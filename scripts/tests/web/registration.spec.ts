@@ -35,9 +35,13 @@ const COMPLETE = {
   addressState: "VIC", addressPostcode: "3072",
 };
 
-/** Build a draft through the API on whatever context is given. */
-async function buildDraft(ctx: APIRequestContext, title: string): Promise<string> {
-  const saved = await ctx.put("/api/projects/current/lines", { data: { title, items: [A_LINE] } });
+/** Build a draft through the API on whatever context is given.
+ *
+ *  `code` matters when two drafts are going to be MERGED: item codes must be
+ *  unique across the surviving project, and two W01s block submission exactly as
+ *  they should — which is a duplicate-code test, not a merge test. */
+async function buildDraft(ctx: APIRequestContext, title: string, code = "W01"): Promise<string> {
+  const saved = await ctx.put("/api/projects/current/lines", { data: { title, items: [{ ...A_LINE, code }] } });
   expect(saved.ok(), `save lines: ${await saved.text()}`).toBeTruthy();
   return (await saved.json()).project.id as string;
 }
@@ -285,4 +289,119 @@ test("no referral-code field and no trade-pricing copy anywhere on the gate", as
   const detailsText = await gateText();
   expect(detailsText).not.toMatch(forbiddenCopy);
   expect(detailsText, "no ABN or business-name field is seeded early either").not.toMatch(/\bABN\b/);
+});
+
+// ─── 7. The merge moment ─────────────────────────────────────────────────────
+// AC-26, AC-27. Signing in runs the claim-merge, which DELETES the anonymous
+// project and folds its lines into the account's existing draft. The customer
+// submits what they can see, and no request is ever made against the dead id.
+test("an existing draft and an anonymous one merge, and the merged list is shown before submit", async ({ page, playwright }) => {
+  const email = freshEmail("merge");
+
+  // The account already has a draft, built in its own context.
+  const owner = await playwright.request.newContext({ baseURL: "http://127.0.0.1:8788" });
+  await apiSignIn(owner, email);
+  expect((await owner.post("/api/auth/profile", { data: COMPLETE })).ok()).toBeTruthy();
+  const existingId = await buildDraft(owner, `Merge existing ${stamp}`);
+
+  // The browser is anonymous and builds a second draft.
+  const anonId = await buildDraft(page.request, `Merge anonymous ${stamp}`, "D01");
+  expect(anonId).not.toBe(existingId);
+
+  const deadIdRequests: string[] = [];
+  page.on("request", (r) => { if (r.url().includes(anonId)) deadIdRequests.push(r.url()); });
+
+  await openReview(page);
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  const before = deadIdRequests.length;
+  await gateSignIn(page, email);
+
+  // The merged list is redisplayed BEFORE submission is possible.
+  await expect(page.getByText("Your quotes have been combined")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+  await expect(page.getByText(/Your quote · 2 items/)).toBeVisible();
+
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+
+  expect(deadIdRequests.length, "no request may be made against the merge-deleted project id").toBe(before);
+  const survivor = await (await owner.get(`/api/projects/${existingId}`)).json();
+  expect(survivor.items.length, "both drafts' lines are on the surviving project").toBe(2);
+  await owner.dispose();
+});
+
+// ─── 8. Delivery is never seeded from the account address ─────────────────────
+// AC-42. The owner's ruling: a tradie delivers to their customer's site, not to
+// their own office, so a prefill that is wrong nearly every time is worse than a
+// blank field — it is wrong AND it stops the field being read.
+test("delivery starts blank for an account with a complete address, and never copies it", async ({ page }) => {
+  const email = freshEmail("delivery");
+  await apiSignIn(page.request, email);
+  expect((await page.request.post("/api/auth/profile", { data: COMPLETE })).ok()).toBeTruthy();
+  const projectId = await buildDraft(page.request, `Delivery blank ${stamp}`);
+
+  await openReview(page);
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+
+  // The account's own postcode is 3072. If the delivery field ever copied it, a
+  // blank would be indistinguishable from a copy — so both are asserted.
+  await expect(page.getByLabel("Postcode", { exact: true })).toHaveValue("3072");
+  await expect(page.getByLabel("Delivery suburb")).toHaveValue("");
+  await expect(page.getByLabel("Delivery postcode")).toHaveValue("");
+  // …and not as a placeholder-shaped hint of the account address either.
+  await expect(page.getByLabel("Delivery suburb")).not.toHaveAttribute("value", COMPLETE.addressSuburb);
+  // Browser autofill cannot reintroduce it: neither delivery field opts in.
+  await expect(page.getByLabel("Delivery suburb")).not.toHaveAttribute("autocomplete", /.+/);
+  await expect(page.getByLabel("Delivery postcode")).not.toHaveAttribute("autocomplete", /.+/);
+
+  // An entered destination persists to the PROJECT, and the account address is
+  // untouched — the second half of AC-42, which was correct throughout.
+  await page.getByLabel("Delivery suburb").fill("Craigieburn VIC");
+  await page.getByLabel("Delivery postcode").fill("3064");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+
+  const account = await (await page.request.get("/api/auth/me")).json();
+  expect(account.user.addressSuburb, "the account address is not overwritten by a delivery").toBe(COMPLETE.addressSuburb);
+  expect(account.user.addressPostcode).toBe(COMPLETE.addressPostcode);
+  const project = await (await page.request.get(`/api/projects/${projectId}`)).json();
+  expect(project.delivery.postcode, "the project stores the destination the customer entered").toBe("3064");
+});
+
+// ─── 9. The surviving NameStep, at /login ────────────────────────────────────
+// AC-6a. The gate never renders this component; /login and the account shell are
+// the two paths where no details form follows, so the name is asked exactly once
+// — here, and mandatorily.
+test("signing in at /login with a nameless account demands a name before the dashboard", async ({ page, playwright }) => {
+  const email = freshEmail("namestep");
+  // The account is created in its own context so this browser arrives signed out.
+  const setup = await playwright.request.newContext({ baseURL: "http://127.0.0.1:8788" });
+  await apiSignIn(setup, email);   // creates the account with name = NULL
+  await setup.dispose();
+
+  await page.goto("/login");
+  await page.getByPlaceholder(/your@email\.com/).first().fill(email);
+  await page.getByRole("button", { name: /email me a code/i }).click();
+  const devText = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("••••••").fill(devText?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /verify & continue/i }).click();
+
+  // The name step, not the dashboard.
+  await expect(page.getByRole("heading", { name: "What's your name?" })).toBeVisible();
+  // The greeting is "Welcome, X" on a first visit and "Good morning, X" once
+  // there is work to come back to — the dashboard is unreachable either way.
+  const greeting = /^(Welcome|Good (morning|afternoon|evening)), /;
+  await expect(page.getByRole("heading", { name: greeting })).toHaveCount(0);
+  // Mandatory: no skip, no dismissal, no "later".
+  await expect(page.getByRole("button", { name: /skip|later|not now/i })).toHaveCount(0);
+
+  await page.getByLabel("Full name").fill("Sam Taylor");
+  await page.getByRole("button", { name: /save and continue/i }).click();
+  await expect(page.getByRole("heading", { name: /^(Welcome|Good (morning|afternoon|evening)), Sam/ })).toBeVisible();
+
+  // AC-5/AC-7 in the browser: the email local part was never written as a name.
+  const me = await (await page.request.get("/api/auth/me")).json();
+  expect(me.user.name).toBe("Sam Taylor");
+  expect(me.user.name).not.toContain("reg-web-");
 });
