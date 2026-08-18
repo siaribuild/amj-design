@@ -2136,7 +2136,7 @@ export default function App() {
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
-      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => setUser(toAuthUser(u))} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => setUser(toAuthUser(u))} onEditProfile={() => navigateTo("account")} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;

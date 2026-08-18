@@ -597,3 +597,55 @@ test("the gate numbers its two stages, and says where a carried postcode came fr
   await expect(page.getByText("Carried over from the postcode you used above.")).toHaveCount(0);
   await expect(page.getByText("We price delivery from this.")).toBeVisible();
 });
+
+// ─── §16.8 — the GST caption offers the way to change it ─────────────────────
+// The caption exists because prices visibly DROP ~9% at the moment of sign-in
+// and that has to read as a preference rather than a bug. Naming the setting
+// without saying where it lives leaves the customer told about a control they
+// cannot find.
+test("the ex-GST caption links to the setting it names", async ({ page, playwright }) => {
+  const email = freshEmail("gstlink");
+  const setup = await playwright.request.newContext({ baseURL: "http://127.0.0.1:8788" });
+  await apiSignIn(setup, email);
+  expect((await setup.post("/api/auth/profile", { data: { ...COMPLETE, priceGstMode: "ex" } })).ok()).toBeTruthy();
+  await setup.dispose();
+
+  await buildDraft(page.request, `GST link ${stamp}`);
+  await openReview(page);
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  await gateSignIn(page, email);
+
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+  await expect(page.getByText("Now showing prices ex GST, the setting on your account.")).toBeVisible();
+  const change = page.getByRole("button", { name: "Change in your profile" });
+  await expect(change).toBeVisible();
+
+  // It goes somewhere — the account surface that owns the preference.
+  await change.click();
+  await expect(page.getByRole("heading", { name: /Review and submit/ })).toHaveCount(0);
+});
+
+// ─── §16.9 — Enter in the details form ───────────────────────────────────────
+// "Enter triggers Submit only when the form is valid; otherwise it moves focus to
+// the first invalid field." Enter doing nothing is the worse half of that: the
+// customer presses it, the page does not move, and nothing says why.
+test("Enter submits a complete details form, and finds the gap in an incomplete one", async ({ page }) => {
+  const email = freshEmail("enterkey");
+  await apiSignIn(page.request, email);
+  await buildDraft(page.request, `Enter key ${stamp}`);
+  await openReview(page);
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+
+  // Incomplete: Enter moves to the first thing outstanding rather than sitting mute.
+  await page.getByLabel("Phone").fill(COMPLETE.phone);
+  await page.getByLabel("Phone").press("Enter");
+  await expect(page.getByLabel("Full name")).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toHaveCount(0);
+
+  // Complete: the same key submits.
+  await fillDetails(page);
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByLabel("Delivery suburb").press("Enter");
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+});

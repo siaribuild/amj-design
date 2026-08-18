@@ -36,7 +36,7 @@
 // optimistically — so a failed or lost request surfaces an error instead of a
 // false confirmation.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, AlertCircle, CheckCircle, Loader2, Send } from "lucide-react";
 import { SAGE, WindowMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import {
@@ -139,7 +139,7 @@ export function QuoteSubmitted({ email, user, onGo }: {
 
 export function QuoteReviewSubmit({
   quote, user, projectId, backLabel = "Back to MyProject", aiReading, projectResolving = false,
-  storedDelivery, onBack, onSubmit, onSubmitted, onFixBlocked, onAuthed,
+  storedDelivery, onBack, onSubmit, onSubmitted, onFixBlocked, onAuthed, onEditProfile,
 }: {
   quote: QuoteState;
   user: QuoteUser;
@@ -165,6 +165,9 @@ export function QuoteReviewSubmit({
   onFixBlocked: () => void;
   /** A fresh user from the inline sign-in or a profile save — App owns identity. */
   onAuthed?: (user: AuthUserDto) => void;
+  /** Where the GST preference actually lives (§16.8). Naming a setting without
+   *  saying where it is leaves the customer told about a control they can't find. */
+  onEditProfile?: () => void;
 }) {
   const gstMode = useGstMode();
   const { total, pendingPriceCount, attentionCount } = quoteSummary(quote);
@@ -364,6 +367,36 @@ export function QuoteReviewSubmit({
 
   const errId = (field: DetailField) => `detail-err-${field}`;
 
+  /** Every required detail field's control, so "the first invalid field" is a
+   *  thing this form can actually put the cursor in. */
+  const CONTROL_ID: Record<DetailField, string> = {
+    name: "detail-name", phone: "detail-phone",
+    addressLine1: "detail-address1", addressLine2: "detail-address2",
+    addressSuburb: "detail-suburb", addressState: "detail-state",
+    addressPostcode: "detail-postcode",
+  };
+  const focusFirstGap = () => {
+    const target = missing.length ? CONTROL_ID[missing[0]] : "delivery-postcode";
+    document.getElementById(target)?.focus();
+  };
+
+  /** §16.9: Enter submits when the form is valid, and otherwise moves to the
+   *  first thing still outstanding. Enter doing NOTHING is the worse half of
+   *  that — the customer presses it, the page does not move, and nothing says
+   *  why. Ignored on the state <select>, where Enter belongs to the picker. */
+  const onDetailsKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Enter") return;
+    const el = e.target as HTMLElement;
+    if (el.tagName !== "INPUT") return;
+    e.preventDefault();
+    if (missing.length || postcode.length !== 4) {
+      setTouched(Object.fromEntries(missing.map((f) => [f, true])));
+      focusFirstGap();
+      return;
+    }
+    void handleSubmit();
+  };
+
   return (
     <div className="quote-page min-h-screen ground-bone pt-16">
       <div className="max-w-2xl mx-auto px-6 py-10">
@@ -446,7 +479,18 @@ export function QuoteReviewSubmit({
                 <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
               )}
               {gstFlipped && gstMode === "ex" && (
-                <p className="text-body mt-2 t-cap">Now showing prices ex GST, the setting on your account.</p>
+                <p className="text-body mt-2 t-cap">
+                  Now showing prices ex GST, the setting on your account.
+                  {onEditProfile && (
+                    <>
+                      {" "}
+                      <button type="button" onClick={onEditProfile}
+                        className="text-sage hover:underline cursor-pointer t-cap">
+                        Change in your profile
+                      </button>
+                    </>
+                  )}
+                </p>
               )}
               {pendingPriceCount > 0 && <p className="mt-2 text-amber-800 t-cap">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
             </>
@@ -500,7 +544,7 @@ export function QuoteReviewSubmit({
 
         {/* ── Stage 3: your details ─────────────────────────────────────────── */}
         {stage === "details" && user && (
-          <div className="quote-panel p-5 space-y-4 mb-4">
+          <div className="quote-panel p-5 space-y-4 mb-4" onKeyDown={onDetailsKeyDown}>
             <div>
               {/* Numbered only for someone who actually went through the sign-in.
                   A returning customer never saw a step 1, so they are not on step

@@ -65,7 +65,7 @@ const DOC_TYPE: Record<string, { label: string; tint: string }> = {
   supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-body-soft" },
 };
 
-export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, onAuthed, projectResolving, storedDelivery }: {
+export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, onAuthed, onEditProfile, projectResolving, storedDelivery }: {
   setPage: (p: Page) => void;
   user: QuoteUser;
   quote: QuoteState;
@@ -76,6 +76,8 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, on
   onSubmit?: (delivery: SubmitDelivery) => Promise<SubmitResult>;
   /** A fresh user from the gate's inline sign-in or a profile save. */
   onAuthed?: (user: AuthUserDto) => void;
+  /** Opens the account surface that owns the GST preference (§16.8). */
+  onEditProfile?: () => void;
   /** The identity-keyed hydration has a fetch in flight — a claim-merge may be
    *  replacing the project id this screen is holding. */
   projectResolving?: boolean;
@@ -217,6 +219,7 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, on
         projectResolving={projectResolving}
         storedDelivery={storedDelivery}
         onAuthed={onAuthed}
+        onEditProfile={onEditProfile}
         onBack={() => setView("build")}
         onSubmit={onSubmit}
         onSubmitted={(email) => { setSubmittedEmail(email); setSubmitted(true); }}
