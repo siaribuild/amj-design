@@ -1351,7 +1351,7 @@ record, the line-note vocabulary, the `ItemForm` disclosure fence, and
 
 ---
 
-# 21. R1f — the line plane serves four jobs
+# 21. R1f — the line plane serves four jobs (the DOORS are superseded by section 24; the four jobs and the code findings stand)
 
 R1e's reading — *"show me the thing, and tell me what is wrong with it"* — is
 right for **arrival** and survives unchanged. It was wrong as the whole surface:
@@ -1515,3 +1515,162 @@ would make a price entry silently move a project's status.
 §13, §15, §17, §19 and `OPEN-DEFECTS.md` are unchanged. The estimator mental-model
 divergence has been reported to the owner separately by the coordinator; it does
 not change what is designed above, only what the Why plane has to be honest about.
+
+---
+
+# 24. R1h — view mode
+
+Built to the owner's proposal and to his answers to the four challenges. Mobile
+line plane only; the record/list view is approved and untouched.
+
+## 24.1 The rule that replaces no-scroll
+
+No-scroll was deliberately given up — *"with splits in particular, we're unlikely
+to fit into no scroll concept. I'm ok to sacrifice that."* It was, however, the
+only mechanism that had actually stopped content creeping back. So its load
+transfers to one rule, and the rule is **structural, not a promise**:
+
+> **A panel is a summary that leads somewhere. It never grows to fit its
+> content.**
+
+`Panel` takes a `budget`, **slices to it**, and demands a `more` string when it
+truncates. A panel cannot silently absorb one more fact, because the fact would
+not render. The CSS refuses to grow either: fixed row rhythm, no wrapping value,
+ellipsis on overflow.
+
+**A "line"** is one rendered row of text at the panel's own size. Overflow is
+either clamped with a stated remainder or lives in the panel the summary leads
+to — never both, never neither.
+
+### The budgets
+
+| Panel | Budget | Leads to | Overflow says |
+|---|---|---|---|
+| Specification | **4 lines** | the spec panel | `+2 more options` |
+| Why this product | **3 lines** | the why panel | `What else was considered` |
+| Price | **2 lines** | re-pricing | `Confirm against the manufacturer` |
+| The customer's note | **2 lines**, clamped | (full text in the spec panel) | — |
+| The size line | **1 line** | — | — |
+| Units (split only) | one row per unit | that unit | — |
+
+The units block is the one panel with no fixed budget, and deliberately: its
+length *is* the split. Four units is a fact about the line, not content that
+crept in.
+
+## 24.2 The order is `ItemForm`'s
+
+*"mirroring what is in the edit panel conceptually, but following mobile-first
+concept."* `ItemForm` runs Item ID → product type → product → size → options →
+note (`ItemComposer.tsx:536`ff), with price shown as a preview and never an
+input. View mode runs the same concerns in the same order, so the two modes are
+recognisably the same thing:
+
+```
+the drawing              the hero — ItemForm draws it in-form too
+1,200 × 3,300 mm         from the schedule        ← size + one word of provenance
+SPECIFICATION            product · glazing · frame · …    → spec panel
+WHY THIS PRODUCT         had to meet · this one · chosen  → why panel
+PRICE                    $1,840.00 ex GST · list price    → re-pricing
+THE CUSTOMER WROTE       their words, clamped to 2 lines
+─────────────────────────────────────────────────
+[ Edit W01 ]                                      [ ⋯ ]
+```
+
+## 24.3 The action is Edit
+
+Not Save/Cancel — *"good catch. we can adjust as needed."* There is nothing to
+commit on a read-only screen; Save and Cancel belong in edit mode.
+
+## 24.4 What the split forced that the single product did not
+
+This is the substantive half of the round.
+
+1. **The specification panel is replaced by the units — never both.** The
+   customer list settled this (*"a spec panel above the units would describe
+   nothing"*, `OpeningList.tsx:99-105`) and the same logic holds: a composite
+   parent has no single product, glazing or option set to summarise. **Its units
+   are its specification.** `ItemForm` agrees — a parent gets `hideProduct` and
+   `hideOptions`.
+2. **The Why panel disappears entirely — from the parent *and* from every unit.**
+   This one changed my mind mid-build. The estimator recommends a product per
+   **opening**; a composite is *one* opening the customer submitted and **ops**
+   then divided, so the units' products were an ops decision in the split
+   planner, not a machine recommendation. There is nothing to justify anywhere on
+   a split, and inventing a rationale would be worse than the absence.
+3. **A coverage line appears** — *"The units add up to 100 mm less than this
+   opening."* It reports and never vetoes. `D01` in the mock is deliberately
+   short by 100 mm so the case is visible rather than theoretical.
+4. **Units get no price and no pencil** (`UnitRow.tsx:137`): the parent owns the
+   total, and a unit is reached through the parent's editor. The unit plane says
+   so in its footer.
+5. **Unit references are `W04A` / `W04B` / …**, from `unitLabel(parentCode, i)`
+   ported from `rowState.ts:63`.
+
+**One thing mirroring did *not* mean inheriting.** Read-only `OpeningList` drops
+state chips entirely — right for customers, wrong for staff who scan for
+`needs review` and `no rate`. Ops2's list keeps them; this view keeps the
+problems visible on the line.
+
+## 24.5 Back names its destination: `‹ Lines`
+
+Of the three offered:
+
+- **`‹ Lines` — taken.** It names the *actual* return target: the row was tapped
+  in the record's Lines tab and that is what comes back. `Lines` is a destination
+  that exists on screen, in the record's own segment control. At ~52px it also
+  leaves room for the title and the neighbours.
+- `‹ Project` would be wrong twice — **Project is the name of the sibling tab** in
+  that same segment, so it promises the wrong half of the record.
+- `‹ Wattle Grove - Lot 14` names the project, not a destination; at ~150px it
+  crowds out the title and the neighbour pair and then truncates, spending the
+  most width on the least navigational word.
+
+## 24.6 prev/next: settled concept, new execution
+
+Placement and concept are settled and not reopened — top of the plane, neighbours
+visible. What failed was the execution: two labelled full-width buttons taking a
+whole band. Mail, photo and reader apps all solve this and **none of them spends
+a row on it.**
+
+So: **a chevron pair in the toolbar's `slot="end"`, each carrying its
+neighbour's code** — `‹W03` `W05›`. That keeps the settled property (you can see
+which line is next *before* you move, which the rejected `‹ 4/18 ›` could not do)
+at **~96px of an existing bar instead of 44px of new chrome**. The room name is
+what made the buttons wide, and it is one line down on the screen you arrive at.
+
+Header is now **56px, one toolbar**, down from 100px with the band.
+
+## 24.7 Line notes — corrected
+
+Line notes are **not a thread and not editable**. The field is
+`quote_line.room_label`: the customer's own note, typed under "Note (optional)".
+It is shown as **their words, read-only**, clamped to two lines with the full
+text in the spec panel. **The line-notes plane with its composer is deleted** —
+threads are project-level only.
+
+---
+
+# 25. What R1h changes in the spec
+
+1. **§18's four "doors" are superseded by §24's panels.** The dimensions door is
+   absorbed into Specification (provenance is part of how a line is specified);
+   the notes door is deleted outright with the line-notes plane.
+2. **The line-notes acceptance criteria must go.** Any AC describing a line-level
+   note composer, thread or ops-authored line note describes something that does
+   not exist. `room_label` is the customer's field.
+3. **The split needs its own criteria** — unit rows, `unitLabel`, no unit price,
+   no unit pencil, the coverage sentence, and the rule that a composite shows
+   units *instead of* a specification panel and carries no recommendation.
+4. **Read-only-first is settled** and should be recorded as such: *"List view
+   does not give all the details to make the decision on what exactly and why
+   adjustments are needed. I can't expect ops to edit straight from the list."*
+5. **The no-scroll property is formally retired** for the line plane, and the
+   line budgets in §24.1 replace it. They should be written into the AC, because
+   a budget nobody can point at is a budget that erodes.
+
+# 26. Still open
+
+§13, §15, §17, §19, §22 and `OPEN-DEFECTS.md` are unchanged. R1f's spec gaps —
+the uplift's storage and rounding, the manufacturer-confirmed state, the discount
+application point (`pricing.ts:189-196`), `measured_by = 'unsure'` as a review
+flag — all still stand.
