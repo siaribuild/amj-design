@@ -1674,3 +1674,158 @@ threads are project-level only.
 the uplift's storage and rounding, the manufacturer-confirmed state, the discount
 application point (`pricing.ts:189-196`), `measured_by = 'unsure'` as a review
 flag — all still stand.
+
+---
+
+# 27. R1i — the bottom tab bar
+
+Four tabs in the order he gave them: **Dashboard · Projects · Enquiries · More**.
+`IonTabs` with `IonTabBar slot="bottom"`. Mobile and tablet only; desktop keeps
+the persistent left rail and shows no bar.
+
+**A switcher in the top-right of the mock flips between the variants on the same
+screen**, and a `⌂` button simulates the home indicator — a desktop browser
+reports `env(safe-area-inset-bottom)` as 0, which would flatter every variant
+equally and hide the whole problem.
+
+## 27.1 Why the `IonTabs` ban no longer applies
+
+The boundary doc banned it, and **the ban was right for the reason given**: Lines
+and Project are two views of *one* record, and tabbing them would claim they were
+separate destinations when the back button, the URL and the totals all say
+otherwise. **That ban stands — there are still no tabs inside a record.**
+
+These four are different in kind. Dashboard, Projects and Enquiries share nothing
+but the account: no common header, no common totals, no back path between them.
+That is what a tab bar is for, and hand-building one would have meant
+reimplementing the active state, the stack-per-tab behaviour and the safe-area
+inset `IonTabBar` already has.
+
+## 27.2 The pixel cost, measured at 375 × 812 with the 34px home indicator
+
+**The bar is 91px**, not the ~50 assumed: 56 (Ionic md) + 34 (inset) + 1 border.
+
+| Screen | A (bar everywhere) | B (hidden on record & line) | C (icon-only) |
+|---|---|---|---|
+| Record | **−25px** | 0 | −25px |
+| Line | **−93px** | 0 | −93px |
+| Dashboard | −91px | −91px | −91px |
+
+At **320 × 690** the bar is the same 91px; the line plane keeps 492px of content
+with it, and nothing overflows.
+
+**Why the record only loses 25px and the line loses 93.** The inset rule: when a
+bar sits below the action panel, the *bar* owns the home-indicator padding and
+the panel drops its own. The record's footer therefore gives back 66px
+(141 → 75) against the bar's 91 — a net 25. The line plane's footer has almost
+nothing to give back (49 → 51), so it pays nearly the full 93.
+
+**Without that rule both elements pad for the same 34px**, which is 34px of
+nothing between the primary action and the tabs. It is settled in one place
+(`ops2-tabs.css`), not per component.
+
+## 27.3 Variant C is withdrawn on measurement
+
+C was meant to be "A, but shorter". It is not available:
+
+- `ion-tab-bar` publishes `--background`, `--border` and `--color` but **no height
+  variable** — `--min-height` computes to `auto` and does nothing.
+- Forcing a height made the bar **taller both times** (113px against A's 91),
+  because the safe-area padding is added on top of a content-box height.
+- Dropping the labels — the only *supported* route — **does not shorten Ionic's
+  md bar either**. Measured at 91px, identical to A.
+
+So C costs its labels and buys **zero pixels**. It stays in the switcher because
+he asked to see the alternatives, but it should not be chosen: "Dashboard" and
+"Enquiries" as bare icons are a guess until learned, for no saving.
+
+**Making it shorter would mean overriding a standard component's internal
+sizing** — precisely what the boundary rule exists to prevent.
+
+## 27.4 The tab stacks and back navigation
+
+**The back semantics we settled survive**, but only because the routes moved.
+
+For the Projects tab to stay selected while three planes deep, the record's
+routes had to live under it: `/record/:ref` became `/projects/record/:ref`, and
+everything below moved with it. With that:
+
+- `< Lines` pops to `/projects/record/:ref` — one pop, inside the Projects stack.
+- `< Projects` pops to `/projects` — the tab's root, where it always went.
+- A deep link to `/projects/record/OF-Q-10482/line/l04` resolves with the stack
+  intact.
+
+**Leaving the routes flat is what would have broken it** — `/record/...` matches
+no tab at all.
+
+### One defect, unresolved, and it must be fixed before tabs ship
+
+**`IonTabs` computes the selected tab from the *matched route*.** Because
+`/projects/record/:ref` is a different `<Route>` from `/projects`, it matches no
+tab, and **the bar lights nothing the moment a record is open** — measured, all
+four buttons unselected. Passing `selectedTab` to `IonTabBar` does not help:
+`IonTabs` clones the bar and injects its own.
+
+The fix is the documented Ionic shape — **one `<Route>` per tab with the record's
+routes nested inside it** — which is a restructure, not a patch. The mock paints
+the active tab from the route meanwhile, **marked in the source as a stand-in**,
+so the variants are judged with a lit bar rather than a broken one.
+
+This is an argument for care in the implementation, not against tabs: the
+behaviour is available, it just requires the nested shape.
+
+## 27.5 What happens to the drawer
+
+**It survives unchanged and becomes what `More` opens.** Below 1024 the drawer is
+the full destination list and `More` is its trigger; at 1024 and above
+`ion-split-pane` turns the same markup into the persistent rail and the bar is
+hidden. One destination list at every width, reached two ways.
+
+The twice-recorded "drawer with no trigger" regression stays fixed — **`More` is
+a more visible trigger than the hamburger it replaces**, and it is in the thumb
+arc rather than the far corner.
+
+## 27.6 A regression the desktop check caught
+
+`ion-split-pane` finds its main content **by id among its direct children**, and
+`id="main"` was on the router outlet — which `IonTabs` now wraps. At 1440 the
+outlet measured `left:0 width:1440` with no `split-pane-main` class, so **the
+260px rail overlaid the record instead of offsetting it.**
+
+`IonTabs` takes no `id` prop, so the id moved to a host element around it.
+Desktop measures correctly again: menu 0–260, rail 260–640, canvas 640–1440, no
+tab bar in any variant, totals and state row still in the rail.
+
+## 27.7 Recommendation
+
+**B**, and the reason is the measurement rather than the principle.
+
+A costs the line plane 93px — on the screen where the drawing is the point, and
+where the no-scroll property was already surrendered. B costs it nothing, because
+the two screens it hides on are exactly the two that already carry a labelled way
+out (`< Lines`, `< Projects`) and a primary action that owns the bottom edge.
+
+The honest objection to B is **instability** — a bar that comes and goes between
+screens — and that the tab bar is then absent from where a founder spends most of
+the day, which undercuts the "speed is money" case for having tabs at all. That
+objection is real and it is why this is his call and not mine: **A buys constant
+access to three destinations for 93px on the line plane and 25px on the record.**
+Whether those destinations are worth reaching *mid-review* is a question about how
+he works, and the switcher is there so he can find out rather than predict.
+
+C should be discarded either way.
+
+---
+
+# 28. What R1i changes in the spec
+
+1. **The route shape changed.** Every record URL is now under `/projects`. Any
+   criterion or deep-link example naming `/record/:ref` needs updating.
+2. **The tab-selection defect (§27.4) is a blocking implementation note**, not a
+   design question: the nested per-tab `<Route>` shape is required.
+3. **The safe-area ownership rule needs a criterion** — exactly one element on the
+   bottom edge pads for the home indicator, and it is the bottom-most one.
+4. **`Dashboard` and `Enquiries` now need real specs.** Both exist here as thin
+   roots so the bar had somewhere to go; neither has been designed.
+5. **The `IonTabs` ban in the boundary doc needs amending**, not deleting: banned
+   *within* a record, sanctioned for top-level destinations.
