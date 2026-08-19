@@ -924,6 +924,23 @@ ion-item.needs-review::part(native) {
 - **Does not depend on the divider:** `--border-color` is back to the neutral
   rule, verified as `rgba(0,0,0,0.13)` on a flagged row.
 
+## 14.5b Two contrast failures found by the closing sweep
+
+Rule A1 is a functional rule, so enforcing it is not colour work. Both were
+amber-family inks that Ionic's own shades do not carry at small sizes, and both
+are fixed by mixing the hue toward the theme's own ink — which keeps the tone
+and clears the floor in *both* palettes rather than picking a colour.
+
+| Where | Was | Now |
+|---|---|---|
+| `WAITING ON US` (shipped in R1b) | `--ion-color-warning-shade` — **1.91:1** on light, the worst on the surface | `color-mix(… warning 45%, ink)` |
+| Quarantined file copy (new in R1c) | `--ion-color-danger-shade` — **4.23:1** on dark | `color-mix(… danger 62%, ink)` — now 8.38:1 |
+
+Closing sweep across `/projects`, the record, Progress, Files, Notes and
+Delivery, at 375×812 and 320×690, in both palettes: **no horizontal overflow on
+any route, and nothing below 4.5:1.** Ionic's own button labels measured
+separately through their shadow `.button-native`: none below 4.5:1.
+
 ## 14.6 Components — standard vs bespoke
 
 Point 5 did **not** push the row off `IonItem`. No boundary rule is engaged and

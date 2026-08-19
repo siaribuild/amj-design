@@ -66,7 +66,13 @@ ion-back-button.crumb-back {
 }
 /* Ours to move is the one worth marking. Waiting on someone else is not our
    queue, so it stays quiet — that difference is the whole point of ranking. */
-.sr-owed[data-ours] { color: var(--ion-color-warning-shade); }
+/* Amber on a light background is never legible: warning-shade measured 1.91:1
+   here, the worst failure on the surface and one R1b shipped. Mixing the warning
+   hue toward the theme's own ink keeps the tone and clears rule A1's floor in
+   both palettes — olive-amber on light, light amber on dark. */
+.sr-owed[data-ours] {
+  color: color-mix(in srgb, var(--ion-color-warning, #ffc409) 45%, var(--ops-text));
+}
 .sr-rest {
   flex: 1 1 auto; min-width: 0; font-size: .75rem; color: var(--ops-quiet);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -82,7 +88,7 @@ ion-back-button.crumb-back {
 }
 .fr-dot {
   flex: none; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--ion-color-warning-shade);
+  background: color-mix(in srgb, var(--ion-color-warning, #ffc409) 60%, var(--ops-text));
 }
 .fr-text { flex: 1 1 auto; min-width: 0; font-size: .8125rem; color: var(--ops-ink); }
 /* Not the primary hue: on the warning tint it measured 4.34:1 against the dark
@@ -169,7 +175,13 @@ ul.rows.files .f-note {
   grid-column: 1 / -1; font-size: .75rem; line-height: 1.35;
   color: var(--ops-quiet); margin-top: 2px;
 }
-ul.rows.files .f-note.bad { color: var(--ion-color-danger-shade); font-weight: 600; }
+/* danger-shade measured 4.23:1 on the dark palette, under rule A1's floor.
+   Mixing the danger hue toward the theme's own ink raises it in BOTH palettes
+   without picking a colour: lighter red on dark, darker red on light. */
+ul.rows.files .f-note.bad {
+  color: color-mix(in srgb, var(--ion-color-danger, #eb445a) 62%, var(--ops-text));
+  font-weight: 600;
+}
 ul.rows.files .f-act { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 ul.rows.files .f-act ion-button {
   margin: 0; --padding-start: 10px; --padding-end: 10px;
