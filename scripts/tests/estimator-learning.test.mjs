@@ -13,13 +13,13 @@ await build({
     contents: `
       export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel } from ${p("worker/lib/estimator/learning.ts")};
       export { decide } from ${p("worker/lib/estimator/select.ts")};
-      export { captureRecommendationOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
+      export { captureRecommendationOutcomes, captureBackfilledOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel, captureRecommendationOutcomes, decide } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel, captureRecommendationOutcomes, captureBackfilledOutcomes, decide } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -530,4 +530,105 @@ test("buildShadowModel reads only quality-gated, keyed rows", async () => {
 
   assert.equal(model.version, RETRIEVAL_KEY_VERSION);
   assert.equal(model.lookup(shadowOpening()).supportFor("amj-b"), 1);
+});
+
+// ── The backfill ingest (D18, AC-34) ────────────────────────────────────────
+
+/** A D1 stub whose project lookup can be made to fail. */
+function backfillDb({ projectExists = true } = {}) {
+  const batched = [];
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) { this.args = args; return this; },
+    async first() { return /FROM project/.test(sql) && projectExists ? { id: "p_real" } : null; },
+  });
+  return { batched, DB: { prepare, async batch(stmts) { batched.push(...stmts); return []; } } };
+}
+
+const BACKFILL_LINE = {
+  externalRef: "W03",
+  context: {
+    operationType: "awning", requirementBasis: "explicit_energy_report",
+    widthMm: 2400, heightMm: 1500, thermalRequired: 1,
+    family: "windows", climateZone: "6",
+  },
+  finalProductSlug: "amj80-series-awning-window",
+  finalVariantId: "dg-lowe",
+  finalConfig: { productSlug: "amj80-series-awning-window", quantity: 1 },
+  finalLineTotal: 1250,
+};
+
+
+test("AC-34 a backfilled row is marked as such and lands in the same bucket", async () => {
+  const env = backfillDb();
+  const result = await captureBackfilledOutcomes(env, { projectId: "p_real", lines: [BACKFILL_LINE] });
+  assert.equal(result.written, 1);
+  assert.deepEqual(result.refused, []);
+
+  const row = env.batched[0];
+  const at = (column) => { const i = bindIndexOf(row.sql, column); return i == null ? null : row.args[i]; };
+
+  // D18: these are REAL decisions — actual plans with the products actually
+  // manufactured — made before the platform's review flow existed. So they are
+  // eligible, approved evidence, flagged for WHERE they came from rather than
+  // for whether they are true.
+  // These five are SQL LITERALS rather than bound parameters, and that is the
+  // security-relevant fact: no request body can make a backfilled row look like
+  // an in-platform review, mark itself eligible, or claim a reason code.
+  for (const column of ["recommendation_eligible", "quality_state", "decision", "reason_code", "provenance"]) {
+    assert.equal(at(column), null, `${column} is not caller-settable`);
+  }
+  assert.match(row.sql, /'adjusted','BACKFILLED_HISTORY',1,0,'approved'/);
+  assert.match(row.sql, /'backfilled'\)/);
+
+  // It buckets by the SAME key the live capture writes, or it is not comparable
+  // evidence at all.
+  assert.equal(at("retrieval_key"), "awning|explicit_energy_report|m|1");
+  assert.equal(at("retrieval_key_version"), RETRIEVAL_KEY_VERSION);
+  assert.equal(retrievalKey(JSON.parse(at("context_json"))), at("retrieval_key"));
+  assert.equal(at("final_product_slug"), "amj80-series-awning-window");
+  assert.equal(at("final_line_total"), 1250);
+
+  // The project id written is the one that was VERIFIED, never the body's.
+  assert.equal(at("project_id"), "p_real");
+});
+
+test("a backfill row for a project that does not exist writes nothing", async () => {
+  // The project id is verified against the database before any row is built —
+  // a body-supplied identifier is a claim, and this table hangs off a real FK.
+  const env = backfillDb({ projectExists: false });
+  const result = await captureBackfilledOutcomes(env, { projectId: "p_made_up", lines: [BACKFILL_LINE] });
+  assert.equal(result.written, 0);
+  assert.deepEqual(env.batched, [], "not one statement was even prepared for the batch");
+  assert.match(result.error, /project/i);
+});
+
+test("AC-56 free text in a backfill row is refused, not normalised into the corpus", async () => {
+  // The same posture as the live capture: this is a cross-account queryable
+  // index, and a staff typo or a pasted spreadsheet cell must not become a
+  // bucket. Refusing beats coercing — a row that arrives wrong should be fixed
+  // at the source, not silently filed under 'other'.
+  const env = backfillDb();
+  const hostile = "Mrs J. Whitmore, 14 Ellerslie Road Hawthorn VIC 3122";
+  const result = await captureBackfilledOutcomes(env, {
+    projectId: "p_real",
+    lines: [
+      { ...BACKFILL_LINE, context: { ...BACKFILL_LINE.context, operationType: hostile } },
+      { ...BACKFILL_LINE, context: { ...BACKFILL_LINE.context, requirementBasis: "made-up-basis" } },
+      { ...BACKFILL_LINE, finalProductSlug: hostile },
+      { ...BACKFILL_LINE, finalProductSlug: "" },
+      { ...BACKFILL_LINE, finalLineTotal: "not a number" },
+      BACKFILL_LINE,
+    ],
+  });
+  assert.equal(result.written, 1, "only the well-formed row is written");
+  assert.equal(result.refused.length, 5);
+  // The refusals name the field, so whoever is keying the data can fix it —
+  // and they carry no echo of the offending value back to the caller.
+  for (const refusal of result.refused) {
+    assert.ok(refusal.field, "each refusal names its field");
+    assert.ok(!JSON.stringify(refusal).includes("Whitmore"), "a refusal never echoes the input");
+  }
+  assert.deepEqual(result.refused.map((r) => r.field).sort(),
+    ["context.operationType", "context.requirementBasis", "finalLineTotal", "finalProductSlug", "finalProductSlug"]);
 });

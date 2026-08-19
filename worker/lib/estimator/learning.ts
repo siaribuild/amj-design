@@ -63,6 +63,18 @@ const REQUIREMENT_BASES = new Set([
  *  truncating would let it in as a plausible-looking prefix. */
 const OPERATION = /^[a-z][a-z-]{0,23}$/;
 
+/** The two admissibility questions, exported so the BACKFILL INGEST asks the
+ *  same ones rather than growing a second copy of the enumeration. `retrievalKey`
+ *  coerces a failure to a safe bucket because it must always return a key; the
+ *  ingest REFUSES the row instead, because a value arriving wrong at the door
+ *  should be fixed at the source rather than silently filed under 'other'.
+ *  Same rule, two appropriate responses, one definition. */
+export const isRetrievalOperation = (value: unknown): boolean =>
+  typeof value === "string" && OPERATION.test(value.toLowerCase());
+
+export const isRequirementBasis = (value: unknown): boolean =>
+  typeof value === "string" && REQUIREMENT_BASES.has(value);
+
 /** By WIDTH, at 1800 and 3000 mm — width is what the frame series' max-width
  *  limits actually turn on, and it is the axis that decides whether a split is
  *  in play at all. Three bands rather than the legacy sixteen width×height
@@ -95,11 +107,11 @@ export function retrievalKey(context: {
   widthMm?: unknown;
   thermalRequired?: unknown;
 }): string {
-  const operation = typeof context.operationType === "string" && OPERATION.test(context.operationType.toLowerCase())
-    ? context.operationType.toLowerCase()
+  const operation = isRetrievalOperation(context.operationType)
+    ? String(context.operationType).toLowerCase()
     : "other";
-  const basis = typeof context.requirementBasis === "string" && REQUIREMENT_BASES.has(context.requirementBasis)
-    ? context.requirementBasis
+  const basis = isRequirementBasis(context.requirementBasis)
+    ? String(context.requirementBasis)
     : "none";
   const thermal = context.thermalRequired === true || context.thermalRequired === 1 || context.thermalRequired === "1"
     ? "1" : "0";
