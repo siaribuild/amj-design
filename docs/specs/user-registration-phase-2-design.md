@@ -1767,7 +1767,7 @@ Phase 1 §16.9 applies unchanged. Additions:
 | Tag | Assumption | Where |
 |---|---|---|
 | `P2-UX-1` | The gate's caption entry for a malformed ABN reads "ABN", reusing Phase 1's "Still needed:" sentence rather than introducing a second caption idiom | §18.5.1 |
-| `P2-UX-2` | The optional business group sits **last** in the details stage, after delivery | §18.5 |
+| ~~`P2-UX-2`~~ | ~~The optional business group sits **last** in the details stage, after delivery~~ — **CONFIRMED by the owner at the mock gate, 2026-08-19.** No longer an assumption: it is a ruling | §18.5, §18.14 |
 | ~~`P2-UX-3`~~ | ~~On `/trade-account` the business fields come **before** the email/OTP step~~ — **STRUCK by the owner, 2026-08-19** (revision 3): one universal flow, the optional group inside it, the fork after it | §18.2 |
 | ~~`P2-UX-4`~~ | ~~The builder/tradie control has no pre-selected option…~~ — **moot: the control is REMOVED by owner ruling P2-D5, 2026-08-19** | — |
 | `P2-UX-5` | The four emails carry **no greeting line** (null-name safety); `{business}` is the only body variable | §18.8 |
@@ -1775,7 +1775,7 @@ Phase 1 §16.9 applies unchanged. Additions:
 | `P2-UX-7` | The ops queue is a **tab** inside Customers (exercising P2-A9's placement latitude), with the count as a dashboard tile | §18.7.1-2 |
 | `P2-UX-8` | Wording of the ops evidence labels ("What the register said", "The three checks") — staff-facing, tunable without a gate | §18.7.3 |
 | `P2-UX-9` | The verified card keeps **business name read-only** (design `P2-ARCH-5`); the ABN is read-only there too | §18.3.2 |
-| `P2-UX-10` | **Orchestrator's decision, not the owner's — flagged for veto.** On `/trade-account` the optional group renders **already revealed**; everywhere else it stays collapsed until relevant. Same component, same flow, same copy — only the initial disclosure differs by entry point | §18.2.1 |
+| ~~`P2-UX-10`~~ | ~~**Orchestrator's decision, not the owner's — flagged for veto.**~~ — **NOT vetoed: the owner approved surface 1, which renders the group revealed, at the mock gate on 2026-08-19.** On `/trade-account` the optional group renders **already revealed**; everywhere else it stays collapsed until relevant | §18.2.1 |
 
 ## 18.13 What must not appear (assert, don't assume)
 
@@ -1804,19 +1804,19 @@ Playwright absence assertions, not review items:
 
 ## 18.14 Open questions for the owner — put these at the mock gate
 
-Neither blocks implementation; both are cheap to change now and annoying to change later, so
-they go to the owner **with** the mock rather than after it. Recorded here so they survive into
-the gate presentation.
+**Both are now answered; the mock gate is CLOSED.** The owner approved surface 1 on 2026-08-19,
+completing approval of all six surfaces (2-6 were approved earlier the same day), so track (b)
+may start. The questions are kept below, struck, so a later reader sees what was asked rather
+than only what survived.
 
 1. ~~**Is the comparative phrasing the one AMJ wants?**~~ — **ANSWERED by the owner,
    2026-08-19: retired.** "Trade pricing" is the name of the thing; the possessive line explains it. See the
    revision-5 block for the ruling and the banned register. Nothing outstanding here.
-2. **Should the gate's optional business group sit earlier than last?** (`P2-UX-2`.) It
-   currently sits after delivery, under its own rule, so nothing optional interrupts the run of
-   required fields — which also means a hurrying tradie may never scroll to it. Moving it up to
-   sit beside name and phone would put it in front of more eyes at the cost of interrupting the
-   required run. The owner overruled "keep the gate minimal" once already (P2-D3), so this is
-   their call, not a re-litigation of it.
+2. ~~**Should the gate's optional business group sit earlier than last?**~~ — **ANSWERED by
+   the owner at the mock gate, 2026-08-19: it sits LAST, after delivery.** `P2-UX-2` is no longer
+   an assumption; it is a ruling. Nothing optional interrupts the run of required fields, and the
+   cost — a hurrying tradie may not scroll to it — is accepted, mitigated by the other two doors
+   (`/trade-account` and the profile card) which exist precisely for that person.
 
 **Resolved without the owner** (recorded so the gate can see what was decided rather than
 asked): the two ui-designer copy findings above — the "three checks" count and the SLA

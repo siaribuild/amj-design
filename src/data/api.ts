@@ -142,10 +142,37 @@ export interface AuthUserDto {
   type: string;
   createdAt: string | null;
 }
+/** The account's trade-verification status, DERIVED by the Worker from the
+ *  application ledger on every read (ADR-0002) — never a stored status word.
+ *
+ *  Two INDEPENDENT facts, deliberately. A verified account that re-applies with a
+ *  new ABN is verified AND pending at once (E-P2-6), and the client renders both
+ *  blocks rather than inventing a third status word for the pair: the customer's
+ *  pricing is not in doubt and the screen must not suggest it is (§18.1).
+ *
+ *  Status ONLY. There is no rate here, no queue reason, no ABR evidence and no
+ *  reference to any other account — P2-A7 holds because the server has no such
+ *  field to serialise. */
+export interface TradeStateDto {
+  verified: boolean;
+  verifiedSince: string | null;
+  /** How the standing grant was made. Staff-meaningful; not rendered as a status. */
+  provenance: "auto" | "ops" | "grandfathered" | null;
+  abn: string | null;
+  pending: { abn: string; businessName: string; createdAt: string } | null;
+  /** Outline only — date and outcome (AC-P2-13). No reason, no actor, no ABN. */
+  history: { at: string; outcome: "approved" | "rejected" | "revoked" }[];
+}
+
 export interface MeResponse {
   authenticated: boolean;
   anonymous: boolean;
   user: AuthUserDto | null;
+  /** Present iff authenticated. Absent from POST /api/auth/verify's response,
+   *  which must stay byte-identical to Phase 1 (AC-P2-56) — so a client that has
+   *  just signed in refetches `me()` to learn its trade state rather than
+   *  reading it off the verify reply. */
+  trade?: TradeStateDto;
 }
 
 /** Current session -> user, or anonymous. */
@@ -170,6 +197,31 @@ export const verifyCode = (email: string, code: string) =>
   });
 
 export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
+
+// ── Trade verification (registration Phase 2) ────────────────────────────────
+
+/** Apply for trade pricing. ONE endpoint behind all three doors (§8.1), so
+ *  AC-P2-10's "no behavioural difference attributable to the entry point" is
+ *  structural rather than a thing three call sites happen to agree on.
+ *
+ *  `source` is telemetry for ops, never a rule: the server validates it against
+ *  an allowlist and treats every value identically.
+ *
+ *  The ABN travels in the BODY of a POST — never a query string, where a
+ *  referrer, a proxy log or the browser's own history would carry it (AB-P2-16).
+ *
+ *  Resolves to the outcome; throws `ApiError` otherwise. The error codes a
+ *  caller must handle by name: `invalid_abn`, `invalid_business_name` (400),
+ *  `application_pending` (409), `rate_limited` (429). */
+export const applyForTrade = (input: {
+  abn: string;
+  businessName: string;
+  source: "trade_page" | "profile" | "submit_gate";
+}) =>
+  req<{ ok: true; status: "verified" | "under_review" }>("/api/trade/application", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }).then((r) => r.status);
 
 /** The current project (session- or claim-cookie scoped) + its draft lines + files. */
 export const getCurrentProject = () => req<CurrentProject>("/api/projects/current");

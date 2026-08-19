@@ -14,7 +14,7 @@
 // ⚠️ NO MESSAGE HERE MAY DIFFER BETWEEN AN ADDRESS THAT HAS AN ACCOUNT AND ONE
 // THAT DOES NOT (AB-5). There is no "we don't recognise that email", ever.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
 import { Btn, FieldLabel, Input } from "../app/ui";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
@@ -22,7 +22,7 @@ import { requestCode, verifyCode, ApiError, type AuthUserDto } from "../data/api
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuthed, onCancel, cancelLabel }: {
+export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuthed, onCancel, cancelLabel, emailStepExtra }: {
   heading: string;
   subcopy: string;
   /** The step numeral beside the heading (§16.3). Present only where the gate is
@@ -43,6 +43,16 @@ export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuth
   /** Rendered as a text button when present — the gate's "Back to my quote". */
   onCancel?: () => void;
   cancelLabel?: string;
+  /** Registration Phase 2: an optional field group rendered INSIDE step 1,
+   *  between the email field and the human check (§18.2.3).
+   *
+   *  A slot rather than a second component because there is ONE registration
+   *  flow in this product and Phase 2 does not add another (owner ruling,
+   *  §18.2): same order, same copy, same Turnstile, same caps — the only
+   *  addition is two optional fields. It sits above the human check because no
+   *  unauthenticated endpoint may accept an ABN: whatever is typed here is held
+   *  in the caller's state and posted only once a session exists (AC-P2-3). */
+  emailStepExtra?: ReactNode;
 }) {
   const inline = layout === "inline";
   const btnWidth = inline ? "w-full sm:w-auto justify-center" : "w-full justify-center";
@@ -140,6 +150,7 @@ export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuth
               onKeyDown={(e) => e.key === "Enter" && send()}
               placeholder="your@email.com" />
           </div>
+          {emailStepExtra}
           {/* Never an empty bordered box where the widget would be: with no site
               key the slot is absent entirely.
               The managed widget is a FIXED 300×65 and does not shrink. At 375px

@@ -132,8 +132,14 @@ function bodyFor(abn) {
   return { Abn: "", AbnStatus: "", BusinessName: [], EntityName: "", Message: "Search text is not a valid ABN or ACN" };
 }
 
-/** Boot the stub on a free port. Returns its base URL, its hit log, and a close. */
-export async function startAbrStub() {
+/** Boot the stub. Returns its base URL, its hit log, and a close.
+ *
+ *  `port` defaults to 0 (an ephemeral port) — what every node suite wants, since
+ *  each one holds the returned handle and reads `hits()` in-process. The
+ *  Playwright harness passes a FIXED port instead: there the stub lives in the
+ *  web-server process and the assertions run in a different one, so the spec
+ *  reaches the counter over HTTP at an address it can know in advance. */
+export async function startAbrStub(port = 0) {
   const hits = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
@@ -176,12 +182,12 @@ export async function startAbrStub() {
 
   const sockets = new Set();
   server.on("connection", (s) => { sockets.add(s); s.on("close", () => sockets.delete(s)); });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address();
+  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
+  const { port: boundPort } = server.address();
 
   return {
-    port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    port: boundPort,
+    baseUrl: `http://127.0.0.1:${boundPort}`,
     hits: () => hits.slice(),
     reset: () => { hits.length = 0; },
     close: () => new Promise((resolve) => {

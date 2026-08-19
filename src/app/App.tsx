@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Menu, X, ArrowRight, ChevronRight, ChevronLeft,
   Upload, Check, AlertCircle, Truck, FileText, Phone,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { type Page, SAGE, DARK, WindowMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
 import { OtpSignIn, OTP_COPY } from "../components/OtpSignIn";
+import { TradeApplicationCard } from "../components/trade/TradeApplicationCard";
 import { NameStep } from "../components/NameStep";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
@@ -37,7 +38,7 @@ import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, ApiError, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitDelivery, type SubmitResult } from "../data/api";
+import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, ApiError, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitDelivery, type SubmitResult, type TradeStateDto } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 import { SAGE_LIGHT as SAGE_LT } from "../styles/tokens";
 
@@ -1653,7 +1654,11 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRADE ACCOUNT
 // ═══════════════════════════════════════════════════════════════════════════════
-function TradePage({ setPage, signedIn }: { setPage: (p: Page) => void; signedIn: boolean }) {
+function TradePage({ setPage, signedIn, user, trade, onAuthed, onTradeChanged }: {
+  setPage: (p: Page) => void; signedIn: boolean;
+  user: AuthUser | null; trade: TradeStateDto | null;
+  onAuthed: (u: AuthUserDto) => void; onTradeChanged: () => void;
+}) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   return (
     <div className="bg-bone min-h-screen">
@@ -1687,21 +1692,26 @@ function TradePage({ setPage, signedIn }: { setPage: (p: Page) => void; signedIn
               </div>
             ))}
           </div>
-          <div className="group relative card p-6 overflow-hidden">
-            <FrameCorners size={10} color={SAGE} show="always" />
-            <h3 className="font-semibold text-ink mb-4">Apply for a trade account</h3>
-            <div className="space-y-3">
-              {[["Business name","ABC Constructions"],["ABN","00 000 000 000"],["Contact name","Full name"],["Email","trade@business.com.au"],["Phone","(03) 9000 0000"]].map(([l,p]) => (
-                <div key={l}><FieldLabel>{l}</FieldLabel><Input placeholder={p} /></div>
-              ))}
-              <Btn variant="sage" size="md" className="w-full justify-center">Apply <ArrowRight className="w-4 h-4" /></Btn>
-            </div>
-            {/* Was "Checked by a person before you pay." — the quote page's
-                reassurance, pasted onto a form that charges nothing and issues
-                no quote. Nothing on this page is paid for, so the line answered
-                a question nobody was asking here. */}
-            <p className="text-body mt-3 t-cap">No cost and no obligation — we'll be in touch to set it up.</p>
-          </div>
+          {/* THE MOCK FORM IS GONE. It rendered five inputs — business name, ABN,
+              contact, email, phone — wired to nothing at all: every application
+              typed into this page was silently discarded, and the reassuring
+              line underneath ("we'll be in touch") made that a promise the page
+              could not keep. AC-P2-1 is the rule that no field on this page
+              discards input.
+
+              What replaces it is NOT a second registration flow. It is the
+              ordinary Phase-1 signup with the optional business group inside it
+              (owner ruling, §18.2): same component, same order, same Turnstile,
+              same caps. Only the initial disclosure differs — someone who
+              navigated HERE came to hand over an ABN, so the group arrives
+              already revealed (P2-UX-10). */}
+          <TradeApplicationCard
+            user={user}
+            trade={trade}
+            source="trade_page"
+            onAuthed={onAuthed}
+            onTradeChanged={onTradeChanged}
+          />
         </div>
       </section>
       <ReferralPlacement variant="trade" signedIn={signedIn} setPage={setPage} />
@@ -1783,6 +1793,16 @@ export default function App() {
   const initialRoute = routeFromPathname(window.location.pathname);
   const [page, setPage] = useState<Page>(initialRoute.page);
   const [user, setUser] = useState<AuthUser | null>(null);
+  // Trade status is a SIBLING of the user, never a field on it: the Worker
+  // derives it from the application ledger on every read (ADR-0002), and
+  // POST /api/auth/verify deliberately does not carry it (AC-P2-56). Keeping it
+  // separate is what stops a stale copy riding along inside AuthUser.
+  const [trade, setTrade] = useState<TradeStateDto | null>(null);
+  /** Re-read the derived trade state. Called after any application outcome —
+   *  the §7.1 response bodies are constant by design and carry no state. */
+  const refreshTrade = useCallback(() => {
+    fetchMe().then((r) => setTrade(r.trade ?? null)).catch(() => {});
+  }, []);
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
   const [focusRecord, setFocusRecord] = useState<TrackFocus>(null);
@@ -1945,7 +1965,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     fetchMe()
-      .then(r => { if (!cancelled && r.user) setUser(toAuthUser(r.user)); })
+      .then(r => { if (!cancelled && r.user) { setUser(toAuthUser(r.user)); setTrade(r.trade ?? null); } })
       .catch(() => {})
       .finally(() => { if (!cancelled) setAuthLoading(false); });
     return () => { cancelled = true; };
@@ -2161,7 +2181,7 @@ export default function App() {
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "not-found":        return <NotFoundPage setPage={navigateTo} />;
-      case "trade":            return <TradePage setPage={navigateTo} signedIn={Boolean(user)} />;
+      case "trade":            return <TradePage setPage={navigateTo} signedIn={Boolean(user)} user={user} trade={trade} onAuthed={(u) => { setUser(toAuthUser(u)); refreshTrade(); }} onTradeChanged={refreshTrade} />;
       case "refer":            return <ReferPage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
