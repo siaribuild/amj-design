@@ -1153,6 +1153,67 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     // estimator-split.test.mjs owns the split-as-candidate criteria — and this
     // suite owns what only a real migrated database can show.
 
+    await t.test("AC-34/AC-57 the backfill ingest is staff-only and verifies its project", async () => {
+      const [{ id: projectId }] = await sql("SELECT id FROM project ORDER BY id LIMIT 1");
+      const body = {
+        projectId,
+        lines: [{
+          externalRef: "W-HIST",
+          context: {
+            operationType: "awning", requirementBasis: "explicit_energy_report",
+            widthMm: 2400, heightMm: 1500, thermalRequired: 1, family: "windows",
+          },
+          finalProductSlug: "amj80-series-awning-window",
+          finalVariantId: "dg-lowe",
+          finalConfig: { productSlug: "amj80-series-awning-window", quantity: 1 },
+          finalLineTotal: 1250,
+        }],
+      };
+
+      // This route writes to a cross-account learning corpus on a product that
+      // holds financial PII. The gate is not optional and it is executed here
+      // for real, not asserted from the source.
+      await requestJson(anonymous, "/api/ops/recommendation-outcomes/backfill", { method: "POST", json: body }, 403);
+      await requestJson(customer, "/api/ops/recommendation-outcomes/backfill", { method: "POST", json: body }, 403);
+      assert.deepEqual(
+        await sql("SELECT count(*) AS n FROM recommendation_outcome WHERE provenance='backfilled'"),
+        [{ n: 0 }], "a refused call writes nothing at all",
+      );
+
+      // A project id that does not resolve is refused — the body's claim is
+      // never trusted, and nothing is written on the way to finding out.
+      await requestJson(ops, "/api/ops/recommendation-outcomes/backfill",
+        { method: "POST", json: { ...body, projectId: "p_does_not_exist" } }, 404);
+      assert.deepEqual(
+        await sql("SELECT count(*) AS n FROM recommendation_outcome WHERE provenance='backfilled'"),
+        [{ n: 0 }],
+      );
+
+      // Staff with an assigned role: the row lands, flagged for where it came
+      // from and bucketed by the same key the live capture writes.
+      const ok = await requestJson(ops, "/api/ops/recommendation-outcomes/backfill", { method: "POST", json: body });
+      assert.equal(ok.body.written, 1);
+      assert.deepEqual(ok.body.refused, []);
+      const [row] = await sql(
+        `SELECT provenance, retrieval_key, retrieval_key_version, recommendation_eligible,
+                quality_state, reason_code, project_id
+           FROM recommendation_outcome WHERE external_ref='W-HIST'`,
+      );
+      assert.equal(row.provenance, "backfilled");
+      assert.equal(row.retrieval_key, "awning|explicit_energy_report|m|1");
+      assert.equal(row.retrieval_key_version, "rk-v1");
+      assert.equal(row.recommendation_eligible, 1);
+      assert.equal(row.quality_state, "approved");
+      assert.equal(row.reason_code, "BACKFILLED_HISTORY");
+      assert.equal(row.project_id, projectId, "the VERIFIED id, not the body's");
+
+      // AC-36's tail: no surviving row predates the provenance column unset.
+      assert.deepEqual(
+        await sql("SELECT count(*) AS n FROM recommendation_outcome WHERE provenance IS NULL"),
+        [{ n: 0 }],
+      );
+    });
+
     await t.test("AC-53/AC-55/AC-57 candidate data is ops-only, and no customer surface carries it", async () => {
       // AC-57: the support-lever estimate endpoint, anonymously.
       await requestJson(anonymous, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);

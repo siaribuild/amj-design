@@ -33,6 +33,7 @@ import { scanFile } from "../lib/scan";
 import {
   pricingOptionSlugsFromOptions, runProjectEstimate, toOpeningInput, type OpeningRow,
 } from "../lib/estimator/estimate";
+import { captureBackfilledOutcomes } from "../lib/ai/outcomes";
 import { createCatalogueRepository, sanityExecutor } from "../lib/estimator/catalogue";
 import { checkHardRules } from "../lib/estimator/rules";
 import { retryCurrentAiExtraction } from "../lib/ai/jobs";
@@ -1686,6 +1687,31 @@ ops.get("/lines/:id/configurations", async (c) => {
 // finalized human adjustment before it can influence future recommendations.
 // Physical/thermal corrections remain a separate signal from commercial
 // preference learning.
+// POST /api/ops/recommendation-outcomes/backfill — file pre-platform decisions
+// into the learning corpus (D18).
+//
+// STAFF ONLY, and the project id is VERIFIED rather than trusted: this writes to
+// a cross-account corpus, and a body-supplied identifier is a claim. The route
+// stays thin — auth, parse, delegate — and every rule about what a row may
+// contain lives in captureBackfilledOutcomes, beside the capture path it has to
+// agree with.
+ops.post("/recommendation-outcomes/backfill", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+  const lines = Array.isArray(body?.lines) ? body.lines : [];
+  if (!projectId || !lines.length) return c.json({ error: "invalid_request" }, 400);
+  const result = await captureBackfilledOutcomes(c.env, { projectId, lines });
+  if (result.error) return c.json({ error: result.error }, 404);
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "project", entityId: projectId,
+    action: `backfilled ${result.written} learning outcome(s), ${result.refused.length} refused`,
+  });
+  return c.json({ written: result.written, refused: result.refused });
+});
+
 ops.patch("/recommendation-outcomes/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
