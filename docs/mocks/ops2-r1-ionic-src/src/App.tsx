@@ -56,6 +56,7 @@ import { DashboardPage, EnquiriesPage, ProjectsPage } from "./pages/TabRoots";
 import { DeliveryPage, ProjectBlockPage } from "./pages/SmallPlanes";
 import { ManufacturerPricePage, SpecPage, UnitPage, WhyPage } from "./pages/LineJobs";
 import { EditorDock, EditorPlane } from "./Editor";
+import { BottomAppBar } from "./chrome";
 import { planeTransition } from "./transitions";
 import {
   setStore, setTabVariant, useEditorPane, useScrollAwayBar, useStore, useTabBar,
@@ -117,9 +118,12 @@ function VariantSwitch({ variant }: { variant: TabVariant }) {
   return (
     <div className="variantswitch" role="group" aria-label="Mock control: tab bar variant">
       <span className="vs-tag">tabs</span>
-      {(["a", "b", "d", "off"] as TabVariant[]).map((v) => (
+      {([
+        ["a", "A · bar + panel"], ["d", "D · scroll away"], ["e", "E · CTA in header"],
+        ["f", "F · FAB"], ["g", "G · no CTA"], ["h", "H · one bar"], ["off", "OFF"],
+      ] as [TabVariant, string][]).map(([v, label]) => (
         <button key={v} type="button" aria-pressed={variant === v}
-          onClick={() => setTabVariant(v)}>{v.toUpperCase()}</button>
+          onClick={() => setTabVariant(v)}>{label}</button>
       ))}
       <button type="button" className="vs-inset" title="Simulate the home indicator"
         onClick={() => {
@@ -151,6 +155,7 @@ export default function App() {
   const paneBand = useEditorPane();
   const { variant, visible: barVisible } = useTabBar();
   useScrollAwayBar(variant === "d" && barVisible);
+  const wideNow = wide;
   /* D unmounts the bar rather than sliding it: ion-tab-bar cannot be moved or
      resized from outside — three measurements are recorded in ops2-tabs.css. The
      spacer keeps the home-indicator band present either way, so the action panel
@@ -247,6 +252,15 @@ export default function App() {
             {/* The indicator band, always present in D so the action panel keeps
                 its no-inset state whether the bar is there or not. */}
             {variant === "d" && !showBar && <div slot="bottom" className="tabspacer" />}
+            {variant === "h" && !wideNow && (
+              <div slot="bottom">
+                <BottomAppBar activeTab={activeTab}
+                  onGo={(t) => {
+                    if (t === "more") document.querySelector("ion-menu")?.open();
+                    else window.location.hash = "#/" + t;
+                  }} />
+              </div>
+            )}
           </IonTabs>
           </div>
         </IonSplitPane>

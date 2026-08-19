@@ -140,33 +140,25 @@ export function useEditorPane(): boolean {
    below the action panel, the BAR owns the home-indicator inset and the panel
    must not add a second one. Two stacked elements both padding for the same
    34px is the fiddly bit, and it is settled here rather than per component. */
-export type TabVariant = "a" | "b" | "d" | "off";
+export type TabVariant = "a" | "d" | "e" | "f" | "g" | "h" | "off";
 
-/** Planes that carry their own primary action AND their own labelled way out —
- *  the two conditions that make variant (b)'s hiding defensible. */
-const ACTION_PLANE = /^#\/projects\/record\/[^/]+(\/line\/|$)/;
 
 export function useTabBar(): { variant: TabVariant; visible: boolean } {
   const wc = useWidthClass();
   const [variant, setV] = useState<TabVariant>(
     () => (localStorage.getItem("ops2-tabs") as TabVariant) || "a");
-  const [hash, setHash] = useState(() => window.location.hash);
 
   useEffect(() => {
-    const onHash = () => setHash(window.location.hash);
     const onVar = (e: Event) => setV((e as CustomEvent).detail as TabVariant);
-    window.addEventListener("hashchange", onHash);
     window.addEventListener("ops2-tabs", onVar as EventListener);
-    return () => {
-      window.removeEventListener("hashchange", onHash);
-      window.removeEventListener("ops2-tabs", onVar as EventListener);
-    };
+    return () => window.removeEventListener("ops2-tabs", onVar as EventListener);
   }, []);
 
   /* Desktop keeps the persistent left nav and never shows a bar. */
   const desktop = wc === "desktop" || wc === "wide";
-  const onActionPlane = ACTION_PLANE.test(hash);
-  const visible = !desktop && variant !== "off" && !(variant === "b" && onActionPlane);
+  /* H replaces IonTabBar with its own strip, so the Ionic bar is not shown for
+     it either. Everything else with tabs shows it. */
+  const visible = !desktop && variant !== "off" && variant !== "h";
 
   useEffect(() => {
     document.documentElement.dataset.tabs = variant;

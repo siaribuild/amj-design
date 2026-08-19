@@ -77,13 +77,23 @@ import { Money, mm } from "./ui";
  *
  *  So the claim is not deleted and not faked — the thing that must not truncate
  *  was moved somewhere it cannot. */
-export function RecordNavBar() {
+export function RecordNavBar({ cta }: { cta?: { label: string; disabled?: boolean } }) {
   return (
     <IonToolbar>
       <IonButtons slot="start">
         <IonBackButton defaultHref="/projects" text="Projects" />
       </IonButtons>
       <IonTitle>{RECORD.title}</IonTitle>
+      {/* E only. The end slot was deliberately empty (§16.1: "a toolbar is
+          allowed to have no trailing action; it is not allowed to carry a
+          total") — a CTA is an action, so it may sit here where the total may
+          not. */}
+      {cta && (
+        <IonButtons slot="end">
+          <IonButton disabled={cta.disabled}
+            className={cta.disabled ? "inert hdr-cta" : "hdr-cta"}>{cta.label}</IonButton>
+        </IonButtons>
+      )}
       {/* slot="end" is deliberately empty. The record's actions live in the
           bottom action panel, where he asked for them. A toolbar is allowed to
           have no trailing action; it is not allowed to carry a total. */}

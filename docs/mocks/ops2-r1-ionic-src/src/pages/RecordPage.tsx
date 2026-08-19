@@ -36,12 +36,14 @@ import {
 import { useHistory, useParams } from "react-router-dom";
 import { DELIVERY, LINES, RECORD } from "../data";
 import {
-  setStore, useEditorPane, useShortViewport, useStore, useWidthClass, visibleLines,
+  setStore, useEditorPane, useShortViewport, useStore, useTabBar, useWidthClass,
+  visibleLines,
 } from "../store";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
 import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
 import { EditorPane } from "../Editor";
+import { ActionFab, HeaderCta, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
 import {
   FilterRow, LineList, ProjectBlockBody, ProjectBlocks,
   RecordNavBar, RecordSummaryBar, StateRow, Totals,
@@ -55,6 +57,7 @@ export function RecordPage() {
   const short = useShortViewport();
   const canvasPlate = short ? "sm" : "md";
   const paneBand = useEditorPane();
+  const { variant } = useTabBar();
   const { selectedId, filterUnpriced, draft, editing } = useStore();
   const [segment, setSegment] = useState<"lines" | "project">("lines");
   const [block, setBlock] = useState("progress");
@@ -116,7 +119,8 @@ export function RecordPage() {
   const header = (
     <IonHeader className="ion-no-border">
       {/* D3 — two toolbars, to the convention. See pieces.tsx RecordNavBar. */}
-      <RecordNavBar />
+      <RecordNavBar cta={hasHeaderCta(variant)
+        ? { label: "Issue quote", disabled: true } : undefined} />
       <RecordSummaryBar />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}
@@ -141,14 +145,27 @@ export function RecordPage() {
   const blocked = DELIVERY.finalCents === null
     ? `${RECORD.unpricedCount} lines have no rate, and delivery is not confirmed`
     : `${RECORD.unpricedCount} lines have no rate`;
+  /* THE RECORD IS WHERE E, F AND G BREAK, and it is rendered so the break is
+     visible. `Issue quote` is BLOCKED, and R-153 calls the footer "the ONE footer
+     allowed a second line" precisely because a blocked primary must say why. A
+     header cannot carry that sentence and a FAB cannot either — so E and F keep
+     the reason as a slim strip, trading the panel's 75px for ~28px rather than
+     for nothing. G keeps the whole panel here, because no panel on this screen
+     owns `Issue quote` the way the spec panel owns Edit on a line. */
   const footer = (
     <IonFooter className="ion-no-border">
-      <div className="actions">
-        <IonButton className="inert" disabled>Issue quote</IonButton>
-        <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
-          aria-label="More actions for this project">···</IonButton>
-      </div>
-      <p className="reason">{blocked}</p>
+      {hasBottomPanel(variant, "record") ? (
+        <>
+          <div className="actions">
+            <IonButton className="inert" disabled>Issue quote</IonButton>
+            <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
+              aria-label="More actions for this project">···</IonButton>
+          </div>
+          <p className="reason">{blocked}</p>
+        </>
+      ) : (
+        <p className="reason reason-alone">{blocked}</p>
+      )}
     </IonFooter>
   );
 
@@ -177,6 +194,13 @@ export function RecordPage() {
         <IonContent scrollEvents>{listColumn}</IonContent>
         {footer}
         {sheet}
+        {/* F on the record — the unflattering case, rendered rather than
+            described. `Issue quote` has no icon that reads as itself, and a
+            disabled FAB cannot say why it is disabled. */}
+        {hasFab(variant) && (
+          <ActionFab label="Issue quote" icon={CTA_ICONS.issue} disabled
+            onClick={() => undefined} />
+        )}
       </IonPage>
     );
   }

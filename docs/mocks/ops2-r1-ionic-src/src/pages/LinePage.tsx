@@ -39,7 +39,8 @@ import {
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
 import { LINES, RECORD } from "../data";
-import { setStore, useShortViewport, useStore, visibleLines } from "../store";
+import { setStore, useShortViewport, useStore, useTabBar, visibleLines } from "../store";
+import { ActionFab, HeaderCta, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
 import { useMoveKeys, useSiblingSwipe } from "../LineScroller";
@@ -49,6 +50,8 @@ export function LinePage() {
   const { ref, lineId } = useParams<{ ref: string; lineId: string }>();
   const { filterUnpriced } = useStore();
   const short = useShortViewport();
+  const { variant } = useTabBar();
+  const edit = () => history.push(`/projects/record/${ref}/line/${line.id}/edit`);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   /* R-18 — the page owns the 24px threshold and hands the plate its state. The
@@ -87,6 +90,9 @@ export function LinePage() {
               aria-label="Back to the lines" />
           </IonButtons>
           <IonTitle>{line.code} · {subtitle}</IonTitle>
+          {hasHeaderCta(variant) && (
+            <HeaderCta label="Edit" onClick={edit} />
+          )}
           <IonButtons slot="end" className="nbpair">
             <IonButton disabled={!run[at - 1]} onClick={() => run[at - 1] && goTo(run[at - 1].id)}
               aria-label={run[at - 1] ? `Previous line: ${run[at - 1].code}, ${run[at - 1].room}` : "This is the first line"}>
@@ -137,10 +143,10 @@ export function LinePage() {
             </div>
           </div>
         )}
-        {/* R1e — the deck is the action row alone. The filmstrip moved to the
-            top and became named neighbours; keeping both would be two mechanisms
-            for one job. */}
-        <div className="deck">
+        {/* The deck exists only for the variants that put the action on the
+            bottom edge. E moves it to the header, F to a FAB, G removes it, and
+            H folds it into the one bar. */}
+        {hasBottomPanel(variant, "line") && <div className="deck">
           {/* Edit, and nothing else. There is nothing to Save on a read-only
               screen — Save and Cancel live in edit mode where there is something
               to commit. */}
@@ -151,8 +157,14 @@ export function LinePage() {
             <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
               aria-label="More actions for this line">···</IonButton>
           </div>
-        </div>
+        </div>}
       </IonFooter>
+
+      {/* F — one FAB per screen, so `···` has moved to the action sheet reachable
+          from the header. It floats over the last of the content. */}
+      {hasFab(variant) && (
+        <ActionFab label={`Edit ${line.code}`} icon={CTA_ICONS.edit} onClick={edit} />
+      )}
 
 
       <IonActionSheet
