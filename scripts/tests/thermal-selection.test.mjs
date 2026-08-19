@@ -1,12 +1,17 @@
-// Automated tests for the live thermal model: the coherence guard (WS2), graded
-// compliance (WS4), and the computed band (WS6). The regression that motivated the
-// rework — a composite's non-overlapping lite bands collapsing to an impossible
-// (min>max) band — is asserted directly against the coherence guard.
+// Automated tests for the live thermal model: the coherence guard, requirement-
+// relative deviation (D8), and the computed band. The regression that motivated
+// the rework — a composite's non-overlapping lite bands collapsing to an
+// impossible (min>max) band — is asserted directly against the coherence guard.
 //
-// The precedence *resolver* and standalone glass *selector* these tests once also
-// covered were retired (dead code; live selection is the weighted ranker). The
-// end-to-end selection cases live in estimator-recommendation.test.mjs, and the
-// ranker's band handling in estimator-rules.test.mjs.
+// Two things these tests once covered are gone. The precedence *resolver* and
+// the standalone glass *selector* were retired as dead code. `gradedComplianceScore`
+// and its FLOOR / SHGC_SPAN / UVALUE_SPAN constants were deleted with the
+// weighted ranker (ADR 0007) — how nearly a candidate meets a band is now a
+// DISTANCE, not a score between 0 and 1, and the cases that pinned the score
+// are re-asked below in the deviation vocabulary that replaced it.
+//
+// End-to-end selection lives in estimator-recommendation.test.mjs; the ladder's
+// own arithmetic in recommendation-ladder.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";

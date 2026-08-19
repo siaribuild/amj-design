@@ -1,6 +1,24 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // SELECTING A COMPOSITE — the system is chosen for the opening, the frames inside it
 //
+// WHAT IS LIVE HERE, AND WHAT IS NOT (read this before changing anything)
+//
+//   `enumerateMakeUps` — LIVE. Production reaches it through
+//   splitCandidates.ts's `enumerateSplitCandidates`, and everything it depends
+//   on (`selectAll`, `sourceFor`, `coveringSystems`, `partnersOf`,
+//   `isBuildableTogether`) is live with it. The production entry point for
+//   answering an opening is `selectWithSplits`, in splitCandidates.ts.
+//
+//   `selectForComposite`, `choose` and `fallback` — TEST-HARNESS ONLY. Since
+//   splits became candidates (D7, Phase 2) nothing in production calls them.
+//   They are retained because composite-select.test.mjs drives the live
+//   compatibility rules above through them, and rewriting those tests onto
+//   `enumerateMakeUps` would be churn with no behavioural gain. `fallback` in
+//   particular asserts behaviour that can NO LONGER SHIP: it builds a
+//   mixed-system make-up, and D3 makes combinability hard, so a cross-system
+//   make-up is never offered as a candidate. Do not reach for it as a model of
+//   what the estimator does.
+//
 // Each unit of a composite used to be selected on its own merits. Nothing tied
 // one unit's frame to the next, the ranker had no cross-segment term, and every
 // fixed product in the catalogue shares one 400–3000 dimension rule — so
