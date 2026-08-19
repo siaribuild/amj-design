@@ -496,3 +496,53 @@ test("Enter cannot submit past a malformed ABN either", async ({ page }) => {
   await abn.fill("");
   await expect(page.getByRole("button", { name: /^Submit/ })).toBeEnabled();
 });
+
+// ─── 10. The confirmation denies the SLA it sits under (AC-P2-18) ────────────
+// Placement here is load-bearing, not cosmetic. Phase 1's confirmation carries
+// "Expect a response within 1-2 business days" — the QUOTE-REVIEW turnaround. An
+// acknowledgement of the ABN check sitting near it would let a fast reader
+// attach that number to the ABN check: a timeframe promised by adjacency, which
+// the owner's ruling forbids as absolutely as one promised in words.
+//
+// Two defences, both required, and this test asserts both: the block sits after
+// the actions behind a rule, AND its copy explicitly denies the number rather
+// than merely avoiding it. It must also never promise a repricing (P2-D4).
+test("the submit-gate acknowledgement denies the quote SLA and promises no timeframe", async ({ page }) => {
+  const business = SPARE(4);
+  const email = emailAt(business.domain);
+  await apiSignIn(page.request, email);
+  await openReview(page);
+  await fillDetails(page);
+
+  await page.getByLabel("ABN (optional)").fill(business.abn);
+  await page.getByLabel("Business name").fill(business.businessName);
+  await page.getByRole("button", { name: /^Submit/ }).click();
+
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible({ timeout: 30_000 });
+
+  const ack = page.getByTestId("trade-ack");
+  await expect(ack, "an application was created, so the block renders").toBeVisible();
+  const said = (await ack.innerText()).replace(/\s+/g, " ");
+
+  expect(said, "it DENIES the response time above rather than avoiding it")
+    .toContain("The response time above is for your quote review");
+  expect(said, "no timeframe of its own").toMatch(/no timeframe attached/i);
+  expect(said, "and the quote is not waiting on it").toMatch(/isn't waiting on it/i);
+
+  // P2-D4: no repricing is ever promised.
+  expect(said, "no repricing promise").not.toMatch(/update your quote|reprice|re-price|adjust your quote/i);
+  // AC-P2-47 holds here too.
+  expect(said, "no percentage").not.toMatch(/\d\s*%|\d+\s*per\s?cent/i);
+
+  // The block sits BELOW the actions — a fast reader must reach the buttons
+  // before the ABN copy, never the other way round.
+  const order = await page.evaluate(() => {
+    const ack = document.querySelector('[data-testid="trade-ack"]');
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const back = buttons.find((b) => /back to home/i.test(b.textContent ?? ""));
+    if (!ack || !back) return null;
+    // 2 === DOCUMENT_POSITION_PRECEDING: the button precedes the block.
+    return (ack.compareDocumentPosition(back) & 2) !== 0;
+  });
+  expect(order, "the acknowledgement sits after the action buttons").toBe(true);
+});

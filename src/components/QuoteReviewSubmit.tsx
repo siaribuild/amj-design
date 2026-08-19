@@ -126,8 +126,11 @@ function FieldError({ id, children }: { id: string; children: string }) {
 }
 
 /** Confirmation screen after a submission the server accepted. */
-export function QuoteSubmitted({ email, user, onGo }: {
-  email: string; user: QuoteUser; onGo: (p: "order" | "track-order" | "home") => void;
+export function QuoteSubmitted({ email, user, onGo, trade }: {
+  email: string; user: QuoteUser;
+  onGo: (p: "order" | "track-order" | "home" | "account") => void;
+  /** What the post-submit trade application did, or null if none was made. */
+  trade?: "sent" | "failed" | null;
 }) {
   return (
     <div className="quote-page relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
@@ -140,6 +143,49 @@ export function QuoteSubmitted({ email, user, onGo }: {
           <Btn variant="sage" size="md" onClick={() => onGo(user ? "order" : "track-order")}>{user ? "View status" : "Track an order"}</Btn>
           <Btn variant="ghost" size="md" onClick={() => onGo("home")}>Back to home</Btn>
         </div>
+
+        {/* ── The trade acknowledgement (AC-P2-18) ────────────────────────────
+            PLACEMENT IS LOAD-BEARING, NOT COSMETIC. The paragraph above carries
+            "Expect a response within 1-2 business days" — the QUOTE-REVIEW
+            turnaround. An earlier draft put this block two lines beneath it, and
+            a fast reader would have attached that number to the ABN check: a
+            timeframe promised by adjacency, which the owner's ruling forbids as
+            absolutely as one promised in words.
+
+            Two defences, both required, and neither may be dropped:
+              1. distance and structure — below the actions, behind a rule, at
+                 the end of the screen, outside the paragraph that carries the SLA;
+              2. the copy DENIES the number explicitly rather than merely
+                 avoiding it.
+
+            "Your quote isn't waiting on it" is the whole promise. It must never
+            grow into "and we'll update your quote if it's approved" (P2-D4). */}
+        {trade && (
+          <div data-testid="trade-ack" className="border-t border-black/8 mt-10 pt-6 text-left">
+            {trade === "sent" ? (
+              <>
+                <p className="font-semibold text-ink t-bd-sm">Your trade account is a separate check</p>
+                <p className="text-body mt-1 t-cap">
+                  The response time above is for your quote review. Checking your ABN is a separate
+                  job with no timeframe attached — we'll email you when it's done, and your quote
+                  isn't waiting on it.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-ink t-bd-sm">We couldn't start the ABN check</p>
+                <p className="text-body mt-1 t-cap">
+                  Your quote is safely submitted and isn't affected. You can add your ABN any time
+                  from{" "}
+                  <button type="button" onClick={() => onGo("account")}
+                    className="text-ink underline underline-offset-2 cursor-pointer">
+                    your account
+                  </button>.
+                </p>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -168,7 +214,9 @@ export function QuoteReviewSubmit({
   onBack: () => void;
   onSubmit?: (delivery: SubmitDelivery) => Promise<SubmitResult>;
   /** Server-confirmed; carries the address the confirmation went to. */
-  onSubmitted: (email: string) => void;
+  /** `trade` reports what the post-submit application did (AC-P2-18), so the
+   *  confirmation can acknowledge it. Null when none was attempted. */
+  onSubmitted: (email: string, trade?: "sent" | "failed" | null) => void;
   /** Blocking lines exist — send the customer back to fix them. */
   onFixBlocked: () => void;
   /** A fresh user from the inline sign-in or a profile save — App owns identity. */
@@ -218,9 +266,7 @@ export function QuoteReviewSubmit({
    *  part of the profile patch, because an ABN is applied WITH, not saved. */
   const [tradeAbn, setTradeAbn] = useState("");
   const [tradeBusiness, setTradeBusiness] = useState("");
-  /** What the post-submit application did, for the confirmation block (AC-P2-18).
-   *  `null` = none was attempted, so no block renders at all. */
-  const [tradeOutcome, setTradeOutcome] = useState<"sent" | "failed" | null>(null);
+
   const [postcodeError, setPostcodeError] = useState("");
   // The pre-gate value, remembered so the details form can say where it came
   // from. It is the ONLY thing that ever pre-fills a delivery field, and a value
@@ -412,17 +458,21 @@ export function QuoteReviewSubmit({
         // already safe, so a failed application becomes a quiet line on the
         // confirmation pointing at the account page, never an error on a
         // submission that worked.
+        //  A LOCAL, not state: this screen is about to unmount in favour of the
+        //  confirmation, and a setState here would never be read by anything.
+        //  `null` means no application was attempted, so no block renders at all.
+        let tradeOutcome: "sent" | "failed" | null = null;
         if (tradeGroupOffered && abnEntered && !abnMalformed && !tradeNameMissing) {
           try {
             await applyForTrade({
               abn: tradeAbn.trim(), businessName: tradeBusiness.trim(), source: "submit_gate",
             });
-            setTradeOutcome("sent");
+            tradeOutcome = "sent";
           } catch {
-            setTradeOutcome("failed");
+            tradeOutcome = "failed";
           }
         }
-        onSubmitted(user.email);
+        onSubmitted(user.email, tradeOutcome);
         return;
       } // no handler = design preview
       if (result.error === "missing_postcode" || result.error === "invalid_postcode") {

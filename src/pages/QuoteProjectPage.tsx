@@ -88,6 +88,9 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, on
   const [view, setView] = useState<"build" | "review">("build");
   const [submitted, setSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
+  /** What the post-submit trade application did (AC-P2-18), carried from the
+   *  review screen to the confirmation. Null when none was attempted. */
+  const [submittedTrade, setSubmittedTrade] = useState<"sent" | "failed" | null>(null);
 
   // Transient UI identity keys on serverId, never the local array id — the local
   // id is regenerated on rehydrate, which is exactly when the user is most likely
@@ -209,7 +212,7 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, on
   };
 
   // ─── Submitted / review — the SHARED final step ─────────────────────────────
-  if (submitted) return <QuoteSubmitted email={submittedEmail} user={user} onGo={go} />;
+  if (submitted) return <QuoteSubmitted email={submittedEmail} user={user} onGo={go} trade={submittedTrade} />;
   if (view === "review") {
     return (
       <QuoteReviewSubmit
@@ -222,7 +225,7 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, on
         onEditProfile={onEditProfile}
         onBack={() => setView("build")}
         onSubmit={onSubmit}
-        onSubmitted={(email) => { setSubmittedEmail(email); setSubmitted(true); }}
+        onSubmitted={(email, trade) => { setSubmittedEmail(email); setSubmittedTrade(trade ?? null); setSubmitted(true); }}
         onFixBlocked={() => { setView("build"); fixFirstBlocker(); }}
       />
     );
