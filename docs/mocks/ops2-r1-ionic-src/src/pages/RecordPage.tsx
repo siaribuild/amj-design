@@ -43,8 +43,8 @@ import { Plate } from "../Plate";
 import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
 import { EditorPane } from "../Editor";
 import {
-  FilterRow, LineList, ProjectBlockBody, ProjectBlocks, RecordIdentity,
-  RecordTotal, StateRow, Totals,
+  FilterRow, LineList, ProjectBlockBody, ProjectBlocks,
+  RecordHeader, StateRow, Totals,
 } from "../pieces";
 
 export function RecordPage() {
@@ -96,15 +96,9 @@ export function RecordPage() {
 
   const header = (
     <IonHeader className="ion-no-border">
-      {/* Back at the start, the money in the end slot — the corner the overflow
-          used to hold, and the corner he asked for it in. */}
-      <IonToolbar className="navbar">
-        <IonButtons slot="start">
-          <IonBackButton defaultHref="/projects" text="Projects" />
-        </IonButtons>
-        <div slot="end"><RecordTotal /></div>
-      </IonToolbar>
-      <RecordIdentity />
+      {/* Back, the ref and the total on one line; the title and the customer
+          beneath at full width. See pieces.tsx RecordHeader. */}
+      <RecordHeader />
       <StateRow onOpenProgress={() => openBlock("progress")} />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}

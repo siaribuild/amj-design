@@ -4,6 +4,7 @@
 import { useState } from "react";
 import {
   IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
+  IonBackButton,
 } from "@ionic/react";
 import { chevronForward, download } from "ionicons/icons";
 import { Elevation } from "./elevation";
@@ -38,11 +39,49 @@ export function RecordTotal() {
   );
 }
 
-export function RecordIdentity() {
+/** POINT 1 — the header, recomposed.
+ *
+ *  "you have moved the project name and introduced '<- Projects' reads
+ *  disconnected to a project. Keep it on the same line."
+ *
+ *  Correct. R1b put back on its own bar ABOVE the identity, so the control
+ *  floated with nothing to belong to and the project name lost the position it
+ *  had beside the leading control — the thing he liked in the first place.
+ *
+ *  The composition problem is real: three elements on one 375px row. `Back to
+ *  Projects` is ~86px because it must name its destination (it is the record's
+ *  only navigation), the total is ~80px in the corner, and that leaves ~200px —
+ *  not enough for `OF-Q-10482 - Wattle Grove — Lot 14`.
+ *
+ *  Solved by composing back and identity as ONE PATH rather than two competing
+ *  items, and letting the long half fall to the line beneath at full width:
+ *
+ *      < Projects / OF-Q-10482                          $48,802.40
+ *      Wattle Grove — Lot 14                                ex GST
+ *      Marchetti Constructions · Ana Bianchi
+ *
+ *  Back is no longer a bar of its own — it is the head of the breadcrumb, so it
+ *  reads as "where this project sits" rather than as a stray control. The ref,
+ *  which is the identity ops actually says out loud, is on that line and never
+ *  truncates. The title gets the full width below it and never truncates either,
+ *  which the old single-line `ref - title` could not promise.
+ *
+ *  One <h1> still carries the whole identity for assistive technology; the
+ *  layout is a grid and the h1 is `display: contents`, so nothing is duplicated
+ *  or hidden to achieve the arrangement. IonBackButton is kept — it owns the
+ *  router pop and the defaultHref — it is simply placed in this grid rather than
+ *  in a toolbar of its own. */
+export function RecordHeader() {
   return (
     <div className="rec-head">
-      <h1><span className="mono">{RECORD.ref}</span> · {RECORD.title}</h1>
-      <span className="sub">{RECORD.customer}</span>
+      <IonBackButton defaultHref="/projects" text="Projects" className="crumb-back" />
+      <span className="crumb-sep" aria-hidden="true">/</span>
+      <h1 className="rec-h1">
+        <span className="ref mono">{RECORD.ref}</span>
+        <span className="title">{RECORD.title}</span>
+      </h1>
+      <RecordTotal />
+      <p className="rec-cust">{RECORD.customer}</p>
     </div>
   );
 }
