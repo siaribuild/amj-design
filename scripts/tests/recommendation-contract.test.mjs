@@ -264,3 +264,65 @@ test("AC-58 the corpus reset is a SCOPED delete that cannot cascade", async () =
   assert.match(sql, /ADD COLUMN provenance TEXT NOT NULL DEFAULT 'in_platform'/);
   assert.match(sql, /CHECK \(provenance IN \('in_platform','backfilled'\)\)/);
 });
+
+// The selection path: every module a candidate passes through on its way to
+// being chosen. AC-4's own wording names the ladder, but the Definition of Done
+// says "the only tuned constant IN THE SELECTION PATH" — so the guard is scoped
+// to the path, not to one file.
+const SELECTION_PATH = [
+  "worker/lib/estimator/ladder.ts",
+  "worker/lib/estimator/select.ts",
+  "worker/lib/estimator/outcome.ts",
+  "worker/lib/estimator/rules.ts",
+  "worker/lib/estimator/compositeRank.ts",
+  "worker/lib/estimator/compositeSelect.ts",
+  "worker/lib/estimator/splitCandidates.ts",
+  "worker/lib/estimator/configuration.ts",
+];
+
+test("AC-4 no PREFERENCE constant exists anywhere in the selection path", async () => {
+  // A weight and a work cap are not the same animal, and the distinction is the
+  // one this whole redesign turns on: a weight says one candidate is BETTER than
+  // another, a cap says how much enumeration is enough. The deleted ranker was
+  // six weights; `MAX_SYSTEMS` bounds how many frame systems get a hearing and
+  // then the ladder decides among all of them equally.
+  //
+  // The structural tell is the literal itself. A preference weight is a fraction
+  // — .35, .20, 0.05 — because it is a share of something. A bound is a count.
+  // So: every module-level numeric constant in the selection path must be a
+  // whole number, and the one exception is named.
+  const offenders = [];
+  for (const rel of SELECTION_PATH) {
+    const code = (await readFile(join(projectRoot, rel), "utf8"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    for (const [, name, literal] of code.matchAll(/^(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)\s*;/gm)) {
+      if (name === "REQUIREMENT_TOLERANCE") continue;
+      if (!Number.isInteger(Number(literal))) offenders.push(`${rel}: ${name} = ${literal}`);
+    }
+  }
+  assert.deepEqual(offenders, [], "a fractional constant in the selection path is a weight");
+});
+
+test("the enumeration caps are bounds on work, and are documented as such", async () => {
+  const code = await readFile(join(projectRoot, "worker/lib/estimator/compositeSelect.ts"), "utf8");
+  const capOf = (name) => Number(code.match(new RegExp(`const ${name} = ([0-9]+)`))?.[1]);
+
+  // MAX_SYSTEMS must stay ABOVE the number of frame systems the catalogue has.
+  // Its own history is the argument: at 4 it permanently excluded sys-80, the
+  // largest platform in the catalogue, because the best-first ordering it relies
+  // on collapses to a slug tiebreak on an all-fixed composite and "8" sorts
+  // after "1", "6" and "7". A bound has to bound runaway work, not act as a
+  // lexical filter on which frames get a hearing.
+  assert.ok(capOf("MAX_SYSTEMS") >= 12, "the cap must exceed the catalogue's system count");
+  assert.ok(Number.isInteger(capOf("MAX_GLASS_TRIALS")));
+
+  // And each is documented with WHY, so the next person to tighten one knows
+  // what breaks. A bare number here is how the six weights happened.
+  for (const name of ["MAX_SYSTEMS", "MAX_GLASS_TRIALS"]) {
+    const preamble = code.slice(Math.max(0, code.indexOf(`const ${name}`) - 1200), code.indexOf(`const ${name}`));
+    assert.match(preamble, /\/\*\*|\/\//, `${name} carries no reasoning`);
+    assert.ok(/bound|cap|budget|work|runaway|enumerat/i.test(preamble),
+      `${name}'s comment does not say it bounds WORK rather than expressing a preference`);
+  }
+});

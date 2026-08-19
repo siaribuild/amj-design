@@ -101,8 +101,28 @@ export interface CompositeSelectionResult {
   note: string | null;
 }
 
+// ── TWO BOUNDS ON WORK, AND WHY THEY ARE NOT TUNED CONSTANTS ────────────────
+//
+// ASSUMED: the Definition of Done says `REQUIREMENT_TOLERANCE` is the only tuned
+// constant in the SELECTION PATH, and these two numbers sit in it — they prune
+// the candidate set before the ladder ever sees it. They are kept, on the
+// grounds that a bound on enumeration is a different kind of thing from a
+// preference weight: a weight says one candidate is BETTER than another, which
+// is exactly the judgement this redesign moved into one comparator, while a cap
+// says how much searching is enough and then lets the ladder decide among
+// everything it found, equally. The owner may prefer a spec amendment naming
+// them instead; either way this goes to acceptance.
+//
+// What makes the distinction enforceable rather than rhetorical: a weight is a
+// FRACTION (a share of something) and a bound is a COUNT.
+// recommendation-contract.test.mjs asserts that every module-level numeric
+// constant in the selection path is a whole number, with the tolerance named as
+// the single exception — so a resurrected `.15` cannot slip back in under a new
+// name, whatever it is called.
+
 /** How many covering systems are actually tried.
  *
+ *  MUST STAY ABOVE THE NUMBER OF SYSTEMS THE CATALOGUE HAS (six today).
  *  Set ABOVE the number of systems the catalogue has (six), because the
  *  best-first ordering it relies on does not survive a tie. On an all-fixed
  *  composite every fixed-lite system covers the opening exactly and with the
@@ -112,8 +132,15 @@ export interface CompositeSelectionResult {
  *  catalogue, because "8" sorts after "1", "6" and "7". A bound has to be a
  *  bound on runaway work, not a lexical filter on which frames get a hearing. */
 const MAX_SYSTEMS = 12;
-/** Distinct glasses trialled across the units. Pass one produces at most one per
- *  unit, and a composite is capped at a handful of units. */
+/** Distinct glasses trialled across the units — a bound on WORK, like the one
+ *  above, not a statement that three glasses are enough to be right.
+ *
+ *  The unpinned pass produces at most one glass per unit and a composite is a
+ *  handful of units, so the realistic ceiling is already small; this stops a
+ *  pathological opening from turning the search quadratic. The trials are taken
+ *  largest-area-first, so what a tighter cap drops is the glass carried by the
+ *  smallest lite — and every trial that survives is compared by the same ladder
+ *  with no thumb on the scale. */
 const MAX_GLASS_TRIALS = 3;
 
 export interface MakeUp {
