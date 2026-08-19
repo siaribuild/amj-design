@@ -20,7 +20,7 @@ export function DashboardPage() {
           <IonTitle>Dashboard</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <IonContent scrollEvents>
         <IonList lines="full">
           <IonListHeader><IonLabel>Needs us</IonLabel></IonListHeader>
           <IonItem button detail={false} onClick={() => history.push("/projects/record/OF-Q-10482")}>
@@ -75,7 +75,7 @@ export function EnquiriesPage() {
           <IonTitle>Enquiries</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <IonContent scrollEvents>
         <IonList lines="full">
           {[
             { who: "Dan Whelan", what: "Showroom visit — Frankston", when: "Today 08:41", state: "new" },
@@ -113,7 +113,7 @@ export function ProjectsPage() {
           <IonTitle>Projects</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>
+      <IonContent scrollEvents>
         <IonList lines="full">
           {PROJECTS.map((p) => (
             <IonItem key={p.ref} button detail={false}

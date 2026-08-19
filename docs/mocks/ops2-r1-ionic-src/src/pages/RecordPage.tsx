@@ -174,7 +174,7 @@ export function RecordPage() {
     return (
       <IonPage>
         {header}
-        <IonContent>{listColumn}</IonContent>
+        <IonContent scrollEvents>{listColumn}</IonContent>
         {footer}
         {sheet}
       </IonPage>
@@ -185,7 +185,7 @@ export function RecordPage() {
   return (
     <IonPage>
       {header}
-      <IonContent className="ws">
+      <IonContent scrollEvents className="ws">
         <div className="zones" data-editing={paneBand && editing ? "" : undefined}>
           <div className="zone rail">{listColumn}</div>
           <div className="zone canvas">

@@ -38,7 +38,7 @@ function Frame({ title, back, children, footer }: {
           <IonTitle>{title}</IonTitle>
         </IonToolbar>
       </IonHeader>
-      <IonContent>{children}</IonContent>
+      <IonContent scrollEvents>{children}</IonContent>
       {footer}
     </IonPage>
   );

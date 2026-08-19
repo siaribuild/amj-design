@@ -181,27 +181,34 @@ export function setTabVariant(v: TabVariant) {
   window.dispatchEvent(new CustomEvent("ops2-tabs", { detail: v }));
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   VARIANT D — the bar slides away on scroll down and returns on scroll up.
+/* -----------------------------------------------------------------------------
+   VARIANT D - the bar leaves on scroll down and returns on scroll up.
 
-   WHOSE IS IT? Ionic's tab bar has no scroll-away; ion-header has `collapse`
-   and ion-footer has `collapse="fade"`, but ion-tab-bar has neither. So the
-   COUPLING is ours — and it needs no boundary disqualifier, because nothing is
-   being rebuilt: the component is still IonTabBar, untouched, and what we add is
-   scroll-driven motion around it.
+   WHOSE IS IT? Ionic has no scroll-away for the tab bar, so the COUPLING is
+   ours. It needs no boundary disqualifier - nothing is rebuilt, the component is
+   still IonTabBar untouched. What the boundary governs is WHERE the listening
+   lives: disqualifier 4 keeps scroll in the shell, which is why R-18's plate
+   pinning gets a shell channel rather than reaching for IonContent itself. This
+   listens in the shell and no body knows it exists.
 
-   Where it may live is the part the boundary doc does govern. Disqualifier 4
-   says zone bodies never touch the page scaffold or scroll-coupled components,
-   because scroll belongs to the shell — which is why R-18's plate pinning gets
-   `useZoneScroll()` rather than reaching for IonContent itself. This listens in
-   the SHELL, on the capture phase, and no body knows it exists. That is the same
-   channel R-18 already needs, so D adds a caller rather than a mechanism.
+   -- THE BUG THIS REPLACES, because it is worth not repeating -----------------
+   The first version listened for raw `scroll` in the capture phase and read
+   `e.target.scrollTop`. ion-content scrolls inside its SHADOW DOM, and a scroll
+   event crossing a shadow boundary is RETARGETED to the host - so `e.target` was
+   always <ion-content>, whose own scrollTop is permanently 0. Every event
+   therefore looked like "at the top", tripped the `y < 24` guard and told the bar
+   to show. The bar never moved, and the +57px first reported came from measuring
+   the two states directly rather than from a gesture that never fired.
 
-   It listens for raw `scroll` in the capture phase rather than Ionic's
-   `ionScroll`, because ionScroll only fires on an IonContent that opted in with
-   `scrollEvents` — and requiring every page to opt in would be the shell
-   reaching into bodies, which is the thing disqualifier 4 forbids.
-   ───────────────────────────────────────────────────────────────────────── */
+   The fix is Ionic's published API. `ionScroll` is a Stencil @Event, so it
+   bubbles AND is composed: it reaches a document listener with `detail.scrollTop`
+   already resolved against the real inner scroller. No shadow root is touched.
+   It only fires on an IonContent that opted in with `scrollEvents`, which the
+   pages now do - the scaffold is theirs to opt in with (disqualifier 4 puts
+   IonContent in the host, not the body).
+
+   A plain-element fallback is kept for non-Ionic scrollers, and it takes the
+   real target from composedPath()[0] rather than the retargeted e.target. */
 export function useScrollAwayBar(active: boolean) {
   useEffect(() => {
     if (!active) {
@@ -216,12 +223,7 @@ export function useScrollAwayBar(active: boolean) {
       hidden = h;
       document.documentElement.dataset.tabhide = h ? "on" : "off";
     };
-    const onScroll = (e: Event) => {
-      const t = e.target as HTMLElement | null;
-      if (!t || typeof t.scrollTop !== "number") return;
-      const y = t.scrollTop;
-      const dy = y - last;
-      last = y;
+    const apply = (y: number, dy: number) => {
       /* Near the top the bar is always available: arriving at a screen must
          never require a scroll gesture to reach navigation. */
       if (y < 24) return set(false);
@@ -229,9 +231,32 @@ export function useScrollAwayBar(active: boolean) {
       if (dy > 8) set(true);
       else if (dy < -8) set(false);
     };
-    document.addEventListener("scroll", onScroll, true);
+    /* Ionic's own event. detail.scrollTop is the real offset; detail.deltaY is
+       the movement since the last emission. */
+    const onIonScroll = (e: Event) => {
+      const d = (e as CustomEvent).detail as { scrollTop?: number; deltaY?: number } | null;
+      if (!d || typeof d.scrollTop !== "number") return;
+      const dy = typeof d.deltaY === "number" ? d.deltaY : d.scrollTop - last;
+      last = d.scrollTop;
+      apply(d.scrollTop, dy);
+    };
+    /* Anything that is not an ion-content. composedPath()[0] is the element that
+       actually scrolled, before retargeting rewrote e.target. */
+    const onRawScroll = (e: Event) => {
+      const path = e.composedPath ? e.composedPath() : [];
+      const t = (path[0] ?? e.target) as HTMLElement | null;
+      if (!t || typeof t.scrollTop !== "number") return;
+      if (t.tagName === "ION-CONTENT") return;   // ionScroll owns those
+      const y = t.scrollTop;
+      const dy = y - last;
+      last = y;
+      apply(y, dy);
+    };
+    document.addEventListener("ionScroll", onIonScroll);
+    document.addEventListener("scroll", onRawScroll, true);
     return () => {
-      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("ionScroll", onIonScroll);
+      document.removeEventListener("scroll", onRawScroll, true);
       document.documentElement.dataset.tabhide = "off";
     };
   }, [active]);

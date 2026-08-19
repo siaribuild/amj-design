@@ -27,7 +27,7 @@ export function ProjectBlockPage() {
           </div>
         </IonToolbar>
       </IonHeader>
-      <IonContent><ProjectBlockBody block={block} /></IonContent>
+      <IonContent scrollEvents><ProjectBlockBody block={block} /></IonContent>
     </IonPage>
   );
 }
@@ -77,7 +77,7 @@ export function DeliveryPage() {
         </IonToolbar>
       </IonHeader>
 
-      <IonContent>
+      <IonContent scrollEvents>
         <div className="section">
           {missing ? (
             /* An error, drawn as one. The screen is not built around it: the same
