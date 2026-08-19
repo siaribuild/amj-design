@@ -174,3 +174,18 @@ ul.rows.files .f-act { grid-column: 2; grid-row: 1 / span 2; align-self: center;
 ul.rows.files .f-act ion-button {
   margin: 0; --padding-start: 10px; --padding-end: 10px;
 }
+
+/* The note composer. Ionic's textarea, autogrowing, with the action row beneath
+   so the button does not sit beside a field that changes height under it. */
+.composer {
+  border: 1px solid var(--ops-line);
+  border-radius: 6px;
+  padding: 4px 10px 8px;
+  background: var(--ops-surface);
+}
+.composer ion-textarea { --padding-start: 0; --padding-end: 0; font-size: .875rem; }
+.composer-act {
+  display: flex; align-items: center; gap: 12px; margin-top: 4px;
+}
+.composer-act ion-note { flex: 1 1 auto; min-width: 0; font-size: .75rem; }
+.composer-act ion-button { flex: none; margin: 0; }

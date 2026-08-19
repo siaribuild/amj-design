@@ -89,6 +89,8 @@ which C4 forbids outright.
 | No rate for a configuration | warning |
 | Delivery zone unpriced | warning |
 | A panel failed to load | danger |
+| A file is quarantined by the virus scan | danger |
+| A file is still being scanned | neutral, stated — not a fault |
 | Delete confirmation | danger |
 
 ### A3 — The GST basis is stated once, where it governs
@@ -726,10 +728,10 @@ plus an underline. Re-measured at 320×690 dark: no failures.
 
 ---
 
-# 13. Decisions needed
+# 13. Decisions needed (R1b)
 
-Owner-only. Three items, all consequences of this pass rather than open design
-questions.
+Owner-only. Three items, all consequences of that pass rather than open design
+questions. **Still open** — see section 15 for the R1c addition.
 
 1. **`waitingOn` may want to generalise.** Waiting on a **courier** is the same
    shape as waiting on the **manufacturer** — a third party, outside the phase
@@ -755,3 +757,203 @@ questions.
 
 Also flagged, not a decision: **AC-95/AC-96 (line add and delete) are unchanged.**
 "Add a line" moved from the list into the overflow. Nothing was descoped.
+
+---
+
+# 14. R1c — the second phone review
+
+Scope unchanged: **mobile project view only**. No colour work, no ItemDetail, no
+desktop.
+
+## 14.1 The header, recomposed (point 1)
+
+R1b put back on a bar of its own above the identity, which moved the project name
+off the leading line and left `‹ Projects` belonging to nothing.
+
+Three elements will not fit one 375px row. Naming the back destination costs
+~86px **and it must be named** — it is the record's only navigation. The total
+costs ~80px in its corner. That leaves ~200px, which is not enough for the ref
+and the title together.
+
+So back and the identity stop competing and become **one path**, and the
+free-text half falls to the line beneath at full width:
+
+```
+‹ Projects / OF-Q-10482                            $48,802.40
+Wattle Grove — Lot 14                                  ex GST
+Marchetti Constructions · Ana Bianchi
+```
+
+- Back is the head of a breadcrumb, not a stray control.
+- The **ref** takes the crowded line because it is short, fixed-width and the
+  identity ops says out loud. It never truncates.
+- The **title** takes the full width below and never truncates either — which
+  the old single-line `ref · title` could not promise.
+- Measured at 375: back 14–117, separator 123–127, ref 133–275, total 281–361.
+  At 320: back 14–117, ref 133–220, total 226–306, title unclipped, no overflow.
+- The header block is 81px (R1b: 44px bar + 46px identity = 90px). Whole header
+  209px, list 530px.
+
+**Markup.** One `<h1>` still carries the whole identity for assistive
+technology; the layout is a grid and the `<h1>` is `display: contents`, so its
+two spans become grid items directly. Nothing is duplicated and nothing is
+hidden to achieve the arrangement. `IonBackButton` is kept — it owns the router
+pop and the `defaultHref` — simply placed in this grid rather than in a toolbar
+of its own.
+
+## 14.2 Files are downloadable (point 2)
+
+The gap is on the record specifically. Register **row 150** records the current
+record's Files block as *"filename + size or raw status word; no download, no
+kind, no dates, no rescan"*. All four are carried, not a subset.
+
+**Download is gated on the virus scan, because the endpoint is.**
+`GET /files/:id/download` serves `clean` only and answers **403 `quarantined`**
+or **409 `scan_pending`** otherwise (register row 206). A download button that
+does not know the state is one that 403s in the operator's face, so the state is
+part of the row and the control agrees with it:
+
+| Scan state | Control | Row copy |
+|---|---|---|
+| `clean` | `Download` (outline, download icon) | — |
+| `scan_pending` | `Checking` — inert, not faded (rule A1b) | "Being checked for viruses. Download opens when it passes." |
+| `quarantined` | `Rescan` (danger outline) | "Quarantined by the virus check. Download is blocked." |
+
+Each row also carries kind, size, time and who — the other three things row 150
+says are missing. The source schedule is grouped separately from later
+attachments.
+
+`POST /files/:id/rescan` is register row 205, and **its defect is the one thing
+not carried**: rescan failure is currently swallowed. Here it reports, and the
+block says so: "A rescan that fails says so; it does not fail quietly."
+
+The Project tab's Files summary now reads `5 files · 2 not downloadable yet`.
+
+## 14.3 Notes compose in place (point 3)
+
+A button labelled "Add a note to this project" that opens something else is a
+label pretending to be an action, and it was the longest string on the block. A
+note is two lines of text — there is nothing to open.
+
+The composer **is** the affordance, at the top of the notes:
+
+```
+NEW NOTE
+┌────────────────────────────────────────┐
+│ What should the next person know?      │   IonTextarea, autoGrow
+│ On the project, not on a line.  [ Add ]│
+└────────────────────────────────────────┘
+3 NOTES
+Gedas · just now
+Ring AMJ about the obscure glass on W04.
+```
+
+Headings are one and two words. `Add` is disabled until there is text; on press
+the note appears directly beneath, the count heading updates and the draft
+clears. Verified end to end in the mock.
+
+**Deliberately not applied to the siblings.** "Add a file" opens a file picker
+and "Record a payment" needs an amount, a date and a method — both genuinely go
+somewhere, so a button that says so is honest. The rule is *an affordance that
+can complete in place should*, not *no buttons*.
+
+The record's overflow item shortens to `Add a note` and routes to the Notes
+block rather than opening a second composer.
+
+## 14.4 The customer's note leaves the row (point 4)
+
+**Established, not assumed.** The field is:
+
+| | |
+|---|---|
+| Column | `quote_line.room_label`, plain `TEXT` — `migrations/0001_customer_core.sql:88` |
+| Schema's own comment | `-- optional secondary label ("Note")` |
+| Customer-facing label | **"Note (optional)"** — `ItemComposer.tsx:428` |
+| Who types it | **The customer**, free-form. Placeholder: *"e.g. Bedroom 1, north elevation"* |
+| Bound | **500 characters** — `NOTE_MAX`, `configurator.ts:327`, enforced client-side and again by `normNote` on the server |
+
+**His concern is founded.** Five hundred characters is a paragraph, not a room
+name. `Ensuite` was the lucky case, never the contract. It comes out of the row
+at any length — and out of the line-switcher sheet's rows, which are the same
+grammar and carry the same risk.
+
+The row now reads: `W01 · AMJ58 Series Sliding Window · 1,200 × 1,800 mm · ×1 ·
+$2,140.00`.
+
+### The vocabulary defect is worse than a mislabel — `CONTEXT.md` action
+
+One field has **four names across the stack**, and `CONTEXT.md` has no entry for
+it at all:
+
+| Name | Where |
+|---|---|
+| `room_label` | the D1 column |
+| `location` | the worker DTO and `QItem` — `lines.ts:100`, `configurator.ts:61` |
+| **Note** | what the customer is shown, and what the normaliser is called (`normNote`), and what the schema comment says |
+| `room` | `accountModel.tsx:175`, which is what the ops mock was rendering |
+
+**Recommendation for the architect:** the customer-facing name is the real one —
+it is a **note**, not a room. Add a glossary entry, name it `Line note`, and put
+`room_label`, `location` and `room` on its _Avoid_ line. Renaming the column is
+not required; agreeing the word is.
+
+## 14.5 The flagged-row mark leaves the divider (point 5)
+
+`ops2.css:317` was `ion-item.needs-review { --border-color: … }`, which under
+`lines="full"` recolours the item's **bottom divider** — a rule drawn *between*
+two rows, belonging to neither, so it cannot say which of the two it is about.
+That is a structural ambiguity, not a matter of taste.
+
+The mark moves to the **leading edge**:
+
+```css
+ion-item.needs-review::part(native) {
+  box-shadow: inset 4px 0 0 var(--ion-color-warning-shade);
+}
+```
+
+- `::part(native)` is `ion-item`'s documented shadow part and the element that
+  also carries the row's background, so the bar lands **on** the background
+  rather than behind it.
+- **Not a background tint** — selection already owns background, and two states
+  competing for one channel gives a row that is either selected or flagged but
+  never legibly both.
+- **Survives greyscale on its own:** the bar is a 4px *shape* at the row's start,
+  and the `needs review` badge states the same thing in words beside it. Colour
+  agrees with the mark; it does not carry it.
+- **Does not depend on the divider:** `--border-color` is back to the neutral
+  rule, verified as `rgba(0,0,0,0.13)` on a flagged row.
+
+## 14.6 Components — standard vs bespoke
+
+Point 5 did **not** push the row off `IonItem`. No boundary rule is engaged and
+nothing went bespoke. The record surface's inventory:
+
+| Region | Component |
+|---|---|
+| Line rows | `IonList lines="full"` + `IonItem button detail={false}` — unchanged |
+| Flagged mark | the same `IonItem`, via its documented `::part(native)` |
+| Lines / Project switch | `IonSegment` + `IonSegmentButton`, `scrollable={false}` — unchanged |
+| Back | `IonBackButton` — kept, relocated into the header grid |
+| Project blocks | `IonList` + `IonItem` |
+| Note composer | `IonTextarea autoGrow` + `IonButton` |
+| File actions | `IonButton` (`size="small"`, `fill="outline"`) |
+| Overflow | `IonActionSheet` |
+| Totals, header, deck, plate | ours — Ionic has no component for them |
+
+The one thing our CSS does to an Ionic component here is the inset shadow on a
+documented part. That is the boundary working as intended: extend through the
+published surface, never pierce the shadow DOM.
+
+---
+
+# 15. Decisions needed
+
+Owner-only. §13's three items still stand and are unanswered. R1c adds one:
+
+4. **`CONTEXT.md` needs a glossary entry for the line note** (§14.4). Four names
+   for one field, none of them canonical, and the ops console was rendering the
+   least accurate of them. Architect's call on the term; my recommendation is
+   `Line note`, with `room_label` / `location` / `room` listed under _Avoid_.
+   Not urgent for this mock — it is out of the row either way — but it will bite
+   whoever writes the ItemDetail copy next.

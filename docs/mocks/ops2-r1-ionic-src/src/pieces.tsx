@@ -4,7 +4,7 @@
 import { useState } from "react";
 import {
   IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
-  IonBackButton,
+  IonBackButton, IonTextarea,
 } from "@ionic/react";
 import { chevronForward, download } from "ionicons/icons";
 import { Elevation } from "./elevation";
@@ -466,21 +466,54 @@ function History() {
   );
 }
 
+/** POINT 3 — "Add a note" should add a note.
+ *
+ *  "Add a note - should add a note, and title should be shorter. Inline form?"
+ *
+ *  Right on both counts. A button labelled "Add a note to this project" that
+ *  opens something else is a label pretending to be an action, and it was the
+ *  longest string on the block. A note is two lines of text — there is nothing
+ *  to open.
+ *
+ *  So the composer IS the affordance and it sits at the top of the notes, where
+ *  the notes are and where the eye lands: type, press Add, and the new note
+ *  appears directly beneath. The heading is one word.
+ *
+ *  This is deliberately NOT applied to the block's siblings. "Add a file" opens
+ *  a file picker and "Record a payment" needs an amount, a date and a method —
+ *  both genuinely go somewhere, so a button that says so is honest. The rule is
+ *  "an affordance that can complete in place should", not "no buttons". */
 function Notes() {
+  const [draft, setDraft] = useState("");
+  const [notes, setNotes] = useState(PROJECT_NOTES);
+  const add = () => {
+    const body = draft.trim();
+    if (!body) return;
+    setNotes([{ who: "Gedas \u00b7 just now", body }, ...notes]);
+    setDraft("");
+  };
   return (
     <div className="section">
-      {PROJECT_NOTES.map((n, i) => (
+      <h3 className="sub-h">New note</h3>
+      <div className="composer">
+        <IonTextarea
+          aria-label="New note on this project"
+          placeholder="What should the next person know?"
+          autoGrow rows={2} value={draft}
+          onIonInput={(e) => setDraft(String(e.detail.value ?? ""))} />
+        <div className="composer-act">
+          <IonNote className="fact basis">On the project, not on a line.</IonNote>
+          <IonButton size="small" disabled={!draft.trim()} onClick={add}>Add</IonButton>
+        </div>
+      </div>
+
+      <h3 className="sub-h">{notes.length} notes</h3>
+      {notes.map((n, i) => (
         <div key={i} className="note-item">
           <div className="who">{n.who}</div>
           <div className="body">{n.body}</div>
         </div>
       ))}
-      <div className="block-act">
-        <IonButton expand="block">Add a note to this project</IonButton>
-        <IonNote className="fact basis">
-          A note on the project, not on a line. Line notes stay on the line.
-        </IonNote>
-      </div>
     </div>
   );
 }

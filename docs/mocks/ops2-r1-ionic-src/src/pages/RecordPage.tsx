@@ -143,7 +143,7 @@ export function RecordPage() {
         { text: "Add a line", handler: () => openEditor(LINES[3].id) },
         { text: "Confirm the delivery charge", handler: openDelivery },
         { text: "Request clarification" },
-        { text: "Add a note to this project" },
+        { text: "Add a note", handler: () => openBlock("notes") },
         { text: "Copy a link to this project" },
         { text: `Refresh · updated ${RECORD.updatedAt}` },
         { text: "Cancel", role: "cancel" },
