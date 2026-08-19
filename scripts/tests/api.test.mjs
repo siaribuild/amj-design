@@ -1144,6 +1144,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.deepEqual(await sql("PRAGMA foreign_key_check"), []);
     });
 
+    // AN END-TO-END ESTIMATE RUN IS NOT EXERCISABLE HERE, and it is worth saying
+    // why rather than leaving a gap that looks like an oversight. This Worker
+    // boots with SANITY_PROJECT_ID empty (see the --var list above), so the
+    // CatalogueRepository has no products at all: POST /estimate completes, and
+    // every opening honestly reports no_candidate. The estimator paths are
+    // therefore proven against a fixture catalogue in the pure suites —
+    // estimator-split.test.mjs owns the split-as-candidate criteria — and this
+    // suite owns what only a real migrated database can show.
+
     await t.test("AC-53/AC-55/AC-57 candidate data is ops-only, and no customer surface carries it", async () => {
       // AC-57: the support-lever estimate endpoint, anonymously.
       await requestJson(anonymous, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);

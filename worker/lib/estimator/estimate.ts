@@ -1,9 +1,13 @@
 // Project estimate orchestration (spec §18): run the deterministic engine over
 // every opening_instance in a project and persist the selection. Ties the
-// CatalogueRepository, hard rules, pricing, ranker and persistence together.
+// CatalogueRepository, hard rules, pricing, the ladder and persistence together.
+//
+// One pass per opening, and the answer may be a single unit or a split — both
+// compete in the same ladder (D7). Materialisation afterwards only WRITES the
+// make-up that won; it no longer re-decides anything.
 import type { Env } from "../../types";
 import { createCatalogueRepository, sanityExecutor } from "./catalogue";
-import { selectForOpening } from "./select";
+import { resolvePairing, selectWithSplits, splitSegmentSpecs } from "./splitCandidates";
 import { persistSelection } from "./persist";
 import { buildApprovedThermalModel } from "./learning";
 import { createCachedPriceResolver } from "./pricing";
@@ -11,12 +15,8 @@ import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
-import { splitLine, loadCompositePolicy, type SegmentSpec } from "../composite";
-import { proposeSplit, type SplitHint } from "./split";
-import { selectForComposite } from "./compositeSelect";
-import { resolveScheduleType } from "../../../src/data/scheduleMatch";
-import { defaultOptions } from "../../../src/data/configurator";
-import { getProductBySlug } from "../../../src/data/catalogue";
+import { splitLine, loadCompositePolicy } from "../composite";
+import { type SplitHint } from "./split";
 
 // Schedule TYPE text → structured operation (the delivered parser records the raw
 // schedule term; the estimator needs the operation vocabulary the catalogue uses).
@@ -236,9 +236,37 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   let selectedCount = 0;
   let appliedToCart = 0;
   const proposalLines: ProposalSelection[] = [];
+  // Read once per run, not per opening: it is one small D1 row, and every split
+  // proposed below is measured against the same cap.
+  const policy = await loadCompositePolicy(env);
+  const splitHints = opts?.splitHints ?? new Map<string, SplitHint>();
+  const scheduleTypes = opts?.scheduleTypes ?? new Map<string, string>();
+
   for (const row of openings) {
     const opening = thermalModel.apply(toOpeningInput(row));
-    const result = await selectForOpening(opening, repo, priceFn);
+    // THE HINT IS READ BEFORE SELECTION, NOT AFTER IT (D7).
+    //
+    // It used to arrive in a post-pass that reworked a pick already made. Now it
+    // is one of the two things that decide whether a split may be a candidate at
+    // all, and the split it admits competes in the same ladder as every single
+    // unit rather than replacing their winner.
+    const hint = (row.external_ref && splitHints.get(row.external_ref)) || null;
+    const result = await selectWithSplits(opening, hint, {
+      repo,
+      priceFn,
+      primaryCategory: opening.family ?? null,
+      // ONE WAY ONLY. A door composite may take a fixed WINDOW lite; a window
+      // composite may never take a door.
+      alternateCategory: alternateCategoryFor(opening.family ?? null),
+      resolvePairing: (representative) => resolvePairing(repo, {
+        representative,
+        maxSegments: policy.maxSegments,
+        // The schedule's own wording, not the stored operation: "OFFSET AWNING"
+        // and "AWNING" resolve to one family and one operation_type, so this is
+        // the only place the difference still exists.
+        offset: /\boffset\b/i.test(row.external_ref ? scheduleTypes.get(row.external_ref) ?? "" : ""),
+      }),
+    });
     await persistSelection(env, { projectId, openingId: row.id, result });
     proposalLines.push({
       openingId: row.id,
@@ -270,284 +298,83 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       }
     }
     appliedToCart = published.appliedLines;
-    // WS5: after the lines exist, materialise a review-flagged composite for any
-    // opening that the schedule comment says to split, or that is oversize.
-    const splitWarnings = await materialiseSplits(env, { repo, priceFn, proposalLines,
-      splitHints: opts?.splitHints ?? new Map(), scheduleTypes: opts?.scheduleTypes ?? new Map() });
-    return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: splitWarnings };
+    // After the lines exist, rebuild the make-ups that WON as composites. The
+    // choice was made during candidate generation; this only writes it.
+    const splitWarnings: string[] = [];
+    for (const pl of proposalLines) {
+      splitWarnings.push(...await materialiseSelectedSplit(env, pl));
+    }
+    return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(splitWarnings)] };
   }
   return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [] };
 }
 
-/** For each opening with a split intent (comment or oversize), select a product
- *  per segment and turn its quote_line into a composite via splitLine (origin
- *  'ai', always review-flagged). Fixed lites have no dedicated product in the
- *  catalogue, so a segment whose operation has none falls back to the parent's
- *  real product (same frame series) — never an invented one. */
-async function materialiseSplits(env: Env, ctx: {
-  repo: Parameters<typeof selectForOpening>[1];
-  priceFn: Parameters<typeof selectForOpening>[2];
-  proposalLines: ProposalSelection[];
-  splitHints: Map<string, SplitHint>;
-  scheduleTypes: Map<string, string>;
-}): Promise<string[]> {
-  const reviewWarnings: string[] = [];
-  // Read once per run, not per opening: it is one small D1 row and every
-  // proposal below is measured against the same cap.
-  const policy = await loadCompositePolicy(env);
-  for (const pl of ctx.proposalLines) {
-    const parent = pl.result.selected;
-    const hint = (pl.externalRef && ctx.splitHints.get(pl.externalRef)) || null;
-    // The authoritative fit fact, not the filter that also reports it: one home
-    // for fit means the split trigger and the ladder's tiering can never come to
-    // different conclusions about whether this unit is oversize.
-    const oversize = parent?.candidateOutcome.fit.fits === false;
-    if (!hint && !oversize) continue;
-    const quoteLineId = pl.quoteLineId ?? (await env.DB.prepare(
-      "SELECT quote_line_id FROM opening_instance WHERE id=?",
-    ).bind(pl.openingId).first<{ quote_line_id: string | null }>())?.quote_line_id ?? null;
-    if (!quoteLineId) continue;
+/** Turn the make-up that WON into a composite quote line (design §7.3).
+ *
+ *  This is the surviving rump of `materialiseSplits`, and the difference is the
+ *  whole of D7. The old function chose: it re-ran the composite selector after
+ *  the proposal was published and replaced a pick already made. This one only
+ *  rebuilds — the split already beat every single unit in the same ladder, and
+ *  every product, glass and dimension below comes off that candidate.
+ *
+ *  The failure paths are unchanged. A refused split leaves the opening as its
+ *  single-unit parent, which is now an honestly ranked answer rather than an
+ *  orphaned one, and says so on the line. */
+export async function materialiseSelectedSplit(env: Env, pl: ProposalSelection): Promise<string[]> {
+  const split = pl.result.selectedSplit;
+  if (!split) return [];
+  const quoteLineId = pl.quoteLineId ?? (await env.DB.prepare(
+    "SELECT quote_line_id FROM opening_instance WHERE id=?",
+  ).bind(pl.openingId).first<{ quote_line_id: string | null }>())?.quote_line_id ?? null;
+  if (!quoteLineId) return [];
 
-    // The family's authored pairing, when it has one. Two things are needed and
-    // neither is on the parent product: the rule (which family supplies the
-    // infill) and the widest frame THAT family makes — a panel cannot be sized
-    // without it. The infill family's products come from the same cached
-    // candidate query the selection already uses, so this is a cache hit in
-    // every realistic project rather than a second round trip per opening.
-    const rule = parent?.candidate.defaultSplit ?? null;
-    let infillMaxWidthMm: number | null = null;
-    if (rule?.infillFamilySlug && rule.infillOperation) {
-      const infill = await ctx.repo.queryCandidates(parent!.candidate.family, rule.infillOperation);
-      const widths = infill
-        .filter((c) => c.series === rule.infillFamilySlug)
-        .map((c) => c.dimensionRule?.maxWidthMm)
-        .filter((w): w is number => typeof w === "number" && w > 0);
-      // The WIDEST frame the family makes: the pairing asks "can one panel cover
-      // this", and answering with a narrower product would invent an extra
-      // mullion the manufacturer would not build.
-      infillMaxWidthMm = widths.length ? Math.max(...widths) : null;
+  const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
+    .bind(quoteLineId).first<{ options_json: string | null }>();
+  let inheritedOptions: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(parentRow?.options_json ?? "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      inheritedOptions = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? "")]));
     }
+  } catch { /* unreadable options are absent */ }
 
-    // The default split uses the product's max width so a >2× opening becomes 3+
-    // units, not two still-oversize halves.
-    const proposal = proposeSplit(pl.opening, hint, {
-      maxWidthMm: parent?.candidate.dimensionRule?.maxWidthMm ?? null,
-      // maxSegments is the REAL policy cap, not the proposer's safety bound: a
-      // pairing that exceeds it would be built here and then refused by
-      // validateSplit below, which reads to the customer as no split at all.
-      pairing: {
-        rule, infillMaxWidthMm, maxSegments: policy.maxSegments,
-        // The schedule's own wording, not the stored operation: "OFFSET AWNING"
-        // and "AWNING" resolve to one family and one operation_type, so this is
-        // the only place the difference still exists.
-        offset: /\boffset\b/i.test(pl.externalRef ? ctx.scheduleTypes.get(pl.externalRef) ?? "" : ""),
-      },
-    });
-    if (proposal.segments.length < 2) continue;
+  const specs = splitSegmentSpecs(split, { inheritedOptions });
+  if (specs.length !== split.plan.length) return [];
 
-    // The plan decided the geometry; the report is the only document carrying a
-    // per-unit thermal target, so its components are matched onto the units the
-    // plan produced — by operation, in document order, each claimed once. A unit
-    // with no counterpart keeps the opening's band, which is the conservative
-    // reading and is what the thermal audit reports as inherited.
-    if (hint?.components?.length && proposal.basis !== "energy_report") {
-      const pool = [...hint.components];
-      for (const seg of proposal.segments) {
-        const i = pool.findIndex((cp) => (cp.operation || "fixed") === seg.operation);
-        if (i < 0) continue;
-        const cp = pool.splice(i, 1)[0];
-        seg.requirement = cp.requirement ?? seg.requirement;
-        seg.ref = seg.ref ?? cp.ref ?? null;
-        seg.performanceTypeId = seg.performanceTypeId ?? cp.performanceTypeId ?? null;
-        seg.performanceDescription = seg.performanceDescription ?? cp.performanceDescription ?? null;
-        seg.glazingNote = seg.glazingNote ?? cp.glazingNote ?? null;
-      }
-    }
-
-    const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
-      .bind(quoteLineId).first<{ options_json: string | null }>();
-    let inheritedOptions: Record<string, string> = {};
-    try {
-      const parsed = JSON.parse(parentRow?.options_json ?? "{}");
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        inheritedOptions = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? "")]));
-      }
-    } catch { /* unreadable options are absent */ }
-
-    const section = pl.opening.family === "doors" ? "door" : "window";
-    // The opening's own category, and the one a unit may cross into when the
-    // chosen frame system makes nothing for its operation here. In practice this
-    // is one case — a door composite taking a fixed WINDOW lite from its own
-    // system — and it repairs a real fault: queryCandidates("doors","fixed") is
-    // empty, so a door needing a lite used to fall through to the parent's slug
-    // and price a fixed panel as a whole sliding door.
-    // ONE WAY ONLY. A door composite may take a fixed WINDOW lite; a window
-    // composite may never take a door.
-    //
-    // This was symmetric and that was a hole, not a generalisation. `sliding` is
-    // claimed by sliding-window, sliding-door AND slim-frame-sliding-door, and
-    // exactly one product in the whole catalogue is a sliding window — so on a
-    // wide sliding-window opening every door system reported EXACT coverage,
-    // scored higher (a thermally-broken door meets a band the conventional
-    // window misses), and the line was materialised as two sliding DOORS priced
-    // on the door rate card. Nothing downstream would have caught it: splitLine
-    // validates that a product slug exists, never that it is the right category.
-    const primaryCategory = pl.opening.family ?? null;
-    const alternateCategory = alternateCategoryFor(primaryCategory);
-    const specs: SegmentSpec[] = [];
-    const prepared = proposal.segments.map((seg) => {
-      // Resolve the tradie term (e.g. "fixed") to a manufacturer operation via the
-      // Sanity Family → Schedule Aliases — "fixed" is an alias on Sliding Window,
-      // so a fixed lite is a sliding-window frame, not an unknown operation.
-      const operationType = hint?.source === "energy_report"
-        ? seg.operation
-        : resolveScheduleType(section, seg.operation).operationType ?? seg.operation;
-      const requirement = seg.requirement ? {
-        maxUValue: seg.requirement.maxUValue,
-        minShgc: seg.requirement.shgcMin,
-        maxShgc: seg.requirement.shgcMax,
-      } : pl.opening.requirements;
-      const glazingDescription = seg.performanceDescription ?? seg.glazingNote ?? pl.opening.scheduleRequirements?.glassDescription ?? null;
-      const sub = {
-        ...pl.opening,
-        externalRef: seg.ref ?? null,
-        operationType,
-        widthMm: seg.widthMm,
-        heightMm: seg.heightMm,
-        requirements: requirement,
-        thermalContext: {
-          ...(pl.opening.thermalContext ?? {}),
-          requirementBasis: seg.requirement ? "explicit_energy_report" as const : pl.opening.thermalContext?.requirementBasis,
-        },
-        scheduleRequirements: {
-          ...(pl.opening.scheduleRequirements ?? {}),
-          glassDescription: glazingDescription,
-          doubleGlazed: glazingDescription && /\bDG\b|double\s+glaz/i.test(glazingDescription)
-            ? true
-            : pl.opening.scheduleRequirements?.doubleGlazed ?? null,
-        },
-      };
-      return { seg, sub, requirement, glazingDescription };
-    });
-
-    // THE UNITS ARE CHOSEN TOGETHER, not one at a time. A composite is coupled
-    // frames, so the thing being selected is the SET: one frame system for the
-    // whole opening, the best frame and glass for each unit inside it, and the
-    // make-up scored as a whole on averaged thermal and summed price. When no
-    // single system can supply every unit this falls back to exactly the old
-    // per-unit selection and warns — it never refuses a line.
-    const composite = await selectForComposite(
-      pl.opening,
-      prepared.map(({ seg, sub, requirement }) => ({
-        opening: sub,
-        primaryCategory,
-        alternateCategory,
-        widthMm: seg.widthMm,
-        heightMm: seg.heightMm,
-        // A unit whose band an ENGINEER stated keeps its own glass; the one-glass
-        // preference must not overrule a report's per-component instruction.
-        ownBand: !!seg.requirement && !!requirement,
-      })),
-      ctx.repo, ctx.priceFn,
-    );
-    if (composite.note) reviewWarnings.push(`${pl.externalRef ?? "Opening"}: ${composite.note}`);
-
-    for (let index = 0; index < prepared.length; index++) {
-      const { seg, requirement, glazingDescription } = prepared[index];
-      const chosen = composite.units[index]?.result.selected ?? null;
-      if (!chosen && hint?.source === "energy_report") {
-        specs.length = 0;
-        break;
-      }
-      const productSlug = chosen?.candidate.slug ?? parent?.candidate.slug ?? "";
-      if (!productSlug) { specs.length = 0; break; }
-      const variant = chosen?.selectedVariant ?? null;
-      const displayProduct = getProductBySlug(productSlug);
-      const options = {
-        ...(displayProduct ? defaultOptions(displayProduct) : {}),
-        ...inheritedOptions,
-        glassDescription: glazingDescription ?? "",
-        performanceVariantId: variant?.variantId ?? "",
-        frameTechnology: variant?.frameTechnology ?? "unknown",
-        glazing: variant?.glazingOptionSlug ?? "",
-      };
-      specs.push({
-        widthMm: seg.widthMm,
-        heightMm: seg.heightMm,
-        // The segment's own best-fit product; only if the alias resolves to nothing
-        // does it fall back to the parent's real product (never a fabricated one).
-        productSlug,
-        options,
-        selectedVariantId: variant?.variantId ?? null,
-        // THE MACHINE'S OWN RECORD OF THIS UNIT, frozen at the moment it chose.
-        // A unit never gets an ai_proposal_line — that table requires an
-        // opening_instance and a unit has none — so without this there is no
-        // frozen account of what was proposed for it, and the thermal audit
-        // could only report a blank beside a unit whose product it can plainly
-        // see on the line. configuration_snapshot_json is written once, here,
-        // and no human path updates it: updateSegment's SET clause omits it.
-        configurationSnapshot: chosen ? {
-          productSlug,
-          variantId: variant?.variantId ?? null,
-          uw: variant?.uValue ?? null,
-          shgc: variant?.shgc ?? null,
-          source: variant?.dataSource ?? null,
-          catalogueRevision: chosen.candidate.catalogueRevision ?? null,
-          // WHY THIS FRAME AND NOT THE CHEAPER ONE. The unit was not chosen on
-          // its own merits — it came out of the system picked for the whole
-          // opening — so the frozen record has to name the system, or a reviewer
-          // reading it back has no account of the decision that produced it.
-          // Null when no system covered the opening and the units were chosen
-          // independently, which is itself the thing worth knowing.
-          frameSystem: composite.system,
-        } : null,
-        resolvedBand: requirement ? {
-          maxUValue: requirement.maxUValue ?? null,
-          minShgc: requirement.minShgc ?? null,
-          maxShgc: requirement.maxShgc ?? null,
-          shgcTarget: seg.requirement?.shgcTarget ?? null,
-        } : null,
-        requirementBasis: seg.requirement ? "explicit_energy_report" : proposal.basis,
-        thermalReview: !!chosen && (chosen.outcome.filters ?? []).some((filter) => filter.filter === "energy" && filter.severity === "warning"),
-      });
-    }
-    if (specs.length !== proposal.segments.length) continue;
-
-    const res = await splitLine(env, { parentId: quoteLineId, segments: specs, axis: proposal.axis, origin: "ai" });
-    if (!res.ok) {
-      // A refused split used to be dropped on the floor. The opening stays a
-      // single oversize line — which is a defensible outcome — but nobody was
-      // told that the make-up the documents stated had been rejected, so the one
-      // person who could correct it never learned there was anything to correct.
-      // The commonest cause is a comment naming more units than the composite
-      // policy allows.
-      // `in` rather than res.errors: this project is deliberately not strict, so
-      // a boolean discriminant does not narrow the union.
-      const why = ("errors" in res ? res.errors : []).join(" ");
-      const warning = `${pl.externalRef ?? "Opening"}: the ${proposal.segments.length}-unit make-up `
-        + `${proposal.basis === "schedule_comment" ? `from the schedule comment "${hint?.raw ?? ""}" ` : ""}`
-        + `could not be built as a composite — ${why} Left as a single unit for human review.`;
-      reviewWarnings.push(warning);
-      await env.DB.prepare(
-        `UPDATE quote_line SET status='technical_review',
-           review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
-         WHERE id=?`,
-      ).bind(JSON.stringify({ composite: warning }), quoteLineId).run();
-      continue;
-    }
-
-    const maxWidth = parent?.candidate.dimensionRule?.maxWidthMm ?? null;
-    const warning = proposal.basis === "energy_report"
-      ? `${pl.externalRef ?? "Opening"}: built as ${proposal.segments.length} report-defined components; confirm the document reconciliation during human review.`
-      : `${pl.externalRef ?? "Opening"}: ${pl.opening.widthMm ?? "stated"} mm width exceeds the selected product${maxWidth ? `'s ${maxWidth} mm maximum` : " range"}; proposed as ${proposal.segments.length} joined units for human review.`;
-    reviewWarnings.push(warning);
-    await env.DB.prepare(
-      `UPDATE quote_line SET status='technical_review',
-         review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
-       WHERE id=?`,
-    ).bind(
-      JSON.stringify({ composite: warning }), quoteLineId,
-    ).run();
+  const warnings: string[] = [];
+  const label = pl.externalRef ?? "Opening";
+  const res = await splitLine(env, { parentId: quoteLineId, segments: specs, axis: split.axis, origin: "ai" });
+  if (!res.ok) {
+    // A refused split used to be dropped on the floor. The opening stays a
+    // single line — a defensible outcome — but nobody was told the make-up the
+    // documents stated had been rejected, so the one person who could correct it
+    // never learned there was anything to correct. The commonest cause is a
+    // comment naming more units than the composite policy allows.
+    // `in` rather than res.errors: this project is deliberately not strict, so a
+    // boolean discriminant does not narrow the union.
+    const why = ("errors" in res ? res.errors : []).join(" ");
+    const warning = `${label}: the ${specs.length}-unit make-up `
+      + `${split.proposalBasis === "schedule_comment" ? "from the schedule comment " : ""}`
+      + `could not be built as a composite — ${why} Left as a single unit for human review.`;
+    warnings.push(warning);
+    await flagForReview(env, quoteLineId, warning);
+    return warnings;
   }
-  return [...new Set(reviewWarnings)];
+
+  const warning = split.proposalBasis === "energy_report"
+    ? `${label}: built as ${specs.length} report-defined components; confirm the document reconciliation during human review.`
+    : `${label}: ${pl.opening.widthMm ?? "stated"} mm width proposed as ${specs.length} joined units for human review.`;
+  warnings.push(warning);
+  await flagForReview(env, quoteLineId, warning);
+  return warnings;
+}
+
+/** A composite the machine proposed is never a finished answer — the line says
+ *  so, and carries the reason a reviewer needs. */
+async function flagForReview(env: Env, quoteLineId: string, warning: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE quote_line SET status='technical_review',
+       review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
+     WHERE id=?`,
+  ).bind(JSON.stringify({ composite: warning }), quoteLineId).run();
 }

@@ -16,12 +16,13 @@ await build({
     contents: `
       export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
       export { splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs } from ${p("worker/lib/estimator/splitCandidates.ts")};
+      export { materialiseSelectedSplit } from ${p("worker/lib/estimator/estimate.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs, materialiseSelectedSplit } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -900,4 +901,80 @@ test("splitSegmentSpecs rebuilds the WINNING make-up, unit by unit", async () =>
   // meets it is not. Read from the unit's own verdict, not from a filter.
   assert.equal(specs[0].thermalReview, false, "3.6 meets a 4.0 cap");
   assert.equal(specs[1].thermalReview, true, "4.4 does not");
+});
+
+// ── Materialising the make-up that WON (design §7.3) ────────────────────────
+
+/** A D1 stub that answers reads from a table and records every write. */
+function scriptedDb(reads = {}) {
+  const writes = [];
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) {
+      this.args = args;
+      return this;
+    },
+    async first() {
+      for (const [pattern, value] of Object.entries(reads)) {
+        if (sql.includes(pattern)) return value;
+      }
+      return null;
+    },
+    async run() { writes.push({ sql, args: this.args }); return { success: true }; },
+  });
+  return { writes, DB: { prepare, async batch(stmts) { writes.push(...stmts.map((s) => ({ sql: s.sql, args: s.args }))); return []; } } };
+}
+
+test("only a WINNING split is materialised — a losing one writes nothing", async () => {
+  // The whole of D7 in one assertion. The old post-pass ran after publication
+  // and reworked a pick already made; this runs only when the split beat every
+  // single unit in the same ladder. An opening whose split candidates LOST
+  // materialises nothing at all — and the losing make-ups stay persisted
+  // candidates, so a reviewer can still see what was considered.
+  const env = scriptedDb();
+  const nothing = await materialiseSelectedSplit(env, {
+    openingId: "o1", quoteLineId: "ql1", externalRef: "W07",
+    opening: { widthMm: 3600 },
+    result: { selectedSplit: null, splits: [{ key: "split::0" }], selected: { candidate: { slug: "amj-awn" } } },
+  });
+  assert.deepEqual(nothing, [], "no warning, because nothing was reworked");
+  assert.deepEqual(env.writes, [], "and not one write escaped");
+});
+
+test("a REFUSED split leaves the line as its parent, and says why", async () => {
+  // A refused split used to be dropped on the floor. The opening stays a single
+  // line — a defensible outcome, and now an honestly ranked one, because the
+  // losing single-unit candidates were persisted beside the split rather than
+  // discarded when it won. What was missing is the telling: the one person who
+  // could correct the make-up never learned there was anything to correct.
+  const products = [
+    splitProduct("awn-36", { operation: "awning", maxWidthMm: 1200, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("fix-44", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg", 4.4, 0.45)] }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, externalRef: "W15" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products),
+  );
+  assert.ok(r.selectedSplit, "a split won the ladder");
+
+  // The parent line carries the customer's own spec — and splitLine refuses,
+  // because by the time materialisation runs the line is gone.
+  const env = scriptedDb({
+    "SELECT options_json FROM quote_line": { options_json: '{"colour":"Dover White"}' },
+    "FROM composite_policy": { tolerance_mm: 5, default_joiner_mm: 0, max_segments: 6 },
+  });
+  const warnings = await materialiseSelectedSplit(env, {
+    openingId: "o1", quoteLineId: "ql1", externalRef: "W15",
+    opening: { widthMm: 2000 }, result: r,
+  });
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^W15: the 2-unit make-up/, "the warning names the opening and the make-up");
+  assert.match(warnings[0], /Left as a single unit for human review/);
+  // …and the line itself carries the reason, so it surfaces without the run log.
+  const flagged = env.writes.find((w) => /status='technical_review'/.test(w.sql));
+  assert.ok(flagged, "the line is flagged");
+  assert.equal(flagged.args[1], "ql1");
+  assert.equal(JSON.parse(flagged.args[0]).composite, warnings[0]);
 });
