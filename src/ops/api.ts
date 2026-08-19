@@ -15,8 +15,79 @@ export interface OpsSummary {
   customers: number;
   readyToIssue: number;
   newEnquiries: number;
+  /** Registration Phase 2: applications awaiting a human. Pending only — an
+   *  auto-passed application never appears in a queue, because nobody has to do
+   *  anything about it (AC-P2-35). */
+  tradeApplications?: number;
   degraded?: boolean;
 }
+
+// ── Trade verification (registration Phase 2) ──────────────────────────────
+
+/** One application awaiting a decision.
+ *
+ *  Everything a person needs in order to DECIDE is here, so that deciding is not
+ *  a research task: the frozen ABR evidence, every reason it queued, and any
+ *  account currently verified on the same ABN.
+ *
+ *  `duplicateHolders` is resolved live rather than read from the snapshot: D2.1
+ *  lets a human knowingly approve a second holder (an estimator and a director
+ *  of the same business), and they cannot make that call blind — nor should they
+ *  be shown a holder whose grant has since ended. STAFF ONLY; no customer
+ *  surface ever learns another account exists (AC-P2-36, AC-P2-44). */
+export interface OpsTradeApplication {
+  id: string;
+  applicant: { id: string; name: string | null; email: string };
+  abn: string | null;
+  businessName: string | null;
+  source: string;
+  queueReasons: string[];
+  abrSnapshot: unknown;
+  createdAt: string | null;
+  duplicateHolders: { id: string; name: string | null; email: string }[];
+}
+
+/** A decided application, for the customer record's history. */
+export interface OpsTradeHistoryEntry {
+  id: string;
+  abn: string | null;
+  businessName: string | null;
+  status: string;
+  decidedVia: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  revokedAt: string | null;
+  revokeReason: string | null;
+  createdAt: string | null;
+}
+
+export const opsTradeApplications = () =>
+  req<{ applications: OpsTradeApplication[] }>("/api/ops/trade/applications")
+    .then((r) => r.applications);
+
+/** Approve. The server's guarded UPDATE is what makes two staff clicking at the
+ *  same moment produce one decision, so a 409 here means somebody already
+ *  decided it — not that anything went wrong. */
+export const opsTradeApprove = (id: string, note?: string) =>
+  req<{ ok: true }>(`/api/ops/trade/applications/${encodeURIComponent(id)}/approve`, {
+    method: "POST", body: JSON.stringify({ note: note ?? "" }),
+  });
+
+/** Reject. The reason is what the customer's record carries forward — prose a
+ *  colleague reads in six months. It never travels to the customer: the
+ *  rejection email is deliberately general (AC-P2-44). */
+export const opsTradeReject = (id: string, reason: string) =>
+  req<{ ok: true }>(`/api/ops/trade/applications/${encodeURIComponent(id)}/reject`, {
+    method: "POST", body: JSON.stringify({ reason }),
+  });
+
+/** Revoke, addressed to the ACCOUNT rather than to an application — "stop this
+ *  customer paying trade prices" is what a person means, and making them find
+ *  the right application first would invite revoking the wrong one. */
+export const opsTradeRevoke = (customerId: string, reason: string) =>
+  req<{ ok: true }>(`/api/ops/trade/customers/${encodeURIComponent(customerId)}/revoke`, {
+    method: "POST", body: JSON.stringify({ reason }),
+  });
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -362,9 +433,23 @@ export interface OpsCustomer {
   id: string; name: string | null; email: string; phone: string | null;
   company: string | null; abn: string | null; created_at: string | null;
   projects: number; orders: number;
+  /** DERIVED from the application ledger, never stored (ADR-0002). */
+  tradeVerified?: boolean;
+  /** The account's rate. READ-ONLY on every ops surface in this phase — there is
+   *  deliberately no editor for it, so a rate can only be granted by a decision
+   *  or negotiated by a direct write. */
+  discountPercent?: number;
 }
 export interface OpsCustomerDetail {
-  customer: { id: string; name: string | null; email: string; phone: string | null; company: string | null; abn: string | null; createdAt: string | null };
+  customer: {
+    id: string; name: string | null; email: string; phone: string | null;
+    company: string | null; abn: string | null; createdAt: string | null;
+    discountPercent?: number;
+    trade?: { verified: boolean; verifiedSince: string | null; provenance: string | null };
+  };
+  /** Every decision on this account, newest last. Ops-only detail: reasons,
+   *  who decided, and what was revoked — none of which a customer ever sees. */
+  tradeHistory?: OpsTradeHistoryEntry[];
   projects: { id: string; title: string | null; status_customer: string; status_internal: string; updated_at: string }[];
   orders: { id: string; order_no: string; stage: string; total: number | null }[];
 }

@@ -4,11 +4,12 @@
 // edit the profile; the sign-in email is the unique login ID — customers can't
 // change it themselves, and only ADMINS can here.
 import { SAGE } from "../styles/tokens";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, Loader2, User, Mail, Phone, Building2, PenLine, Lock } from "lucide-react";
 import {
   opsCustomers, opsCustomer, opsUpdateCustomer,
-  type OpsCustomer, type OpsCustomerDetail, type OpsUser,
+  opsTradeApplications, opsTradeApprove, opsTradeReject,
+  type OpsCustomer, type OpsCustomerDetail, type OpsUser, type OpsTradeApplication,
 } from "./api";
 
 const money = (n: number | null) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`);
@@ -18,9 +19,175 @@ const fmtDate = (s: string | null) => {
   return isNaN(+d) ? "—" : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 };
 
+/** Why an application is sitting here, in a person's words.
+ *
+ *  The engine's reason codes are precise and unreadable; these are what a
+ *  reviewer needs to see at a glance to know which check to make. STAFF ONLY —
+ *  no customer surface ever names a reason (AC-P2-44). */
+const QUEUE_REASON: Record<string, string> = {
+  email_domain: "Free-mail address",
+  name_mismatch: "Name doesn't match",
+  abn_inactive: "ABN not active",
+  abn_not_found: "ABN not found",
+  duplicate_abn: "Also verified elsewhere",
+  abr_unavailable: "Register unavailable",
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  trade_page: "Trade page",
+  profile: "Account page",
+  submit_gate: "Submit gate",
+  migration: "Grandfathered",
+};
+
 export function Customers({ user }: { user: OpsUser }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  return openId ? <Detail id={openId} viewer={user} onBack={() => setOpenId(null)} /> : <List onOpen={setOpenId} />;
+  const [view, setView] = useState<"all" | "queue">("all");
+  const [pending, setPending] = useState<OpsTradeApplication[] | null>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
+
+  const loadQueue = useCallback(() => {
+    opsTradeApplications()
+      .then((a) => { setPending(a); setQueueError(null); })
+      .catch((e) => setQueueError(String(e?.message ?? e)));
+  }, []);
+  useEffect(loadQueue, [loadQueue]);
+
+  if (openId) return <Detail id={openId} viewer={user} onBack={() => setOpenId(null)} />;
+
+  return (
+    <>
+      {/* The queue lives in Customers because that is what it is about — a
+          person, not a document (P2-A9's placement latitude). A tab rather than
+          a separate area: whoever is looking at customers is the one who decides
+          these, and a second navigation entry would hide the work from them. */}
+      <div className="flex items-center gap-2 mb-4">
+        <button type="button" onClick={() => setView("all")}
+          className={`px-3 py-1.5 border t-bd-sm cursor-pointer ${view === "all" ? "border-black/40 text-ink" : "border-black/10 text-body"}`}>
+          All customers
+        </button>
+        <button type="button" onClick={() => setView("queue")}
+          className={`px-3 py-1.5 border t-bd-sm cursor-pointer inline-flex items-center gap-2 ${view === "queue" ? "border-black/40 text-ink" : "border-black/10 text-body"}`}>
+          Trade applications
+          {!!pending?.length && (
+            <span className="bg-black/8 px-1.5 rounded-full t-label">{pending.length}</span>
+          )}
+        </button>
+      </div>
+
+      {view === "all"
+        ? <List onOpen={setOpenId} />
+        : <TradeQueue rows={pending} error={queueError} onOpen={setOpenId} onDecided={loadQueue} />}
+    </>
+  );
+}
+
+/** The review queue. Everything needed to DECIDE is on the row, because a
+ *  decision that requires opening three other screens is a decision that gets
+ *  postponed. */
+function TradeQueue({ rows, error, onOpen, onDecided }: {
+  rows: OpsTradeApplication[] | null;
+  error: string | null;
+  onOpen: (id: string) => void;
+  onDecided: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const decide = async (id: string, action: "approve" | "reject") => {
+    if (busy) return;
+    setBusy(id);
+    setFailed(null);
+    try {
+      if (action === "approve") {
+        await opsTradeApprove(id);
+      } else {
+        // The reason is what the customer's RECORD carries forward — prose a
+        // colleague reads in six months. It never reaches the customer: the
+        // rejection email is deliberately general (AC-P2-44).
+        const reason = window.prompt("Why is this being rejected? (kept on the customer's record, never sent to them)");
+        if (!reason?.trim()) { setBusy(null); return; }
+        await opsTradeReject(id, reason.trim());
+      }
+      onDecided();
+    } catch (e) {
+      // A 409 means somebody else already decided it — the guarded UPDATE on the
+      // server is what makes two people clicking at once produce one decision.
+      // That is not an error the reviewer caused, so it reads as news.
+      const msg = String((e as { code?: string })?.code ?? e);
+      setFailed(msg.includes("already_decided")
+        ? "Somebody else has already decided that one."
+        : "That didn't go through. Try again.");
+      onDecided();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load trade applications. {error}</div>;
+  if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
+  if (!rows.length) {
+    return (
+      <div className="bg-white border border-dashed border-black/15 p-12 text-center">
+        <p className="text-ink t-bd-sm">Nothing waiting</p>
+        <p className="text-body mt-1 t-cap">
+          Applications that pass every check are approved automatically and never appear here.
+          This queue only holds the ones that need a person.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="trade-queue" className="space-y-3">
+      {failed && <div className="bg-white border border-black/15 p-3 text-body t-bd-sm">{failed}</div>}
+      {rows.map((a) => (
+        <div key={a.id} className="bg-white border border-black/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <button type="button" onClick={() => onOpen(a.applicant.id)}
+                className="text-ink underline underline-offset-2 cursor-pointer t-bd-sm">
+                {a.applicant.name || a.applicant.email}
+              </button>
+              <p className="text-body t-cap">{a.applicant.email}</p>
+              <p className="text-ink mt-2 t-bd-sm">{a.businessName || "—"}</p>
+              <p className="text-body font-data t-cap">{a.abn || "No ABN"}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={!!busy} onClick={() => void decide(a.id, "approve")}
+                className="px-3 py-1.5 border border-black/25 text-ink cursor-pointer disabled:opacity-50 t-bd-sm">
+                Approve
+              </button>
+              <button type="button" disabled={!!busy} onClick={() => void decide(a.id, "reject")}
+                className="px-3 py-1.5 border border-black/10 text-body cursor-pointer disabled:opacity-50 t-bd-sm">
+                Reject
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            {a.queueReasons.map((r) => (
+              <span key={r} className="border border-black/15 px-2 py-0.5 text-body t-label">
+                {QUEUE_REASON[r] ?? r}
+              </span>
+            ))}
+            <span className="text-quiet t-cap">
+              From {SOURCE_LABEL[a.source] ?? a.source}
+              {a.createdAt ? ` \u00b7 ${a.createdAt.slice(0, 10)}` : ""}
+            </span>
+          </div>
+
+          {/* D2.1: a human may knowingly allow a second holder — an estimator and
+              a director of the same business — but not blind. */}
+          {!!a.duplicateHolders.length && (
+            <p className="text-body mt-2 t-cap">
+              Also verified on: {a.duplicateHolders.map((h) => h.email).join(", ")}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function List({ onOpen }: { onOpen: (id: string) => void }) {

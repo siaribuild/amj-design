@@ -465,3 +465,99 @@ test("T-C9: a delivery zone can be created, priced, saved and deleted from the c
   await reloadedRow.locator('button[title="Delete"]').click();
   await expect(page.getByRole("row").filter({ hasText: slug })).toHaveCount(0);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRADE VERIFICATION — the ops half (registration Phase 2, design §11.3).
+//
+// The node suite proves the ENGINE decides correctly and the authorization
+// matrix holds. It cannot see whether a person can actually FIND a queued
+// application, read why it queued, and act on it — which is the entire point of
+// a review queue. An application the engine parks and the console never shows is
+// indistinguishable, to the business, from one that was silently dropped.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** A checksum-valid ABN whose ABR entity is nothing like the name we send, so
+ *  the triple fails on criterion 2 and the application parks in the queue. */
+const QUEUE_ABN = "70000000760";
+
+test("a queued application is visible, explained, and decidable", async ({ page }) => {
+  // Two sign-ins and a decision in one journey — heavier than this file's norm,
+  // and the default 45s is tight once four workers are competing.
+  test.setTimeout(120_000);
+
+  // A customer applies with details that cannot auto-pass. Signed in through the
+  // API and NOT through `signInAndComplete`: that helper fills a complete
+  // account so the submission gate will accept a quote, and nothing here submits
+  // one. Applying for trade needs a session, nothing more.
+  const email = `ops-trade-${Date.now().toString(36)}@example.com`;
+  const challenge = await page.request.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": "198.51.141.9" },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: QUEUE_ABN, businessName: "Smith Brothers Pty Ltd", source: "profile" },
+    headers: { "X-Forwarded-For": "198.51.140.7" },
+  });
+  expect(applied.ok(), await applied.text()).toBeTruthy();
+  expect((await applied.json()).status, "these details must queue, not auto-pass").toBe("under_review");
+
+  // A FRESH staff address, not the seeded admin every other test in this file
+  // shares. The OTP cap is per RECIPIENT, and the ops challenge is deliberately
+  // existence-neutral — once the cap is spent it still answers 200 and issues
+  // nothing, so an exhausted address reads as a broken sign-in SCREEN rather
+  // than as a working control. Adding one more staffLogin to the shared address
+  // is what tipped this file over, and only under parallel workers, which is the
+  // worst way to find out.
+  //
+  // Fresh is also SUFFICIENT: the Worker creates such a staffer with role = null,
+  // and the trade queue is open to assigned-role staff rather than admins (owner
+  // ruling Q4) — so this test proves that too, for free.
+  const staffEmail = `ops-trade-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  // AC-P2-35: the count is visible WITHOUT opening the queue. A review queue
+  // nobody knows is non-empty is a queue that does not get worked.
+  // The summary loads async — wait for the tile rather than reading the body once.
+  await expect(page.getByText(/trade applications? waiting on a decision/i),
+    "the dashboard names the waiting work").toBeVisible({ timeout: 15_000 });
+
+  // AC-P2-36: the queue shows the applicant, the ABN, and WHY it queued —
+  // deciding must not be a research task.
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  await page.getByRole("button", { name: /^trade applications/i }).click();
+
+  const queue = page.getByTestId("trade-queue");
+  await expect(queue).toBeVisible();
+  const queueText = (await queue.innerText()).replace(/\s+/g, " ");
+  expect(queueText, "the applicant is named").toContain(email);
+  expect(queueText, "the submitted business name is shown").toContain("Smith Brothers");
+  expect(queueText, "and the reason it queued").toMatch(/name doesn't match/i);
+
+  // AC-P2-37: a decision can be made from here, and it sticks.
+  await queue.getByRole("button", { name: /^approve$/i }).first().click();
+  await expect(queue.getByText(email), "the decided application leaves the queue")
+    .toHaveCount(0, { timeout: 15_000 });
+
+  // The grant is REAL, not just a row leaving a list. Fetched from the browser
+  // context because that is where the ops session cookie lives — page.request
+  // still carries the customer's.
+  const verified = await page.evaluate(async (addr) => {
+    const res = await fetch("/api/ops/customers", { credentials: "same-origin" });
+    if (!res.ok) return { ok: false, status: res.status };
+    const body = await res.json();
+    const row = body.customers.find((c: { email: string }) => c.email === addr);
+    return { ok: true, tradeVerified: row?.tradeVerified, discountPercent: row?.discountPercent };
+  }, email);
+  expect(verified.ok, `ops customers fetch: ${JSON.stringify(verified)}`).toBe(true);
+  expect(verified.tradeVerified, "the customer record shows the grant").toBe(true);
+  // AC-P2-41: the rate travels with it, read-only.
+  expect(verified.discountPercent, "and the rate the grant set").toBeGreaterThan(0);
+});

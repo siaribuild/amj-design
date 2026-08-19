@@ -392,6 +392,12 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
     { key: "iss", count: s.readyToIssue, text: "quote is priced and ready to issue|quotes are priced and ready to issue", tab: "projects" },
     { key: "pay", count: s.awaitingPayment, text: "order awaiting payment|orders awaiting payment", tab: "projects" },
     { key: "enq", count: s.newEnquiries, text: "enquiry nobody has replied to|enquiries nobody has replied to", tab: "enquiries" },
+    // AC-P2-35. Pending only — an auto-passed application never appears here,
+    // because nobody has to do anything about it. It joins "Needs us" rather
+    // than sitting in its own tile so it obeys the same rule as everything
+    // else: it is listed when it is waiting and absent when it is not, and a
+    // permanent "0 pending" trains people to stop reading the screen.
+    { key: "trade", count: s.tradeApplications ?? 0, text: "trade application waiting on a decision|trade applications waiting on a decision", tab: "customers" },
   ].filter(r => r.count > 0);
 
   return (
