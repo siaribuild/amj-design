@@ -15,13 +15,13 @@ await build({
   stdin: {
     contents: `
       export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
-      export { splitsAreEligible, selectWithSplits } from ${p("worker/lib/estimator/splitCandidates.ts")};
+      export { splitsAreEligible, selectWithSplits, resolvePairing } from ${p("worker/lib/estimator/splitCandidates.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -777,4 +777,73 @@ test("E15 a product appearing in both forms is two candidates, and neither is hi
     ...r.splits.map((s) => s.candidateOutcome.form),
   ];
   assert.ok(forms.includes("single") && forms.includes("split"));
+});
+
+test("the family's authored pairing decides the geometry, resolved from the representative", async () => {
+  // The pairing rule and the infill family's widest frame are BOTH needed to
+  // size a panel, and neither is on the opening — they hang off the product this
+  // opening would otherwise have been built from, and the infill width is a
+  // catalogue lookup. So the geometry seed is resolved from the representative,
+  // once, and handed in. A default even split would have produced three equal
+  // 1200 mm units here; the authored pairing produces an operable pane and one
+  // panel, which is what the family actually makes.
+  const products = [
+    splitProduct("amj-awn", { operation: "awning", maxWidthMm: 1300 }),
+    splitProduct("amj-fixed", { operation: "fixed", maxWidthMm: 2600 }),
+  ];
+  products[0].defaultSplit = { infillFamilySlug: "fixed-window", infillOperation: "fixed", operableRatio: 0.25 };
+
+  let sawRepresentative = null;
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 3600, heightMm: 2100, externalRef: "W13" },
+    null,
+    splitCtx(products, {
+      async resolvePairing(representative) {
+        sawRepresentative = representative?.candidate.slug ?? null;
+        return { rule: products[0].defaultSplit, infillMaxWidthMm: 2600, maxSegments: 4 };
+      },
+    }),
+  );
+
+  assert.equal(sawRepresentative, "amj-awn", "the pairing was resolved from the product this opening would have used");
+  assert.ok(r.selectedSplit, "the pairing produced a buildable make-up");
+  const widths = r.selectedSplit.candidateOutcome.units.map((u) => u.widthMm);
+  assert.equal(widths.reduce((a, b) => a + b, 0), 3600, "the units still partition the opening exactly");
+  assert.notDeepEqual(widths, [1200, 1200, 1200], "…and NOT by the even-split fallback");
+});
+
+test("resolvePairing reads the rule off the representative and the width off the infill family", async () => {
+  // Two things are needed to size a panel and NEITHER is on the opening: the
+  // rule (which family supplies the infill) hangs off the product this opening
+  // would otherwise have been built from, and the widest frame THAT family makes
+  // is a catalogue lookup. Getting the width wrong invents a mullion the
+  // manufacturer would not build.
+  const rule = { infillFamilySlug: "fixed-window", infillOperation: "fixed", operableRatio: 0.25 };
+  const infill = [
+    { ...splitProduct("fix-narrow", { operation: "fixed", maxWidthMm: 1400 }), series: "fixed-window" },
+    { ...splitProduct("fix-wide", { operation: "fixed", maxWidthMm: 2600 }), series: "fixed-window" },
+    { ...splitProduct("fix-other", { operation: "fixed", maxWidthMm: 9000 }), series: "some-other-family" },
+  ];
+  const repo = { async queryCandidates() { return infill; }, catalogueVersion() { return "cat-v1"; } };
+  const representative = {
+    candidate: { family: "windows", defaultSplit: rule, dimensionRule: { maxWidthMm: 1300 } },
+  };
+
+  const pairing = await resolvePairing(repo, { representative, maxSegments: 4, offset: true });
+  assert.equal(pairing.rule, rule);
+  assert.equal(pairing.infillMaxWidthMm, 2600, "the WIDEST frame the infill family makes, not the first");
+  assert.equal(pairing.maxSegments, 4, "the real policy cap, not the proposer's safety bound");
+  assert.equal(pairing.offset, true);
+
+  // A product whose family authored no pairing has no opinion, and asking the
+  // catalogue about a rule that does not exist would be a wasted round trip.
+  const none = await resolvePairing(repo, {
+    representative: { candidate: { family: "windows", defaultSplit: null } },
+    maxSegments: 4, offset: false,
+  });
+  assert.equal(none.rule, null);
+  assert.equal(none.infillMaxWidthMm, null);
+  // And no representative at all — nothing fit, nothing to read a rule from.
+  const bare = await resolvePairing(repo, { representative: null, maxSegments: 4, offset: false });
+  assert.equal(bare.rule, null);
 });

@@ -15,7 +15,7 @@ import type { CatalogueRepository } from "./catalogue";
 import type { OpeningInput } from "./types";
 import {
   decide, evaluateCandidates, parentRepresentative,
-  type Evaluation, type PriceFn, type SelectionResult,
+  type EvaluatedCandidate, type PriceFn, type SelectionResult,
 } from "./select";
 import { enumerateMakeUps, type CompositeUnit, type MakeUp } from "./compositeSelect";
 import { area, makeUpDeviation } from "./compositeRank";
@@ -108,6 +108,51 @@ export interface SplitContext {
   primaryCategory?: string | null;
   alternateCategory?: string | null;
   section?: "window" | "door";
+  /** Resolve the family's authored pairing from the representative product.
+   *  Async because the infill family's widest frame is a catalogue lookup, and
+   *  a panel cannot be sized without it. Called at most once per opening. */
+  resolvePairing?: (
+    representative: EvaluatedCandidate | null,
+  ) => Promise<SplitContext["pairing"]>;
+}
+
+/** The family's authored pairing, resolved from the product this opening would
+ *  otherwise have been built from.
+ *
+ *  Two things are needed and NEITHER is on the opening: the rule — which family
+ *  supplies the infill — hangs off that product, and the widest frame that
+ *  family makes is a catalogue lookup. The pairing asks "can one panel cover
+ *  this", and answering with a narrower product would invent an extra mullion
+ *  the manufacturer would not build.
+ *
+ *  The infill family's products come from the same cached candidate query the
+ *  selection already used, so in a realistic project this is a cache hit rather
+ *  than a second round trip per opening. */
+export async function resolvePairing(
+  repo: CatalogueRepository,
+  args: {
+    representative: EvaluatedCandidate | null;
+    /** The REAL policy cap, not the proposer's safety bound: a pairing that
+     *  exceeded it would be built and then refused by validateSplit, which
+     *  reads to the customer as no split at all. */
+    maxSegments: number | null;
+    /** The schedule said OFFSET — the operable pane is the smaller share. */
+    offset: boolean;
+  },
+): Promise<SplitContext["pairing"]> {
+  const rule = args.representative?.candidate.defaultSplit ?? null;
+  let infillMaxWidthMm: number | null = null;
+  if (rule?.infillFamilySlug && rule.infillOperation) {
+    const infill = await repo.queryCandidates(
+      args.representative!.candidate.family, rule.infillOperation,
+    );
+    const widths = infill
+      .filter((c) => c.series === rule.infillFamilySlug)
+      .map((c) => c.dimensionRule?.maxWidthMm)
+      .filter((w): w is number => typeof w === "number" && w > 0);
+    infillMaxWidthMm = widths.length ? Math.max(...widths) : null;
+  }
+  return { rule, infillMaxWidthMm, maxSegments: args.maxSegments, offset: args.offset };
 }
 
 /**
@@ -285,22 +330,21 @@ export async function selectWithSplits(
   const evaluation = await evaluateCandidates(opening, ctx.repo, ctx.priceFn);
   if (!splitsAreEligible(hint, evaluation)) return decide(opening, evaluation);
 
+  // WHICH PRODUCT'S GEOMETRY THE SPLIT DIVIDES BY.
+  //
+  // A preliminary ladder run over the single units alone answers "what would
+  // this opening otherwise be built from" — and that is a DIMENSION input, not
+  // a recommendation. It decides nothing: every candidate it ranked goes back
+  // into the final ladder with the splits present, undecided. Reading the
+  // representative's max width and its family's authored pairing is what the
+  // proposal has always done, so the geometry a customer sees does not move.
+  const representative = parentRepresentative(decide(opening, evaluation));
   const splits = await enumerateSplitCandidates(opening, hint, {
     ...ctx,
-    parentMaxWidthMm: ctx.parentMaxWidthMm ?? geometrySeedWidth(opening, evaluation),
+    parentMaxWidthMm: ctx.parentMaxWidthMm
+      ?? representative?.candidate.dimensionRule?.maxWidthMm
+      ?? null,
+    pairing: ctx.resolvePairing ? await ctx.resolvePairing(representative) : ctx.pairing ?? null,
   });
   return decide(opening, evaluation, { splits });
-}
-
-/** The frame width the split geometry divides by: the representative single-unit
- *  candidate's max width, which is what today's proposal has always used. A
- *  preliminary ladder run is the honest way to ask "which product would this
- *  opening otherwise be built from" — it decides no recommendation, and every
- *  candidate it ranked competes again with the splits present. */
-function geometrySeedWidth(
-  opening: OpeningInput & { externalRef?: string | null },
-  evaluation: Evaluation,
-): number | null {
-  const representative = parentRepresentative(decide(opening, evaluation));
-  return representative?.candidate.dimensionRule?.maxWidthMm ?? null;
 }
