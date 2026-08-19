@@ -170,3 +170,30 @@ not be such requirement, it's a judgement call. No need to surface it; list view
 that sense."* Remove the family-mix line from the Why plane. Spec gap 4 (family mix has no
 endpoint) is void — nothing needs building. The judgement is made by looking at the
 approved list view, which already shows what the rest of the project uses.
+
+## R1f feedback — line plane, recorded not applied (2026-08-19)
+
+**R3 — one back idiom, not two.** The record uses `< Projects`; the line plane uses
+`< W04`. *"navigation should be consistent... Choose one. The earlier, if you ask me."*
+Adopt naming the **destination** everywhere. Note the line plane's destination is the
+record, not Projects, so it is `< OF-Q-10482` or `< Lines` — the pattern is "name where
+you are going", not "repeat the word Projects".
+
+**R4 — prev/next is conceptually right, the implementation does not scale.**
+*"scales very poorly on ipad in particular - just too massive buttons on the screen. But
+good placement of navigation controls indeed."* Keep the placement and the principle that
+neighbours are **identified rather than counted**; the two full-width labelled buttons are
+what fails as the viewport grows. A control sized for a 375px phone should not become
+furniture at 1024.
+
+**R5 — there are no line-level notes, and the field is not editable.**
+*"there are no item level notes, not in a form of growing list of comments like on the
+Project level. The field is just for a customer's note, like 'this is a kitchen window'.
+This is not editable."* So the design is wrong twice over: it renders a notes thread that
+does not exist at line level, and offers a composer for a field ops does not own. This is
+`quote_line.room_label` — the same field as D4's, which the customer types under "Note
+(optional)", bounded at 500 characters. Show it as the customer's words, read-only.
+Threads remain a project-level concept.
+
+**R6 — the approved list view has no split support.** *"I like the view of it BUT it lacks
+support for the splits."* Under investigation; see the reuse analysis in `docs/design/`.
