@@ -457,7 +457,10 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
 
   try {
     if (reasons.length === 0) {
-      await grant(env, { applicationId: id, applicant: user, abn, businessName, insert: insert("approved") });
+      await grant(env, {
+        applicationId: id, applicant: user, abn, businessName,
+        insert: insert("approved"), mode: "create",
+      });
       await logEvent(env, {
         actor: "system", entityType: "user", entityId: user.id,
         action: "trade.approved", after: { applicationId: id, via: "auto" },
@@ -515,7 +518,7 @@ export async function approveApplication(
   const changes = await grant(env, {
     applicationId, applicant,
     abn: application.abn, businessName: application.business_name,
-    insert: claim,
+    insert: claim, mode: "claim",
   });
   if (!changes) return { ok: false, error: "already_decided" };
 
@@ -622,20 +625,42 @@ async function grant(env: Env, opts: {
   abn: string | null;
   businessName: string | null;
   insert: D1PreparedStatement;
+  /** What `insert` actually DOES, and the supersede guard depends on it.
+   *
+   *  `"claim"` — ops approving: the row already exists as `pending` and the
+   *  statement flips it to approved.
+   *  `"create"` — an auto-pass: the row does not exist yet and the statement
+   *  INSERTs it, already approved, inside this same batch.
+   *
+   *  This was the F-0 bug. The guard below asked whether the application was
+   *  `pending`, which is only ever true for a claim — so on every auto-pass by
+   *  an already-verified account the prior grant was silently not superseded,
+   *  the new approved row collided with `trade_application_one_standing`, and
+   *  the constraint error surfaced to the customer as `application_pending`
+   *  while `/api/auth/me` reported no pending application at all. */
+  mode: "claim" | "create";
 }): Promise<number> {
   const prior = await standingGrant(env, opts.applicant.id);
   const statements: D1PreparedStatement[] = [];
   let claimIndex = 0;
   if (prior) {
-    // The EXISTS clause is what makes a lost race harmless. Without it, two
-    // staff members approving a re-application at the same instant would have
-    // the loser supersede the winner's brand-new grant and leave the account
+    // The subquery is what makes a lost race harmless. Without it, two staff
+    // members approving a re-application at the same instant would have the
+    // loser supersede the winner's brand-new grant and leave the account
     // unverified — the one ordering in this batch that is not idempotent.
+    //
+    // The condition has to describe the state THIS application is in before the
+    // batch claims or creates it, and those differ: a claim expects a pending
+    // row, a create expects no row at all. Asking only the first question is
+    // what made every auto-pass re-application fail (F-0).
+    const stillOurs = opts.mode === "claim"
+      ? "EXISTS (SELECT 1 FROM trade_application WHERE id = ?2 AND status = 'pending')"
+      : "NOT EXISTS (SELECT 1 FROM trade_application WHERE id = ?2)";
     statements.push(env.DB.prepare(
       `UPDATE trade_application SET superseded_at = datetime('now')
         WHERE user_id = ?1 AND id <> ?2
           AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL
-          AND EXISTS (SELECT 1 FROM trade_application WHERE id = ?2 AND status = 'pending')`,
+          AND ${stillOurs}`,
     ).bind(opts.applicant.id, opts.applicationId));
     claimIndex = 1;
   }

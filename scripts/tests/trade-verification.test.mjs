@@ -806,6 +806,55 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
 
     // Characterisation of grant()'s rate rule (design §6.5.4): discount_percent
     // moves only on a not-verified -> verified transition.
+    await t.test("E-P2-6: a verified account re-applies and AUTO-PASSES (F-0 regression)", async () => {
+      // THE PATH THE OPS TEST BELOW CANNOT REACH. Its re-application goes to a
+      // human, so the second application row exists as `pending` before the
+      // grant batch runs. An AUTO-PASS has no such row — it is inserted inside
+      // the batch — and that difference is the whole bug: grant()'s supersede
+      // guard asked whether the application was already pending, which is only
+      // ever true on the ops path. On auto-pass the prior grant was never
+      // superseded, the new approved row collided with the
+      // trade_application_one_standing partial unique index, and the constraint
+      // error was answered as `application_pending` — telling a customer an
+      // application is in flight while /api/auth/me reports pending: null.
+      //
+      // This is the exact journey the account card's "My ABN has changed"
+      // affordance exists for, and it is AC-P2-11's own justification for
+      // showing the verified ABN as a fact rather than an input.
+      const first = spareBusiness(5);
+      const second = spareBusiness(6);
+      const account = await newAccount("reauto", first.domain);
+
+      const firstRes = await apply(account.session, {
+        abn: first.abn, businessName: first.businessName, source: "profile",
+      });
+      const firstApps = await applications(account.email);
+      assert.deepEqual(await firstRes.clone().json(), { ok: true, status: "verified" },
+        `the first application must auto-pass. reasons=${firstApps[0]?.queue_reasons}`);
+
+      const reapply = await apply(account.session, {
+        abn: second.abn, businessName: second.businessName, source: "profile",
+      });
+      assert.equal(reapply.status, 200,
+        `a verified account may re-apply — 409 here is F-0. body=${JSON.stringify(await reapply.clone().json())}`);
+      assert.deepEqual(await reapply.clone().json(), { ok: true, status: "verified" },
+        "and the new ABN auto-passes on its own merits");
+
+      // Exactly one standing grant, and it is the NEW one.
+      const standing = (await applications(account.email)).filter(
+        (a) => a.status === "approved" && !a.revoked_at && !a.superseded_at);
+      assert.equal(standing.length, 1, "the prior grant is superseded, not left beside the new one");
+      assert.equal(standing[0].abn, second.abn, "the standing grant carries the new ABN");
+
+      // The account still holds trade pricing throughout — a re-application must
+      // never drop the customer to retail while the new number is checked.
+      const me = (await requestJson(account.session, "/api/auth/me")).body.trade;
+      assert.equal(me.verified, true, "still verified after re-applying");
+      assert.equal(me.abn, second.abn, "and the account's ABN is the new one");
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5,
+        "the rate is unchanged by a re-verification (AC-P2-29)");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
