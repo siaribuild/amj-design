@@ -216,7 +216,14 @@ export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "
 export const applyForTrade = (input: {
   abn: string;
   businessName: string;
-  source: "trade_page" | "profile" | "submit_gate";
+  /** Where the application was made — telemetry for ops, never a rule: the
+   *  engine treats every source identically, which is what makes AC-P2-10's "no
+   *  behavioural difference attributable to the entry point" structural.
+   *
+   *  MUST match `TradeSource` in `worker/lib/trade.ts` and the allowlist in
+   *  `worker/routes/trade.ts`. `login` was added on the owner's directive
+   *  (2026-08-20) so the ABN option travels with the flow wherever it appears. */
+  source: "trade_page" | "profile" | "submit_gate" | "login";
 }) =>
   req<{ ok: true; status: "verified" | "under_review" }>("/api/trade/application", {
     method: "POST",

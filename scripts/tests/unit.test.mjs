@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -1152,4 +1153,32 @@ test("detailsPatchProblems: the limit applies to the trimmed value, not the keys
   assert.deepEqual(M.detailsPatchProblems({ name: `  ${"x".repeat(M.DETAIL_LIMITS.name)}  ` }), []);
   // …and a genuinely over-limit value is still refused once trimmed.
   assert.deepEqual(M.detailsPatchProblems({ name: `  ${"x".repeat(M.DETAIL_LIMITS.name + 1)}  ` }), ["name"]);
+});
+
+// ─── The trade application's `source` is declared in three places ────────────
+// The Worker's union, the route's runtime allowlist, and the client's argument
+// type must agree. They drifted the moment a fourth source (`login`) was added:
+// the Worker and the route learned about it, the client did not, and the call
+// still WORKED — the server accepts the value, so only the type was wrong.
+//
+// `typecheck:gate` is fatal-only by design and TS2322 is not on its list, so
+// nothing failed. The mismatch was found by an external reviewer, which is a
+// poor substitute for a test that costs nothing to run.
+test("the trade application source list agrees across worker, route and client", async () => {
+  const read = async (p) => readFile(join(projectRoot, p), "utf8");
+  const listFrom = (text, pattern) => {
+    const m = text.match(pattern);
+    assert.ok(m, `could not find the source list via ${pattern}`);
+    return [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]).sort();
+  };
+
+  const worker = listFrom(await read("worker/lib/trade.ts"),
+    /export type TradeSource =([^;]+);/);
+  const route = listFrom(await read("worker/routes/trade.ts"),
+    /const SOURCES: readonly TradeSource\[\] = \[([^\]]+)\]/);
+  const client = listFrom(await read("src/data/api.ts"),
+    /source: ("trade_page"[^;]+);/);
+
+  assert.deepEqual(route, worker, "the route's allowlist must match TradeSource");
+  assert.deepEqual(client, worker, "the client's argument type must match TradeSource");
 });
