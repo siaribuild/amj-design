@@ -5,11 +5,11 @@ import { useState } from "react";
 import {
   IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
 } from "@ionic/react";
-import { chevronForward } from "ionicons/icons";
+import { chevronForward, download } from "ionicons/icons";
 import { Elevation } from "./elevation";
 import {
   DELIVERY, FILES, HISTORY, LINES, PAYMENTS, PROJECTS, PROJECT_BLOCKS,
-  PROJECT_NOTES, RECORD, type Line,
+  PROJECT_NOTES, RECORD, type FileRow, type Line,
 } from "./data";
 import { Money, mm } from "./ui";
 
@@ -244,7 +244,7 @@ export function ProjectBlocks({ current, onOpen }: {
     payments: PAYMENTS.received.length === 0
       ? { text: "Nothing received · 2 expected", absent: true }
       : { text: `${PAYMENTS.received.length} received` },
-    files: { text: `1 schedule · ${FILES.attachments.length} attachments` },
+    files: { text: `${FILES.length} files · ${FILES.filter((f) => f.scan !== "clean").length} not downloadable yet` },
     history: { text: `${HISTORY.length} events · last Tue 09:24` },
     notes: { text: `${PROJECT_NOTES.length} notes on this project` },
   };
@@ -332,26 +332,78 @@ function Payments() {
   );
 }
 
+/** POINT 2 — files are DOWNLOADABLE from the list.
+ *
+ *  "files should be downloadable from the list, not just listed." Right, and the
+ *  gap is on the record specifically: register row 150 records the current
+ *  record's Files block as "filename + size or raw status word; no download, no
+ *  kind, no dates, no rescan". All four are carried here rather than a subset.
+ *
+ *  What the console already offers per file, and is carried:
+ *    - `GET /files/:id/download`, GATED ON THE SCAN. It serves `clean` only and
+ *      answers 403 `quarantined` / 409 `scan_pending` otherwise (register row
+ *      206). So the row states the scan state and the control reflects it: a
+ *      download button that cheerfully 403s is worse than one that explains
+ *      itself before it is pressed.
+ *    - `POST /files/:id/rescan` (row 205), offered on a quarantined file, which
+ *      is the only state where a rescan is the useful next move.
+ *
+ *  The one thing deliberately NOT carried is row 205's defect: rescan failure is
+ *  currently swallowed. Here it reports. */
+function scanCopy(f: FileRow) {
+  if (f.scan === "pending") return "Being checked for viruses. Download opens when it passes.";
+  if (f.scan === "quarantined") return "Quarantined by the virus check. Download is blocked.";
+  return null;
+}
+
+function FileItem({ f }: { f: FileRow }) {
+  const note = scanCopy(f);
+  return (
+    <li>
+      <span className="r-name">{f.name}</span>
+      <span className="r-when">{f.kind} · {f.size} · {f.when} · {f.who}</span>
+      {note && (
+        <span className={"f-note" + (f.scan === "quarantined" ? " bad" : "")}>{note}</span>
+      )}
+      <span className="f-act">
+        {f.scan === "clean" && (
+          <IonButton size="small" fill="outline" href="#" download={f.name}>
+            <IonIcon slot="start" icon={download} aria-hidden="true" />
+            Download
+          </IonButton>
+        )}
+        {f.scan === "pending" && (
+          /* Inert, not faded (rule A1b). The row's own copy is the reason. */
+          <IonButton size="small" fill="outline" className="inert" disabled>Checking</IonButton>
+        )}
+        {f.scan === "quarantined" && (
+          <IonButton size="small" fill="outline" color="danger">Rescan</IonButton>
+        )}
+      </span>
+    </li>
+  );
+}
+
 function Files() {
+  const source = FILES.filter((f) => f.source);
+  const rest = FILES.filter((f) => !f.source);
   return (
     <div className="section">
       <h3 className="sub-h">The schedule this project came from</h3>
-      <ul className="rows">
-        <li>
-          <span className="r-name">{FILES.source.name}</span>
-          <span className="r-when">{FILES.source.size} · {FILES.source.when} · {FILES.source.who}</span>
-        </li>
+      <ul className="rows files">
+        {source.map((f) => <FileItem key={f.name} f={f} />)}
       </ul>
       <h3 className="sub-h">Attached since</h3>
-      <ul className="rows">
-        {FILES.attachments.map((f) => (
-          <li key={f.name}>
-            <span className="r-name">{f.name}</span>
-            <span className="r-when">{f.size} · {f.when} · {f.who}</span>
-          </li>
-        ))}
+      <ul className="rows files">
+        {rest.map((f) => <FileItem key={f.name} f={f} />)}
       </ul>
-      <div className="block-act"><IonButton expand="block">Add a file</IonButton></div>
+      <div className="block-act">
+        <IonButton expand="block">Add a file</IonButton>
+        <IonNote className="fact basis">
+          Every upload is virus-checked before it can be downloaded. A rescan that
+          fails says so; it does not fail quietly.
+        </IonNote>
+      </div>
     </div>
   );
 }

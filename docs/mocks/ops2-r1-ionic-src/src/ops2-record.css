@@ -133,3 +133,17 @@ ion-button.offto { margin: 14px 0 0; --padding-start: 0; }
    Measured at 375x812: 218px of header, 76px of footer, 518px of list. */
 ion-toolbar.navbar { --min-height: 44px; }
 ion-header ion-toolbar:has(ion-segment) { --min-height: 44px; --padding-top: 0; --padding-bottom: 0; }
+
+/* Files. The row grows a scan note and a control column, so it stops being a
+   grid of two lines and becomes two lines plus a spanning note beside an
+   action. */
+ul.rows.files li { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+ul.rows.files .f-note {
+  grid-column: 1 / -1; font-size: .75rem; line-height: 1.35;
+  color: var(--ops-quiet); margin-top: 2px;
+}
+ul.rows.files .f-note.bad { color: var(--ion-color-danger-shade); font-weight: 600; }
+ul.rows.files .f-act { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+ul.rows.files .f-act ion-button {
+  margin: 0; --padding-start: 10px; --padding-end: 10px;
+}

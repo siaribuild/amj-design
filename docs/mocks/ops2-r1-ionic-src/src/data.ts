@@ -255,14 +255,27 @@ export const PAYMENTS = {
   ],
 };
 
-export const FILES = {
-  source: { name: "Lot14-windows-schedule.pdf", size: "2.4 MB", when: "Mon 14:02", who: "Ana Bianchi" },
-  attachments: [
-    { name: "elevation-A.pdf", size: "1.1 MB", when: "Tue 09:20", who: "Gedas" },
-    { name: "AMJ67T-thermal-cert.pdf", size: "480 KB", when: "Tue 09:24", who: "Gedas" },
-    { name: "site-photo-north.jpg", size: "3.2 MB", when: "Wed 08:03", who: "Ana Bianchi" },
-  ],
+/* Files carry a SCAN STATE, because the download endpoint is gated on it:
+   `GET /files/:id/download` serves only `clean` and answers 403 `quarantined`
+   or 409 `scan_pending` otherwise (register row 206). A download control that
+   does not know the state is a control that 403s in the user's face, so the
+   state is part of the row. `POST /files/:id/rescan` exists (row 205) — and its
+   failure is currently SWALLOWED, which is the one thing from the old console
+   not carried across. */
+export type ScanState = "clean" | "pending" | "quarantined";
+
+export type FileRow = {
+  name: string; kind: string; size: string; when: string; who: string;
+  scan: ScanState; source?: boolean;
 };
+
+export const FILES: FileRow[] = [
+  { name: "Lot14-windows-schedule.pdf", kind: "Schedule", size: "2.4 MB", when: "Mon 14:02", who: "Ana Bianchi", scan: "clean", source: true },
+  { name: "elevation-A.pdf", kind: "Drawing", size: "1.1 MB", when: "Tue 09:20", who: "Gedas", scan: "clean" },
+  { name: "AMJ67T-thermal-cert.pdf", kind: "Certificate", size: "480 KB", when: "Tue 09:24", who: "Gedas", scan: "clean" },
+  { name: "site-photo-north.jpg", kind: "Photo", size: "3.2 MB", when: "Wed 08:03", who: "Ana Bianchi", scan: "pending" },
+  { name: "schedule-v1-superseded.pdf", kind: "Schedule", size: "1.8 MB", when: "Mon 09:40", who: "Ana Bianchi", scan: "quarantined" },
+];
 
 export const HISTORY = [
   { when: "Tue 09:24", who: "Gedas", what: "Attached AMJ67T-thermal-cert.pdf" },
