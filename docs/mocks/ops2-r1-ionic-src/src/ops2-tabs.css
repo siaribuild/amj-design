@@ -48,14 +48,29 @@
 ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
 
 /* ── the mock's own variant switcher ─────────────────────────────────────────
-   Deliberately ugly and deliberately fixed to the top-right: it is scaffolding
-   for a decision, not a control anyone is proposing to ship. */
+   Deliberately ugly: it is scaffolding for a decision, not a control anyone is
+   proposing to ship.
+
+   VERTICALLY CENTRED, NOT TOP-RIGHT. It sat over the header and covered the very
+   controls the variants are being judged on — back, the neighbour chevrons, and
+   E's whole point, the CTA in the trailing slot. LEARNINGS.md 3 records the same
+   defect in the earlier generation, where a floating dev strip covered the
+   rate-card primary at 1366 and 'Save new rates' at 390: "a mock control
+   obscuring the very action the walkthrough is about".
+
+   The middle is the only band under judgement here, and it is the one that
+   scrolls — so what this covers can be moved out from under it, which is not
+   true of either chrome edge. Right-hand side so it never sits over the drawing,
+   and pointer-events restored per child so the strip does not eat a swipe. */
 .variantswitch {
-  position: fixed; top: 6px; right: 6px; z-index: 99999;
+  position: fixed; top: 50%; right: 6px; transform: translateY(-50%);
+  z-index: 99999; max-width: calc(100vw - 12px); flex-wrap: wrap;
+  justify-content: flex-end; pointer-events: none;
   display: flex; align-items: center; gap: 2px;
   padding: 3px 4px; border-radius: 999px;
   background: rgba(0, 0, 0, .82); box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
 }
+.variantswitch > * { pointer-events: auto; }
 .variantswitch .vs-tag {
   font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
   color: rgba(255, 255, 255, .55); padding: 0 3px;
