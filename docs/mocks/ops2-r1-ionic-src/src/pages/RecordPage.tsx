@@ -44,7 +44,7 @@ import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
 import { EditorPane } from "../Editor";
 import {
   FilterRow, LineList, ProjectBlockBody, ProjectBlocks,
-  RecordHeader, StateRow, Totals,
+  RecordNavBar, RecordSummaryBar, StateRow, Totals,
 } from "../pieces";
 
 export function RecordPage() {
@@ -82,13 +82,21 @@ export function RecordPage() {
   };
   const openDelivery = () => history.push(`/record/${ref}/delivery`);
 
+  /* D3 — the state row moves OUT of the header and leads the content. It is
+     status, not navigation and not money, so it may scroll; keeping it in the
+     header was what pushed a fourth band into chrome. It is still the first
+     thing read on arrival. */
+  const stateRow = <StateRow onOpenProgress={() => openBlock("progress")} />;
+
   const listColumn = segment === "lines" ? (
     <>
+      {!wide && stateRow}
       <LineList lines={run} selectedId={selected?.id ?? null} dense={wide} onPick={pick} />
       {!wide && <Totals onReviewDelivery={openDelivery} />}
     </>
   ) : (
     <>
+      {!wide && stateRow}
       <ProjectBlocks current={wide ? block : undefined} onOpen={openBlock} />
       {!wide && <Totals onReviewDelivery={openDelivery} />}
     </>
@@ -96,10 +104,9 @@ export function RecordPage() {
 
   const header = (
     <IonHeader className="ion-no-border">
-      {/* Back, the ref and the total on one line; the title and the customer
-          beneath at full width. See pieces.tsx RecordHeader. */}
-      <RecordHeader />
-      <StateRow onOpenProgress={() => openBlock("progress")} />
+      {/* D3 — two toolbars, to the convention. See pieces.tsx RecordNavBar. */}
+      <RecordNavBar />
+      <RecordSummaryBar />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}
           onIonChange={(e) => setSegment((e.detail.value as "lines" | "project") ?? "lines")}>

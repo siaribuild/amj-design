@@ -4,7 +4,7 @@
 import { useState } from "react";
 import {
   IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
-  IonBackButton, IonTextarea,
+  IonBackButton, IonTextarea, IonToolbar, IonTitle, IonButtons,
 } from "@ionic/react";
 import { chevronForward, download } from "ionicons/icons";
 import { Elevation } from "./elevation";
@@ -31,58 +31,79 @@ import { Money, mm } from "./ui";
  *
  *  This is also where rule A3's GST basis now lives — stated once, under the
  *  figure it governs, instead of eighteen times down the list. */
-export function RecordTotal() {
+
+/** D3 — the header is toolbars, not a dashboard.
+ *
+ *  "header is messed up, isn't it: back button, title, project id, price - that
+ *  is not how guidelines say it should be mobile, no?"
+ *
+ *  He is right, and the fault is structural rather than cosmetic. R1c assembled
+ *  back, ref, title, customer and total as a bespoke CSS grid INSIDE IonHeader —
+ *  a private layout wearing a standard component's name. That is the boundary
+ *  rule broken in the one place he keeps looking, and it accreted one relayed
+ *  request at a time without anyone asking whether a toolbar is where money
+ *  belongs.
+ *
+ *  The convention — iOS HIG, Material, and Ionic's own structure — is that a
+ *  toolbar is one line: `IonButtons slot="start"`, `IonTitle`, `IonButtons
+ *  slot="end"` FOR ACTIONS. A total is not an action, so it may not sit in the
+ *  end slot. Ionic's sanctioned way to carry more is a SECOND IonToolbar in the
+ *  same IonHeader, which is what this now is:
+ *
+ *    IonToolbar   [< Projects]  Wattle Grove — Lot 14
+ *    IonToolbar   OF-Q-10482 · Marchetti Constructions      $48,802.40 ex GST
+ *    IonToolbar   [ Lines · 18 ][ Project ]
+ *
+ *  Nothing here is a grid of ours. Bar 1 is start/title. Bar 2 uses the default
+ *  slot for its leading content and `slot="end"` for the figure — the component's
+ *  own API, which is the distinction that matters: extending through the
+ *  published slots, not composing a private layout inside them.
+ *
+ *  ── D1, which dissolves into this ──────────────────────────────────────────
+ *  R1c argued the title got "full width below and never truncates", while the
+ *  CSS set `text-overflow: ellipsis` three lines away. The honest fix is not to
+ *  make the claim true by wrapping — a header that grows a line on a long name
+ *  is the thing toolbars exist to prevent — it is to put each piece where its
+ *  truncation behaviour is correct:
+ *
+ *    • THE REF NEVER TRUNCATES, because it cannot: ten fixed-width characters,
+ *      on bar 2, at the leading edge. It is the identity ops reads out on a
+ *      call, so it is the piece that must always be complete, and now it
+ *      structurally is.
+ *    • THE PROJECT NAME TRUNCATES, in IonTitle, using Ionic's own ellipsis.
+ *      That is what every platform title does with a long name and it needs no
+ *      defence. The full name is never lost: the overflow sheet's header carries
+ *      `ref · title` in full and wraps.
+ *
+ *  So the claim is not deleted and not faked — the thing that must not truncate
+ *  was moved somewhere it cannot. */
+export function RecordNavBar() {
   return (
-    <div className="rec-total">
-      <Money cents={RECORD.totalCents} basis size="lg" />
-    </div>
+    <IonToolbar>
+      <IonButtons slot="start">
+        <IonBackButton defaultHref="/projects" text="Projects" />
+      </IonButtons>
+      <IonTitle>{RECORD.title}</IonTitle>
+      {/* slot="end" is deliberately empty. The record's actions live in the
+          bottom action panel, where he asked for them. A toolbar is allowed to
+          have no trailing action; it is not allowed to carry a total. */}
+    </IonToolbar>
   );
 }
 
-/** POINT 1 — the header, recomposed.
- *
- *  "you have moved the project name and introduced '<- Projects' reads
- *  disconnected to a project. Keep it on the same line."
- *
- *  Correct. R1b put back on its own bar ABOVE the identity, so the control
- *  floated with nothing to belong to and the project name lost the position it
- *  had beside the leading control — the thing he liked in the first place.
- *
- *  The composition problem is real: three elements on one 375px row. `Back to
- *  Projects` is ~86px because it must name its destination (it is the record's
- *  only navigation), the total is ~80px in the corner, and that leaves ~200px —
- *  not enough for `OF-Q-10482 - Wattle Grove — Lot 14`.
- *
- *  Solved by composing back and identity as ONE PATH rather than two competing
- *  items, and letting the long half fall to the line beneath at full width:
- *
- *      < Projects / OF-Q-10482                          $48,802.40
- *      Wattle Grove — Lot 14                                ex GST
- *      Marchetti Constructions · Ana Bianchi
- *
- *  Back is no longer a bar of its own — it is the head of the breadcrumb, so it
- *  reads as "where this project sits" rather than as a stray control. The ref,
- *  which is the identity ops actually says out loud, is on that line and never
- *  truncates. The title gets the full width below it and never truncates either,
- *  which the old single-line `ref - title` could not promise.
- *
- *  One <h1> still carries the whole identity for assistive technology; the
- *  layout is a grid and the h1 is `display: contents`, so nothing is duplicated
- *  or hidden to achieve the arrangement. IonBackButton is kept — it owns the
- *  router pop and the defaultHref — it is simply placed in this grid rather than
- *  in a toolbar of its own. */
-export function RecordHeader() {
+/** Bar 2. The identity that must stay complete, and the money — given room to be
+ *  read at 17px instead of squeezed into the ~80px an end-slot allowed. */
+export function RecordSummaryBar() {
   return (
-    <div className="rec-head">
-      <IonBackButton defaultHref="/projects" text="Projects" className="crumb-back" />
-      <span className="crumb-sep" aria-hidden="true">/</span>
-      <h1 className="rec-h1">
-        <span className="ref mono">{RECORD.ref}</span>
-        <span className="title">{RECORD.title}</span>
-      </h1>
-      <RecordTotal />
-      <p className="rec-cust">{RECORD.customer}</p>
-    </div>
+    <IonToolbar className="summarybar">
+      <div className="sb-id">
+        <span className="sb-ref mono">{RECORD.ref}</span>
+        <span className="sb-cust">{RECORD.customer}</span>
+      </div>
+      <div slot="end" className="sb-total">
+        <Money cents={RECORD.totalCents} basis size="lg" />
+      </div>
+    </IonToolbar>
   );
 }
 
