@@ -627,3 +627,154 @@ test("AC-17 a split ENTERS the ranked set — it is not a rework of a pick alrea
   const ranks = [o.rank, ...singles.map((s) => s.rank)].filter((x) => x != null).sort((a, b) => a - b);
   assert.deepEqual(ranks, ranks.map((_, i) => i + 1));
 });
+
+test("AC-18 a split is NEVER conjured to meet a thermal band", async () => {
+  // The exploit this criterion exists to close. A single awning fits the opening
+  // dimensionally but misses the band (Uw 3.6 against a 3.0 cap). A fixed lite is
+  // thermally better, so an "awning + fixed" split would average to 3.0 and meet
+  // it exactly — and if thermal could open the gate, the machine would quote a
+  // mullion nobody asked for, every time it could not otherwise comply.
+  const products = [
+    splitProduct("amj-awn", { operation: "awning", maxWidthMm: 2400, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("amj-fixed", { operation: "fixed", maxWidthMm: 2400, glasses: [glass("dg", 2.4, 0.45)] }),
+  ];
+  const opening = {
+    family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000,
+    requirements: { maxUValue: 3.0 }, externalRef: "W08",
+  };
+  const r = await selectWithSplits(opening, null, splitCtx(products));
+
+  assert.deepEqual(r.splits, [], "no split candidate exists at all");
+  assert.equal(r.selectedSplit, null);
+  assert.ok(r.selected, "the single unit is the answer");
+  assert.equal(r.selected.candidate.slug, "amj-awn");
+  // And it is honestly reported as missing the band, not quietly rescued.
+  assert.ok(["within_tolerance", "misses"].includes(r.selected.candidateOutcome.tier));
+  assert.ok(r.selected.candidateOutcome.thermal.normalisedDeviation > 0);
+});
+
+test("AC-19 a drawing instruction lets a split compete on an opening one unit fits", async () => {
+  const products = [
+    splitProduct("amj-awn", { operation: "awning", maxWidthMm: 2400 }),
+    splitProduct("amj-fixed", { operation: "fixed", maxWidthMm: 2400 }),
+  ];
+  const opening = { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, externalRef: "W09" };
+  const hint = parseSplitHint("AWNING + FIXED");
+
+  const without = await selectWithSplits(opening, null, splitCtx(products));
+  assert.deepEqual(without.splits, [], "no instruction, one unit fits ⇒ no split");
+
+  const withHint = await selectWithSplits(opening, hint, splitCtx(products));
+  assert.ok(withHint.splits.length, "the comment put a split in the running");
+  // It COMPETES — it is not automatically the answer. Both forms are ranked, and
+  // the single unit is still a live, priced, selectable candidate.
+  const single = withHint.evaluated.find((e) => e.candidate.slug === "amj-awn");
+  assert.notEqual(single.candidateOutcome.rank, null);
+  assert.equal(single.candidateOutcome.fit.fits, true);
+  const ranks = [
+    ...withHint.evaluated.map((e) => e.candidateOutcome.rank),
+    ...withHint.splits.map((s) => s.candidateOutcome.rank),
+  ].filter((x) => x != null).sort((a, b) => a - b);
+  assert.deepEqual(ranks, ranks.map((_, i) => i + 1), "one dense ranking over both forms");
+});
+
+test("AC-20 a split is priced as the SUM of its units and measured as their averaged cell", async () => {
+  // The spec's worked example: two 1 m² units at $700 and $500, Uw 3.6 and 4.4,
+  // against a 4.0 cap. The averaged cell is exactly 4.0, so the make-up MEETS a
+  // band neither of its units meets alone — which is correct, and is why the
+  // gate that decides whether a split may exist is nowhere near this arithmetic.
+  const products = [
+    splitProduct("awn-36", { operation: "awning", maxWidthMm: 1200, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("fix-44", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg", 4.4, 0.45)] }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, requirements: { maxUValue: 4.0 }, externalRef: "W10" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products, { perM2: { "awn-36": 700, "fix-44": 500 } }),
+  );
+
+  assert.ok(r.selectedSplit, "the split is the answer here");
+  const o = r.selectedSplit.candidateOutcome;
+  assert.equal(o.price.total, 1200, "the sum of its units, not one of them");
+  assert.equal(o.thermal.normalisedDeviation, 0, "the averaged cell meets the band");
+  assert.equal(o.tier, "meets");
+  assert.deepEqual(o.units.map((u) => u.productSlug), ["awn-36", "fix-44"]);
+  assert.deepEqual(o.units.map((u) => u.widthMm), [1000, 1000]);
+  // Neither unit alone meets 4.0 in the way the make-up does — the fixed lite
+  // misses it outright, and the make-up is still the honest answer.
+  assert.equal(r.selectedSplit.units.length, 2);
+});
+
+test("A2 a lite with no figure makes the whole split unknown, never thermally better", async () => {
+  // The failure this guards. `compositeAveragedUw`/`Shgc` average only the units
+  // they HAVE a figure for, so a make-up with one blank lite would report the
+  // other lite's number as the composite's — a data gap reading as a thermal
+  // advantage, and enough to beat a single unit that was honestly measured and
+  // honestly missed.
+  //
+  // Reachable exactly as production reaches it: the schedule says "double
+  // glazed", which is a HARD instruction, so the awning unit can only be built
+  // from the one double-glazed variant its product publishes — and that variant
+  // has no SHGC. The product is still offerable, because a different variant of
+  // it is fully described.
+  const products = [
+    splitProduct("awn-mix", { operation: "awning", maxWidthMm: 1200, glasses: [
+      glass("sg-good", 5.0, 0.50),          // quotable, but single-glazed
+      { ...glass("dg-blank", 3.0, 0.50), shgc: null },  // the only double glazing
+    ] }),
+    splitProduct("fix-good", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg-good", 3.0, 0.50)] }),
+    // The honest single unit: it fits, it is measured, and it MISSES the floor.
+    // Its own frame system, so it can never join the make-up and rescue it.
+    splitProduct("awn-whole", { operation: "awning", maxWidthMm: 2400, system: "sys-99",
+      glasses: [glass("dg-whole", 3.0, 0.35)] }),
+  ];
+  const r = await selectWithSplits(
+    {
+      family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000,
+      requirements: { minShgc: 0.40 },
+      scheduleRequirements: { doubleGlazed: true },
+      externalRef: "W11",
+    },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products),
+  );
+
+  assert.ok(r.splits.length, "the split candidates exist");
+  for (const split of r.splits) {
+    assert.equal(split.deviation.scalar, null, "unknown is contagious across the make-up");
+    assert.equal(split.candidateOutcome.tier, "thermal_unknown");
+    assert.equal(split.candidateOutcome.thermal.normalisedDeviation, null);
+    assert.equal(split.candidateOutcome.competing, false);
+  }
+  // Tier D sits below every measurable deviation, so the honestly-measured
+  // single unit wins even though it MISSES the requirement. A gap is not a
+  // result, and it must never out-rank one.
+  assert.ok(r.selected, "the measured single unit is the answer");
+  assert.equal(r.selected.candidate.slug, "awn-whole");
+  assert.ok(r.selected.candidateOutcome.thermal.normalisedDeviation > 0, "…and it is honestly a miss");
+  assert.equal(r.selectedSplit, null);
+});
+
+test("E15 a product appearing in both forms is two candidates, and neither is hidden", async () => {
+  const products = [
+    splitProduct("amj-awn", { operation: "awning", maxWidthMm: 2400 }),
+    splitProduct("amj-fixed", { operation: "fixed", maxWidthMm: 2400 }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, externalRef: "W12" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products),
+  );
+
+  const singleAwnings = r.evaluated.filter((e) => e.candidate.slug === "amj-awn");
+  assert.ok(singleAwnings.length, "amj-awn stands alone as a candidate");
+  assert.ok(r.splits.some((s) => s.candidateOutcome.units.some((u) => u.productSlug === "amj-awn")),
+    "…and appears again inside a make-up");
+  // Two distinct rows with distinct forms. No deduplication hides either from
+  // the reviewer, because "why not the cheaper one?" has to stay answerable.
+  const forms = [
+    ...r.evaluated.map((e) => e.candidateOutcome.form),
+    ...r.splits.map((s) => s.candidateOutcome.form),
+  ];
+  assert.ok(forms.includes("single") && forms.includes("split"));
+});
