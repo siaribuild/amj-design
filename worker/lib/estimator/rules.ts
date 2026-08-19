@@ -11,10 +11,12 @@
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 import { coerceCoherent } from "./thermal/precedence";
 
-// v2: thermal is NON-BLOCKING (a miss warns, never rejects) and requirement
-// resolution is coherence-guarded (an impossible min>max band can never zero a
-// product). See docs/estimator/thermal-selection-rework-plan.md.
-export const RULE_VERSION = "v2-thermal-nonblocking";
+// v3: energy is an OBJECTIVE, not a filter (D4, ADR 0007). The rules engine
+// eliminates on publication, operation and the schedule's glazing instruction
+// only; how nearly a candidate meets a thermal requirement is the ladder's
+// question, and it is asked in exactly one place. Requirement resolution stays
+// coherence-guarded — an impossible min>max band can never zero a product.
+export const RULE_VERSION = "v3-energy-objective";
 
 // SCAFFOLD (product compatibility, C8): `composite` has been declared and never
 // pushed since this engine was written. It is the name for "no single frame
@@ -54,6 +56,58 @@ export interface RuleOutcome {
   filters: FilterOutcome[];
 }
 
+export type DimensionRule = NonNullable<CatalogueCandidate["dimensionRule"]>;
+
+export interface FitFacts {
+  /** Can this product be asserted to serve the opening as a single unit? */
+  fits: boolean;
+  widthMm: number | null;
+  heightMm: number | null;
+  limit: {
+    minWidthMm: number | null; maxWidthMm: number | null;
+    minHeightMm: number | null; maxHeightMm: number | null;
+    maxAreaM2: number | null; maxAspectRatio: number | null;
+  } | null;
+  breached: ("width" | "height" | "area" | "aspect")[];
+}
+
+/** The ONE home for fit (design §2.2). checkDimensions renders these facts as a
+ *  filter outcome for the rules engine; the outcome builder renders the same
+ *  facts as structured detail for the ops surface. Nobody re-derives fit — that
+ *  is how the two could ever come to disagree about whether a unit is oversize.
+ *
+ *  A missing rule and an unknown opening size both read `fits: false`: neither
+ *  can be ASSERTED to fit, and the ladder never machine-selects what it cannot
+ *  assert. The rules engine still severs those two cases differently. */
+export function fitFacts(
+  opening: Pick<OpeningInput, "widthMm" | "heightMm">,
+  rule: DimensionRule | null,
+): FitFacts {
+  const w = opening.widthMm ?? null, h = opening.heightMm ?? null;
+  const limit = rule
+    ? {
+        minWidthMm: rule.minWidthMm ?? null, maxWidthMm: rule.maxWidthMm ?? null,
+        minHeightMm: rule.minHeightMm ?? null, maxHeightMm: rule.maxHeightMm ?? null,
+        maxAreaM2: rule.maxAreaM2 ?? null, maxAspectRatio: rule.maxAspectRatio ?? null,
+      }
+    : null;
+  if (!rule || !w || !h) return { fits: false, widthMm: w, heightMm: h, limit, breached: [] };
+
+  const breached: FitFacts["breached"] = [];
+  const within = (v: number, min: number | null, max: number | null) =>
+    (min == null || v >= min) && (max == null || v <= max);
+  if (!within(w, rule.minWidthMm, rule.maxWidthMm)) breached.push("width");
+  if (!within(h, rule.minHeightMm, rule.maxHeightMm)) breached.push("height");
+  // The tolerances mirror the ones checkDimensions has always applied, so a
+  // borderline opening does not change verdict depending on which caller asked.
+  if (rule.maxAreaM2 != null && (w * h) / 1_000_000 > rule.maxAreaM2 + 0.001) breached.push("area");
+  if (rule.maxAspectRatio != null) {
+    const ar = Math.max(w, h) / Math.max(1, Math.min(w, h));
+    if (ar > rule.maxAspectRatio + 0.01) breached.push("aspect");
+  }
+  return { fits: breached.length === 0, widthMm: w, heightMm: h, limit, breached };
+}
+
 function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOutcome {
   const rule = c.dimensionRule;
   const w = opening.widthMm ?? 0, h = opening.heightMm ?? 0;
@@ -78,58 +132,30 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
   return { filter: "dimensions", passed: true };
 }
 
-// Energy: returns pass + whether the satisfying variant was CERTIFIED. Absent
-// requirement ⇒ pass (no energy constraint to meet). Requirement but no perf
-// data ⇒ incomplete. Requirement met only by an estimated variant ⇒ passes but
-// NOT certified (caller downgrades the line to commercial_only_estimate).
-// SCAFFOLD WS3 (thermal rework): the no-match branch returns severity:'reject',
-// which eliminates the product and yields the empty line. Make thermal NON-BLOCKING
-// like checkDimensions: downgrade to 'warning', return the closest-band glass set
-// (never []), keep energyCertified=false, and let the line become
-// commercial_only_estimate + reviewRequired. Plan §1/§4/WS3.
-function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
-  outcome: FilterOutcome; certified: boolean; matching: PerformanceVariant[];
-} {
-  // Human-approved precedent is a conservative eligibility floor. It is not a
-  // regulatory assertion and never overrides an explicit energy report, but it
-  // must be more than a ranking hint: otherwise a cheaper, known-incompatible
-  // configuration can still win and repeat the correction that created the
-  // precedent.
-  const req = effectiveThermalRequirements(opening);
-  const maxU = req?.maxUValue ?? null, minShgc = req?.minShgc ?? null, maxShgc = req?.maxShgc ?? null;
-  if (maxU == null && minShgc == null && maxShgc == null) {
-    return {
-      outcome: { filter: "energy", passed: true },
-      certified: false,
-      matching: c.performanceVariants.filter((v) => v.published),
-    };
-  }
-  const variants = c.performanceVariants.filter((v) => v.published);
-  if (!variants.length) {
-    return { outcome: { filter: "energy", passed: false, severity: "incomplete", reason: "no published performance variant" }, certified: false, matching: [] };
-  }
-  const satisfies = (v) =>
-    (maxU == null || (v.uValue != null && v.uValue <= maxU)) &&
-    (minShgc == null || (v.shgc != null && v.shgc >= minShgc)) &&
-    (maxShgc == null || (v.shgc != null && v.shgc <= maxShgc));
-  const match = variants.filter(satisfies);
-  if (!match.length) {
-    // WS3: thermal is NON-BLOCKING. Glass is mandatory, so a band no glass meets
-    // must not eliminate the product — keep ALL published variants eligible so the
-    // ranker (graded compliance) picks the CLOSEST, and warn. Mirrors the
-    // dimensions contract: the line becomes commercial_only_estimate, never empty.
-    return {
-      outcome: { filter: "energy", passed: false, severity: "warning", reason: "no glass meets the thermal band — closest selected, confirm at review" },
-      certified: false,
-      matching: variants,
-    };
-  }
-  const certified = match.some((v) => v.certified && v.dataSource === "certified");
-  return {
-    outcome: { filter: "energy", passed: true, reason: certified ? undefined : "met by estimated (uncertified) performance data" },
-    certified,
-    matching: match,
-  };
+// checkEnergy() lived here and is GONE (D4, ADR 0007). Energy is an OBJECTIVE,
+// not a hard constraint and not a filter of any severity: the estimator meets it
+// where it can and recommends the closest where it cannot, and deciding which
+// candidate is closest belongs to exactly one module — the ladder. Its two real
+// jobs went two different ways:
+//
+//   • variant eligibility by band — ABOLISHED. Every published variant that
+//     satisfies the schedule's glazing instruction is a candidate configuration.
+//     A near-miss must stay selectable, priceable and saveable by a human
+//     (ops2 AC-3), which a filter of any severity makes impossible.
+//   • the certified determination — it moved to the exact variant, in select.ts,
+//     where it feeds LINE STATUS and nothing else. `certified` vs `estimated`
+//     never enters an ordering at any position (AC-49).
+//
+// The `energy` literal stays in FilterName so persisted history from before this
+// change still reads.
+
+// Glass is mandatory: a product with no published performance variant has no
+// configuration to sell, whatever else its record says. Reported as a catalogue
+// data gap so a reviewer is sent to the record rather than to the opening.
+function checkPerformanceData(c: CatalogueCandidate): FilterOutcome {
+  return c.performanceVariants.some((v) => v.published)
+    ? { filter: "data_completeness", passed: true }
+    : { filter: "data_completeness", passed: false, severity: "incomplete", reason: "no published performance variant" };
 }
 
 type ThermalLimits = NonNullable<OpeningInput["requirements"]>;
@@ -162,6 +188,32 @@ export function effectiveThermalRequirements(opening: OpeningInput): ThermalLimi
   const { band } = coerceCoherent({ maxUValue: merged.maxUValue ?? null, minShgc: merged.minShgc ?? null, maxShgc: merged.maxShgc ?? null, shgcTarget: null });
   if (!band) return null;
   return { maxUValue: band.maxUValue, minShgc: band.minShgc, maxShgc: band.maxShgc };
+}
+
+/** The resolved band the LADDER judges against, plus where it came from and
+ *  whether it exists at all. A thin wrapper over effectiveThermalRequirements
+ *  (which keeps owning resolution, E14/AC-16) so the ladder never has to know
+ *  how explicit and advisory requirements intersect.
+ *
+ *  A computed requirement binds selection exactly as a reported one does — only
+ *  `basis` differs (AC-10). */
+export function resolvedRequirement(opening: OpeningInput): {
+  maxUValue: number | null; minShgc: number | null; maxShgc: number | null;
+  basis: NonNullable<OpeningInput["thermalContext"]>["requirementBasis"] | null;
+  absent: boolean;
+} {
+  const req = effectiveThermalRequirements(opening);
+  const maxUValue = req?.maxUValue ?? null;
+  const minShgc = req?.minShgc ?? null;
+  const maxShgc = req?.maxShgc ?? null;
+  // Absent means "nothing to fail", which is what makes every fitting candidate
+  // tier `meets` rather than every candidate thermally unknown (AC-6, E5, E6).
+  const absent = maxUValue == null && minShgc == null && maxShgc == null;
+  return {
+    maxUValue, minShgc, maxShgc,
+    basis: absent ? null : (opening.thermalContext?.requirementBasis ?? null),
+    absent,
+  };
 }
 
 const minLimit = (a: number | null | undefined, b: number | null | undefined) =>
@@ -260,29 +312,21 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   // Dimensions.
   filters.push(checkDimensions(opening, c));
 
-  // Energy (against estimated/certified performance data).
-  const energy = checkEnergy(opening, c);
-  filters.push(energy.outcome);
+  // Glass exists at all.
+  filters.push(checkPerformanceData(c));
 
-  // Material schedule instructions (double/single glazing, Low-E and argon)
-  // constrain the same exact variant as Uw/SHGC. The intersection below prevents
-  // one variant satisfying the energy target while another satisfies the glazing
-  // instruction.
+  // Material schedule instructions (double/single glazing, Low-E) are the SOLE
+  // source of eligible variants now. A stated "double glazed" is a customer
+  // instruction, not a performance objective — satisfying it with the opposite
+  // glass is the substitution D3 forbids, so it stays a hard reject (A3, AC-11).
+  // The old thermal ∩ glazing reconciliation died with checkEnergy: there is no
+  // longer a second opinion about glass for it to reconcile with.
   const schedule = checkScheduleConfiguration(opening, c);
   filters.push(schedule.outcome);
-  const scheduleIds = new Set(schedule.matching.map((variant) => variant.variantId));
-  let eligibleVariants = energy.matching.filter((variant) => scheduleIds.has(variant.variantId));
-  if (energy.outcome.passed && schedule.outcome.passed &&
-      (energy.matching.length || schedule.matching.length) && !eligibleVariants.length) {
-    // WS3: non-blocking. When thermal and the glazing instruction cannot both be
-    // met by one variant, prefer the schedule-compatible glass and WARN rather
-    // than eliminate the product. The ranker picks the closest; review confirms.
-    eligibleVariants = schedule.matching.length ? schedule.matching : energy.matching;
-    filters.push({
-      filter: "schedule_configuration", passed: false, severity: "warning",
-      reason: "no single variant meets both the thermal and glazing requirement — closest selected, confirm at review",
-    });
-  }
+  const eligibleVariants = schedule.matching;
+  // Line status only, never ordering (AC-49): an energy requirement backed by no
+  // certified variant can produce an estimate but never a compliance claim.
+  const energyCertified = eligibleVariants.some((v) => v.certified && v.dataSource === "certified");
 
 
   const rejected = filters.some((f) => !f.passed && f.severity === "reject");
@@ -298,7 +342,7 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   else if (incomplete) { status = "catalogue_data_incomplete"; passed = false; }
   else if (review) { status = "needs_manual_review"; passed = false; }
   else if (warned) { status = "commercial_only_estimate"; passed = true; }
-  else if (energyHadRequirement(opening) && !energy.certified) { status = "commercial_only_estimate"; passed = true; }
+  else if (energyHadRequirement(opening) && !energyCertified) { status = "commercial_only_estimate"; passed = true; }
   else { status = "ready"; passed = true; }
 
   return {
@@ -306,7 +350,7 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
     ruleVersion,
     passed,
     status,
-    energyCertified: energy.certified,
+    energyCertified,
     eligibleVariantIds: eligibleVariants.map((v) => v.variantId),
     filters,
   };

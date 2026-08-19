@@ -15,7 +15,7 @@ await build({
   stdin: {
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability } from ${p("worker/lib/estimator/catalogue.ts")};
-      export { checkHardRules, RULE_VERSION, effectiveThermalRequirements } from ${p("worker/lib/estimator/rules.ts")};
+      export { checkHardRules, RULE_VERSION, effectiveThermalRequirements, fitFacts, resolvedRequirement } from ${p("worker/lib/estimator/rules.ts")};
       export { gradedComplianceScore } from ${p("worker/lib/estimator/thermal/compliance.ts")};
       export { computePrice, loadOptionSurcharges, createCachedPriceResolver } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
@@ -28,7 +28,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability, checkHardRules, RULE_VERSION, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore, fitFacts, resolvedRequirement } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 // depositPercent is gone from PricingPolicy (0043) — deposit is always
@@ -72,6 +72,83 @@ test("operation + dimensions: in-range awning is READY, out-of-range is WARNED (
   assert.match(dim.reason, /composite\/custom/i);
 });
 
+test("fitFacts is the ONE home for whether a candidate serves the opening", () => {
+  const rule = cand().dimensionRule;
+  const ok = fitFacts({ widthMm: 800, heightMm: 1200 }, rule);
+  assert.equal(ok.fits, true);
+  assert.deepEqual(ok.breached, []);
+  assert.equal(ok.limit.maxWidthMm, 1000);
+
+  // Every breached axis is named, not just the first one found.
+  const wide = fitFacts({ widthMm: 1400, heightMm: 1200 }, rule);
+  assert.equal(wide.fits, false);
+  assert.deepEqual(wide.breached, ["width"]);
+
+  // Area is its own limit, independent of the width and height ranges.
+  const area = fitFacts({ widthMm: 1000, heightMm: 2400 }, { ...rule, maxAreaM2: 1.5 });
+  assert.equal(area.fits, false);
+  assert.deepEqual(area.breached, ["area"]);
+  // …and at exactly the cap it still fits.
+  assert.equal(fitFacts({ widthMm: 1000, heightMm: 2400 }, rule).fits, true);
+
+  const aspect = fitFacts({ widthMm: 400, heightMm: 2400 }, rule);
+  assert.deepEqual(aspect.breached, ["aspect"]);
+
+  // No rule and unknown size are both "cannot be asserted to fit", with the
+  // limits reported as far as they are known.
+  assert.equal(fitFacts({ widthMm: 800, heightMm: 1200 }, null).fits, false);
+  assert.equal(fitFacts({ widthMm: 800, heightMm: 1200 }, null).limit, null);
+  assert.equal(fitFacts({ widthMm: null, heightMm: null }, rule).fits, false);
+
+  // AD5: checkDimensions keeps its `warning` severity so the ops line-revalidation
+  // surface still lists configurations for an existing oversize line. Fit HARDNESS
+  // is applied by the ladder, not by re-severing this filter — two questions, one
+  // fit-fact home.
+  const dim = checkHardRules({ family: "window", operationType: "awning", widthMm: 1400, heightMm: 1200 }, cand())
+    .filters.find((f) => f.filter === "dimensions");
+  assert.equal(dim.severity, "warning");
+});
+
+test("resolvedRequirement carries the band, its basis and whether there is one", () => {
+  const none = resolvedRequirement({ family: "window", operationType: "awning" });
+  assert.equal(none.absent, true);
+  assert.equal(none.maxUValue, null);
+  assert.equal(none.basis, null);
+
+  const explicit = resolvedRequirement({
+    requirements: { maxUValue: 4.0, minShgc: 0.3 },
+    thermalContext: { requirementBasis: "explicit_energy_report" },
+  });
+  assert.equal(explicit.absent, false);
+  assert.equal(explicit.maxUValue, 4.0);
+  assert.equal(explicit.minShgc, 0.3);
+  assert.equal(explicit.basis, "explicit_energy_report");
+
+  // AC-10: a COMPUTED requirement is as real as a reported one. Only the basis
+  // differs; the band the ladder judges against is identical.
+  const computed = resolvedRequirement({
+    requirements: { maxUValue: 4.0, minShgc: 0.3 },
+    thermalContext: { requirementBasis: "plan_derived" },
+  });
+  assert.equal(computed.basis, "plan_derived");
+  assert.equal(computed.maxUValue, explicit.maxUValue);
+  assert.equal(computed.minShgc, explicit.minShgc);
+  assert.equal(computed.absent, explicit.absent);
+
+  // AC-16/E6: an impossible band is coerced, and where coercion leaves nothing
+  // the opening has NO requirement — it must never zero every product.
+  const impossible = resolvedRequirement({ requirements: { minShgc: 0.5, maxShgc: 0.41 } });
+  assert.equal(impossible.absent, true);
+  assert.equal(impossible.minShgc, null);
+});
+
+test("AD16 RULE_VERSION names the model that produced a run", () => {
+  // Behaviour changed, so runs must be attributable: a persisted outcome from
+  // before energy became an objective must not read as one from after.
+  assert.equal(RULE_VERSION, "v3-energy-objective");
+  assert.equal(checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200 }, cand()).ruleVersion, "v3-energy-objective");
+});
+
 test("wrong operation is rejected", () => {
   const r = checkHardRules({ family: "window", operationType: "sliding", widthMm: 800, heightMm: 1200 }, cand());
   assert.equal(r.passed, false);
@@ -85,15 +162,20 @@ test("SAFETY: an energy requirement met only by ESTIMATED data ⇒ commercial_on
   assert.equal(r.energyCertified, false);
 });
 
-test("energy requirement the product cannot meet WARNS but still assigns a product (non-blocking)", () => {
-  // WS3: thermal is non-blocking. Glass is mandatory, so a band no glass meets
-  // must not eliminate the product — it warns and assigns the closest glass.
+test("D4 energy is an OBJECTIVE: the rules engine emits no energy filter at all", () => {
+  // The band a product cannot meet is no longer a rules verdict of any severity
+  // — not reject, not warning. Every published variant that satisfies the
+  // schedule's glazing instruction is a candidate configuration, and the LADDER
+  // tiers the ones that miss. Two sources of truth about thermal is exactly the
+  // problem the ladder exists to kill.
   const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 2.0 } }, cand());
   assert.equal(r.passed, true, "thermal never eliminates a product");
-  assert.equal(r.status, "commercial_only_estimate");
-  assert.ok(r.filters.find((f) => f.filter === "energy" && f.severity === "warning"));
+  assert.equal(r.filters.find((f) => f.filter === "energy"), undefined, "no energy filter is emitted");
   assert.equal(r.energyCertified, false);
-  assert.ok(r.eligibleVariantIds.length > 0, "a glass is still eligible (closest)");
+  assert.deepEqual(r.eligibleVariantIds, ["std"], "every published variant stays eligible");
+  // The line is still an indicative estimate, because nothing certified backs
+  // the requirement — that downgrade is line STATUS and it survives (AC-49).
+  assert.equal(r.status, "commercial_only_estimate");
 });
 
 test("energy requirement with NO performance data ⇒ catalogue_data_incomplete (never a guess)", () => {
@@ -185,9 +267,22 @@ test("human-approved thermal precedent is a conservative eligibility floor, not 
     advisoryRequirements: { maxUValue: 2.8 },
     thermalContext: { requirementBasis: "human_override" },
   }, configurations);
-  assert.deepEqual(learned.eligibleVariantIds, ["improved"]);
+  // E14/D4: the precedent is still RESOLVED into the effective requirement — it
+  // is a real requirement, and the ladder judges every candidate against it. It
+  // no longer culls the eligible set, because a near-miss must stay selectable.
+  assert.deepEqual(learned.eligibleVariantIds, ["standard", "improved"]);
   assert.equal(learned.energyCertified, false);
+  assert.equal(effectiveThermalRequirements({
+    advisoryRequirements: { maxUValue: 2.8 },
+    thermalContext: { requirementBasis: "human_override" },
+  }).maxUValue, 2.8, "the precedent binds selection through the resolved band");
 
+  // An explicit energy report still wins outright over the advisory band.
+  assert.equal(effectiveThermalRequirements({
+    requirements: { maxUValue: 4.0 },
+    advisoryRequirements: { maxUValue: 2.0 },
+    thermalContext: { requirementBasis: "explicit_energy_report" },
+  }).maxUValue, 4.0);
   const explicitWins = checkHardRules({
     family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
     requirements: { maxUValue: 4.0 },
