@@ -119,3 +119,86 @@ test("a cold visitor signs up on /trade-account with an ABN and lands verified",
   await expect(page.getByText(/trade pricing applies to your account/i)).toBeVisible({ timeout: 15_000 });
   await expectNoPercentage(page, "/trade-account after auto-pass");
 });
+
+// ─── 2. A gmail sole trader queues, and the account still works ───────────────
+// AC-P2-6/23 + §18.0 rules 2 and 3. The load-bearing ABSENCES: no timeframe is
+// promised anywhere, and the customer is never told WHICH criterion failed. Two
+// applications queued for different reasons must produce identical screens, so
+// "your email domain didn't match" can never appear — the person would then know
+// the ABN and the name were fine, which is exactly the oracle P2-A3 forbids.
+test("a gmail applicant is put under review, with no reason and no timeframe", async ({ page }) => {
+  const business = SPARE(1);
+  // Everything about this application is good EXCEPT criterion 3.
+  const email = `sam-${stamp}-${seq++}@gmail.com`;
+
+  await page.goto("/trade-account");
+  await page.getByLabel("Business name").fill(business.businessName);
+  await page.getByLabel("ABN").fill(business.abn);
+  await otpSignIn(page, email);
+
+  const card = page.getByTestId("trade-application-card");
+  await expect(card.getByText(/we're checking your abn/i)).toBeVisible({ timeout: 15_000 });
+
+  const said = (await card.innerText()).replace(/\s+/g, " ");
+  // No turnaround, in any spelling — "we'll be in touch" is the whole promise (Q2).
+  expect(said, "no turnaround is promised")
+    .not.toMatch(/business day|within \d|\d+ hours|usually takes|by tomorrow|shortly/i);
+  // No criterion is named, and no register verdict is quoted (P2-A3).
+  expect(said, "the failing criterion is never named")
+    .not.toMatch(/gmail|free (e-?mail|mail)|domain|didn't match|mismatch|not active|cancelled/i);
+  await expectNoPercentage(page, "/trade-account under review");
+
+  // The account WORKS meanwhile: a queued application is not a locked account.
+  const me = await page.request.get("/api/auth/me");
+  const body = await me.json();
+  expect(body.authenticated, "a queued applicant is signed in and usable").toBe(true);
+  expect(body.trade.pending?.abn, "the pending application holds the submitted ABN").toBe(business.abn);
+  expect(body.trade.verified, "queued is not verified").toBe(false);
+});
+
+/** The stub the web harness booted, same default the harness uses. Its hit log
+ *  is an ASSERTION SURFACE: "this journey made no ABR call" is an acceptance
+ *  criterion, and reading the counter proves it rather than inferring it. */
+const ABR_BASE = process.env.ABR_BASE_URL ?? "http://127.0.0.1:8789";
+async function abrCallsFor(abn: string): Promise<number> {
+  const res = await fetch(`${ABR_BASE}/__hits`);
+  expect(res.ok, `the ABR stub answers on ${ABR_BASE} — the web harness must boot it`).toBeTruthy();
+  return ((await res.json()) as { abn: string }[]).filter((h) => h.abn === abn).length;
+}
+
+// ─── 3. A checksum-invalid ABN never reaches the register ─────────────────────
+// AC-P2-7. This is the assertion the node suite cannot make about a CLIENT field
+// check: the browser refuses a transposed digit with zero round trips, so no
+// application row is created and the register is never asked. A field error is
+// exactly like a malformed phone — nothing to reject, because nothing was made.
+test("a checksum-invalid ABN is refused in the browser, costing the register nothing", async ({ page }) => {
+  const bad = "12345678901";           // checksum-invalid by construction
+  const before = await abrCallsFor(bad);
+  const email = freshEmail("badsum");
+
+  await page.goto("/trade-account");
+  await page.getByLabel("Business name").fill("Nowhere Joinery");
+  await page.getByLabel("ABN").fill(bad);
+
+  // Refused before any network call — the message is on screen while still anonymous.
+  const card = page.getByTestId("trade-application-card");
+  await expect(card.getByText(/that abn doesn't look right/i)).toBeVisible();
+
+  await otpSignIn(page, email);
+  // Wait for the SIGNED-IN card before reading the session. Without this the
+  // assertions below race the verify round trip and read an anonymous /me — a
+  // failure that looks like a broken sign-in rather than a slow one.
+  await expect(card.getByRole("button", { name: /check my abn/i }))
+    .toBeVisible({ timeout: 15_000 });
+
+  expect(await abrCallsFor(bad) - before,
+    "a failed checksum costs the register nothing (AC-P2-7)").toBe(0);
+
+  // Signed in, and NO application exists: the ABN was simply never sent. The
+  // person has an ordinary private account, exactly as Phase 1 shipped it.
+  const body = await (await page.request.get("/api/auth/me")).json();
+  expect(body.authenticated, "the sign-in still succeeded — the ABN was optional").toBe(true);
+  expect(body.trade.verified, "no grant from a malformed ABN").toBe(false);
+  expect(body.trade.pending, "no pending application from a malformed ABN").toBeNull();
+  expect(body.trade.history, "and nothing in the ledger at all").toEqual([]);
+});
