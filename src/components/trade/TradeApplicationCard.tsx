@@ -55,13 +55,27 @@ function Pill({ tone, children }: { tone: "positive" | "work" | "mute"; children
 }
 
 export function TradeApplicationCard({
-  user, trade, source, onAuthed, onTradeChanged,
+  user, trade, source, onAuthed, onTradeChanged, revealed, heading, subcopy, bare,
 }: {
   user: { company?: string } | null;
   trade: TradeStateDto | null;
-  source: "trade_page" | "profile";
+  source: "trade_page" | "profile" | "login";
   onAuthed?: (u: AuthUserDto) => void;
   onTradeChanged?: () => void;
+  /** Does the optional group arrive OPEN?
+   *
+   *  True on `/trade-account`, where the visitor came specifically to hand over
+   *  an ABN (P2-UX-10). False on `/login`, where most people signing in have no
+   *  ABN at all and a pair of business fields in their face would read as a
+   *  demand — the owner's directive is that the option be PRESENTED, not that it
+   *  be unavoidable. */
+  revealed?: boolean;
+  /** The host's own sign-in copy, when the card is standing in for a bare
+   *  `OtpSignIn` on a page that already has its own voice. */
+  heading?: string;
+  subcopy?: string;
+  /** The host already draws a card; do not draw a second one inside it. */
+  bare?: boolean;
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -78,6 +92,7 @@ export function TradeApplicationCard({
    *  ABN really does change. So the fact is displayed, and changing it is a
    *  deliberate act behind an affordance rather than a text cursor. */
   const [reapplying, setReapplying] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(revealed ?? true);
 
   // AC-P2-8: the account's business name is already known, so it is already in
   // the field.
@@ -187,35 +202,52 @@ export function TradeApplicationCard({
   // ── Door (a), cold. The ORDINARY signup, with the optional group mounted
   //    inside step 1 — not a second registration flow (owner ruling, §18.2).
   if (!user) {
-    return (
-      <div className="card p-6" data-testid="trade-application-card">
+    const anonymous = (
+      <>
         <OtpSignIn
-          heading="Sign in or create your account"
-          subcopy="We'll email you a 6-digit code — no password. If you don't have an account yet, this creates one."
+          heading={heading ?? "Sign in or create your account"}
+          subcopy={subcopy ?? "We'll email you a 6-digit code — no password. If you don't have an account yet, this creates one."}
           onAuthed={(u) => {
             onAuthed?.(u);
             // The fork, and the ONLY one: an ABN was entered, so verification
             // runs now that a session exists. Nothing was entered ⇒ an ordinary
             // private account, exactly as Phase 1 shipped it.
-            if (abnValid(normalizeAbn(draft.abn)) && draft.businessName.trim()) void submit();
+            if (groupOpen && abnValid(normalizeAbn(draft.abn)) && draft.businessName.trim()) void submit();
           }}
-          emailStepBlocked={blocked}
+          emailStepBlocked={groupOpen && blocked}
           emailStepExtra={
             <div className="border-t border-line pt-4 space-y-3">
-              <div>
-                <p className="text-quiet t-label">Your business (optional)</p>
-                <p className="text-body mt-1 t-cap">
-                  Add your ABN and we'll check it against the Australian Business Register as soon
-                  as you're signed in. If it checks out, trade pricing is on your account straight
-                  away. You can also add it later from your account.
-                </p>
-              </div>
-              {fields}
+              {groupOpen ? (
+                <>
+                  <div>
+                    <p className="text-quiet t-label">Your business (optional)</p>
+                    <p className="text-body mt-1 t-cap">
+                      Add your ABN and we'll check it against the Australian Business Register as
+                      soon as you're signed in. If it checks out, trade pricing is on your account
+                      straight away. You can also add it later from your account.
+                    </p>
+                  </div>
+                  {fields}
+                </>
+              ) : (
+                // PRESENTED, not imposed. The owner's directive is that a tradie
+                // must not have to hunt for where to put an ABN; it is not that
+                // every private customer signing in should be asked for one.
+                <button type="button" onClick={() => setGroupOpen(true)}
+                  className="text-body hover:text-ink underline underline-offset-2 text-left cursor-pointer t-cap">
+                  Have an ABN? Add it now for trade pricing
+                </button>
+              )}
             </div>
           }
         />
-      </div>
+      </>
     );
+    // `bare` drops the card CHROME, never the marker — the host already draws a
+    // card, but "is the shared flow on this page?" must stay answerable.
+    return bare
+      ? <div data-testid="trade-application-card">{anonymous}</div>
+      : <div className="card p-6" data-testid="trade-application-card">{anonymous}</div>;
   }
 
   // ── Signed in. The two live facts render as their own BLOCKS, in order, and

@@ -1300,7 +1300,23 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
         </div>
         <div className="group relative card p-6 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
-          <OtpSignIn
+          {/* THE SAME COMPONENT the trade page and the submit gate use, with the
+              same optional group — collapsed here, because most people signing
+              in are not tradies.
+
+              Owner directive, 2026-08-20: "the option for ABN must be
+              presented. Trade users are our key target group, they should not
+              wander around the site looking for place to enter their ABN."
+              P2-D2/D3 named three entry points where ABN capture MUST exist;
+              that was a floor, not a ceiling, and this is the most-pressed door
+              on the site. A tradie signing in from the header used to land as a
+              private account and then have to go and find the account page. */}
+          <TradeApplicationCard
+            user={null}
+            trade={null}
+            source="login"
+            revealed={false}
+            bare
             heading={OTP_COPY.login.heading}
             subcopy={OTP_COPY.login.subcopy}
             onAuthed={(u) => {

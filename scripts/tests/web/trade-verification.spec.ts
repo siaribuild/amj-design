@@ -709,3 +709,34 @@ test("the referral payout form prefills a verified account's ABN (AC-P2-54)", as
   await expect(abnField, "AC-P2-54: and it already holds the account's own")
     .toHaveValue(new RegExp(business.abn));
 });
+
+// ─── 15. The ABN option travels with the flow, including /login ──────────────
+// Owner directive, 2026-08-20: "the option for ABN must be presented. Trade
+// users are our key target group, they should not wander around the site
+// looking for place to enter their ABN to get better prices."
+//
+// P2-D2/D3 named three entry points where ABN capture MUST exist. That is a
+// floor, not a ceiling — it was never a ruling that those are the only places,
+// and /login is the most-pressed door on the site. A tradie who signs in from
+// the header used to become a private account and then had to go and find the
+// account page.
+//
+// Collapsed rather than revealed here (P2-UX-10): most people signing in are
+// not tradies, and the group arrives already open only on /trade-account, where
+// the visitor came specifically to hand over an ABN.
+test("the sign-in page offers the optional ABN group (owner directive)", async ({ page }) => {
+  await page.goto("/login");
+
+  const card = page.getByTestId("trade-application-card");
+  await expect(card, "the sign-in page carries the shared flow").toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel("Email"), "and it is still the ordinary sign-in").toBeVisible();
+
+  // Presented, but not in the face of the majority who have no ABN.
+  const reveal = card.getByRole("button", { name: /have an abn/i });
+  await expect(reveal, "the option is visible without hunting for it").toBeVisible();
+  await expect(card.getByLabel("ABN"), "and closed until asked for").toHaveCount(0);
+
+  await reveal.click();
+  await expect(card.getByLabel("ABN"), "opening it gives the same two fields").toBeVisible();
+  await expect(card.getByLabel("Business name")).toBeVisible();
+});

@@ -37,6 +37,7 @@ const SOURCE_LABEL: Record<string, string> = {
   trade_page: "Trade page",
   profile: "Account page",
   submit_gate: "Submit gate",
+  login: "Sign-in",
   migration: "Grandfathered",
 };
 

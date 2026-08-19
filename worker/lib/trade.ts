@@ -124,7 +124,14 @@ export type ApplyResult =
            | "forbidden" | "application_pending" | "rate_limited";
     };
 
-export type TradeSource = "trade_page" | "profile" | "submit_gate";
+/** Where the application was made. Telemetry for ops, never a rule — the engine
+ *  treats every source identically, which is what makes AC-P2-10's "no
+ *  behavioural difference attributable to the entry point" structural.
+ *
+ *  `login` was added on the owner's directive (2026-08-20): the ABN option
+ *  travels with the flow wherever the flow appears, and the sign-in page is the
+ *  most-pressed door on the site. */
+export type TradeSource = "trade_page" | "profile" | "submit_gate" | "login";
 
 interface ApplicationRow {
   id: string;

@@ -18,7 +18,7 @@ import { applyForTrade, type TradeSource } from "../lib/trade";
 
 export const trade = new Hono<{ Bindings: Env }>();
 
-const SOURCES: readonly TradeSource[] = ["trade_page", "profile", "submit_gate"];
+const SOURCES: readonly TradeSource[] = ["trade_page", "profile", "submit_gate", "login"];
 
 // POST /api/trade/application { abn, businessName, source? }
 //
