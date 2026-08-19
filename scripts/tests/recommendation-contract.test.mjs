@@ -232,3 +232,35 @@ test("A17/AC-4 the price delta's sign is fixed, and the tolerance is stamped on 
   assert.equal(result.selection.openingRef, "W09");
   assert.deepEqual(result.selection.withheldIncomplete, []);
 });
+
+test("AC-58 the corpus reset is a SCOPED delete that cannot cascade", async () => {
+  const sql = (await readFile(join(projectRoot, "migrations/0056_learning_retrieval_and_provenance.sql"), "utf8"))
+    .split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+
+  // The reset targets the learning corpus and only the learning corpus.
+  // `pending` and `rejected` rows are immutable audit records the platform
+  // promised to keep, and a bare DELETE would take them too.
+  const deletes = [...sql.matchAll(/DELETE\s+FROM\s+(\w+)([\s\S]*?);/gi)];
+  assert.equal(deletes.length, 1, "exactly one delete");
+  assert.equal(deletes[0][1], "recommendation_outcome");
+  assert.match(deletes[0][2], /WHERE\s+recommendation_eligible\s*=\s*1\s+AND\s+quality_state\s*=\s*'approved'/i);
+
+  // And it cannot cascade, because nothing in the schema references the table.
+  // Asserted against the migrations rather than trusted from a comment: a future
+  // child table with ON DELETE CASCADE would make this statement destructive
+  // somewhere nobody was looking.
+  const referencers = [];
+  for (const file of await readdir(join(projectRoot, "migrations"))) {
+    if (!file.endsWith(".sql")) continue;
+    // Comments are where a cascade audit gets WRITTEN DOWN, and a migration
+    // that says "grep found no referencers" would otherwise report itself.
+    const text = (await readFile(join(projectRoot, "migrations", file), "utf8"))
+      .split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+    if (/REFERENCES\s+recommendation_outcome/i.test(text)) referencers.push(file);
+  }
+  assert.deepEqual(referencers, [], "recommendation_outcome has no child referencers");
+
+  // Provenance defaults, so no surviving row can predate the column unset.
+  assert.match(sql, /ADD COLUMN provenance TEXT NOT NULL DEFAULT 'in_platform'/);
+  assert.match(sql, /CHECK \(provenance IN \('in_platform','backfilled'\)\)/);
+});
