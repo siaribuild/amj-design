@@ -272,3 +272,117 @@ W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
 });
 
 test.after(() => removeRunDir(runDir));
+
+// ── The anonymous matcher picks the cheapest that fits (D6) ─────────────────
+//
+// `WINDOW_SERIES_BIAS` / `DOOR_SERIES_BIAS` were slug-prefix inference deciding
+// which product a visitor is quoted — the exact rule
+// docs/product-compatibility-design.md §1.1 refuses, on the grounds that a rule
+// right nine times and silently wrong twice is worse than no rule. They survive
+// as the deterministic FALLBACK and the final tiebreak; they stop being the
+// decision.
+
+/** Price by slug, and count the calls so memoisation can be asserted. */
+const pricerOver = (bySlug, fallback = 1000) => {
+  const calls = [];
+  const priceOf = (product, widthMm, heightMm) => {
+    calls.push(`${product.slug}@${widthMm}x${heightMm}`);
+    return bySlug[product.slug] ?? fallback;
+  };
+  return { priceOf, calls };
+};
+
+const rowFor = (typeText, widthMm, heightMm) =>
+  ({ tag: "W1", section: "window", typeText, widthMm, heightMm, qty: 1 });
+
+
+test("AC-37 the cheapest fitting product wins, whatever the bias order says", () => {
+  // Five awning frames all fit 850 × 2057. The bias order puts amj80 first and
+  // amj150 last; the rate card says amj150 is the cheapest thing that fits.
+  const { priceOf } = pricerOver({ "amj150-series-awning-window": 400 });
+  const [line] = matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf });
+  assert.equal(line.productSlug, "amj150-series-awning-window");
+
+  // Move the money and the pick moves with it — the ordering is the rate card's,
+  // not a slug's position in a list.
+  const cheapMid = pricerOver({ "amj100l-series-awning-window": 400 });
+  assert.equal(matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf: cheapMid.priceOf })[0].productSlug,
+    "amj100l-series-awning-window");
+});
+
+test("AC-38 fit is still the filter — a cheaper product that does not fit is not picked", () => {
+  // 1,250 mm wide: only the amj100t frames are made that wide. amj80 is the
+  // cheapest product in the family and is not a candidate, because being cheap
+  // has never been a reason to quote something that is not manufactured.
+  const { priceOf } = pricerOver({ "amj80-series-awning-window": 1, "amj150-series-awning-window": 2 }, 5000);
+  const [line] = matchSchedule([rowFor("AWNING", 1250, 2000)], { priceOf });
+  assert.match(line.productSlug, /^amj100t/);
+  assert.ok(!line.review?.fit, "it genuinely fits, so there is no indicative-price warning");
+});
+
+test("AC-39 with no pricer the bias order stands, exactly as before", () => {
+  // The live client path: App.tsx renders the sample schedule with no pricing
+  // engine in the browser. This is a real branch, not a defensive one.
+  const [line] = matchSchedule([rowFor("AWNING", 850, 2057)]);
+  assert.equal(line.productSlug, "amj80-series-awning-window");
+  // …and an injected pricer that can price NOTHING falls back to the same order
+  // rather than picking arbitrarily.
+  const blind = matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf: () => null })[0];
+  assert.equal(blind.productSlug, "amj80-series-awning-window");
+  // A6's posture, carried onto this path: a rate-card gap that computes zero is
+  // not a cheap product.
+  const zero = matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf: () => 0 })[0];
+  assert.equal(zero.productSlug, "amj80-series-awning-window");
+});
+
+test("A6 a $0 or negative rate-card gap is not the cheapest product", () => {
+  // The uniform-zero case above is not the dangerous one: it degrades to the
+  // bias order by accident. THIS is the dangerous one — a single product whose
+  // rate card computes nothing, sitting beside four that price properly. It
+  // would win every comparison on price and quote a visitor $0 for a window.
+  const { priceOf } = pricerOver({ "amj150-series-awning-window": 0, "amj100t-awning-window": -50 }, 900);
+  const [line] = matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf });
+  assert.ok(!["amj150-series-awning-window", "amj100t-awning-window"].includes(line.productSlug),
+    `an unpriceable product was picked: ${line.productSlug}`);
+  // The cheapest REAL price wins instead.
+  const withReal = pricerOver({ "amj150-series-awning-window": 0, "amj100l-series-awning-window": 400 }, 900);
+  assert.equal(matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf: withReal.priceOf })[0].productSlug,
+    "amj100l-series-awning-window");
+  // A NaN is not a price either — it compares false against everything and would
+  // silently leave the pick wherever it started.
+  const nan = pricerOver({ "amj150-series-awning-window": Number.NaN }, 900);
+  assert.equal(matchSchedule([rowFor("AWNING", 850, 2057)], { priceOf: nan.priceOf })[0].productSlug,
+    "amj80-series-awning-window", "the bias order holds when nothing is genuinely cheaper");
+});
+
+test("AC-40 the nothing-fits branch is untouched", () => {
+  // 5,000 mm wide: no awning frame is made at that size. The largest-capacity
+  // unit still comes back, priced at the REAL opening dimensions, with the
+  // indicative-price warning — that promise predates this change and survives it.
+  const { priceOf } = pricerOver({ "amj80-series-awning-window": 1 });
+  const [line] = matchSchedule([rowFor("AWNING", 5000, 2000)], { priceOf });
+  assert.match(line.productSlug, /^amj100t/, "the largest capacity, not the cheapest");
+  assert.match(line.review.fit, /Indicative price only/);
+
+  // And with no dimensions at all it is the bias order, pricer or not: there is
+  // nothing to price against.
+  const [noDims] = matchSchedule([rowFor("AWNING", 0, 0)], { priceOf });
+  assert.equal(noDims.productSlug, "amj80-series-awning-window");
+});
+
+test("AC-41 pricing is memoised per (family, section, size), not per row × product", () => {
+  // A 50-row schedule across a handful of families must not turn into hundreds
+  // of price computations. The bound is distinct (family, size) combinations.
+  const { priceOf, calls } = pricerOver({});
+  const rows = [];
+  for (let i = 0; i < 25; i++) {
+    rows.push(rowFor("AWNING", 850, 2057));
+    rows.push(rowFor("AWNING", 900, 1200));
+  }
+  const lines = matchSchedule(rows, { priceOf });
+  assert.equal(lines.length, 50);
+
+  // Two distinct sizes in one family, five products in it: ten lookups, not 250.
+  assert.equal(calls.length, 10, calls.join(" "));
+  assert.equal(new Set(calls).size, 10, "and every lookup asked a different question");
+});

@@ -92,25 +92,66 @@ function biasIndex(slug: string, bias: string[]): number {
   return i === -1 ? bias.length : i;
 }
 
-// Choose a product in a family for the given size. Prefer one whose range actually
-// contains the opening (series-biased). When NONE fits, still return the BEST FIT
+/** Price one product at one opening size. Injected rather than imported: this
+ *  module is pure and synchronous, and pricing's single home is D1's
+ *  `computePrice`. The Worker supplies the lookup; the browser has none, and
+ *  does not get a second engine to compensate.
+ *
+ *  Compared on BASE rate-card totals — there is no account on this path, and a
+ *  uniform account discount cannot reorder a list anyway, so list-price order is
+ *  the same order for everyone (AD11). */
+export type SchedulePriceLookup = (product: Product, widthMm: number, heightMm: number) => number | null;
+
+// Choose a product in a family for the given size: the CHEAPEST one whose range
+// actually contains the opening. When NONE fits, still return the BEST FIT
 // (largest capacity) so the line carries an indicative price — but mark it
 // `fits:false` so the caller raises a WARNING: no standard unit is made at this
 // size, we design a composite/custom one and confirm the final price. Pricing
 // uses the REAL opening dimensions, never the product's max, so the estimate
 // reflects the true size instead of silently under-quoting.
-function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean } {
+function pickProduct(
+  familySlug: string,
+  section: ScheduleSection,
+  w: number,
+  h: number,
+  priceOf?: SchedulePriceLookup,
+): { product?: Product; fits: boolean } {
   const products = getProductsByFamily(familySlug);
   if (!products.length) return { fits: false };
   const bias = section === "window" ? WINDOW_SERIES_BIAS : DOOR_SERIES_BIAS;
   const byBias = (list: Product[]) => [...list].sort((a, b) => biasIndex(a.slug, bias) - biasIndex(b.slug, bias));
   if (w > 0 && h > 0) {
     const fitting = products.filter((p) => inRange(p, w, h));
-    if (fitting.length) return { product: byBias(fitting)[0], fits: true };
+    // THE CHEAPEST ONE THAT FITS (D6). The series bias used to BE the decision,
+    // and that was slug-prefix inference deciding what a visitor is quoted — the
+    // exact rule docs/product-compatibility-design.md §1.1 refuses, because a
+    // rule right nine times and silently wrong twice is worse than no rule. The
+    // list is handed over already in bias order, so with no pricer, and between
+    // products that price identically, the answer is exactly what it was.
+    if (fitting.length) return { product: cheapestOf(byBias(fitting), w, h, priceOf), fits: true };
     // Nothing fits: best fit = the largest-capacity unit in the family.
     return { product: [...products].sort((a, b) => areaCap(b) - areaCap(a))[0], fits: false };
   }
   return { product: byBias(products)[0], fits: false };
+}
+
+/** The cheapest of an ALREADY BIAS-ORDERED list. Strictly cheaper wins, so a tie
+ *  keeps the incoming order — a coin flip between equal prices would make the
+ *  same schedule match differently on different days. */
+function cheapestOf(ordered: Product[], w: number, h: number, priceOf?: SchedulePriceLookup): Product {
+  if (!priceOf) return ordered[0];
+  let best = ordered[0];
+  let bestPrice = Infinity;
+  for (const product of ordered) {
+    const price = priceOf(product, w, h);
+    // A price that is missing, not a number, or not POSITIVE is not a price
+    // (spec A6). A rate-card gap computing $0 would otherwise win every
+    // comparison and quote a visitor nothing for a window — and a negative or
+    // NaN would corrupt the comparison itself.
+    if (price == null || !Number.isFinite(price) || price <= 0) continue;
+    if (price < bestPrice) { best = product; bestPrice = price; }
+  }
+  return best;
 }
 
 // Catalogue-authored aliases: a family may declare the alternative names
@@ -157,9 +198,25 @@ const pad2 = (s: string) => {
 };
 
 /** Map extracted schedule rows to estimator draft lines (faithful + flagged). */
-export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
+export function matchSchedule(
+  rows: RawScheduleRow[],
+  opts?: { priceOf?: SchedulePriceLookup },
+): ParsedLine[] {
   const used = new Set<string>();
   const out: ParsedLine[] = [];
+  // The pick is a pure function of (family, section, size), and a real schedule
+  // repeats those constantly — a house has eight identical bedroom awnings. Left
+  // unmemoised, a 50-row schedule across five families asks the pricing engine
+  // rows × products times instead of once per distinct question. Scoped to this
+  // call so nothing survives between parses and a rate-card change is picked up
+  // by the next one.
+  const picks = new Map<string, { product?: Product; fits: boolean }>();
+  const pickFor = (familySlug: string, section: ScheduleSection, w: number, h: number) => {
+    const key = `${familySlug}|${section}|${w}|${h}`;
+    let pick = picks.get(key);
+    if (!pick) { pick = pickProduct(familySlug, section, w, h, opts?.priceOf); picks.set(key, pick); }
+    return pick;
+  };
 
   for (const r of rows) {
     const review: LineReview = {};
@@ -171,7 +228,7 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
     let productSlug = "";
     let product: Product | undefined;
     if (familySlug) {
-      const picked = pickProduct(familySlug, r.section, w, h);
+      const picked = pickFor(familySlug, r.section, w, h);
       product = picked.product;
       productSlug = product?.slug ?? "";
       if (product && !picked.fits && w > 0 && h > 0) {
