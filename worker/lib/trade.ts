@@ -662,7 +662,21 @@ export async function revokeTrade(
   // is the one that did the revoking.
   const standing = await standingGrant(env, customerId);
   if (!standing) return { ok: false, error: "not_verified" };
-  const revokedAt = new Date().toISOString().replace("T", " ").slice(0, 23);
+  // UNIQUE TO THIS CALL, not merely to this millisecond.
+  //
+  // The guards below fire on `revoked_at = ?revokedAt`, so that value has to
+  // identify THE CALL and nothing else. A plain millisecond timestamp does not:
+  // two concurrent revokes of the same grant can mint the same one, and although
+  // only one claim can win (the other sees `revoked_at IS NOT NULL`), the loser's
+  // guards would still match the winner's row and it would run the dependent
+  // writes while reporting `not_verified`.
+  //
+  // Six random digits after the milliseconds make that unreachable. The value
+  // stays a lexicographically ordered timestamp string — history sorts on it and
+  // the UI slices the first ten characters for the date — so nothing downstream
+  // notices the extra precision.
+  const revokedAt = `${new Date().toISOString().replace("T", " ").slice(0, 23)}${
+    Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0")}`;
 
   const [claim] = await env.DB.batch([
     env.DB.prepare(
