@@ -23,7 +23,8 @@ await build({
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
-      export { proposalVerdict } from ${p("worker/lib/ai/proposal.ts")};
+      export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
+      export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
     `,
@@ -36,7 +37,7 @@ const {
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
-  proposalVerdict, persistSelection,
+  proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
@@ -944,4 +945,88 @@ test("AD6/E15 a winning split is persisted as a candidate row, and the draft lin
   const splitRowId = splitRow.args[columnsOf(splitRow.sql).indexOf("id")];
   assert.equal(bound(line, "selected_candidate_id"), splitRowId);
   assert.deepEqual(JSON.parse(bound(line, "warnings_json")), []);
+});
+
+test("AD7 when a split wins, the proposal line is seeded from the parent representative", () => {
+  // `publishAiProposal` needs ONE product per proposal line, and a make-up has
+  // none. Rather than invent a shape for it, the line is seeded from the best
+  // single-unit candidate — the honest runner-up — and `splitLine` converts it
+  // afterwards. That is byte-for-byte today's write path, so every lifecycle
+  // guard it already carries (draft-only writes, origin='ai' scoping, the
+  // edited-line locks) is inherited rather than re-proven against a new one.
+  //
+  // The candidate rows still tell the truth regardless: `selected: true` sits on
+  // the SPLIT's row, not on the representative's.
+  const outcome = (over) => ({
+    productSlug: "p", sanityProductId: "id", variantId: "v", catalogueRevision: "r",
+    form: "single", tier: "does_not_fit", rank: 2, selected: false, competing: false,
+    exclusions: [], fit: { fits: false, widthMm: 3600, heightMm: 2100, limit: null, breached: ["width"] },
+    price: { total: 900, currency: "AUD", ok: true, deltaToSelected: -300 }, ...over,
+  });
+  const single = {
+    candidate: { slug: "amj-awn", sanityProductId: "id" },
+    selectedVariant: { variantId: "v" }, price: { ok: true, total: 900 },
+    outcome: { status: "commercial_only_estimate" },
+    candidateOutcome: outcome({}),
+  };
+  const result = {
+    evaluated: [single],
+    splits: [{ candidateOutcome: outcome({ form: "split", tier: "meets", rank: 1, selected: true, competing: true }) }],
+    selected: null,
+  };
+  result.selectedSplit = result.splits[0];
+
+  // Nothing was selected as a single unit, so `selected` is null — and reading
+  // only that would publish an EMPTY line for an opening the machine answered.
+  assert.equal(result.selected, null);
+  const seed = parentRepresentative(result);
+  assert.ok(seed, "there is always a representative when the operation exists at all");
+  assert.equal(seed.candidate.slug, "amj-awn");
+  assert.equal(seed.candidateOutcome.selected, false, "the seed is not the pick, and does not claim to be");
+});
+
+test("AD7 the proposal seed is the pick, or the representative when a split won", () => {
+  const line = (over) => ({
+    evaluated: [], splits: [], selected: null, selectedSplit: null, ...over,
+  });
+  const single = {
+    candidate: { slug: "amj-awn" }, price: { ok: true, total: 900 },
+    candidateOutcome: { rank: 1, selected: true },
+  };
+  // A single unit won: it is the seed, exactly as it always was.
+  assert.equal(proposalSeed(line({ evaluated: [single], selected: single })), single);
+
+  // A split won: the parent line is seeded from the best single-unit candidate
+  // and immediately rebuilt by splitLine, so the write path is unchanged.
+  const runnerUp = { ...single, candidateOutcome: { rank: 2, selected: false } };
+  const split = { candidateOutcome: { rank: 1, selected: true, form: "split" } };
+  assert.equal(
+    proposalSeed(line({ evaluated: [runnerUp], splits: [split], selectedSplit: split })),
+    runnerUp,
+  );
+
+  // Nothing was answerable at all: no seed, and the empty-line branch stands.
+  assert.equal(proposalSeed(line({})), null);
+  // An unpriceable representative cannot seed a line either — the parent has to
+  // carry a price before splitLine can reprice it into segments.
+  const unpriced = { ...runnerUp, price: { ok: false, total: null } };
+  assert.equal(proposalSeed(line({ evaluated: [unpriced], splits: [split], selectedSplit: split })), null);
+});
+
+test("a proposed split is never a final answer — the line is always reviewed", () => {
+  // `SplitProposal.reviewRequired` is typed as the literal `true`: a split is a
+  // starting point the drawings or the dimensions forced, and a human confirms
+  // the make-up before it is quoted. Without this the best case — a split that
+  // fits and meets the band on a ready line — would publish unreviewed, and the
+  // seed's own fit fact would be doing the work by accident on the oversize
+  // case while saying nothing at all on the drawing-instruction case (AC-19).
+  const base = {
+    tier: "meets", status: "ready", fits: true, requirementAbsent: true,
+    hasScheduleCommercialOption: false, documentReviewReasons: [],
+  };
+  assert.equal(proposalVerdict(base).reviewRequired, false, "a single unit can stand on its own");
+  assert.equal(proposalVerdict({ ...base, isSplit: true }).reviewRequired, true);
+  // Confidence is untouched by it — the machine is not less sure of a split, it
+  // simply does not get the last word on one.
+  assert.equal(proposalVerdict({ ...base, isSplit: true }).confidence, "high");
 });

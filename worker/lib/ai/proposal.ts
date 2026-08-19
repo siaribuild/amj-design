@@ -1,7 +1,7 @@
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import { PIPELINE_VERSION } from "./versions";
-import type { SelectionResult } from "../estimator/select";
+import { parentRepresentative, type SelectionResult } from "../estimator/select";
 import type { Tier } from "../../../src/data/recommendation";
 import type { OpeningInput } from "../estimator/types";
 import { defaultOptions } from "../../../src/data/configurator";
@@ -53,6 +53,11 @@ export function proposalVerdict(input: {
   requirementAbsent: boolean;
   hasScheduleCommercialOption: boolean;
   documentReviewReasons: string[];
+  /** The answer was a SPLIT. A proposed split is a starting point the drawings
+   *  or the dimensions forced, never a final answer — `SplitProposal.reviewRequired`
+   *  is typed as the literal `true` — so a human confirms the make-up before it
+   *  is quoted, however well it scored. */
+  isSplit?: boolean;
 }): { confidence: "high" | "medium" | "low"; reviewRequired: boolean; thermalBandNotMet: boolean } {
   const requirementMet = input.tier === "meets";
   const badTier = input.tier === "misses" || input.tier === "thermal_unknown" || input.tier === "does_not_fit";
@@ -63,6 +68,7 @@ export function proposalVerdict(input: {
 
   // A human confirms whenever the machine did not fully answer the brief.
   const reviewRequired = !(requirementMet && input.status === "ready")
+    || !!input.isSplit
     || !input.fits
     || input.hasScheduleCommercialOption
     || input.documentReviewReasons.length > 0;
@@ -73,6 +79,26 @@ export function proposalVerdict(input: {
   const thermalBandNotMet = !requirementMet && !input.requirementAbsent && input.tier != null;
 
   return { confidence, reviewRequired, thermalBandNotMet };
+}
+
+/** The single-unit candidate a proposal line is written from (design AD7).
+ *
+ *  `publishAiProposal` needs ONE product per line, and a make-up has none. When
+ *  a split wins, the line is seeded from the best single-unit candidate — the
+ *  honest runner-up — and `splitLine` converts it into segments immediately
+ *  after. That is byte-for-byte the write path that already existed, so every
+ *  lifecycle guard it carries (draft-only writes, `origin='ai'` scoping, the
+ *  edited-line locks) is inherited rather than re-proven against a new one.
+ *
+ *  The candidate rows still tell the truth regardless: `selected: true` sits on
+ *  the split's row, and the seed's row says it was not chosen. */
+export function proposalSeed(result: SelectionResult): SelectionResult["selected"] {
+  if (result.selected?.price?.ok) return result.selected;
+  if (!result.selectedSplit) return null;
+  const representative = parentRepresentative(result);
+  // A parent line has to carry a price before splitLine can reprice it into
+  // segments, so an unpriceable representative is no seed at all.
+  return representative?.price?.ok ? representative : null;
 }
 
 const parseArray = (value: string | null | undefined): string[] => {
@@ -92,10 +118,10 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     return { proposalId, published: false, appliedLines: 0 };
   }
 
-  const selected = input.lines.filter((line) => line.result.selected?.price?.ok);
+  const selected = input.lines.filter((line) => !!proposalSeed(line.result));
   const catalogueVersion = selected[0]?.result.catalogueVersion ?? null;
   const rankerVersion = selected[0]?.result.selectionVersion ?? null;
-  const pricingVersion = selected[0]?.result.selected?.price?.pricingPolicyVersion ?? null;
+  const pricingVersion = selected.length ? proposalSeed(selected[0].result)?.price?.pricingPolicyVersion ?? null : null;
 
   const quoteIds = input.lines.map((line) => line.quoteLineId).filter((id): id is string => !!id);
   const quoteState = new Map<string, {
@@ -146,7 +172,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
   ).bind(input.projectId).first<{ n: number }>();
   let nextPosition = positionRow?.n ?? 0;
   for (const line of input.lines) {
-    const chosen = line.result.selected?.price?.ok ? line.result.selected : null;
+    const chosen = proposalSeed(line.result);
     const proposalLineId = uuid();
     const effectiveQuoteLineId = line.quoteLineId ?? uuid();
     let quote = line.quoteLineId ? quoteState.get(line.quoteLineId) : null;
@@ -296,7 +322,10 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     const verdict = proposalVerdict({
       tier: line.result.selection.competingTier,
       status: chosen.outcome.status,
-      fits: chosen.candidateOutcome.fit.fits,
+      // The WINNER's fit, in whichever form it won — the seed is a write-path
+      // detail and its own fit says nothing about the answer.
+      fits: (line.result.selectedSplit ?? chosen).candidateOutcome.fit.fits,
+      isSplit: !!line.result.selectedSplit,
       requirementAbsent: line.result.selection.requirement.absent,
       hasScheduleCommercialOption,
       documentReviewReasons,
