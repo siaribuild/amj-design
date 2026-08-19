@@ -11,14 +11,13 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { aggregateHistorical, aggregateApprovedThermal, contextKey } from ${p("worker/lib/estimator/learning.ts")};
-      export { rankCandidates } from ${p("worker/lib/estimator/rank.ts")};
+      export { aggregateApprovedThermal, contextKey } from ${p("worker/lib/estimator/learning.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateHistorical, aggregateApprovedThermal, contextKey, rankCandidates } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -48,65 +47,17 @@ test("context key includes thermal and geometry buckets", () => {
   assert.notEqual(contextKey({ ...opening, thermalContext: { ...opening.thermalContext, orientation: "S" } }), key);
 });
 
-test("empty finalized corpus is neutral", () => {
-  const model = aggregateHistorical([]);
-  assert.equal(model.observations, 0);
-  assert.equal(model.scoreFor(candidate("amj100"), opening, variant("dg-low-e")), 0.5);
-});
-
-test("issued final configurations create a positive contextual signal", () => {
-  const model = aggregateHistorical([row("amj100"), row("amj100")]);
-  assert.equal(model.observations, 2);
-  assert.ok(model.scoreFor(candidate("amj100"), opening, variant("dg-low-e")) > 0.5);
-  assert.ok(model.scoreFor(candidate("other"), opening, variant("dg-low-e")) < 0.5);
-});
-
-test("an adjusted outcome learns the final configuration, not an unsafe negative label for the proposal", () => {
-  const model = aggregateHistorical([
-    row("amj200", "tb-low-e", key, "adjusted"),
-    row("amj200", "tb-low-e", key, "adjusted"),
-  ]);
-  assert.ok(model.scoreFor(candidate("amj200"), opening, variant("tb-low-e")) > 0.5);
-  assert.ok(model.scoreFor(candidate("unrecorded-proposal"), opening, variant("std")) < 0.5);
-});
-
-test("matching context and exact variant outweigh global back-off", () => {
-  const other = contextKey({ ...opening, thermalContext: { ...opening.thermalContext, orientation: "N", riskBand: "low" } });
-  const model = aggregateHistorical([
-    row("amj100"), row("amj100"), row("amj100"),
-    row("amj100", "std", other),
-    row("other", "std", other), row("other", "std", other), row("other", "std", other),
-  ]);
-  const exact = model.scoreFor(candidate("amj100"), opening, variant("dg-low-e"));
-  const unseenContext = model.scoreFor(
-    candidate("amj100"),
-    { ...opening, thermalContext: { ...opening.thermalContext, orientation: "E" } },
-    variant("dg-low-e"),
-  );
-  assert.ok(exact > unseenContext);
-});
-
-test("historical nudge remains capped by its 0.10 rank weight", () => {
-  const perf = {
-    variantId: "v", glassBuildUp: null, uValue: 3, shgc: 0.5, frameType: null,
-    frameTechnology: "unknown", coating: null, pricingOptionSlugs: [],
-    dataSource: "estimated", certified: false, published: true,
-  };
-  const base = {
-    catalogueRevision: "rev1", schemaVersion: 1, family: "windows", series: "awning-window",
-    configuration: { operationTypes: ["awning"] },
-    dimensionRule: { minWidthMm: 600, maxWidthMm: 1800, minHeightMm: 600, maxHeightMm: 1800, maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1" },
-    performanceVariants: [perf], optionGroups: [], pricingRef: null,
-  };
-  const make = (id) => ({ ...base, sanityProductId: id, name: id, slug: id });
-  const outcome = { passed: true, status: "commercial_only_estimate", filters: [], eligibleVariantIds: ["v"] };
-  const ranked = rankCandidates(opening, [
-    { candidate: make("liked"), outcome, selectedVariant: perf, price: { total: 500 }, historicalAcceptance: 0.95 },
-    { candidate: make("disliked"), outcome, selectedVariant: perf, price: { total: 500 }, historicalAcceptance: 0.05 },
-  ]);
-  assert.equal(ranked[0].candidateId, "liked");
-  assert.ok(ranked[0].score - ranked[1].score <= 0.1);
-});
+// Five tests lived here pinning aggregateHistorical: an empty corpus reading
+// neutral, a positive contextual signal, the adjusted-outcome label, exact-
+// context back-off, and a cap proving the nudge stayed inside its 0.10 weight.
+// All five went with the commercial model (ADR 0007). They tested a signal that
+// production never once returned: the twelve-field contextKey produced 9 usable
+// rows across 11 distinct keys, so every opening sat alone in its bucket and the
+// model answered the neutral 0.5 every time it was asked (D12).
+//
+// contextKey KEEPS being recorded, and the tests above still pin it. The dark
+// shadow model that replaces retrieval — coarsened key, density floor,
+// provenance — arrives with Phase 3 and brings its own tests (AC-27..AC-36).
 
 test("thermal correction needs three approved examples in the exact context", () => {
   const rows = [2.8, 2.6].map((maxUValue) => ({

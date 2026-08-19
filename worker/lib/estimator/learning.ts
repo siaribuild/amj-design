@@ -1,5 +1,5 @@
 import type { Env } from "../../types";
-import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
+import type { OpeningInput } from "./types";
 
 export const LEARNING_VERSION = "v2-finalized-contextual";
 
@@ -30,63 +30,18 @@ export function contextKey(opening: OpeningInput): string {
   ].join("|");
 }
 
-export interface HistoricalRow {
-  context_key: string;
-  final_product_slug: string;
-  final_variant_id: string | null;
-  decision: "accepted" | "adjusted" | "no_ai_proposal";
-  reason_code: string;
-}
-
-interface Counts { accepts: number }
-const smooth = (n: number, total: number) => (n + 1) / (total + 2);
-
-export interface HistoricalModel {
-  version: string;
-  observations: number;
-  scoreFor(
-    candidate: CatalogueCandidate,
-    opening: OpeningInput,
-    variant?: PerformanceVariant | null,
-  ): number;
-}
-
-export function aggregateHistorical(rows: HistoricalRow[]): HistoricalModel {
-  const exact = new Map<string, number>();
-  const contextTotals = new Map<string, number>();
-  let observations = 0;
-  for (const row of rows ?? []) {
-    if (!row.context_key || !row.final_product_slug) continue;
-    observations++;
-    const variant = row.final_variant_id || "any";
-    const exactKey = `${row.context_key}::${row.final_product_slug}::${variant}`;
-    exact.set(exactKey, (exact.get(exactKey) ?? 0) + 1);
-    contextTotals.set(row.context_key, (contextTotals.get(row.context_key) ?? 0) + 1);
-  }
-  return {
-    version: LEARNING_VERSION,
-    observations,
-    scoreFor(candidate, opening, variant) {
-      if (!observations) return 0.5;
-      const ctx = contextKey(opening);
-      const ctxTotal = contextTotals.get(ctx) ?? 0;
-      if (ctxTotal < 2) return 0.5;
-      const exactCount = exact.get(`${ctx}::${candidate.slug}::${variant?.variantId || "any"}`) ?? 0;
-      return smooth(exactCount, ctxTotal);
-    },
-  };
-}
-
-export async function buildHistoricalModel(env: Env): Promise<HistoricalModel> {
-  const { results } = await env.DB.prepare(
-    `SELECT context_key, final_product_slug, final_variant_id, decision, reason_code
-       FROM recommendation_outcome
-      WHERE recommendation_eligible = 1
-        AND thermal_eligible = 0
-        AND quality_state = 'approved'`,
-  ).all<HistoricalRow>();
-  return aggregateHistorical(results ?? []);
-}
+// HistoricalRow, Counts, smooth(), HistoricalModel, aggregateHistorical() and
+// buildHistoricalModel() lived here and are GONE (ADR 0007).
+//
+// They fed the deleted 0.10 historical weight, and D12 explains why that never
+// mattered: the twelve-field contextKey produced 9 usable rows across 11
+// distinct keys in production — every opening alone in its bucket, so the model
+// returned the neutral 0.5 every time it was ever asked, and always would have.
+// A cheapest-wins ladder has no channel for a preference in any case.
+//
+// contextKey() itself STAYS: it is still written to the NOT NULL context_key
+// column at capture, and recording is untouched (D12). Phase 3 adds the coarse
+// retrieval key and the dark shadow model that reads it.
 
 interface ThermalCorrectionRow {
   context_key: string;

@@ -16,9 +16,7 @@ await build({
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION, effectiveThermalRequirements, fitFacts, resolvedRequirement } from ${p("worker/lib/estimator/rules.ts")};
-      export { gradedComplianceScore } from ${p("worker/lib/estimator/thermal/compliance.ts")};
       export { computePrice, loadOptionSurcharges, createCachedPriceResolver } from ${p("worker/lib/estimator/pricing.ts")};
-      export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { r2Keys } from ${p("worker/lib/estimator/storage.ts")};
       export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
@@ -28,7 +26,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability, checkHardRules, RULE_VERSION, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore, fitFacts, resolvedRequirement } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability, checkHardRules, RULE_VERSION, computePrice, loadOptionSurcharges, createCachedPriceResolver, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, fitFacts, resolvedRequirement } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 // depositPercent is gone from PricingPolicy (0043) — deposit is always
@@ -465,25 +463,13 @@ test("low-E survives EITHER spelling — `double_low_e` (WERS import) and `doubl
     ["seed-lowe", "wers-lowe"], "an imported low-E cell reads as low-E, not as an unclassified variant");
 });
 
-test("M4: compliance blends axes — a cell adverse on two axes scores strictly lower than one", () => {
-  const band = { maxUValue: 3.0, minShgc: null, maxShgc: 0.4, shgcTarget: null };
-  const overU = { glassOptionSlug: "a", variantId: "a", uValue: 3.6, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
-  const overBoth = { glassOptionSlug: "b", variantId: "b", uValue: 3.6, shgc: 0.6, certified: true, pricingOptionSlugs: [] };
-  assert.ok(gradedComplianceScore(overBoth, band) < gradedComplianceScore(overU, band),
-    "second adverse axis lowers the score — no worst-axis tie");
-});
-
-test("in-band cells all score a flat 1.0 — compliance does NOT rank by band position (owner rule)", () => {
-  // Reversal of the earlier midpoint tie-break: once a cell MEETS the band it is
-  // fully compliant. The recommendation among compliant cells is decided by PRICE
-  // (the ranker's commercial term), never by which glass is thermally "best" —
-  // that biased toward the most expensive option.
-  const band = { maxUValue: null, minShgc: 0.3, maxShgc: 0.5, shgcTarget: null };
-  const mid = { glassOptionSlug: "n", variantId: "n", uValue: 3, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
-  const edge = { glassOptionSlug: "f", variantId: "f", uValue: 3, shgc: 0.5, certified: true, pricingOptionSlugs: [] };
-  assert.equal(gradedComplianceScore(mid, band), 1, "in-band ⇒ 1.0");
-  assert.equal(gradedComplianceScore(edge, band), 1, "an edge-of-band cell is equally compliant — 1.0");
-});
+// Two gradedComplianceScore tests lived here — a blend-across-axes pin and an
+// in-band-scores-1.0 pin — and went with the function (ADR 0007). The blend was
+// the wrong shape by spec A1: a requirement is a CONJUNCTION, so the degree to
+// which a candidate fails it is the worst of its failures, not a product of
+// them, and summing punished one failure twice while making the tolerance band
+// uninterpretable. Their replacements live in thermal-selection.test.mjs, in the
+// deviation vocabulary.
 
 test("M4: the enforced band is the explicit ∩ advisory intersection (ranker shares it with rules)", () => {
   const eff = effectiveThermalRequirements({
@@ -862,26 +848,54 @@ test("selection: no candidate for an unknown operation ⇒ no_candidate", async 
   assert.equal(res.status, "no_candidate");
 });
 
-test("ranker: prefers the snugger fit at equal price", () => {
-  const mk = (id, r) => ({ candidate: toCandidate({ ...awning, sanityProductId: id, dimensionRule: r }), outcome: { passed: true, status: "ready" }, price: { total: 1000 } });
-  const snug = mk("snug", { minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400, maxAreaM2: 2.4, maxAspectRatio: 4, ruleVersion: "v1" });
-  const loose = mk("loose", { minWidthMm: 700, maxWidthMm: 5000, minHeightMm: 700, maxHeightMm: 5000, maxAreaM2: 25, maxAspectRatio: 4, ruleVersion: "v1" });
-  const ranked = rankCandidates({ operationType: "awning", widthMm: 700, heightMm: 1400 }, [snug, loose]);
-  assert.equal(ranked[0].rank, 1);
-  assert.equal(ranked.length, 2);
+test("AC-51 the geometry curve is GONE: fit is a boolean, and the cheaper unit wins", () => {
+  // The exact case geometryScore got wrong. `snug` is rated 400–1000 mm and
+  // `loose` 700–5000 mm; at 700 mm the old centre-of-range curve preferred the
+  // one whose midpoint sat nearer, which is a preference dressed as a fit test.
+  // Both fit. Cheapest wins, and the dearer product is ranked second, not first.
+  const rule = (r) => ({ maxAreaM2: 25, maxAspectRatio: 4, ruleVersion: "v1", ...r });
+  const products = [
+    { ...awning, sanityProductId: "id-snug", slug: "a-snug", category: { slug: { current: "windows" } },
+      dimensionRule: rule({ minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400 }) },
+    { ...awning, sanityProductId: "id-loose", slug: "b-loose", category: { slug: { current: "windows" } },
+      dimensionRule: rule({ minWidthMm: 700, maxWidthMm: 5000, minHeightMm: 700, maxHeightMm: 5000 }) },
+  ];
+  const priceBy = { "a-snug": 1500, "b-loose": 900 };
+  return selectForOpening(
+    { family: "windows", operationType: "awning", widthMm: 700, heightMm: 1400 },
+    fixtureCatalogueRepository(products),
+    async (c) => ({ ok: true, total: priceBy[c.slug], unit: priceBy[c.slug] }),
+  ).then((res) => {
+    assert.equal(res.selected.candidate.slug, "b-loose", "the cheaper unit, not the snugger one");
+    assert.equal(res.selected.candidateOutcome.rank, 1);
+    const snug = res.evaluated.find((e) => e.candidate.slug === "a-snug");
+    assert.equal(snug.candidateOutcome.tier, "meets", "it fits — it is simply dearer");
+    assert.equal(snug.candidateOutcome.rank, 2);
+    assert.equal(snug.candidateOutcome.price.deltaToSelected, 600);
+  });
 });
 
-test("owner rule: among compliant glasses the CHEAPEST is recommended, not the thermally-best", () => {
-  // Both variants MEET the Uw cap, so both score compliance 1.0. The pricier one has
-  // a slightly better Uw/SHGC — under the old midpoint tie-break it would have won.
-  // With flat in-band compliance, the commercial term picks the cheaper glass.
-  const opening = { operationType: "awning", widthMm: 700, heightMm: 1400, requirements: { maxUValue: 4.0 } };
-  const cand = toCandidate({ ...awning, sanityProductId: "amjX" });
-  const v = (id, u, shgc) => ({ variantId: id, glazingOptionSlug: id, glazingClass: "double_clear", uValue: u, shgc, certified: true, dataSource: "certified", published: true, pricingOptionSlugs: [] });
-  const cheap = { candidate: cand, outcome: { passed: true, status: "ready" }, selectedVariant: v("cheap", 3.4, 0.42), price: { total: 900, ok: true } };
-  const pricey = { candidate: cand, outcome: { passed: true, status: "ready" }, selectedVariant: v("pricey", 3.0, 0.36), price: { total: 1500, ok: true } };
-  const ranked = rankCandidates(opening, [pricey, cheap]);
-  assert.equal(ranked.find((r) => r.rank === 1).performanceVariantId, "cheap");
+test("owner rule: among compliant glasses the CHEAPEST is recommended, not the thermally-best", async () => {
+  // Both variants MEET the Uw cap, so both are tier `meets` and deviate by zero.
+  // The pricier one has the better Uw/SHGC — under the old midpoint tie-break it
+  // would have won. Cheapest wins among candidates that meet the brief (D2).
+  const product = {
+    ...awning, sanityProductId: "amjX", slug: "amjx", category: { slug: { current: "windows" } },
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "cheap", glazingOptionSlug: "cheap", uValue: 3.4, shgc: 0.42, certified: true, dataSource: "certified", certificationRef: "WERS-C" },
+      { ...awning.performanceVariants[0], variantId: "pricey", glazingOptionSlug: "pricey", uValue: 3.0, shgc: 0.36, certified: true, dataSource: "certified", certificationRef: "WERS-P" },
+    ],
+  };
+  const priceBy = { cheap: 900, pricey: 1500 };
+  const res = await selectForOpening(
+    { family: "windows", operationType: "awning", widthMm: 700, heightMm: 1400, requirements: { maxUValue: 4.0 } },
+    fixtureCatalogueRepository([product]),
+    async (_c, _o, v) => ({ ok: true, total: priceBy[v.variantId], unit: priceBy[v.variantId] }),
+  );
+  assert.ok(res.selected, `nothing selected: ${res.status} ${JSON.stringify(res.withheldIncomplete)} ${res.evaluated.length}`);
+  assert.equal(res.selected.selectedVariant.variantId, "cheap");
+  assert.equal(res.selected.candidateOutcome.tier, "meets");
+  assert.equal(res.selected.candidateOutcome.thermal.normalisedDeviation, 0);
 });
 
 test("r2Keys: layout is consistent and path-traversal-safe", () => {

@@ -21,7 +21,7 @@ await build({
   stdin: {
     contents: `
       export { coerceCoherent } from ${p("worker/lib/estimator/thermal/precedence.ts")};
-      export { gradedComplianceScore } from ${p("worker/lib/estimator/thermal/compliance.ts")};
+      export { deviationOf } from ${p("worker/lib/estimator/ladder.ts")};
       export { computeDefaultBand } from ${p("worker/lib/estimator/thermal/computedBand.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
@@ -29,7 +29,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const {
-  coerceCoherent, gradedComplianceScore, computeDefaultBand,
+  coerceCoherent, deviationOf, computeDefaultBand,
 } = await import(pathToFileURL(outfile).href);
 
 const band = (maxUValue, minShgc, maxShgc, shgcTarget = null) => ({ maxUValue, minShgc, maxShgc, shgcTarget });
@@ -56,25 +56,41 @@ test("coerceCoherent: nonsensical bounds (U<=0, SHGC out of [0,1]) are dropped",
   assert.equal(out, null, "nothing usable survives ⇒ null");
 });
 
-// ── graded compliance (WS4) ──────────────────────────────────────────────────
-test("compliance: any in-band cell scores a flat 1.0; a miss is graded and floored above 0", () => {
-  // Owner rule: once a cell MEETS the band it is fully compliant — SHGC position
-  // within the band does NOT shade the score (that biased toward pricier glass).
-  // Two in-band cells at different SHGC both score exactly 1; price decides later.
-  const lowShgc = gradedComplianceScore(cell("x", 1.6, 0.38), band(1.69, 0.37, 0.45));
-  const highShgc = gradedComplianceScore(cell("y", 1.6, 0.44), band(1.69, 0.37, 0.45));
-  assert.equal(lowShgc, 1, "in-band ⇒ 1.0 regardless of SHGC position");
-  assert.equal(highShgc, 1, "the other in-band cell also scores exactly 1.0 (no tie-break)");
-  const nearMiss = gradedComplianceScore(cell("x", 1.75, 0.4), band(1.69, 0.37, 0.45));
-  assert.ok(nearMiss > 0.1 && nearMiss < 1, `near miss graded, got ${nearMiss}`);
-  const grossMiss = gradedComplianceScore(cell("x", 9, 0.9), band(1.69, 0.37, 0.45));
-  assert.ok(grossMiss >= 0.1, "never zero — a miss never eliminates the line");
+// ── requirement-relative deviation (D8), replacing graded compliance ─────────
+//
+// gradedComplianceScore is deleted with FLOOR, SHGC_SPAN and UVALUE_SPAN
+// (ADR 0007). Its two spans punished an SHGC miss ~7.5× harder per unit than a
+// Uw one, and its 0.1 floor existed to stop a score becoming a veto — both
+// problems of scoring, and neither exists once the answer is a distance rather
+// than a number between 0 and 1. These are the cases it used to own, re-asked
+// in the vocabulary that replaced it.
+const req = (b) => ({ maxUValue: b.maxUValue, minShgc: b.minShgc, maxShgc: b.maxShgc, basis: "explicit_energy_report", absent: false });
+const devOf = (c, b) => deviationOf(req(b), { uValue: c.uValue, shgc: c.shgc }).scalar;
+
+test("deviation: any in-band cell deviates by ZERO; SHGC position inside the band is not shaded", () => {
+  // Owner rule: once a cell MEETS the band it is fully compliant. Two in-band
+  // cells at different SHGC are equally compliant and price decides between them
+  // — the old midpoint tie-break biased toward the pricier glass.
+  assert.equal(devOf(cell("x", 1.6, 0.38), band(1.69, 0.37, 0.45)), 0);
+  assert.equal(devOf(cell("y", 1.6, 0.44), band(1.69, 0.37, 0.45)), 0);
+  // A miss is a MEASURED distance, not a shrinking score with a floor under it.
+  const nearMiss = devOf(cell("x", 1.75, 0.4), band(1.69, 0.37, 0.45));
+  assert.ok(nearMiss > 0 && nearMiss < 0.05, `near miss measured, got ${nearMiss}`);
+  const grossMiss = devOf(cell("x", 9, 0.9), band(1.69, 0.37, 0.45));
+  assert.ok(grossMiss > nearMiss, "a gross miss is further out, and has no floor to hide behind");
 });
 
-test("compliance: closer-to-band glass ranks higher (the ordering that replaces the veto)", () => {
-  const closer = gradedComplianceScore(cell("x", 1.8, 0.42), band(1.69, 0.37, 0.41));
-  const farther = gradedComplianceScore(cell("y", 3.5, 0.7), band(1.69, 0.37, 0.41));
-  assert.ok(closer > farther, `${closer} should beat ${farther}`);
+test("deviation: closer-to-band glass sorts ahead (the ordering that replaces the veto)", () => {
+  const closer = devOf(cell("x", 1.8, 0.42), band(1.69, 0.37, 0.41));
+  const farther = devOf(cell("y", 3.5, 0.7), band(1.69, 0.37, 0.41));
+  assert.ok(closer < farther, `${closer} should sort ahead of ${farther}`);
+});
+
+test("D8: Uw and SHGC carry no hidden multiplier relative to each other", () => {
+  // The defect this replaces: SHGC_SPAN 0.2 against UVALUE_SPAN 1.5 punished an
+  // SHGC miss about 7.5× harder per unit. A 10% miss is now 0.10 on either axis.
+  assert.equal(devOf(cell("u", 2.2, 0.4), band(2.0, 0.37, 0.45)), 0.1);
+  assert.equal(devOf(cell("s", 1.6, 0.495), band(2.0, 0.37, 0.45)), 0.1);
 });
 
 // ── computed band (WS6) ──────────────────────────────────────────────────────
