@@ -10,6 +10,26 @@ Author: architect. Date: 2026-08-19. Branch: `feat/user-registration`. Phase 1 i
 
 Status of "Decisions needed": **empty** (§16). Spec findings — places the spec is unbuildable exactly as written, with the recorded resolution — are in §14; none is a business decision.
 
+> ### ⚠️ READ BEFORE TREATING THIS DOCUMENT AS INSTRUCTIONS (2026-08-19)
+>
+> **Owner ruling P2-D5 removed the builder/tradie label from the entire product**, superseding D7
+> and Q5. The sweep reached §18, the shipped migration `0054`, and every line of Worker and client
+> code — **it has NOT yet reached this document's body.** §3.1 has been corrected because it
+> carried a runnable `ALTER TABLE user ADD COLUMN trade_label` that the shipped migration never
+> performed, and acting on it would create a column the owner deliberately removed. Migrations
+> here are append-only and a rebuild in this database has already cascade-deleted production rows.
+>
+> **`trade_label` / `label` still appears, wrongly, in §6, §7.1–7.4, §8.1, §8.3, §8.5, §9, §10
+> step 5 and §13.** Treat every one as struck. There is no builder/tradie control on any surface,
+> no such column anywhere, and no such field in any DTO.
+>
+> Also stale: **§7.4 names `label` where the Worker actually returns `provenance`**
+> (`"auto" | "ops" | "grandfathered" | null`), and **§18.2.5's premise is wrong** — Phase 1's
+> NameStep interstitial covers account routes only and never appears on `/trade-account`.
+>
+> The full conformance review and the open fix queue this note came from are recorded with the
+> architect's stage-7 findings; the remaining sweep is the architect's to apply.
+
 ---
 
 ## 1. Shape of the change
@@ -136,7 +156,6 @@ CREATE TABLE trade_application (
   -- rows for accounts that held no ABN (nothing is invented — AC-P2-51/E-P2-9).
   abn             TEXT,
   business_name   TEXT,
-  trade_label     TEXT,                                -- 'builder' | 'tradie' | NULL (not stated)
   source          TEXT NOT NULL DEFAULT 'profile',     -- 'trade_page' | 'profile' | 'submit_gate' | 'migration'
   -- Decision state.
   status          TEXT NOT NULL DEFAULT 'pending',     -- 'pending' | 'approved' | 'rejected'
@@ -165,9 +184,16 @@ CREATE UNIQUE INDEX trade_application_one_standing
 -- Duplicate-rule lookup path (D2.1).
 CREATE INDEX trade_application_abn ON trade_application(abn) WHERE abn IS NOT NULL;
 
--- The self-declared builder/tradie label (D7). Lives on user: it is a live
--- account fact ops reads, editable later on the profile page (owner ruling Q5).
-ALTER TABLE user ADD COLUMN trade_label TEXT;
+-- ⚠️ REMOVED BY OWNER RULING P2-D5 (2026-08-19), which supersedes D7.
+-- This block used to read:
+--     ALTER TABLE user ADD COLUMN trade_label TEXT;
+-- DO NOT REINSTATE IT, AND DO NOT "RESTORE" IT IN A LATER MIGRATION.
+-- The shipped migrations/0054_trade_verification.sql never performed it: the
+-- builder/tradie distinction is not stored, because it makes no difference to
+-- anything this system does. Migrations here are append-only, so writing an
+-- 0055 to "catch up" would CREATE a column the owner deliberately removed —
+-- and a table rebuild in this database has already cascade-deleted production
+-- rows once (.claude/skills/d1-migration-safety/).
 ```
 
 **There is deliberately NO trade-status column on `user`.** "Currently verified" *is* "has a
@@ -200,11 +226,11 @@ UPDATE user SET discount_percent = 5
 -- absent from a local/dev database simply inserts nothing. abn is copied
 -- normalised when present, never invented (E-P2-9).
 INSERT INTO trade_application
-  (id, user_id, abn, business_name, trade_label, source, status,
+  (id, user_id, abn, business_name, source, status,
    decided_via, decided_at, decision_reason, created_at)
 SELECT lower(hex(randomblob(16))), id,
        CASE WHEN abn IS NULL OR replace(abn,' ','') = '' THEN NULL ELSE replace(abn,' ','') END,
-       company, NULL, 'migration', 'approved',
+       company, 'migration', 'approved',
        'grandfathered', datetime('now'),
        'Grandfathered by owner decision (grill D4, 2026-08-19); not verified against ABR.',
        datetime('now')
