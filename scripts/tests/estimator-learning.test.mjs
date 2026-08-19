@@ -12,12 +12,13 @@ await build({
   stdin: {
     contents: `
       export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } from ${p("worker/lib/estimator/learning.ts")};
+      export { captureRecommendationOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, captureRecommendationOutcomes } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -310,4 +311,112 @@ test("rows with no retrieval key are not evidence about anything", () => {
   const found = model.lookup(shadowOpening());
   assert.equal(found.observations, 5, "only the five real rows count");
   assert.equal(found.supportFor("amj80"), 0);
+});
+
+// ── Capture (D13) — recording widened, the point unchanged ──────────────────
+
+/** A D1 stub that answers the proposal lookup and records the INSERT batch. */
+function captureDb(proposalRow) {
+  const batched = [];
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) { this.args = args; return this; },
+    async first() { return /FROM ai_proposal_line/.test(sql) ? proposalRow : null; },
+  });
+  return { batched, DB: { prepare, async batch(stmts) { batched.push(...stmts); return []; } } };
+}
+
+/** Map a column name to its position in the BIND list. Not the same as its
+ *  position in the column list: this INSERT writes two columns as SQL literals
+ *  (`thermal_eligible`, `provenance`), which consume no placeholder — and an
+ *  off-by-one here would read the neighbouring value and call it a pass. */
+const bindIndexOf = (sql, column) => {
+  const columns = (sql.match(/\(([^)]*?)\)\s*VALUES/is)?.[1] ?? "")
+    .split(",").map((c) => c.trim()).filter(Boolean);
+  const values = (sql.match(/VALUES\s*\(([\s\S]*?)\)\s*$/i)?.[1] ?? "")
+    .split(",").map((v) => v.trim());
+  let bind = -1;
+  for (let i = 0; i < columns.length; i++) {
+    if (values[i] === "?") bind++;
+    if (columns[i] === column) return values[i] === "?" ? bind : null;
+  }
+  throw new Error(`no such column: ${column}`);
+};
+
+const ISSUED_LINE = {
+  id: "ql_1", external_ref: "W01", product_slug: "amj100t-awning",
+  options_json: '{"colour":"Dover White"}',
+  dims_json: '{"width":"2100","height":"1500"}',
+  qty: 1, line_total: 1400, ai_proposal_line_id: "apl_1",
+  selected_variant_id: "dg-lowe",
+};
+const PROPOSAL_ROW = {
+  configuration_json: '{"options":{"colour":"Dover White"}}',
+  ranking_context_json: JSON.stringify({
+    family: "windows", operationType: "awning",
+    requirements: { maxUValue: 2.27 },
+    dimensions: { widthMm: 2100, heightMm: 1500 },
+    quantity: 1,
+    thermalContext: {
+      requirementBasis: "plan_derived", orientation: "W", riskBand: "high",
+      climateZone: "6", jurisdiction: "VIC", buildingClass: "1a",
+      envelopeClass: "high", glazingToRoomFloorRatio: 0.4,
+    },
+  }),
+  opening_id: "op_1", performance_variant_id: "dg-lowe",
+  product_slug: "amj100t-awning", price_snapshot_json: '{"total":1400}',
+};
+
+
+test("AC-27/AC-30/AC-34 capture records twelve, retrieves four, and stamps provenance", async () => {
+  const env = captureDb(PROPOSAL_ROW);
+  await captureRecommendationOutcomes(env, "p_1", [ISSUED_LINE]);
+  assert.equal(env.batched.length, 1);
+  const row = env.batched[0];
+  const at = (column) => { const i = bindIndexOf(row.sql, column); return i == null ? null : row.args[i]; };
+
+  // AC-27: recording is UNTOUCHED. All twelve context fields still go in, which
+  // is what makes a later redefinition of the coarsening a recompute rather than
+  // lost history — the legacy key stays too.
+  const context = JSON.parse(at("context_json"));
+  for (const field of [
+    "family", "operationType", "requirementBasis", "orientation", "riskBand",
+    "climateZone", "jurisdiction", "buildingClass", "envelopeClass", "glazingToRoomFloorRatio",
+  ]) {
+    assert.ok(field in context, `${field} is still recorded`);
+  }
+  assert.ok(at("context_key").startsWith("windows|awning|plan_derived|W|high|"), "the legacy key is still written");
+
+  // AD9: three ADDITIONS, and they are the reason AC-30 can hold. The width the
+  // retrieval key bands on existed only inside the legacy key's own bucketing,
+  // so without recording it the key would not be recomputable from context_json.
+  assert.equal(context.widthMm, 2100);
+  assert.equal(context.heightMm, 1500);
+  assert.equal(context.thermalRequired, 1);
+
+  // AC-30: the key and its version are stored, and the key recomputes EXACTLY
+  // from the recorded context alone.
+  assert.equal(at("retrieval_key"), "awning|plan_derived|m|1");
+  assert.equal(at("retrieval_key_version"), RETRIEVAL_KEY_VERSION);
+  assert.equal(retrievalKey(context), at("retrieval_key"), "recomputable from context_json");
+
+  // AC-34: a row captured through the platform's own review flow. Written as a
+  // SQL literal rather than a bound parameter — a row this function writes came
+  // through the review flow by definition, and no caller could say otherwise.
+  // The backfill ingest is a separate function for exactly that reason.
+  assert.equal(at("provenance"), null, "not a parameter any caller can set");
+  assert.match(row.sql, /,'in_platform'\)/);
+});
+
+test("AC-30 an opening with no band records thermalRequired 0 and buckets apart", async () => {
+  const noBand = JSON.parse(PROPOSAL_ROW.ranking_context_json);
+  noBand.requirements = {};
+  const env = captureDb({ ...PROPOSAL_ROW, ranking_context_json: JSON.stringify(noBand) });
+  await captureRecommendationOutcomes(env, "p_1", [ISSUED_LINE]);
+  const row = env.batched[0];
+  const at = (column) => { const i = bindIndexOf(row.sql, column); return i == null ? null : row.args[i]; };
+  const context = JSON.parse(at("context_json"));
+  assert.equal(context.thermalRequired, 0);
+  assert.equal(at("retrieval_key"), "awning|plan_derived|m|0");
+  assert.equal(retrievalKey(context), at("retrieval_key"));
 });

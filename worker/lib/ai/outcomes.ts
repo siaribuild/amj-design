@@ -1,6 +1,6 @@
 import type { Env } from "../../types";
 import { uuid } from "../util";
-import { contextKey } from "../estimator/learning";
+import { contextKey, retrievalKey, RETRIEVAL_KEY_VERSION } from "../estimator/learning";
 import type { OpeningInput } from "../estimator/types";
 
 export interface IssuedCartLine {
@@ -16,6 +16,13 @@ export interface IssuedCartLine {
   /** 'composite_parent' when the reviewer rebuilt this opening as joined units. */
   line_kind?: string | null;
 }
+
+/** Whether this opening carried a thermal requirement at all — the fourth
+ *  field the retrieval key reads, and one the legacy context never recorded. */
+const hasThermalRequirement = (opening: OpeningInput): boolean => {
+  const r = opening.requirements ?? null;
+  return !!r && (r.maxUValue != null || r.minShgc != null || r.maxShgc != null);
+};
 
 const object = (value: string | null | undefined): Record<string, unknown> => {
   try {
@@ -135,6 +142,23 @@ export async function captureRecommendationOutcomes(
       dimensions: object(line.dims_json),
       quantity: line.qty,
     };
+    // RECORD TWELVE, RETRIEVE FOUR (D12, design AD9).
+    //
+    // The twelve context fields are untouched — recording is not what was broken
+    // — and three facts are ADDED beside them. They are additions rather than a
+    // convenience: the retrieval key bands on WIDTH, and width existed only
+    // inside the legacy key's own bucketing, so without recording it here the
+    // key would not be recomputable from `context_json` alone (AC-30) and a
+    // later redefinition of the coarsening would be lost history instead of a
+    // recompute.
+    const recordedContext = {
+      ...context,
+      family: opening.family,
+      operationType: opening.operationType,
+      widthMm: opening.widthMm,
+      heightMm: opening.heightMm,
+      thermalRequired: hasThermalRequirement(opening) ? 1 : 0,
+    };
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO recommendation_outcome
          (id, project_id, quote_line_id, ai_proposal_line_id,
@@ -142,11 +166,11 @@ export async function captureRecommendationOutcomes(
           proposed_variant_id, proposed_config_json, proposed_line_total,
           final_product_slug, final_variant_id, final_config_json, final_line_total,
           price_delta, decision, reason_code, recommendation_eligible,
-          thermal_eligible, quality_state)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
+          thermal_eligible, quality_state, retrieval_key, retrieval_key_version, provenance)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,'in_platform')`,
     ).bind(
       uuid(), projectId, line.id, line.ai_proposal_line_id, line.external_ref,
-      contextKey(opening), JSON.stringify({ ...context, family: opening.family, operationType: opening.operationType }),
+      contextKey(opening), JSON.stringify(recordedContext),
       proposal?.product_slug ?? null, proposal?.performance_variant_id ?? null,
       proposal?.configuration_json ?? null, proposedTotal, line.product_slug,
       line.selected_variant_id, JSON.stringify(finalConfiguration), line.line_total,
@@ -160,6 +184,13 @@ export async function captureRecommendationOutcomes(
         : "NO_AI_PROPOSAL",
       recommendationEligible ? 1 : 0,
       qualityState,
+      // Computed from the SAME context that was just recorded, so the row can
+      // always be re-bucketed from what it stored.
+      retrievalKey(recordedContext), RETRIEVAL_KEY_VERSION,
+      // `provenance` is bound literally in the statement above rather than as a
+      // parameter: a row written by this function came through the platform's
+      // own review flow by definition, and there is no caller who could say
+      // otherwise. The backfill ingest is a different function for that reason.
     ));
   }
   if (stmts.length) await env.DB.batch(stmts);
