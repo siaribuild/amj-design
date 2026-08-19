@@ -1677,7 +1677,7 @@ flag — all still stand.
 
 ---
 
-# 27. R1i — the bottom tab bar
+# 27. R1i — the bottom tab bar (its recommendation of B and its account of native convention are SUPERSEDED by section 29)
 
 Four tabs in the order he gave them: **Dashboard · Projects · Enquiries · More**.
 `IonTabs` with `IonTabBar slot="bottom"`. Mobile and tablet only; desktop keeps
@@ -1829,3 +1829,160 @@ C should be discarded either way.
    roots so the bar had somewhere to go; neither has been designed.
 5. **The `IonTabs` ban in the boundary doc needs amending**, not deleting: banned
    *within* a record, sanctioned for top-level destinations.
+
+---
+
+# 29. R1j — why B is dead, and variant D
+
+## 29.1 The argument that settles B — and it is not a preference
+
+> "ok, but then it stands that in order to get to Enquiries from Line view -
+> there are multiple backs required before being able to get there. That's
+> annoying to say the least."
+
+**B forces the user to destroy their position in order to change destination.**
+
+Per-tab stacks mean tabbing away from a line and back returns you *to that line* —
+that lossless return is the whole value of tabs. But it only exists if the bar is
+reachable **from where the user is**. If the bar is hidden on the line plane,
+reaching it requires popping the stack, and **popping is exactly what discards
+where you were**. The cost is paid twice: taps out, and re-navigation back.
+
+B therefore does not "save 93px on the line plane" — it trades the pattern's
+central benefit for them, on the screen where the benefit is worth most.
+
+## 29.2 A correction to §27's account of the convention
+
+My earlier framing — that native apps hide the bar on detail screens — was too
+tidy and is **wrong**. Native practice splits by the **kind** of detail screen,
+not by depth:
+
+- **Immersive viewers hide it.** Photos, on opening a photo.
+- **Working detail screens keep it.** App Store product pages, Instagram posts.
+
+**The line plane is the second kind** — a screen you act on, not one you have
+dived into. §27's framing should be read as superseded by this.
+
+## 29.3 The hamburger is removed
+
+Confirmed redundant: `More` is the drawer's trigger below 1024, and at 1024+ the
+rail is permanently visible. **There is no width at which the button earns its
+place.** Removed from all three tab roots (verified: zero `ion-menu-button`
+elements on Dashboard, Projects and Enquiries).
+
+**The regression check, asserted rather than assumed — and it did not fully
+pass.** The drawer is populated (9 destinations) and `More` sits in the thumb
+arc, so on structure it is a *better* trigger than the hamburger. But **I could
+not verify the drawer actually opens**:
+
+- `menuController.open()` left the menu's classes untouched — with a
+  `split-pane-side` menu it does not resolve to this one. **Fixed** by calling
+  the element's own `open()`.
+- The element's `open()` awaits an animation that never completes in a
+  non-compositing browser pane — the same limitation already recorded in §9 for
+  `ion-modal.present()`.
+
+**So: the trigger is wired, and its presentation is unverified in this
+environment. It must be confirmed on a real device before the hamburger's removal
+is accepted.** Flagging rather than claiming it.
+
+## 29.4 Variant D — built, and what building it revealed
+
+### It is ours, not Ionic's — but it needs no disqualifier
+
+Ionic has no scroll-away for the tab bar (`ion-header` has `collapse`,
+`ion-footer` has `collapse="fade"`; `ion-tab-bar` has neither). **The coupling is
+ours, and that is fine**: nothing is being rebuilt, the component is still
+`IonTabBar` untouched, so none of the boundary doc's four disqualifiers is
+engaged.
+
+What the boundary *does* govern is **where the scroll listening lives**.
+Disqualifier 4 says zone bodies never touch the page scaffold or scroll-coupled
+components, because scroll belongs to the shell — which is why R-18's plate
+pinning gets `useZoneScroll()` instead of reaching for `IonContent`. D listens in
+**the shell**, capture-phase, and no body knows it exists. **D adds a caller to
+the channel R-18 already needs, not a new mechanism.**
+
+### `ion-tab-bar` cannot be moved or resized from outside
+
+Three techniques, all measured in the browser, all failed:
+
+| Technique | Result |
+|---|---|
+| `transform` + negative margin (the idiomatic slide) | Computed to the **identity matrix even as an inline `!important`** — the element carries `contain: strict` |
+| `height` | Computed away to Ionic's own `height: 56px` at equal specificity |
+| `height` with `!important` | Rendered box **unchanged at 91px** |
+
+**So D unmounts the bar rather than sliding it.** That is a pop, not a slide, and
+it is the honest limit of what the component allows: making it slide would mean
+replacing `IonTabBar` with a hand-built bar, and **none of the four disqualifiers
+covers "the standard component will not animate the way I want".**
+
+### The inset, in reverse — the interaction the brief warned about
+
+§27 gave the home-indicator padding to the bar and took it off the action panel,
+which is why the record costs 25px rather than 91. If the bar simply left, the
+panel would become bottom-most, **take the inset back and grow 34px at the exact
+moment the bar vanished** — resizing under the thumb on every scroll.
+
+**So a spacer of exactly the indicator height stays behind.** The action panel
+never changes, and the reclaim is the bar's 57px of buttons rather than the full
+91.
+
+Measured, both widths:
+
+| | bar shown | scrolled away | reclaimed | action panel height |
+|---|---|---|---|---|
+| **375 × 812** | content 614 | content **671** | **+57px** | 51 → 51 (**unchanged**) |
+| **320 × 690** | content 492 | content **549** | **+57px** | unchanged |
+
+Restores exactly on scroll up. Near the top (`< 24px`) the bar is always shown —
+arriving at a screen must never require a scroll gesture to reach navigation. An
+8px deadband stops a resting thumb flickering it. `prefers-reduced-motion`
+removes the animation, not the behaviour.
+
+## 29.5 The cost table, updated
+
+At 375 × 812 with the 34px indicator, content lost against `OFF`:
+
+| Screen | A | D (reading) | D (bar shown) |
+|---|---|---|---|
+| Record | −25px | **+32px** | −25px |
+| Line | −93px | **−36px** | −93px |
+| Dashboard | −91px | −34px | −91px |
+
+D's line-plane cost while reading is **36px against A's 93** — and reading is
+most of what happens on that screen.
+
+## 29.6 Recommendation: D
+
+A and D are the same design; D is A that gets out of the way. It keeps the
+lossless return that killed B — the bar is one upward flick away at all times,
+never a stack pop — and gives back 57px exactly when the drawing and the panels
+are being read.
+
+**The honest costs of D**, so they are on the table:
+
+1. **It is a pop, not a slide.** The component will not animate, so the bar
+   appears and disappears. On a real device that may read as abrupt; it is the
+   one thing I cannot judge from measurements.
+2. **It is scroll-coupled shell code we own** — small, but ours to maintain, and
+   scroll handlers are where jank appears first.
+3. On screens too short to scroll, D and A are identical.
+
+If the pop reads badly on the device, **A is the fallback** and costs 93px on the
+line plane — which is now the honest price of tabs, not a defect.
+
+---
+
+# 30. What R1j changes in the spec
+
+1. **§27.7's recommendation of B is withdrawn**, and §27's account of native
+   convention is superseded by §29.2.
+2. **The hamburger's removal needs device verification** before it is accepted —
+   §29.3. This is the only open verification item from this round.
+3. **D's scroll listener belongs to the shell** and should be specified alongside
+   `useZoneScroll()`, not as a separate mechanism.
+4. **`ion-tab-bar`'s immovability is worth recording in the boundary doc** — it
+   is the second component this round found to resist external sizing, after the
+   compact-bar attempt in §27.3.
