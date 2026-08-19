@@ -141,9 +141,19 @@ export function LineList({
                 <span className="code mono">{l.code}</span>
                 <span className="prod">{l.product}{l.withdrawn ? " — withdrawn from sale" : ""}</span>
               </span>
+              {/* POINT 4 — the customer's note is NOT in the row.
+                  Established rather than assumed: the field is
+                  `quote_line.room_label` (migrations/0001_customer_core.sql:88,
+                  plain TEXT), whose own schema comment already calls it
+                  "Note"; it is labelled "Note (optional)" to the CUSTOMER
+                  (ItemComposer.tsx:428) who types it free-form; and it is
+                  bounded at NOTE_MAX = 500 characters (configurator.ts:327),
+                  enforced client and server. Five hundred characters is a
+                  paragraph, not a room name — "Ensuite" is the lucky case, not
+                  the contract. It cannot be in a scannable row at any length. */}
               <span className="meta">
                 {l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"}
-                {" · "}×{l.qty} · {l.room}
+                {" · "}×{l.qty}
                 {l.parts ? ` · ${l.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} joined units` : ""}
               </span>
             </span>

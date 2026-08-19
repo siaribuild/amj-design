@@ -138,7 +138,9 @@ export function LineSwitcher({
               </span>
               <IonLabel className="ion-text-wrap">
                 <strong className="mono">{l.code}</strong>
-                <p>{l.room} · {l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"}</p>
+                {/* The customer's 500-char note is out of these rows too — same
+                    list grammar, same argument as the record's Lines list. */}
+                <p>{l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"} · ×{l.qty}</p>
               </IonLabel>
               <div slot="end" style={{ textAlign: "right" }}>
                 <Money cents={l.priceCents} absent="no rate" />

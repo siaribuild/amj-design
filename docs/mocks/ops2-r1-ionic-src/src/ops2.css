@@ -314,7 +314,30 @@ ion-button.inert {
 }
 .linebody .flag { font-size: .75rem; color: var(--ops-ink); }
 .linebody .flag::before { content: "! "; font-weight: 700; }
-ion-item.needs-review { --border-color: var(--ion-color-warning-shade); }
+/* POINT 5 — the flagged-row mark.
+   It used to be `--border-color`, which under `lines="full"` recolours the
+   item's BOTTOM DIVIDER: a rule drawn BETWEEN two rows, so it belongs to
+   neither and cannot say which of the two it is about. That is a structural
+   ambiguity, not a matter of taste, and the owner read it exactly right.
+
+   It moves to the LEADING EDGE, which is unambiguous because it is visibly
+   attached to one row's start and terminates at that row's own bounds.
+
+   Painted with an inset box-shadow on `::part(native)` — ion-item's documented
+   shadow part, the element that also carries the row's background — so the bar
+   lands ON the background rather than behind it. The row stays a plain
+   `IonItem`; no boundary rule is engaged and nothing goes bespoke.
+
+   NOT a background tint: selection already owns background, and two states
+   competing for one channel is how you get a row that is either selected or
+   flagged but never legibly both.
+
+   It survives greyscale on its own: the bar is a 4px SHAPE at the row's start,
+   and the `needs review` badge states the same thing in words beside it —
+   colour agrees with the mark, it does not carry it. */
+ion-item.needs-review::part(native) {
+  box-shadow: inset 4px 0 0 var(--ion-color-warning-shade);
+}
 
 /* ── The verdict list — what the rejected chip strip was actually FOR ─────────
    Five headlines at once, stacked and wrapping, never scrolling sideways and
