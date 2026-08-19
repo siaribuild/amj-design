@@ -1820,8 +1820,21 @@ export default function App() {
    *  prop and could not be expected to remember. Same lesson as the refresh
    *  itself: state that must track an account cannot be maintained by whoever
    *  happens to change it. */
+  const signedInAs = useRef<string | null>(null);
   const setUser = useCallback((next: AuthUser | null) => {
-    sessionGeneration.current++;
+    const nextId = next?.id ?? null;
+    // ONLY on an identity change. `setUser` is also how an unchanged account
+    // updates itself — a profile save, a name added at the interstitial — and
+    // invalidating on those dropped legitimate in-flight refreshes: save your
+    // name while a trade refresh is in the air and the card keeps whatever it
+    // had, silently, because the answer was thrown away on arrival.
+    //
+    // Compared against a ref rather than inside the state updater, so this stays
+    // synchronous and performs no side effect during render.
+    if (signedInAs.current !== nextId) {
+      signedInAs.current = nextId;
+      sessionGeneration.current++;
+    }
     setUserState(next);
   }, []);
   // Trade status is a SIBLING of the user, never a field on it: the Worker
