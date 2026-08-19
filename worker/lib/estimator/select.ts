@@ -16,7 +16,7 @@ import { catalogueCandidateOfferability, type CatalogueRepository } from "./cata
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 import {
   checkHardRules, fitFacts, resolvedRequirement, RULE_VERSION,
-  type FitFacts, type RuleOutcome, type OutcomeStatus,
+  type FitFacts, type RuleOutcome,
 } from "./rules";
 import {
   deviationOf, runLadder, REQUIREMENT_TOLERANCE, SELECTION_VERSION,
@@ -339,5 +339,3 @@ export function parentRepresentative(result: SelectionResult): EvaluatedCandidat
     .sort((a, b) => (a.candidateOutcome.rank ?? 0) - (b.candidateOutcome.rank ?? 0));
   return ranked[0] ?? null;
 }
-
-export type { OutcomeStatus };
