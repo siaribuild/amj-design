@@ -102,8 +102,11 @@ export function LinePage() {
           if (y <= 2 && pinned) setPinned(false);
         }}>
         <LineBody line={line} plateSize={heroSize} showPlate={!pinned}
-          onAlternatives={() => history.push(`/record/${ref}/line/${line.id}/alternatives`)}
-          onNotes={() => history.push(`/record/${ref}/line/${line.id}/notes`)} />
+          onDimensions={() => history.push(`/record/${ref}/line/${line.id}/dimensions`)}
+          onWhy={() => history.push(`/record/${ref}/line/${line.id}/why`)}
+          onManufacturer={() => history.push(`/record/${ref}/line/${line.id}/price`)}
+          onNotes={() => history.push(`/record/${ref}/line/${line.id}/notes`)}
+          onEdit={() => history.push(`/record/${ref}/line/${line.id}/edit`)} />
       </IonContent>
 
       <IonFooter className="ion-no-border">
@@ -148,7 +151,9 @@ export function LinePage() {
           { text: "Split into units" },
           ...(line.parts ? [{ text: "Merge back to one" }] : []),
           { text: `Notes on ${line.code}`, handler: () => history.push(`/record/${ref}/line/${line.id}/notes`) },
-          { text: "Show what it was chosen over", handler: () => history.push(`/record/${ref}/line/${line.id}/alternatives`) },
+          { text: "Why this product", handler: () => history.push(`/record/${ref}/line/${line.id}/why`) },
+          { text: "Dimensions and their source", handler: () => history.push(`/record/${ref}/line/${line.id}/dimensions`) },
+          { text: "Manufacturer's price", handler: () => history.push(`/record/${ref}/line/${line.id}/price`) },
           { text: `Copy a link to ${line.code}` },
           { text: `Delete ${line.code}`, role: "destructive", handler: () => setDeleteArmed(true) },
           { text: "This job — Progress", handler: () => history.push(`/record/${ref}/job/progress`) },

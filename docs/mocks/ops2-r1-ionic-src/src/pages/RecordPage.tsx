@@ -210,8 +210,11 @@ export function RecordPage() {
                   <LineBody line={selected} plateSize={canvasPlate} showPlate={!pinned}
                     dirtyFrom={draft?.from ?? null}
                     heightMm={draft?.heightMm} widthMm={draft?.widthMm}
-                    onAlternatives={() => history.push(`/record/${ref}/line/${selected.id}/alternatives`)}
-                    onNotes={() => history.push(`/record/${ref}/line/${selected.id}/notes`)} />
+                    onDimensions={() => history.push(`/record/${ref}/line/${selected.id}/dimensions`)}
+                    onWhy={() => history.push(`/record/${ref}/line/${selected.id}/why`)}
+                    onManufacturer={() => history.push(`/record/${ref}/line/${selected.id}/price`)}
+                    onNotes={() => history.push(`/record/${ref}/line/${selected.id}/notes`)}
+                    onEdit={() => setStore({ editing: selected.id })} />
                 </div>
                 <div className="deck">
                   <LineScroller run={run} at={at} filtered={filterUnpriced}

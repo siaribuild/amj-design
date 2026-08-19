@@ -303,3 +303,110 @@ export const PROJECT_BLOCKS = [
   { key: "history", name: "History" },
   { key: "notes", name: "Notes" },
 ] as const;
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   R1f — what the four review scenarios need, sourced from the real schema.
+   Every field below exists; the absences are marked and are real absences.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* SCENARIO 1 — validate the opening's dimensions against their source.
+   quote_line.origin ('manual' | 'schedule', migration 0012) is exactly the
+   distinction the owner drew: a number off a plan and a number a customer said
+   on the phone. measured_by (0001) says how the customer measured. edited_fields
+   (0019) is a JSON array of the field GROUPS a human changed — and R-55 records
+   why it carries no actor and no timestamp: "inventing one is worse than
+   omitting it".
+
+   What is NOT available, verified during the grill against production:
+   evidence_items has page_no, sheet_ref and region_json columns, and 0 of 1,000
+   rows populate any of them. extracted_text is populated on all 1,000. So the
+   console can quote what the parser read; it cannot say which page it read it
+   from, and it must say so rather than leave a blank. */
+export type LineSource = {
+  origin: "schedule" | "manual";
+  /** The document, when origin is `schedule`. */
+  file?: string;
+  /** evidence_items.extracted_text — the only populated provenance field. */
+  read?: string;
+  measuredBy: "" | "frame" | "opening" | "unsure";
+  /** quote_line.edited_fields — field GROUPS only. No actor, no timestamp. */
+  editedFields: string[];
+};
+
+export const SOURCES: Record<string, LineSource> = {
+  l04: { origin: "schedule", file: "Lot14-windows-schedule.pdf",
+         read: "W04   1200 x 3300   AWN  x3 units   Bed 1   obscure to ensuite",
+         measuredBy: "opening", editedFields: ["dims_json"] },
+  l06: { origin: "schedule", file: "Lot14-windows-schedule.pdf",
+         read: "W06   2100 x 600   FIX   Stair void   toughened",
+         measuredBy: "opening", editedFields: [] },
+  l13: { origin: "manual", measuredBy: "unsure", editedFields: ["dims_json", "product_slug"] },
+};
+export const DEFAULT_SOURCE: LineSource = {
+  origin: "schedule", file: "Lot14-windows-schedule.pdf",
+  read: "—", measuredBy: "frame", editedFields: [],
+};
+
+/* SCENARIO 2 — validate the recommendation.
+   The owner believes the estimator picks "the cheapest product that matches size
+   and energy constraints". It does not, and the derivation surface must explain
+   what the code actually does:
+
+     • THREE HARD FILTERS disqualify before anything is scored — sellable
+       (!disabled), rules-passing (outcome.passed) and priceable (price.ok) —
+       select.ts:90/168/169, with select.ts:138 `passing.filter(e => e.price?.ok)`.
+     • THEN a six-component weighted score, rank.ts:17. PRICE IS 15%.
+     • RANKER_VERSION "v3-graded-thermal": compliance is GRADED, so a thermal
+       miss DEPRESSES rank instead of eliminating the candidate, and an unknown
+       Uw against a real cap is "a mild penalty, not 0" (thermal/compliance.ts:32).
+
+   candidate_result already persists all of this per candidate: hard_rule_outcome_json
+   (per-filter outcome + reasons), score, score_components_json, reason_codes,
+   rank, selected (migration 0014:96-110). Nothing here needs new storage. */
+export const RANK_WEIGHTS: { key: string; label: string; pct: number }[] = [
+  { key: "compliance", label: "Thermal compliance", pct: 35 },
+  { key: "geometry", label: "Fits the opening", pct: 20 },
+  { key: "configuration", label: "Configuration match", pct: 15 },
+  { key: "commercial", label: "Price", pct: 15 },
+  { key: "historical", label: "What we have used before", pct: 10 },
+  { key: "dataCompleteness", label: "Catalogue data complete", pct: 5 },
+];
+
+export const FILTER_STAGE = [
+  { label: "Not sellable", detail: "withdrawn or disabled in the catalogue", n: 2 },
+  { label: "Failed a hard rule", detail: "outside the product's size or configuration limits", n: 5 },
+  { label: "Could not be priced", detail: "no rate for that size band", n: 1 },
+];
+
+export const MODEL_INPUTS = [
+  { k: "Uw target", v: "≤ 3.9", src: "the plan's window schedule" },
+  { k: "SHGC target", v: "≤ 0.44", src: "the plan's window schedule" },
+  { k: "Opening", v: "1,200 × 3,300 mm", src: "the schedule, edited by hand" },
+  { k: "Frame systems", v: "unrestricted", src: "no constraint set on this project" },
+  { k: "Note in the plan", v: "obscure to ensuite", src: "read from the schedule text" },
+];
+
+/** SCENARIO 3's cross-line concern: "maybe we should go with same family, no
+ *  matter the price". Nothing in ops answers "what did I choose elsewhere", so
+ *  this is derived here from the lines themselves. */
+export const familyMix = () => {
+  const m = new Map<string, number>();
+  LINES.forEach((l) => m.set(l.frame, (m.get(l.frame) ?? 0) + 1));
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+};
+
+/* SCENARIO 4 — the manufacturer's price plus an uplift.
+   VERIFIED NEW: there is no uplift, markup or margin anywhere in worker/, src/
+   or migrations/. The account discount that DOES exist is a different thing —
+   migration 0032 puts discount_percent on `user`, and pricing.ts:191 multiplies
+   it into the unit price. The owner's platform change moves that to the items
+   total, which is flagged in the spec rather than modelled here. */
+export const MANUFACTURER = {
+  /** Null until ops has rung them. */
+  quotedCents: null as number | null,
+  /** Their figure may or may not include GST — a real ambiguity on a call. */
+  basis: "ex" as "ex" | "inc",
+  /** Defaults to 30 and is adjustable on the fly, per the owner. */
+  upliftPct: 30,
+};

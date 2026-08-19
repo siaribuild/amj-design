@@ -34,7 +34,7 @@ function StripDrawing({ line }: { line: Line }) {
 }
 
 export function Plate({
-  line, size, pinned, onUnpin, dirtyFrom, heightMm, widthMm,
+  line, size, pinned, onUnpin, dirtyFrom, heightMm, widthMm, captionless,
 }: {
   line: Line;
   /** hero on a phone, md on a canvas column, lg inside the expansion. */
@@ -47,6 +47,11 @@ export function Plate({
   dirtyFrom?: string | null;
   heightMm?: number;
   widthMm?: number;
+  /** R1f — the line plane moved the dimension caption into its own row, because
+   *  that row is now the door to the dimensions-and-source review (scenario 1).
+   *  Two captions saying the same millimetres would be the duplication this
+   *  round exists to remove. */
+  captionless?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const h = heightMm ?? line.heightMm;
@@ -81,7 +86,7 @@ export function Plate({
           <Elevation op={line.op} widthMm={w} heightMm={h}
             parts={line.parts} axis={line.axis} size={size} className="elev" />
         </button>
-        <figcaption>
+        {!captionless && <figcaption>
           {dirtyFrom ? (
             /* R-50 — whose figures. Stated, not implied. */
             <span className="dirty">{dirtyFrom}</span>
@@ -97,7 +102,10 @@ export function Plate({
               No size read for this opening — drawn as a square stand-in
             </span>
           )}
-        </figcaption>
+        </figcaption>}
+        {captionless && dirtyFrom && (
+          <figcaption><span className="dirty">{dirtyFrom}</span></figcaption>
+        )}
       </figure>
 
       <IonModal isOpen={expanded} onDidDismiss={() => setExpanded(false)} >

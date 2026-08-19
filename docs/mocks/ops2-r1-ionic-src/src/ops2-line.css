@@ -109,3 +109,93 @@ ion-item.altrow { --padding-start: 16px; --inner-padding-end: 12px; }
   color: color-mix(in srgb, var(--ion-color-primary, #3880ff) 70%, var(--ops-text));
 }
 ion-item.altrow ion-button { margin: 0; --padding-start: 10px; --padding-end: 10px; }
+
+/* ═══ R1f — the doors are the facts ═══════════════════════════════════════════
+   A door row is a fact that opens the review of itself. It reads as a fact
+   first and a control second: the value at full weight, its state quiet
+   beneath, a chevron at the end. Deliberately not styled as a button — the
+   reviewer is looking at the number, not shopping for actions. */
+.doorrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; width: 100%; gap: 0 10px;
+  padding: 10px 16px; border: 0; text-align: left; cursor: pointer;
+  background: none; color: inherit;
+  border-bottom: 1px solid var(--ops-line);
+}
+.doorrow:active { background: var(--ops-surface-2); }
+.doorrow:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: -2px; }
+.dr-main { grid-column: 1; font-size: .9375rem; font-weight: 600; min-width: 0; }
+.dr-sub { grid-column: 1; font-size: .75rem; color: var(--ops-quiet); }
+.doorrow ion-icon { grid-column: 2; grid-row: 1 / span 2; font-size: 16px; color: var(--ops-quiet); }
+.dimrow .dr-main { font-variant-numeric: tabular-nums slashed-zero; }
+.pricerow .money { align-items: flex-start; }
+.pricerow .money .amt { font-size: 1.0625rem; }
+
+/* What it is — one line, because the editor changes it and the editor is the
+   footer. */
+.linewhat {
+  margin: 0; padding: 10px 16px; font-size: .875rem; line-height: 1.4;
+  border-bottom: 1px solid var(--ops-line);
+}
+
+/* R-46 — each problem carries its own way into the configurator. */
+.v-problems li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.vp-text { flex: 1 1 auto; min-width: 0; }
+/* Not the primary hue. The fix control sits ON the warning tint, where Ionic's
+   blue measured 4.34:1 against the dark palette — under rule A1's floor, and the
+   same failure the record's filter action had. Ink plus an underline says
+   "control" without borrowing a colour that has to fight the tint behind it. */
+.vp-fix {
+  flex: none; border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: .8125rem; font-weight: 700;
+  color: var(--ops-ink); text-decoration: underline; text-underline-offset: 2px;
+}
+.v-evidence {
+  margin: 8px 0 10px; font-size: .8125rem; line-height: 1.4;
+  color: var(--ops-quiet); font-variant-numeric: tabular-nums;
+}
+
+/* ── the dimensions plane ── */
+.dimpair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 4px; }
+.dimpair > div { display: flex; flex-direction: column; gap: 2px; }
+.dp-k { font-size: .6875rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ops-quiet); }
+.dp-v { font-size: 1.25rem; font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero; }
+.readback-text { font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.blocknote { display: block; margin-top: 12px; font-size: .75rem; line-height: 1.45; }
+
+/* ── the why plane ── */
+.kv-src { display: block; font-size: .6875rem; color: var(--ops-quiet); margin-top: 1px; }
+ul.rows .filter-n {
+  grid-column: 2; grid-row: 1 / span 2; align-self: center;
+  font-size: 1.125rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.weights { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.weights li { display: grid; grid-template-columns: 1fr 96px 34px; align-items: center; gap: 8px; }
+.w-label { font-size: .8125rem; }
+.w-bar { height: 8px; background: var(--ops-surface-2); border-radius: 4px; overflow: hidden; }
+.w-bar > span { display: block; height: 100%; background: var(--ion-color-primary); }
+.w-pct { font-size: .75rem; font-weight: 700; text-align: right;
+  font-variant-numeric: tabular-nums; }
+.alt-rank {
+  font-size: .8125rem; font-weight: 700; color: var(--ops-quiet);
+  font-variant-numeric: tabular-nums; min-width: 14px;
+}
+ion-item.altrow-chosen { --background: var(--ops-primary-tint); }
+.alt-name em { font-style: normal; font-weight: 700; color: var(--ion-color-primary); }
+.famline { margin: 0 0 8px; font-size: .875rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+
+/* ── the manufacturer price plane ── */
+.mfr-lede { margin: 0 0 16px; font-size: .875rem; line-height: 1.45; }
+.mfr-lede .money { display: inline-flex; }
+.mfr-fields { display: grid; gap: 4px; margin-top: 8px; }
+.mfr-work {
+  margin-top: 16px; padding: 10px 12px; border-radius: 6px;
+  background: var(--ops-surface); display: grid; gap: 4px;
+}
+.mfr-work > div { display: flex; justify-content: space-between; gap: 12px;
+  font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.mfr-work .mw-total { border-top: 1px solid var(--ops-line); padding-top: 6px;
+  margin-top: 2px; font-weight: 700; font-size: .9375rem; }
