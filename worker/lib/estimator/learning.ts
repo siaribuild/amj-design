@@ -106,6 +106,130 @@ export function retrievalKey(context: {
   return [operation, basis, sizeBand(context.widthMm), thermal].join("|");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// THE SHADOW MODEL — dark by construction (D11)
+//
+// It records what it WOULD have said and is wired into nothing the ladder
+// reads. `runProjectEstimate` builds it once per run and hands it to the
+// OUTCOME BUILDER, which stamps a `learned` block on each candidate for staff
+// to see. The ladder's interface has no parameter that could receive it, so
+// "removing the learned model changes no selection anywhere" (AC-32) is a fact
+// about the type signature rather than a promise about the code.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** The density floor, raised from the legacy 2 (spec A10). Laplace smoothing on
+ *  n=2 swings between 0.25 and 0.5 on a single row — the model would announce a
+ *  preference on evidence one more quote could reverse. At n≥5 the estimate is
+ *  stable enough to put in front of a reviewer as "this is what humans did".
+ *
+ *  A LEARNED-LAYER constant, not a ladder one: it changes what staff are shown
+ *  and can move no recommendation (AC-4 is about the selection path). */
+export const SHADOW_MIN_OBSERVATIONS = 5;
+
+export interface ShadowRow {
+  retrieval_key: string | null;
+  final_product_slug: string | null;
+  provenance: string | null;
+}
+
+export interface ShadowLookup {
+  retrievalKey: string;
+  observations: number;
+  provenance: { inPlatform: number; backfilled: number };
+  /** Rows in this bucket naming THIS product. Raw counts, always exposed, so a
+   *  reviewer can discount a thin lead themselves. */
+  supportFor(productSlug: string): number;
+  /** The unique modal product, or null below the floor / on a tie (AC-31). */
+  preferredSlug: string | null;
+}
+
+export interface ShadowLearnedModel {
+  version: string;
+  lookup(opening: OpeningInput): ShadowLookup;
+}
+
+interface Bucket {
+  total: number;
+  inPlatform: number;
+  backfilled: number;
+  bySlug: Map<string, number>;
+}
+
+const EMPTY: Bucket = { total: 0, inPlatform: 0, backfilled: 0, bySlug: new Map() };
+
+/** Pure, so the whole model is testable without a database. */
+export function aggregateShadow(rows: ShadowRow[]): ShadowLearnedModel {
+  const buckets = new Map<string, Bucket>();
+  for (const row of rows ?? []) {
+    // A row with no key belongs to no bucket. Counting it in the nearest one
+    // would put pre-platform history behind a claim about a specific kind of
+    // opening — which is the opposite of what the key exists to establish.
+    if (!row.retrieval_key || !row.final_product_slug) continue;
+    const bucket = buckets.get(row.retrieval_key)
+      ?? { total: 0, inPlatform: 0, backfilled: 0, bySlug: new Map<string, number>() };
+    bucket.total += 1;
+    // D18: a backfilled row is REAL — an actual plan with the product that was
+    // actually manufactured. The flag exists because the decision was made
+    // outside the platform's review flow and may lack the thermal context the
+    // key reads, not because it is less true. So it counts EQUALLY and the
+    // split is reported; down-weighting it would need a weight, and an
+    // unsourced weight nobody can defend is the disease this redesign cures.
+    if (row.provenance === "in_platform") bucket.inPlatform += 1;
+    else if (row.provenance === "backfilled") bucket.backfilled += 1;
+    bucket.bySlug.set(row.final_product_slug, (bucket.bySlug.get(row.final_product_slug) ?? 0) + 1);
+    buckets.set(row.retrieval_key, bucket);
+  }
+
+  return {
+    version: RETRIEVAL_KEY_VERSION,
+    lookup(opening) {
+      const key = retrievalKey(shadowContext(opening));
+      const bucket = buckets.get(key) ?? EMPTY;
+      return {
+        retrievalKey: key,
+        observations: bucket.total,
+        provenance: { inPlatform: bucket.inPlatform, backfilled: bucket.backfilled },
+        supportFor: (slug) => bucket.bySlug.get(slug) ?? 0,
+        preferredSlug: modalSlug(bucket),
+      };
+    },
+  };
+}
+
+/** The UNIQUE modal product, above the floor. A bare argmax on a tie is an
+ *  alphabetical coin flip dressed up as "the layer would have preferred X"; the
+ *  reviewer sees the counts either way, so suppressing the claim costs them
+ *  nothing and asserting it would cost them their trust the first time they
+ *  checked. A thin but genuine lead IS reported — withholding a 3-of-5 majority
+ *  would need a second threshold with nothing behind it. */
+function modalSlug(bucket: Bucket): string | null {
+  if (bucket.total < SHADOW_MIN_OBSERVATIONS) return null;
+  let best: string | null = null;
+  let bestCount = 0;
+  let tied = false;
+  for (const [slug, count] of bucket.bySlug) {
+    if (count > bestCount) { best = slug; bestCount = count; tied = false; }
+    else if (count === bestCount) tied = true;
+  }
+  return tied ? null : best;
+}
+
+/** The four fields the key reads, off an opening rather than off a stored row. */
+const shadowContext = (opening: OpeningInput) => ({
+  operationType: opening.operationType ?? null,
+  requirementBasis: opening.thermalContext?.requirementBasis ?? null,
+  widthMm: opening.widthMm ?? null,
+  thermalRequired: !resolvedRequirementAbsent(opening),
+});
+
+/** Whether this opening carries a thermal requirement at all. Read through the
+ *  same coherence-guarded resolution selection uses, so the bucket a lookup
+ *  lands in matches the bucket the capture wrote. */
+function resolvedRequirementAbsent(opening: OpeningInput): boolean {
+  const r = opening.requirements ?? null;
+  return !r || (r.maxUValue == null && r.minShgc == null && r.maxShgc == null);
+}
+
 // HistoricalRow, Counts, smooth(), HistoricalModel, aggregateHistorical() and
 // buildHistoricalModel() lived here and are GONE (ADR 0007).
 //

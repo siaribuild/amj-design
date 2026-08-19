@@ -11,13 +11,13 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION } from ${p("worker/lib/estimator/learning.ts")};
+      export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } from ${p("worker/lib/estimator/learning.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -189,4 +189,125 @@ test("AC-30 the key is versioned, and recomputable from context_json alone", () 
   assert.equal(retrievalKey(contextJson), "awning|plan_derived|m|1");
   // …and the same object read back off a row round-trips to the same bucket.
   assert.equal(retrievalKey(JSON.parse(JSON.stringify(contextJson))), retrievalKey(contextJson));
+});
+
+// ── The shadow model (D11, D18) ─────────────────────────────────────────────
+
+const shadowRow = (retrieval_key, final_product_slug, provenance = "in_platform") =>
+  ({ retrieval_key, final_product_slug, provenance });
+const BUCKET = "awning|plan_derived|s|1";
+const shadowOpening = (over = {}) => ({
+  operationType: "awning", widthMm: 1200,
+  thermalContext: { requirementBasis: "plan_derived" },
+  requirements: { maxUValue: 4.0 },
+  ...over,
+});
+
+test("AC-31 the density floor: a bucket speaks at five observations, not at four", () => {
+  // Raised from the legacy 2. Laplace smoothing on n=2 swings between 0.25 and
+  // 0.5 on a single row — the model would announce a preference on evidence
+  // that one more quote could reverse. At n≥5 the estimate is stable enough to
+  // put in front of a reviewer as "this is what humans did".
+  assert.equal(SHADOW_MIN_OBSERVATIONS, 5);
+
+  const four = aggregateShadow([1, 2, 3, 4].map(() => shadowRow(BUCKET, "amj100")));
+  const atFour = four.lookup(shadowOpening());
+  assert.equal(atFour.observations, 4);
+  assert.equal(atFour.preferredSlug, null, "below the floor it says nothing at all");
+  assert.equal(atFour.supportFor("amj100"), 4, "…while still reporting what it saw");
+
+  const five = aggregateShadow([1, 2, 3, 4, 5].map(() => shadowRow(BUCKET, "amj100")));
+  const atFive = five.lookup(shadowOpening());
+  assert.equal(atFive.observations, 5);
+  assert.equal(atFive.preferredSlug, "amj100");
+  assert.equal(atFive.supportFor("amj100"), 5);
+  assert.equal(atFive.supportFor("never-seen"), 0);
+});
+
+test("the preference is the UNIQUE modal product — a tie is not a preference", () => {
+  // A bare argmax on a tie is an alphabetical coin flip dressed up as "the layer
+  // would have preferred X". The reviewer is shown the counts either way, so
+  // suppressing the claim costs them nothing and asserting it would cost them
+  // their trust the first time they checked.
+  const tied = aggregateShadow([
+    shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+    shadowRow(BUCKET, "amj150"),
+  ]);
+  const split = tied.lookup(shadowOpening());
+  assert.equal(split.observations, 5);
+  assert.equal(split.preferredSlug, null, "two products at two each is not a lead");
+  assert.equal(split.supportFor("amj80"), 2);
+  assert.equal(split.supportFor("amj100"), 2);
+
+  // A thin but genuine lead IS reported, with the counts beside it so a reviewer
+  // can discount it. Withholding a 3-of-5 majority would be a second judgement
+  // call with a second unsourced threshold behind it.
+  const led = aggregateShadow([
+    shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+  ]);
+  assert.equal(led.lookup(shadowOpening()).preferredSlug, "amj80");
+  assert.equal(led.lookup(shadowOpening()).supportFor("amj80"), 3);
+});
+
+test("a bucket is looked up by the SAME key the capture wrote", () => {
+  const model = aggregateShadow([1, 2, 3, 4, 5].map(() => shadowRow(BUCKET, "amj100")));
+  assert.equal(model.version, RETRIEVAL_KEY_VERSION);
+  assert.equal(model.lookup(shadowOpening()).retrievalKey, BUCKET);
+
+  // A different bucket is a different question, and an empty one is silent
+  // rather than neutral-sounding.
+  const elsewhere = model.lookup(shadowOpening({ widthMm: 4200 }));
+  assert.equal(elsewhere.retrievalKey, "awning|plan_derived|l|1");
+  assert.equal(elsewhere.observations, 0);
+  assert.equal(elsewhere.preferredSlug, null);
+  assert.equal(elsewhere.supportFor("amj100"), 0);
+
+  // An opening with no thermal requirement lands in its own bucket, because
+  // "what did humans pick when a band was in play" is a different question.
+  assert.equal(model.lookup(shadowOpening({ requirements: null })).retrievalKey, "awning|plan_derived|s|0");
+});
+
+test("AC-35 provenance is counted and reported, and it does not weight the evidence", () => {
+  // D18: the backfilled rows are REAL — actual plans, with the products that
+  // were actually manufactured. The flag exists because those decisions were
+  // made outside the platform's review flow and may lack the thermal context
+  // the key reads, not because they are less true. So they count equally, and
+  // the split is reported: a reviewer told "3 of 4 similar openings went this
+  // way" can see which of the four were in-platform reviews.
+  //
+  // Down-weighting them would need a weight, and an unsourced weight nobody can
+  // defend is the exact disease this redesign exists to cure.
+  const model = aggregateShadow([
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+    shadowRow(BUCKET, "amj100", "backfilled"),
+    shadowRow(BUCKET, "amj80", "backfilled"),
+  ]);
+  const found = model.lookup(shadowOpening());
+  assert.equal(found.observations, 5);
+  assert.deepEqual(found.provenance, { inPlatform: 3, backfilled: 2 });
+  assert.equal(found.supportFor("amj100"), 4, "a backfilled row counts as evidence");
+  assert.equal(found.preferredSlug, "amj100");
+
+  // An unrecognised provenance is counted as an observation but claimed for
+  // neither side — the split must add up to something a surface can render.
+  const odd = aggregateShadow([...Array(5)].map(() => shadowRow(BUCKET, "amj100", "who-knows")));
+  const oddFound = odd.lookup(shadowOpening());
+  assert.equal(oddFound.observations, 5);
+  assert.deepEqual(oddFound.provenance, { inPlatform: 0, backfilled: 0 });
+});
+
+test("rows with no retrieval key are not evidence about anything", () => {
+  // A row captured before the key existed, or one whose key could not be
+  // computed, belongs to no bucket. Counting it in the nearest one would put
+  // pre-platform history behind a claim about a specific kind of opening.
+  const model = aggregateShadow([
+    ...[1, 2, 3, 4, 5].map(() => shadowRow(BUCKET, "amj100")),
+    shadowRow(null, "amj80"), shadowRow("", "amj80"),
+    { retrieval_key: BUCKET, final_product_slug: null, provenance: "in_platform" },
+  ]);
+  const found = model.lookup(shadowOpening());
+  assert.equal(found.observations, 5, "only the five real rows count");
+  assert.equal(found.supportFor("amj80"), 0);
 });
