@@ -643,41 +643,58 @@ export async function revokeTrade(
   const customer = await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(customerId).first<UserRow>();
   if (!customer || customer.type !== "customer") return { ok: false, error: "not_found" };
 
-  const claim = await env.DB.prepare(
-    `UPDATE trade_application
-        SET revoked_at = datetime('now'), revoked_by = ?1, revoke_reason = ?2
-      WHERE user_id = ?3 AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
-  ).bind(actor.id, trimmed, customerId).run();
-  if (Number(claim.meta?.changes ?? 0) === 0) return { ok: false, error: "not_verified" };
-
-  await env.DB.prepare("UPDATE user SET discount_percent = 0 WHERE id = ?").bind(customerId).run();
-
-  // A REVOKE REACHES THE APPLICATION ALREADY IN FLIGHT (security review SEC-3).
+  // ONE TRANSACTION: the grant, the rate and the in-flight application move
+  // together or not at all.
   //
-  // Blocking the account's NEXT application is not enough: one submitted BEFORE
-  // the revocation survives it untouched. A verified customer can pre-position a
-  // second application — it queues carrying a perfectly clean set of reasons —
-  // and wait. Revoke them, and that row is still sitting in the queue looking
-  // like an ordinary applicant; approving it restores the rate the revocation
-  // just removed, and the person approving has no way to know.
+  // These were three sequential statements with a read-modify-write in the
+  // middle. Two ways that went wrong, and neither needed an attacker:
   //
-  // The decision stays theirs. A pending application may well be the customer
-  // putting things right, and auto-rejecting it would punish that. What must not
-  // happen is somebody deciding it without knowing the account was revoked
-  // underneath it — so the reason is added to the row rather than the row being
-  // taken away. The partial unique index means there is at most one.
-  const inFlight = await env.DB.prepare(
-    "SELECT id, queue_reasons FROM trade_application WHERE user_id = ? AND status = 'pending'",
-  ).bind(customerId).first<{ id: string; queue_reasons: string | null }>();
-  if (inFlight) {
-    let reasons: string[] = [];
-    try { reasons = JSON.parse(inFlight.queue_reasons ?? "[]") as string[]; } catch { reasons = []; }
-    if (!reasons.includes("previously_revoked")) {
-      reasons.push("previously_revoked");
-      await env.DB.prepare("UPDATE trade_application SET queue_reasons = ?1 WHERE id = ?2")
-        .bind(JSON.stringify(reasons), inFlight.id).run();
-    }
-  }
+  //   - a request that died after the grant was claimed left the rate zeroed and
+  //     the queued application UNannotated — the exact state SEC-3 exists to
+  //     prevent, reached by a dropped connection instead of a clever sequence;
+  //   - the read-modify-write on `queue_reasons` could lose a concurrent write,
+  //     so an application that queued for a name mismatch AND a revocation could
+  //     end up admitting to only one.
+  //
+  // `json_insert` appends server-side, so there is no read-modify-write left to
+  // lose, and the `NOT LIKE` guard makes a second revoke idempotent rather than
+  // stacking the reason twice.
+  const [claim] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE trade_application
+          SET revoked_at = datetime('now'), revoked_by = ?1, revoke_reason = ?2
+        WHERE user_id = ?3 AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
+    ).bind(actor.id, trimmed, customerId),
+    // Guarded by the claim's own effect rather than assumed: if nothing was
+    // revoked, this must not zero a rate ops negotiated by hand.
+    env.DB.prepare(
+      `UPDATE user SET discount_percent = 0
+        WHERE id = ?1 AND type = 'customer'
+          AND EXISTS (SELECT 1 FROM trade_application
+                       WHERE user_id = ?1 AND status = 'approved' AND revoked_at IS NOT NULL)`,
+    ).bind(customerId),
+    // A REVOKE REACHES THE APPLICATION ALREADY IN FLIGHT (SEC-3).
+    //
+    // Blocking the account's NEXT application is not enough: one submitted
+    // BEFORE the revocation survives it. A verified customer can pre-position a
+    // second application — it queues carrying a clean set of reasons — and wait.
+    // Revoke them, and that row still looks like an ordinary applicant, so
+    // approving it restores the rate the revocation just removed.
+    //
+    // The decision stays a person's: a pending application may be the customer
+    // putting things right, and auto-rejecting it would punish that. What must
+    // not happen is somebody deciding it without knowing. So the reason is added
+    // to the row rather than the row being taken away.
+    env.DB.prepare(
+      `UPDATE trade_application
+          SET queue_reasons = json_insert(
+                CASE WHEN queue_reasons IS NULL OR queue_reasons = '' THEN '[]' ELSE queue_reasons END,
+                '$[#]', 'previously_revoked')
+        WHERE user_id = ?1 AND status = 'pending'
+          AND (queue_reasons IS NULL OR queue_reasons NOT LIKE '%previously_revoked%')`,
+    ).bind(customerId),
+  ]);
+  if (Number(claim?.meta?.changes ?? 0) === 0) return { ok: false, error: "not_verified" };
 
   await logEvent(env, {
     actor: actor.id, entityType: "user", entityId: customerId,
