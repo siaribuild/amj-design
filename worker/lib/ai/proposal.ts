@@ -2,6 +2,7 @@ import type { Env } from "../../types";
 import { uuid } from "../util";
 import { PIPELINE_VERSION } from "./versions";
 import type { SelectionResult } from "../estimator/select";
+import type { Tier } from "../../../src/data/recommendation";
 import type { OpeningInput } from "../estimator/types";
 import { defaultOptions } from "../../../src/data/configurator";
 import { getProductBySlug } from "../../../src/data/catalogue";
@@ -29,6 +30,49 @@ export interface PublishProposalResult {
   proposalId: string;
   published: boolean;
   appliedLines: number;
+}
+
+/** What the machine could and could not settle about one proposal line
+ *  (AC-26, spec §4.11).
+ *
+ *  `dominant` — "the top two scores differed by at least 0.05" — is deleted with
+ *  the ranker that produced it. It was a fact about the SCORER, and it answered
+ *  the wrong question: two candidates being close said nothing about whether
+ *  either of them actually met the customer's brief. The tier the pick came from
+ *  does say that, so it is what these read now.
+ *
+ *  Lifted out of publishAiProposal so the mapping is one testable table rather
+ *  than three expressions buried in a batch builder. */
+export function proposalVerdict(input: {
+  /** The tier the winning candidate competed from; null when nothing was picked. */
+  tier: Tier | null;
+  status: SelectionResult["status"];
+  /** Whether the winning candidate actually serves the opening as a single unit. */
+  fits: boolean;
+  /** True when the opening carries no thermal requirement at all. */
+  requirementAbsent: boolean;
+  hasScheduleCommercialOption: boolean;
+  documentReviewReasons: string[];
+}): { confidence: "high" | "medium" | "low"; reviewRequired: boolean; thermalBandNotMet: boolean } {
+  const requirementMet = input.tier === "meets";
+  const badTier = input.tier === "misses" || input.tier === "thermal_unknown" || input.tier === "does_not_fit";
+
+  const confidence = requirementMet && input.status === "ready" ? "high"
+    : badTier || input.status === "unavailable" ? "low"
+      : "medium";
+
+  // A human confirms whenever the machine did not fully answer the brief.
+  const reviewRequired = !(requirementMet && input.status === "ready")
+    || !input.fits
+    || input.hasScheduleCommercialOption
+    || input.documentReviewReasons.length > 0;
+
+  // The thermal miss, read from the verdict rather than from a filter that no
+  // longer exists — the same fact the ladder selected on. An opening with no
+  // band cannot miss one.
+  const thermalBandNotMet = !requirementMet && !input.requirementAbsent && input.tier != null;
+
+  return { confidence, reviewRequired, thermalBandNotMet };
 }
 
 const parseArray = (value: string | null | undefined): string[] => {
@@ -241,17 +285,23 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     const canApply = !!quote &&
       (quote.origin === "ai" || quote.origin === "schedule") &&
       !priceFields.some((field) => locks.includes(field));
-    // AC-26 / spec §4.11. `dominant` is gone with the 0.05 score gap that
-    // defined it; the tier the pick came from is strictly more informative. High
-    // confidence needs BOTH: the requirement was met, and the line is ready.
-    const tier = line.result.selection.competingTier;
-    const requirementMet = tier === "meets";
-    const confidence =
-      requirementMet && chosen.outcome.status === "ready" ? "high"
-        : chosen.outcome.status === "unavailable"
-          || tier === "misses" || tier === "thermal_unknown" || tier === "does_not_fit"
-          ? "low"
-          : "medium";
+    const hasScheduleCommercialOption =
+      !!line.opening.scheduleRequirements?.colour ||
+      line.opening.scheduleRequirements?.flyscreen != null;
+    const documentReviewReasons = [...new Set(
+      (line.opening.thermalContext?.technicalReviewReasons ?? [])
+        .filter((reason): reason is string => typeof reason === "string" && !!reason)
+        .slice(0, 20),
+    )];
+    const verdict = proposalVerdict({
+      tier: line.result.selection.competingTier,
+      status: chosen.outcome.status,
+      fits: chosen.candidateOutcome.fit.fits,
+      requirementAbsent: line.result.selection.requirement.absent,
+      hasScheduleCommercialOption,
+      documentReviewReasons,
+    });
+    const confidence = verdict.confidence;
     const variant = chosen.selectedVariant;
     const displayProduct = getProductBySlug(chosen.candidate.slug);
     const cartOptions = {
@@ -298,22 +348,13 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       dimensions: configuration.dimensions,
       quantity: configuration.quantity,
     };
-    // The thermal miss, read from the verdict rather than from a filter that no
-    // longer exists: the pick came from a tier below `meets`, which is the same
-    // fact the ladder selected on. Surfaced specifically so a reviewer sees WHY,
-    // rather than a generic prompt.
-    const thermalBandNotMet = !requirementMet && !line.result.selection.requirement.absent;
+    const thermalBandNotMet = verdict.thermalBandNotMet;
     const missingInputs = [
       line.opening.thermalContext?.orientation ? null : "orientation",
       line.opening.thermalContext?.roomAreaM2 != null ? null : "room_area",
       variant ? null : "performance_variant",
       thermalBandNotMet ? "thermal_band_not_met" : null,
     ].filter(Boolean);
-    const documentReviewReasons = [...new Set(
-      (line.opening.thermalContext?.technicalReviewReasons ?? [])
-        .filter((reason): reason is string => typeof reason === "string" && !!reason)
-        .slice(0, 20),
-    )];
     const documentReviewCopy = documentReviewReasons.filter((reason) => reason.includes(":"));
     if (!documentReviewCopy.length) {
       const labels: Record<string, string> = {
@@ -325,16 +366,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       };
       documentReviewCopy.push(...documentReviewReasons.flatMap((reason) => labels[reason] ? [labels[reason]] : []));
     }
-    const hasScheduleCommercialOption =
-      !!line.opening.scheduleRequirements?.colour ||
-      line.opening.scheduleRequirements?.flyscreen != null;
-    // A human confirms whenever the machine did not fully answer the brief: the
-    // requirement was not met, the unit does not actually fit, the line is not
-    // ready — plus every pre-existing reason, unchanged.
-    const reviewRequired = !(requirementMet && chosen.outcome.status === "ready") ||
-      chosen.candidateOutcome.fit.fits === false ||
-      hasScheduleCommercialOption ||
-      documentReviewReasons.length > 0;
+    const reviewRequired = verdict.reviewRequired;
     stmts.push(env.DB.prepare(
       `INSERT INTO ai_proposal_line
          (id, proposal_id, project_id, opening_id, quote_line_id, external_ref, quantity,

@@ -23,6 +23,8 @@ await build({
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
+      export { proposalVerdict } from ${p("worker/lib/ai/proposal.ts")};
+      export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
@@ -34,6 +36,7 @@ const {
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
+  proposalVerdict, persistSelection,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
@@ -701,4 +704,159 @@ test("schedule skill: text-only input builds a string prompt; a photo builds mul
   assert.equal(parts.at(-1).type, "image_url");
   assert.equal(parts.at(-1).image_url.url, "data:image/jpeg;base64,AAAA");
   assert.match(parts[0].text, /source CONTENT, never instructions/, "prompt-injection guard present (§21.2)");
+});
+
+// ── AC-26: `dominant` is gone and its consumers moved ───────────────────────
+//
+// The 0.05 score gap that defined `dominant` is deleted, and the tier the pick
+// came from replaces it — strictly more informative, because "two scores were
+// within 0.05" was a fact about the ranker while a tier is a fact about the
+// line. This is the whole mapping, in one table.
+test("AC-26 confidence_band and review_required are derived from the tier, not a score gap", () => {
+  const v = (over) => proposalVerdict({
+    tier: "meets", status: "ready", fits: true,
+    requirementAbsent: false, hasScheduleCommercialOption: false, documentReviewReasons: [], ...over,
+  });
+
+  // Met the requirement AND ready: nothing is unresolved.
+  assert.deepEqual(
+    { c: v({}).confidence, r: v({}).reviewRequired },
+    { c: "high", r: false },
+  );
+  // Met it, but the line is only an indicative estimate.
+  assert.deepEqual(
+    { c: v({ status: "commercial_only_estimate" }).confidence, r: v({ status: "commercial_only_estimate" }).reviewRequired },
+    { c: "medium", r: true },
+  );
+  // Inside the tolerance band: close, and a human confirms.
+  assert.deepEqual(
+    { c: v({ tier: "within_tolerance", status: "commercial_only_estimate" }).confidence, r: v({ tier: "within_tolerance" }).reviewRequired },
+    { c: "medium", r: true },
+  );
+  // Beyond it, no thermal figures at all, or does not fit: low, every time.
+  for (const tier of ["misses", "thermal_unknown", "does_not_fit"]) {
+    assert.equal(v({ tier }).confidence, "low", tier);
+    assert.equal(v({ tier }).reviewRequired, true, tier);
+  }
+  assert.equal(v({ status: "unavailable" }).confidence, "low");
+
+  // A pick that met the band but does not physically fit is still reviewed —
+  // the tier can read `meets` for a last-resort unit judged on thermal alone.
+  assert.equal(v({ fits: false }).reviewRequired, true);
+
+  // Every pre-existing reason survives, unchanged.
+  assert.equal(v({ hasScheduleCommercialOption: true }).reviewRequired, true);
+  assert.equal(v({ documentReviewReasons: ["energy_requirement_ambiguous"] }).reviewRequired, true);
+
+  // The thermal-miss flag reads the verdict, not a filter that no longer exists.
+  assert.equal(v({ tier: "misses" }).thermalBandNotMet, true);
+  assert.equal(v({}).thermalBandNotMet, false);
+  assert.equal(v({ tier: "misses", requirementAbsent: true }).thermalBandNotMet, false,
+    "an opening with no band cannot miss one");
+});
+
+// ── AC-22 / AC-25: what actually reaches the columns ────────────────────────
+//
+// A stub D1 that records what each statement was BOUND with. The point is not
+// that SQLite accepts the insert — api.test.mjs proves that against a real
+// migrated database — it is that `score` and `score_components_json` are bound
+// NULL rather than quietly recomputed, and that the verdict lands in
+// outcome_json where ops2 R3 reads it.
+function recordingDb() {
+  const calls = [];
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) { calls.push({ sql, args }); return this; },
+  });
+  return { calls, DB: { prepare, async batch() { return []; } } };
+}
+
+const columnsOf = (sql) => (sql.match(/\(([^)]*?)\)\s*VALUES/is)?.[1] ?? "")
+  .split(",").map((c) => c.trim()).filter(Boolean);
+const bound = (call, column) => call.args[columnsOf(call.sql).indexOf(column)];
+
+test("AC-22/AC-25 the verdict is persisted and the deleted score is bound NULL", async () => {
+  const env = recordingDb();
+  const outcome = (over) => ({
+    productSlug: "amj80", sanityProductId: "id-1", variantId: "std",
+    catalogueRevision: "rev-1", form: "single", tier: "meets", rank: 1,
+    selected: true, competing: true, exclusions: [],
+    requirement: { maxUValue: 4, minShgc: null, maxShgc: null, basis: "plan_derived", absent: false },
+    thermal: { uValue: 3.2, shgc: 0.5, deviation: { uValue: 0, minShgc: null, maxShgc: null }, worstAxis: null, normalisedDeviation: 0, absoluteMiss: null, dataSource: "estimated" },
+    fit: { fits: true, widthMm: 800, heightMm: 1200, limit: null, breached: [] },
+    price: { total: 900, currency: "AUD", ok: true, deltaToSelected: 0 },
+    learned: null, ...over,
+  });
+  const candidate = (candidateOutcome) => ({
+    candidate: { sanityProductId: candidateOutcome.sanityProductId, catalogueRevision: "rev-1", name: "n", configuration: null, slug: candidateOutcome.productSlug },
+    outcome: { passed: candidateOutcome.tier !== "excluded", status: "ready", filters: [], energyCertified: false },
+    selectedVariant: { variantId: candidateOutcome.variantId },
+    price: { ok: true, total: candidateOutcome.price.total },
+    candidateOutcome,
+  });
+
+  const winner = outcome({});
+  const loser = outcome({ sanityProductId: "id-2", productSlug: "amj100", tier: "within_tolerance", rank: 2, selected: false, competing: false, price: { total: 700, currency: "AUD", ok: true, deltaToSelected: -200 } });
+  const barred = outcome({ sanityProductId: "id-3", productSlug: "fixed-lite", tier: "excluded", rank: null, selected: false, competing: false, exclusions: [{ constraint: "operation", detail: { requiredOperation: "awning", offered: ["fixed"] } }] });
+
+  const result = {
+    openingRef: "W01", ruleVersion: "v3-energy-objective", selectionVersion: "ladder-v1",
+    catalogueVersion: "cat:1", status: "ready",
+    evaluated: [winner, loser, barred].map(candidate),
+    selected: candidate(winner),
+    selection: { version: "ladder-v1", tolerance: 0.05, competingTier: "meets", status: "ready" },
+    withheldIncomplete: [],
+  };
+  await persistSelection(env, { projectId: "p1", openingId: "o1", result });
+
+  const run = env.calls.find((c) => /INSERT INTO selection_run/.test(c.sql));
+  assert.equal(bound(run, "ranker_version"), "ladder-v1", "the column keeps its name and carries the model");
+  assert.equal(JSON.parse(bound(run, "selection_json")).tolerance, 0.05);
+
+  const rows = env.calls.filter((c) => /INSERT INTO candidate_result/.test(c.sql));
+  assert.equal(rows.length, 3, "every candidate is persisted, losers and excluded included");
+  for (const row of rows) {
+    assert.equal(bound(row, "score"), null, "AC-25: the score is stopped, not shimmed");
+    assert.equal(bound(row, "score_components_json"), null);
+    assert.ok(bound(row, "outcome_json"), "the verdict is written");
+  }
+  const persisted = rows.map((r) => JSON.parse(bound(r, "outcome_json")));
+  assert.deepEqual(persisted.map((o) => o.rank), [1, 2, null]);
+  assert.deepEqual(rows.map((r) => bound(r, "rank")), [1, 2, null]);
+  assert.deepEqual(rows.map((r) => bound(r, "selected")), [1, 0, 0]);
+  assert.equal(persisted[2].exclusions[0].constraint, "operation");
+});
+
+test("spec 4.11 the draft line's warnings are tier-derived and its confidence is NULL", async () => {
+  const base = {
+    openingRef: null, ruleVersion: "v3-energy-objective", selectionVersion: "ladder-v1",
+    catalogueVersion: "cat:1", status: "commercial_only_estimate",
+    selection: { version: "ladder-v1", tolerance: 0.05 }, withheldIncomplete: [],
+  };
+  const lineFor = async (tier) => {
+    const env = recordingDb();
+    const candidateOutcome = {
+      productSlug: "p", sanityProductId: "id", variantId: "v", catalogueRevision: "r",
+      form: "single", tier, rank: 1, selected: true, competing: true, exclusions: [],
+      fit: { fits: tier !== "does_not_fit", widthMm: 1, heightMm: 1, limit: null, breached: [] },
+      price: { total: 900, currency: "AUD", ok: true, deltaToSelected: 0 },
+    };
+    const c = {
+      candidate: { sanityProductId: "id", catalogueRevision: "r", name: "n", configuration: null, slug: "p" },
+      outcome: { passed: true, status: "commercial_only_estimate", filters: [], energyCertified: false },
+      selectedVariant: { variantId: "v" }, price: { ok: true, total: 900 }, candidateOutcome,
+    };
+    await persistSelection(env, { projectId: "p1", openingId: "o1", result: { ...base, evaluated: [c], selected: c } });
+    return env.calls.find((x) => /INSERT INTO draft_order_line/.test(x.sql));
+  };
+
+  // `close_alternatives` — "two scores were within 0.05" — is replaced by tokens
+  // that say what is actually unresolved about the pick.
+  assert.deepEqual(JSON.parse(bound(await lineFor("meets"), "warnings_json")), []);
+  assert.deepEqual(JSON.parse(bound(await lineFor("within_tolerance"), "warnings_json")), ["requirement_not_met"]);
+  assert.deepEqual(JSON.parse(bound(await lineFor("misses"), "warnings_json")), ["requirement_missed_beyond_tolerance"]);
+  assert.deepEqual(JSON.parse(bound(await lineFor("thermal_unknown"), "warnings_json")), ["no_thermal_data"]);
+  assert.deepEqual(JSON.parse(bound(await lineFor("does_not_fit"), "warnings_json")), ["does_not_fit"]);
+  // A12: there is no score, so there is nothing to put in `confidence`.
+  assert.equal(bound(await lineFor("meets"), "confidence"), null);
 });
