@@ -3,7 +3,20 @@
 State at 2026-08-19. Branch `design/ops2-planning`, worktree `E:\Projects\amj-ops-planning`.
 Nothing here blocks reading the mock; everything here blocks calling R1c finished.
 
-## Defects in R1c — found by the Codex stop-gate, verified, NOT yet fixed
+## Defects in R1c — ALL FOUR FIXED in R1d (2026-08-19)
+
+Fixed on `design/ops2-planning`, one commit each, with the reasoning in
+`docs/ops2/interaction-spec-r1.md` section 16. Kept here with their original
+wording because the reasoning is worth more than the status line.
+
+| | Was | Now |
+|---|---|---|
+| D1 | title truncated while the spec said it did not | dissolved into D3 — the ref cannot truncate, the title does via IonTitle's own ellipsis; header does not grow (measured at 320 with a 67-char name) |
+| D2 | Files controls did not act | download acknowledges, rescan runs pending -> verdict and states it either way; gating matches row 206 |
+| D3 | bespoke CSS grid inside IonHeader | three IonToolbars, published slots only; header 190px, total at 17px |
+| D4 | quantity rendered | removed from view and fixtures; qtyPerParent untouched |
+
+### Original wording
 
 **D1 — the record title truncates, and the spec claims it does not.**
 `docs/mocks/ops2-r1-ionic-src/src/ops2-record.css:47` sets

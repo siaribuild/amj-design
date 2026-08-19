@@ -787,19 +787,17 @@ Marchetti Constructions · Ana Bianchi
 - Back is the head of a breadcrumb, not a stray control.
 - The **ref** takes the crowded line because it is short, fixed-width and the
   identity ops says out loud. It never truncates.
-- The **title** takes the full width below and never truncates either — which
-  the old single-line `ref · title` could not promise.
+- The **title** takes the full width below. *(Corrected in §16.2 — R1c claimed
+  it "never truncates" while the CSS set `text-overflow: ellipsis`. D3 resolves
+  it by placement: the ref cannot truncate, the title truncates via IonTitle's
+  own ellipsis.)*
 - Measured at 375: back 14–117, separator 123–127, ref 133–275, total 281–361.
   At 320: back 14–117, ref 133–220, total 226–306, title unclipped, no overflow.
 - The header block is 81px (R1b: 44px bar + 46px identity = 90px). Whole header
   209px, list 530px.
 
-**Markup.** One `<h1>` still carries the whole identity for assistive
-technology; the layout is a grid and the `<h1>` is `display: contents`, so its
-two spans become grid items directly. Nothing is duplicated and nothing is
-hidden to achieve the arrangement. `IonBackButton` is kept — it owns the router
-pop and the `defaultHref` — simply placed in this grid rather than in a toolbar
-of its own.
+**Markup.** *Superseded by §16.1.* This grid was a bespoke layout inside
+`IonHeader` and has been replaced by three `IonToolbar`s using published slots.
 
 ## 14.2 Files are downloadable (point 2)
 
@@ -974,3 +972,163 @@ Owner-only. §13's three items still stand and are unanswered. R1c adds one:
    `Line note`, with `room_label` / `location` / `room` listed under _Avoid_.
    Not urgent for this mock — it is out of the row either way — but it will bite
    whoever writes the ItemDetail copy next.
+
+---
+
+# 16. R1d — the four recorded defects
+
+Scope unchanged: mobile project view, no colour work, no ItemDetail, no desktop.
+All four were logged in `docs/ops2/OPEN-DEFECTS.md`; that file is now updated to
+match.
+
+## 16.1 D3 — the header is toolbars, not a dashboard
+
+> "header is messed up, isn't it: back button, title, project id, price - that is
+> not how guidelines say it should be mobile, no?"
+
+He is right, and the fault was structural rather than cosmetic. R1c assembled
+back, ref, title, customer and total as a **bespoke CSS grid inside
+`IonHeader`** — a private layout wearing a standard component's name. That is
+the boundary rule broken in the one screen he keeps returning to, and it
+accreted one relayed request at a time without anyone asking whether a toolbar
+is where money belongs.
+
+**Now three `IonToolbar`s in one `IonHeader`**, which is Ionic's own sanctioned
+way to carry more than one line:
+
+```
+┌──────────────────────────────────────────────────┐
+│ ‹ Projects        Wattle Grove — Lot 14          │  IonToolbar  56
+├──────────────────────────────────────────────────┤
+│ OF-Q-10482                        $48,802.40     │  IonToolbar  46
+│ Marchetti Constructions · Ana Bianchi   ex GST   │
+├──────────────────────────────────────────────────┤
+│ [ Lines · 18 ][ Project ]                        │  IonToolbar  48
+├──────────────────────────────────────────────────┤
+│ • 2 lines have no rate        show only these    │  filter      40
+└──────────────────────────────────────────────────┘
+```
+
+| Bar | Structure |
+|---|---|
+| 1 | `IonButtons slot="start"` (back) + `IonTitle`. **`slot="end"` deliberately empty** — a total is not an action, and the record's actions live in the bottom panel where he asked for them. A toolbar is allowed no trailing action; it is not allowed to carry money. |
+| 2 | Default slot for the identity, `slot="end"` for the figure. Both are the component's **published slots**, which is the distinction that matters: extending through the API, not composing a private layout inside it. |
+| 3 | `IonSegment` in a toolbar — Ionic's documented pattern, unchanged. |
+
+**What moved to content.** The waiting-on row is status, not navigation and not
+money, so it may scroll. It now leads the content and is still the first thing
+read on arrival. Keeping it in chrome is what pushed a fourth band up there.
+
+**Measured:** header **190px**, down from 209. Total gets **97px and 17px type**
+instead of being squeezed into an ~80px end slot. No horizontal overflow at 375
+or 320.
+
+**Preserved:** the total is reachable without scrolling, back still names its
+destination, and the identity is legible at a glance.
+
+## 16.2 D1 — the truncation claim, resolved by placement
+
+R1c's spec said the title "gets full width below and never truncates" while
+`ops2-record.css:47` set `text-overflow: ellipsis` three lines away. **D1
+dissolves into D3**, and the fix is placement rather than a promise:
+
+- **The ref cannot truncate.** Ten fixed-width characters, alone on bar 2's
+  leading edge, nothing sharing its line. It is the identity ops reads out on a
+  call, so it is the piece that must always be complete — and now it
+  structurally is, rather than being asserted.
+- **The project name truncates**, in `IonTitle`, using **Ionic's own ellipsis**.
+  That is what every platform title does with a long name and it needs no
+  defence. The full name is not lost: the overflow sheet's header carries
+  `ref · title` in full and wraps.
+
+**Measured at 320 with a 67-character name:** the title ellipsises, the header
+**does not grow** (190px before and after), the ref is intact, nothing
+overflows. The R1c claim is corrected in §14.1 rather than left standing.
+
+## 16.3 D2 — the Files controls act
+
+R1c shipped Download as `href="#"` and Rescan with no handler, while the report
+claimed the behaviour was carried. Both act now, and **what they demonstrate
+agrees with the endpoint**, not with a more generous fiction.
+
+`GET /files/:id/download` serves `clean` **only** — 403 on `quarantined`, 409 on
+`scan_pending` (register row 206). So:
+
+- **The download control is not rendered unless the file is clean.** The gating
+  is structural, not a check inside a handler that could drift from the
+  endpoint. An enabled button whose server answers 403 is a worse design than no
+  button plus a sentence saying why. The handler mirrors the guard anyway, so a
+  disagreement would surface as a sentence rather than a silent no-op.
+- **Download** acknowledges: *"Download started — Lot14-windows-schedule.pdf
+  (2.4 MB)"* via `IonToast`. Stated honestly in the block: in this mock the
+  download is acknowledged but no file transfers.
+- **Rescan** moves the row through the real states and **states its verdict
+  either way** — which is precisely register row 205's defect (failure
+  swallowed) not being carried:
+
+| Step | Row |
+|---|---|
+| tap Rescan | `Rescanning…`, control becomes inert `Checking` |
+| verdict, 1st | `Rescan finished — still quarantined. Download stays blocked.` + toast |
+| verdict, 2nd | `Rescan finished — clean. Download is open.` + toast; the Download control appears and acknowledges |
+
+Both verdicts are reachable because both are real; the still-quarantined case is
+shown first because it is the one the current console swallows.
+
+## 16.4 D4 — quantity is retired, so it stops being drawn
+
+Ruled by the owner: *"remove qty from the view."* Nothing creates a
+multi-quantity line any more — `ItemComposer` and `ItemForm` carry no qty field.
+
+Removed from the record's line rows, the switcher sheet's rows, and **the
+fixtures** — every seeded line is single-quantity, so the mock stops showing a
+case the product no longer produces.
+
+Also removed from the line body's facts and price caption. **That is ItemDetail
+territory and out of scope this pass**, flagged rather than done silently: the
+field is retired product-wide and leaving a dead concept rendered there would
+have been worse than touching it.
+
+**`qtyPerParent` is untouched.** Units within a composite line are a different
+concept that also prints as `×N` and is not retired — `3 joined units` and
+`4 joined units` still render. Verified: no quantity multiplier survives; the
+remaining `×` characters are dimension separators.
+
+The four production lines carrying 2/3/4/6 keep correct totals; only the
+multiplier goes unstated, and it disappears as those projects close.
+
+## 16.5 Components — standard vs bespoke, after D3
+
+D3 **removed** the one real violation. The record surface now has no
+hand-composed layout inside a standard component:
+
+| Region | Component |
+|---|---|
+| Nav bar | `IonToolbar` + `IonButtons slot="start"` + `IonBackButton` + `IonTitle` |
+| Summary bar | `IonToolbar`, default slot + `slot="end"` — published slots only |
+| Lines / Project switch | `IonSegment` + `IonSegmentButton`, `scrollable={false}` |
+| Line rows | `IonList lines="full"` + `IonItem button detail={false}` |
+| Flagged mark | the same `IonItem`, via its documented `::part(native)` |
+| Project blocks | `IonList` + `IonItem` |
+| Note composer | `IonTextarea autoGrow` + `IonButton` |
+| File actions | `IonButton` + `IonToast` |
+| Overflow | `IonActionSheet` |
+| Totals, deck, plate, state row | ours — Ionic has no component for them |
+
+The remaining bespoke pieces are all *content*, not chrome, which is where a
+private layout is legitimate.
+
+---
+
+# 17. Spec changes this round needs
+
+1. **§14.1's truncation claim is corrected** by §16.2 above. The original
+   sentence asserted behaviour the CSS contradicted; it now describes placement.
+2. **Quantity should come out of the acceptance criteria**, not just the view.
+   D4 retires the concept product-wide, so any AC that asserts a quantity
+   multiplier renders — or that a line total is shown "for all units" — is now
+   describing something the product does not do. The PM owns that sweep; I have
+   only removed the rendering.
+3. Everything else in R1d is a design change, not a spec change.
+
+The §13 and §15 decision lists are unchanged and still open.

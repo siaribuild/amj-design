@@ -1,10 +1,10 @@
 // Shared regions of the record surface. Ionic components wherever Ionic has one,
 // so rows, ripples, dividers, keyboard behaviour and both palettes come from the
 // framework.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
-  IonBackButton, IonTextarea, IonToolbar, IonTitle, IonButtons,
+  IonBackButton, IonTextarea, IonToolbar, IonTitle, IonButtons, IonToast,
 } from "@ionic/react";
 import { chevronForward, download } from "ionicons/icons";
 import { Elevation } from "./elevation";
@@ -395,32 +395,44 @@ function Payments() {
   );
 }
 
-/** POINT 2 — files are DOWNLOADABLE from the list.
+/** POINT 2 / D2 — files are downloadable from the list, and the controls ACT.
  *
- *  "files should be downloadable from the list, not just listed." Right, and the
- *  gap is on the record specifically: register row 150 records the current
- *  record's Files block as "filename + size or raw status word; no download, no
- *  kind, no dates, no rescan". All four are carried here rather than a subset.
+ *  "files should be downloadable from the list, not just listed." The gap is on
+ *  the record specifically: register row 150 records the current record's Files
+ *  block as "filename + size or raw status word; no download, no kind, no dates,
+ *  no rescan". All four are carried, not a subset.
  *
- *  What the console already offers per file, and is carried:
- *    - `GET /files/:id/download`, GATED ON THE SCAN. It serves `clean` only and
- *      answers 403 `quarantined` / 409 `scan_pending` otherwise (register row
- *      206). So the row states the scan state and the control reflects it: a
- *      download button that cheerfully 403s is worse than one that explains
- *      itself before it is pressed.
- *    - `POST /files/:id/rescan` (row 205), offered on a quarantined file, which
- *      is the only state where a rescan is the useful next move.
+ *  D2: R1c shipped Download as `href="#"` and Rescan with no handler, while the
+ *  report claimed the behaviour was carried. A control he taps to evaluate must
+ *  demonstrate its outcome, so both do now — and what they demonstrate agrees
+ *  with the real endpoint rather than a more generous fiction:
  *
- *  The one thing deliberately NOT carried is row 205's defect: rescan failure is
- *  currently swallowed. Here it reports. */
+ *    `GET /files/:id/download` serves `clean` ONLY, and answers 403 on
+ *    `quarantined`, 409 on `scan_pending` (register row 206).
+ *
+ *  So the download control is not rendered at all unless the file is clean.
+ *  That is deliberate: an enabled button whose server answers 403 is a worse
+ *  design than no button plus a sentence saying why. The gating is structural
+ *  here, not a check inside a handler that could drift from the endpoint.
+ *
+ *  `POST /files/:id/rescan` is register row 205, and its DEFECT — failure
+ *  swallowed — is the one thing not carried. A rescan here moves the row through
+ *  `pending` to a verdict and states the verdict either way, including when it
+ *  is still quarantined.
+ *
+ *  Honest about the mock: the download is acknowledged, no bytes transfer. */
 function scanCopy(f: FileRow) {
   if (f.scan === "pending") return "Being checked for viruses. Download opens when it passes.";
   if (f.scan === "quarantined") return "Quarantined by the virus check. Download is blocked.";
   return null;
 }
 
-function FileItem({ f }: { f: FileRow }) {
-  const note = scanCopy(f);
+function FileItem({ f, onDownload, onRescan }: {
+  f: FileRow;
+  onDownload: (f: FileRow) => void;
+  onRescan: (f: FileRow) => void;
+}) {
+  const note = f.outcome ?? scanCopy(f);
   return (
     <li>
       <span className="r-name">{f.name}</span>
@@ -429,8 +441,10 @@ function FileItem({ f }: { f: FileRow }) {
         <span className={"f-note" + (f.scan === "quarantined" ? " bad" : "")}>{note}</span>
       )}
       <span className="f-act">
+        {/* clean only. The 403 and 409 cases get a sentence, not a button that
+            fails after the tap. */}
         {f.scan === "clean" && (
-          <IonButton size="small" fill="outline" href="#" download={f.name}>
+          <IonButton size="small" fill="outline" onClick={() => onDownload(f)}>
             <IonIcon slot="start" icon={download} aria-hidden="true" />
             Download
           </IonButton>
@@ -440,7 +454,8 @@ function FileItem({ f }: { f: FileRow }) {
           <IonButton size="small" fill="outline" className="inert" disabled>Checking</IonButton>
         )}
         {f.scan === "quarantined" && (
-          <IonButton size="small" fill="outline" color="danger">Rescan</IonButton>
+          <IonButton size="small" fill="outline" color="danger"
+            onClick={() => onRescan(f)}>Rescan</IonButton>
         )}
       </span>
     </li>
@@ -448,25 +463,69 @@ function FileItem({ f }: { f: FileRow }) {
 }
 
 function Files() {
-  const source = FILES.filter((f) => f.source);
-  const rest = FILES.filter((f) => !f.source);
+  const [files, setFiles] = useState<FileRow[]>(FILES);
+  const [toast, setToast] = useState<string | null>(null);
+  const rescans = useRef<Record<string, number>>({});
+
+  const patch = (name: string, next: Partial<FileRow>) =>
+    setFiles((cur) => cur.map((f) => (f.name === name ? { ...f, ...next } : f)));
+
+  const onDownload = (f: FileRow) => {
+    /* Mirrors the endpoint's own guard rather than trusting the caller. If this
+       ever disagrees with what is rendered, the sentence is what the operator
+       sees, not a silent no-op. */
+    if (f.scan !== "clean") {
+      setToast(f.scan === "quarantined"
+        ? `${f.name} is quarantined — download refused.`
+        : `${f.name} is still being checked — download not open yet.`);
+      return;
+    }
+    setToast(`Download started — ${f.name} (${f.size})`);
+  };
+
+  const onRescan = (f: FileRow) => {
+    patch(f.name, { scan: "pending", outcome: "Rescanning…" });
+    const n = (rescans.current[f.name] = (rescans.current[f.name] ?? 0) + 1);
+    window.setTimeout(() => {
+      /* Both verdicts are reachable, because both are real. The first rescan of
+         an infected file usually finds it again — that is the case row 205
+         currently swallows, so it is the one shown first. */
+      if (n < 2) {
+        patch(f.name, { scan: "quarantined", outcome: "Rescan finished — still quarantined. Download stays blocked." });
+        setToast(`Rescan finished — ${f.name} is still quarantined.`);
+      } else {
+        patch(f.name, { scan: "clean", outcome: "Rescan finished — clean. Download is open." });
+        setToast(`Rescan finished — ${f.name} is clean.`);
+      }
+    }, 1400);
+  };
+
+  const source = files.filter((f) => f.source);
+  const rest = files.filter((f) => !f.source);
   return (
     <div className="section">
       <h3 className="sub-h">The schedule this project came from</h3>
       <ul className="rows files">
-        {source.map((f) => <FileItem key={f.name} f={f} />)}
+        {source.map((f) => (
+          <FileItem key={f.name} f={f} onDownload={onDownload} onRescan={onRescan} />
+        ))}
       </ul>
       <h3 className="sub-h">Attached since</h3>
       <ul className="rows files">
-        {rest.map((f) => <FileItem key={f.name} f={f} />)}
+        {rest.map((f) => (
+          <FileItem key={f.name} f={f} onDownload={onDownload} onRescan={onRescan} />
+        ))}
       </ul>
       <div className="block-act">
         <IonButton expand="block">Add a file</IonButton>
         <IonNote className="fact basis">
           Every upload is virus-checked before it can be downloaded. A rescan that
-          fails says so; it does not fail quietly.
+          fails says so; it does not fail quietly. In this mock the download is
+          acknowledged but no file transfers.
         </IonNote>
       </div>
+      <IonToast isOpen={!!toast} message={toast ?? ""} duration={2600}
+        onDidDismiss={() => setToast(null)} />
     </div>
   );
 }

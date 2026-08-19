@@ -267,6 +267,9 @@ export type ScanState = "clean" | "pending" | "quarantined";
 export type FileRow = {
   name: string; kind: string; size: string; when: string; who: string;
   scan: ScanState; source?: boolean;
+  /** What the last rescan concluded. Replaces the standing scan sentence, so a
+   *  verdict is never silently indistinguishable from the default state. */
+  outcome?: string;
 };
 
 export const FILES: FileRow[] = [
