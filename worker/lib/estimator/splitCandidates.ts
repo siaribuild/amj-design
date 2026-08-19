@@ -25,6 +25,9 @@ import type { Deviation } from "./ladder";
 import type { CandidateOutcome } from "../../../src/data/recommendation";
 import type { FamilyDefaultSplit } from "../../../src/data/catalogue";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
+import { defaultOptions } from "../../../src/data/configurator";
+import { getProductBySlug } from "../../../src/data/catalogue";
+import type { SegmentSpec } from "../composite";
 
 /** One evaluated single-unit configuration, as the gate needs to see it. */
 interface FitEvidence {
@@ -297,6 +300,76 @@ function toCandidate(
     fits: makeUp.units.every((u) => u.result.selected?.candidateOutcome.fit.fits === true),
     candidateOutcome: undefined as unknown as CandidateOutcome,
   };
+}
+
+/** Turn the WINNING make-up into the segments `splitLine` writes.
+ *
+ *  Materialisation is now the tail of a decision rather than a decision of its
+ *  own: the make-up already won the ladder against every single unit, and this
+ *  only rebuilds it. Nothing here chooses a product, a glass or a geometry —
+ *  each one comes off the candidate that won.
+ *
+ *  Returns [] when any unit came back unselected, which is not a make-up and
+ *  must never be half-written. */
+export function splitSegmentSpecs(
+  split: SplitCandidate,
+  args: { inheritedOptions?: Record<string, string> },
+): SegmentSpec[] {
+  const specs: SegmentSpec[] = [];
+  for (const unit of split.units) {
+    const plan = split.plan[unit.index];
+    const chosen = unit.result.selected;
+    if (!plan || !chosen) return [];
+    const variant = chosen.selectedVariant;
+    const displayProduct = getProductBySlug(chosen.candidate.slug);
+    specs.push({
+      widthMm: plan.segment.widthMm,
+      heightMm: plan.segment.heightMm,
+      productSlug: chosen.candidate.slug,
+      options: {
+        ...(displayProduct ? defaultOptions(displayProduct) : {}),
+        // Every unit INHERITS the opening's spec. Building them blank discarded
+        // the customer's colour and hardware and, because most option rows carry
+        // a surcharge, re-priced the units as bare product.
+        ...(args.inheritedOptions ?? {}),
+        glassDescription: plan.glazingDescription ?? "",
+        performanceVariantId: variant?.variantId ?? "",
+        frameTechnology: variant?.frameTechnology ?? "unknown",
+        glazing: variant?.glazingOptionSlug ?? "",
+      },
+      selectedVariantId: variant?.variantId ?? null,
+      // THE MACHINE'S OWN RECORD OF THIS UNIT, frozen at the moment it chose.
+      // A unit never gets an ai_proposal_line — that table requires an
+      // opening_instance and a unit has none — so without this there is no
+      // frozen account of what was proposed for it, and the thermal audit could
+      // only report a blank beside a unit whose product it can plainly see on
+      // the line. Written once, here; no human path updates it.
+      configurationSnapshot: {
+        productSlug: chosen.candidate.slug,
+        variantId: variant?.variantId ?? null,
+        uw: variant?.uValue ?? null,
+        shgc: variant?.shgc ?? null,
+        source: variant?.dataSource ?? null,
+        catalogueRevision: chosen.candidate.catalogueRevision ?? null,
+        // WHY THIS FRAME AND NOT THE CHEAPER ONE. The unit was not chosen on its
+        // own merits — it came out of the system picked for the whole opening —
+        // so the frozen record has to name the system, or a reviewer reading it
+        // back has no account of the decision that produced it.
+        frameSystem: split.system,
+      },
+      resolvedBand: plan.requirement ? {
+        maxUValue: plan.requirement.maxUValue ?? null,
+        minShgc: plan.requirement.minShgc ?? null,
+        maxShgc: plan.requirement.maxShgc ?? null,
+        shgcTarget: plan.segment.requirement?.shgcTarget ?? null,
+      } : null,
+      requirementBasis: plan.ownBand ? "explicit_energy_report" : split.proposalBasis,
+      // The unit's own verdict, not a filter that no longer exists: it did not
+      // meet the band it was judged against, whatever the make-up averaged to.
+      thermalReview: chosen.candidateOutcome.tier !== "meets",
+    });
+  }
+  return specs;
 }
 
 /** The largest-area unit, whose product and variant stand as the split's

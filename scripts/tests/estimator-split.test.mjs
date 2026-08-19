@@ -15,13 +15,13 @@ await build({
   stdin: {
     contents: `
       export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
-      export { splitsAreEligible, selectWithSplits, resolvePairing } from ${p("worker/lib/estimator/splitCandidates.ts")};
+      export { splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs } from ${p("worker/lib/estimator/splitCandidates.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -846,4 +846,58 @@ test("resolvePairing reads the rule off the representative and the width off the
   // And no representative at all — nothing fit, nothing to read a rule from.
   const bare = await resolvePairing(repo, { representative: null, maxSegments: 4, offset: false });
   assert.equal(bare.rule, null);
+});
+
+test("splitSegmentSpecs rebuilds the WINNING make-up, unit by unit", async () => {
+  // Materialisation is now the tail of a decision, not a decision of its own:
+  // the make-up already won the ladder, and this only turns it into the segments
+  // splitLine writes. Everything the old post-pass derived here — the product,
+  // the glass, the inherited spec, the frozen configuration snapshot — comes off
+  // the candidate that won.
+  const products = [
+    splitProduct("awn-36", { operation: "awning", maxWidthMm: 1200, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("fix-44", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg", 4.4, 0.45)] }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, requirements: { maxUValue: 4.0 }, externalRef: "W14" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products, { perM2: { "awn-36": 700, "fix-44": 500 } }),
+  );
+  assert.ok(r.selectedSplit, "a split won, so there is something to materialise");
+
+  const specs = splitSegmentSpecs(r.selectedSplit, {
+    inheritedOptions: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle" },
+  });
+  assert.equal(specs.length, 2);
+  assert.deepEqual(specs.map((s) => s.productSlug), ["awn-36", "fix-44"]);
+  assert.deepEqual(specs.map((s) => s.widthMm), [1000, 1000]);
+  assert.deepEqual(specs.map((s) => s.selectedVariantId), ["dg", "dg"]);
+
+  // Every unit INHERITS the opening's spec. Building them with no options
+  // discarded the customer's colour and hardware and, because most option rows
+  // carry a surcharge, re-priced the units as bare product.
+  for (const s of specs) {
+    assert.equal(s.options.colour, "Dover White");
+    assert.equal(s.options.hardware, "AMJ Standard D Shape Handle");
+    assert.equal(s.options.performanceVariantId, "dg");
+  }
+
+  // THE MACHINE'S OWN RECORD OF THIS UNIT, frozen at the moment it chose. A unit
+  // never gets an ai_proposal_line — that table requires an opening_instance and
+  // a unit has none — so without this there is no account of what was proposed
+  // for it, and the thermal audit could only report a blank beside a unit whose
+  // product it can plainly see on the line.
+  assert.equal(specs[0].configurationSnapshot.productSlug, "awn-36");
+  assert.equal(specs[0].configurationSnapshot.uw, 3.6);
+  // WHY THIS FRAME AND NOT THE CHEAPER ONE: the unit was not chosen on its own
+  // merits, it came out of the system picked for the whole opening — so the
+  // frozen record names the system, or a reviewer has no account of the decision.
+  assert.equal(specs[0].configurationSnapshot.frameSystem, "sys-80");
+  assert.equal(specs[0].resolvedBand.maxUValue, 4.0);
+  assert.equal(specs[0].requirementBasis, "schedule_comment");
+
+  // The unit that MISSES its band is flagged for thermal review; the one that
+  // meets it is not. Read from the unit's own verdict, not from a filter.
+  assert.equal(specs[0].thermalReview, false, "3.6 meets a 4.0 cap");
+  assert.equal(specs[1].thermalReview, true, "4.4 does not");
 });
