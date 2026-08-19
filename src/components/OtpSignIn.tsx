@@ -22,7 +22,7 @@ import { requestCode, verifyCode, ApiError, type AuthUserDto } from "../data/api
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuthed, onCancel, cancelLabel, emailStepExtra }: {
+export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuthed, onCancel, cancelLabel, emailStepExtra, emailStepBlocked }: {
   heading: string;
   subcopy: string;
   /** The step numeral beside the heading (§16.3). Present only where the gate is
@@ -53,6 +53,12 @@ export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuth
    *  unauthenticated endpoint may accept an ABN: whatever is typed here is held
    *  in the caller's state and posted only once a session exists (AC-P2-3). */
   emailStepExtra?: ReactNode;
+  /** Registration Phase 2 (§18.2.3): the slot's own fields are invalid, so this
+   *  step may not be left yet. The optional group is OPTIONAL — an empty ABN
+   *  never blocks — but a malformed one blocks exactly as it blocks Submit at
+   *  the gate, and clearing it always releases the step again. The slot owns the
+   *  message; this only gates the button. */
+  emailStepBlocked?: boolean;
 }) {
   const inline = layout === "inline";
   const btnWidth = inline ? "w-full sm:w-auto justify-center" : "w-full justify-center";
@@ -172,7 +178,7 @@ export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuth
               reader — which is not what "disabled until a token exists" means. */}
           <div className={actionRow}>
             <Btn variant="sage" size="md" onClick={() => send()}
-              disabled={!validEmail || busy || !captchaReady}
+              disabled={!validEmail || busy || !captchaReady || !!emailStepBlocked}
               className={btnWidth}>
               {busy ? "Sending…" : "Email me a code"}
             </Btn>

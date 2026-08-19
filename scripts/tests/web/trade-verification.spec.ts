@@ -149,7 +149,7 @@ test("a gmail applicant is put under review, with no reason and no timeframe", a
   await otpSignIn(page, email);
 
   const card = page.getByTestId("trade-application-card");
-  await expect(card.getByText(/we're checking your abn/i)).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByText(/we're checking the details you sent/i)).toBeVisible({ timeout: 15_000 });
 
   const said = (await card.innerText()).replace(/\s+/g, " ");
   // No turnaround, in any spelling — "we'll be in touch" is the whole promise (Q2).
@@ -179,37 +179,42 @@ async function abrCallsFor(abn: string): Promise<number> {
 }
 
 // ─── 3. A checksum-invalid ABN never reaches the register ─────────────────────
-// AC-P2-7. This is the assertion the node suite cannot make about a CLIENT field
-// check: the browser refuses a transposed digit with zero round trips, so no
-// application row is created and the register is never asked. A field error is
-// exactly like a malformed phone — nothing to reject, because nothing was made.
+// AC-P2-7 + §18.2.3. Two claims, and only the browser can make either.
+//
+// FIRST: the checksum is a CLIENT gate, so a transposed digit costs the register
+// nothing — proved from the stub's hit counter, not inferred from a body.
+//
+// SECOND: it BLOCKS the step rather than being advisory. This assertion was
+// originally written the other way round, against what the code did rather than
+// what the owner approved at the mock gate, and the review caught it. Clearing
+// the field is the documented escape — the group is optional and stays optional.
 test("a checksum-invalid ABN is refused in the browser, costing the register nothing", async ({ page }) => {
   const bad = "12345678901";           // checksum-invalid by construction
   const before = await abrCallsFor(bad);
   const email = freshEmail("badsum");
 
   await page.goto("/trade-account");
-  await page.getByLabel("Business name").fill("Nowhere Joinery");
-  await page.getByLabel("ABN").fill(bad);
-
-  // Refused before any network call — the message is on screen while still anonymous.
   const card = page.getByTestId("trade-application-card");
-  await expect(card.getByText(/that abn doesn't look right/i)).toBeVisible();
+  await card.getByLabel("Business name").fill("Nowhere Joinery");
+  await card.getByLabel("ABN").fill(bad);
 
+  // Refused before any network call, and the step will not be left.
+  await expect(card.getByText(/that abn doesn't look right/i)).toBeVisible();
+  await expect(card.getByRole("button", { name: /email me a code/i })).toBeDisabled();
+
+  // "…or clear the field to continue without it."
+  await card.getByLabel("ABN").fill("");
   await otpSignIn(page, email);
-  // Wait for the SIGNED-IN card before reading the session. Without this the
-  // assertions below race the verify round trip and read an anonymous /me — a
-  // failure that looks like a broken sign-in rather than a slow one.
-  await expect(card.getByRole("button", { name: /check my abn/i }))
+  await expect(card.getByRole("button", { name: /apply for trade pricing/i }))
     .toBeVisible({ timeout: 15_000 });
 
   expect(await abrCallsFor(bad) - before,
     "a failed checksum costs the register nothing (AC-P2-7)").toBe(0);
 
-  // Signed in, and NO application exists: the ABN was simply never sent. The
-  // person has an ordinary private account, exactly as Phase 1 shipped it.
+  // Signed in, with NO application: the ABN was never sent. An ordinary private
+  // account, exactly as Phase 1 shipped it.
   const body = await (await page.request.get("/api/auth/me")).json();
-  expect(body.authenticated, "the sign-in still succeeded — the ABN was optional").toBe(true);
+  expect(body.authenticated, "the sign-in still succeeds once the field is cleared").toBe(true);
   expect(body.trade.verified, "no grant from a malformed ABN").toBe(false);
   expect(body.trade.pending, "no pending application from a malformed ABN").toBeNull();
   expect(body.trade.history, "and nothing in the ledger at all").toEqual([]);
@@ -235,7 +240,7 @@ test("the account page applies for trade pricing, and a verified ABN is not free
   // Anchor on a SIGNED-IN affordance. The card itself renders in both states, so
   // waiting for it proves nothing and /account then bounces to /login — a
   // failure that reads like a missing card rather than an unfinished sign-in.
-  await expect(page.getByTestId("trade-application-card").getByRole("button", { name: /check my abn/i }))
+  await expect(page.getByTestId("trade-application-card").getByRole("button", { name: /apply for trade pricing/i }))
     .toBeVisible({ timeout: 15_000 });
 
   // SETUP, not an assertion: a brand-new account has no name, and Phase 1's name
@@ -255,7 +260,7 @@ test("the account page applies for trade pricing, and a verified ABN is not free
 
   await card.getByLabel("Business name").fill(business.businessName);
   await card.getByLabel("ABN").fill(business.abn);
-  await card.getByRole("button", { name: /check my abn/i }).click();
+  await card.getByRole("button", { name: /apply for trade pricing/i }).click();
 
   await expect(card.getByText(/trade pricing applies to your account/i)).toBeVisible({ timeout: 15_000 });
   await expectNoPercentage(page, "/account when verified");
@@ -290,7 +295,7 @@ test("the business name prefills from the account on the trade page (AC-P2-8)", 
 
   await page.goto("/trade-account");
   const card = page.getByTestId("trade-application-card");
-  await expect(card.getByRole("button", { name: /check my abn/i })).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByRole("button", { name: /apply for trade pricing/i })).toBeVisible({ timeout: 15_000 });
 
   await expect(card.getByLabel("Business name"),
     "AC-P2-8: the account's business name is already there").toHaveValue(business.businessName);
@@ -336,4 +341,32 @@ test("the owner-approved trade strings appear verbatim on their surfaces (AC-P2-
   await expect(card).toBeVisible({ timeout: 15_000 });
   expect((await card.innerText()).replace(/\s+/g, " "), "spec §7.2 account-card invitation")
     .toContain(APPROVED.accountCard);
+});
+
+// ─── 7. §18.2.3 — a malformed ABN blocks the step it is on ────────────────────
+// Architect F1. Journey 3 above asserts what the code DID: sign-in proceeded and
+// the bad ABN was silently skipped. The owner approved the opposite at the mock
+// gate — the field blocks the step, exactly as it blocks Submit at the gate, and
+// clearing it always releases it.
+//
+// The difference matters because the failure is silent: values are held, so
+// nothing is lost, but a person who does not scroll past the button believes
+// they applied and finds out only when no email arrives.
+test("a malformed ABN blocks the sign-in step until it is fixed or cleared", async ({ page }) => {
+  await page.goto("/trade-account");
+  const card = page.getByTestId("trade-application-card");
+  const send = card.getByRole("button", { name: /email me a code/i });
+
+  await page.getByLabel("Email").fill(freshEmail("blocked"));
+  await expect(send, "a valid email alone is enough to send").toBeEnabled();
+
+  await card.getByLabel("ABN").fill("12345678901");           // checksum-invalid
+  await expect(send, "§18.2.3: a malformed ABN blocks this step").toBeDisabled();
+  await expect(card.getByText(
+    "That ABN doesn't look right. Check the 11 digits, or clear the field to continue without it.",
+  )).toBeVisible();
+
+  // Clearing ALWAYS releases it — the group is optional and stays optional.
+  await card.getByLabel("ABN").fill("");
+  await expect(send, "clearing the field releases the step").toBeEnabled();
 });

@@ -23,7 +23,7 @@
 //   4. No builder/tradie control exists on any surface (P2-D5).
 //   5. No repricing promise.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Check } from "lucide-react";
 import { Btn, FieldLabel, Input, WindowMark, SAGE } from "../../app/ui";
 import { OtpSignIn } from "../OtpSignIn";
@@ -38,6 +38,21 @@ import { applyForTrade, ApiError, type AuthUserDto, type TradeStateDto } from ".
 interface Draft { businessName: string; abn: string }
 
 const EMPTY: Draft = { businessName: "", abn: "" };
+
+/** The status pill (§18.3). Three tones and no more: positive for a live grant,
+ *  work for something being looked at, mute for rejected/revoked — because
+ *  nothing failed and nothing broke, and attention/danger colour would say it
+ *  did (P2-UX-6). */
+function Pill({ tone, children }: { tone: "positive" | "work" | "mute"; children: ReactNode }) {
+  const skin = tone === "positive" ? "text-ink border-[color:var(--sage)]"
+    : tone === "work" ? "text-ink border-black/25"
+    : "text-body border-black/15";
+  return (
+    <span className={`inline-flex items-center gap-1.5 border px-2 py-0.5 rounded-full t-label ${skin}`}>
+      {children}
+    </span>
+  );
+}
 
 export function TradeApplicationCard({
   user, trade, source, onAuthed, onTradeChanged,
@@ -98,6 +113,13 @@ export function TradeApplicationCard({
    *  name for the condition so the panels cannot disagree about it mid-refresh. */
   const isVerified = (trade?.verified ?? false) || outcome === "verified";
 
+  /** A malformed ABN blocks the step it sits on (§18.2.3) — the same rule the
+   *  gate applies to Submit. An EMPTY ABN never blocks: the group is optional
+   *  and clearing the field always releases it. */
+  const abnMalformed = draft.abn.trim() !== "" && !abnLooksRight;
+  const nameMissing = draft.abn.trim() !== "" && !draft.businessName.trim();
+  const blocked = abnMalformed || nameMissing;
+
   async function submit(): Promise<void> {
     if (!canSubmit) return;
     setBusy(true);
@@ -108,6 +130,7 @@ export function TradeApplicationCard({
       });
       setOutcome(status);
       setDraft(EMPTY);
+      setReapplying(false);
       onTradeChanged?.();
     } catch (e) {
       // The server's refusals, said in the person's language. `application_pending`
@@ -133,19 +156,25 @@ export function TradeApplicationCard({
     <div className="space-y-3">
       <div>
         <FieldLabel htmlFor="trade-business">Business name</FieldLabel>
-        <Input id="trade-business" value={draft.businessName} placeholder="As it's registered"
+        <Input id="trade-business" value={draft.businessName} placeholder="ABC Constructions"
+          maxLength={200} autoComplete="organization"
           onChange={(e) => { setDraft((d) => ({ ...d, businessName: e.target.value })); if (error) setError(""); }} />
+        <p className="text-body mt-1 t-cap">As it's registered against the ABN.</p>
+        {nameMissing && (
+          <p role="alert" className="text-warning mt-1 t-cap">Enter the business name registered to this ABN.</p>
+        )}
       </div>
       <div>
         <FieldLabel htmlFor="trade-abn">ABN</FieldLabel>
         <Input id="trade-abn" value={draft.abn} placeholder="00 000 000 000" inputMode="numeric"
+          maxLength={32}
           onChange={(e) => { setDraft((d) => ({ ...d, abn: e.target.value })); if (error) setError(""); }} />
         {/* The checksum is a CLIENT gate: a transposed digit is caught with zero
             round trips, so a malformed ABN costs the register nothing
             (AC-P2-7). It is re-run server-side; this is not the authority. */}
-        {draft.abn.trim() !== "" && !abnLooksRight && (
-          <p role="alert" className="text-warning mt-1 t-cap">That ABN doesn't look right — check the digits.</p>
-        )}
+        {abnMalformed
+          ? <p role="alert" className="text-warning mt-1 t-cap">That ABN doesn't look right. Check the 11 digits, or clear the field to continue without it.</p>
+          : <p className="text-body mt-1 t-cap">11 digits. Spaces are fine.</p>}
       </div>
       {error && (
         <p role="alert" className="text-warning flex items-start gap-2 t-cap">
@@ -170,6 +199,7 @@ export function TradeApplicationCard({
             // private account, exactly as Phase 1 shipped it.
             if (abnValid(normalizeAbn(draft.abn)) && draft.businessName.trim()) void submit();
           }}
+          emailStepBlocked={blocked}
           emailStepExtra={
             <div className="border-t border-line pt-4 space-y-3">
               <div>
@@ -188,43 +218,85 @@ export function TradeApplicationCard({
     );
   }
 
-  // ── Signed in. The two live facts render as their own blocks, in order.
+  // ── Signed in. The two live facts render as their own BLOCKS, in order, and
+  //    a verified account re-applying is both at once (E-P2-6, §18.3.4) — never
+  //    merged into a third status word.
+  const row = (label: string, value: string) => (
+    <div className="flex justify-between gap-4 t-cap">
+      <span className="text-quiet">{label}</span>
+      <span className="text-ink">{value}</span>
+    </div>
+  );
+
   return (
     <div className="card p-6 space-y-5" data-testid="trade-application-card">
       {isVerified && (
-        <div className="space-y-2">
-          <p className="font-semibold text-ink flex items-center gap-2">
-            <WindowMark size={12} color={SAGE} />Trade pricing applies to your account
-          </p>
-          <p className="text-body t-bd-sm">
-            The prices you see are already your prices — while you're configuring, not just on the
-            quote we send back.
-          </p>
-          {trade?.abn && (
-            <p className="text-body t-cap">ABN {formatAbn(trade.abn)}</p>
-          )}
+        <div className="space-y-3">
+          <Pill tone="positive"><Check className="w-3 h-3" />Active</Pill>
+          <p className="text-ink t-bd-sm">Trade pricing applies to your account.</p>
+          <div className="space-y-1">
+            {user?.company ? row("Business", user.company) : null}
+            {trade?.abn ? row("ABN", formatAbn(trade.abn)) : null}
+          </div>
         </div>
       )}
 
       {(pending || outcome === "under_review") && (
-        <div className="space-y-2">
-          <p className="font-semibold text-ink">We're checking your ABN</p>
-          {/* No reason (rule 3) and no turnaround (rule 2). */}
-          <p className="text-body t-bd-sm">
-            We'll be in touch. Your account works in the meantime — you can quote, submit and track
-            exactly as you do now.
-          </p>
-          {pending?.abn && <p className="text-body t-cap">ABN {formatAbn(pending.abn)}</p>}
-        </div>
+        isVerified ? (
+          // §18.3.4 — the pair. The customer's pricing is NOT in doubt and the
+          // screen must not suggest it is.
+          <div className="space-y-2 border-t border-line pt-4">
+            <Pill tone="work">New details under review</Pill>
+            <p className="text-body t-bd-sm">
+              {pending
+                ? `We're checking ABN ${formatAbn(pending.abn)} for ${pending.businessName}.`
+                : "We're checking the details you sent."}{" "}
+              Your trade pricing is unaffected while we do — nothing changes on your account unless
+              we tell you.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Pill tone="work">Under review</Pill>
+            {/* No reason (rule 3) and no turnaround (rule 2). */}
+            <p className="text-body t-bd-sm">
+              We're checking the details you sent. We'll email you when it's done — your account
+              works as normal in the meantime.
+            </p>
+            <div className="space-y-1">
+              {pending?.businessName ? row("Business", pending.businessName) : null}
+              {pending?.abn ? row("ABN", formatAbn(pending.abn)) : null}
+              {pending?.createdAt ? row("Sent", pending.createdAt.slice(0, 10)) : null}
+            </div>
+            <p className="text-body t-cap">You can send new details once this one's been looked at.</p>
+          </div>
+        )
       )}
 
-      {/* A refusal costs nothing, and the screen says so plainly rather than
-          reading as an error state (P2-UX-6). Never says why (rule 3). */}
-      {!isVerified && !pending && !outcome && lastDecision && lastDecision !== "approved" && (
-        <p className="text-body t-bd-sm">
-          Trade pricing isn't active on this account. Everything else works as normal, and you're
-          welcome to apply again below.
-        </p>
+      {/* §18.3.5 — rejected and revoked are DIFFERENT things and read
+          differently. Both mute: nothing failed and nothing broke. Neither names
+          a reason, and a duplicate-ABN rejection never discloses that another
+          account holds it (AC-P2-44). */}
+      {!isVerified && !pending && !outcome && lastDecision === "rejected" && (
+        <div className="space-y-2">
+          <Pill tone="mute">Not approved</Pill>
+          <p className="font-semibold text-ink t-bd-sm">We couldn't set up trade pricing from those details</p>
+          <p className="text-body t-bd-sm">
+            Your account still works exactly as before — you can price jobs, submit them, track them
+            and use Refer &amp; earn. You're welcome to try again with updated details, or reply to
+            our email and we'll help.
+          </p>
+        </div>
+      )}
+      {!isVerified && !pending && !outcome && lastDecision === "revoked" && (
+        <div className="space-y-2">
+          <Pill tone="mute">Not active</Pill>
+          <p className="font-semibold text-ink t-bd-sm">Trade pricing no longer applies</p>
+          <p className="text-body t-bd-sm">
+            You're seeing our standard prices from now on. Everything else on your account is
+            unchanged. If you think that's a mistake, get in touch and we'll sort it out.
+          </p>
+        </div>
       )}
 
       {/* A verified account's re-apply affordance, CLOSED by default: the ABN
@@ -232,10 +304,16 @@ export function TradeApplicationCard({
           pending row is a representable state, re-applying never takes the
           existing trade pricing away while the new ABN is checked (E-P2-6). */}
       {isVerified && !pending && outcome !== "under_review" && !reapplying && (
-        <button type="button" onClick={() => setReapplying(true)}
-          className="text-body hover:text-ink underline underline-offset-2 text-left cursor-pointer t-cap">
-          My ABN has changed
-        </button>
+        <div className="border-t border-line pt-4">
+          <p className="text-body t-cap">
+            Changed ABN or trading name?{" "}
+            <button type="button" onClick={() => setReapplying(true)}
+              className="text-ink underline underline-offset-2 cursor-pointer">
+              Send us the new details
+            </button>{" "}
+            — your trade pricing stays while we check them.
+          </p>
+        </div>
       )}
 
       {/* The form: offered when there is no application in flight, and — for a
@@ -244,25 +322,23 @@ export function TradeApplicationCard({
         <div className="space-y-4">
           {!isVerified && !outcome && (
             <div>
-              <p className="font-semibold text-ink">Trade pricing</p>
+              <p className="font-semibold text-ink t-bd-sm">Trade account</p>
               {/* Spec §7.2, VERBATIM — the owner's words, which this stage may
-                  place but not rewrite. "You may qualify" is the load-bearing
-                  part: the reader may be a private customer who holds an ABN and
-                  does not know they qualify, and nothing may promise an outcome
-                  before verification (AC-P2-9). An earlier draft promised trade
-                  pricing outright, which is the thing this sentence refuses to
-                  do. */}
+                  place but not rewrite. "You may qualify" is load-bearing: the
+                  reader may be a private customer who holds an ABN and does not
+                  know they qualify, and nothing may promise an outcome before
+                  verification (AC-P2-9). */}
               <p className="text-body mt-1 t-bd-sm">
                 Have an ABN? You may qualify for trade pricing. Add it and we'll check it against
                 the Australian Business Register.
               </p>
             </div>
           )}
-          {isVerified && <p className="text-quiet t-label">Your new ABN</p>}
+          {isVerified && <p className="text-quiet t-label">Your new details</p>}
           {fields}
           <div className="flex items-center gap-4">
             <Btn variant="sage" size="md" onClick={() => void submit()} disabled={!canSubmit}>
-              {busy ? "Checking…" : "Check my ABN"}
+              {busy ? "Checking your details…" : "Apply for trade pricing"}
               {!busy && <Check className="w-4 h-4" />}
             </Btn>
             {isVerified && (
@@ -279,11 +355,15 @@ export function TradeApplicationCard({
       {!!trade?.history?.length && (
         <div className="border-t border-line pt-4">
           <p className="text-quiet t-label mb-2">History</p>
+          {/* Newest first (§18.6). The server returns the ledger oldest-first
+              because that is the order it happened in; a person reading their own
+              account wants the latest state at the top. */}
           <ul className="space-y-1">
-            {trade.history.map((h, i) => (
+            {[...trade.history].reverse().map((h, i) => (
               <li key={`${h.at}-${i}`} className="text-body flex justify-between t-cap">
                 <span>{h.at?.slice(0, 10)}</span>
-                <span>{h.outcome === "approved" ? "Approved" : h.outcome === "rejected" ? "Not approved" : "Removed"}</span>
+                <span>{h.outcome === "approved" ? "Trade pricing approved"
+                  : h.outcome === "rejected" ? "Not approved" : "Trade pricing removed"}</span>
               </li>
             ))}
           </ul>
