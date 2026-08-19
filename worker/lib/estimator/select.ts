@@ -26,6 +26,7 @@ import { buildOutcomes, priceCentsOf, type OutcomeCandidate } from "./outcome";
 import type { CandidateOutcome, SelectionOutcome } from "../../../src/data/recommendation";
 import type { PriceSnapshot } from "./pricing";
 import { eligiblePerformanceVariants } from "./configuration";
+import type { ShadowLearnedModel } from "./learning";
 // Type-only, so no runtime cycle: splitCandidates.ts imports the VALUES here.
 import type { SplitCandidate } from "./splitCandidates";
 import { leadUnitOf } from "./splitCandidates";
@@ -208,7 +209,16 @@ const rowKey = (row: EvaluatedRow) =>
 export function decide(
   opening: OpeningInput & { externalRef?: string | null },
   evaluation: Evaluation,
-  opts?: { splits?: SplitCandidate[]; tolerance?: number },
+  opts?: {
+    splits?: SplitCandidate[];
+    tolerance?: number;
+    /** The dark learned layer (D11). Passed to the OUTCOME BUILDER and nowhere
+     *  else. `runLadder` below is called with `LadderCandidate[]` and a
+     *  tolerance — there is no parameter it could arrive through, so AC-32
+     *  ("removing the learned model changes no selection anywhere") is a fact
+     *  about the type signature rather than a promise about the code. */
+    shadow?: ShadowLearnedModel;
+  },
 ): SelectionResult {
   const requirement = resolvedRequirement(opening);
   const tolerance = opts?.tolerance ?? REQUIREMENT_TOLERANCE;
@@ -251,6 +261,8 @@ export function decide(
     withheldIncomplete: evaluation.withheldIncomplete,
     hadCandidates: evaluation.hadCandidates || splits.length > 0,
     sizeKnown,
+    shadow: opts?.shadow ?? null,
+    opening,
   });
 
   const evaluated: EvaluatedCandidate[] = evaluation.rows.map((row, i) => ({

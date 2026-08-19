@@ -16,6 +16,8 @@ import {
 } from "./ladder";
 import type { FilterOutcome, FitFacts, OutcomeStatus } from "./rules";
 import type { PriceSnapshot } from "./pricing";
+import type { ShadowLearnedModel } from "./learning";
+import type { OpeningInput } from "./types";
 
 /** One candidate as the engine knows it, before the contract is stamped on it. */
 export interface OutcomeCandidate {
@@ -68,6 +70,13 @@ export interface OutcomeInput {
   hadCandidates: boolean;
   /** The opening's own dimensions are known (E7). */
   sizeKnown: boolean;
+  /** The dark learned layer (D11), consulted for DISPLAY and applied to nothing.
+   *  It arrives here rather than at the ladder because this is the only place it
+   *  is allowed to reach: staff see what it would have said, and the pick is
+   *  already made by the time this runs. */
+  shadow?: ShadowLearnedModel | null;
+  /** The opening the shadow layer is looked up by. */
+  opening?: OpeningInput | null;
 }
 
 /** A price that is missing, not `ok`, or ≤ 0 is not a price (spec A6, AC-52):
@@ -155,6 +164,10 @@ export function buildOutcomes(input: OutcomeInput): {
     absent: requirement.absent,
   };
 
+  // Looked up ONCE per run, not per candidate: the bucket is a property of the
+  // opening, and only `supportFor` varies between candidates.
+  const learned = input.shadow && input.opening ? input.shadow.lookup(input.opening) : null;
+
   const outcomes = input.candidates.map((c) => {
     const t = tiered.get(c.key);
     const tier = t?.tier ?? "excluded";
@@ -203,7 +216,20 @@ export function buildOutcomes(input: OutcomeInput): {
           ? round2(price.total - selectedTotal)
           : null,
       },
-      learned: null,
+      // D11: recorded, shown, and applied to nothing. `applied` is the literal
+      // `false` in this release — not a flag someone could flip on, because
+      // flipping it would require the ladder to gain a parameter it does not
+      // have. Turning the layer on is a later release and a design decision,
+      // not a boolean.
+      learned: learned ? {
+        retrievalKey: learned.retrievalKey,
+        retrievalKeyVersion: input.shadow!.version,
+        observations: learned.observations,
+        support: learned.supportFor(c.productSlug),
+        wouldPrefer: learned.preferredSlug != null && learned.preferredSlug === c.productSlug,
+        applied: false,
+        provenance: learned.provenance,
+      } : null,
     };
     return outcome;
   });

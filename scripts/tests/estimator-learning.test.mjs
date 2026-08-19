@@ -12,13 +12,14 @@ await build({
   stdin: {
     contents: `
       export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } from ${p("worker/lib/estimator/learning.ts")};
+      export { decide } from ${p("worker/lib/estimator/select.ts")};
       export { captureRecommendationOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, captureRecommendationOutcomes } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, captureRecommendationOutcomes, decide } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -419,4 +420,90 @@ test("AC-30 an opening with no band records thermalRequired 0 and buckets apart"
   assert.equal(context.thermalRequired, 0);
   assert.equal(at("retrieval_key"), "awning|plan_derived|m|0");
   assert.equal(retrievalKey(context), at("retrieval_key"));
+});
+
+// ── AC-32: dark means dark ──────────────────────────────────────────────────
+
+/** A hand-built Evaluation, so the seam under test is `decide` itself rather
+ *  than a catalogue. Two products, both fitting, both meeting — so PRICE is the
+ *  only thing that can separate them, and the learned layer is the only thing
+ *  that could be caught trying. */
+const darkEvaluation = (prices) => ({
+  rows: Object.entries(prices).map(([slug, total]) => ({
+    candidate: {
+      sanityProductId: `id-${slug}`, slug, catalogueRevision: "rev1", schemaVersion: 1,
+      configuration: { operationTypes: ["awning"] },
+      dimensionRule: { minWidthMm: 300, maxWidthMm: 3000, minHeightMm: 300, maxHeightMm: 3000, maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1" },
+      performanceVariants: [], family: "windows",
+    },
+    outcome: { passed: true, status: "ready", filters: [], eligibleVariantIds: ["dg"], energyCertified: true, candidateId: `id-${slug}`, ruleVersion: "v3-energy-objective" },
+    selectedVariant: { variantId: "dg", uValue: 2.0, shgc: 0.45, dataSource: "certified", certified: true },
+    price: { ok: true, total },
+    fit: { fits: true, widthMm: 1200, heightMm: 1500, limit: null, breached: [] },
+  })),
+  hadCandidates: true, catalogueVersion: "cat-v1", withheldIncomplete: [],
+});
+
+const darkOpening = {
+  family: "windows", operationType: "awning", widthMm: 1200, heightMm: 1500,
+  externalRef: "W20", thermalContext: { requirementBasis: "plan_derived" },
+};
+
+
+test("AC-32 the learned layer records what it would have said, and moves nothing", () => {
+  // The bucket overwhelmingly names amj-b. The ladder's competing set selects
+  // amj-a, because amj-a is cheaper and cheapest-wins is the whole rule.
+  const shadow = aggregateShadow([1, 2, 3, 4, 5, 6, 7].map(() => shadowRow("awning|plan_derived|s|0", "amj-b")));
+  const evaluation = darkEvaluation({ "amj-a": 900, "amj-b": 1400 });
+
+  const withModel = decide(darkOpening, evaluation, { shadow });
+  const withoutModel = decide(darkOpening, darkEvaluation({ "amj-a": 900, "amj-b": 1400 }));
+
+  // A IS SELECTED. Not nudged, not tie-broken — the layer had no channel.
+  assert.equal(withModel.selected.candidate.slug, "amj-a");
+  assert.equal(withoutModel.selected.candidate.slug, "amj-a");
+
+  // And removing the model entirely changes NO selection anywhere: the complete
+  // tier and rank order is identical, not merely the winner.
+  const order = (r) => r.evaluated.map((e) => [e.candidate.slug, e.candidateOutcome.tier, e.candidateOutcome.rank, e.candidateOutcome.competing]);
+  assert.deepEqual(order(withModel), order(withoutModel));
+
+  // What the layer DID do is record its opinion, per candidate, for staff.
+  const a = withModel.evaluated.find((e) => e.candidate.slug === "amj-a").candidateOutcome.learned;
+  const b = withModel.evaluated.find((e) => e.candidate.slug === "amj-b").candidateOutcome.learned;
+  assert.equal(b.wouldPrefer, true, "it would have promoted B");
+  assert.equal(a.wouldPrefer, false);
+  assert.equal(b.applied, false, "and it applied nothing");
+  assert.equal(a.applied, false);
+  assert.equal(b.observations, 7);
+  assert.equal(b.support, 7);
+  assert.equal(a.support, 0, "nobody ever issued A in this bucket");
+  assert.equal(b.retrievalKey, "awning|plan_derived|s|0");
+  assert.equal(b.retrievalKeyVersion, RETRIEVAL_KEY_VERSION);
+
+  // With no model at all the block is null, not a neutral-looking zero — an
+  // absent layer must not read as a layer with nothing to say.
+  assert.equal(withoutModel.evaluated[0].candidateOutcome.learned, null);
+});
+
+test("AC-31/AC-35 below the floor it prefers nothing, and the evidence names its provenance", () => {
+  const shadow = aggregateShadow([
+    shadowRow("awning|plan_derived|s|0", "amj-b"),
+    shadowRow("awning|plan_derived|s|0", "amj-b"),
+    shadowRow("awning|plan_derived|s|0", "amj-b"),
+    shadowRow("awning|plan_derived|s|0", "amj-b", "backfilled"),
+  ]);
+  const r = decide(darkOpening, darkEvaluation({ "amj-a": 900, "amj-b": 1400 }), { shadow });
+  const b = r.evaluated.find((e) => e.candidate.slug === "amj-b").candidateOutcome.learned;
+
+  // AC-31: four observations is below the floor, so no preference is claimed —
+  // but the counts are still shown, because "we have four of these" is exactly
+  // what a reviewer needs to judge how much the silence is worth.
+  assert.equal(b.observations, 4);
+  assert.equal(b.wouldPrefer, false);
+  assert.equal(b.support, 4);
+  // AC-35: three in-platform reviews and one backfilled row. A reviewer told
+  // "3 of 4 similar openings went this way" can see which of the four were real
+  // in-platform reviews without inventing the number.
+  assert.deepEqual(b.provenance, { inPlatform: 3, backfilled: 1 });
 });
