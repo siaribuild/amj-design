@@ -655,7 +655,7 @@ test("the customer record shows trade status and history, and revoke returns the
   test.setTimeout(120_000);
 
   // A customer whose details auto-pass, so there is a grant to look at.
-  const email = `ops-360-${Date.now().toString(36)}@spare9joinery.com.au`;
+  const email = `ops-360-${Date.now().toString(36)}@spare8joinery.com.au`;
   const challenge = await page.request.post("/api/auth/challenge", {
     data: { email }, headers: { "X-Forwarded-For": "198.51.143.4" },
   });
@@ -664,7 +664,7 @@ test("the customer record shows trade status and history, and revoke returns the
   expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
 
   const applied = await page.request.post("/api/trade/application", {
-    data: { abn: "81000143439", businessName: "Spare 9 Joinery Pty Ltd", source: "trade_page" },
+    data: { abn: "81000143439", businessName: "Spare 8 Joinery Pty Ltd", source: "trade_page" },
     headers: { "X-Forwarded-For": "198.51.143.5" },
   });
   expect((await applied.json()).status, "this fixture must auto-pass").toBe("verified");
@@ -703,4 +703,66 @@ test("the customer record shows trade status and history, and revoke returns the
     const body = await res.json();
     return body.customers.find((c: { email: string }) => c.email === addr)?.tradeVerified;
   }, email), { timeout: 15_000 }).toBe(false);
+});
+
+// ─── Editing a customer must not erase what was never being edited ───────────
+// Found by the Codex stop-gate review.
+//
+// The PATCH endpoint answers with the PROFILE it just wrote — name, phone,
+// company, abn — and the record replaced its whole customer object with that
+// reply. Trade status and the account rate are DERIVED (ADR-0002) and are not in
+// that response, so saving a phone number made a verified customer read as
+// retail at 0% and took the revoke control off the screen.
+//
+// Nothing was actually lost in the database, which is what makes it dangerous:
+// the screen said the customer had no trade pricing, and the only way to find
+// out otherwise was to reload. Somebody would have re-granted a rate that was
+// never gone, or told a tradie on the phone that they were not verified.
+test("editing a customer's details does not erase their trade status", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const email = `ops-patch-${Date.now().toString(36)}@spare10joinery.com.au`;
+  const challenge = await page.request.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": "198.51.144.6" },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: "81000168236", businessName: "Spare 10 Joinery Pty Ltd", source: "trade_page" },
+    headers: { "X-Forwarded-For": "198.51.144.7" },
+  });
+  expect((await applied.json()).status, "fixture must auto-pass").toBe("verified");
+
+  const staffEmail = `ops-patch-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  await page.getByRole("row", { name: new RegExp(email) })
+    .getByRole("button", { name: /open/i }).click();
+
+  const trade = page.getByTestId("customer-trade");
+  await expect(trade).toBeVisible({ timeout: 15_000 });
+  await expect(trade.getByRole("button", { name: /revoke/i }),
+    "verified before the edit").toBeVisible();
+
+  // Edit something that has nothing to do with trade at all.
+  await page.getByRole("button", { name: /edit details/i }).click();
+  await page.getByLabel("Phone").fill("0499 111 222");
+  await page.getByRole("button", { name: /save changes/i }).click();
+
+  // WITHOUT a reload, the derived facts must still be on screen.
+  await expect(page.getByText("0499 111 222"), "the edit saved").toBeVisible({ timeout: 15_000 });
+  const said = (await trade.innerText()).replace(/\s+/g, " ");
+  expect(said, "still verified after saving an unrelated field").toMatch(/verified/i);
+  expect(said, "and the rate is not blanked to 0%").not.toMatch(/rate 0%/i);
+  await expect(trade.getByRole("button", { name: /revoke/i }),
+    "the revoke control survives the edit").toBeVisible();
 });

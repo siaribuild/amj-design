@@ -197,7 +197,7 @@ function TradeQueue({ rows, error, onOpen, onDecided }: {
             ))}
             <span className="text-quiet t-cap">
               From {SOURCE_LABEL[a.source] ?? a.source}
-              {a.createdAt ? ` \u00b7 ${a.createdAt.slice(0, 10)}` : ""}
+              {a.createdAt ? ` · ${a.createdAt.slice(0, 10)}` : ""}
             </span>
           </div>
 
@@ -298,7 +298,16 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
       const patch: Record<string, string> = { name: draft.name, phone: draft.phone, company: draft.company, abn: draft.abn };
       if (isAdmin && draft.email.trim() !== cu.email) patch.email = draft.email.trim();
       const r = await opsUpdateCustomer(cu.id, patch);
-      setD({ ...d, customer: r.customer });
+      // MERGE, never replace. The PATCH answers with the PROFILE it just wrote —
+      // name, phone, company, abn — and nothing else. Trade status and the
+      // account rate are DERIVED (ADR-0002) and are not in that reply, so
+      // replacing the customer object made saving a phone number read as "not on
+      // trade pricing, rate 0%" and took the revoke control off the screen.
+      //
+      // Nothing was lost in the database, which is what made it dangerous: the
+      // only way to learn otherwise was to reload, and somebody would have
+      // re-granted a rate that was never gone.
+      setD({ ...d, customer: { ...d.customer, ...r.customer } });
       setEditing(false);
     } catch (e) {
       setEditErr(String(e).includes("409") ? "That email is already in use by another account."
@@ -443,11 +452,11 @@ function TradeBlock({ d, onChanged, error, setError }: {
           <p className="text-quiet t-label">Trade pricing</p>
           <p className="text-ops mt-1 t-bd-sm">
             {trade?.verified
-              ? `Verified${trade.provenance ? ` \u00b7 ${trade.provenance}` : ""}${trade.verifiedSince ? ` \u00b7 since ${trade.verifiedSince.slice(0, 10)}` : ""}`
+              ? `Verified${trade.provenance ? ` · ${trade.provenance}` : ""}${trade.verifiedSince ? ` · since ${trade.verifiedSince.slice(0, 10)}` : ""}`
               : "Not on trade pricing"}
           </p>
           <p className="text-body mt-1 t-cap">
-            {d.customer.abn ? `ABN ${d.customer.abn}` : "No ABN on file"} \u00b7 account rate {rate}%
+            {d.customer.abn ? `ABN ${d.customer.abn}` : "No ABN on file"} · account rate {rate}%
           </p>
         </div>
         {trade?.verified && (
@@ -467,9 +476,9 @@ function TradeBlock({ d, onChanged, error, setError }: {
           {history.map((h) => (
             <div key={h.id} className="flex flex-wrap justify-between gap-x-4 text-body t-cap">
               <span>
-                {(h.decidedAt ?? h.createdAt ?? "").slice(0, 10)} \u00b7 {h.status}
+                {(h.decidedAt ?? h.createdAt ?? "").slice(0, 10)} · {h.status}
                 {h.decidedVia ? ` (${h.decidedVia})` : ""}
-                {h.revokedAt ? ` \u00b7 revoked ${h.revokedAt.slice(0, 10)}` : ""}
+                {h.revokedAt ? ` · revoked ${h.revokedAt.slice(0, 10)}` : ""}
               </span>
               <span className="text-quiet">{h.revokeReason || h.decisionReason || ""}</span>
             </div>

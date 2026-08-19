@@ -14,7 +14,26 @@ const PORT = process.env.WEB_PORT || "8788";
 // "this journey made no ABR call" is an acceptance criterion (AC-P2-7/17) and
 // the counter is how it is proved rather than inferred.
 const ABR_PORT = process.env.ABR_PORT || "8789";
-const abr = await startAbrStub(Number(ABR_PORT));
+// A FIXED port is what lets the browser specs read the stub's hit counter from
+// another process, but it also means a run that died without cleaning up leaves
+// the port held — and node's EADDRINUSE surfaces through Playwright as a bare
+// "Process from config.webServer was not able to start", which says nothing
+// about what to do. Say it here instead.
+const abr = await startAbrStub(Number(ABR_PORT)).catch((e) => {
+  if (e?.code === "EADDRINUSE") {
+    console.error(
+      `
+[web-server] ABR stub port ${ABR_PORT} is already in use — almost certainly an ` +
+      `orphaned harness from a run that was killed.
+` +
+      `  Free it:  netstat -ano | grep ":${ABR_PORT}.*LISTENING"   then taskkill //F //PID <pid>
+` +
+      `  Or run on another port:  ABR_PORT=8799 npm run test:web
+`,
+    );
+  }
+  throw e;
+});
 const base = join(projectRoot, ".codex-tmp");
 await mkdir(base, { recursive: true });
 const runDir = await mkdtemp(join(base, "web-"));
@@ -42,5 +61,10 @@ const wrangler = spawn(process.execPath, [
   "--var", `ABR_BASE_URL:${abr.baseUrl}`, "--var", "ABR_GUID:test-guid-do-not-log",
 ], { cwd: projectRoot, env: { ...process.env, ...env }, stdio: "inherit" });
 
+// Teardown. Deliberately NOT a taskkill /T tree-kill: an attempt at that made
+// the server stop serving partway through a run, and the orphaned ports it was
+// meant to solve turned out to be self-inflicted — piping a test run through
+// `head` sends SIGPIPE, npm dies mid-run, and its children outlive it. Do not
+// truncate test output with `head`; redirect to a file and read that.
 wrangler.on("exit", (code) => { void abr.close(); process.exit(code ?? 0); });
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { void abr.close(); wrangler.kill(); });
