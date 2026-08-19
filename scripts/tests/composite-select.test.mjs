@@ -8,9 +8,10 @@
 // wrong answer to the opening — the lite has to couple with the sash beside it.
 //
 // Every test below drives the REAL engine (selectForOpening, the rules, the
-// ranker, the composite scorer) over a fixture catalogue. Prices are set per
-// product so the commercial term is a real force and not a formality: in most of
-// these the compatible answer is the DEARER one, which is the whole point.
+// ladder) over a fixture catalogue. Prices are set per product so price is a
+// real force and not a formality: in most of these the compatible answer is the
+// DEARER one, which is the whole point — a hard constraint is not a preference
+// that happens to be strong.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -67,8 +68,9 @@ const makeRepo = (products) => ({
   catalogueVersion() { return "cat-v1"; },
 });
 
-/** Price per (product, glass). The commercial term is 0.15 of the score, so these
- *  gaps are wide enough to decide a tie and never wide enough to beat compliance. */
+/** Price per (product, glass). Price is what decides between candidates that
+ *  survived the hard constraints and landed in the same tier — so these gaps are
+ *  wide enough to be decisive, and still cannot buy past a constraint. */
 const makePrice = (table) => async (candidate, _opening, variant) => {
   const key = `${candidate.slug}:${variant?.variantId ?? "none"}`;
   const total = table[key] ?? table[candidate.slug] ?? 1000;
@@ -536,4 +538,31 @@ test("AC-20 per-unit bands are measured per unit, never averaged into one target
   const d = makeUpDeviation(opening, [cell(600, 3.0, 3.2), cell(2000, 2.4, 2.5), cell(600, 3.0, 3.2)],
     resolvedRequirement(opening));
   assert.equal(d.scalar, 0);
+});
+
+test("AC-8 split combinability is HARD: a mixed-system make-up is never offered", async () => {
+  // D3's third hard constraint. The cheap lite belongs to a system that couples
+  // with nothing here, so the make-up containing it does not exist to be
+  // compared — it is not a dearer candidate that lost on price, it was never a
+  // candidate. A make-up drawn from ONE system is offered, and is chosen.
+  const products = [
+    product("sys80-awning", { system: "sys-80", operation: "awning" }),
+    product("sys80-fixed", { system: "sys-80", operation: "fixed" }),
+    product("sys65-cheap-fixed", { system: "sys-65", operation: "fixed" }),
+  ];
+  const prices = { "sys80-awning": 1000, "sys80-fixed": 1000, "sys65-cheap-fixed": 10 };
+  const r = await selectForComposite(
+    { family: "windows", operationType: "awning", widthMm: 3200, heightMm: 2100 },
+    [unit("awning", 600), unit("fixed", 2000), unit("awning", 600)],
+    makeRepo(products), makePrice(prices),
+  );
+  assert.equal(r.system, "sys-80");
+  assert.equal(r.mixedSystems, false);
+  assert.deepEqual(slugsOf(r), ["sys80-awning", "sys80-fixed", "sys80-awning"]);
+  // The units are the ones that COUPLE, at a hundred times the lite's price.
+  assert.ok(!slugsOf(r).includes("sys65-cheap-fixed"), "the uncouplable lite is not in the make-up");
+  // The chosen make-up's facts are the same two the ladder tiers a single unit
+  // by — one comparator, one vocabulary (AC-50).
+  assert.equal(r.totalCents, 300_000);
+  assert.equal(r.deviation, 0, "no band to miss");
 });

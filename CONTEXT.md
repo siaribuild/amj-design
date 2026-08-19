@@ -17,6 +17,10 @@ _Avoid_: admin, operator
 **Payable account**:
 An account with complete, ABN-valid payout details. Payability gates what an account can *receive* (e.g. a referral code); it is a different axis from staff-ness, which gates what an account can *participate in*. It is never a purchase gate — nothing anywhere may condition a referrer's capabilities on the referrer's own order history.
 
+**Visitor**:
+A signed-out person on the customer site. Browsing, configuring, live pricing and the schedule match are Visitor territory; the submission gate is where a Visitor becomes a Customer. A Visitor is served by the deterministic matcher with an indicative price — never by the AI estimator, which serves signed-in Customers; neither engine re-runs or silently replaces the other's work.
+_Avoid_: anonymous user, guest
+
 ### Registration and the submission gate
 
 **Submission gate**:
@@ -114,8 +118,28 @@ A customer-uploaded document (plans, window schedule) listing openings to be quo
 Turning an uploaded schedule into proposed lines. Parsed lines carry their origin and stay reviewable — a parse proposes, a person confirms.
 
 **Estimator**:
-The subsystem that derives line configurations and recommendations from parsed schedules, improving via learning from ops corrections.
+The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
 _Avoid_: quote (an estimator output is not a quote)
+
+**Candidate**:
+One way the estimator could answer an opening: a product-and-glass configuration, or a split of several units acting as one. Every candidate a run considered is kept with its verdict — winners, losers and the excluded — because staff review must be able to answer "why not the cheaper one?" long after the fact.
+_Avoid_: option, suggestion
+
+**Selection ladder**:
+How the estimator chooses among candidates: hard constraints eliminate; tiers order what survives (meets → within tolerance → misses → thermal unknown → does not fit); the cheapest candidate in the best non-empty tier wins. There are no weights and no blended score. A lower tier is reached only when every tier above it is empty, so the competing set is never empty while any candidate survives.
+_Avoid_: ranker, scoring, weights
+
+**Tier**:
+A candidate's verdict class on the ladder. An excluded candidate is recorded with the constraint it failed and is never machine-selected; every other tier stays selectable, priceable and saveable by a human.
+
+**Requirement tolerance**:
+The single tuned constant in selection: when no candidate meets a thermal requirement, candidates within 5% (of the requirement value) beyond the best achieved deviation still compete on price. Stamped on every run so a past selection is reproducible.
+
+**Requirement basis**:
+Where an opening's thermal requirement came from: an energy report, derivation from the plans, a default envelope, or a human override. A computed requirement binds selection exactly as a reported one does; only the basis differs, and staff see the basis.
+
+**Candidate outcome**:
+The structured facts the estimator emits per candidate — tier, rank, per-axis deviation, price delta against the pick, exclusion constraints. Facts only, never sentences: each surface composes its own wording. This is the contract the ops derivation surface reads.
 
 ### Referrals
 
