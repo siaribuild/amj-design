@@ -35,8 +35,15 @@ import { test, expect, type Page } from "@playwright/test";
  *  correctly so. An auto-pass also CONSUMES its ABN for the rest of the run (the
  *  next applicant on that number is a duplicate), so each journey takes its own. */
 const SPARE = (index: number) => ({
+  // MIRRORS abr-stub.mjs's SPARE_ABNS **in order**. The stub derives the entity
+  // name and domain from the ARRAY POSITION, so a list that skips an entry hands
+  // back an ABN whose registered name belongs to a different business — the
+  // triple then fails on criterion 2 and the journey queues instead of granting,
+  // for a reason that has nothing to do with what it is testing.
   abn: ["81000008768", "81000020276", "81000043566", "81000045073", "81000066856",
-        "81000068363", "81000120149", "81000122752"][index],
+        "81000068363", "81000120149", "81000122752", "81000143439", "81000166729",
+        "81000168236", "81000180840", "81000200000", "81000200032", "81000200064",
+        "81000200096", "81000200113", "81000200145"][index],
   businessName: `Spare ${index} Joinery Pty Ltd`,
   domain: `spare${index}joinery.com.au`,
 });
@@ -663,3 +670,42 @@ test("a second account never inherits the first account's trade status", async (
 // would claim coverage this file does not have. The property test above
 // ("a second account never inherits the first account's trade status") is the
 // real coverage; the race itself is argued from the code, not demonstrated.
+
+// ─── 14. AC-P2-54 — the payout form already knows the ABN ────────────────────
+// Acceptance flagged this as the one UI change in the phase that shipped with no
+// coverage at any level. It is also the piece that gates the deploy: since an
+// ABN now GRANTS pricing, the Worker refuses to let the payout path change a
+// verified one, so a verified tradie joining the referral programme would have
+// typed their own ABN, had it refused, and read "we couldn't save those details"
+// over four correct fields.
+//
+// Prefill is what stops that happening at all: unchanged digits are not a write.
+test("the referral payout form prefills a verified account's ABN (AC-P2-54)", async ({ page }) => {
+  const business = SPARE(12);
+  const email = emailAt(business.domain);
+  await apiSignIn(page.request, email);
+  expect((await page.request.post("/api/auth/profile", { data: { name: "Ada Referrer" } })).ok()).toBeTruthy();
+
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: business.abn, businessName: business.businessName, source: "profile" },
+  });
+  expect((await applied.json()).status, "fixture must auto-pass").toBe("verified");
+
+  await page.goto("/refer");
+
+  // The join flow is behind a call to action; find it however the page words it.
+  const join = page.getByRole("button", { name: /join|get my code|start earning/i }).first();
+  await expect(join).toBeVisible({ timeout: 20_000 });
+  await join.click();
+
+  // The flow opens on the conditions; the payout fields are behind them.
+  await expect(page.getByRole("heading", { name: /join the referral program/i }))
+    .toBeVisible({ timeout: 15_000 });
+  await page.locator('input[type="checkbox"]').first().check();
+  await page.getByRole("button", { name: /continue/i }).click();
+
+  const abnField = page.locator("#payout-abn");
+  await expect(abnField, "the payout form asks for an ABN").toBeVisible({ timeout: 15_000 });
+  await expect(abnField, "AC-P2-54: and it already holds the account's own")
+    .toHaveValue(new RegExp(business.abn));
+});

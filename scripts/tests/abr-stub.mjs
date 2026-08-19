@@ -57,6 +57,11 @@ const SPARE_ABNS = [
   "81000008768", "81000020276", "81000043566", "81000045073",
   "81000066856", "81000068363", "81000120149", "81000122752",
   "81000143439", "81000166729", "81000168236", "81000180840",
+  // Added when the first twelve ran out. An auto-pass CONSUMES its ABN for the
+  // rest of a run — the next applicant on that number is a duplicate, correctly
+  // — so a suite that grows needs more of these, not more reuse. All
+  // checksum-valid; verify with the ATO weights before adding any.
+  "81000200000", "81000200032", "81000200064", "81000200096", "81000200113", "81000200145",
 ];
 
 export function spareBusiness(index) {

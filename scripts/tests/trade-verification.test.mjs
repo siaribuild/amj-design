@@ -1085,6 +1085,86 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         "SEC-4: a refused revoke must not zero a rate it never revoked");
     });
 
+    await t.test("AC-P2-5 / AC-P2-32: trade pricing applies WHILE CONFIGURING, not just on the quote", async () => {
+      // The phase's headline promise, and until now the one nobody priced.
+      // Acceptance flagged it: the grant was proven, the pricing path was proven
+      // untouched, and a rate was proven to lower a price — but nothing joined
+      // them end to end. Composition is an argument; this is a measurement.
+      //
+      // The rate is NOT written to D1 here. It arrives the way a real tradie's
+      // does — through the verification flow — so what is measured is the whole
+      // path from "my ABN checked out" to "the number on my screen is lower".
+      //
+      // "It applies while you configure — not just on the quote we send back" is
+      // owner-approved copy on the trade page (spec §7.2). This is the test that
+      // makes that sentence true rather than aspirational.
+      const line = {
+        code: "W01", location: "Trade pricing probe", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        lineTotal: 1,
+      };
+      const priceFor = async (session) => (await requestJson(session, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Trade pricing probe", items: [line] },
+      })).body.items[0].lineTotal;
+
+      // A private account: registered, no ABN, no grant.
+      const priv = await newAccount("retail-price", "example.com");
+      const retail = await priceFor(priv.session);
+      assert.ok(retail > 0, "a private account prices");
+
+      // A tradie who verifies, through the real flow.
+      const business = spareBusiness(12);          // its own; an auto-pass consumes one
+      const tradie = await newAccount("trade-price", business.domain);
+      assert.deepEqual(
+        await (await apply(tradie.session, {
+          abn: business.abn, businessName: business.businessName, source: "trade_page",
+        })).clone().json(),
+        { ok: true, status: "verified" },
+        "the fixture must auto-pass — this test is about what happens AFTER it does",
+      );
+
+      // Configuring, not quoting: this is the draft-line price preview, the same
+      // number the builder shows while somebody is still adding units.
+      const traded = await priceFor(tradie.session);
+      assert.ok(traded < retail,
+        `AC-P2-5: a verified account configures at trade prices (${traded}) below retail (${retail})`);
+
+      // And the rate that did it is the granted one, not something else.
+      assert.equal(Number((await userRow(tradie.email)).discount_percent), 5,
+        "granted at the business-account default (TRADE_DISCOUNT_DEFAULT)");
+      assert.equal(Number((await userRow(priv.email)).discount_percent), 0,
+        "and a private account is still at retail — no rate leaked across accounts");
+    });
+
+    await t.test("AC-P2-12 / P2-A10: one application at a time, and the refusal says so", async () => {
+      // Acceptance flagged this as built-but-untested. The 409 is what stops a
+      // customer stacking applications while one waits on a person — without it
+      // an impatient applicant could fill the queue with the same request and
+      // the reviewer would decide the same case repeatedly.
+      //
+      // The DB backs it too: `trade_application_one_pending` is a partial unique
+      // index, so a concurrent double-submit is a constraint violation rather
+      // than torn state. This asserts the polite sequential answer.
+      const business = spareBusiness(13);
+      const account = await newAccount("one-pending", "gmail.com");   // queues: free-mail
+
+      const first = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.equal((await first.clone().json()).status, "under_review");
+
+      const second = await apply(account.session, {
+        abn: spareBusiness(14).abn, businessName: "Something Else Entirely", source: "profile",
+      });
+      assert.equal(second.status, 409, "a second application while one is pending is refused");
+      assert.equal((await second.clone().json()).error, "application_pending");
+
+      const rows = await applications(account.email);
+      assert.equal(rows.length, 1, "and nothing was written for the refused one");
+      assert.equal(rows[0].status, "pending");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
