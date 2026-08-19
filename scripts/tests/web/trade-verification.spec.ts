@@ -370,3 +370,92 @@ test("a malformed ABN blocks the sign-in step until it is fixed or cleared", asy
   await card.getByLabel("ABN").fill("");
   await expect(send, "clearing the field releases the step").toBeEnabled();
 });
+
+// ── shared: build a draft and open the review screen ──────────────────────────
+const A_LINE = {
+  code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+  width: "1200", height: "900", qty: 1,
+  options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+};
+
+async function openReview(page: Page): Promise<void> {
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: { title: `Trade gate ${stamp}-${seq++}`, items: [A_LINE] },
+  });
+  expect(saved.ok(), `save lines: ${await saved.text()}`).toBeTruthy();
+
+  await page.goto("/quote");
+  const bar = page.getByRole("region", { name: "Project summary and actions" });
+  await expect(bar).toBeVisible({ timeout: 30_000 });
+  await bar.getByRole("button", { name: /Submit for technical review/ }).click();
+  await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
+}
+
+/** The gate's details stage, with every required field filled. */
+async function fillDetails(page: Page): Promise<void> {
+  await page.getByLabel("Full name").fill("Sam Taylor");
+  await page.getByLabel("Phone").fill("0412 345 678");
+  await page.getByLabel("Street address").fill("12 Bridge Street");
+  await page.getByLabel("Suburb", { exact: true }).fill("Preston");
+  await page.getByLabel("State").selectOption("VIC");
+  await page.getByLabel("Postcode", { exact: true }).fill("3072");
+  await page.getByLabel(/delivery postcode/i).first().fill("3000");
+}
+
+// ─── 8. Door (c) — the optional ABN at the submit gate ────────────────────────
+// AC-P2-14/15/16 and the owner's mock-gate ruling P2-UX-2: the group sits LAST,
+// after delivery, because everything above it is required and putting the only
+// optional thing on the screen between two demands reads as a third demand.
+//
+// The load-bearing asymmetry: an EMPTY ABN must contribute NOTHING. Phase 1's
+// "one field, one press" promise is that a disabled Submit always names what is
+// outstanding, and an optional field that silently blocked it would break that
+// promise for every customer who never wanted trade pricing at all.
+test("the gate offers an optional ABN last, and only an entered one can hold Submit back", async ({ page }) => {
+  const email = freshEmail("gate");
+  await apiSignIn(page.request, email);
+  await openReview(page);
+  await fillDetails(page);
+
+  const abn = page.getByLabel("ABN (optional)");
+  await expect(abn, "the gate offers the optional ABN group").toBeVisible();
+
+  // §7.2 verbatim — the fourth AC-P2-48 advertising surface.
+  expect((await page.locator("body").innerText()).replace(/\s+/g, " "))
+    .toContain("Got an ABN? Add it and we'll check whether you qualify for trade pricing. It won't hold up this submission.");
+
+  // The group sits AFTER delivery in the DOM (P2-UX-2).
+  const order = await page.evaluate(() => {
+    const labels = Array.from(document.querySelectorAll("label")).map((l) => l.textContent ?? "");
+    return {
+      abn: labels.findIndex((t) => /^ABN \(optional\)/.test(t.trim())),
+      delivery: labels.findIndex((t) => /delivery postcode/i.test(t)),
+    };
+  });
+  expect(order.abn, "the ABN field is in the details stage").toBeGreaterThanOrEqual(0);
+  expect(order.abn, "the optional business group sits after delivery (P2-UX-2)")
+    .toBeGreaterThan(order.delivery);
+
+  // EMPTY contributes nothing — Phase 1 behaviour untouched (AC-P2-14).
+  const submit = page.getByRole("button", { name: /^Submit/ });
+  await expect(submit, "an empty optional field never blocks Submit").toBeEnabled();
+
+  // Malformed disables Submit and names itself in the caption (AC-P2-16).
+  await abn.fill("12345678901");
+  await expect(submit).toBeDisabled();
+  await expect(page.getByText(/still needed/i)).toContainText("ABN");
+  await expect(page.getByText(
+    "That ABN doesn't look right. Check the 11 digits, or clear the field to submit without it.",
+  )).toBeVisible();
+
+  // A valid ABN with no business name names THAT instead (AC-P2-15).
+  await abn.fill("51000000680");
+  await expect(page.getByLabel("Business name"), "the paired field appears with an ABN").toBeVisible();
+  await expect(submit).toBeDisabled();
+  await expect(page.getByText(/still needed/i)).toContainText("business name");
+
+  // Clearing restores Phase-1 behaviour instantly, with no round trip.
+  await abn.fill("");
+  await expect(submit, "clearing the field releases Submit").toBeEnabled();
+  await expect(page.getByLabel("Business name"), "and the paired field goes away").toHaveCount(0);
+});

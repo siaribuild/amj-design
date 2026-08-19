@@ -311,41 +311,62 @@ test("signing in at the gate flips the totals to ex GST without a reload", async
 // AC-32, AC-41. Absence is the half a diff review cannot see, so it is asserted
 // rather than assumed: no referral-code input on any gate panel, and no word
 // about trade pricing, discounts or applying for anything.
-test("no referral-code field and no trade-pricing copy anywhere on the gate", async ({ page }) => {
+// DECLARED EDIT, registration Phase 2 (AC-P2-49). Phase 1's AC-41 required
+// silence about trade pricing on every surface it added. **That silence ends at
+// the details stage by design**: owner ruling P2-D3 put an optional ABN group at
+// the submit gate, and its helper is one of the four AC-P2-48 advertising
+// surfaces. A tester finding trade copy there is recording conformance, not a
+// regression.
+//
+// What this test still guards, and what it must keep guarding:
+//   1. NO referral-code field anywhere, at any stage (unchanged, AC-P2-57).
+//   2. Stages 0 and 1 stay silent. The pre-gate screen and the sign-in step are
+//      for a stranger who has not been asked for anything yet; the trade offer
+//      belongs with the details, last, after delivery (P2-UX-2).
+//   3. No percentage and no comparative framing at ANY stage (AC-P2-47) — the
+//      rule that never relaxes.
+test("no referral-code field, and trade copy only where Phase 2 put it", async ({ page }) => {
   await buildDraft(page.request, `Absence check ${stamp}`);
   await openReview(page);
 
-  const forbiddenCopy = /trade pricing|trade account|discount|% off|apply for|coming soon/i;
+  const tradeCopy = /trade pricing|trade account|discount|% off|apply for|coming soon/i;
+  // Never, at any stage, on any surface (AC-P2-47).
+  const anyPercentage = /\d\s*%|\d+(\.\d+)?\s*per\s?cent|\b(better|cheaper|lower|you save|save on)\b/i;
   const referralField = page.locator(
     'input[name*="referral" i], input[id*="referral" i], input[placeholder*="referral" i], input[aria-label*="referral" i]',
   );
   // Scoped to THE SURFACE THIS PHASE OWNS. The site's global footer still links
-  // to the trade-account mock, and that is Phase 3's to replace — AC-41 binds
-  // what this phase adds or changes, and the guard is that no NEW surface says
-  // anything about trade pricing or links to that page.
+  // to the trade-account page, and AC-41 binds what these phases add or change.
   const gate = page.locator(".quote-page");
   const gateText = () => gate.innerText();
 
-  // Stage 0.
+  // Stage 0 — a stranger. Still completely silent.
   await expect(referralField).toHaveCount(0);
-  expect(await gateText()).not.toMatch(forbiddenCopy);
+  expect(await gateText()).not.toMatch(tradeCopy);
+  expect(await gateText()).not.toMatch(anyPercentage);
   await expect(gate.getByRole("link", { name: /trade/i })).toHaveCount(0);
   await expect(gate.locator('a[href*="trade"], button:has-text("trade")')).toHaveCount(0);
 
-  // Stage 1.
+  // Stage 1 — sign in. Still silent: nothing has been asked of them yet.
   await page.getByLabel("Delivery postcode").fill("3072");
   await page.getByRole("button", { name: /Submit for technical review/ }).click();
   await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toBeVisible();
   await expect(referralField).toHaveCount(0);
-  expect(await gateText()).not.toMatch(forbiddenCopy);
+  expect(await gateText()).not.toMatch(tradeCopy);
+  expect(await gateText()).not.toMatch(anyPercentage);
 
-  // Stage 3.
+  // Stage 3 — the details. HERE the optional group is expected (AC-P2-49).
   await gateSignIn(page, freshEmail("absence"));
   await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
-  await expect(referralField).toHaveCount(0);
+  await expect(referralField, "no referral-code input, ever (AC-P2-57)").toHaveCount(0);
+
   const detailsText = await gateText();
-  expect(detailsText).not.toMatch(forbiddenCopy);
-  expect(detailsText, "no ABN or business-name field is seeded early either").not.toMatch(/\bABN\b/);
+  expect(detailsText, "AC-P2-47 holds even where trade copy is allowed")
+    .not.toMatch(anyPercentage);
+  expect(detailsText, "the optional group is present at the details stage (AC-P2-49)")
+    .toMatch(/ABN \(optional\)/i);   // innerText is CSS-uppercased by the label style
+  expect(detailsText, "and no builder/tradie question is asked (P2-D5)")
+    .not.toMatch(/\bbuilder\b\s*\/?\s*\btradie\b/i);
 });
 
 // ─── 7. The merge moment ─────────────────────────────────────────────────────

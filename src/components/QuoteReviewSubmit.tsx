@@ -45,10 +45,11 @@ import {
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import { quoteSummary } from "../data/quoteSummary";
 import {
-  getDeliveryEstimate, updateProfile, ApiError,
+  getDeliveryEstimate, updateProfile, applyForTrade, ApiError,
   type AuthUserDto, type SubmitDelivery, type SubmitResult,
 } from "../data/api";
 import { AU_STATES, DETAIL_LIMITS, submitMissing, type DetailField } from "../data/accountDetails";
+import { abnValid } from "../data/abn";
 import { OtpSignIn, OTP_COPY } from "./OtpSignIn";
 
 export type QuoteUser = {
@@ -63,6 +64,13 @@ export type QuoteUser = {
   addressPostcode: string;
   priceGstMode: "inc" | "ex";
   type: string;
+  /** Registration Phase 2, AC-P2-19. STATUS ONLY, and only what this screen
+   *  needs: whether to offer the optional group at all. The whole group is
+   *  ABSENT — not disabled — when either is true, because an account that
+   *  already has trade pricing, or an application in flight, has nothing to be
+   *  asked. No rate, no reason, no ABR evidence reaches this component. */
+  tradeVerified?: boolean;
+  tradePending?: boolean;
 } | null;
 
 /** DetailField → prose, one mapping, used by every message on this screen. */
@@ -206,6 +214,13 @@ export function QuoteReviewSubmit({
   // not one of them.
   const [suburb, setSuburb] = useState(storedDelivery?.suburb ?? "");
   const [postcode, setPostcode] = useState(storedDelivery?.postcode ?? "");
+  /** Door (c): the optional business group. Local to this screen — it is never
+   *  part of the profile patch, because an ABN is applied WITH, not saved. */
+  const [tradeAbn, setTradeAbn] = useState("");
+  const [tradeBusiness, setTradeBusiness] = useState("");
+  /** What the post-submit application did, for the confirmation block (AC-P2-18).
+   *  `null` = none was attempted, so no block renders at all. */
+  const [tradeOutcome, setTradeOutcome] = useState<"sent" | "failed" | null>(null);
   const [postcodeError, setPostcodeError] = useState("");
   // The pre-gate value, remembered so the details form can say where it came
   // from. It is the ONLY thing that ever pre-fills a delivery field, and a value
@@ -386,7 +401,30 @@ export function QuoteReviewSubmit({
       }
 
       const result = await onSubmit?.({ suburb: suburb.trim(), postcode });
-      if (!result || result.ok) { onSubmitted(user.email); return; } // no handler = design preview
+      if (!result || result.ok) {
+        // AC-P2-17: the trade application is a SEPARATE request, fired only once
+        // the server has confirmed the submission. That ordering is what makes
+        // "it won't hold up this submission" structural rather than a timing
+        // accident — no ABR round trip can ever enter the submit critical path,
+        // and a register outage cannot delay or fail a quote.
+        //
+        // Its failure is deliberately not the submit's failure: the quote is
+        // already safe, so a failed application becomes a quiet line on the
+        // confirmation pointing at the account page, never an error on a
+        // submission that worked.
+        if (tradeGroupOffered && abnEntered && !abnMalformed && !tradeNameMissing) {
+          try {
+            await applyForTrade({
+              abn: tradeAbn.trim(), businessName: tradeBusiness.trim(), source: "submit_gate",
+            });
+            setTradeOutcome("sent");
+          } catch {
+            setTradeOutcome("failed");
+          }
+        }
+        onSubmitted(user.email);
+        return;
+      } // no handler = design preview
       if (result.error === "missing_postcode" || result.error === "invalid_postcode") {
         setPostcodeError("Enter your 4-digit delivery postcode.");
         return;
@@ -411,9 +449,28 @@ export function QuoteReviewSubmit({
     }
   };
 
+  /** Door (c), the optional business group (§18.5).
+   *
+   *  THE ASYMMETRY IS THE POINT. An empty ABN contributes NOTHING — Phase 1's
+   *  "one field, one press" promise is that a disabled Submit always names what
+   *  is outstanding, and an optional field that silently blocked it would break
+   *  that promise for every customer who never wanted trade pricing. Only a
+   *  field somebody actually filled in can hold Submit back, and clearing it
+   *  releases the screen instantly with no round trip — the checksum is
+   *  src/data/abn.ts, the same function the Worker re-runs. */
+  const tradeGroupOffered = stage === "details" && !!user && !user.tradeVerified && !user.tradePending;
+  const abnEntered = tradeAbn.trim() !== "";
+  const abnMalformed = abnEntered && !abnValid(tradeAbn);
+  const tradeNameMissing = abnEntered && !abnMalformed && !tradeBusiness.trim();
+  const tradeOutstanding = !tradeGroupOffered ? []
+    : abnMalformed ? ["ABN"]
+    : tradeNameMissing ? ["business name"]
+    : [];
+
   const submitDisabled =
     submitting || aiReading || projectResolving || postcode.length !== 4 ||
-    (stage === "details" && missing.length > 0);
+    (stage === "details" && missing.length > 0) ||
+    tradeOutstanding.length > 0;
 
   /** EVERYTHING still standing between the customer and Submit, in form order.
    *
@@ -431,8 +488,9 @@ export function QuoteReviewSubmit({
    *  the two-stage gate exists to avoid. Pre-gate, the only thing outstanding is
    *  the one field actually on the screen. */
   const deliveryOutstanding = postcode.length === 4 ? [] : ["delivery postcode"];
+
   const outstanding = stage === "details"
-    ? [...missing.map((f) => FIELD_LABEL[f]), ...deliveryOutstanding]
+    ? [...missing.map((f) => FIELD_LABEL[f]), ...deliveryOutstanding, ...tradeOutstanding]
     : deliveryOutstanding;
 
   const errId = (field: DetailField) => `detail-err-${field}`;
@@ -771,6 +829,56 @@ export function QuoteReviewSubmit({
                       </p>}
                 </div>
               </div>
+
+              {/* ── The optional business group (door c, §18.5) ─────────────
+                  LAST, under a rule, after delivery — the owner's ruling at the
+                  mock gate (P2-UX-2). Everything above is required; this is the
+                  only optional thing on the screen, and putting it between two
+                  demands would read as a third.
+
+                  ABSENT, not disabled, for a verified or pending account
+                  (AC-P2-19): there is nothing to ask them. */}
+              {tradeGroupOffered && (
+                <div className="border-t border-black/8 pt-4 mt-4 space-y-3">
+                  <div>
+                    <p className="text-quiet t-label">Your business (optional)</p>
+                    {/* Spec §7.2 verbatim — the fourth AC-P2-48 advertising
+                        surface. "It won't hold up this submission" is a promise
+                        the code keeps structurally: the application is a
+                        SEPARATE request fired after the server confirms the
+                        submit (AC-P2-17). */}
+                    <p className="text-body mt-1 t-cap">
+                      Got an ABN? Add it and we'll check whether you qualify for trade pricing.
+                      It won't hold up this submission.
+                    </p>
+                  </div>
+                  <div className="max-w-[260px]">
+                    <FieldLabel htmlFor="trade-abn">ABN (optional)</FieldLabel>
+                    <Input id="trade-abn" value={tradeAbn} inputMode="numeric" maxLength={32}
+                      aria-invalid={abnMalformed || undefined}
+                      onChange={(e) => setTradeAbn(e.target.value)}
+                      placeholder="00 000 000 000" />
+                    {abnMalformed && (
+                      <FieldError id="trade-abn-err">
+                        That ABN doesn't look right. Check the 11 digits, or clear the field to submit without it.
+                      </FieldError>
+                    )}
+                  </div>
+                  {/* Renders only while an ABN is present, and is required once
+                      it is: an ABN with no name cannot be checked against the
+                      register (AC-P2-15). */}
+                  {abnEntered && (
+                    <div className="max-w-[360px]">
+                      <FieldLabel htmlFor="trade-business">Business name</FieldLabel>
+                      <Input id="trade-business" value={tradeBusiness} maxLength={200}
+                        autoComplete="organization"
+                        onChange={(e) => setTradeBusiness(e.target.value)}
+                        placeholder="ABC Constructions" />
+                      <p className="text-body mt-1 t-cap">Needed with an ABN.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
