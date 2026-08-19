@@ -247,33 +247,45 @@ test("terminal AI runs cannot be overwritten by a late completion", async () => 
   assert.match(statement, /status = 'running'/);
 });
 
-test("AC-42 the two engines stay exclusive — signing in schedules no AI job", async () => {
+test("AC-42 signing in schedules no AI job and re-decides no product", async () => {
   // D5: the deterministic matcher serves a signed-out visitor with an indicative
   // price; the AI parser/estimator takes over for signed-in users. There is no
   // automatic re-run on sign-in, and products do not silently change under
   // someone who has already been quoted.
   //
-  // A source scan, because the failure it guards is a NEW scheduling call site —
-  // an auth route, a claim-merge, a "welcome back" refresh — any of which would
-  // quietly re-price a visitor's lines the moment they created an account.
-  const schedulers = [];
-  const walk = async (dir) => {
-    for (const entry of await readdir(join(projectRoot, dir), { withFileTypes: true })) {
-      const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) { await walk(rel); continue; }
-      if (!/\.ts$/.test(entry.name)) continue;
-      const code = (await readFile(join(projectRoot, rel), "utf8"))
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
-      if (/INSERT INTO ai_job_claim/i.test(code)) schedulers.push(rel);
-    }
-  };
-  await walk("worker");
-
-  // Exactly two homes: the upload-finalise path, and the retry/dispatch machinery
-  // that re-runs work already scheduled. No auth or session route among them.
-  assert.deepEqual(schedulers.sort(), ["worker/lib/ai/jobs.ts", "worker/routes/files.ts"]);
-  for (const rel of schedulers) {
-    assert.ok(!/auth|session|login|claim-merge/i.test(rel), `${rel} must not schedule AI work`);
+  // Scanned for the CALL, not for the SQL. `enqueueAiExtraction` contains the
+  // INSERT and lives in jobs.ts, so a scan for the statement text would pass
+  // however many routes imported and called it — the caller's filename never
+  // enters the question. What matters is which route can reach the machinery.
+  const ENTRY_POINTS = [
+    // Anything that can put AI work in the queue…
+    "dispatchAiExtractionJob", "enqueueAiExtraction", "retryCurrentAiExtraction",
+    // …and anything that can re-decide a product on an existing line, which is
+    // the second half of the criterion and was not asserted at all before.
+    "runProjectEstimate", "selectWithSplits", "selectForOpening", "matchSchedule",
+  ];
+  const callers = new Map();
+  for (const entry of await readdir(join(projectRoot, "worker/routes"), { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+    const code = (await readFile(join(projectRoot, "worker/routes", entry.name), "utf8"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    const hits = ENTRY_POINTS.filter((fn) => new RegExp(`[^A-Za-z0-9_]${fn}[ ]*[(]`).test(code));
+    if (hits.length) callers.set(entry.name, hits.sort());
   }
+
+  // The identity surface reaches NONE of it. A visitor who signs in gets their
+  // draft claimed and nothing re-run: no job queued, no line re-matched, no
+  // product re-selected under a quote they have already seen.
+  assert.equal(callers.get("auth.ts"), undefined, "the auth route must not schedule or re-decide anything");
+
+  // And the full set of routes that CAN, so a new one is a deliberate change
+  // rather than something that arrives unnoticed.
+  assert.deepEqual([...callers.keys()].sort(), ["files.ts", "ops.ts", "parse.ts"]);
+  // Uploading a file is the one customer-facing trigger (D5/AC-42).
+  assert.deepEqual(callers.get("files.ts"), ["dispatchAiExtractionJob"]);
+  // The other two are staff-side or a retry of work already scheduled — neither
+  // is reached by signing in.
+  assert.ok(callers.get("ops.ts").every((fn) => /retry|runProjectEstimate/.test(fn)), callers.get("ops.ts").join());
+  assert.ok(callers.get("parse.ts").every((fn) => /retry|matchSchedule/.test(fn)), callers.get("parse.ts").join());
 });
