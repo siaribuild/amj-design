@@ -147,3 +147,26 @@ supports per-route hiding, and the record already has `< Projects` as its route 
 would not repeat the no-navigation regression); let the action footer yield instead
 (unlikely — it is the primary action); or accept the stack and buy the height back
 elsewhere. Not a swap; a design question.
+
+## Rulings on R1f (2026-08-19) — apply when work resumes, not started
+
+**R1 — design to the owner's stated recommender model, not to the code.**
+*"make a working assumption that the recommender works the way I described - I'll deal
+with inconsistency separately."* So the Why plane presents **"the cheapest product that
+matches size and energy constraints"**. Remove the on-screen correction (*"It is not 'the
+cheapest that fits'"*), the six drawn weights and the graded-compliance explanation.
+
+The code does something else and that is now HIS to reconcile, not the design's to expose:
+hard filters at `select.ts:90/138/168` (sellable, rules-passing, priceable), then a
+six-component weighted score at `rank.ts:17` with **commercial at 0.15**, and
+`RANKER_VERSION = "v3-graded-thermal"` where a thermal miss depresses rank rather than
+disqualifying (`thermal/compliance.ts:32`). Recorded here so that whoever builds the real
+endpoint knows the design and the engine disagree **by instruction**, and does not "fix"
+the screen to match the code without asking. If the engine changes to match the stated
+model, this note is what says the screen was already right.
+
+**R2 — family consistency is not surfaced.** *"Family consistency is optional - there may
+not be such requirement, it's a judgement call. No need to surface it; list view provides
+that sense."* Remove the family-mix line from the Why plane. Spec gap 4 (family mix has no
+endpoint) is void — nothing needs building. The judgement is made by looking at the
+approved list view, which already shows what the rest of the project uses.
