@@ -41,14 +41,28 @@ same `IonHeader`**, which also gives the money room to be read instead of squeez
 ~80px. Rework to that, and stop composing bespoke grids inside standard components — that
 is the boundary rule being broken in the one place he keeps looking.
 
-**D4 — quantity: suppress the default, show the exception.**
-The owner believed qty is always 1 (*"remove qty from the lines - it's always 1 per line,
-actually"*). Checked against production `quote_line`: **283 lines at qty 1, four above it,
-max 6, of 287 total.** So the display is noise on 98.6% of rows and load-bearing on the
-rest — and those are the rows where an error is most expensive, since a 6x line read as 1x
-is a five-figure mistake. Render nothing when qty is 1; render it prominently when it is
-not. Do not remove the field. Fixture data should keep at least one multi-qty line so the
-case stays visible in the mock.
+**D4 — quantity: the field is retired; render it only where legacy data still carries it.**
+The owner: *"qty is always 1. you are seeing some legacy records and legacy functionality
+that is ought to be retired - if you'd look at estimator tool, you'd notice that qty field
+is removed from all screens."* Verified: `ItemComposer.tsx` and `ItemForm.tsx` contain zero
+qty references, so nothing creates a multi-quantity line any more. He is right.
+
+The one case that still needs covering: of 287 production lines, four carry qty above 1
+(2, 3, 4 and 6) and they sit on projects in `estimator_assigned` and `submitted` — both
+EDITABLE_STATES, i.e. live pre-issue projects ops2 will open, not closed history. Hidden
+outright, those four render a line total 2x to 6x the unit price with nothing explaining
+the arithmetic, in a console whose job is checking money.
+
+So: render nothing when qty is 1 — every line the estimator can now produce — and show it
+where a legacy row still carries a multiplier. The annotation vanishes from current work
+entirely and self-eliminates as those four projects close. The alternative is normalising
+the data, which is a migration and the owner's call.
+
+Do not conflate this with `qtyPerParent`, the count of units *within* a composite line
+(`OpeningDrawer.tsx:245/309`). Both render as `xN` and only one is being retired.
+
+Residue noted for whoever retires it properly: `OpeningDrawer.tsx:45/138` still carries a
+`"qty"` section key and a review-key clear on qty change, on the customer side.
 
 ## Owner decisions still open
 
