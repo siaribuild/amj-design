@@ -1156,7 +1156,7 @@ The §13 and §15 decision lists are unchanged and still open.
 
 ---
 
-# 18. R1e — the line plane, reimagined
+# 18. R1e — the line plane, reimagined (EXTENDED by section 21: arrival is right, but it is the doorway to four jobs)
 
 The record/list view is **approved and closed**. This section covers the line
 plane only, mobile only. No colour, no desktop.
@@ -1348,3 +1348,170 @@ These are structural, not wording, so they need the PM rather than a note here:
 delivery as an issue gate, `waitingOn` generalisation, the delivery divergence
 record, the line-note vocabulary, the `ItemForm` disclosure fence, and
 `feat/ops-ux-gap-pass` — remains as it was.
+
+---
+
+# 21. R1f — the line plane serves four jobs
+
+R1e's reading — *"show me the thing, and tell me what is wrong with it"* — is
+right for **arrival** and survives unchanged. It was wrong as the whole surface:
+the owner has described **four reviews**, and three of them had nowhere to
+happen. Mobile line plane only.
+
+## 21.1 The structural idea: the doors are the facts
+
+Four destinations could easily become a menu, which would be the accordion in a
+third costume. They are not a menu. **Each door is attached to the fact it
+interrogates:**
+
+| The fact on arrival | The doubt it answers | Scenario |
+|---|---|---|
+| the dimension line | *is this number right?* | 1 |
+| the verdict | *is this the right product?* | 2 |
+| the price row | *is this the right money?* | 4 |
+| `Edit` (the footer) | *change it* | 3 |
+
+So **nothing was added to arrival to hold the new jobs** — the facts R1e already
+showed became the way in. A reviewer arrives with a doubt, and the doubt is about
+one of those facts, so they press the fact they doubt.
+
+**Arrival still fits with no scrolling** at 375×812 and at 320×690, both
+palettes. That test is what forced the trimming: the verdict lost its three-line
+reasoning block (that content is job 2's and now lives there in full), and product
+and glazing collapsed to one line, because the editor is what changes them.
+
+## 21.2 Scenario 1 — validate the dimensions against their source
+
+> "source is typically plan document (file attached) or manual user input (on
+> call)."
+
+**What I checked, and what exists:**
+
+| Field | Where | What it gives |
+|---|---|---|
+| `quote_line.origin` | migration 0012 | `manual` \| `schedule` — **exactly the plan-vs-phone distinction he drew** |
+| `quote_line.measured_by` | 0001 | `frame` \| `opening` \| `unsure` \| `''` |
+| `quote_line.edited_fields` | 0019 | JSON array of field **groups** a human changed |
+| `evidence_items.extracted_text` | 0016 | the text the parser read |
+
+**What does not exist, and is said rather than left blank.** `evidence_items` has
+`page_no`, `sheet_ref` and `region_json`, and production has **0 of 1,000 rows
+populated on any of them**. So the screen quotes the read text and states plainly
+that it cannot cite a page — *"open the file itself to find it in context"*.
+
+`edited_fields` carries **no actor and no timestamp**, and R-55 records why:
+*"inventing one is worse than omitting it."* The screen says so rather than
+implying nobody touched it.
+
+`measured_by = 'unsure'` gets a warning note — it is the value that most warrants
+a second look before a figure goes to the manufacturer.
+
+## 21.3 Scenario 2 — validate the recommendation
+
+> "If in doubt on accuracy, ops need to be able to validate inputs into the model
+> and the output it has produced."
+
+**This screen deliberately corrects a wrong mental model.** The owner believes
+the estimator picks *"the cheapest product that matches size and energy
+constraints"*. The code does something materially different, and a derivation
+surface that let the wrong story stand would be worse than none:
+
+| What the code does | Where |
+|---|---|
+| **Three hard filters disqualify first** — sellable (`!disabled`), rules-passing (`outcome.passed`), priceable (`price.ok`) | `select.ts:90`, `:138`, `:168` |
+| **Then a six-component weighted score.** Price is **15%** | `rank.ts:17` |
+| **Compliance is graded, not a veto** — a thermal miss depresses rank rather than eliminating the candidate; unknown Uw against a real cap is *"a mild penalty, not 0"* | `RANKER_VERSION = "v3-graded-thermal"`, `thermal/compliance.ts:32` |
+
+The plane therefore has three parts: **what it was given** (the Uw target, the
+SHGC target, the opening, frame restrictions, and any note read from the plan —
+the inputs he named); **the filter stage** with counts and reasons; and **the
+weighted score** with the six weights drawn, plus one sentence in words: *"It is
+not 'the cheapest that fits'."*
+
+**Nothing new has to be stored.** `candidate_result` already persists
+`hard_rule_outcome_json`, `score`, `score_components_json`, `reason_codes`,
+`rank` and `selected` per candidate (migration 0014:96–110).
+
+R-53.1 and R-56 are honoured: no price column, and `Price it` is an explicit
+per-row metered fetch with the meter stated.
+
+## 21.4 Scenario 3 — adjust the product and its options
+
+> "Ultimately, all those options above -> full product configuration (edit panel)
+> capabilities."
+
+The editor is the destination and is **not designed in this pass**. What R1f adds
+is the **varied paths in**, per R-46 (*every review reason carries its own fix
+control*): each problem in the verdict offers its own route — `Change glazing`,
+`Change the size`, `Change the frame system` — and the Dimensions and Why planes
+each carry their own `Change the size` / `Change the product` footer action.
+
+**The cross-line concern has no home anywhere**, so I have put it where the
+judgement is made: the Why plane ends with **what the rest of the project uses**
+(`AMJ58 (9) · AMJ67T (6) · AMJ95 (2) · AMJ150T (1)`), with a note that *"maybe we
+should go with the same family, no matter the price"* is a judgement the
+estimator does not make. This is derived in the mock; see §22.
+
+## 21.5 Scenario 4 — the manufacturer's price plus the uplift
+
+> "manufacturer's price, plus standard uplift (30%, adjustable on the fly). Plus
+> GST, if prices are stored in the system with GST."
+
+**Verified new.** There is no `uplift`, `markup` or `margin` field anywhere in
+`worker/`, `src/` or `migrations/`. This is a new capability, not a surfacing of
+an existing one.
+
+The screen is the same shape as the delivery confirm already approved:
+
+- **A basis control** — `ex GST` / `inc GST` — because whether their quote
+  includes GST is a real ambiguity on a call, and guessing it would be a silent
+  10% error. An inc-GST figure is divided by 1.1 before the uplift, and the
+  screen says so.
+- **Their figure**, and **the uplift**, defaulting to 30 and editable in place.
+- **The arithmetic shown**: their price → `+ 30% uplift` → line price.
+- **A read-back** of what this line and the quote total become, with the old
+  figure struck through.
+
+Verified live: 1,240 + 30% = 1,612; changing the uplift to 22% gives 1,512.80;
+switching to inc-GST gives 1,127.27 ex before uplift.
+
+It also states that confirming here does **not** change the project's *waiting on
+the manufacturer* state (D10) — that is set on Progress, and conflating them
+would make a price entry silently move a project's status.
+
+---
+
+# 22. What R1f needs from the spec
+
+1. **The uplift is new and needs storage, criteria and a rounding rule.** Where
+   it lives (per line? per project? a default in settings?), whether the 30% is
+   configurable globally or only per use, and how it interacts with the $10
+   customer-visible rounding grid `pricing.ts` already applies.
+2. **A manufacturer-confirmed price needs a state, not just a value.** The line
+   currently renders `list price` vs `confirmed with the manufacturer`; that
+   distinction has no column. It also belongs in the divergence record at issue,
+   for the same reason the delivery override does.
+3. **THE DISCOUNT CONTRADICTS THE NEW PLATFORM RULE — flagged as asked.**
+   `worker/lib/estimator/pricing.ts:189-196` multiplies the account discount
+   **into the unit price**, before the line total. The owner's stated change is
+   *"prices should go into quote as-is, and discount shown on a total for items
+   level."* So:
+   - the per-line price must stop being discounted;
+   - the totals panel needs a **Discount** row between Goods and the total.
+   The record surface is approved and closed, so **I have not changed its totals
+   panel** — this needs a decision and a small, separate change once the platform
+   change lands. Note the discount is *already* modelled account-level
+   (`user.discount_percent`, migration 0032), so only the application point moves;
+   there is no per-line discount to remove.
+4. **Family mix is derived in the mock.** Nothing serves "what did I choose on
+   the other openings" today. It is one query over the project's lines, but it
+   needs an endpoint and a criterion.
+5. **`measured_by = 'unsure'` should probably be a review flag**, not just a
+   field the Dimensions plane happens to show. It is the strongest predictor that
+   a dimension needs confirming, and today nothing surfaces it.
+
+# 23. Still open
+
+§13, §15, §17, §19 and `OPEN-DEFECTS.md` are unchanged. The estimator mental-model
+divergence has been reported to the owner separately by the coordinator; it does
+not change what is designed above, only what the Why plane has to be honest about.
