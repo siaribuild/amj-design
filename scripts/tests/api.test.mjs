@@ -1104,6 +1104,87 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // subject. Nothing about the edit is reported, annotated or judged.
       assert.equal(row.current, undefined, "the audit says nothing about what a person did");
     });
+
+    // ── The recommendation model (migration 0055, spec §5.9) ────────────────
+    await t.test("AC-24 the outcome columns were ADDED and nothing was rebuilt", async () => {
+      // The runtime half of the migration lint. `score_components_json` still
+      // being present is the whole point: 0055 could have "cleaned up" by
+      // rebuilding candidate_result, and the rebuild would have fired
+      // draft_order_line.selected_candidate_id's ON DELETE SET NULL and severed
+      // every draft line from the candidate it was built from — silently, with
+      // a clean local run proving nothing.
+      const candidateCols = (await sql("PRAGMA table_info(candidate_result)")).map((c) => c.name);
+      for (const col of ["outcome_json", "score", "score_components_json", "rank", "selected"]) {
+        assert.ok(candidateCols.includes(col), `candidate_result.${col} is present`);
+      }
+      const runCols = (await sql("PRAGMA table_info(selection_run)")).map((c) => c.name);
+      assert.ok(runCols.includes("selection_json"));
+      assert.ok(runCols.includes("ranker_version"), "the version column keeps its name (AD16)");
+
+      // The FK still points at candidate_result, with SET NULL intact.
+      const fks = await sql("PRAGMA foreign_key_list(draft_order_line)");
+      const link = fks.find((f) => f.table === "candidate_result");
+      assert.ok(link, "draft_order_line still references candidate_result");
+      assert.equal(link.on_delete, "SET NULL");
+
+      // And a real row round-trips through the new column with its FK honoured.
+      const [{ id: projectId }] = await sql("SELECT id FROM project ORDER BY id LIMIT 1");
+      await sql(`INSERT INTO opening_instance (id, project_id, external_ref, family, operation_type, width_mm, height_mm, status) VALUES ('op_rec','${projectId}','WR','windows','awning',800,1200,'extracted')`);
+      await sql(`INSERT INTO selection_run (id, opening_id, project_id, catalogue_revision, rule_version, ranker_version, selection_json, status) VALUES ('sr_rec','op_rec','${projectId}','cat:1','v3-energy-objective','ladder-v1','{"version":"ladder-v1","tolerance":0.05}','completed')`);
+      await sql(`INSERT INTO candidate_result (id, selection_run_id, sanity_product_id, catalogue_rev, hard_rule_passed, score, score_components_json, rank, selected, outcome_json) VALUES ('cr_rec','sr_rec','pid','rev',1,NULL,NULL,1,1,'{"tier":"meets","rank":1,"selected":true}')`);
+      await sql(`INSERT INTO draft_order_line (id, project_id, opening_id, selected_candidate_id, confidence, status) VALUES ('dl_rec','${projectId}','op_rec','cr_rec',NULL,'ready')`);
+
+      const [stored] = await sql("SELECT score, score_components_json, outcome_json FROM candidate_result WHERE id='cr_rec'");
+      assert.equal(stored.score, null, "AC-25: the score is stopped, not shimmed");
+      assert.equal(stored.score_components_json, null);
+      assert.equal(JSON.parse(stored.outcome_json).tier, "meets");
+      const [line] = await sql("SELECT selected_candidate_id, confidence FROM draft_order_line WHERE id='dl_rec'");
+      assert.equal(line.selected_candidate_id, "cr_rec", "the draft line still points at its candidate");
+      assert.equal(line.confidence, null, "A12: there is no score to put in it");
+      assert.deepEqual(await sql("PRAGMA foreign_key_check"), []);
+    });
+
+    await t.test("AC-53/AC-55/AC-57 candidate data is ops-only, and no customer surface carries it", async () => {
+      // AC-57: the support-lever estimate endpoint, anonymously.
+      await requestJson(anonymous, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);
+      // AC-53: an authenticated CUSTOMER, against a project — the denial is the
+      // same, because losing candidates are a consultation surface, not an
+      // account's data (D15). Their prices expose the rate card's shape.
+      await requestJson(customer, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);
+      await requestJson(customer, "/api/ops/summary", {}, 403);
+      await requestJson(anonymous, "/api/ops/lines/ql_e/configurations", {}, 403);
+      await requestJson(customer, "/api/ops/lines/ql_e/configurations", {}, 403);
+
+      // AC-55: scan every customer-facing surface that carries line or estimate
+      // data for anything the ops-only contract owns. A field appearing here
+      // would be a leak whatever route added it, which is why this scans the
+      // response rather than asserting a route's known shape.
+      const surfaces = [];
+      for (const path of ["/api/projects", "/api/auth/me"]) {
+        const res = await customer.request(path);
+        if (res.ok) surfaces.push(await res.text());
+      }
+      const projects = await requestJson(customer, "/api/projects");
+      for (const project of (projects.body.projects ?? projects.body ?? [])) {
+        if (!project?.id) continue;
+        for (const path of [`/api/projects/${project.id}`, `/api/projects/${project.id}/quote`]) {
+          const res = await customer.request(path);
+          if (res.ok) surfaces.push(await res.text());
+        }
+      }
+      assert.ok(surfaces.length, "there is something to scan");
+      for (const body of surfaces) {
+        for (const forbidden of [
+          "outcome_json", "selection_json", "score_components", "candidate_result",
+          "deltaToSelected", "competingTier", "wouldPrefer", "retrievalKey",
+        ]) {
+          assert.ok(!body.includes(forbidden), `${forbidden} reached a customer surface`);
+        }
+        // The learned block, specifically: it is cross-account by construction
+        // and must never leave the ops side (D11, D15).
+        assert.ok(!/"learned"\s*:/.test(body), "the learned block reached a customer surface");
+      }
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);
