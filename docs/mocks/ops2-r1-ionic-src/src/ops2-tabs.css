@@ -1,0 +1,88 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE BOTTOM TAB BAR — three variants, and the inset rule that makes any of
+   them survivable.
+
+   Ionic's ion-tab-bar already handles its own safe-area padding, its own active
+   state and its own stack-per-tab behaviour. What is here is only: which variant
+   shows the bar, and who owns the home-indicator inset when two elements are
+   stacked on the same edge.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── THE INSET RULE ───────────────────────────────────────────────────────────
+   This is the fiddly bit and it is settled in one place. The action panel pads
+   for the home indicator because it is normally the bottom-most element. When a
+   TAB BAR is below it, the bar is bottom-most and the bar owns the inset — the
+   panel must drop its own or the two of them pad for the same 34px twice, which
+   is 34px of nothing between the primary action and the tabs.
+
+   Measured with the inset simulated at 34px: the double-pad cost 34px on every
+   action screen before this rule existed. */
+:root[data-tabbar="on"] .actions,
+:root[data-tabbar="on"] .reason,
+:root[data-tabbar="on"] .totals,
+:root[data-tabbar="on"] .foot {
+  padding-bottom: 8px;
+}
+:root[data-tabbar="on"] .deck .reason { padding-bottom: 10px; }
+
+/* MOCK ONLY. A desktop browser reports env(safe-area-inset-bottom) as 0, which
+   would flatter every variant equally and hide the whole problem. 34px is the
+   iPhone home-indicator value. */
+:root[data-inset="on"] { --ion-safe-area-bottom: 34px; }
+
+/* ── WHERE THE BAR SHOWS ──────────────────────────────────────────────────── */
+
+/* Desktop keeps the persistent left rail and never shows a bar — his
+   instruction, and the rail already carries every destination. */
+:root[data-width-class="desktop"] ion-tab-bar,
+:root[data-width-class="wide"] ion-tab-bar { display: none; }
+
+/* OFF — today's mock, for comparison. */
+:root[data-tabs="off"] ion-tab-bar { display: none; }
+
+/* B — hidden on the record and line planes, where a labelled back already
+   exists. The rule is applied from JS (data-tabbar) rather than by matching
+   routes in CSS, so the visibility test lives next to the route test. */
+:root[data-tabbar="off"] ion-tab-bar { display: none; }
+
+/* C - icon-only. The ONLY supported route to a shorter bar:
+   ion-tab-bar publishes --background, --border and --color but NO height,
+   and forcing one made it TALLER both times (113px against A's 91) because
+   the safe-area padding is added on top of a content-box height. Dropping
+   the labels lets Ionic size the bar down itself, which is the component's
+   own affordance rather than a fight with its internals.
+
+   The variant exists to be judged, not recommended: "Dashboard" and
+   "Enquiries" as icons alone are a guess until they are learned. */
+
+ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
+
+/* ── the mock's own variant switcher ─────────────────────────────────────────
+   Deliberately ugly and deliberately fixed to the top-right: it is scaffolding
+   for a decision, not a control anyone is proposing to ship. */
+.variantswitch {
+  position: fixed; top: 6px; right: 6px; z-index: 99999;
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px 4px; border-radius: 999px;
+  background: rgba(0, 0, 0, .82); box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
+}
+.variantswitch .vs-tag {
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .55); padding: 0 3px;
+}
+.variantswitch button {
+  min-width: 26px; height: 22px; padding: 0 5px; border: 0; border-radius: 999px;
+  background: transparent; color: rgba(255, 255, 255, .72);
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
+}
+.variantswitch button[aria-pressed="true"] { background: #fff; color: #111; }
+.variantswitch .vs-inset { font-size: 12px; }
+
+/* MOCK STAND-IN for the unresolved tab-selection defect — see App.tsx. Ionic
+   would normally own this entirely. */
+:root[data-tab="dashboard"] ion-tab-button[tab="dashboard"],
+:root[data-tab="projects"] ion-tab-button[tab="projects"],
+:root[data-tab="enquiries"] ion-tab-button[tab="enquiries"] {
+  color: var(--ion-color-primary);
+  --color: var(--ion-color-primary);
+}

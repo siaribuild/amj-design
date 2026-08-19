@@ -68,19 +68,19 @@ export function RecordPage() {
 
   const pick = (id: string) => {
     setStore({ selectedId: id });
-    if (!wide) history.push(`/record/${ref}/line/${id}`);
+    if (!wide) history.push(`/projects/record/${ref}/line/${id}`);
   };
   const move = (d: -1 | 1) => { const n = run[at + d]; if (n) setStore({ selectedId: n.id }); };
   useMoveKeys(wide ? move : () => {});
   const openEditor = (id: string) => {
-    if (wc === "phone") history.push(`/record/${ref}/line/${id}/edit`);
+    if (wc === "phone") history.push(`/projects/record/${ref}/line/${id}/edit`);
     else setStore({ editing: id });
   };
   const openBlock = (k: string) => {
     if (wide) { setSegment("project"); setBlock(k); }
-    else history.push(`/record/${ref}/project/${k}`);
+    else history.push(`/projects/record/${ref}/project/${k}`);
   };
-  const openDelivery = () => history.push(`/record/${ref}/delivery`);
+  const openDelivery = () => history.push(`/projects/record/${ref}/delivery`);
 
   /* D3 — the state row moves OUT of the header and leads the content. It is
      status, not navigation and not money, so it may scroll; keeping it in the
@@ -210,10 +210,10 @@ export function RecordPage() {
                   <LineBody line={selected} plateSize={canvasPlate} showPlate={!pinned}
                     dirtyFrom={draft?.from ?? null}
                     heightMm={draft?.heightMm} widthMm={draft?.widthMm}
-                    onSpec={() => history.push(`/record/${ref}/line/${selected.id}/spec`)}
-                    onWhy={() => history.push(`/record/${ref}/line/${selected.id}/why`)}
-                    onManufacturer={() => history.push(`/record/${ref}/line/${selected.id}/price`)}
-                    onUnit={(i) => history.push(`/record/${ref}/line/${selected.id}/unit/${i}`)} />
+                    onSpec={() => history.push(`/projects/record/${ref}/line/${selected.id}/spec`)}
+                    onWhy={() => history.push(`/projects/record/${ref}/line/${selected.id}/why`)}
+                    onManufacturer={() => history.push(`/projects/record/${ref}/line/${selected.id}/price`)}
+                    onUnit={(i) => history.push(`/projects/record/${ref}/line/${selected.id}/unit/${i}`)} />
                 </div>
                 <div className="deck">
                   <LineScroller run={run} at={at} filtered={filterUnpriced}

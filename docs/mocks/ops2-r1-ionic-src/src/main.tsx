@@ -20,6 +20,7 @@ import "./ops2.css";
 import "./ops2-record.css";
 import "./ops2-line.css";
 import "./ops2-view.css";
+import "./ops2-tabs.css";
 
 setupIonicReact({
   /* R-164: focus a heading on every navigation — Ionic config, not our code. */

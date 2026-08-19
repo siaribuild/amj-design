@@ -123,3 +123,60 @@ export function useEditorPane(): boolean {
   }, []);
   return can;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE TAB BAR — three variants, switchable, because "I won't know before I see
+   it". Nothing here decides which one wins; it decides what each one costs.
+
+     a    the bar is present everywhere, the action panel sits above it
+     b    the bar is hidden on the record and line planes, where `< Projects`
+          and `< Lines` are already the way out
+     c    as (a), but the bar is compact — the same everywhere-ness at less height
+     off  today's mock, for comparison
+
+   Two attributes are written on <html> and everything else keys off them:
+   `data-tabs` is the chosen variant, `data-tabbar` is whether a bar is ACTUALLY
+   showing right now. The second is what the safe-area rule needs: when a bar is
+   below the action panel, the BAR owns the home-indicator inset and the panel
+   must not add a second one. Two stacked elements both padding for the same
+   34px is the fiddly bit, and it is settled here rather than per component. */
+export type TabVariant = "a" | "b" | "c" | "off";
+
+/** Planes that carry their own primary action AND their own labelled way out —
+ *  the two conditions that make variant (b)'s hiding defensible. */
+const ACTION_PLANE = /^#\/projects\/record\/[^/]+(\/line\/|$)/;
+
+export function useTabBar(): { variant: TabVariant; visible: boolean } {
+  const wc = useWidthClass();
+  const [variant, setV] = useState<TabVariant>(
+    () => (localStorage.getItem("ops2-tabs") as TabVariant) || "a");
+  const [hash, setHash] = useState(() => window.location.hash);
+
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash);
+    const onVar = (e: Event) => setV((e as CustomEvent).detail as TabVariant);
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("ops2-tabs", onVar as EventListener);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("ops2-tabs", onVar as EventListener);
+    };
+  }, []);
+
+  /* Desktop keeps the persistent left nav and never shows a bar. */
+  const desktop = wc === "desktop" || wc === "wide";
+  const onActionPlane = ACTION_PLANE.test(hash);
+  const visible = !desktop && variant !== "off" && !(variant === "b" && onActionPlane);
+
+  useEffect(() => {
+    document.documentElement.dataset.tabs = variant;
+    document.documentElement.dataset.tabbar = visible ? "on" : "off";
+  }, [variant, visible]);
+
+  return { variant, visible };
+}
+
+export function setTabVariant(v: TabVariant) {
+  localStorage.setItem("ops2-tabs", v);
+  window.dispatchEvent(new CustomEvent("ops2-tabs", { detail: v }));
+}

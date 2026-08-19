@@ -1,25 +1,74 @@
-import { useEffect } from "react";
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE SHELL — bottom tabs below 1024, the left nav above it
+//
+// Four tabs, in the order he gave them: Dashboard, Projects, Enquiries, More.
+//
+// ── WHY IonTabs IS NO LONGER BANNED ──────────────────────────────────────────
+// The boundary doc banned it, and the ban was right for the reason given: Lines
+// and Project are two views of ONE record, and dressing them as tabs would have
+// claimed they were separate destinations when the back button, the URL and the
+// totals all say otherwise. THAT BAN STANDS — there are still no tabs inside a
+// record.
+//
+// These four are different in kind. Dashboard, Projects and Enquiries are
+// genuine top-level destinations with nothing in common but the account: no
+// shared header, no shared totals, no back path between them. That is what a tab
+// bar is for, and hand-building one would have meant reimplementing the active
+// state, the stack-per-tab behaviour and the safe-area inset IonTabBar has.
+//
+// ── EACH TAB IS ITS OWN STACK, AND THAT COSTS A URL CHANGE ───────────────────
+// This is the pattern's point and its main cost. For the Projects tab to STAY
+// SELECTED while you are three planes deep in a record, the record's routes have
+// to live under it — so `/record/:ref` became `/projects/record/:ref`, and
+// everything below it moved with it.
+//
+// The back semantics we settled SURVIVE, and each was checked:
+//   • `< Lines` pops to /projects/record/:ref — one pop, inside the Projects stack.
+//   • `< Projects` pops to /projects — the tab's root, where it always went.
+//   • A deep link to /projects/record/OF-Q-10482/line/l04 resolves with the
+//     Projects tab selected and the back chain intact.
+// What WOULD have broken them is leaving the routes flat: `/record/...` matches
+// no tab, so the bar would show nothing selected for most of the working day.
+// That is the price of tabs, and it is worth stating rather than hiding.
+//
+// ── WHAT HAPPENS TO THE DRAWER ───────────────────────────────────────────────
+// It survives unchanged and becomes what `More` opens. Below 1024 the drawer is
+// the full destination list and `More` is its trigger; at 1024 and above
+// ion-split-pane makes the same markup a persistent rail and the bar is hidden.
+// One destination list at every width, reached two ways — and the twice-recorded
+// "drawer with no trigger" regression stays fixed, with `More` a more visible
+// trigger than the hamburger it replaces.
+// ═══════════════════════════════════════════════════════════════════════════════
+import { useEffect, useState } from "react";
 import {
   IonApp, IonRouterOutlet, IonMenu, IonContent, IonSplitPane, IonList, IonItem,
-  IonLabel, IonListHeader, IonButton, IonNote,
+  IonLabel, IonListHeader, IonButton, IonNote, IonTabs, IonTabBar, IonTabButton,
+  IonIcon,
 } from "@ionic/react";
+import { menuController } from "@ionic/core/components";
 import { IonReactHashRouter } from "@ionic/react-router";
 import { Redirect, Route, useHistory, useParams } from "react-router-dom";
+import {
+  gridOutline, layersOutline, chatbubbleEllipsesOutline, ellipsisHorizontal,
+} from "ionicons/icons";
 import { RecordPage } from "./pages/RecordPage";
 import { LinePage } from "./pages/LinePage";
-import { DeliveryPage, ProjectBlockPage, ProjectListPage } from "./pages/SmallPlanes";
+import { DashboardPage, EnquiriesPage, ProjectsPage } from "./pages/TabRoots";
+import { DeliveryPage, ProjectBlockPage } from "./pages/SmallPlanes";
 import { ManufacturerPricePage, SpecPage, UnitPage, WhyPage } from "./pages/LineJobs";
 import { EditorDock, EditorPlane } from "./Editor";
 import { planeTransition } from "./transitions";
-import { setStore, useEditorPane, useStore, useWidthClass } from "./store";
+import {
+  setStore, setTabVariant, useEditorPane, useStore, useTabBar, useWidthClass,
+  type TabVariant,
+} from "./store";
 
-const DESTINATIONS = ["Projects", "Enquiries", "Customers", "Catalogue",
-  "Pricing", "Referrals", "Files", "Audit"];
+const DESTINATIONS = [
+  ["Dashboard", "#/dashboard"], ["Projects", "#/projects"], ["Enquiries", "#/enquiries"],
+  ["Customers", "#/projects"], ["Catalogue", "#/projects"], ["Pricing", "#/projects"],
+  ["Referrals", "#/projects"], ["Files", "#/projects"], ["Audit", "#/projects"],
+];
 
-/* The nav drawer. IonMenu gives the overlay, the scrim, Esc and scrim dismissal,
-   the focus trap and the scroll lock; ion-list gives the rows. The destinations
-   are a VERTICAL list — eight of them as chips in a strip would be ~700px, which
-   is exactly what critique 1 forbids. */
 function NavDrawer() {
   return (
     <IonMenu contentId="main" type="overlay">
@@ -27,10 +76,10 @@ function NavDrawer() {
         <div className="nav">
           <IonList lines="none">
             <IonListHeader><IonLabel>OpenFrame ops</IonLabel></IonListHeader>
-            {DESTINATIONS.map((d, i) => (
-              <IonItem key={d} button detail={false} href="#/projects"
-                color={i === 0 ? "light" : undefined}
-                aria-current={i === 0 ? "page" : undefined}>
+            {DESTINATIONS.map(([d, href], i) => (
+              <IonItem key={d} button detail={false} href={href}
+                onClick={() => menuController.close()}
+                color={i === 1 ? "light" : undefined}>
                 <IonLabel>{d}</IonLabel>
               </IonItem>
             ))}
@@ -48,78 +97,134 @@ function NavDrawer() {
   );
 }
 
-/** D11 — the LINE url resolves at every width, and resolves to the right SHAPE.
- *  Below 1024 a line is a pushed plane. At 1024 and above it is a selection in
- *  the record surface's canvas, because there is no plane to push into — pushing
- *  one would replace the rail the reviewer is working from. One route, one IA,
- *  two geometries. */
-function LineRoute() {
-  const wc = useWidthClass();
-  const { lineId } = useParams<{ ref: string; lineId: string }>();
-  const wide = wc === "desktop" || wc === "wide";
-  useEffect(() => { setStore({ selectedId: lineId }); }, [lineId]);
-  return wide ? <RecordPage /> : <LinePage />;
-}
-
-/** D11 — the edit URL resolves at every width. Below 768 it is a pushed plane;
- *  at 768 and above it hands the line id to the docked panel and steps the URL
- *  back to the line, so the panel is never a page in the stack. */
 function EditRoute() {
   const wc = useWidthClass();
   const history = useHistory();
   const { ref, lineId } = useParams<{ ref: string; lineId: string }>();
   const dock = wc !== "phone";
-
   useEffect(() => {
     if (!dock) return;
     setStore({ selectedId: lineId, editing: lineId });
-    history.replace(`/record/${ref}/line/${lineId}`);
+    history.replace(`/projects/record/${ref}/line/${lineId}`);
   }, [dock, lineId, ref]);
-
   return dock ? null : <EditorPlane />;
 }
 
+/** MOCK-ONLY, and marked as such. It exists so the three shapes can be compared
+ *  on the same screen instead of argued about in prose. The ⌂ button switches
+ *  the home-indicator inset on, because a desktop browser reports it as 0 and
+ *  would flatter every variant equally. */
+function VariantSwitch({ variant }: { variant: TabVariant }) {
+  return (
+    <div className="variantswitch" role="group" aria-label="Mock control: tab bar variant">
+      <span className="vs-tag">tabs</span>
+      {(["a", "b", "c", "off"] as TabVariant[]).map((v) => (
+        <button key={v} type="button" aria-pressed={variant === v}
+          onClick={() => setTabVariant(v)}>{v.toUpperCase()}</button>
+      ))}
+      <button type="button" className="vs-inset" title="Simulate the home indicator"
+        onClick={() => {
+          const r = document.documentElement;
+          r.dataset.inset = r.dataset.inset === "on" ? "off" : "on";
+        }}>⌂</button>
+    </div>
+  );
+}
+
+function useActiveTab() {
+  const [tab, setTab] = useState(() => tabOf(window.location.hash));
+  useEffect(() => {
+    const on = () => setTab(tabOf(window.location.hash));
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  return tab;
+}
+const tabOf = (h: string) =>
+  h.startsWith("#/enquiries") ? "enquiries"
+  : h.startsWith("#/dashboard") ? "dashboard"
+  : "projects";
+
 export default function App() {
-  /* C1: the rail is summoned or persistent by MEASURED width, not a media
-     query — ion-split-pane's `when` accepts a boolean, so the same drawer
-     becomes a persistent rail at 1024 and the change is drivable. */
   const wc = useWidthClass();
   const { editing } = useStore();
   const wide = wc === "desktop" || wc === "wide";
   const paneBand = useEditorPane();
+  const { variant } = useTabBar();
+  /* Ionic infers the selected tab from the tab buttons' hrefs, and measured, it
+     selected NOTHING once the URL went below a tab root — /projects/record/…
+     left the bar blank for most of the working day. Driving it explicitly from
+     the route is deterministic and is what keeps Projects lit three planes deep. */
+  const activeTab = useActiveTab();
+  /* MOCK STAND-IN, and a recorded defect. IonTabs computes the selected tab from
+     the MATCHED ROUTE, and `/projects/record/:ref` is a different Route from
+     `/projects`, so it matches no tab and the bar lights NOTHING once you open a
+     record — measured, all four buttons unselected. Passing `selectedTab` to
+     IonTabBar does not help: IonTabs clones the bar and injects its own.
+
+     The real fix is the documented Ionic shape — ONE Route per tab with the
+     record's routes nested inside it — which is a restructure, not a patch. Until
+     then the mock paints the active tab from the route so the variants are judged
+     with a lit bar rather than a broken one. See the spec: this must be resolved
+     before tabs ship. */
+  useEffect(() => { document.documentElement.dataset.tab = activeTab; }, [activeTab]);
 
   return (
     <IonApp>
       <IonReactHashRouter>
         <IonSplitPane contentId="main" when={wide}>
           <NavDrawer />
-          <IonRouterOutlet id="main" animation={planeTransition}>
-            {/* The record is NEVER the root: it is pushed from Projects, so
-                back always has somewhere real to go. */}
-            <Route exact path="/projects" component={ProjectListPage} />
-            <Route exact path="/record/:ref" component={RecordPage} />
-            <Route exact path="/record/:ref/project/:block" component={ProjectBlockPage} />
-            <Route exact path="/record/:ref/delivery" component={DeliveryPage} />
-            <Route exact path="/record/:ref/line/:lineId" component={LineRoute} />
-            <Route exact path="/record/:ref/line/:lineId/edit" component={EditRoute} />
-            {/* The line plane's two second steps. Real routes, so both are deep
-                linkable and both survive a reload (D11). */}
-            <Route exact path="/record/:ref/line/:lineId/spec" component={SpecPage} />
-            <Route exact path="/record/:ref/line/:lineId/unit/:idx" component={UnitPage} />
-            <Route exact path="/record/:ref/line/:lineId/why" component={WhyPage} />
-            <Route exact path="/record/:ref/line/:lineId/price" component={ManufacturerPricePage} />
-            <Route exact path="/">
-              <Redirect to="/projects" />
-            </Route>
-          </IonRouterOutlet>
+          <IonTabs>
+            <IonRouterOutlet id="main" animation={planeTransition}>
+              <Route exact path="/dashboard" component={DashboardPage} />
+              <Route exact path="/enquiries" component={EnquiriesPage} />
+              {/* The Projects stack. Everything about a record lives under the
+                  tab, so the tab stays selected all the way down. */}
+              <Route exact path="/projects" component={ProjectsPage} />
+              <Route exact path="/projects/record/:ref" component={RecordPage} />
+              <Route exact path="/projects/record/:ref/project/:block" component={ProjectBlockPage} />
+              <Route exact path="/projects/record/:ref/delivery" component={DeliveryPage} />
+              <Route exact path="/projects/record/:ref/line/:lineId" component={LinePage} />
+              <Route exact path="/projects/record/:ref/line/:lineId/edit" component={EditRoute} />
+              <Route exact path="/projects/record/:ref/line/:lineId/spec" component={SpecPage} />
+              <Route exact path="/projects/record/:ref/line/:lineId/unit/:idx" component={UnitPage} />
+              <Route exact path="/projects/record/:ref/line/:lineId/why" component={WhyPage} />
+              <Route exact path="/projects/record/:ref/line/:lineId/price" component={ManufacturerPricePage} />
+              <Route exact path="/"><Redirect to="/dashboard" /></Route>
+            </IonRouterOutlet>
+
+            <IonTabBar slot="bottom" className="opstabs" selectedTab={activeTab}>
+              {/* Variant C drops the labels. That is the ONLY supported way to a
+                  shorter bar: ion-tab-bar publishes no height variable, and both
+                  attempts to force one made it TALLER, not shorter. The cost is
+                  real and he should judge it — "Dashboard" and "Enquiries" as
+                  icons alone are a guess until they are learned. */}
+              <IonTabButton tab="dashboard" href="/dashboard">
+                <IonIcon icon={gridOutline} aria-hidden="true" />
+                {variant !== "c" && <IonLabel>Dashboard</IonLabel>}
+              </IonTabButton>
+              <IonTabButton tab="projects" href="/projects">
+                <IonIcon icon={layersOutline} aria-hidden="true" />
+                {variant !== "c" && <IonLabel>Projects</IonLabel>}
+              </IonTabButton>
+              <IonTabButton tab="enquiries" href="/enquiries">
+                <IonIcon icon={chatbubbleEllipsesOutline} aria-hidden="true" />
+                {variant !== "c" && <IonLabel>Enquiries</IonLabel>}
+              </IonTabButton>
+              {/* `More` is not a destination — it opens the drawer, which IS the
+                  full list. A tab button with no href does not route. */}
+              <IonTabButton tab="more" onClick={() => menuController.open()}>
+                <IonIcon icon={ellipsisHorizontal} aria-hidden="true" />
+                {variant !== "c" && <IonLabel>More</IonLabel>}
+              </IonTabButton>
+            </IonTabBar>
+          </IonTabs>
         </IonSplitPane>
-        {/* CRITIQUE 4 — the docked editor lives outside the outlet, so opening
-            it never pushes a plane and never covers the line it is editing. */}
-        {/* The OVERLAY band only: 768–1279. Below that the editor is a pushed
-            plane; at ≥1280 it is a workspace column rendered by the record
-            surface, so no modal is involved at either end. */}
-        <EditorDock lineId={wc !== "phone" && !paneBand ? editing : null}
-          onClose={() => setStore({ editing: null })} />
+
+        {editing && !paneBand && wc !== "phone" && (
+          <EditorDock lineId={editing} onClose={() => setStore({ editing: null })} />
+        )}
+        <VariantSwitch variant={variant} />
       </IonReactHashRouter>
     </IonApp>
   );

@@ -71,7 +71,7 @@ export function LinePage() {
     setStore({ selectedId: id });
     /* replace, not push: lateral movement inside a zone never deepens the stack,
        so Back still returns to the list from wherever you stopped. */
-    history.replace(`/record/${ref}/line/${id}`);
+    history.replace(`/projects/record/${ref}/line/${id}`);
   };
   const move = (d: -1 | 1) => { const n = run[at + d]; if (n) goTo(n.id); };
   useMoveKeys(move);
@@ -83,7 +83,7 @@ export function LinePage() {
       <IonHeader className="ion-no-border">
         <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/record/${ref}`} text="Lines"
+            <IonBackButton defaultHref={`/projects/record/${ref}`} text="Lines"
               aria-label="Back to the lines" />
           </IonButtons>
           <IonTitle>{line.code} · {subtitle}</IonTitle>
@@ -112,10 +112,10 @@ export function LinePage() {
           if (y <= 2 && pinned) setPinned(false);
         }}>
         <LineBody line={line} plateSize={heroSize} showPlate={!pinned}
-          onSpec={() => history.push(`/record/${ref}/line/${line.id}/spec`)}
-          onWhy={() => history.push(`/record/${ref}/line/${line.id}/why`)}
-          onManufacturer={() => history.push(`/record/${ref}/line/${line.id}/price`)}
-          onUnit={(i) => history.push(`/record/${ref}/line/${line.id}/unit/${i}`)} />
+          onSpec={() => history.push(`/projects/record/${ref}/line/${line.id}/spec`)}
+          onWhy={() => history.push(`/projects/record/${ref}/line/${line.id}/why`)}
+          onManufacturer={() => history.push(`/projects/record/${ref}/line/${line.id}/price`)}
+          onUnit={(i) => history.push(`/projects/record/${ref}/line/${line.id}/unit/${i}`)} />
       </IonContent>
 
       <IonFooter className="ion-no-border">
@@ -145,7 +145,7 @@ export function LinePage() {
               screen — Save and Cancel live in edit mode where there is something
               to commit. */}
           <div className="actions">
-            <IonButton onClick={() => history.push(`/record/${ref}/line/${line.id}/edit`)}>
+            <IonButton onClick={() => history.push(`/projects/record/${ref}/line/${line.id}/edit`)}>
               Edit {line.code}
             </IonButton>
             <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
@@ -162,15 +162,15 @@ export function LinePage() {
         buttons={[
           { text: "Split into units" },
           ...(line.parts ? [{ text: "Merge back to one" }] : []),
-          { text: "Specification", handler: () => history.push(`/record/${ref}/line/${line.id}/spec`) },
-          { text: "Why this product", handler: () => history.push(`/record/${ref}/line/${line.id}/why`) },
-          { text: "Re-price", handler: () => history.push(`/record/${ref}/line/${line.id}/price`) },
+          { text: "Specification", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/spec`) },
+          { text: "Why this product", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/why`) },
+          { text: "Re-price", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/price`) },
           { text: `Copy a link to ${line.code}` },
           { text: `Delete ${line.code}`, role: "destructive", handler: () => setDeleteArmed(true) },
-          { text: "This job — Progress", handler: () => history.push(`/record/${ref}/job/progress`) },
-          { text: "This job — Payments", handler: () => history.push(`/record/${ref}/job/payments`) },
-          { text: "This job — Files", handler: () => history.push(`/record/${ref}/job/files`) },
-          { text: "This job — History", handler: () => history.push(`/record/${ref}/job/history`) },
+          { text: "This job — Progress", handler: () => history.push(`/projects/record/${ref}/job/progress`) },
+          { text: "This job — Payments", handler: () => history.push(`/projects/record/${ref}/job/payments`) },
+          { text: "This job — Files", handler: () => history.push(`/projects/record/${ref}/job/files`) },
+          { text: "This job — History", handler: () => history.push(`/projects/record/${ref}/job/history`) },
           { text: "Cancel", role: "cancel" },
         ]}
       />

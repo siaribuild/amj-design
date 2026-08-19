@@ -63,11 +63,11 @@ export function SpecPage() {
   }[src.measuredBy];
 
   return (
-    <Frame title="Specification" back={`/record/${ref}/line/${lineId}`}
+    <Frame title="Specification" back={`/projects/record/${ref}/line/${lineId}`}
       footer={
         <IonFooter className="ion-no-border">
           <div className="actions">
-            <IonButton routerLink={`/record/${ref}/line/${lineId}/edit`}>Edit {line.code}</IonButton>
+            <IonButton routerLink={`/projects/record/${ref}/line/${lineId}/edit`}>Edit {line.code}</IonButton>
           </div>
         </IonFooter>
       }>
@@ -165,11 +165,11 @@ export function UnitPage() {
   const code = unitLabel(line.code, i);
 
   return (
-    <Frame title={code} back={`/record/${ref}/line/${lineId}`}
+    <Frame title={code} back={`/projects/record/${ref}/line/${lineId}`}
       footer={
         <IonFooter className="ion-no-border">
           <div className="actions">
-            <IonButton routerLink={`/record/${ref}/line/${lineId}/edit`}>Edit {code}</IonButton>
+            <IonButton routerLink={`/projects/record/${ref}/line/${lineId}/edit`}>Edit {code}</IonButton>
           </div>
           <p className="reason">
             A unit is edited through {line.code}'s editor — it has no separate price.
@@ -215,11 +215,11 @@ export function WhyPage() {
   const beaten = CANDIDATES.filter((c) => c.verdict !== "chosen");
 
   return (
-    <Frame title="Why this product" back={`/record/${ref}/line/${lineId}`}
+    <Frame title="Why this product" back={`/projects/record/${ref}/line/${lineId}`}
       footer={
         <IonFooter className="ion-no-border">
           <div className="actions">
-            <IonButton routerLink={`/record/${ref}/line/${lineId}/edit`}>
+            <IonButton routerLink={`/projects/record/${ref}/line/${lineId}/edit`}>
               Change the product
             </IonButton>
           </div>
@@ -299,7 +299,7 @@ export function ManufacturerPricePage() {
   const delta = valid ? lineCents - (line.priceCents ?? 0) : 0;
 
   return (
-    <Frame title="Re-price" back={`/record/${ref}/line/${lineId}`}
+    <Frame title="Re-price" back={`/projects/record/${ref}/line/${lineId}`}
       footer={
         <>
           <div className="readback" aria-live="polite">
@@ -319,7 +319,7 @@ export function ManufacturerPricePage() {
           </div>
           <div className="actions">
             <IonButton disabled={!valid}>Confirm this price</IonButton>
-            <IonButton fill="outline" routerLink={`/record/${ref}/line/${lineId}`}>Cancel</IonButton>
+            <IonButton fill="outline" routerLink={`/projects/record/${ref}/line/${lineId}`}>Cancel</IonButton>
           </div>
         </>
       }>

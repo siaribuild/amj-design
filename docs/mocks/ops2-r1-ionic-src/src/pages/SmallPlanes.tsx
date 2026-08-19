@@ -3,13 +3,12 @@
 import { useState } from "react";
 import {
   IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonBackButton,
-  IonMenuButton, IonContent, IonFooter, IonInput, IonNote, IonTitle,
-  IonList, IonItem, IonLabel, IonTextarea,
+  IonContent, IonFooter, IonInput, IonNote, IonTitle,
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
 import { DELIVERY, LINES, RECORD } from "../data";
 import { Money } from "../ui";
-import { ProjectBlockBody, ProjectList, blockName } from "../pieces";
+import { ProjectBlockBody, blockName } from "../pieces";
 
 /** A Project-tab block, pushed. Move 1 — the same body the canvas renders at
  *  ≥1024. One IA, one component, nothing behind a disclosure. */
@@ -20,7 +19,7 @@ export function ProjectBlockPage() {
       <IonHeader className="ion-no-border">
         <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/record/${ref}`} text="" aria-label="Back to the project" />
+            <IonBackButton defaultHref={`/projects/record/${ref}`} text="" aria-label="Back to the project" />
           </IonButtons>
           <div className="ident">
             <h1>{blockName(block)}</h1>
@@ -72,7 +71,7 @@ export function DeliveryPage() {
       <IonHeader className="ion-no-border">
         <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/record/${ref}`} text="" aria-label="Back to the project" />
+            <IonBackButton defaultHref={`/projects/record/${ref}`} text="" aria-label="Back to the project" />
           </IonButtons>
           <IonTitle>Delivery</IonTitle>
         </IonToolbar>
@@ -122,29 +121,6 @@ export function DeliveryPage() {
           for any other project.
         </IonNote>
       </IonFooter>
-    </IonPage>
-  );
-}
-
-/** The project list — the record's parent, and the home of the drawer opener.
- *  See RecordPage's header comment for why the opener is here rather than on the
- *  record. This is the stack ROOT, so it is the one screen that legitimately has
- *  no back. */
-export function ProjectListPage() {
-  const history = useHistory();
-  return (
-    <IonPage>
-      <IonHeader className="ion-no-border">
-        <IonToolbar>
-          <IonButtons slot="start">
-            <IonMenuButton aria-label="Open the console menu" />
-          </IonButtons>
-          <IonTitle>Projects</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent>
-        <ProjectList onOpen={(r) => history.push(`/record/${r}`)} />
-      </IonContent>
     </IonPage>
   );
 }
