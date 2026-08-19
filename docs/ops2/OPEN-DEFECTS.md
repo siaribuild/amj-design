@@ -190,33 +190,27 @@ Three candidates, his to pick:
   same row. It is also the one idiom that differs in kind from `< Projects`, which names a
   type rather than an instance.
 
-**R4 — prev/next: right placement, wrong mechanism, at EVERY size.**
-First recorded as a tablet problem — *"scales very poorly on ipad in particular - just too
-massive buttons"* — then corrected: *"back/forth navigation fails equally on mobile as
-well, imo."* So two labelled full-width neighbour buttons are not a control that needs
-resizing; they are the wrong control. What survives is the **placement** (top, out of the
-thumb zone) and the **principle** that moving to an adjacent line must not require a trip
-through the list.
+**R4 — prev/current/next: the concept and the placement are SETTLED. Only the execution
+is rejected.**
 
-Note the history, because it is a loop and the next attempt should not re-enter it:
-- `< 4/18 >` stepper in the header — rejected, *"not intuitive or convenient"*.
-- Bottom filmstrip scroller — **approved**, *"Scroller at the bottom - good direction"*.
-- R1e **removed** the filmstrip, arguing the top control made it redundant and citing the
-  owner's own point that the list serves distant jumps. That argument now looks weaker,
-  because the control it deferred to has since been rejected.
-- Top prev/current/next as two labelled buttons — rejected at all sizes.
+Stated twice by the owner and misrecorded by me twice, so it is written plainly here:
 
-Two directions worth costing rather than one being assumed:
-1. **Restore the bottom scroller** he approved, and give the top nothing. Cheapest, and
-   returns to a thing he liked; costs the thumb-zone argument R1e made against it.
-2. **A compact control in the toolbar's end slot** — the iOS Mail idiom, a chevron pair
-   that consumes no row and is identical at 375 and 1024. Costs the "neighbours are
-   identified, not counted" property, which is exactly what the `< 4/18 >` rejection was
-   about, so it must earn that back some other way or argue the property was never the
-   point.
+> *"I told you - it is the right place and right approach, conceptually. Implementation of
+> the concept is weak."*
 
-A full row of chrome for line-to-line movement is what both rejected attempts had in
-common. That is the constraint to design against.
+**Settled, not open:**
+- **Top of the line plane** is the right home. Not the bottom, not the footer.
+- **prev / current / next** is the right idea — you see the neighbours, you move one step.
+
+**Rejected:** the execution. Two labelled full-width buttons consuming a whole band of
+chrome. It fails on the phone as well as the tablet — *"back/forth navigation fails equally
+on mobile as well, imo."* — so it is not a sizing bug to be fixed with a breakpoint.
+
+**Do not reopen** the bottom scroller, the `< 4/18 >` stepper, or the placement. Those are
+decided. The task is one control, in the place already agreed, expressing the idea already
+agreed, without spending a full row on it. Look at how the idiom is executed natively
+before proposing anything — this is a solved problem in mail, photo and reader apps, and
+none of them give it a band of its own.
 
 **R5 — there are no line-level notes, and the field is not editable.**
 *"there are no item level notes, not in a form of growing list of comments like on the
