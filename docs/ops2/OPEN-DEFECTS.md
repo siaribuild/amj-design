@@ -41,27 +41,21 @@ same `IonHeader`**, which also gives the money room to be read instead of squeez
 ~80px. Rework to that, and stop composing bespoke grids inside standard components — that
 is the boundary rule being broken in the one place he keeps looking.
 
-**D4 — quantity: the field is retired; render it only where legacy data still carries it.**
-The owner: *"qty is always 1. you are seeing some legacy records and legacy functionality
-that is ought to be retired - if you'd look at estimator tool, you'd notice that qty field
-is removed from all screens."* Verified: `ItemComposer.tsx` and `ItemForm.tsx` contain zero
-qty references, so nothing creates a multi-quantity line any more. He is right.
+**D4 — quantity: remove it from the view. RULED.**
+The owner: *"remove qty from the view."* Quantity is retired — `ItemComposer.tsx` and
+`ItemForm.tsx` carry no qty field, so nothing creates a multi-quantity line any more.
 
-The one case that still needs covering: of 287 production lines, four carry qty above 1
-(2, 3, 4 and 6) and they sit on projects in `estimator_assigned` and `submitted` — both
-EDITABLE_STATES, i.e. live pre-issue projects ops2 will open, not closed history. Hidden
-outright, those four render a line total 2x to 6x the unit price with nothing explaining
-the arithmetic, in a console whose job is checking money.
+Recorded because it was argued and decided rather than assumed: four production lines
+carry qty 2, 3, 4 and 6, and they sit on projects in `estimator_assigned` and `submitted`
+— live pre-issue states ops2 will open, not closed history. I proposed rendering the
+multiplier only there; the owner ruled it out. The consequence is bounded and acceptable:
+the line total stays arithmetically correct, only its derivation is unstated, and it
+disappears entirely as those four projects close.
 
-So: render nothing when qty is 1 — every line the estimator can now produce — and show it
-where a legacy row still carries a multiplier. The annotation vanishes from current work
-entirely and self-eliminates as those four projects close. The alternative is normalising
-the data, which is a migration and the owner's call.
+Do not conflate with `qtyPerParent`, the count of units *within* a composite line
+(`OpeningDrawer.tsx:245/309`). Both print as `xN`; only one is retired.
 
-Do not conflate this with `qtyPerParent`, the count of units *within* a composite line
-(`OpeningDrawer.tsx:245/309`). Both render as `xN` and only one is being retired.
-
-Residue noted for whoever retires it properly: `OpeningDrawer.tsx:45/138` still carries a
+Residue for whoever finishes the retirement: `OpeningDrawer.tsx:45/138` still carries a
 `"qty"` section key and a review-key clear on qty change, on the customer side.
 
 ## Owner decisions still open
@@ -89,3 +83,22 @@ Residue noted for whoever retires it properly: `OpeningDrawer.tsx:45/138` still 
 - Colour and theming. *"UX is more important than colours at this point."* The three theming
   options (bare Ionic / palette+type toward the v2 reference / further) remain unchosen.
 - ItemDetail view, then desktop. Mobile project view is finished first.
+
+## Parked, with the thinking so far
+
+**Bottom tab bar as top-level navigation.** Raised by the owner while brainstorming
+`IonSegment` vs `IonTabs`, to be taken up *"once we start talking about main menu"*. His
+shape: **3-4 tabs plus a "more" tab that expands into the main menu** — which fits Ionic's
+practical five-item limit and ops2's eight destinations, and removes the drawer's extra tap
+from the destinations used constantly ("speed is money").
+
+His own stated concern is the real obstacle and should lead the discussion: **how the
+bottom sticky panel coexists with navigation tabs.** The record screen's bottom edge
+already carries the line scroller (44px) and the action footer (48px). A tab bar adds
+roughly 50px more — about 142px of an 812px phone, some 17% of the screen, permanently.
+
+Three shapes worth costing when it is taken up: hide the tab bar on the record (Ionic
+supports per-route hiding, and the record already has `< Projects` as its route out, so it
+would not repeat the no-navigation regression); let the action footer yield instead
+(unlikely — it is the primary action); or accept the stack and buy the height back
+elsewhere. Not a swap; a design question.
