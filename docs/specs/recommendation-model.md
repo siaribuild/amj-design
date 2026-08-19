@@ -1031,6 +1031,7 @@ Every user-owned call made in the owner's absence, in one place, for the accepta
 | A15 | `CONTEXT.md` gains a new **`Visitor`** term rather than widening `Customer` | §3 | The two are served by different engines with different guarantees (D5); the architect owns the final call and no criterion depends on it |
 | A16 | Four deployable phases, in the order given, with phase 4 free to ship first | §8 | The owner's standing directive to break multi-area work into deployable phases |
 | A17 | `deltaToSelected` is **candidate minus pick** — negative means cheaper than the pick | §4.10, AC-44 | The sign has to be fixed somewhere or the developer guesses and the ops surface renders it backwards |
+| A18 | `MAX_SYSTEMS = 12` and `MAX_GLASS_TRIALS = 3` (`worker/lib/estimator/compositeSelect.ts`) are **retained** as work bounds rather than deleted as tuned constants. They prune which make-ups are *enumerated*, never which one *wins* | §11, AC-4 | Added at acceptance on the tester's finding, and the ruling is the ORCHESTRATOR's, not the developer's or the PM's — the owner was unavailable. History that sharpens it: `MAX_SYSTEMS` was originally **4**, and at 4 it silently excluded AMJ80 — the largest platform in the catalogue — from all-fixed composites via an alphabetical tiebreak. So these caps HAVE changed which product could win. A test now forces the cap above the catalogue's system count. Registered as AD35 in the design. **Owner's choice: keep the caps (recommended, with the §11 amendment above), or delete them and accept unbounded enumeration** |
 
 ---
 
@@ -1047,10 +1048,18 @@ a question is decided above and registered in §9 for veto at acceptance.
 - `RANK_WEIGHTS`, `geometryScore`, `configurationScore`, `dataCompletenessScore`,
   `selectWithConfidence`, `FLOOR`, `SHGC_SPAN` and `UVALUE_SPAN` do not exist in the codebase
   (AC-4).
-- `REQUIREMENT_TOLERANCE = 0.05` is the only tuned constant in the selection path, defined in
-  one module, stamped on every persisted run, and documented with its reasoning and an owner
-  (D10: NCC compliance is a whole-of-home NatHERS star rating that absorbs per-window variance,
-  and AFRC Total System figures are product ratings rather than site measurements).
+- `REQUIREMENT_TOLERANCE = 0.05` is the only **preference** constant in the selection path —
+  the only number that can make one candidate rank above another — defined in one module,
+  stamped on every persisted run, and documented with its reasoning and an owner (D10: NCC
+  compliance is a whole-of-home NatHERS star rating that absorbs per-window variance, and AFRC
+  Total System figures are product ratings rather than site measurements).
+- **Work bounds are a separate category and are permitted** (A18): a constant that limits how
+  many candidates are *enumerated* is not a constant that decides which one *wins*. Each must
+  be documented with its reasoning, and `MAX_SYSTEMS` must stay above the number of frame
+  systems the catalogue holds. This clause is an amendment made at acceptance — the original
+  wording said "the only tuned constant", which was not true of the shipped code, and a
+  Definition of Done that asserts something untrue is how the six unsourced weights this
+  feature deletes got in unchallenged.
 - No `migrations/` change rebuilds a table; the `d1-migration-safety` skill was loaded before
   authoring; production data was exported before any destructive statement.
 - `npm test` and `npm run typecheck:gate` green.
