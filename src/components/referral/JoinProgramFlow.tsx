@@ -12,10 +12,10 @@
 // "we need an account to pay into" is part 2. Adjacent, they read as "you have to
 // be a customer to refer" — which is the ACL s 49 shape this program is built to
 // stay outside of.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReferralProgramPublic, ReferrerScreen } from "../../data/referrals";
 import { savePayoutDetails } from "../../data/referrals";
-import { updateProfile } from "../../data/api";
+import { updateProfile, me, ApiError } from "../../data/api";
 import { Input, FieldLabel, Btn, SAGE } from "../../app/ui";
 import { pct, moneyRound, months, days } from "./format";
 
@@ -75,7 +75,33 @@ export function PayoutDetailsForm({ program, submitLabel, onDone, initial }: {
       // Two writes, one commit from the reader's side. The ABN is a profile
       // field, and the gate needs all four — so a partial write simply leaves
       // the gate shut rather than producing a half-member.
-      await updateProfile({ abn: digits(f.abn) });
+      //
+      // REGISTRATION PHASE 2 (E-P2-19). This is the last remaining writer of
+      // `user.abn` outside the trade engine, and since the ABN now GRANTS
+      // pricing the Worker refuses to let this path change a verified or pending
+      // one (`abn_locked`, §6.6). Two consequences, both handled here:
+      //
+      //   1. Unchanged digits are not a write. A verified referrer prefilled
+      //      with their own ABN would otherwise be refused for "changing" it to
+      //      exactly what it already is — the commonest journey failing on a
+      //      rule aimed at a different one.
+      //   2. A genuine change IS refused, and the refusal is explained rather
+      //      than surfaced as "we couldn't save those details", which would send
+      //      the person back to re-check four correct fields.
+      if (digits(f.abn) !== digits(initial?.abn ?? "")) {
+        try {
+          await updateProfile({ abn: digits(f.abn) });
+        } catch (e) {
+          if (e instanceof ApiError && e.code === "abn_locked") {
+            setErrs((p) => ({
+              ...p,
+              abn: "This ABN is verified on your account, or is being checked right now, so it can't be changed here. Update it from your account page.",
+            }));
+            return;
+          }
+          throw e;
+        }
+      }
       const saved = await savePayoutDetails({
         bsb: digits(f.bsb), accountNumber: digits(f.accountNumber), accountName: f.accountName.trim(),
       });
@@ -139,6 +165,33 @@ export function JoinProgramFlow({ program, onJoined, onCancel, onReadTerms }: {
   onCancel?: () => void;
   onReadTerms?: () => void;
 }) {
+  /** The account's own ABN, prefilled into the payout form (AC-P2-54).
+   *
+   *  PREFILL ONLY — not joining changes nothing about the account, and this
+   *  never writes. It exists so a verified tradie is not asked to re-type a
+   *  number the system already holds and has already checked, and so the
+   *  skip-same-digits rule above has something to compare against.
+   *
+   *  Read here rather than threaded from the pages (design §8.6 suggested props
+   *  from ReferPage/ReferralsPage): neither page holds the auth user, and this
+   *  flow is authenticated-only by construction, so one `me()` gives both the
+   *  standing ABN and a pending application's — which is precisely the
+   *  `abn ?? pending.abn` precedence the design asks for.
+   *
+   *  A pending ABN counts: it is the number this person is currently telling us
+   *  is theirs, and making them retype it while it is being checked would be
+   *  the one moment the system most obviously already knows it. */
+  const [initialAbn, setInitialAbn] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    me()
+      .then((r) => {
+        if (cancelled) return;
+        setInitialAbn(r.user?.abn ?? r.trade?.pending?.abn ?? "");
+      })
+      .catch(() => { /* prefill is a courtesy; its absence changes nothing */ });
+    return () => { cancelled = true; };
+  }, []);
   const [part, setPart] = useState<1 | 2>(1);
   const [accepted, setAccepted] = useState(false);
 
@@ -217,7 +270,8 @@ export function JoinProgramFlow({ program, onJoined, onCancel, onReadTerms }: {
                 <button onClick={() => setPart(1)} className="text-sage hover:text-sage-deep cursor-pointer">back</button>
               </p>
               <h3 className="text-ink t-hd1 font-display">Where do we send the money?</h3>
-              <PayoutDetailsForm program={program} submitLabel="Join the program" onDone={onJoined} />
+              <PayoutDetailsForm program={program} submitLabel="Join the program" onDone={onJoined}
+                initial={initialAbn ? { abn: initialAbn } : undefined} />
             </>
           )}
         </div>
