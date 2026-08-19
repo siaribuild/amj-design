@@ -111,7 +111,10 @@ async function sendTradeEmail(
 
 export type TradeQueueReason =
   | "abn_inactive" | "abn_not_found" | "name_mismatch"
-  | "email_domain" | "duplicate_abn" | "abr_unavailable";
+  | "email_domain" | "duplicate_abn" | "abr_unavailable"
+  /** This account held trade pricing and a person took it away. Re-applying is
+   *  allowed; doing so unseen is not (security review SEC-2). */
+  | "previously_revoked";
 
 export type ApplyResult =
   | { ok: true; status: "verified" | "under_review" }
@@ -413,6 +416,12 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
 
   // 6. The duplicate rule (D2.1). Only a STANDING grant on another account
   //    counts — revoked, rejected and superseded holders do not (E-P2-8).
+  const revokedBefore = await env.DB.prepare(
+    `SELECT 1 AS hit FROM trade_application
+      WHERE user_id = ?1 AND status = 'approved' AND revoked_at IS NOT NULL LIMIT 1`,
+  ).bind(user.id).first<{ hit: number }>();
+  const everRevoked = !!revokedBefore;
+
   const duplicates = await env.DB.prepare(
     `SELECT user_id FROM trade_application
       WHERE abn = ?1 AND user_id <> ?2
@@ -427,9 +436,38 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   //    rather than guessed at.
   const abrNames = lookup.outcome === "found" ? [lookup.entityName, ...lookup.businessNames] : [];
   const nameMatch = lookup.outcome === "found" ? nameMatches(businessName, abrNames) : { pass: false, matched: null };
-  const emailDomain = emailDomainPlausible(user.email, [businessName, ...abrNames]);
+  // CRITERION 3 IS JUDGED ON THE REGISTER'S NAMES ONLY — never on the submitted
+  // one (security review SEC-1, HIGH).
+  //
+  // The submitted name is the CLAIM UNDER TEST. Including it here made the claim
+  // its own evidence: an applicant put their own domain word inside the business
+  // name they typed and satisfied the domain check themselves. Criterion 2 did
+  // not stop it either, because containment passes when the ABR name is the
+  // smaller set, so padding was free there too. The ABN and the registered name
+  // are public facts, and the duplicate rule only fires for a business already
+  // verified here — so one request granted trade pricing on a stranger's ABN,
+  // and because it auto-passed no pending row existed for ops to see.
+  //
+  // A legitimate applicant loses nothing: criterion 2 already requires the
+  // submitted name to resemble a register name, so a real business's domain is
+  // compared against a string it genuinely matches.
+  const emailDomain = emailDomainPlausible(user.email, abrNames);
 
   const reasons: TradeQueueReason[] = [];
+  // A REVOCATION IS NOT SELF-REVERSIBLE (security review SEC-2).
+  //
+  // `revokeTrade` clears the grant and the rate, but nothing here used to
+  // consult `revoked_at` for THIS account — so replaying the original request
+  // auto-passed again and put the rate straight back, unseen. One-action revoke
+  // is the compensating control for the auto-pass residual (AB-P2-9), and a
+  // control the subject can undo by resending their last request is not one.
+  //
+  // Account-wide rather than per-ABN, because that is what "revoked" means to
+  // the person who clicked it. This is a QUEUE REASON, not a refusal: the
+  // account may still apply, and a genuine mistake is still recoverable — it
+  // simply cannot happen without a human seeing it (AC-P2-13 keeps
+  // re-application after a REJECTION untouched and automatic).
+  if (everRevoked) reasons.push("previously_revoked");
   if (lookup.outcome === "unavailable") reasons.push("abr_unavailable");
   else if (lookup.outcome === "not_found") reasons.push("abn_not_found");
   else if (!lookup.abnActive) reasons.push("abn_inactive");

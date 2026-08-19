@@ -31,11 +31,11 @@ The project's **delivery destination** is a different fact in a different place 
 ### Trade verification
 
 **Trade-verified (trade-ness)**:
-An axis on an account, parallel to staff-ness and payability: whether the account's business has been verified (ABR-checked or human-approved) and therefore *pays* trade prices. It gates what an account pays, never what it can see. The live facts (ABN, business name, builder/tradie label, discount) live on the account row; whether the account is verified is derived from its trade applications — never stored as a status column, never baked into a session.
+An axis on an account, parallel to staff-ness and payability: whether the account's business has been verified (ABR-checked or human-approved) and therefore *pays* trade prices. It gates what an account pays, never what it can see. The live facts (ABN, business name, discount) live on the account row; whether the account is verified is derived from its trade applications — never stored as a status column, never baked into a session.
 _Avoid_: trade tier, premium account
 
 **Trade application**:
-One attempt to become trade-verified: the frozen submitted ABN, business name and label, the ABR snapshot at lookup time, the queue reasons, the outcome, the deciding actor and provenance (`auto` / `ops` / `grandfathered`). History, not a second home for the ABN — the same frozen-copy pattern a Payout uses. The application whose approval currently makes an account verified is its **standing grant**; a later approval supersedes it, a revocation ends it.
+One attempt to become trade-verified: the frozen submitted ABN and business name, the ABR snapshot at lookup time, the queue reasons, the outcome, the deciding actor and provenance (`auto` / `ops` / `grandfathered`). History, not a second home for the ABN — the same frozen-copy pattern a Payout uses. The application whose approval currently makes an account verified is its **standing grant**; a later approval supersedes it, a revocation ends it.
 _Avoid_: trade request, upgrade
 
 **Auto-pass**:

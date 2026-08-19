@@ -888,6 +888,97 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         "and the rate is untouched");
     });
 
+    await t.test("AB-P2-9 hardening: a padded business name cannot satisfy criterion 3 (SEC-1)", async () => {
+      // Security review finding, HIGH, verified against the shipped matchers.
+      //
+      // Criterion 3 asks whether the applicant's EMAIL DOMAIN plausibly belongs
+      // to the business. It was evaluated against a list that began with the
+      // applicant's own submitted business name — so the claim under test was
+      // also its own evidence. Anyone could put their domain word inside the
+      // name they typed and satisfy the check themselves.
+      //
+      // Criterion 2 did not stop it, because containment passes when the ABR
+      // name is the SMALLER set: "Smith Brothers Constructions" is contained in
+      // "Zoho Smith Brothers Constructions", so padding is free there too.
+      //
+      // The ABN and the registered name are public facts, free from ABR Lookup.
+      // The duplicate rule only fires for a business already verified HERE. So
+      // one request granted the attacker trade pricing on a stranger's ABN, and
+      // because it auto-passed no pending row was created and the ops queue
+      // never saw it.
+      //
+      // The accepted residual (AB-P2-9) was always "somebody who genuinely
+      // controls a lookalike domain". This was materially wider: no matching
+      // domain of any kind was required.
+      const attacker = await newAccount("padded", "zoho.com");   // NOT free-mail listed
+      const res = await apply(attacker.session, {
+        abn: ABR_FIXTURES.active,                                 // SMITH BROTHERS PTY LTD
+        businessName: "Zoho Smith Brothers Constructions",        // real name + the domain word
+        source: "profile",
+      });
+
+      assert.equal(res.status, 200);
+      const body = await res.clone().json();
+      const rows = await applications(attacker.email);
+      assert.equal(body.status, "under_review",
+        `SEC-1: a padded name must not auto-pass. reasons=${rows[0]?.queue_reasons}`);
+
+      const reasons = JSON.parse(rows[0].queue_reasons ?? "[]");
+      assert.ok(reasons.includes("email_domain"),
+        "and the reason is the domain check, judged on what the REGISTER says");
+      assert.equal(rows[0].status, "pending", "it lands in front of a human");
+      assert.equal(Number((await userRow(attacker.email)).discount_percent), 0,
+        "and no trade rate is granted");
+    });
+
+    await t.test("AC-P2-30 hardening: a revoked account cannot re-grant itself (SEC-2)", async () => {
+      // Security review finding, MEDIUM. `revokeTrade` clears the grant and the
+      // rate, but nothing in `applyForTrade` consulted `revoked_at` for THIS
+      // account — so replaying the original request auto-passed again and put
+      // the rate straight back, with no pending row and no human involved.
+      //
+      // That matters more than it looks: one-action revoke is named as the
+      // compensating control for the auto-pass residual. A control somebody can
+      // undo by resending their last request is not a control.
+      //
+      // The spec permits re-applying after a REJECTION (AC-P2-13 / E-P2-7) and
+      // is silent on revocation; the code treated them the same. A revoked
+      // account may still apply — it simply cannot do so unseen.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-sec2-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+
+      const business = spareBusiness(11);
+      const account = await newAccount("revoked-retry", business.domain);
+      const first = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.deepEqual(await first.clone().json(), { ok: true, status: "verified" });
+
+      const accountId = (await userRow(account.email)).id;
+      const revoked = await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "ABN is not theirs" },
+      });
+      assert.equal(revoked.status, 200);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 0, "revoked to retail");
+
+      // The replay — byte-identical to the request that worked before.
+      const replay = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.equal(replay.status, 200);
+      assert.equal((await replay.clone().json()).status, "under_review",
+        "SEC-2: a revoked account cannot silently re-grant itself");
+      assert.equal(Number((await userRow(account.email)).discount_percent), 0,
+        "and the rate stays at retail until a human says otherwise");
+
+      const pending = (await applications(account.email)).filter((a) => a.status === "pending");
+      assert.equal(pending.length, 1, "the retry is in front of a person");
+      assert.ok(JSON.parse(pending[0].queue_reasons ?? "[]").includes("previously_revoked"),
+        "and the queue says why");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;

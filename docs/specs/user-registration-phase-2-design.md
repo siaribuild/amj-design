@@ -10,25 +10,13 @@ Author: architect. Date: 2026-08-19. Branch: `feat/user-registration`. Phase 1 i
 
 Status of "Decisions needed": **empty** (§16). Spec findings — places the spec is unbuildable exactly as written, with the recorded resolution — are in §14; none is a business decision.
 
-> ### ⚠️ READ BEFORE TREATING THIS DOCUMENT AS INSTRUCTIONS (2026-08-19)
+> ### P2-D5 — the builder/tradie label does not exist (owner, 2026-08-19)
 >
-> **Owner ruling P2-D5 removed the builder/tradie label from the entire product**, superseding D7
-> and Q5. The sweep reached §18, the shipped migration `0054`, and every line of Worker and client
-> code — **it has NOT yet reached this document's body.** §3.1 has been corrected because it
-> carried a runnable `ALTER TABLE user ADD COLUMN trade_label` that the shipped migration never
-> performed, and acting on it would create a column the owner deliberately removed. Migrations
-> here are append-only and a rebuild in this database has already cascade-deleted production rows.
->
-> **`trade_label` / `label` still appears, wrongly, in §6, §7.1–7.4, §8.1, §8.3, §8.5, §9, §10
-> step 5 and §13.** Treat every one as struck. There is no builder/tradie control on any surface,
-> no such column anywhere, and no such field in any DTO.
->
-> Also stale: **§7.4 names `label` where the Worker actually returns `provenance`**
-> (`"auto" | "ops" | "grandfathered" | null`), and **§18.2.5's premise is wrong** — Phase 1's
-> NameStep interstitial covers account routes only and never appears on `/trade-account`.
->
-> The full conformance review and the open fix queue this note came from are recorded with the
-> architect's stage-7 findings; the remaining sweep is the architect's to apply.
+> **Owner ruling P2-D5 removed the builder/tradie label from the entire product**, superseding
+> D7 and Q5. The sweep now covers this document's body (2026-08-19, post-conformance-review) as
+> well as §18, the shipped migration `0054`, and every line of Worker and client code. The
+> fenced comment in §3.1 remains the standing guard against reinstating `trade_label`:
+> migrations here are append-only, and 0054 never created the column.
 
 ---
 
@@ -54,7 +42,7 @@ One verification engine, three doors, one ops queue. The deep-module bet of this
   (AC-P2-7/16) and the Worker's are the same function. One validator, two callers, no drift.
 - **Trade-ness is derived from a ledger, never stored as a status column** (§3). The
   `trade_application` table is the single source of truth for every verification fact except
-  the live ABN/company/label/discount, which stay on `user` exactly as §4.7 requires.
+  the live ABN/company/discount, which stay on `user` exactly as §4.7 requires.
 
 ```
              src/data/abn.ts  (abnValid moved; referrals.ts re-exports)
@@ -88,10 +76,10 @@ Changes to `CONTEXT.md`:
    > An axis on an account, parallel to staff-ness and payability: whether the account's
    > business has been verified (ABR-checked or human-approved) and therefore *pays* trade
    > prices. It gates what an account pays, never what it can see. The live facts (ABN,
-   > business name, builder/tradie label, discount) live on `user`; whether the account is
+   > business name, discount) live on `user`; whether the account is
    > verified is derived from its trade applications, never stored as a status column.
 3. **Trade application** — new entry:
-   > One attempt to become trade-verified: the frozen submitted ABN, business name and label,
+   > One attempt to become trade-verified: the frozen submitted ABN and business name,
    > the ABR snapshot at lookup time, the queue reasons, the outcome, the deciding actor and
    > provenance (`auto` / `ops` / `grandfathered`). History, not a second home for the ABN —
    > the same frozen-copy pattern a Payout uses. The application whose approval currently makes
@@ -398,7 +386,6 @@ export interface TradeState {
   verified: boolean;
   verifiedSince: string | null;
   provenance: "auto" | "ops" | "grandfathered" | null;
-  label: "builder" | "tradie" | null;                 // user.trade_label
   abn: string | null;                                 // user.abn (the live fact)
   pending: { abn: string; businessName: string; createdAt: string } | null;
   history: { at: string; outcome: "approved" | "rejected" | "revoked" }[];  // outline only (AC-P2-13)
@@ -407,10 +394,10 @@ export async function tradeStateOf(env: Env, user: UserRow): Promise<TradeState>
 
 export type ApplyResult =
   | { ok: true;  status: "verified" | "under_review" }
-  | { ok: false; error: "invalid_abn" | "invalid_business_name" | "invalid_label"
+  | { ok: false; error: "invalid_abn" | "invalid_business_name"
                       | "forbidden" | "application_pending" | "rate_limited" };
 export async function applyForTrade(env: Env, user: UserRow, input: {
-  abn: unknown; businessName: unknown; label?: unknown;
+  abn: unknown; businessName: unknown;
   source: "trade_page" | "profile" | "submit_gate"; ip: string;
 }): Promise<ApplyResult>;
 
@@ -436,8 +423,7 @@ export async function abnWriteAllowed(env: Env, user: UserRow, digits: string): 
    or checksum-invalid ⇒ `invalid_abn`. **No row, no ABR call, no rate-limit spend** — a
    field error, exactly like a malformed phone (AC-P2-7).
    `businessName` required, trimmed, 1-200 chars ⇒ else `invalid_business_name` (200 matches
-   the ops-PATCH company cap). `label` absent or one of `builder`/`tradie` ⇒ else
-   `invalid_label`.
+   the ops-PATCH company cap).
 2. **Staff-ness**: `user.type !== 'customer'` ⇒ `forbidden` (AB-P2-11 — checked here AND at
    approval, so no path grants an internal account).
 3. **One pending per account** (P2-A10): a pending row exists ⇒ `application_pending` (the
@@ -526,10 +512,10 @@ Served to the customer on `GET /api/auth/me` (§7.1) — status only, **never**
      `UPDATE trade_application SET superseded_at=datetime('now') WHERE user_id=? AND id <> ?
       AND status='approved' AND revoked_at IS NULL AND superseded_at IS NULL`.
    - Write the account's live facts:
-     `UPDATE user SET abn = COALESCE(?, abn), company = COALESCE(?, company),
-      trade_label = COALESCE(?, trade_label) WHERE id = ? AND type='customer'`
-     — application values; `COALESCE` so a gate-originated NULL label never blanks a stated
-     value.
+     `UPDATE user SET abn = COALESCE(?, abn), company = COALESCE(?, company)
+      WHERE id = ? AND type='customer'`
+     — application values; `COALESCE` so a NULL never blanks a value the account already
+     holds.
    - **The rate, only on a not-verified → verified transition** (AC-P2-28/29, P2-A5):
      `UPDATE user SET discount_percent = ? WHERE id = ? AND type='customer'` bound to
      `TRADE_DISCOUNT_DEFAULT`, executed **only when no standing grant existed at claim time**
@@ -580,11 +566,9 @@ the engine (`abnWriteAllowed`):
 
 This is AB-P2-12/E-P2-19 made structural: the payout path keeps its non-granting write for
 private accounts and loses only the swap. The route (`worker/routes/auth.ts` `/profile`) maps
-the new result to `400 { error: "abn_locked" }`. `updateAccountDetails` also gains the
-**`tradeLabel`** allowlist key (value `builder`/`tradie`, or empty → NULL; anything else
-`invalid_fields`) — the label is self-declared, gates nothing (D7), and owner ruling Q5 wants
-it settable from the profile page. It is deliberately NOT added to
-`src/data/accountDetails.ts` (`submitMissing` must never demand it).
+the new result to `400 { error: "abn_locked" }`. (A `tradeLabel` allowlist key was designed
+here under Q5 — struck by P2-D5: the label does not exist, and `updateAccountDetails`'s
+allowlist is unchanged beyond the `abn` lock.)
 
 ### 6.7 Rate limiting — reuse, not invention (spec §8.7)
 
@@ -636,9 +620,9 @@ customer endpoint accepts a subject id anywhere (AB-P2-4: scoping is by session 
 | | |
 |---|---|
 | Auth | session (`resolveUser`); 401 `{ error: "unauthorized" }`; `type='internal'` ⇒ 403 `{ error: "forbidden" }` |
-| Request | `{ abn: string, businessName: string, label?: "builder" \| "tradie", source?: "trade_page" \| "profile" \| "submit_gate" }` — unknown keys **unread** (AB-P2-3: `status`, `abrSnapshot`, `decidedBy`, `discountPercent` fall on the floor because nothing looks at them); invalid `source` coerced to `"profile"` |
+| Request | `{ abn: string, businessName: string, source?: "trade_page" \| "profile" \| "submit_gate" }` — unknown keys **unread** (AB-P2-3: `status`, `abrSnapshot`, `decidedBy`, `discountPercent` fall on the floor because nothing looks at them); invalid `source` coerced to `"profile"` |
 | 200 | **exactly one of two constant bodies**: `{ ok: true, status: "verified" }` or `{ ok: true, status: "under_review" }` (§6.2.8, §14.2) |
-| 400 | `{ error: "invalid_abn" }` · `{ error: "invalid_business_name" }` · `{ error: "invalid_label" }` |
+| 400 | `{ error: "invalid_abn" }` · `{ error: "invalid_business_name" }` |
 | 409 | `{ error: "application_pending" }` (E-P2-5) |
 | 429 | `{ error: "rate_limited" }` (AB-P2-6, before any ABR call) |
 
@@ -660,7 +644,7 @@ aliases).
 
 | Endpoint | Request | Responses |
 |---|---|---|
-| `GET /api/ops/trade/applications` | — | 200 `{ applications: OpsTradeApplication[] }` — **pending only** (AC-P2-35); each: `id`, applicant `{ id, name, email }`, `abn`, `businessName`, `label` (null ⇒ client renders "not stated"), `source`, `queueReasons[]`, `abrSnapshot`, `createdAt`, `duplicateHolders: { id, name, email }[]` (resolved live from `evaluated.duplicateOf` — AC-P2-36) |
+| `GET /api/ops/trade/applications` | — | 200 `{ applications: OpsTradeApplication[] }` — **pending only** (AC-P2-35); each: `id`, applicant `{ id, name, email }`, `abn`, `businessName`, `source`, `queueReasons[]`, `abrSnapshot`, `createdAt`, `duplicateHolders: { id, name, email }[]` (resolved live from `evaluated.duplicateOf` — AC-P2-36) |
 | `POST /api/ops/trade/applications/:id/approve` | `{ note?: string }` | 200 `{ ok: true }` · 404 · 409 `{ error: "already_decided", outcome }` (AC-P2-39) |
 | `POST /api/ops/trade/applications/:id/reject` | `{ reason: string }` (required) | 200 `{ ok: true }` · 400 `{ error: "invalid_reason" }` · 404 · 409 as above |
 | `POST /api/ops/trade/customers/:id/revoke` | `{ reason: string }` (required) | 200 `{ ok: true }` · 400 · 404 · 409 `{ error: "not_verified" }` |
@@ -676,15 +660,15 @@ the job, and every action is `logEvent`-attributed (AC-P2-42).
   `(SELECT count(*) FROM trade_application WHERE status='pending') AS trade_applications`;
   the response gains `tradeApplications` (AC-P2-35's count-without-opening; the degraded
   branch pins it 0 like the others).
-- **`GET /api/ops/customers`** (line 1399): SELECT gains `u.discount_percent`,
-  `u.trade_label`, and a standing-grant subselect
+- **`GET /api/ops/customers`** (line 1399): SELECT gains `u.discount_percent` and a
+  standing-grant subselect
   `EXISTS(SELECT 1 FROM trade_application t WHERE t.user_id = u.id AND t.status='approved'
   AND t.revoked_at IS NULL AND t.superseded_at IS NULL) AS trade_verified`;
-  response rows gain `tradeVerified`, `tradeLabel`, `discountPercent` (read-only list columns
+  response rows gain `tradeVerified`, `discountPercent` (read-only list columns
   — AC-P2-41's "alongside"; ops is not a customer surface).
 - **`GET /api/ops/customers/:id`** (line 1473): the `customer` object gains
   `discountPercent` (read-only — there is deliberately **no PATCH for it**: spec §2.2 keeps
-  the rate editor out of this phase), `tradeLabel`,
+  the rate editor out of this phase),
   `trade: { verified, verifiedSince, provenance }`, and a new
   `tradeHistory: OpsTradeHistoryEntry[]` — every application in order with
   `{ at, abn, businessName, outcome: "approved" | "rejected" | "pending" | "revoked",
@@ -706,15 +690,16 @@ the job, and every action is `logEvent`-attributed (AC-P2-42).
 ```ts
 export interface TradeStateDto {
   verified: boolean; verifiedSince: string | null;
-  label: "builder" | "tradie" | null;
+  provenance: "auto" | "ops" | "grandfathered" | null;  // how the standing grant was made
   abn: string | null;
   pending: { abn: string; businessName: string; createdAt: string } | null;
   history: { at: string; outcome: "approved" | "rejected" | "revoked" }[];
 }
-// me() response type gains trade?: TradeStateDto (present iff authenticated).
+// MeResponse gains trade?: TradeStateDto (present iff authenticated). POST /verify's
+// response never carries it (AC-P2-56): a fresh session re-reads me() to learn it (§8.8).
 
 export async function applyForTrade(input: {
-  abn: string; businessName: string; label?: "builder" | "tradie";
+  abn: string; businessName: string;
   source: "trade_page" | "profile" | "submit_gate";
 }): Promise<"verified" | "under_review">;   // throws ApiError otherwise (existing pattern)
 ```
@@ -736,21 +721,37 @@ export async function applyForTrade(input: {
 ### 8.1 One component, three doors — `src/components/trade/TradeApplicationCard.tsx` (new)
 
 The application UI is ONE component rendered on two surfaces (doors a and b), so AC-P2-10's
-"no behavioural difference attributable to the entry point" is structural. Props:
+"no behavioural difference attributable to the entry point" is structural. Props (as built —
+corrected by the conformance review, 2026-08-19):
 
 ```ts
-{ user: AuthUser | null; onAuthed(u: AuthUserDto): void; onTradeChanged(): void;
-  source: "trade_page" | "profile" }
+{ user: { company?: string } | null;   // display facts only — trade is NOT a field on it
+  trade: TradeStateDto | null;         // App's sibling state (§8.8), re-read via me()
+  source: "trade_page" | "profile";
+  onAuthed?: (u: AuthUserDto) => void; // door (a) only — the cold-signup path
+  onTradeChanged?: () => void }
 ```
 
-States it renders (derived from `user`/`user.trade`, never stored):
+Trade state is a **sibling of the user in App, never `user.trade`**: the Worker derives it
+per read (ADR-0002) and `/verify` never carries it (AC-P2-56), so a copy stored on `AuthUser`
+would be exactly the stale rider the derivation exists to prevent. §8.8 holds the refetch and
+invalidation rules.
+
+On door (a), cold, the card does not compose a signup of its own: it mounts the optional
+group into the ordinary `OtpSignIn` through its **`emailStepExtra`** slot (rendered inside
+step 1, between the email field and the Turnstile — §18.2.3's order), and raises
+**`emailStepBlocked`** while a non-empty ABN fails its checksum, so a malformed ABN blocks
+the step exactly as §18.2.3 rules. The slot keeps the trade fields out of the shared auth
+component and the registration-flow count at one (owner ruling, §18.2).
+
+States it renders (derived from `trade`, never stored):
 
 | Condition | Panel |
 |---|---|
-| `user == null` (trade page only) | ABN + business name + builder/tradie label fields **plus** the inline `OtpSignIn` (Phase-1 component, Turnstile and caps unchanged — AC-P2-2). Entered values are **held in component state across the OTP** and posted via `applyForTrade` the moment `onAuthed` fires; a transient failure keeps the values on screen with a retry, and the person is signed in regardless (AC-P2-3) |
-| signed in, not verified, none pending | The application form (ABN, business name, label; business name pre-filled from `user.company` — AC-P2-8), submitting via `applyForTrade` |
+| `user == null` (trade page only) | ABN + business name fields **plus** the inline `OtpSignIn` (Phase-1 component, Turnstile and caps unchanged — AC-P2-2). Entered values are **held in component state across the OTP** and posted via `applyForTrade` the moment `onAuthed` fires; a transient failure keeps the values on screen with a retry, and the person is signed in regardless (AC-P2-3) |
+| signed in, not verified, none pending | The application form (ABN, business name; business name pre-filled from `user.company` — AC-P2-8), submitting via `applyForTrade` |
 | `trade.pending` | Pending state: the submitted ABN shown, **no second application startable** (AC-P2-12); no reason shown, no rejection implied (AC-P2-6, P2-A3) |
-| `trade.verified` | Active state: status + ABN (formatted, read-only — AC-P2-11), label, and the re-apply affordance for a changed ABN (E-P2-6) |
+| `trade.verified` | Active state: status + read-only Business and ABN rows (formatted — AC-P2-11, P2-ARCH-5), and the re-apply affordance for a changed ABN behind a disclosure (E-P2-6) |
 | history present | Outline list (date + outcome only) from `trade.history` (AC-P2-13) |
 
 On any outcome the card calls `onTradeChanged()` → App refetches `me()` (the constant §7.1
@@ -771,8 +772,8 @@ form; a signed-in unverified visitor gets the form with no second OTP (AC-P2-8).
 The free-text **Business details** card (company + ABN inputs, App.tsx:1400-1407) is
 **replaced** by `TradeApplicationCard source="profile"`. The ABN ceases to be a free-text
 profile input on this surface (AC-P2-11); business name is entered through the card as part
-of an application. The card is also where the builder/tradie label is set later
-(`updateProfile({ tradeLabel })` — owner ruling Q5). The affordance states that trade pricing
+of an application. (A later `updateProfile({ tradeLabel })` setter was designed here under
+Q5 — struck by P2-D5: no label exists to set.) The affordance states that trade pricing
 exists — no percentage, no worked example (AC-P2-9).
 
 ### 8.4 Door (c) — the submit gate (`src/components/QuoteReviewSubmit.tsx`)
@@ -781,7 +782,7 @@ Inside the existing details stage (no third stage — spec §2.3):
 
 - **Rendered only when** `user.trade` is neither verified nor pending (AC-P2-19).
 - Optional **ABN** field + **Business name** field that appears (and becomes required) only
-  while the ABN field is non-empty (AC-P2-15). **No builder/tradie control** (Q5).
+  while the ABN field is non-empty (AC-P2-15). **No builder/tradie control** (P2-D5).
 - Enablement folds into the existing `outstanding` caption machinery
   (QuoteReviewSubmit.tsx:418-437): empty ABN contributes nothing (AC-P2-14); a
   checksum-invalid ABN (via `src/data/abn.ts`, client-side, zero round trips) disables Submit
@@ -807,8 +808,8 @@ from `me().trade`.
   the extended `/summary` (AC-P2-35: visible without opening the queue). Exact placement is
   the ux stage's (P2-A9); existence and count are not.
 - **`src/ops/Customers.tsx`** — gains the trade-applications queue (P2-A9 puts it in the
-  Customers area): queue list per §7.2's DTO (reasons, snapshot, duplicate holders with links,
-  "not stated" label), approve/reject with reason, and on the customer 360:
+  Customers area): queue list per §7.2's DTO (reasons, snapshot, duplicate holders with
+  links), approve/reject with reason, and on the customer 360:
   ABN + trade status + read-only `discountPercent` ("No ABN on file" explicit — AC-P2-41),
   the application history (AC-P2-40), and the revoke action with reason.
 - **`src/ops/ProjectRecord.tsx`** (line ~228 header block) — renders the carried contact
@@ -819,10 +820,14 @@ from `me().trade`.
 
 `src/components/referral/JoinProgramFlow.tsx`:
 
-- `PayoutDetailsForm` already accepts `initial`; the join-flow call site (line ~220) passes
-  `initial={{ abn: user.abn ?? user.trade?.pending?.abn ?? "" }}` threaded from the pages
-  (`src/pages/ReferPage.tsx:283`, `src/pages/ReferralsPage.tsx:77` — both already hold the
-  auth user). Prefill only: not joining changes nothing (AC-P2-54).
+- **As built (accepted divergence — conformance review, 2026-08-19):** the flow reads
+  `me()` itself and prefills `r.user?.abn ?? r.trade?.pending?.abn ?? ""`; it does **not**
+  thread `user` from the pages as first designed. The designed route assumed
+  `ReferPage`/`ReferralsPage` already hold the auth user — neither does, so the prop route
+  meant plumbing `user` through two pages and App to deliver a courtesy. The flow is
+  authenticated-only by construction, and one `me()` yields both the standing ABN and a
+  pending application's — exactly the precedence asked for. Prefill only: the read never
+  writes, its failure changes nothing, and not joining changes nothing (AC-P2-54).
 - The submit handler (line ~68-90) skips `updateProfile({ abn })` when the digits equal the
   stored ABN (the common verified case — no write, no refusal), and maps the new
   `abn_locked` refusal to explanatory copy ("your ABN is verified / being checked" — final
@@ -836,6 +841,31 @@ while configuring" arrives through the existing preview path (`loadAccountDiscou
 client change. AC-P2-58 is therefore satisfied by construction and asserted in Playwright
 (no new price element bypasses `useGstMode`).
 
+### 8.8 Session identity and the trade refetch (rule recorded post-design, 2026-08-19)
+
+Built while closing a cross-account leak the design did not describe; recorded because a
+future contributor adding a fourth sign-in path must know the rule exists.
+
+`POST /api/auth/verify` deliberately carries no trade state (AC-P2-56), so **every path that
+establishes a session must re-read it** — there are three today (the gate, `/login`, the
+trade page). App therefore refetches `me()` from **one effect keyed on `user?.id`**, never
+from the individual sign-in call sites (per-call-site memory is how the gate once offered a
+verified tradie an ABN field the server had already granted on), and clears `trade` on
+sign-out rather than leaving one account's status visible to the next.
+
+The refetch is guarded by a **session generation**: App holds a `sessionGeneration` ref,
+bumped **synchronously inside the `setUser` wrapper, on identity change only** — a profile
+save on the same account must not void a legitimate in-flight refresh, and bumping from an
+effect left a post-render window in which a stale response could still land. Every
+`fetchMe()` App makes — the load-time session restore included — stamps the generation at
+launch and may only write its result while that stamp is still current. Without the guard, a
+response begun for account A and resolving after B signed in on the same machine wrote A's
+identity or trade status onto B's screen.
+
+**The rule:** any new path that establishes or changes a session goes through `setUser` (the
+wrapper is what invalidates in-flight reads — a raw state setter reopens the leak); any new
+`fetchMe()` consumer stamps and checks the generation before writing.
+
 ---
 
 ## 9. Security (mandatory)
@@ -848,7 +878,6 @@ client change. AC-P2-58 is therefore satisfied by construction and asserted in P
 | `abr_snapshot` (entity name, status, trading names, evaluation) | Commercial (register data + our judgment of the applicant) | Ops surfaces only; never in any customer DTO; capped/clamped at write (§4) so a hostile ABR response cannot balloon rows |
 | `queue_reasons`, `duplicateOf` | Commercial — **the oracle surface** | Ops-only. A duplicate rejection email never mentions another account (AC-P2-44); the customer response never names a criterion (P2-A3) |
 | `user.discount_percent` | Commercial | Written by exactly three writers after this phase: the grant (§6.5), the revoke (§6.5), and the 0054 migration. Read-only on ops customer surfaces; **never serialised into any customer-facing DTO** (P2-A7, AC-P2-47) |
-| `user.trade_label` | Commercial, self-declared | Gates nothing (D7); customer-editable |
 | `ABR_GUID` | **Credential** | Worker secret; exists only inside `lookupAbn`'s request construction; never logged, never in a DTO, never a `VITE_*` var (AB-P2-8) |
 | `user.phone` / `user.address_*` on the ops project record | Personal PII | New *display* on an existing staff surface behind the same `resolveStaff` + assigned-role gate that already serves this customer's name/email/ABN (AC-P2-55) |
 
@@ -872,7 +901,7 @@ client change. AC-P2-58 is therefore satisfied by construction and asserted in P
 |---|---|---|
 | `POST /api/trade/application` | session holder, self only | No subject id exists in path, query or body (AB-P2-4 structural). Every read and the INSERT bind `resolveUser(...).id`: pending check `SELECT … WHERE user_id = ?session AND status='pending'`; INSERT binds `user_id = ?session`; internal accounts refused (`user.type !== 'customer'` ⇒ 403) |
 | `GET /api/auth/me` (trade DTO) | session holder | `tradeStateOf` reads `WHERE user_id = ?session` only |
-| `POST /api/auth/profile` (abn/tradeLabel) | session holder, self only | unchanged Phase-1 shape: `UPDATE user … WHERE id = ?session`; the new `abn_locked` rule *narrows* what the session may write to its own row |
+| `POST /api/auth/profile` (abn) | session holder, self only | unchanged Phase-1 shape: `UPDATE user … WHERE id = ?session`; the new `abn_locked` rule *narrows* what the session may write to its own row |
 | `GET /api/ops/trade/applications` | assigned-role staff | `resolveStaff` + `hasAssignedRole`; reads `WHERE status='pending'` (all customers — that is the queue's job); the read is `logEvent`-attributed like the customer list (`ops.ts:1409` precedent) |
 | `POST /api/ops/trade/applications/:id/approve` | assigned-role staff | claim `UPDATE trade_application SET … WHERE id = ?1 AND status='pending'`; grant `UPDATE user SET … WHERE id = ?applicant AND type='customer'`; self-approval check (`decided_by <> user_id`, §6.5.3) |
 | `POST /api/ops/trade/applications/:id/reject` | assigned-role staff | claim `… WHERE id = ?1 AND status='pending'`; **no user write** |
@@ -888,7 +917,7 @@ the canonical failure the pipeline exists to prevent.
 
 | AB | Structural answer (where proven: `scripts/tests/trade-verification.test.mjs` unless noted) |
 |---|---|
-| AB-P2-1 self-grant | `updateAccountDetails` allowlist unchanged in shape — `discountPercent`, `tradeStatus`, `trade_verified`, `tier`, `type`, `role`, `id` are never read; `POST /api/trade/application` reads only `abn`/`businessName`/`label`/`source`. D1 re-read asserts the row |
+| AB-P2-1 self-grant | `updateAccountDetails` allowlist unchanged in shape — `discountPercent`, `tradeStatus`, `trade_verified`, `tier`, `type`, `role`, `id` are never read; `POST /api/trade/application` reads only `abn`/`businessName`/`source`. D1 re-read asserts the row |
 | AB-P2-2 approve own application via ops routes | customer session fails `resolveStaff` ⇒ 403, no body data; probed for queue-list, approve, reject, revoke |
 | AB-P2-3 crafting the outcome | `status`/`abrSnapshot`/`decidedBy`/`discountPercent` in the body are unread (nothing looks at them); status is whatever the server decided |
 | AB-P2-4 reading another's ABN | customer endpoints carry **no subject id at all**; `/api/trade/application/:id` does not route (404 probed) |
@@ -900,7 +929,7 @@ the canonical failure the pipeline exists to prevent.
 | AB-P2-10 duplicate escalation | `duplicate_abn` forces queue regardless of triple; the customer response is the constant under-review body — B never learns of A (probed byte-compare) |
 | AB-P2-11 staff/partner roles | internal refused at apply and approve (`type='customer'` in both guards); manufacturer fails `hasAssignedRole` on every ops-trade endpoint (probed with a manufacturer session) |
 | AB-P2-12 swapping a verified ABN | the §6.6 lock: differing digits ⇒ `abn_locked` 400, row unchanged (D1-asserted) |
-| AB-P2-13 unbounded input | raw-length caps before normalisation (ABN ≤ 32 raw, name ≤ 200, label enum); refusal names the field; nothing unbounded reaches D1 |
+| AB-P2-13 unbounded input | raw-length caps before normalisation (ABN ≤ 32 raw, name ≤ 200); refusal names the field; nothing unbounded reaches D1 |
 | AB-P2-14 replayed decision | the guarded claim (`WHERE status='pending'`) — second call, including concurrent, gets `changes=0` ⇒ 409; one decision row, `discount_percent` applied once (probed with parallel approves) |
 | AB-P2-15 immediate revocation | `discount_percent` read per priced request via unchanged `loadAccountDiscount`; nothing trade-related is in the session or any token — revoke then preview asserts retail (Playwright `ops.spec.ts` + node) |
 | AB-P2-16 ABN in transit | our endpoints: ABN only ever in POST bodies (route table §7); Playwright asserts no `abn` in any request URL. The outbound Worker→ABR GET is the one deliberate exception — §14.3 records the interpretation |
@@ -950,7 +979,7 @@ then code, then a commit — incremental and killable (handover §4.8).
 4. **`worker/lib/abr.ts`** + `scripts/tests/abr-stub.mjs` + `Env` additions
    (`ABR_GUID?`, `ABR_BASE_URL?` in `worker/types.ts`). Commit.
 5. **`worker/lib/trade.ts` + `worker/routes/trade.ts` + mount** (`worker/index.ts`), the
-   `withinCap` generalisation in `worker/lib/auth.ts`, the §6.6 lock + `tradeLabel` key in
+   `withinCap` generalisation in `worker/lib/auth.ts`, the §6.6 lock in
    `worker/lib/account.ts`, the `/me` trade DTO in `worker/routes/auth.ts`. The new
    `scripts/tests/trade-verification.test.mjs` grows with every slice: triple, duplicate,
    outage, oracle bodies, caps, mass-assignment, grant/revoke arithmetic. Commit per slice.
@@ -972,7 +1001,10 @@ API is live and node-verified — matching the spec's slice-1/2 landability requ
 ### Track (b) — UI (starts only after the mock gate; spec §11 slice 3 + the visible halves)
 
 9. **`src/data/api.ts` / `src/ops/api.ts`** types + functions (§7.4) — first UI-track commit
-   because both tracks' types must agree with what (a) shipped.
+   because both tracks' types must agree with what (a) shipped. *(As built: the
+   `src/data/api.ts` half landed here; the `src/ops/api.ts` half landed with step 12, where
+   its only consumers live. Recorded by the conformance review — both halves now exist as
+   §7.4 specifies.)*
 10. **`TradeApplicationCard`** + door (a) `TradePage` rebuild + door (b) `ProfilePage` rework.
 11. **Door (c)**: `QuoteReviewSubmit` optional ABN + caption + post-submit application call +
     `QuoteSubmitted` acknowledgement; `QuoteUser`/App plumbing.
@@ -1226,11 +1258,11 @@ decision ledger; everything this design added on its own authority is technical,
 |---|---|
 | `worker/types.ts` | `Env` gains `ABR_GUID?: string` (secret), `ABR_BASE_URL?: string` (test seam) — alongside the other optional secrets |
 | `worker/lib/auth.ts` | new `withinCap` export; `challengeSourceAllowed` (line ~128-134) delegates to it, behaviour identical |
-| `worker/lib/account.ts` | §6.6: `abn` branch (line ~72) consults `abnWriteAllowed` → new `abn_locked` result; new `tradeLabel` allowlist key; `AccountUpdateResult` union widened |
+| `worker/lib/account.ts` | §6.6: `abn` branch (line ~72) consults `abnWriteAllowed` → new `abn_locked` result; `AccountUpdateResult` union widened |
 | `worker/routes/auth.ts` | `/me` handler (lines 23-27) attaches `trade: tradeStateOf(...)`; `/profile` handler (lines 131-138) maps `abn_locked` → 400. **Lines 70-121 untouched** |
 | `worker/lib/referrals.ts` | lines 76-95 (`ABN_WEIGHTS` + `abnValid`) replaced by re-export from `src/data/abn.ts` |
 | `worker/lib/staff.ts` | exports `hasAssignedRole` (the ops.ts:99-100 predicate, one home) |
-| `worker/routes/ops.ts` | line 100: local `hasAssignedRole` alias → import; `/summary` SELECT + response (lines 292-322); `/customers` SELECT + rows (lines 1399-1420); `/customers/:id` response (lines 1472-1490): `discountPercent`, `tradeLabel`, `trade`, `tradeHistory`; `/projects/:id` response assembly (lines ~519-536): `customerPhone`, `customerAddress` |
+| `worker/routes/ops.ts` | line 100: local `hasAssignedRole` alias → import; `/summary` SELECT + response (lines 292-322); `/customers` SELECT + rows (lines 1399-1420); `/customers/:id` response (lines 1472-1490): `discountPercent`, `trade`, `tradeHistory`; `/projects/:id` response assembly (lines ~519-536): `customerPhone`, `customerAddress` |
 | `worker/index.ts` | route mounts after line 86: `/api/trade`, `/api/ops/trade` |
 | `package.json` | `test:trade` script; inserted into the `test` chain between `test:registration` and `test:api` (line 15) |
 | `scripts/tests/email-templates.test.mjs` | §11.4 four-key cases |
@@ -1243,7 +1275,8 @@ decision ledger; everything this design added on its own authority is technical,
 | File | Change lands at |
 |---|---|
 | `src/data/api.ts` | `TradeStateDto`, `applyForTrade`, `me()` return type (near `AuthUserDto`, line 127) |
-| `src/app/App.tsx` | `AuthUser`/`toAuthUser` gain `trade` (lines 44-66); `TradePage` mock form deleted + card mounted (lines 1690-1704; page fn ~1660-1720); `ProfilePage` Business-details card → `TradeApplicationCard` (lines 1400-1407); `case "trade"` plumbing (line 2164) |
+| `src/components/OtpSignIn.tsx` | `emailStepExtra` slot (renders inside step 1, between email and Turnstile — §18.2.3's mechanism) + `emailStepBlocked` (a malformed ABN blocks the step). Required by §18.2 revision 3; absent from this index until the conformance review |
+| `src/app/App.tsx` | As built: `trade` is **sibling state**, never a field on `AuthUser` (§8.8) — `sessionGeneration` ref + `setUser` wrapper + `refreshTrade` + the identity-keyed effect (~lines 1805-1890); `TradePage` mock form deleted + card mounted; `ProfilePage` Business-details card → `TradeApplicationCard`; `case "trade"` plumbing |
 | `src/components/QuoteReviewSubmit.tsx` | `QuoteUser` (line 55) + details-stage ABN/business-name fields; `outstanding` caption (lines 418-437); submit tail + `QuoteSubmitted` acknowledgement (lines 121-139, 380-395) |
 | `src/pages/QuoteProjectPage.tsx` | prop plumbing for the widened `QuoteUser` (lines 204-227) |
 | `src/components/referral/JoinProgramFlow.tsx` | `initial` abn prefill via call site (line ~220); submit handler skip-same-digits + `abn_locked` copy (lines 68-90) |
@@ -1449,21 +1482,24 @@ email"**). Below the actions, under a hairline, the held values render read-only
 formatted ABN) each with a **"Held"** chip, and one caption: **"Still here — we send these for
 checking as soon as you're in."**
 
-### 18.2.5 Step 3 — your details, with the check running beside it
+### 18.2.5 Step 3 — the check runs where the person is standing
 
-Off the submit gate, Phase 1's details step is the mandatory single-field `NameStep`
-(**"What's your name?"**, **"Full name"**, **"Save and continue"**). **Phase 2 does not modify
-it.** The moment the session exists, `applyForTrade({ abn, businessName, label, source:
-"trade_page" })` fires, and a work-tone block renders beneath the name field:
+**Premise corrected (conformance review, 2026-08-19):** this section assumed Phase 1's
+`NameStep` renders after the OTP on this page. It does not — the name interstitial covers
+account routes only and never appears on `/trade-account`, so there is no name field here for
+anything to sit beneath. `NameStep` is unmodified either way; an account route reached
+without a name still shows the interstitial first, exactly as Phase 1 shipped it. The moment
+the session exists, `applyForTrade({ abn, businessName, source: "trade_page" })` fires, and
+the work-tone block renders **inside the card, in place of the signup it replaces**:
 
 > **"Checking your ABN"** / **"We're checking the details you added. Carry on — we'll show you
 > the result here."**
 
-- Result arrives while the person is still on this step ⇒ the block is replaced in place by the
+- Result arrives while the person is still on the page ⇒ the block is replaced in place by the
   Active or Under-review panel (§18.4).
-- The person saves their name first ⇒ they land on their dashboard as Phase 1 sends them, and
-  the outcome panel is on their account page (§18.3). **No third state is invented for the
-  race**, and the outcome copy is identical either way.
+- The person navigates away first ⇒ the outcome panel is waiting on their account page
+  (§18.3). **No third state is invented for the race**, and the outcome copy is identical
+  either way.
 - **Transient failure** (network, 5xx, 429): the person **is signed in regardless** (AC-P2-3),
   and the block becomes a mute-tone retry — **"We couldn't send your details just now. Nothing
   is lost — try again."**; 429: **"That's a few attempts in a short time. Give it a few minutes
