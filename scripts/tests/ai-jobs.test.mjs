@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeRunDir, projectRoot } from "./helpers.mjs";
 
@@ -244,4 +245,35 @@ test("terminal AI runs cannot be overwritten by a late completion", async () => 
   };
   await completeAiRun(env, "run-cancelled", { status: "completed" });
   assert.match(statement, /status = 'running'/);
+});
+
+test("AC-42 the two engines stay exclusive — signing in schedules no AI job", async () => {
+  // D5: the deterministic matcher serves a signed-out visitor with an indicative
+  // price; the AI parser/estimator takes over for signed-in users. There is no
+  // automatic re-run on sign-in, and products do not silently change under
+  // someone who has already been quoted.
+  //
+  // A source scan, because the failure it guards is a NEW scheduling call site —
+  // an auth route, a claim-merge, a "welcome back" refresh — any of which would
+  // quietly re-price a visitor's lines the moment they created an account.
+  const schedulers = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(join(projectRoot, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { await walk(rel); continue; }
+      if (!/\.ts$/.test(entry.name)) continue;
+      const code = (await readFile(join(projectRoot, rel), "utf8"))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+      if (/INSERT INTO ai_job_claim/i.test(code)) schedulers.push(rel);
+    }
+  };
+  await walk("worker");
+
+  // Exactly two homes: the upload-finalise path, and the retry/dispatch machinery
+  // that re-runs work already scheduled. No auth or session route among them.
+  assert.deepEqual(schedulers.sort(), ["worker/lib/ai/jobs.ts", "worker/routes/files.ts"]);
+  for (const rel of schedulers) {
+    assert.ok(!/auth|session|login|claim-merge/i.test(rel), `${rel} must not schedule AI work`);
+  }
 });

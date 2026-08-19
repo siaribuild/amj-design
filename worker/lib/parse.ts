@@ -10,6 +10,8 @@ import { uuid } from "./util";
 import { logEvent } from "./activity";
 import { extractSchedule } from "./extract";
 import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
+import { createCachedPriceResolver } from "./estimator/pricing";
+import type { Product } from "../../src/data/catalogue";
 import { priceItem } from "./lines";
 import type { ProjectRow } from "./access";
 
@@ -185,7 +187,30 @@ export async function runScheduleParse(
   ).bind(extract.engine, extract.engineVersion ?? null, extract.pageCount || null, extract.inputTokens ?? null, extract.outputTokens ?? null, extract.costMicroUsd ?? null, jobId).run();
 
   // Match → estimator lines (faithful + flagged).
-  const lines: ParsedLine[] = matchSchedule(extract.rows);
+  //
+  // THE PRICER IS INJECTED HERE (D6). `matchSchedule` is pure and synchronous
+  // and has no pricing engine of its own — pricing's single home is D1's
+  // `computePrice` — so the Worker builds the resolver once per parse job and
+  // hands it a synchronous closure. Without it the matcher falls back to the
+  // series-bias order, which is what the browser gets and is correct there.
+  //
+  // Built with a NULL user on purpose: there is no account on this path, and a
+  // uniform account discount cannot reorder a list anyway, so comparing base
+  // rate-card totals gives every visitor the same order (AD11).
+  const priceFromCache = await createCachedPriceResolver(env, null);
+  const priceOf = (product: Product, widthMm: number, heightMm: number): number | null => {
+    try {
+      const snapshot = priceFromCache({
+        family: product.slug, widthMm, heightMm, qty: 1, optionSlugs: [],
+      });
+      return snapshot.ok && snapshot.total > 0 ? snapshot.total : null;
+    } catch {
+      // A product this rate card cannot price is not a cheap product; it simply
+      // does not compete, and the bias order still answers.
+      return null;
+    }
+  };
+  const lines: ParsedLine[] = matchSchedule(extract.rows, { priceOf });
 
   // Hard row cap: a single apply must stay within the D1 per-invocation budget.
   // Fail cleanly rather than exceed it mid-batch after paying for extraction.

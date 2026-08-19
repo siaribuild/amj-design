@@ -6,6 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
@@ -385,4 +386,24 @@ test("AC-41 pricing is memoised per (family, section, size), not per row × prod
   // Two distinct sizes in one family, five products in it: ten lookups, not 250.
   assert.equal(calls.length, 10, calls.join(" "));
   assert.equal(new Set(calls).size, 10, "and every lookup asked a different question");
+});
+
+test("the Worker parse path injects a pricer; the client path deliberately does not", async () => {
+  // Two callers, two correct answers. The Worker has D1 and injects the real
+  // engine, so a visitor's parsed schedule is priced against the rate card. The
+  // browser has no pricing engine and must not grow one — a second engine is
+  // exactly the drift this codebase keeps one home to prevent — so the sample
+  // schedule renders in bias order, which is a live path and not a fallback.
+  const source = (rel) => readFile(join(projectRoot, rel), "utf8");
+
+  const parse = await source("worker/lib/parse.ts");
+  assert.match(parse, /matchSchedule\([\s\S]{0,200}priceOf/,
+    "the Worker supplies the lookup to matchSchedule");
+  assert.match(parse, /createCachedPriceResolver\(\s*env\s*,\s*null\s*\)/,
+    "built with a NULL user: there is no account on the anonymous path (AD11)");
+
+  const app = await source("src/app/App.tsx");
+  const call = app.match(/matchSchedule\([^)]*\)/);
+  assert.ok(call, "the client still matches the sample schedule");
+  assert.ok(!/priceOf/.test(call[0]), "and passes no pricer");
 });
