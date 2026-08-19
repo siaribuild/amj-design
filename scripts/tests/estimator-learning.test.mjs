@@ -11,7 +11,7 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS } from ${p("worker/lib/estimator/learning.ts")};
+      export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel } from ${p("worker/lib/estimator/learning.ts")};
       export { decide } from ${p("worker/lib/estimator/select.ts")};
       export { captureRecommendationOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
     `,
@@ -19,7 +19,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, captureRecommendationOutcomes, decide } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel, captureRecommendationOutcomes, decide } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -506,4 +506,28 @@ test("AC-31/AC-35 below the floor it prefers nothing, and the evidence names its
   // "3 of 4 similar openings went this way" can see which of the four were real
   // in-platform reviews without inventing the number.
   assert.deepEqual(b.provenance, { inPlatform: 3, backfilled: 1 });
+});
+
+test("buildShadowModel reads only quality-gated, keyed rows", async () => {
+  let seen = null;
+  const env = { DB: { prepare(sql) { seen = sql; return { async all() { return { results: [
+    { retrieval_key: BUCKET, final_product_slug: "amj-b", provenance: "in_platform" },
+  ] }; } }; } } };
+  const model = await buildShadowModel(env);
+
+  // The corpus is the REVIEWED one: rows a human endorsed at quote issue, and
+  // only those. A pending row is an unsettled question and a rejected one is a
+  // recorded mistake — neither is evidence about what humans choose.
+  assert.match(seen, /FROM recommendation_outcome/i);
+  assert.match(seen, /recommendation_eligible\s*=\s*1/i);
+  assert.match(seen, /quality_state\s*=\s*'approved'/i);
+  // And a row with no key belongs to no bucket, so it is not even fetched.
+  assert.match(seen, /retrieval_key IS NOT NULL/i);
+  // No project, account or price is read: the aggregate that leaves this model
+  // is a product slug and some counts, which is what makes a cross-tenant read
+  // defensible at all.
+  assert.ok(!/project_id|account|price|final_line_total|context_json/i.test(seen), seen);
+
+  assert.equal(model.version, RETRIEVAL_KEY_VERSION);
+  assert.equal(model.lookup(shadowOpening()).supportFor("amj-b"), 1);
 });

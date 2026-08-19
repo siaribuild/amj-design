@@ -9,7 +9,7 @@ import type { Env } from "../../types";
 import { createCatalogueRepository, sanityExecutor } from "./catalogue";
 import { resolvePairing, selectWithSplits, splitSegmentSpecs } from "./splitCandidates";
 import { persistSelection } from "./persist";
-import { buildApprovedThermalModel } from "./learning";
+import { buildApprovedThermalModel, buildShadowModel } from "./learning";
 import { createCachedPriceResolver } from "./pricing";
 import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
@@ -197,6 +197,10 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   // weights (ADR 0007) — a cheapest-wins ladder has no channel for a preference,
   // and the dark learned layer that replaces it arrives with Phase 3.
   const thermalModel = await buildApprovedThermalModel(env);
+  // The dark learned layer (D11), built ONCE per run from the reviewed corpus.
+  // It is handed to the outcome builder and to nothing else: staff see what it
+  // would have said, and it moves no recommendation in this release.
+  const shadow = await buildShadowModel(env);
   // The project's owner, for the account discount. Resolved once here rather than
   // per candidate — an estimate prices dozens of candidates per opening.
   const owner = await env.DB.prepare("SELECT owner_user_id FROM project WHERE id = ?")
@@ -255,6 +259,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     const result = await selectWithSplits(opening, hint, {
       repo,
       priceFn,
+      shadow,
       primaryCategory: opening.family ?? null,
       // ONE WAY ONLY. A door composite may take a fixed WINDOW lite; a window
       // composite may never take a door.

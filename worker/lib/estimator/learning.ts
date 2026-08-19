@@ -196,6 +196,33 @@ export function aggregateShadow(rows: ShadowRow[]): ShadowLearnedModel {
   };
 }
 
+/**
+ * Build the shadow model from the reviewed corpus.
+ *
+ * THE READ IS CROSS-TENANT, and that is worth naming rather than glossing: it
+ * aggregates over every account's approved outcomes. What makes it defensible is
+ * WHAT LEAVES — a product slug and some counts. No project id, no account id, no
+ * price, no free text and no `context_json` is selected, so nothing that could
+ * identify one customer's job can reach another customer's estimate. The bucket
+ * itself is four enumerated values (see `retrievalKey`), so it carries no
+ * customer text either.
+ *
+ * `recommendation_eligible = 1 AND quality_state = 'approved'` is the reviewed
+ * corpus and only that: a `pending` row is an unsettled question and a
+ * `rejected` one is a recorded mistake, and neither is evidence about what
+ * humans choose. A row with no key belongs to no bucket, so it is not fetched.
+ */
+export async function buildShadowModel(env: Env): Promise<ShadowLearnedModel> {
+  const { results } = await env.DB.prepare(
+    `SELECT retrieval_key, final_product_slug, provenance
+       FROM recommendation_outcome
+      WHERE recommendation_eligible = 1
+        AND quality_state = 'approved'
+        AND retrieval_key IS NOT NULL`,
+  ).all<ShadowRow>();
+  return aggregateShadow(results ?? []);
+}
+
 /** The UNIQUE modal product, above the floor. A bare argmax on a tie is an
  *  alphabetical coin flip dressed up as "the layer would have preferred X"; the
  *  reviewer sees the counts either way, so suppressing the claim costs them

@@ -20,6 +20,7 @@ import {
 import { enumerateMakeUps, type CompositeUnit, type MakeUp } from "./compositeSelect";
 import { area, makeUpDeviation } from "./compositeRank";
 import { resolvedRequirement } from "./rules";
+import type { ShadowLearnedModel } from "./learning";
 import { proposeSplit, type ProposedSegment, type SplitHint, type SplitProposal } from "./split";
 import type { Deviation } from "./ladder";
 import type { CandidateOutcome } from "../../../src/data/recommendation";
@@ -111,6 +112,9 @@ export interface SplitContext {
   primaryCategory?: string | null;
   alternateCategory?: string | null;
   section?: "window" | "door";
+  /** The dark learned layer, forwarded to decide() so the outcome builder can
+   *  stamp it. It reaches no comparator on the way through. */
+  shadow?: ShadowLearnedModel | null;
   /** Resolve the family's authored pairing from the representative product.
    *  Async because the infill family's widest frame is a catalogue lookup, and
    *  a panel cannot be sized without it. Called at most once per opening. */
@@ -404,7 +408,7 @@ export async function selectWithSplits(
   ctx: SplitContext,
 ): Promise<SelectionResult> {
   const evaluation = await evaluateCandidates(opening, ctx.repo, ctx.priceFn);
-  if (!splitsAreEligible(hint, evaluation)) return decide(opening, evaluation);
+  if (!splitsAreEligible(hint, evaluation)) return decide(opening, evaluation, { shadow: ctx.shadow ?? undefined });
 
   // WHICH PRODUCT'S GEOMETRY THE SPLIT DIVIDES BY.
   //
@@ -425,5 +429,5 @@ export async function selectWithSplits(
   // A split was considered and nothing could supply it. Somebody has to be
   // told: refusing silently would leave a reviewer looking at one oversize line
   // with no hint that a make-up was tried and why it could not be built.
-  return { ...decide(opening, evaluation, { splits }), splitNote: note };
+  return { ...decide(opening, evaluation, { splits, shadow: ctx.shadow ?? undefined }), splitNote: note };
 }
