@@ -174,8 +174,16 @@ export default function App() {
       <IonReactHashRouter>
         <IonSplitPane contentId="main" when={wide}>
           <NavDrawer />
+          {/* id="main" belongs on the DIRECT child of ion-split-pane. It used
+              to sit on the router outlet, and once IonTabs wrapped the outlet the
+              split pane could no longer find its content among its children — so
+              at 1440 the 260px rail OVERLAID the record instead of offsetting it,
+              measured as outlet left:0 width:1440 with no split-pane-main class.
+              IonTabs takes no id prop, so the id goes on a host element around
+              it. The menu's contentId points here too. */}
+          <div id="main" className="tabshost">
           <IonTabs>
-            <IonRouterOutlet id="main" animation={planeTransition}>
+            <IonRouterOutlet animation={planeTransition}>
               <Route exact path="/dashboard" component={DashboardPage} />
               <Route exact path="/enquiries" component={EnquiriesPage} />
               {/* The Projects stack. Everything about a record lives under the
@@ -219,6 +227,7 @@ export default function App() {
               </IonTabButton>
             </IonTabBar>
           </IonTabs>
+          </div>
         </IonSplitPane>
 
         {editing && !paneBand && wc !== "phone" && (

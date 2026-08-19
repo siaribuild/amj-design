@@ -86,3 +86,9 @@ ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
   color: var(--ion-color-primary);
   --color: var(--ion-color-primary);
 }
+
+/* The split pane's main content. It exists only to carry id="main", because
+   IonTabs takes no id prop and ion-split-pane needs to find its content among
+   its DIRECT children. */
+.tabshost { flex: 1 1 auto; position: relative; display: flex; min-width: 0; }
+.tabshost > ion-tabs { flex: 1 1 auto; min-width: 0; }
