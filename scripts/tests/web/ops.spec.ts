@@ -542,7 +542,12 @@ test("a queued application is visible, explained, and decidable", async ({ page 
   expect(queueText, "and the reason it queued").toMatch(/name doesn't match/i);
 
   // AC-P2-37: a decision can be made from here, and it sticks.
-  await queue.getByRole("button", { name: /^approve$/i }).first().click();
+  // Scoped to THIS applicant's card, never `.first()`. Other tests in this file
+  // also leave applications queued, and approving whichever happened to sort
+  // first would decide somebody else's — passing or failing for reasons that
+  // have nothing to do with what this test claims.
+  const card = queue.locator("> div").filter({ hasText: email });
+  await card.getByRole("button", { name: /^approve$/i }).click();
   await expect(queue.getByText(email), "the decided application leaves the queue")
     .toHaveCount(0, { timeout: 15_000 });
 
@@ -765,4 +770,80 @@ test("editing a customer's details does not erase their trade status", async ({ 
   expect(said, "and the rate is not blanked to 0%").not.toMatch(/rate 0%/i);
   await expect(trade.getByRole("button", { name: /revoke/i }),
     "the revoke control survives the edit").toBeVisible();
+});
+
+// ─── A profile save must not resurrect trade state somebody else removed ─────
+// Found by the Codex stop-gate review, as the follow-on to the merge fix.
+//
+// Merging the PATCH response over the held customer was right about the fields
+// the PATCH owns and wrong about the ones it does not. Trade status is DERIVED
+// (ADR-0002) and is not in that reply, so a merge preserves whatever the screen
+// was last told — including a grant that has since been revoked by somebody
+// else, or in another tab, or by this same person minutes earlier.
+//
+// The screen then shows trade pricing on an account that no longer has it, and
+// offers a revoke button for a grant that is already gone. That is worse than
+// the bug it replaced: the first version lost true information, this one
+// asserts false information, and neither is visible without a reload.
+//
+// The fix is not a smarter merge. It is that a write to profile fields must
+// re-read the fields it does not own, because it cannot know whether they moved.
+test("saving profile details does not resurrect a revoked grant", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const email = `ops-stale-${Date.now().toString(36)}@spare11joinery.com.au`;
+  const challenge = await page.request.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": "198.51.145.3" },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: "81000180840", businessName: "Spare 11 Joinery Pty Ltd", source: "trade_page" },
+    headers: { "X-Forwarded-For": "198.51.145.4" },
+  });
+  expect((await applied.json()).status, "fixture must auto-pass").toBe("verified");
+
+  const staffEmail = `ops-stale-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  await page.getByRole("row", { name: new RegExp(email) })
+    .getByRole("button", { name: /open/i }).click();
+
+  const trade = page.getByTestId("customer-trade");
+  await expect(trade.getByRole("button", { name: /revoke/i })).toBeVisible({ timeout: 15_000 });
+
+  // SOMEBODY ELSE revokes it — another console, another tab, a colleague.
+  // This screen is now holding a grant that no longer exists.
+  const revoked = await page.evaluate(async (addr) => {
+    const list = await (await fetch("/api/ops/customers", { credentials: "same-origin" })).json();
+    const row = list.customers.find((c: { email: string }) => c.email === addr);
+    const res = await fetch(`/api/ops/trade/customers/${row.id}/revoke`, {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Concurrent revocation from elsewhere" }),
+    });
+    return res.ok;
+  }, email);
+  expect(revoked, "the out-of-band revoke landed").toBe(true);
+
+  // Now edit something unrelated and save.
+  await page.getByRole("button", { name: /edit details/i }).click();
+  await page.getByLabel("Phone").fill("0499 777 888");
+  await page.getByRole("button", { name: /save changes/i }).click();
+
+  await expect(page.getByText("0499 777 888"), "the edit saved").toBeVisible({ timeout: 15_000 });
+
+  const said = (await trade.innerText()).replace(/\s+/g, " ");
+  expect(said, "the revoked grant must NOT come back").toMatch(/not on trade pricing/i);
+  await expect(trade.getByRole("button", { name: /revoke/i }),
+    "and no revoke control for a grant that is already gone").toHaveCount(0);
 });

@@ -35,7 +35,8 @@ import { test, expect, type Page } from "@playwright/test";
  *  correctly so. An auto-pass also CONSUMES its ABN for the rest of the run (the
  *  next applicant on that number is a duplicate), so each journey takes its own. */
 const SPARE = (index: number) => ({
-  abn: ["81000008768", "81000020276", "81000043566", "81000045073", "81000066856"][index],
+  abn: ["81000008768", "81000020276", "81000043566", "81000045073", "81000066856",
+        "81000068363", "81000120149", "81000122752"][index],
   businessName: `Spare ${index} Joinery Pty Ltd`,
   domain: `spare${index}joinery.com.au`,
 });
@@ -545,4 +546,47 @@ test("the submit-gate acknowledgement denies the quote SLA and promises no timef
     return (ack.compareDocumentPosition(back) & 2) !== 0;
   });
   expect(order, "the acknowledgement sits after the action buttons").toBe(true);
+});
+
+// ─── 11. AC-P2-19 — a verified account is never asked again, by ANY route ────
+// Tester finding N-1 (MAJOR), and the control case is what makes it damning:
+// the same account, in the same state, asserting the same thing, passes when it
+// arrives already signed in and fails when it signs in AT the gate.
+//
+// The client derives "offer the group?" from App's `trade`, and the gate's
+// sign-in set the user without refreshing it. `/api/auth/verify` deliberately
+// carries no trade state (AC-P2-56 keeps that response byte-identical to Phase
+// 1), so the server knew and the client did not — and a verified tradie was
+// asked for an ABN the system had already checked and granted on.
+test("a verified account sees no ABN field at the gate, however it signed in", async ({ page }) => {
+  // Its OWN spare: an auto-pass consumes its ABN for the rest of the run, so a
+  // journey reusing one that already granted would queue as a duplicate — and
+  // would then be asserting the wrong thing for the wrong reason.
+  const business = SPARE(5);
+  const email = emailAt(business.domain);
+
+  // Verified BEFORE the gate ever sees them, and signed out again so the gate
+  // has to do the sign-in itself.
+  await apiSignIn(page.request, email);
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: business.abn, businessName: business.businessName, source: "profile" },
+  });
+  expect((await applied.json()).status, "fixture must auto-pass").toBe("verified");
+  await page.request.post("/api/auth/logout");
+
+  // Sign in AT THE GATE — the path the control case does not take.
+  await openReview(page);
+  // Signed out, so the gate starts at stage 0: the delivery postcode, then the
+  // press that opens the sign-in step.
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  await otpSignIn(page, email);
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible({ timeout: 15_000 });
+
+  const me = await (await page.request.get("/api/auth/me")).json();
+  expect(me.trade.verified, "the server knows this account is verified").toBe(true);
+
+  await expect(page.getByLabel("ABN (optional)"),
+    "AC-P2-19: a verified account is not asked for an ABN, whichever door it came through")
+    .toHaveCount(0);
 });

@@ -298,16 +298,27 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
       const patch: Record<string, string> = { name: draft.name, phone: draft.phone, company: draft.company, abn: draft.abn };
       if (isAdmin && draft.email.trim() !== cu.email) patch.email = draft.email.trim();
       const r = await opsUpdateCustomer(cu.id, patch);
-      // MERGE, never replace. The PATCH answers with the PROFILE it just wrote —
-      // name, phone, company, abn — and nothing else. Trade status and the
-      // account rate are DERIVED (ADR-0002) and are not in that reply, so
-      // replacing the customer object made saving a phone number read as "not on
-      // trade pricing, rate 0%" and took the revoke control off the screen.
+      // Paint the fields the PATCH owns immediately, then RE-READ the record.
       //
-      // Nothing was lost in the database, which is what made it dangerous: the
-      // only way to learn otherwise was to reload, and somebody would have
-      // re-granted a rate that was never gone.
+      // The PATCH answers with the PROFILE it wrote — name, phone, company, abn —
+      // and nothing else. Trade status and the account rate are DERIVED
+      // (ADR-0002) and are absent from that reply, so this screen cannot settle
+      // them from the response alone:
+      //
+      //   - REPLACING the customer with the reply dropped them, and saving a
+      //     phone number made a verified customer read as "not on trade pricing,
+      //     rate 0%" with no revoke control.
+      //   - MERGING kept whatever the screen was last told, which resurrects a
+      //     grant somebody else revoked in the meantime — offering a revoke
+      //     button for a grant that is already gone. That is the worse of the
+      //     two: the first lost true information, this asserts false
+      //     information, and neither is visible without a reload.
+      //
+      // There is no smarter merge available, because this screen cannot know
+      // whether the fields it does not own have moved. So a write to profile
+      // fields re-reads the ones it does not own.
       setD({ ...d, customer: { ...d.customer, ...r.customer } });
+      reload();
       setEditing(false);
     } catch (e) {
       setEditErr(String(e).includes("409") ? "That email is already in use by another account."

@@ -1818,6 +1818,20 @@ export default function App() {
   const refreshTrade = useCallback(() => {
     fetchMe().then((r) => setTrade(r.trade ?? null)).catch(() => {});
   }, []);
+  // Keyed on IDENTITY, not on each sign-in call site.
+  //
+  // `/api/auth/verify` deliberately carries no trade state — AC-P2-56 keeps that
+  // response byte-identical to Phase 1 — so every path that establishes a
+  // session has to re-read it, and there are three of them (the gate, /login,
+  // the trade page). Making each remember was how the gate came to offer a
+  // verified tradie an ABN field the server already knew it had granted on
+  // (tester finding N-1). One effect keyed on the account id cannot be forgotten
+  // by a fourth path, and clears the state on sign-out rather than leaving one
+  // account's trade status visible to the next.
+  useEffect(() => {
+    if (user?.id) refreshTrade();
+    else setTrade(null);
+  }, [user?.id, refreshTrade]);
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
   const [focusRecord, setFocusRecord] = useState<TrackFocus>(null);
@@ -2187,7 +2201,7 @@ export default function App() {
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
-      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user && { ...user, tradeVerified: trade?.verified ?? false, tradePending: !!trade?.pending }} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => setUser(toAuthUser(u))} onEditProfile={() => navigateTo("account")} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user && { ...user, tradeVerified: trade?.verified ?? false, tradePending: !!trade?.pending }} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => { setUser(toAuthUser(u)); refreshTrade(); }} onEditProfile={() => navigateTo("account")} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
