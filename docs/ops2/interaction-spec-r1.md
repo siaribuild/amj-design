@@ -211,7 +211,7 @@ deepens the stack, so Back still returns to the list from wherever you stopped.
 
 ---
 
-## 4. The disclosure ruling — what replaced it
+## 4. The disclosure ruling — what replaced it (SUPERSEDED for the line plane by section 18)
 
 > "I can see you creating collapsable sections for all the different information
 > groups. Will stop you here — don't like the approach. not great UX pattern."
@@ -1153,3 +1153,198 @@ private layout is legitimate.
 3. Everything else in R1d is a design change, not a spec change.
 
 The §13 and §15 decision lists are unchanged and still open.
+
+---
+
+# 18. R1e — the line plane, reimagined
+
+The record/list view is **approved and closed**. This section covers the line
+plane only, mobile only. No colour, no desktop.
+
+## 18.1 Why this is a rebuild and not a fix
+
+> "When I said 'remove accordions' as they are a cheat code for putting a lot of
+> information into a single screen without thinking, which I think is correct
+> still, you simply did exactly that."
+
+The accordion was never the problem — it was the symptom. The disease was
+putting everything on one screen without deciding what belonged there. R1b
+opened the lids, which did not treat it: it made the pile visible. Then R1b added
+a **verdict index** on top, which is a contents page for a document nobody chose
+to write.
+
+So R1e does not re-lay-out the same content. It starts from the job and lets the
+content follow.
+
+## 18.2 The five questions
+
+**What is the reviewer doing?** A founder, on a phone, with the customer on the
+call. They tapped this line from a list that already told them the code, the
+product, the size, the price and whether it needs review. They did not come to
+re-read those. They came for the two things a row cannot carry:
+
+> *"Show me the thing, and tell me what is wrong with it."*
+
+**What is primary?**
+
+1. **The drawing.** The highest-praised element in the product and the fastest
+   answer to *is this the right thing* — shape, arrangement, which way it opens,
+   real dimensions. It is also what the reviewer turns the phone around to show,
+   and what lets them say "the wide one with the two openers" to a customer who
+   does not read schedules. Treated as primary, per the brief's instruction and
+   R-17/R-154.
+2. **The verdict, in words.** Not five verdicts — the problems, or the stated
+   absence of them. One line each; there are rarely more than two.
+
+**What is the primary action?** **Edit.** The grill settled it: adjudication is
+performed conversationally and *"its normal outcome is a change, not a tick"*.
+So the footer is Edit, not Confirm. R-153 unchanged.
+
+**What earns a second step?** The test is *is this a different job*, not *is this
+more stuff*.
+
+| Step | The different job |
+|---|---|
+| **Alternatives** | Pricing a compromise while the customer is talking — *"home owners might want to save money and choose the next-worse solution that is cheaper despite marginally failing to meet requirements."* A different motive from the one that opened the line. |
+| **Notes** | Capturing what was said while the reason is still in the room, which the grill calls load-bearing. Needs a composer, not a reading surface. |
+
+**What should not be on this screen at all?**
+
+- The verdict index — a contents page for a screen you can see all of.
+- The five section headings — the accordion with its lids off.
+- The facts grid — the drawing dimensions the opening, the header names it, the
+  row you tapped priced it.
+- `Source: no page reference recorded` — absent provenance belongs where
+  provenance is the subject.
+- The candidates table, inline, as IDs.
+
+## 18.3 The screen
+
+```
+┌──────────────────────────────────────────────┐
+│ ‹        W04 · Bed 1                    ⋯    │  56  identity
+│ ‹ W03 Ensuite            W05 WC ›            │  44  neighbours, NAMED
+├──────────────────────────────────────────────┤
+│                                              │
+│            [ the drawing ]                   │ 235  primary
+│         1,200 × 3,300 mm · 3 units           │
+├──────────────────────────────────────────────┤
+│▎Glazing does not meet the requirement on     │ 200  the verdict,
+│ this elevation.                              │      then the winner's
+│  CHOSEN FROM   the plan's schedule, A-201    │      reasoning
+│  REQUIREMENT   Uw ≤ 3.9 · SHGC ≤ 0.44        │
+│  THIS PRODUCT  Uw 4.1 · SHGC 0.52            │
+│  [ Show what it was chosen over          › ] │
+├──────────────────────────────────────────────┤
+│  PRODUCT    AMJ67T Series Awning Window      │ 125  three facts that
+│  GLAZING    DG Low-E 4-12-4                  │      get changed on a call
+│  LINE TOTAL $1,840.00  ex GST                │
+├──────────────────────────────────────────────┤
+│ Notes · 1 on this line · latest Gedas     ›  │  56
+├──────────────────────────────────────────────┤
+│ [ Edit W04 ]                          [ ⋯ ]  │  49  one action
+└──────────────────────────────────────────────┘
+```
+
+**Measured: the whole screen fits with no scrolling on arrival** — at 375×812
+*and* at 320×690, in both palettes, including the missing-rate case (l06) and the
+failed-read case (l10). That is the test of whether the decisions above were real:
+if everything still had to be there, it would not fit.
+
+## 18.4 The verdict block carries the ruling
+
+> "winner's reasoning visible; losers one tap away, ranked, with their reason.
+> But it stays collapsed by default so the common case isn't buried."
+
+R1c inverted this twice: the losers were inline, at the bottom, as product IDs
+against the action panel — which buried the common case under the rare one *and*
+rendered a conversation aid as a debug dump.
+
+Now: the **winner's reasoning is visible** (three lines — what it was chosen
+from, what it had to meet, what it achieves), and the **losers are one tap away**
+behind a labelled control. C4 governs the tone: a problem is stated, never gated,
+and nothing asks to be acknowledged.
+
+## 18.5 The alternatives plane
+
+The **motive shapes the screen**: not "audit the estimator" but "is there a
+cheaper way". So each row leads with the product as a person would say it, states
+plainly whether it passes or what it misses, and offers the one thing the
+conversation needs next.
+
+- **R-53.1 — there is no price column.** `candidate_result` stores no price, and
+  inventing one would be a fiction at exactly the moment money is discussed.
+- **R-56 — pricing an alternative is a separate, metered read.** So it is an
+  explicit per-row `Price it` action, and the meter is stated, not hidden.
+- **R-53.2 / R-53.3** — the panel states its own source, and says the set is
+  rebuilt on re-parse, because a reviewer who saw it yesterday should know why it
+  may have changed.
+- The footer states that choosing an alternative is an edit made in the editor,
+  so nothing on this plane changes the quote on its own.
+
+## 18.6 Navigation: named neighbours, and the filmstrip retired
+
+> "probably more to the top, with prev/current/next style navigation - user can
+> always go back into list and click on required item, if it is further away
+> within the list, doesn't he?"
+
+The difference from the rejected `‹ 4/18 ›` is that **neighbours are identified,
+not counted**. `W03 Ensuite` tells you what the control will show you; `4/18`
+told you only that something existed. You can decide whether to move *before*
+moving, which is the whole of what was wrong with a counter.
+
+**The bottom filmstrip is removed from this screen**, and the argument is his
+own. The far case belongs to the list, which is one tap away and now approved.
+Once the top names both neighbours, the filmstrip's only remaining advantage was
+jumping several lines at once — the exact case he says the list serves better.
+Keeping both would be two mechanisms for one job, costing 44px of the scarcest
+space and a second thing to learn.
+
+**The budget is neutral:** 44px out at the bottom, 44px in at the top — and the
+mechanism moves from under the thumb to the reachable half, where a *decision*
+(which line next) belongs, leaving the thumb zone to the one *action*.
+
+The filmstrip **stays on the desktop canvas**, where the rail is permanently
+beside you rather than one tap away and the horizontal budget is free.
+
+R-158 is still satisfied: four routes to a sibling line — the neighbours bar, the
+list, the overflow sheet, and `[` / `]` on a keyboard.
+
+## 18.7 Rules that die, and why that is sound
+
+| Rule | Fate |
+|---|---|
+| **R-43** — identical chip set and order on every line | Dies. No chips, no sections. |
+| **R-47** — the arrival walk opens the first matching section | Dies as a *mechanism*. The verdict block is always the first thing under the drawing, so the walk is not enacted — it is the layout. |
+| **R-48** — session memory of what was opened | Already gone in R1b; nothing left to remember. |
+| **R-44** — a failed panel says so in its own header | **Survives and is stronger.** A failed read is now a *problem in the verdict*, not a heading that has to be found. |
+| **R-45** — verdicts from real fields | Survives, in the problem list and the note count. |
+| **R-53.x / R-56** | Move intact to the alternatives plane. |
+
+---
+
+# 19. Spec changes R1e requires
+
+These are structural, not wording, so they need the PM rather than a note here:
+
+1. **Sections are removed as a concept from the line plane.** Any acceptance
+   criterion phrased as "the Why / Glass / Build / Price / Trail section shows
+   X" no longer has a referent. The *content* survives in three places — the
+   verdict block, the spec rows, and the alternatives plane — so this is a
+   re-homing exercise, not a deletion, but every such AC needs rewriting against
+   the new home.
+2. **R-43 and R-47 should be retired in `LEARNINGS.md`**, with R-47's intent
+   preserved as "the verdict leads the screen" rather than as a walk.
+3. **The alternatives plane needs its own criteria**, including the negative
+   ones: no price is stored against a candidate, the price fetch is metered and
+   says so, and selecting an alternative does not change the quote outside the
+   editor.
+4. **Line notes are now a plane, not a section.** Any AC that expects them inline
+   on the line body needs moving.
+
+# 20. Still open
+
+§13, §15 and §17's lists are unchanged. The `OPEN-DEFECTS.md` decision list —
+delivery as an issue gate, `waitingOn` generalisation, the delivery divergence
+record, the line-note vocabulary, the `ItemForm` disclosure fence, and
+`feat/ops-ux-gap-pass` — remains as it was.
