@@ -1,7 +1,13 @@
-// WS8: end-to-end tests of the PRODUCT RECOMMENDATION model (selectForOpening) —
-// the non-blocking thermal contract, the W01 impossible-band regression, glass
-// chosen to meet the band, operation/dimension authority, and the historical/LLM
-// learning nudge. Drives the real selection engine over a fixture catalogue.
+// End-to-end tests of the PRODUCT RECOMMENDATION model (selectForOpening),
+// driving the real selection engine over a fixture catalogue.
+//
+// This suite owns the criteria that only exist once the ladder is WIRED: the
+// hard constraints refusing a substitution and saying so in structured detail
+// (AC-7, AC-11), energy behaving as an objective (AC-9, AC-10, AC-12), the
+// emitted contract (AC-22), certified-vs-estimated moving no order (AC-49), and
+// the run statuses that have to tell a catalogue gap from a measuring gap
+// (E3, E7). The ladder's own arithmetic is proven fixture-only in
+// recommendation-ladder.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -16,13 +22,12 @@ await build({
   stdin: {
     contents: `
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
-      export { aggregateHistorical, contextKey } from ${p("worker/lib/estimator/learning.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { selectForOpening, aggregateHistorical, contextKey } = await import(pathToFileURL(outfile).href);
+const { selectForOpening } = await import(pathToFileURL(outfile).href);
 
 // ── Fixture catalogue ────────────────────────────────────────────────────────
 const glass = (variantId, uValue, shgc, over = {}) => ({
@@ -160,4 +165,153 @@ test("AC-32 the ladder has no channel for a learned preference to arrive through
   // Selection depends on the opening, the catalogue and the price — nothing else.
   assert.equal(r.selected.candidate.slug, "amj-awn", "the slug tiebreak, not a history");
   assert.equal(r.evaluated.every((e) => e.candidateOutcome.learned === null), true);
+});
+
+// ── Hard constraints (D3) ───────────────────────────────────────────────────
+
+test("AC-7 no operation substitution: the fixed product is EXCLUDED, and named", async () => {
+  // A fixed unit is not a candidate for an awning under any pricing. Nothing is
+  // selected, and the refused candidate is persisted WITH its reason so review
+  // can see the catalogue was asked and answered.
+  const wrongOp = {
+    async queryCandidates() { return [product("amj-fixed", ["fixed"])]; },
+    catalogueVersion() { return "cat-v1"; },
+  };
+  const r = await selectForOpening(opening({ operationType: "awning" }), wrongOp, priceFn);
+  assert.equal(r.selected, null);
+  assert.equal(r.status, "no_candidate");
+  const outcomes = r.evaluated.map((e) => e.candidateOutcome);
+  assert.ok(outcomes.length, "the refused candidate is persisted");
+  for (const o of outcomes) {
+    assert.equal(o.tier, "excluded");
+    assert.equal(o.rank, null);
+    assert.equal(o.exclusions[0].constraint, "operation");
+    assert.deepEqual(o.exclusions[0].detail, { requiredOperation: "awning", offered: ["fixed"] });
+  }
+  assert.deepEqual(r.selection.withheldIncomplete, [], "this is not a data gap");
+});
+
+test("AC-11 the glazing instruction is HARD, not a performance objective", async () => {
+  const singleOnly = {
+    async queryCandidates() {
+      return [product("amj-single", ["awning"], {
+        performanceVariants: [{ ...GLASSES[2], glazingOptionSlug: "single", glazingClass: "single_clear" }],
+      })];
+    },
+    catalogueVersion() { return "cat-v1"; },
+  };
+  // Satisfying "double glazed" with single glass is a substitution, refused on
+  // the same principle as offering a fixed unit for a required awning.
+  const r = await selectForOpening(
+    opening({ scheduleRequirements: { doubleGlazed: true } }), singleOnly, priceFn,
+  );
+  const o = r.evaluated[0].candidateOutcome;
+  assert.equal(o.tier, "excluded");
+  assert.equal(o.exclusions[0].constraint, "glazing_instruction");
+  assert.equal(o.exclusions[0].detail.required.doubleGlazed, true);
+  assert.deepEqual(o.exclusions[0].detail.offeredClasses, ["single_clear"]);
+  assert.equal(r.selected, null);
+  assert.equal(r.status, "no_candidate");
+});
+
+// ── Energy as an objective (D4) ─────────────────────────────────────────────
+
+test("AC-9 a requirement nothing can meet still yields a pick, flagged for review", async () => {
+  const r = await selectForOpening(opening({ requirements: { maxUValue: 1.0 } }), repo, priceFn);
+  assert.ok(r.selected, "energy never eliminates");
+  assert.ok(["within_tolerance", "misses"].includes(r.selected.candidateOutcome.tier));
+  assert.equal(r.status, "commercial_only_estimate");
+  assert.equal(r.selection.competingTier, "within_tolerance");
+  assert.equal(r.selected.selectedVariant.variantId, "dg-lowe", "the closest glass competes");
+});
+
+test("AC-10 a COMPUTED requirement binds exactly as a reported one does", async () => {
+  const band = { maxUValue: 2.0 };
+  const reported = await selectForOpening(
+    opening({ requirements: band, thermalContext: { requirementBasis: "explicit_energy_report" } }), repo, priceFn);
+  const derived = await selectForOpening(
+    opening({ requirements: band, thermalContext: { requirementBasis: "plan_derived" } }), repo, priceFn);
+
+  const shape = (r) => r.evaluated.map((e) => ({
+    slug: e.candidate.slug, variant: e.selectedVariant?.variantId ?? null,
+    tier: e.candidateOutcome.tier, rank: e.candidateOutcome.rank,
+    competing: e.candidateOutcome.competing,
+  }));
+  assert.deepEqual(shape(derived), shape(reported), "identical tiering, order and competing set");
+  assert.equal(derived.selected.candidate.slug, reported.selected.candidate.slug);
+  // Only the basis differs, and staff see it.
+  assert.equal(reported.selection.requirement.basis, "explicit_energy_report");
+  assert.equal(derived.selection.requirement.basis, "plan_derived");
+});
+
+test("AC-12 a near-miss survives into the ranked set, priced and selectable", async () => {
+  const r = await selectForOpening(opening({ requirements: { maxUValue: 1.6 } }), repo, priceFn);
+  const missed = r.evaluated.filter((e) => e.candidateOutcome.tier === "misses");
+  assert.ok(missed.length, "the candidates beyond the band are still here");
+  for (const e of missed) {
+    assert.notEqual(e.candidateOutcome.rank, null, "ranked");
+    assert.equal(e.candidateOutcome.price.ok, true, "priced");
+    assert.equal(e.candidateOutcome.competing, false, "and not competing");
+    assert.deepEqual(e.candidateOutcome.exclusions, [], "never filtered out of existence");
+  }
+});
+
+// ── AC-49: the certified/estimated defect, killed ───────────────────────────
+
+test("AC-49 inverting every data source changes the rank order not at all", async () => {
+  const invert = (v) => ({
+    ...v,
+    certified: !v.certified,
+    dataSource: v.dataSource === "certified" ? "estimated" : "certified",
+    certificationRef: v.dataSource === "certified" ? null : "WERS-INV",
+  });
+  const inverted = {
+    async queryCandidates(_family, operation) {
+      return (CATALOGUE[operation] ?? []).map((c) => ({
+        ...c, performanceVariants: c.performanceVariants.map(invert),
+      }));
+    },
+    catalogueVersion() { return "cat-v1"; },
+  };
+  const op = opening({ requirements: { maxUValue: 2.0 } });
+  const before = await selectForOpening(op, repo, priceFn);
+  const after = await selectForOpening(op, inverted, priceFn);
+
+  const order = (r) => r.evaluated
+    .filter((e) => e.candidateOutcome.rank != null)
+    .sort((a, b) => a.candidateOutcome.rank - b.candidateOutcome.rank)
+    .map((e) => `${e.candidate.slug}::${e.selectedVariant?.variantId}`);
+  assert.deepEqual(order(after), order(before), "the complete rank order is identical");
+  assert.equal(after.selected.candidate.slug, before.selected.candidate.slug);
+  assert.equal(after.selected.selectedVariant.variantId, before.selected.selectedVariant.variantId);
+  // Line STATUS may still differ, and that is intended: a certified variant can
+  // back a compliance claim and an estimated one cannot.
+  assert.notEqual(after.status, before.status);
+});
+
+// ── Edge cases the run status has to tell apart ─────────────────────────────
+
+test("E3/E7 a catalogue data gap and a measuring gap are different answers", async () => {
+  // E3: products of this shape exist but are half-authored. Saying no_candidate
+  // would send someone to re-measure an opening that was never the problem.
+  const halfAuthored = {
+    async queryCandidates() {
+      return [product("amj-broken", ["awning"], { performanceVariants: [], pricingRef: null })];
+    },
+    catalogueVersion() { return "cat-v1"; },
+  };
+  const withheld = await selectForOpening(opening(), halfAuthored, priceFn);
+  assert.equal(withheld.status, "catalogue_data_incomplete");
+  assert.equal(withheld.selection.withheldIncomplete[0].slug, "amj-broken");
+  assert.ok(withheld.selection.withheldIncomplete[0].gaps.length, "and the gap is named");
+  assert.equal(withheld.evaluated.length, 0, "a withheld product never became a candidate");
+
+  // E7: the catalogue is fine and the OPENING's size is unknown. Nothing is
+  // machine-selected, and every row carries the truthful verdict (AD13).
+  const unknownSize = await selectForOpening(opening({ widthMm: null, heightMm: null }), repo, priceFn);
+  assert.equal(unknownSize.status, "needs_manual_review");
+  assert.equal(unknownSize.selected, null);
+  assert.ok(unknownSize.evaluated.length, "candidates are still persisted");
+  assert.deepEqual(unknownSize.evaluated[0].candidateOutcome.exclusions,
+    [{ constraint: "dimensions", detail: { sizeUnknown: true } }]);
 });
