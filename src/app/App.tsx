@@ -1815,8 +1815,11 @@ export default function App() {
   const [trade, setTrade] = useState<TradeStateDto | null>(null);
   /** Re-read the derived trade state. Called after any application outcome —
    *  the §7.1 response bodies are constant by design and carry no state. */
-  /** Generation guard. `fetchMe()` is in flight for a while, and whoever it was
-   *  started for may not be who is signed in when it lands.
+  /** Generation guard for EVERY `fetchMe()` this component makes — the session
+   *  restore on load as well as each trade refresh.
+   *
+   *  `fetchMe()` is in flight for a while, and whoever it was started for may not
+   *  be who is signed in when it lands.
    *
    *  Without this, a response begun for account A and resolving after A signed
    *  out — or after B signed in on the same machine — wrote A's trade state onto
@@ -1824,12 +1827,12 @@ export default function App() {
    *  shared trade counter that is somebody else's commercial standing on screen.
    *  Every write is stamped and only the newest survives; signing out bumps the
    *  counter too, so an in-flight response cannot land on an empty session. */
-  const tradeGeneration = useRef(0);
+  const sessionGeneration = useRef(0);
   const refreshTrade = useCallback(() => {
-    const gen = ++tradeGeneration.current;
+    const gen = ++sessionGeneration.current;
     fetchMe()
       .then((r) => {
-        if (gen !== tradeGeneration.current) return;   // superseded; drop it
+        if (gen !== sessionGeneration.current) return;   // superseded; drop it
         setTrade(r.trade ?? null);
       })
       .catch(() => {});
@@ -1844,13 +1847,21 @@ export default function App() {
   // (tester finding N-1). One effect keyed on the account id cannot be forgotten
   // by a fourth path, and clears the state on sign-out rather than leaving one
   // account's trade status visible to the next.
+  const previousUserId = useRef<string | null>(null);
   useEffect(() => {
-    if (user?.id) { refreshTrade(); return; }
-    // Signing out invalidates anything already in flight as well as clearing
-    // what is held — otherwise the response that was already on its way lands a
-    // moment later and repopulates the session that just ended.
-    tradeGeneration.current++;
-    setTrade(null);
+    const id = user?.id ?? null;
+    if (id) {
+      refreshTrade();
+    } else if (previousUserId.current) {
+      // A REAL sign-out — not the initial mount, where `user` is null simply
+      // because the session has not been restored yet. Bumping the generation
+      // here unconditionally invalidated the restore that was in flight at that
+      // very moment, so nobody was ever signed back in on a page load. Signing
+      // out must invalidate what is in the air; starting up must not.
+      sessionGeneration.current++;
+      setTrade(null);
+    }
+    previousUserId.current = id;
   }, [user?.id, refreshTrade]);
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
@@ -2013,8 +2024,20 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
+    // SAME GENERATION GUARD as refreshTrade, and for the same reason — this one
+    // is worse, because it restores the USER as well as the trade state.
+    //
+    // `cancelled` only covers unmount. It says nothing about somebody signing in
+    // or out while this request is still in the air, and this request is the
+    // slowest one the app makes: it fires on page load. A session restore begun
+    // for account A and landing after B signed in put A's identity AND A's trade
+    // status onto B's screen.
+    const gen = ++sessionGeneration.current;
     fetchMe()
-      .then(r => { if (!cancelled && r.user) { setUser(toAuthUser(r.user)); setTrade(r.trade ?? null); } })
+      .then(r => {
+        if (cancelled || gen !== sessionGeneration.current) return;   // superseded
+        if (r.user) { setUser(toAuthUser(r.user)); setTrade(r.trade ?? null); }
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setAuthLoading(false); });
     return () => { cancelled = true; };

@@ -640,3 +640,26 @@ test("a second account never inherits the first account's trade status", async (
     .not.toMatch(/trade pricing applies to your account/i);
   expect(said, "nor the first account's ABN").not.toContain(business.abn);
 });
+
+// ─── 13. NOT WRITTEN: the late-restore race has no honest browser test ───────
+//
+// The guard exists (`sessionGeneration` in src/app/App.tsx) and is correct: the
+// session restore and every trade refresh are stamped, and only the newest may
+// write. What could not be built is a test that FAILS without it.
+//
+// Three attempts, each discarded for the same reason — they passed with the
+// guard removed:
+//   1. Holding the route and calling continue() after the swap sent the request
+//      with the NEW cookies, so the stale answer never existed.
+//   2. Capturing the response early and delivering it late did produce a stale
+//      answer, but swapping the cookie out of band (from the test's request
+//      context) is invisible to the app — no client-side guard can react to it,
+//      so the assertion was one no code could satisfy.
+//   3. Driving the second sign-in through the app does bump the generation, but
+//      the surfaces reachable afterwards do not render enough of the stale
+//      account to tell the two outcomes apart.
+//
+// A test that passes with the fix reverted asserts nothing, and leaving one here
+// would claim coverage this file does not have. The property test above
+// ("a second account never inherits the first account's trade status") is the
+// real coverage; the race itself is argued from the code, not demonstrated.
