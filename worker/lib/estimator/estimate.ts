@@ -240,6 +240,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   // proposed below is measured against the same cap.
   const policy = await loadCompositePolicy(env);
   const splitHints = opts?.splitHints ?? new Map<string, SplitHint>();
+  const unsuppliedSplits: string[] = [];
   const scheduleTypes = opts?.scheduleTypes ?? new Map<string, string>();
 
   for (const row of openings) {
@@ -268,6 +269,9 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       }),
     });
     await persistSelection(env, { projectId, openingId: row.id, result });
+    // A make-up was considered and nothing could supply it. The reviewer hears
+    // about it whether or not this project ever reaches publication.
+    if (result.splitNote) unsuppliedSplits.push(`${row.external_ref ?? "Opening"}: ${result.splitNote}`);
     proposalLines.push({
       openingId: row.id,
       quoteLineId: row.quote_line_id,
@@ -300,13 +304,13 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     appliedToCart = published.appliedLines;
     // After the lines exist, rebuild the make-ups that WON as composites. The
     // choice was made during candidate generation; this only writes it.
-    const splitWarnings: string[] = [];
+    const splitWarnings: string[] = [...unsuppliedSplits];
     for (const pl of proposalLines) {
       splitWarnings.push(...await materialiseSelectedSplit(env, pl));
     }
     return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(splitWarnings)] };
   }
-  return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [] };
+  return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(unsuppliedSplits)] };
 }
 
 /** Turn the make-up that WON into a composite quote line (design §7.3).

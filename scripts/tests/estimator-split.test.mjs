@@ -978,3 +978,47 @@ test("a REFUSED split leaves the line as its parent, and says why", async () => 
   assert.equal(flagged.args[1], "ql1");
   assert.equal(JSON.parse(flagged.args[0]).composite, warnings[0]);
 });
+
+test("AC-8/E12 when no frame system can supply every unit, the reviewer is TOLD", async () => {
+  // Combinability is hard (D3), so a make-up spanning two systems is never a
+  // candidate — `enumerateMakeUps` cannot even produce one. The opening keeps
+  // its honest single-unit answer, which for a 3,600 mm opening is the
+  // last-resort tier-E unit at an indicative price.
+  //
+  // But somebody has to be told. The old post-pass built the uncouplable
+  // composite anyway and warned; refusing it silently would leave a reviewer
+  // looking at one oversize line with no hint that a split was considered and
+  // why nothing could supply it.
+  const products = [
+    splitProduct("awn-a", { operation: "awning", maxWidthMm: 1300, system: "sys-10" }),
+    splitProduct("fix-b", { operation: "fixed", maxWidthMm: 1300, system: "sys-20" }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 3600, heightMm: 2100, externalRef: "W16" },
+    parseSplitHint("AWNING + FIXED + AWNING"),
+    splitCtx(products),
+  );
+
+  assert.deepEqual(r.splits, [], "no uncouplable make-up is ever offered as a candidate");
+  assert.equal(r.selectedSplit, null);
+  assert.ok(r.splitNote, "…and the refusal is reported, not swallowed");
+  assert.match(r.splitNote, /single frame system/i);
+  // The opening still gets an answer: the last-resort unit, priced at the real
+  // opening size, so an oversize opening never reads as "we sell nothing".
+  assert.ok(r.selected, "a last-resort single unit still answers the opening");
+  assert.equal(r.selected.candidateOutcome.tier, "does_not_fit");
+});
+
+test("a split that WAS supplied carries no refusal note", async () => {
+  const products = [
+    splitProduct("awn-a", { operation: "awning", maxWidthMm: 1300 }),
+    splitProduct("fix-b", { operation: "fixed", maxWidthMm: 1300 }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 3600, heightMm: 2100, externalRef: "W17" },
+    parseSplitHint("AWNING + FIXED + AWNING"),
+    splitCtx(products),
+  );
+  assert.ok(r.splits.length);
+  assert.equal(r.splitNote, null, "nothing to report when the make-up exists");
+});

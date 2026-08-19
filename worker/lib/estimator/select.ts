@@ -64,6 +64,9 @@ export interface SelectionResult {
   /** The winning split, when one beat every single unit. Never both — one
    *  competition produces one winner. */
   selectedSplit: SplitCandidate | null;
+  /** Why a split was considered and none could be offered — a reviewer's only
+   *  notice that the documents implied a make-up nothing could supply. */
+  splitNote: string | null;
   /** Line status: the selected candidate's status, else the "best failure". */
   status: SelectionOutcome["status"];
   /** Products that WOULD have been candidates but were withheld as incomplete,
@@ -269,6 +272,7 @@ export function decide(
     selection,
     selected: evaluated.find((e) => e.candidateOutcome.selected) ?? null,
     selectedSplit: splits.find((s) => s.candidateOutcome.selected) ?? null,
+    splitNote: null,
     status: selection.status,
     withheldIncomplete: evaluation.withheldIncomplete,
   };

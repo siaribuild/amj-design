@@ -172,12 +172,12 @@ export async function enumerateSplitCandidates(
   opening: OpeningInput & { externalRef?: string | null },
   hint: SplitHint | null,
   ctx: SplitContext,
-): Promise<SplitCandidate[]> {
+): Promise<{ splits: SplitCandidate[]; note: string | null }> {
   const proposal = proposeSplit(opening, hint, {
     maxWidthMm: ctx.parentMaxWidthMm ?? null,
     pairing: ctx.pairing ?? null,
   });
-  if (proposal.segments.length < 2) return [];
+  if (proposal.segments.length < 2) return { splits: [], note: null };
 
   // The plan decided the geometry; the report is the only document carrying a
   // per-unit thermal target, so its components are matched onto the units the
@@ -267,11 +267,14 @@ export async function enumerateSplitCandidates(
   // unit it returns a fallback signal instead, and there is simply no candidate
   // — an uncouplable composite is not a dearer option that lost, it was never an
   // option. The opening keeps its honest single-unit answer.
-  if ("fallback" in enumerated) return [];
+  if ("fallback" in enumerated) return { splits: [], note: enumerated.fallback };
 
   const requirement = resolvedRequirement(opening);
-  return enumerated.makeUps.map((makeUp, index) =>
-    toCandidate(makeUp, index, plan, proposal, opening, requirement));
+  return {
+    splits: enumerated.makeUps.map((makeUp, index) =>
+      toCandidate(makeUp, index, plan, proposal, opening, requirement)),
+    note: null,
+  };
 }
 
 function toCandidate(
@@ -412,12 +415,15 @@ export async function selectWithSplits(
   // representative's max width and its family's authored pairing is what the
   // proposal has always done, so the geometry a customer sees does not move.
   const representative = parentRepresentative(decide(opening, evaluation));
-  const splits = await enumerateSplitCandidates(opening, hint, {
+  const { splits, note } = await enumerateSplitCandidates(opening, hint, {
     ...ctx,
     parentMaxWidthMm: ctx.parentMaxWidthMm
       ?? representative?.candidate.dimensionRule?.maxWidthMm
       ?? null,
     pairing: ctx.resolvePairing ? await ctx.resolvePairing(representative) : ctx.pairing ?? null,
   });
-  return decide(opening, evaluation, { splits });
+  // A split was considered and nothing could supply it. Somebody has to be
+  // told: refusing silently would leave a reviewer looking at one oversize line
+  // with no hint that a make-up was tried and why it could not be built.
+  return { ...decide(opening, evaluation, { splits }), splitNote: note };
 }
