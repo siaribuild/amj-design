@@ -11,13 +11,13 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { aggregateApprovedThermal, contextKey } from ${p("worker/lib/estimator/learning.ts")};
+      export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION } from ${p("worker/lib/estimator/learning.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -100,4 +100,93 @@ test("an explicit energy report always overrides learned thermal precedent", () 
     reviewed_thermal_json: JSON.stringify({ maxUValue: 3.5 }),
   }));
   assert.deepEqual(aggregateApprovedThermal(rows).apply(reportOpening), reportOpening);
+});
+
+test("AC-28/AC-29 the retrieval key separates the four that matter and nothing else", () => {
+  const base = {
+    operationType: "awning", requirementBasis: "explicit_energy_report",
+    widthMm: 1200, thermalRequired: true,
+  };
+  const key = retrievalKey(base);
+  assert.equal(key, "awning|explicit_energy_report|s|1");
+
+  // AC-28: two openings differing ONLY in a field retrieval does not read land
+  // in the same bucket. Each of these is a real column on the recorded context;
+  // none of them is dropped from the record, only from the lookup.
+  for (const noise of [
+    { climateZone: "6" }, { orientation: "W" }, { jurisdiction: "VIC" },
+    { buildingClass: "1a" }, { envelopeClass: "high" }, { glazingToRoomFloorRatio: 0.4 },
+    { family: "windows" }, { heightMm: 2400 }, { riskBand: "high" },
+  ]) {
+    assert.equal(retrievalKey({ ...base, ...noise }), key, `${Object.keys(noise)[0]} must not split the bucket`);
+  }
+  // `family` specifically: it is a FUNCTION of the operation, so keeping both
+  // would spend cardinality on no extra information (AD8).
+  assert.equal(retrievalKey({ ...base, family: "doors" }), key);
+
+  // AC-29: the four that DO matter each separate.
+  assert.notEqual(retrievalKey({ ...base, operationType: "sliding" }), key);
+  assert.notEqual(retrievalKey({ ...base, requirementBasis: "plan_derived" }), key);
+  assert.notEqual(retrievalKey({ ...base, widthMm: 2400 }), key);
+  assert.notEqual(retrievalKey({ ...base, thermalRequired: false }), key);
+});
+
+test("AD8 the size band is by WIDTH, at 1800 and 3000 mm", () => {
+  const band = (widthMm) => retrievalKey({ operationType: "awning", requirementBasis: "none", widthMm, thermalRequired: false }).split("|")[2];
+  // Width, not area: width is what the frame series' max-width limits actually
+  // turn on, and it is the axis that decides whether a split is in play at all.
+  assert.equal(band(600), "s");
+  assert.equal(band(1799), "s");
+  assert.equal(band(1800), "m");
+  assert.equal(band(3000), "m");
+  assert.equal(band(3001), "l");
+  assert.equal(band(null), "unknown");
+  assert.equal(band(NaN), "unknown");
+  assert.equal(band(-5), "unknown", "a nonsense width is not a small window");
+});
+
+test("AC-56 no free text can traverse into the key — the values are whitelisted", () => {
+  // A schedule comment carrying a client's name and site address must never
+  // become a queryable index key ACROSS ACCOUNTS. The key is built from four
+  // enumerated values and nothing that fails the enumeration is passed through:
+  // it is replaced, not escaped, not truncated.
+  const hostile = "Mrs J. Whitmore, 14 Ellerslie Road Hawthorn VIC 3122 — match existing";
+  const key = retrievalKey({
+    operationType: hostile, requirementBasis: hostile,
+    widthMm: 1200, thermalRequired: hostile,
+  });
+  // The thermal flag fails CLOSED: a requirement is something the platform
+  // positively recorded, so anything that is not a recognisable positive is an
+  // absence rather than a claim.
+  assert.equal(key, "other|none|s|0");
+  for (const word of ["Whitmore", "Ellerslie", "Hawthorn", "3122", " "]) {
+    assert.ok(!key.includes(word), `"${word}" reached the key`);
+  }
+  // A pipe would forge a bucket boundary; an operation that is nearly plausible
+  // is still refused rather than trimmed into something that looks real.
+  assert.equal(retrievalKey({ operationType: "awning|sliding", requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
+  assert.equal(retrievalKey({ operationType: "AWNING", requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "awning", "case alone is normalised, not refused");
+  assert.equal(retrievalKey({ operationType: "a".repeat(40), requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
+  // Only the five enumerated bases survive; anything else is 'none'.
+  for (const basis of ["explicit_energy_report", "plan_derived", "default_envelope", "human_override", "none"]) {
+    assert.equal(retrievalKey({ operationType: "awning", requirementBasis: basis, widthMm: 1, thermalRequired: 0 }).split("|")[1], basis);
+  }
+  assert.equal(retrievalKey({ operationType: "awning", requirementBasis: "made_up", widthMm: 1, thermalRequired: 0 }).split("|")[1], "none");
+});
+
+test("AC-30 the key is versioned, and recomputable from context_json alone", () => {
+  assert.equal(RETRIEVAL_KEY_VERSION, "rk-v1");
+  // The recompute story is the whole reason the key is stored AND versioned: a
+  // later redefinition of the coarsening is a pass over the stored context, not
+  // lost history. So everything the key reads has to BE in context_json — which
+  // is why capture writes widthMm and thermalRequired alongside the twelve.
+  const contextJson = {
+    family: "windows", operationType: "awning", requirementBasis: "plan_derived",
+    orientation: "W", riskBand: "high", climateZone: "6", jurisdiction: "VIC",
+    buildingClass: "1a", envelopeClass: "high", glazingToRoomFloorRatio: 0.4,
+    widthMm: 2100, heightMm: 1500, thermalRequired: 1,
+  };
+  assert.equal(retrievalKey(contextJson), "awning|plan_derived|m|1");
+  // …and the same object read back off a row round-trips to the same bucket.
+  assert.equal(retrievalKey(JSON.parse(JSON.stringify(contextJson))), retrievalKey(contextJson));
 });

@@ -30,6 +30,82 @@ export function contextKey(opening: OpeningInput): string {
   ].join("|");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// THE RETRIEVAL KEY (D12, spec §4.8, design AD8)
+//
+// Record twelve fields, retrieve on four. The twelve-field `contextKey` above
+// keeps being written — recording is untouched — but it is useless for LOOKUP:
+// in production it produced 9 usable rows across 11 distinct keys, so every
+// opening sat alone in its bucket and the model returned the neutral answer
+// every time it was ever asked, and always would have. Four coarse fields put
+// the density threshold at roughly 20 issued quotes instead of roughly 20,000.
+//
+// The key is STORED and VERSIONED, and every value it reads is present in
+// `context_json`. That is what makes a later redefinition of the coarsening a
+// recompute over stored rows rather than lost history (AC-30) — standard
+// feature-store discipline, and the thing that makes "record twelve, retrieve
+// four" safe rather than lossy.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const RETRIEVAL_KEY_VERSION = "rk-v1";
+
+/** The five requirement bases a key may carry. Anything else is 'none'. A
+ *  choice made against a real energy report is a different kind of evidence
+ *  from one made against a default envelope, and merging them would let weak
+ *  evidence outvote strong. */
+const REQUIREMENT_BASES = new Set([
+  "explicit_energy_report", "plan_derived", "default_envelope", "human_override", "none",
+]);
+
+/** An operation type is a catalogue enum, so it looks like one or it is 'other'.
+ *  WHITELISTED, never escaped or truncated: escaping would let a customer's
+ *  document text into a cross-account queryable index in a mangled form, and
+ *  truncating would let it in as a plausible-looking prefix. */
+const OPERATION = /^[a-z][a-z-]{0,23}$/;
+
+/** By WIDTH, at 1800 and 3000 mm — width is what the frame series' max-width
+ *  limits actually turn on, and it is the axis that decides whether a split is
+ *  in play at all. Three bands rather than the legacy sixteen width×height
+ *  combinations (AD8). */
+function sizeBand(widthMm: unknown): "s" | "m" | "l" | "unknown" {
+  const w = typeof widthMm === "number" ? widthMm : Number(widthMm);
+  if (!Number.isFinite(w) || w <= 0) return "unknown";
+  if (w < 1800) return "s";
+  if (w <= 3000) return "m";
+  return "l";
+}
+
+/**
+ * `operationType | requirementBasis | sizeBand | thermalRequired`.
+ *
+ * AC-56 holds BY CONSTRUCTION: each of the four positions can only ever emit a
+ * value from a closed set, so no substring of any customer document can appear
+ * in the key and no customer's text becomes a queryable index across accounts.
+ * A value that fails its enumeration is REPLACED, not sanitised — there is no
+ * transformation of "Mrs J. Whitmore, 14 Ellerslie Road" that belongs in a
+ * bucket name.
+ *
+ * `family` is deliberately absent: it is a function of the operation
+ * (`operationForFamily`), so carrying both spends cardinality on no extra
+ * information.
+ */
+export function retrievalKey(context: {
+  operationType?: unknown;
+  requirementBasis?: unknown;
+  widthMm?: unknown;
+  thermalRequired?: unknown;
+}): string {
+  const operation = typeof context.operationType === "string" && OPERATION.test(context.operationType.toLowerCase())
+    ? context.operationType.toLowerCase()
+    : "other";
+  const basis = typeof context.requirementBasis === "string" && REQUIREMENT_BASES.has(context.requirementBasis)
+    ? context.requirementBasis
+    : "none";
+  const thermal = context.thermalRequired === true || context.thermalRequired === 1 || context.thermalRequired === "1"
+    ? "1" : "0";
+  return [operation, basis, sizeBand(context.widthMm), thermal].join("|");
+}
+
 // HistoricalRow, Counts, smooth(), HistoricalModel, aggregateHistorical() and
 // buildHistoricalModel() lived here and are GONE (ADR 0007).
 //
