@@ -173,11 +173,22 @@ approved list view, which already shows what the rest of the project uses.
 
 ## R1f feedback — line plane, recorded not applied (2026-08-19)
 
-**R3 — one back idiom, not two.** The record uses `< Projects`; the line plane uses
-`< W04`. *"navigation should be consistent... Choose one. The earlier, if you ask me."*
-Adopt naming the **destination** everywhere. Note the line plane's destination is the
-record, not Projects, so it is `< OF-Q-10482` or `< Lines` — the pattern is "name where
-you are going", not "repeat the word Projects".
+**R3 — one back idiom, not two: name the destination.** The record uses `< Projects`;
+the line plane uses `< W04`, which names where you *are*. *"navigation should be
+consistent... Choose one."* Confirmed by the owner: from a line, back goes to the **record**
+and never to `Projects` — *"either Lines, back to Project, back to Wattle Grove - Lot 14 -
+multiple choices for consideration, but not to 'Projects'."*
+
+Three candidates, his to pick:
+- `< Project` — names the destination type, and reads as the singular of the record's own
+  `< Projects`, so the ladder is Projects > Project > line. Short, fixed width, never
+  truncates. Weakest on telling you *which* project, though the header says that on arrival.
+- `< Lines` — names the segment you actually land on, which is literally true. Slightly
+  tautological coming from a line, and it names a tab rather than a place.
+- `< Wattle Grove - Lot 14` — most informative and most specific, but variable length,
+  truncates (67-character names exist in the fixtures), and competes with the title for the
+  same row. It is also the one idiom that differs in kind from `< Projects`, which names a
+  type rather than an instance.
 
 **R4 — prev/next is conceptually right, the implementation does not scale.**
 *"scales very poorly on ipad in particular - just too massive buttons on the screen. But
