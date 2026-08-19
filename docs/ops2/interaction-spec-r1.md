@@ -2055,3 +2055,156 @@ From here: when a claim rests on a mechanism, the report says **which part was
 exercised and which was inferred**. "Measured the states, could not drive the
 trigger in this environment" is worth more than a tidy number, because it tells
 the owner exactly what to check on the device.
+
+---
+
+# 32. R1l — every resolution of the bottom edge
+
+Seven options in a labelled switcher (top-right), plus the `⌂` indicator toggle.
+B is dropped. All measured at **375×812** and **320×690 with the indicator on**,
+on both the record and a line. Nothing overflows in any option at either width.
+
+## 32.1 The two tables
+
+**Line plane — content height (higher is better):**
+
+| | 375×812 | 320×690 | vs OFF @375 |
+|---|---|---|---|
+| **OFF** | 707 | 585 | — |
+| **A** bar + panel | 614 | 492 | −93 |
+| **D** bar shown | 614 | 492 | −93 |
+| **D** scrolled away | **+57** (see §31.4) | **+57** | −36 |
+| **E** CTA in header | **665** | **543** | −42 |
+| **F** docked FAB | **665** | **543** | −42 |
+| **G** no CTA | **665** | **543** | −42 |
+| **H** one bar | 666 | 544 | −41 |
+
+**Record — content height:**
+
+| | 375×812 | 320×690 | vs OFF @375 |
+|---|---|---|---|
+| **OFF** | 481 | 359 | — |
+| **A** | 456 | 334 | −25 |
+| **D** (bar shown) | 456 | 334 | −25 |
+| **E** | **502** | **380** | **+21** |
+| **F** | **502** | **380** | **+21** |
+| **G** | 456 | 334 | −25 |
+| **H** | 469 | 347 | −12 |
+
+## 32.2 Three things the measurements settle
+
+### E, F and G are pixel-identical on the line plane
+
+665 at 375, 543 at 320 — all three. They all remove the bottom panel and keep the
+bar; **they differ in where the action goes, not in what it costs.** Presenting
+them as three different sizes would have been a distinction that does not exist.
+
+The choice between them is therefore entirely about *where the action should be*,
+which is a judgement rather than a measurement:
+
+- **E** — a labelled button in the nav bar. Readable, but see below.
+- **F** — a pencil floating over the content. No label, covers the last row.
+- **G** — nothing; the reviewer goes through Specification.
+
+### G is identical to A on the record — and that asymmetry is the finding
+
+On the line, G works because **the spec panel already owns Edit**: its footer
+carries `Edit W04`, so removing the global CTA costs one tap, not the capability.
+Tapping the drawing could be a second route.
+
+On the record there is no equivalent. **Nothing owns `Issue quote`** the way the
+spec panel owns Edit — it is not a property of any panel, it is what you do to
+the whole project. So G keeps the whole panel there, and measures the same as A.
+
+**G is viable on the line and not on the record.** That is a real result: it means
+the contention does not dissolve, it only dissolves *on one of the two screens*.
+
+### E costs the title, and the number is the argument
+
+At 320 on the line, the title falls from **115px to 55px** once a labelled action
+joins back and the neighbour pair in the same bar.
+
+**The header does not grow** — R1d's 56px property survives, which was the thing
+I was asked not to quietly give back. But the title pays for it, and the title was
+already the one element allowed to truncate (§16.2). So E is affordable, and what
+it spends is legibility of the project name at the smallest width.
+
+## 32.3 Where E and F break, rendered rather than described
+
+Both are shown on the record so the break is visible.
+
+`Issue quote` is **blocked**, and R-153 calls the footer *"the ONE footer allowed
+a second line"* precisely because a blocked primary must say why. **A header
+cannot carry that sentence, and a disabled FAB certainly cannot.** So both keep a
+slim reason strip:
+
+| | panel | reason |
+|---|---|---|
+| A | 75px (button + reason) | inside the panel |
+| E / F | — | **29px strip** |
+
+That is still a net gain (+21px over OFF), but it means neither E nor F actually
+eliminates the bottom-edge furniture on the record — it shrinks it.
+
+**F's specific problem:** `Edit W04` is icon-able — a pencil says it. `Issue
+quote` is not. The record's FAB carries a document icon that could equally mean
+save, export or new; its meaning must be learned. Material also allows **one FAB
+per screen**, so `···` cannot sit beside it and moves to the header.
+
+## 32.4 H — the component check
+
+**Ionic ships no bottom-app-bar-with-FAB primitive**, so H is assembled from plain
+elements. **No boundary disqualifier is engaged**: the four disqualifiers govern
+choosing light-DOM *over an existing Ionic component*, and there is no component
+here to replace.
+
+What it gives up is the real objection: **H is not `IonTabBar`**, so it loses
+everything IonTabBar was chosen for — the selected state, the per-tab stacks, and
+the **lossless return that killed variant B** (§29.1). All would have to be
+rebuilt by hand.
+
+**On legibility:** mixing places and verbs in one strip leaves every element
+ambiguous about which it is. Three icons that navigate and one that acts, with a
+1px divider as the only cue, is a row the user must remember rather than read.
+For 1px of content against E/F/G, that is a poor trade.
+
+## 32.5 What was exercised, and what was inferred
+
+Per §31.5.
+
+**Exercised:** every option's layout at both widths on both screens — the numbers
+above are measured boxes, with the variant switched live and the page re-read each
+time. Overflow checked per option per width (none). E's title compression, G's
+retained panel on the record, F's FAB presence, H's strip — all read from the DOM.
+
+**Inferred, and needing a device:**
+1. **D's scroll trigger under a real finger.** The handler is driven and verified
+   (§31.4); Ionic's rAF-driven *emission* of `ionScroll` does not run in a
+   non-compositing pane.
+2. **Whether `More` opens the drawer** — unchanged from §29.3.
+3. **Whether F's FAB overlaps anything painful in practice.** It is positioned
+   clear of the bar by measurement, but "covers the last row" is a judgement about
+   real content on a real screen.
+4. **H's tab semantics.** The strip renders and routes; the per-tab stack
+   behaviour it would need was not built, because building it is the argument
+   against H rather than a step toward it.
+
+## 32.6 Recommendation
+
+**E**, with **A** as the conservative fallback.
+
+E is the dominant native split — the nav bar is what you can *do* here, the tab
+bar is where you can *go* — and it is the only option that leaves the bottom edge
+wholly to navigation while keeping the action labelled and readable. It is also
+the joint-best on both screens (+21 on the record, −42 on the line, where A is
+−93).
+
+Its cost is the title at 320, and that is the cheapest thing on either screen to
+spend, since the title already truncates by design and the ref beside it never
+does.
+
+**F** buys the same pixels and pays in legibility on the record. **G** is
+tempting on the line and impossible on the record, so it would mean two different
+action models on two adjacent screens. **H** costs the framework's tab behaviour
+for one pixel. **D** remains attractive if he prefers A's shape, but it is the
+only option whose central mechanism still needs a device to confirm.
