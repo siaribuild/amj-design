@@ -177,7 +177,7 @@ function Body({ line, k, failed }: { line: Line; k: Lens["key"]; failed: boolean
             </ul>
           </>
         ) : (
-          <p>One unit. ×{line.qty} on this line.</p>
+          <p>One unit.</p>
         )}
         {line.flags.map((f) => (
           <div key={f} className="note-warning" role="note">{f}</div>
@@ -192,7 +192,6 @@ function Body({ line, k, failed }: { line: Line; k: Lens["key"]; failed: boolean
         <dl className="kv">
           <div><dt>This line</dt>
             <dd><Money cents={line.priceCents} absent="no rate for this configuration" /></dd></div>
-          <div><dt>Quantity</dt><dd>×{line.qty}</dd></div>
         </dl>
         {line.priceCents === null ? (
           /* R-66 — a price that refuses is correct behaviour, and the console
@@ -210,7 +209,7 @@ function Body({ line, k, failed }: { line: Line; k: Lens["key"]; failed: boolean
             {/* "estimate" is struck project-wide: the owner asked for it, and the
                 glossary puts the word on Quote's own _Avoid_ line because the
                 estimator is a different concept. */}
-            {line.qty > 1 ? "line total for all units · " : ""}{RECORD.gstMode} · this account's setting
+            {RECORD.gstMode} · this account's setting
           </IonNote>
         )}
       </>
@@ -265,7 +264,6 @@ export function LineBody({
             <dd>{line.widthMm > 0
               ? `${mm(line.heightMm)} × ${mm(line.widthMm)} mm (height × width)`
               : <span className="absent">not read from the schedule</span>}</dd></div>
-          <div><dt>Quantity</dt><dd>×{line.qty}</dd></div>
           <div><dt>Frame system</dt><dd>{line.frame}</dd></div>
           <div><dt>Line total</dt>
             <dd><Money cents={line.priceCents} absent="no rate" /></dd></div>

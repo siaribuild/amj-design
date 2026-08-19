@@ -140,7 +140,7 @@ export function LineSwitcher({
                 <strong className="mono">{l.code}</strong>
                 {/* The customer's 500-char note is out of these rows too — same
                     list grammar, same argument as the record's Lines list. */}
-                <p>{l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"} · ×{l.qty}</p>
+                <p>{l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"}</p>
               </IonLabel>
               <div slot="end" style={{ textAlign: "right" }}>
                 <Money cents={l.priceCents} absent="no rate" />

@@ -79,7 +79,7 @@ const L = (n: Seed): Line => ({
 
 export const LINES: Line[] = [
   L({ id: "l01", code: "W01", product: "AMJ58 Series Sliding Window", op: "sliding", heightMm: 1200, widthMm: 1800, qty: 1, room: "Living", frame: "AMJ58", glazing: "DG Low-E 4-12-4", variantId: "amj58-sl-dg", priceCents: 214000, state: "ready" }),
-  L({ id: "l02", code: "W02", product: "AMJ58 Series Sliding Window", op: "sliding", heightMm: 1200, widthMm: 1500, qty: 2, room: "Bed 2", frame: "AMJ58", glazing: "DG Low-E 4-12-4", variantId: "amj58-sl-dg", priceCents: 186000, state: "ready" }),
+  L({ id: "l02", code: "W02", product: "AMJ58 Series Sliding Window", op: "sliding", heightMm: 1200, widthMm: 1500, qty: 1, room: "Bed 2", frame: "AMJ58", glazing: "DG Low-E 4-12-4", variantId: "amj58-sl-dg", priceCents: 186000, state: "ready" }),
   L({ id: "l03", code: "W03", product: "AMJ67T Series Casement Window", op: "casement", heightMm: 900, widthMm: 600, qty: 1, room: "Ensuite", frame: "AMJ67T", glazing: "DG Argon 4-16-4", variantId: "amj67t-cs-ar", priceCents: 98000, state: "ready" }),
   L({
     id: "l04", code: "W04", product: "AMJ67T Series Awning Window", op: "awning",
@@ -108,7 +108,7 @@ export const LINES: Line[] = [
   L({ id: "l05", code: "W05", product: "AMJ67T Series Awning Window", op: "awning", heightMm: 600, widthMm: 600, qty: 1, room: "WC", frame: "AMJ67T", glazing: "DG Obscure 4-12-4", variantId: "amj67t-aw-ob", priceCents: 76000, state: "ready" }),
   L({
     id: "l06", code: "W06", product: "AMJ58 Series Fixed Window", op: "fixed",
-    heightMm: 2100, widthMm: 600, qty: 2, room: "Stair void",
+    heightMm: 2100, widthMm: 600, qty: 1, room: "Stair void",
     frame: "AMJ58", glazing: "DG Toughened 6-12-6", variantId: "amj58-fx-tg",
     priceCents: null, state: "needs review",
     flags: ["No price for toughened 6-12-6 at this size."],
@@ -159,8 +159,8 @@ export const LINES: Line[] = [
     flags: ["Below minimum height for this series — confirm intended."],
   }),
   L({ id: "l14", code: "D03", product: "AMJ95 Series Bi-Fold Door", op: "bi-fold", heightMm: 2100, widthMm: 3000, qty: 1, room: "Garage", frame: "AMJ95", glazing: "SG Clear 6", variantId: "amj95-bf-sg", priceCents: 214000, state: "ready" }),
-  L({ id: "l15", code: "W12", product: "AMJ58 Series Sliding Window", op: "sliding", heightMm: 900, widthMm: 1500, qty: 2, room: "Rumpus", frame: "AMJ58", glazing: "DG Low-E 4-12-4", variantId: "amj58-sl-dg", priceCents: 276000, state: "ready" }),
-  L({ id: "l16", code: "W13", product: "AMJ67T Series Casement Window", op: "casement", heightMm: 1350, widthMm: 600, qty: 2, room: "Study", frame: "AMJ67T", glazing: "DG Argon 4-16-4", variantId: "amj67t-cs-ar", priceCents: 232000, state: "ready" }),
+  L({ id: "l15", code: "W12", product: "AMJ58 Series Sliding Window", op: "sliding", heightMm: 900, widthMm: 1500, qty: 1, room: "Rumpus", frame: "AMJ58", glazing: "DG Low-E 4-12-4", variantId: "amj58-sl-dg", priceCents: 276000, state: "ready" }),
+  L({ id: "l16", code: "W13", product: "AMJ67T Series Casement Window", op: "casement", heightMm: 1350, widthMm: 600, qty: 1, room: "Study", frame: "AMJ67T", glazing: "DG Argon 4-16-4", variantId: "amj67t-cs-ar", priceCents: 232000, state: "ready" }),
   /* The unsized line — R-49's honesty case. Drawn as a square at reduced
      opacity, and NO leaders: a drawing may be indicative, a dimension may not. */
   L({

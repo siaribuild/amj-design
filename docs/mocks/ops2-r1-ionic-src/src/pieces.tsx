@@ -213,7 +213,10 @@ export function LineList({
                   the contract. It cannot be in a scannable row at any length. */}
               <span className="meta">
                 {l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"}
-                {" · "}×{l.qty}
+                {/* D4 — no quantity. It is retired: nothing creates a
+                    multi-quantity line any more. The unit count below is
+                    qtyPerParent, a different concept that also prints as xN and
+                    is NOT retired. */}
                 {l.parts ? ` · ${l.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} joined units` : ""}
               </span>
             </span>
