@@ -65,11 +65,23 @@ async function otpSignIn(page: Page, email: string): Promise<void> {
   await page.getByRole("button", { name: /verify & continue/i }).click();
 }
 
-/** The percentage sweep (AC-P2-47). A customer surface may never carry a `%`, a
+/** The percentage sweep (AC-P2-47). A TRADE surface may never carry a `%`, a
  *  spelled-out rate, or the comparative framing the owner retired: "trade
- *  pricing" is the NAME of the thing, never a deduction (§18.0 rule 1). */
+ *  pricing" is the NAME of the thing, never a deduction (§18.0 rule 1).
+ *
+ *  SCOPED TO THE TRADE SURFACE ON PURPOSE, and this is the subtle part. A
+ *  page-wide sweep looks stricter and is actually wrong: `/trade-account` also
+ *  carries the REFERRAL placement, whose "2.5% off / 1% by bank transfer" is a
+ *  different programme's own approved copy, governed by the referral spec
+ *  (AC-70/AC-75) and asserted in referral.spec.ts. Sweeping the whole body would
+ *  make this file fail on copy it does not own, and the obvious "fix" — deleting
+ *  the referral figures — would break the surface that is allowed to state them.
+ *  AC-P2-47 is about the TRADE rate never being derivable, so the trade card is
+ *  the surface it governs. */
 async function expectNoPercentage(page: Page, where: string): Promise<void> {
-  const body = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+  const card = page.getByTestId("trade-application-card");
+  await expect(card, `${where}: the trade card is on screen to be swept`).toBeVisible();
+  const body = (await card.innerText()).replace(/\s+/g, " ");
   expect(body, `${where}: no % symbol on a customer surface`).not.toMatch(/\d\s*%/);
   expect(body, `${where}: no spelled-out percentage`).not.toMatch(/\d+(\.\d+)?\s*per\s?cent/i);
   expect(body, `${where}: no comparative framing`).not.toMatch(/\b(better|cheaper|lower|you save|save on)\b/i);
