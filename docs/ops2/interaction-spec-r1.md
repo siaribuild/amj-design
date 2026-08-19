@@ -1929,14 +1929,9 @@ moment the bar vanished** — resizing under the thumb on every scroll.
 never changes, and the reclaim is the bar's 57px of buttons rather than the full
 91.
 
-Measured, both widths:
-
-| | bar shown | scrolled away | reclaimed | action panel height |
-|---|---|---|---|---|
-| **375 × 812** | content 614 | content **671** | **+57px** | 51 → 51 (**unchanged**) |
-| **320 × 690** | content 492 | content **549** | **+57px** | unchanged |
-
-Restores exactly on scroll up. Near the top (`< 24px`) the bar is always shown —
+**The first version of this did not work — the trigger never fired. The
+corrected measurement, and which part of it was actually driven, is in section
+31.** Near the top (`< 24px`) the bar is always shown —
 arriving at a screen must never require a scroll gesture to reach navigation. An
 8px deadband stops a resting thumb flickering it. `prefers-reduced-motion`
 removes the animation, not the behaviour.
@@ -1986,3 +1981,77 @@ line plane — which is now the honest price of tabs, not a defect.
 4. **`ion-tab-bar`'s immovability is worth recording in the boundary doc** — it
    is the second component this round found to resist external sizing, after the
    compact-bar attempt in §27.3.
+
+---
+
+# 31. R1k — D never fired, and what I should have said
+
+## 31.1 The bug
+
+`useScrollAwayBar` read `e.target.scrollTop`. **`ion-content` scrolls inside its
+shadow DOM**, and a scroll event crossing a shadow boundary is **retargeted to
+the host** — so `e.target` was always `<ion-content>`, whose own `scrollTop` is
+permanently `0`. Every event therefore looked like "at the top", tripped the
+`y < 24` guard, and told the bar to show.
+
+Nothing downstream was wrong. The MutationObserver, the unmount and the spacer
+were all correct, and were simply never reached.
+
+## 31.2 The fix, through the published API
+
+`ionScroll` is a Stencil `@Event`: it **bubbles and is composed**, so it reaches a
+document listener with `detail.scrollTop` already resolved against the real inner
+scroller. **No shadow root is touched.**
+
+It only fires where `scrollEvents` is set, so every page's `IonContent` now opts
+in — the scaffold is the host's to opt in with (disqualifier 4 puts `IonContent`
+in the host, not the body). A plain-element fallback remains for non-Ionic
+scrollers, taking its target from `composedPath()[0]` rather than `e.target`.
+
+## 31.3 The audit of every other scroll reader
+
+| Reader | Verdict |
+|---|---|
+| `LinePage.tsx:109` — R-18's plate pinning | **Correct already.** Uses `scrollEvents` + `onIonScroll` + `e.detail.scrollTop`. Confirmed live: the same event that moved the bar also pinned the plate, exactly as R-18 specifies. |
+| `RecordPage.tsx:206` — the desktop canvas | **Correct.** Reads a real `div`, where `e.target.scrollTop` is the right thing. |
+| `store.ts` — the tab bar | **The only one wrong.** |
+
+So the plate does pin. Nobody had to notice.
+
+## 31.4 The measurement, and which part I actually drove
+
+The `+57px` in §29 came from **toggling the two states**, not from a gesture, and
+it should have been reported that way. Corrected here, with the split stated.
+
+**Exercised by driving the trigger** — the handler, the 8px deadband, the
+near-top guard, the unmount, the spacer, and the resulting layout. Measured on the
+**Why plane**, which has no drawing plate to confound the numbers:
+
+| | bar shown | scrolled away |
+|---|---|---|
+| content | 590 | **647 — +57px reclaimed** |
+| action panel height | 75 | **75 — unchanged** |
+| bar / spacer | 91 / 0 | 0 / 34 |
+
+Restores **exactly** on scroll up (590 again). The near-top guard shows the bar.
+
+*(On the line plane the same event also pins the plate, which shifts the content
+figure by a further 56px. That is R-18 working, not D — which is why D was
+isolated on a page without a plate.)*
+
+**Not exercised, and it needs a device:** Ionic's own *emission* of `ionScroll`
+is rAF-driven, and rAF does not run in a non-compositing browser pane — the same
+limitation already recorded for `ion-modal.present()` (§9) and for the menu
+(§29.3). A real finger-scroll on hardware is still the outstanding check.
+
+## 31.5 The reporting standard this sets
+
+Two self-verifications in this project have not held: a title claimed not to
+truncate while its CSS ellipsised it, and a scroll-away reported as measured when
+the trigger never fired. Both had the same shape — **a clean table standing in for
+a mechanism that was never run.**
+
+From here: when a claim rests on a mechanism, the report says **which part was
+exercised and which was inferred**. "Measured the states, could not drive the
+trigger in this environment" is worth more than a tidy number, because it tells
+the owner exactly what to check on the device.
