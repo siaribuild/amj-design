@@ -140,7 +140,7 @@ export function useEditorPane(): boolean {
    below the action panel, the BAR owns the home-indicator inset and the panel
    must not add a second one. Two stacked elements both padding for the same
    34px is the fiddly bit, and it is settled here rather than per component. */
-export type TabVariant = "a" | "b" | "c" | "off";
+export type TabVariant = "a" | "b" | "d" | "off";
 
 /** Planes that carry their own primary action AND their own labelled way out —
  *  the two conditions that make variant (b)'s hiding defensible. */
@@ -179,4 +179,60 @@ export function useTabBar(): { variant: TabVariant; visible: boolean } {
 export function setTabVariant(v: TabVariant) {
   localStorage.setItem("ops2-tabs", v);
   window.dispatchEvent(new CustomEvent("ops2-tabs", { detail: v }));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   VARIANT D — the bar slides away on scroll down and returns on scroll up.
+
+   WHOSE IS IT? Ionic's tab bar has no scroll-away; ion-header has `collapse`
+   and ion-footer has `collapse="fade"`, but ion-tab-bar has neither. So the
+   COUPLING is ours — and it needs no boundary disqualifier, because nothing is
+   being rebuilt: the component is still IonTabBar, untouched, and what we add is
+   scroll-driven motion around it.
+
+   Where it may live is the part the boundary doc does govern. Disqualifier 4
+   says zone bodies never touch the page scaffold or scroll-coupled components,
+   because scroll belongs to the shell — which is why R-18's plate pinning gets
+   `useZoneScroll()` rather than reaching for IonContent itself. This listens in
+   the SHELL, on the capture phase, and no body knows it exists. That is the same
+   channel R-18 already needs, so D adds a caller rather than a mechanism.
+
+   It listens for raw `scroll` in the capture phase rather than Ionic's
+   `ionScroll`, because ionScroll only fires on an IonContent that opted in with
+   `scrollEvents` — and requiring every page to opt in would be the shell
+   reaching into bodies, which is the thing disqualifier 4 forbids.
+   ───────────────────────────────────────────────────────────────────────── */
+export function useScrollAwayBar(active: boolean) {
+  useEffect(() => {
+    if (!active) {
+      document.documentElement.dataset.tabhide = "off";
+      return;
+    }
+    let last = 0;
+    let hidden = false;
+    document.documentElement.dataset.tabhide = "off";
+    const set = (h: boolean) => {
+      if (h === hidden) return;
+      hidden = h;
+      document.documentElement.dataset.tabhide = h ? "on" : "off";
+    };
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (!t || typeof t.scrollTop !== "number") return;
+      const y = t.scrollTop;
+      const dy = y - last;
+      last = y;
+      /* Near the top the bar is always available: arriving at a screen must
+         never require a scroll gesture to reach navigation. */
+      if (y < 24) return set(false);
+      /* 8px of deadband, so a thumb resting on the glass does not flicker it. */
+      if (dy > 8) set(true);
+      else if (dy < -8) set(false);
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("scroll", onScroll, true);
+      document.documentElement.dataset.tabhide = "off";
+    };
+  }, [active]);
 }

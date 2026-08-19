@@ -45,7 +45,6 @@ import {
   IonLabel, IonListHeader, IonButton, IonNote, IonTabs, IonTabBar, IonTabButton,
   IonIcon,
 } from "@ionic/react";
-import { menuController } from "@ionic/core/components";
 import { IonReactHashRouter } from "@ionic/react-router";
 import { Redirect, Route, useHistory, useParams } from "react-router-dom";
 import {
@@ -59,8 +58,8 @@ import { ManufacturerPricePage, SpecPage, UnitPage, WhyPage } from "./pages/Line
 import { EditorDock, EditorPlane } from "./Editor";
 import { planeTransition } from "./transitions";
 import {
-  setStore, setTabVariant, useEditorPane, useStore, useTabBar, useWidthClass,
-  type TabVariant,
+  setStore, setTabVariant, useEditorPane, useScrollAwayBar, useStore, useTabBar,
+  useWidthClass, type TabVariant,
 } from "./store";
 
 const DESTINATIONS = [
@@ -78,7 +77,7 @@ function NavDrawer() {
             <IonListHeader><IonLabel>OpenFrame ops</IonLabel></IonListHeader>
             {DESTINATIONS.map(([d, href], i) => (
               <IonItem key={d} button detail={false} href={href}
-                onClick={() => menuController.close()}
+                onClick={() => document.querySelector("ion-menu")?.close()}
                 color={i === 1 ? "light" : undefined}>
                 <IonLabel>{d}</IonLabel>
               </IonItem>
@@ -118,7 +117,7 @@ function VariantSwitch({ variant }: { variant: TabVariant }) {
   return (
     <div className="variantswitch" role="group" aria-label="Mock control: tab bar variant">
       <span className="vs-tag">tabs</span>
-      {(["a", "b", "c", "off"] as TabVariant[]).map((v) => (
+      {(["a", "b", "d", "off"] as TabVariant[]).map((v) => (
         <button key={v} type="button" aria-pressed={variant === v}
           onClick={() => setTabVariant(v)}>{v.toUpperCase()}</button>
       ))}
@@ -150,7 +149,22 @@ export default function App() {
   const { editing } = useStore();
   const wide = wc === "desktop" || wc === "wide";
   const paneBand = useEditorPane();
-  const { variant } = useTabBar();
+  const { variant, visible: barVisible } = useTabBar();
+  useScrollAwayBar(variant === "d" && barVisible);
+  /* D unmounts the bar rather than sliding it: ion-tab-bar cannot be moved or
+     resized from outside — three measurements are recorded in ops2-tabs.css. The
+     spacer keeps the home-indicator band present either way, so the action panel
+     never takes its inset back and never resizes under the thumb. */
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const read = () => setHidden(el.dataset.tabhide === "on");
+    const mo = new MutationObserver(read);
+    mo.observe(el, { attributes: true, attributeFilter: ["data-tabhide"] });
+    read();
+    return () => mo.disconnect();
+  }, []);
+  const showBar = !(variant === "d" && hidden);
   /* Ionic infers the selected tab from the tab buttons' hrefs, and measured, it
      selected NOTHING once the URL went below a tab root — /projects/record/…
      left the bar blank for most of the working day. Driving it explicitly from
@@ -201,31 +215,38 @@ export default function App() {
               <Route exact path="/"><Redirect to="/dashboard" /></Route>
             </IonRouterOutlet>
 
-            <IonTabBar slot="bottom" className="opstabs" selectedTab={activeTab}>
-              {/* Variant C drops the labels. That is the ONLY supported way to a
-                  shorter bar: ion-tab-bar publishes no height variable, and both
-                  attempts to force one made it TALLER, not shorter. The cost is
-                  real and he should judge it — "Dashboard" and "Enquiries" as
-                  icons alone are a guess until they are learned. */}
+            {showBar && <IonTabBar slot="bottom" className="opstabs" selectedTab={activeTab}>
+              {/* Variant C is gone. Measured, icon-only did not shorten Ionic's
+                  md bar either (91px, identical to A), so it cost its labels for
+                  zero pixels. */}
               <IonTabButton tab="dashboard" href="/dashboard">
                 <IonIcon icon={gridOutline} aria-hidden="true" />
-                {variant !== "c" && <IonLabel>Dashboard</IonLabel>}
+                <IonLabel>Dashboard</IonLabel>
               </IonTabButton>
               <IonTabButton tab="projects" href="/projects">
                 <IonIcon icon={layersOutline} aria-hidden="true" />
-                {variant !== "c" && <IonLabel>Projects</IonLabel>}
+                <IonLabel>Projects</IonLabel>
               </IonTabButton>
               <IonTabButton tab="enquiries" href="/enquiries">
                 <IonIcon icon={chatbubbleEllipsesOutline} aria-hidden="true" />
-                {variant !== "c" && <IonLabel>Enquiries</IonLabel>}
+                <IonLabel>Enquiries</IonLabel>
               </IonTabButton>
               {/* `More` is not a destination — it opens the drawer, which IS the
                   full list. A tab button with no href does not route. */}
-              <IonTabButton tab="more" onClick={() => menuController.open()}>
+              {/* The element's own open(), not menuController.open(). Measured:
+                  the controller call left the menu's classes untouched — with a
+                  split-pane-side menu it does not resolve to this one — so the
+                  drawer never opened and the twice-recorded "drawer with no
+                  trigger" regression would have shipped again. */}
+              <IonTabButton tab="more"
+                onClick={() => document.querySelector("ion-menu")?.open()}>
                 <IonIcon icon={ellipsisHorizontal} aria-hidden="true" />
-                {variant !== "c" && <IonLabel>More</IonLabel>}
+                <IonLabel>More</IonLabel>
               </IonTabButton>
-            </IonTabBar>
+            </IonTabBar>}
+            {/* The indicator band, always present in D so the action panel keeps
+                its no-inset state whether the bar is there or not. */}
+            {variant === "d" && !showBar && <div slot="bottom" className="tabspacer" />}
           </IonTabs>
           </div>
         </IonSplitPane>

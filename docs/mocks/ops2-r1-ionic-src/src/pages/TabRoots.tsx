@@ -3,25 +3,20 @@
 // the variants can be judged on a live stack, not so this pass designs them.
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
-  IonLabel, IonBadge, IonNote, IonListHeader, IonButtons, IonMenuButton,
+  IonLabel, IonBadge, IonNote, IonListHeader,
 } from "@ionic/react";
 import { useHistory } from "react-router-dom";
 import { PROJECTS, RECORD } from "../data";
 import { Money } from "../ui";
-import { useWidthClass } from "../store";
 
 /** D12 — the attention surface: what needs a person, and what is critically
  *  wrong in the catalogue. Explicitly not a metrics page. */
 export function DashboardPage() {
   const history = useHistory();
-  const wc = useWidthClass();
   return (
     <IonPage>
       <IonHeader className="ion-no-border">
         <IonToolbar>
-          {wc === "desktop" || wc === "wide" ? null : (
-            <IonButtons slot="start"><IonMenuButton aria-label="Open the console menu" /></IonButtons>
-          )}
           <IonTitle>Dashboard</IonTitle>
         </IonToolbar>
       </IonHeader>
@@ -73,14 +68,10 @@ export function DashboardPage() {
  *  purpose. "enquiry" is on Project's _Avoid_ line precisely because it is not a
  *  synonym for one, which is what makes it a legitimate sibling tab. */
 export function EnquiriesPage() {
-  const wc = useWidthClass();
   return (
     <IonPage>
       <IonHeader className="ion-no-border">
         <IonToolbar>
-          {wc === "desktop" || wc === "wide" ? null : (
-            <IonButtons slot="start"><IonMenuButton aria-label="Open the console menu" /></IonButtons>
-          )}
           <IonTitle>Enquiries</IonTitle>
         </IonToolbar>
       </IonHeader>
@@ -115,14 +106,10 @@ export function EnquiriesPage() {
  *  from. Kept here so all three tab roots read the same way. */
 export function ProjectsPage() {
   const history = useHistory();
-  const wc = useWidthClass();
   return (
     <IonPage>
       <IonHeader className="ion-no-border">
         <IonToolbar>
-          {wc === "desktop" || wc === "wide" ? null : (
-            <IonButtons slot="start"><IonMenuButton aria-label="Open the console menu" /></IonButtons>
-          )}
           <IonTitle>Projects</IonTitle>
         </IonToolbar>
       </IonHeader>

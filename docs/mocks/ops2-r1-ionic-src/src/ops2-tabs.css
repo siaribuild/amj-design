@@ -45,16 +45,6 @@
    routes in CSS, so the visibility test lives next to the route test. */
 :root[data-tabbar="off"] ion-tab-bar { display: none; }
 
-/* C - icon-only. The ONLY supported route to a shorter bar:
-   ion-tab-bar publishes --background, --border and --color but NO height,
-   and forcing one made it TALLER both times (113px against A's 91) because
-   the safe-area padding is added on top of a content-box height. Dropping
-   the labels lets Ionic size the bar down itself, which is the component's
-   own affordance rather than a fight with its internals.
-
-   The variant exists to be judged, not recommended: "Dashboard" and
-   "Enquiries" as icons alone are a guess until they are learned. */
-
 ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
 
 /* ── the mock's own variant switcher ─────────────────────────────────────────
@@ -92,3 +82,56 @@ ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
    its DIRECT children. */
 .tabshost { flex: 1 1 auto; position: relative; display: flex; min-width: 0; }
 .tabshost > ion-tabs { flex: 1 1 auto; min-width: 0; }
+
+/* ═══ VARIANT D — scroll away ═══════════════════════════════════════════════
+   The bar slides down and OUT OF LAYOUT on scroll down, and comes back on scroll
+   up. The reclaim is real, not visual: the negative margin returns the space to
+   ion-content, and the transform takes the buttons off screen.
+
+   WHAT MOVES, AND WHAT MUST NOT. Only the bar. The action panel never moves —
+   a primary action that slides away is not a primary action.
+
+   THE INSET, IN REVERSE. Section 27's rule gave the home-indicator padding to
+   the bar and took it off the action panel, which is why the record costs 25px
+   rather than 91. If the bar left entirely, the panel would become bottom-most
+   and have to take the inset BACK — growing 34px at the exact moment the bar
+   leaves, so the panel would resize under the thumb on every scroll.
+
+   So the bar does not leave entirely: it gives up its 57px of BUTTONS and keeps
+   its 34px safe-area band. The band is the indicator gap the panel would
+   otherwise have to own, the panel never changes height, and nothing resizes
+   under the thumb. The reclaim is 57px of the 91, and that number is the honest
+   one. */
+/* HOW IT HIDES, and why not the obvious way.
+
+   ion-tab-bar CANNOT BE MOVED OR RESIZED FROM OUTSIDE. Three techniques, all
+   measured in the browser, all failed:
+     1. transform + negative margin, the idiomatic slide - computed to the
+        identity matrix even as an INLINE !important; the element carries
+        `contain: strict`.
+     2. height - computed away to Ionic own `height: 56px` at equal specificity.
+     3. height with !important - the rendered box stayed 91px regardless.
+
+   So D unmounts the bar instead. That is a pop, not a slide, and it is the
+   honest limit of what the component allows: making it slide would mean
+   replacing IonTabBar with a hand-built bar, and none of the boundary doc four
+   disqualifiers covers "the standard component will not animate the way I want".
+
+   THE INSET, IN REVERSE - the interaction the brief warned about. Section 27
+   gave the home-indicator padding to the bar and took it off the action panel.
+   If the bar simply left, the panel would become bottom-most, take the inset
+   back, and GROW 34px at the exact moment the bar vanished - resizing under the
+   thumb on every scroll. So a spacer of exactly the indicator height stays
+   behind. The panel never changes, and the reclaim is the bar 57px of buttons
+   rather than the full 91. */
+.tabspacer {
+  height: var(--ion-safe-area-bottom, 0px);
+  flex: none;
+  background: var(--ion-background-color);
+}
+
+/* Reduced motion removes the ANIMATION, not the behaviour — the space still
+   comes back, it simply arrives without the slide. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-tabs="d"] ion-tab-bar { transition: none; }
+}
