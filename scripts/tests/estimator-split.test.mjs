@@ -13,12 +13,15 @@ const runDir = await makeRunDir("estimator-split");
 const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
-    contents: `export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};`,
+    contents: `
+      export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
+      export { splitsAreEligible } from ${p("worker/lib/estimator/splitCandidates.ts")};
+    `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -496,4 +499,37 @@ test("an opening that fits one frame is still not split", () => {
   // proposeSplit always returns a proposal; the caller drops it below 2 segments.
   // What matters is that the family default did not manufacture a reason to split.
   assert.equal(p.basis, "default_even");
+});
+
+// ── Splits as candidates (D7) ───────────────────────────────────────────────
+//
+// AC-18 is the criterion this whole phase turns on: a split may never be
+// conjured to meet a thermal band. "Awning + fixed" meets an awning's band more
+// easily than an awning does, because a fixed lite is thermally better — so if
+// thermal could open the gate, the estimator would learn to split its way out of
+// every requirement it could not otherwise meet.
+//
+// The guarantee is structural, not a check: the eligibility function has no
+// parameter through which a requirement, a deviation or a tier could arrive.
+// There is nothing to get wrong later, because there is nothing to read.
+test("AC-17/18/19 splits are eligible on a hint or a dimensional failure, and on nothing else", () => {
+  const row = (fits, passed = true) => ({ outcome: { passed }, fit: { fits } });
+  const hint = { units: [{ operation: "awning", count: 2, widthMm: 600 }], raw: "2x 600mm AWNINGS" };
+
+  // (a) nothing fits ⇒ eligible. This is the only reason the machine may invent
+  // a split on its own initiative.
+  assert.equal(splitsAreEligible(null, { rows: [row(false), row(false)] }), true);
+  // (b) the drawings implied one ⇒ eligible even though a single unit fits.
+  assert.equal(splitsAreEligible(hint, { rows: [row(true)] }), true);
+  // AC-18: a single unit fits and no document asked for a split ⇒ NOT eligible,
+  // whatever the thermal picture is. The function cannot see a requirement.
+  assert.equal(splitsAreEligible(null, { rows: [row(true), row(false)] }), false);
+  assert.equal(splitsAreEligible.length, 2, "hint and evaluation — no requirement parameter exists");
+
+  // A candidate that FITS but failed a hard constraint has not shown the opening
+  // can be served by one unit, so it does not close the gate.
+  assert.equal(splitsAreEligible(null, { rows: [row(true, false)] }), true);
+  // No candidates at all is a catalogue problem, not a dimensional one — but it
+  // is also not evidence a single unit fits, so a split may still be tried.
+  assert.equal(splitsAreEligible(null, { rows: [] }), true);
 });
