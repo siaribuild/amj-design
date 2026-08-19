@@ -651,6 +651,34 @@ export async function revokeTrade(
   if (Number(claim.meta?.changes ?? 0) === 0) return { ok: false, error: "not_verified" };
 
   await env.DB.prepare("UPDATE user SET discount_percent = 0 WHERE id = ?").bind(customerId).run();
+
+  // A REVOKE REACHES THE APPLICATION ALREADY IN FLIGHT (security review SEC-3).
+  //
+  // Blocking the account's NEXT application is not enough: one submitted BEFORE
+  // the revocation survives it untouched. A verified customer can pre-position a
+  // second application — it queues carrying a perfectly clean set of reasons —
+  // and wait. Revoke them, and that row is still sitting in the queue looking
+  // like an ordinary applicant; approving it restores the rate the revocation
+  // just removed, and the person approving has no way to know.
+  //
+  // The decision stays theirs. A pending application may well be the customer
+  // putting things right, and auto-rejecting it would punish that. What must not
+  // happen is somebody deciding it without knowing the account was revoked
+  // underneath it — so the reason is added to the row rather than the row being
+  // taken away. The partial unique index means there is at most one.
+  const inFlight = await env.DB.prepare(
+    "SELECT id, queue_reasons FROM trade_application WHERE user_id = ? AND status = 'pending'",
+  ).bind(customerId).first<{ id: string; queue_reasons: string | null }>();
+  if (inFlight) {
+    let reasons: string[] = [];
+    try { reasons = JSON.parse(inFlight.queue_reasons ?? "[]") as string[]; } catch { reasons = []; }
+    if (!reasons.includes("previously_revoked")) {
+      reasons.push("previously_revoked");
+      await env.DB.prepare("UPDATE trade_application SET queue_reasons = ?1 WHERE id = ?2")
+        .bind(JSON.stringify(reasons), inFlight.id).run();
+    }
+  }
+
   await logEvent(env, {
     actor: actor.id, entityType: "user", entityId: customerId,
     action: "trade.revoked", after: { reason: trimmed },

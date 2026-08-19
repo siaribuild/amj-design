@@ -979,6 +979,67 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         "and the queue says why");
     });
 
+    await t.test("AC-P2-30 hardening: a revoke reaches the application already in flight (SEC-3)", async () => {
+      // Codex stop-gate finding, following SEC-2. Blocking a revoked account's
+      // NEXT application is not enough, because an application submitted BEFORE
+      // the revocation survives it untouched.
+      //
+      // `revokeTrade` claims only the standing grant. A verified customer can
+      // therefore pre-position a second application — it queues, carrying a
+      // perfectly clean set of reasons — and wait. When ops revokes them, that
+      // row is still sitting in the queue looking like an ordinary applicant,
+      // and approving it restores the rate the revocation just removed.
+      //
+      // The decision stays a person's: a pending application may well be the
+      // customer putting things right, and auto-rejecting it would punish that.
+      // What must not happen is the person deciding it WITHOUT KNOWING the
+      // account was revoked underneath it.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-sec3-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+
+      const business = spareBusiness(10);
+      const account = await newAccount("inflight", business.domain);
+
+      // Verified by auto-pass.
+      const first = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.deepEqual(await first.clone().json(), { ok: true, status: "verified" });
+
+      // A SECOND application, submitted while still verified, on a different
+      // ABN so it is a genuine new application. It queues.
+      const other = spareBusiness(9);
+      const second = await apply(account.session, {
+        abn: other.abn, businessName: "Totally Unrelated Holdings", source: "profile",
+      });
+      assert.equal((await second.clone().json()).status, "under_review");
+
+      // Ops revokes the standing grant. The pending row is what this test is about.
+      const accountId = (await userRow(account.email)).id;
+      const revoked = await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "ABN is not theirs" },
+      });
+      assert.equal(revoked.status, 200);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 0);
+
+      // The in-flight application must now SAY the account was revoked, so the
+      // staff member deciding it is deciding with that in front of them.
+      const pending = (await applications(account.email)).find((a) => a.status === "pending");
+      assert.ok(pending, "the in-flight application is still there — it is not auto-rejected");
+      assert.ok(JSON.parse(pending.queue_reasons ?? "[]").includes("previously_revoked"),
+        "SEC-3: a revoke reaches the application already in the queue");
+
+      // And the ops queue itself carries it, since that is where the decision
+      // actually gets made.
+      const queue = await requestJson(staff, "/api/ops/trade/applications");
+      const row = queue.body.applications.find((a) => a.id === pending.id);
+      assert.ok(row, "the application is in the queue");
+      assert.ok(row.queueReasons.includes("previously_revoked"),
+        "and the reviewer can see it without opening anything else");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
