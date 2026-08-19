@@ -647,32 +647,37 @@ export async function revokeTrade(
   // together or not at all.
   //
   // These were three sequential statements with a read-modify-write in the
-  // middle. Two ways that went wrong, and neither needed an attacker:
+  // middle. A request that died after the grant was claimed left the rate zeroed
+  // and the queued application UNannotated — the exact state SEC-3 exists to
+  // prevent, reached by a dropped connection rather than a clever sequence — and
+  // the read-modify-write on `queue_reasons` could lose a concurrent write.
   //
-  //   - a request that died after the grant was claimed left the rate zeroed and
-  //     the queued application UNannotated — the exact state SEC-3 exists to
-  //     prevent, reached by a dropped connection instead of a clever sequence;
-  //   - the read-modify-write on `queue_reasons` could lose a concurrent write,
-  //     so an application that queued for a name mismatch AND a revocation could
-  //     end up admitting to only one.
-  //
-  // `json_insert` appends server-side, so there is no read-modify-write left to
-  // lose, and the `NOT LIKE` guard makes a second revoke idempotent rather than
-  // stacking the reason twice.
+  // EVERY STATEMENT IN A BATCH RUNS, including on the call that turns out to be
+  // a no-op, so each one below is guarded by THIS revocation and not by the
+  // account's history. An earlier guard asked only `revoked_at IS NOT NULL`,
+  // which matches any revocation ever performed on the account: a second press
+  // of revoke correctly answered `not_verified` and then zeroed a rate ops had
+  // negotiated by hand in the meantime (SEC-4). `revokedAt` is minted here and
+  // bound to the claim and to both guards, so nothing matches unless this call
+  // is the one that did the revoking.
+  const standing = await standingGrant(env, customerId);
+  if (!standing) return { ok: false, error: "not_verified" };
+  const revokedAt = new Date().toISOString().replace("T", " ").slice(0, 23);
+
   const [claim] = await env.DB.batch([
     env.DB.prepare(
       `UPDATE trade_application
-          SET revoked_at = datetime('now'), revoked_by = ?1, revoke_reason = ?2
-        WHERE user_id = ?3 AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
-    ).bind(actor.id, trimmed, customerId),
-    // Guarded by the claim's own effect rather than assumed: if nothing was
-    // revoked, this must not zero a rate ops negotiated by hand.
+          SET revoked_at = ?1, revoked_by = ?2, revoke_reason = ?3
+        WHERE id = ?4 AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
+    ).bind(revokedAt, actor.id, trimmed, standing.id),
+    // Zeroed only because THIS call revoked the grant — never because the
+    // account was revoked at some point in the past. AC-P2-29: the rate is
+    // written on a real transition and on nothing else.
     env.DB.prepare(
       `UPDATE user SET discount_percent = 0
         WHERE id = ?1 AND type = 'customer'
-          AND EXISTS (SELECT 1 FROM trade_application
-                       WHERE user_id = ?1 AND status = 'approved' AND revoked_at IS NOT NULL)`,
-    ).bind(customerId),
+          AND EXISTS (SELECT 1 FROM trade_application WHERE id = ?2 AND revoked_at = ?3)`,
+    ).bind(customerId, standing.id, revokedAt),
     // A REVOKE REACHES THE APPLICATION ALREADY IN FLIGHT (SEC-3).
     //
     // Blocking the account's NEXT application is not enough: one submitted
@@ -684,15 +689,18 @@ export async function revokeTrade(
     // The decision stays a person's: a pending application may be the customer
     // putting things right, and auto-rejecting it would punish that. What must
     // not happen is somebody deciding it without knowing. So the reason is added
-    // to the row rather than the row being taken away.
+    // rather than the row taken away, appended with `json_insert` server-side so
+    // there is no read-modify-write left to lose, and guarded the same way so a
+    // refused retry cannot annotate an application it had nothing to do with.
     env.DB.prepare(
       `UPDATE trade_application
           SET queue_reasons = json_insert(
                 CASE WHEN queue_reasons IS NULL OR queue_reasons = '' THEN '[]' ELSE queue_reasons END,
                 '$[#]', 'previously_revoked')
         WHERE user_id = ?1 AND status = 'pending'
-          AND (queue_reasons IS NULL OR queue_reasons NOT LIKE '%previously_revoked%')`,
-    ).bind(customerId),
+          AND (queue_reasons IS NULL OR queue_reasons NOT LIKE '%previously_revoked%')
+          AND EXISTS (SELECT 1 FROM trade_application WHERE id = ?2 AND revoked_at = ?3)`,
+    ).bind(customerId, standing.id, revokedAt),
   ]);
   if (Number(claim?.meta?.changes ?? 0) === 0) return { ok: false, error: "not_verified" };
 

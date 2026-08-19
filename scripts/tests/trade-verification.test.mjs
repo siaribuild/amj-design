@@ -1040,6 +1040,51 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         "and the reviewer can see it without opening anything else");
     });
 
+    await t.test("AC-P2-29 hardening: a retried revoke touches nothing (SEC-4)", async () => {
+      // Codex stop-gate finding. The revoke batch guarded its rate write with
+      // `EXISTS (… revoked_at IS NOT NULL)` — which matches ANY historically
+      // revoked approval on the account, not the one this call just claimed.
+      //
+      // So a SECOND press of revoke, on an account already revoked, correctly
+      // answered `not_verified` and then wrote anyway: every statement in a
+      // batch runs, and that EXISTS was still true from the first revocation
+      // months earlier. A rate ops had negotiated by hand in the meantime went
+      // to zero, reported as a no-op.
+      //
+      // AC-P2-29 is the rule being broken: `discount_percent` is written only on
+      // a real transition. A refused call is not a transition.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-sec4-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+
+      const business = spareBusiness(8);
+      const account = await newAccount("retry-revoke", business.domain);
+      const applied = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.deepEqual(await applied.clone().json(), { ok: true, status: "verified" });
+
+      const accountId = (await userRow(account.email)).id;
+      const revoke = () => staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "ABN is not theirs" },
+      });
+
+      assert.equal((await revoke()).status, 200);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 0);
+
+      // Ops negotiates a rate by hand afterwards. This phase ships no editor for
+      // it, so the negotiation is a direct write — the same state AC-P2-29
+      // protects everywhere else.
+      await sql(`UPDATE user SET discount_percent = 12 WHERE id = '${esc(accountId)}'`);
+
+      // The retry. Refused, and it must write NOTHING.
+      const again = await revoke();
+      assert.equal(again.status, 409, "already revoked — there is nothing to revoke");
+      assert.equal(Number((await userRow(account.email)).discount_percent), 12,
+        "SEC-4: a refused revoke must not zero a rate it never revoked");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
