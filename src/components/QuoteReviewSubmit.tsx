@@ -503,8 +503,14 @@ export function QuoteReviewSubmit({
     addressSuburb: "detail-suburb", addressState: "detail-state",
     addressPostcode: "detail-postcode",
   };
+  /** The first thing still standing between the customer and Submit, in FORM
+   *  ORDER — which is why the optional business group comes last here too. */
   const focusFirstGap = () => {
-    const target = missing.length ? CONTROL_ID[missing[0]] : "delivery-postcode";
+    const target = missing.length ? CONTROL_ID[missing[0]]
+      : postcode.length !== 4 ? "delivery-postcode"
+      : abnMalformed ? "trade-abn"
+      : tradeNameMissing ? "trade-business"
+      : "delivery-postcode";
     document.getElementById(target)?.focus();
   };
 
@@ -517,7 +523,16 @@ export function QuoteReviewSubmit({
     const el = e.target as HTMLElement;
     if (el.tagName !== "INPUT") return;
     e.preventDefault();
-    if (missing.length || postcode.length !== 4) {
+    // EVERY gate the button obeys, obeyed here too. Door (c) added a new way for
+    // this form to be invalid and, at first, taught only the button about it —
+    // so Enter sailed straight past a malformed ABN and submitted the quote an
+    // inch away from a control that was refusing exactly that input. A keyboard
+    // user would have hit it every time.
+    //
+    // `tradeOutstanding` is the single source for that, shared with
+    // `submitDisabled` and the "Still needed:" caption, so the three cannot
+    // drift into disagreeing about what is wrong.
+    if (missing.length || postcode.length !== 4 || tradeOutstanding.length) {
       setTouched(Object.fromEntries(missing.map((f) => [f, true])));
       focusFirstGap();
       return;

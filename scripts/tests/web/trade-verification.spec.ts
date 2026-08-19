@@ -459,3 +459,40 @@ test("the gate offers an optional ABN last, and only an entered one can hold Sub
   await expect(submit, "clearing the field releases Submit").toBeEnabled();
   await expect(page.getByLabel("Business name"), "and the paired field goes away").toHaveCount(0);
 });
+
+// ─── 9. Enter obeys the same gate the button does ────────────────────────────
+// Found by the Codex stop-gate review, not by a person or a suite.
+//
+// §16.9 gives this screen a second way to submit: Enter submits when the form is
+// valid, and otherwise moves to the first thing still outstanding. Door (c)
+// added a new way for the form to be invalid and taught only the BUTTON about
+// it, so Enter sailed past a malformed ABN and submitted — the exact input the
+// button was refusing an inch away.
+//
+// A keyboard user would have hit this every time, and the quote would have
+// submitted with an ABN that never got checked.
+test("Enter cannot submit past a malformed ABN either", async ({ page }) => {
+  const email = freshEmail("enter");
+  await apiSignIn(page.request, email);
+  await openReview(page);
+  await fillDetails(page);
+
+  const abn = page.getByLabel("ABN (optional)");
+  await abn.fill("12345678901");                 // checksum-invalid
+  await expect(page.getByRole("button", { name: /^Submit/ })).toBeDisabled();
+
+  // Enter from a required field, with everything else complete.
+  await page.getByLabel("Full name").press("Enter");
+
+  // Still on the review screen — nothing was submitted.
+  await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /thanks|submitted/i })).toHaveCount(0);
+
+  // §16.9's other half: Enter moves to the first thing outstanding, and with
+  // everything else filled that is the ABN.
+  await expect(abn, "Enter puts the cursor on the gap it refused to skip").toBeFocused();
+
+  // And once the offending value is cleared, Enter works again.
+  await abn.fill("");
+  await expect(page.getByRole("button", { name: /^Submit/ })).toBeEnabled();
+});
