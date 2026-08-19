@@ -53,6 +53,18 @@ const emailAt = (domain: string) => `sam-${stamp}-${seq++}@${domain}`;
 let ip = 0;
 const nextIp = () => `198.51.${(ip >> 8) & 255}.${ip++ & 255}`;
 
+/** Sign an API context in, creating the account if it is new. Setup only —
+ *  journeys that are ABOUT the sign-in drive it through the browser instead. */
+async function apiSignIn(ctx: import("@playwright/test").APIRequestContext, email: string): Promise<void> {
+  const challenge = await ctx.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": nextIp() },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  const verified = await ctx.post("/api/auth/verify", { data: { email, code: devCode } });
+  expect(verified.ok(), `verify ${email}`).toBeTruthy();
+}
+
 /** Drive an OTP panel in the browser, from email through to the code. Shared by
  *  the trade page and the gate because it IS the same component (§18.2.1). */
 async function otpSignIn(page: Page, email: string): Promise<void> {
@@ -254,4 +266,74 @@ test("the account page applies for trade pricing, and a verified ABN is not free
   await expect(verifiedCard.getByText(/trade pricing applies to your account/i)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("textbox", { name: "ABN" }),
     "a verified account is not given a free-text ABN box on the profile (AC-P2-11)").toHaveCount(0);
+});
+
+// ─── 5. AC-P2-8 — the business name is prefilled from the account ─────────────
+// F-1 from the tester's FAIL verdict. The card's `useState` initializer reads
+// `user.company`, but on `/trade-account` it runs while App is still resolving
+// the session, so `user` is null and the initial value is "" forever. Door (b)
+// hid it: the account page only renders once `user` exists.
+//
+// The fix must NOT fight typing — a cold visitor who types a business name
+// before signing in keeps what they typed.
+test("the business name prefills from the account on the trade page (AC-P2-8)", async ({ page }) => {
+  const business = SPARE(3);
+  const email = emailAt(business.domain);
+  await apiSignIn(page.request, email);
+
+  // `company` left the profile PATCH in the UI, but the server still accepts it
+  // (account.ts allowlist) — this is setup, not the behaviour under test.
+  const saved = await page.request.post("/api/auth/profile", {
+    data: { name: "Sam Taylor", company: business.businessName },
+  });
+  expect(saved.ok(), `seed company: ${await saved.text()}`).toBeTruthy();
+
+  await page.goto("/trade-account");
+  const card = page.getByTestId("trade-application-card");
+  await expect(card.getByRole("button", { name: /check my abn/i })).toBeVisible({ timeout: 15_000 });
+
+  await expect(card.getByLabel("Business name"),
+    "AC-P2-8: the account's business name is already there").toHaveValue(business.businessName);
+});
+
+// ─── 6. AC-P2-48 — the owner's words, verbatim, on the surfaces that carry them ─
+// F-2 and F-3/F-5 from the review round. Spec §7.2 records five strings as the
+// OWNER'S WORDS, which the ux/ui stage may place but not rewrite. Three of them
+// belong to this slice's surfaces and none of them shipped: the trade page kept
+// its Phase-1 hero and benefit list, and the account card's invitation was
+// paraphrased away.
+//
+// "You may qualify" is the load-bearing part of the account-card string and is
+// asserted verbatim: the reader may be a private customer who holds an ABN and
+// does not know they qualify, and NOTHING may promise an outcome before
+// verification (AC-P2-9). A rewrite that promises trade pricing is the failure
+// this assertion exists to catch, not a stylistic nitpick.
+const APPROVED = {
+  hero: "Trade accounts get trade pricing, priority review, saved details, and a name to call.",
+  benefitTitle: "Trade pricing, everywhere",
+  benefitBody: "It applies while you configure — not just on the quote we send back.",
+  accountCard: "Have an ABN? You may qualify for trade pricing. Add it and we'll check it against the Australian Business Register.",
+};
+
+test("the owner-approved trade strings appear verbatim on their surfaces (AC-P2-48)", async ({ page }) => {
+  await page.goto("/trade-account");
+  // Wait for the app to render — `goto` resolves on load, before React paints,
+  // and body.innerText is "" until then.
+  await expect(page.getByTestId("trade-application-card")).toBeVisible({ timeout: 15_000 });
+  const marketing = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+  expect(marketing, "spec §7.2 trade-page hero").toContain(APPROVED.hero);
+  expect(marketing, "spec §7.2 trade-page benefit title").toContain(APPROVED.benefitTitle);
+  expect(marketing, "spec §7.2 trade-page benefit body").toContain(APPROVED.benefitBody);
+
+  // The account card, to a PRIVATE user — no grant, no pending application.
+  const email = freshEmail("approved-copy");
+  await apiSignIn(page.request, email);
+  const named = await page.request.post("/api/auth/profile", { data: { name: "Sam Taylor" } });
+  expect(named.ok(), await named.text()).toBeTruthy();
+
+  await page.goto("/account");
+  const card = page.getByTestId("trade-application-card");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  expect((await card.innerText()).replace(/\s+/g, " "), "spec §7.2 account-card invitation")
+    .toContain(APPROVED.accountCard);
 });

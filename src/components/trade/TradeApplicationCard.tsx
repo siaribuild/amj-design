@@ -23,7 +23,7 @@
 //   4. No builder/tradie control exists on any surface (P2-D5).
 //   5. No repricing promise.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Check } from "lucide-react";
 import { Btn, FieldLabel, Input, WindowMark, SAGE } from "../../app/ui";
 import { OtpSignIn } from "../OtpSignIn";
@@ -48,9 +48,7 @@ export function TradeApplicationCard({
   onAuthed?: (u: AuthUserDto) => void;
   onTradeChanged?: () => void;
 }) {
-  // Business name pre-filled from the account's existing company (AC-P2-8) —
-  // read once as the initial value, never bound, so typing is not fought.
-  const [draft, setDraft] = useState<Draft>(() => ({ ...EMPTY, businessName: user?.company ?? "" }));
+  const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /** Set only by an application this card made, so an auto-pass shows its
@@ -65,6 +63,26 @@ export function TradeApplicationCard({
    *  ABN really does change. So the fact is displayed, and changing it is a
    *  deliberate act behind an affordance rather than a text cursor. */
   const [reapplying, setReapplying] = useState(false);
+
+  // AC-P2-8: the account's business name is already known, so it is already in
+  // the field.
+  //
+  // This CANNOT be a `useState` initializer, which is where it started and why
+  // it was broken (F-1). On `/trade-account` the card mounts while App is still
+  // resolving the session, so `user` is null on that first render and the
+  // initial value would be "" forever after. Door (b) hid the bug entirely: the
+  // account page only renders once `user` exists.
+  //
+  // Prefill happens at most ONCE and never overwrites a non-empty field, so a
+  // cold visitor who types a business name before signing in keeps what they
+  // typed — the values held across the OTP (AC-P2-3) outrank the stored one.
+  const prefilled = useRef(false);
+  useEffect(() => {
+    const company = user?.company?.trim();
+    if (prefilled.current || !company) return;
+    prefilled.current = true;
+    setDraft((d) => (d.businessName.trim() ? d : { ...d, businessName: company }));
+  }, [user?.company]);
 
   const pending = trade?.pending ?? null;
   const digits = normalizeAbn(draft.abn);
@@ -227,9 +245,16 @@ export function TradeApplicationCard({
           {!isVerified && !outcome && (
             <div>
               <p className="font-semibold text-ink">Trade pricing</p>
+              {/* Spec §7.2, VERBATIM — the owner's words, which this stage may
+                  place but not rewrite. "You may qualify" is the load-bearing
+                  part: the reader may be a private customer who holds an ABN and
+                  does not know they qualify, and nothing may promise an outcome
+                  before verification (AC-P2-9). An earlier draft promised trade
+                  pricing outright, which is the thing this sentence refuses to
+                  do. */}
               <p className="text-body mt-1 t-bd-sm">
-                Add your ABN and we'll check it against the Australian Business Register. If it
-                checks out, trade pricing is on your account straight away.
+                Have an ABN? You may qualify for trade pricing. Add it and we'll check it against
+                the Australian Business Register.
               </p>
             </div>
           )}

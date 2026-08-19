@@ -1688,7 +1688,7 @@ function TradePage({ setPage, signedIn, user, trade, onAuthed, onTradeChanged }:
             <span className="text-white/60 font-data t-label">Trade account</span>
           </div>
           <h1 className="text-white mb-3 t-ds1">Quote more jobs. Chase fewer reps.</h1>
-          <p className="text-white/70 max-w-xl leading-relaxed t-bd">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get priority review, saved details, and a name to call.</p>
+          <p className="text-white/70 max-w-xl leading-relaxed t-bd">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get trade pricing, priority review, saved details, and a name to call.</p>
         </div>
       </section>
 
@@ -1700,7 +1700,7 @@ function TradePage({ setPage, signedIn, user, trade, onAuthed, onTradeChanged }:
                 FEATURE in the bold line ("Faster quote turnaround") and repeated
                 it in the body, so the page read as a spec sheet for an account
                 rather than as a reason to open one. */}
-            {[["Your jobs jump the queue","Trade projects are reviewed first."],["Stop re-typing","Contacts, addresses and specs carry over to the next job."],["Re-run last job's spec","Same products, new sizes, a couple of clicks."],["A name and a number","Not a general inbox."],["Send them all at once","Every schedule on your desk, one submission."]].map(([t,b]) => (
+            {[["Trade pricing, everywhere","It applies while you configure — not just on the quote we send back."],["Your jobs jump the queue","Trade projects are reviewed first."],["Stop re-typing","Contacts, addresses and specs carry over to the next job."],["Re-run last job's spec","Same products, new sizes, a couple of clicks."],["A name and a number","Not a general inbox."],["Send them all at once","Every schedule on your desk, one submission."]].map(([t,b]) => (
               <div key={t} className="flex gap-3">
                 <WindowMark size={10} color={SAGE} className="mt-1.5 flex-shrink-0" />
                 <div><p className="font-medium text-ink t-bd-sm">{t}</p><p className="text-body t-cap">{b}</p></div>
