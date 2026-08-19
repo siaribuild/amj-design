@@ -609,3 +609,37 @@ test("the trade tile opens the trade queue, not the customer list", async ({ pag
     "the tile lands on the queue it counted").toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("trade-queue").getByText(email)).toBeVisible();
 });
+
+// ─── Pressing "Customers" goes to customers, from wherever you are ───────────
+// Found by the Codex stop-gate review, as the follow-on to the tile fix.
+//
+// Carrying a subview into a navigation is only half the job. `initialView` seeds
+// `useState`, and React does not remount a component whose tab has not changed —
+// so pressing "Customers" while already inside the trade queue changed nothing
+// at all. The nav item and the thing on screen disagreed, and the nav lost.
+//
+// It is the same bug as the tile wearing the opposite coat: there, a row that
+// counted one thing opened another; here, a nav item that names one thing opens
+// nothing. Both break the promise that pressing a label takes you to the label.
+test("pressing Customers returns to the customer list from the trade queue", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const staffEmail = `ops-nav-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  await page.getByRole("button", { name: /^trade applications/i }).click();
+  await expect(page.getByTestId("trade-queue-view"),
+    "we are looking at the queue").toBeVisible();
+
+  // The nav item, pressed while already inside this area.
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  await expect(page.getByTestId("trade-queue-view"),
+    "pressing Customers leaves the queue").toBeHidden();
+});

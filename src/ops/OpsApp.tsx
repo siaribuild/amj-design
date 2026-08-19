@@ -201,8 +201,20 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
    *  in the nav must land on the customer list even if a dashboard row sent
    *  somebody to the queue a moment ago. */
   const [customersView, setCustomersView] = useState<"all" | "queue">("all");
+  /** Counts NAVIGATIONS, not tab changes.
+   *
+   *  React does not remount a component whose tab has not changed, so seeding
+   *  state from a prop is not enough: pressing "Customers" while already inside
+   *  the trade queue changed nothing at all, and the nav item and the screen
+   *  disagreed. Comparing the view alone cannot fix it either — going from the
+   *  queue back to "all" is a change, but pressing "Customers" twice is not, and
+   *  both must land on the customer list.
+   *
+   *  A monotonic token makes every press an event the subview can react to. */
+  const [navToken, setNavToken] = useState(0);
   const setTab = (t: Tab, view?: "queue") => {
     setCustomersView(view === "queue" ? "queue" : "all");
+    setNavToken((n) => n + 1);
     setTabState(t);
   };
   const [navOpen, setNavOpen] = useState(false);
@@ -268,7 +280,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         <div className="p-4 md:p-8">
           {tab === "dashboard" ? <Dashboard setTab={setTab} />
             : tab === "projects" ? <Projects />
-            : tab === "customers" ? <Customers user={user} initialView={customersView} />
+            : tab === "customers" ? <Customers user={user} initialView={customersView} navToken={navToken} />
             : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "pricing" ? <Pricing />
             : tab === "referrals" ? <OpsReferrals />

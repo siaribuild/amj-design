@@ -40,15 +40,28 @@ const SOURCE_LABEL: Record<string, string> = {
   migration: "Grandfathered",
 };
 
-export function Customers({ user, initialView = "all" }: {
+export function Customers({ user, initialView = "all", navToken = 0 }: {
   user: OpsUser;
   /** Which subview to open on. The dashboard's "Needs us" row counts trade
    *  applications and must land ON them — a row that counts one thing and opens
    *  another spends the trust that whole section is built on. */
   initialView?: "all" | "queue";
+  /** Increments on every navigation, including one that does not change tab.
+   *  Seeding state from `initialView` alone leaves this component untouched when
+   *  the tab is already "customers", so pressing the nav item from inside the
+   *  queue did nothing at all. */
+  navToken?: number;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [view, setView] = useState<"all" | "queue">(initialView);
+
+  // A navigation lands at the TOP of the area it names: the requested subview,
+  // and no customer left open behind it.
+  useEffect(() => {
+    setView(initialView);
+    setOpenId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navToken]);
   const [pending, setPending] = useState<OpsTradeApplication[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
 
@@ -130,11 +143,11 @@ function TradeQueue({ rows, error, onOpen, onDecided }: {
     }
   };
 
-  if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load trade applications. {error}</div>;
-  if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
+  if (error) return <div data-testid="trade-queue-view" className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load trade applications. {error}</div>;
+  if (!rows) return <Loader2 data-testid="trade-queue-view" className="w-5 h-5 text-black/30 animate-spin" />;
   if (!rows.length) {
     return (
-      <div className="bg-white border border-dashed border-black/15 p-12 text-center">
+      <div data-testid="trade-queue-view" className="bg-white border border-dashed border-black/15 p-12 text-center">
         <p className="text-ink t-bd-sm">Nothing waiting</p>
         <p className="text-body mt-1 t-cap">
           Applications that pass every check are approved automatically and never appear here.
@@ -145,7 +158,8 @@ function TradeQueue({ rows, error, onOpen, onDecided }: {
   }
 
   return (
-    <div data-testid="trade-queue" className="space-y-3">
+    <div data-testid="trade-queue-view" className="space-y-3">
+      <div data-testid="trade-queue" className="space-y-3">
       {failed && <div className="bg-white border border-black/15 p-3 text-body t-bd-sm">{failed}</div>}
       {rows.map((a) => (
         <div key={a.id} className="bg-white border border-black/10 p-4">
@@ -196,6 +210,7 @@ function TradeQueue({ rows, error, onOpen, onDecided }: {
           )}
         </div>
       ))}
+      </div>
     </div>
   );
 }
