@@ -1807,7 +1807,23 @@ function NotFoundPage({ setPage }: { setPage: (p: Page) => void }) {
 export default function App() {
   const initialRoute = routeFromPathname(window.location.pathname);
   const [page, setPage] = useState<Page>(initialRoute.page);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
+  const sessionGeneration = useRef(0);
+  /** Every identity change invalidates every `fetchMe()` already in the air,
+   *  SYNCHRONOUSLY, at the moment it happens.
+   *
+   *  Doing this from the identity effect was too late: an effect runs after
+   *  render, so between `setUser(B)` and the effect there was a window in which
+   *  a response begun for A still matched the current generation and could write
+   *  A over B. Wrapping the setter closes it — and closes it for every call
+   *  site, including the ones in other components that receive `setUser` as a
+   *  prop and could not be expected to remember. Same lesson as the refresh
+   *  itself: state that must track an account cannot be maintained by whoever
+   *  happens to change it. */
+  const setUser = useCallback((next: AuthUser | null) => {
+    sessionGeneration.current++;
+    setUserState(next);
+  }, []);
   // Trade status is a SIBLING of the user, never a field on it: the Worker
   // derives it from the application ledger on every read (ADR-0002), and
   // POST /api/auth/verify deliberately does not carry it (AC-P2-56). Keeping it
@@ -1827,7 +1843,6 @@ export default function App() {
    *  shared trade counter that is somebody else's commercial standing on screen.
    *  Every write is stamped and only the newest survives; signing out bumps the
    *  counter too, so an in-flight response cannot land on an empty session. */
-  const sessionGeneration = useRef(0);
   const refreshTrade = useCallback(() => {
     const gen = ++sessionGeneration.current;
     fetchMe()
@@ -1850,17 +1865,13 @@ export default function App() {
   const previousUserId = useRef<string | null>(null);
   useEffect(() => {
     const id = user?.id ?? null;
-    if (id) {
-      refreshTrade();
-    } else if (previousUserId.current) {
-      // A REAL sign-out — not the initial mount, where `user` is null simply
-      // because the session has not been restored yet. Bumping the generation
-      // here unconditionally invalidated the restore that was in flight at that
-      // very moment, so nobody was ever signed back in on a page load. Signing
-      // out must invalidate what is in the air; starting up must not.
-      sessionGeneration.current++;
-      setTrade(null);
-    }
+    // Invalidation is `setUser`'s job now and happens synchronously; this only
+    // reacts. It must NOT bump on the initial mount, where `user` is null merely
+    // because the session has not been restored yet — doing so voided the
+    // restore that was in flight at that moment, and nobody was ever signed back
+    // in on a page load.
+    if (id) refreshTrade();
+    else if (previousUserId.current) setTrade(null);
     previousUserId.current = id;
   }, [user?.id, refreshTrade]);
   // Which order/project the tracking page should open (set from the dashboard).
