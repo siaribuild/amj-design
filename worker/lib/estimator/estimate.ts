@@ -5,7 +5,7 @@ import type { Env } from "../../types";
 import { createCatalogueRepository, sanityExecutor } from "./catalogue";
 import { selectForOpening } from "./select";
 import { persistSelection } from "./persist";
-import { buildHistoricalModel, buildApprovedThermalModel } from "./learning";
+import { buildApprovedThermalModel } from "./learning";
 import { createCachedPriceResolver } from "./pricing";
 import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
@@ -191,12 +191,12 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   const openings = results ?? [];
 
   const repo = createCatalogueRepository(sanityExecutor(env));
-  // The learned preference model (Phase 6): built once from the reviewer-correction
-  // corpus and reused across every opening in this run. Empty corpus ⇒ neutral.
-  const [historical, thermalModel] = await Promise.all([
-    buildHistoricalModel(env),
-    buildApprovedThermalModel(env),
-  ]);
+  // The approved-thermal advisory model: human precedent resolved into the
+  // opening's requirement, which the ladder then judges every candidate against.
+  // The old commercial preference model that also lived here is gone with the
+  // weights (ADR 0007) — a cheapest-wins ladder has no channel for a preference,
+  // and the dark learned layer that replaces it arrives with Phase 3.
+  const thermalModel = await buildApprovedThermalModel(env);
   // The project's owner, for the account discount. Resolved once here rather than
   // per candidate — an estimate prices dozens of candidates per opening.
   const owner = await env.DB.prepare("SELECT owner_user_id FROM project WHERE id = ?")
@@ -238,7 +238,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   const proposalLines: ProposalSelection[] = [];
   for (const row of openings) {
     const opening = thermalModel.apply(toOpeningInput(row));
-    const result = await selectForOpening(opening, repo, priceFn, historical);
+    const result = await selectForOpening(opening, repo, priceFn);
     await persistSelection(env, { projectId, openingId: row.id, result });
     proposalLines.push({
       openingId: row.id,
@@ -272,7 +272,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     appliedToCart = published.appliedLines;
     // WS5: after the lines exist, materialise a review-flagged composite for any
     // opening that the schedule comment says to split, or that is oversize.
-    const splitWarnings = await materialiseSplits(env, { repo, priceFn, historical, proposalLines,
+    const splitWarnings = await materialiseSplits(env, { repo, priceFn, proposalLines,
       splitHints: opts?.splitHints ?? new Map(), scheduleTypes: opts?.scheduleTypes ?? new Map() });
     return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: splitWarnings };
   }
@@ -287,7 +287,6 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
 async function materialiseSplits(env: Env, ctx: {
   repo: Parameters<typeof selectForOpening>[1];
   priceFn: Parameters<typeof selectForOpening>[2];
-  historical: Parameters<typeof selectForOpening>[3];
   proposalLines: ProposalSelection[];
   splitHints: Map<string, SplitHint>;
   scheduleTypes: Map<string, string>;
@@ -299,7 +298,10 @@ async function materialiseSplits(env: Env, ctx: {
   for (const pl of ctx.proposalLines) {
     const parent = pl.result.selected;
     const hint = (pl.externalRef && ctx.splitHints.get(pl.externalRef)) || null;
-    const oversize = !!parent && (parent.outcome.filters ?? []).some((f) => f.filter === "dimensions" && f.severity === "warning");
+    // The authoritative fit fact, not the filter that also reports it: one home
+    // for fit means the split trigger and the ladder's tiering can never come to
+    // different conclusions about whether this unit is oversize.
+    const oversize = parent?.candidateOutcome.fit.fits === false;
     if (!hint && !oversize) continue;
     const quoteLineId = pl.quoteLineId ?? (await env.DB.prepare(
       "SELECT quote_line_id FROM opening_instance WHERE id=?",
@@ -446,7 +448,7 @@ async function materialiseSplits(env: Env, ctx: {
         // preference must not overrule a report's per-component instruction.
         ownBand: !!seg.requirement && !!requirement,
       })),
-      ctx.repo, ctx.priceFn, ctx.historical,
+      ctx.repo, ctx.priceFn,
     );
     if (composite.note) reviewWarnings.push(`${pl.externalRef ?? "Opening"}: ${composite.note}`);
 

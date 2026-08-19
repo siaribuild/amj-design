@@ -50,7 +50,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
 
   const selected = input.lines.filter((line) => line.result.selected?.price?.ok);
   const catalogueVersion = selected[0]?.result.catalogueVersion ?? null;
-  const rankerVersion = selected[0]?.result.rankerVersion ?? null;
+  const rankerVersion = selected[0]?.result.selectionVersion ?? null;
   const pricingVersion = selected[0]?.result.selected?.price?.pricingPolicyVersion ?? null;
 
   const quoteIds = input.lines.map((line) => line.quoteLineId).filter((id): id is string => !!id);
@@ -169,7 +169,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         line.externalRef, configuration.quantity, JSON.stringify(configuration.dimensions),
         JSON.stringify(configuration), JSON.stringify(rankingContext), quote.line_total,
         basis, JSON.stringify(["priceable_configuration"]),
-        JSON.stringify(line.result.alternatives),
+        JSON.stringify([]),
       ));
       if (canApplyUnresolved) {
         stmts.push(env.DB.prepare(
@@ -241,8 +241,17 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     const canApply = !!quote &&
       (quote.origin === "ai" || quote.origin === "schedule") &&
       !priceFields.some((field) => locks.includes(field));
-    const confidence = chosen.outcome.status === "ready" && line.result.dominant
-      ? "high" : chosen.outcome.status === "unavailable" ? "low" : "medium";
+    // AC-26 / spec §4.11. `dominant` is gone with the 0.05 score gap that
+    // defined it; the tier the pick came from is strictly more informative. High
+    // confidence needs BOTH: the requirement was met, and the line is ready.
+    const tier = line.result.selection.competingTier;
+    const requirementMet = tier === "meets";
+    const confidence =
+      requirementMet && chosen.outcome.status === "ready" ? "high"
+        : chosen.outcome.status === "unavailable"
+          || tier === "misses" || tier === "thermal_unknown" || tier === "does_not_fit"
+          ? "low"
+          : "medium";
     const variant = chosen.selectedVariant;
     const displayProduct = getProductBySlug(chosen.candidate.slug);
     const cartOptions = {
@@ -289,12 +298,11 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       dimensions: configuration.dimensions,
       quantity: configuration.quantity,
     };
-    // WS7: the non-blocking thermal miss. checkEnergy emits an 'energy' warning
-    // when no glass met the resolved band and the closest was assigned — surface
-    // that specifically so a reviewer sees WHY, rather than a generic prompt.
-    const thermalBandNotMet = (chosen.outcome.filters ?? []).some(
-      (f) => f.filter === "energy" && f.severity === "warning",
-    );
+    // The thermal miss, read from the verdict rather than from a filter that no
+    // longer exists: the pick came from a tier below `meets`, which is the same
+    // fact the ladder selected on. Surfaced specifically so a reviewer sees WHY,
+    // rather than a generic prompt.
+    const thermalBandNotMet = !requirementMet && !line.result.selection.requirement.absent;
     const missingInputs = [
       line.opening.thermalContext?.orientation ? null : "orientation",
       line.opening.thermalContext?.roomAreaM2 != null ? null : "room_area",
@@ -320,7 +328,11 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     const hasScheduleCommercialOption =
       !!line.opening.scheduleRequirements?.colour ||
       line.opening.scheduleRequirements?.flyscreen != null;
-    const reviewRequired = !(line.result.dominant && chosen.outcome.status === "ready") ||
+    // A human confirms whenever the machine did not fully answer the brief: the
+    // requirement was not met, the unit does not actually fit, the line is not
+    // ready — plus every pre-existing reason, unchanged.
+    const reviewRequired = !(requirementMet && chosen.outcome.status === "ready") ||
+      chosen.candidateOutcome.fit.fits === false ||
       hasScheduleCommercialOption ||
       documentReviewReasons.length > 0;
     stmts.push(env.DB.prepare(
@@ -338,7 +350,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       variant?.variantId ?? null, JSON.stringify(configuration),
       JSON.stringify(rankingContext), performance ? JSON.stringify(performance) : null, JSON.stringify(chosen.price),
       quote?.line_total ?? null, basis, confidence, JSON.stringify([]),
-      JSON.stringify(missingInputs), JSON.stringify(line.result.alternatives),
+      JSON.stringify(missingInputs), JSON.stringify([]),
       reviewRequired ? 1 : 0, 0,
     ));
 

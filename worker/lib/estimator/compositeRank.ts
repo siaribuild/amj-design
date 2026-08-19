@@ -1,36 +1,30 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCORING A COMPOSITE — the same six things, weighed over the whole opening
+// COMPOSITE MAKE-UP FACTS — no scores, no weights, no second comparator
 //
-// The per-opening ranker answers "which (frame × glass) is best for this hole in
+// The per-opening question is "which (frame × glass) is best for this hole in
 // the wall". For a composite that is the wrong question asked N times: the units
 // are coupled, so the thing being chosen is the SET, and a set is not the sum of
-// N independently best answers. The cheapest lite in the catalogue is the best
-// answer to its own segment and the wrong answer to the opening.
+// N independently best answers.
 //
-// So this reuses rank.ts's components and RANK_WEIGHTS unchanged, and aggregates
-// them across the units. Nothing here is a second opinion about what matters —
-// a separate weight set would let one opening and the same opening split in two
-// disagree about which product is better, with nothing to say which was right.
+// This module used to answer that by re-weighing rank.ts's six components across
+// the units. It now computes FACTS instead — one deviation for the make-up, one
+// total — and hands them to the same `runLadder` every other path uses. That is
+// AC-50: one opening and the same opening split in two cannot disagree about
+// which product is better, because there is only one comparator and this module
+// declares no weight set of its own.
 //
 // Everything is AREA-WEIGHTED. A 2000mm lite and a 600mm awning are not two
 // equal votes about the opening; the lite is most of what gets built and most of
 // what anyone sees.
 //
-// Design: docs/product-compatibility-design.md §5.
+// Design: docs/specs/recommendation-model-design.md §6.1.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
-import {
-  RANK_WEIGHTS, geometryScore, configurationScore, dataCompletenessScore, complianceScore, variantCell,
-  type ScoreComponents,
-} from "./rank";
-import { effectiveThermalRequirements } from "./rules";
-import { gradedComplianceScore } from "./thermal/compliance";
-import type { ThermalBand } from "./thermal/types";
+import { resolvedRequirement } from "./rules";
+import { deviationOf, type Deviation, type ResolvedRequirement } from "./ladder";
 import { compositeAveragedUw, compositeAveragedShgc } from "./split";
 
-const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
-
-/** One chosen unit, as the composite scorer needs to see it. */
+/** One chosen unit, as the composite needs to see it. */
 export interface ScoredUnit {
   /** The unit's own opening — its size, its band, its operation. */
   opening: OpeningInput;
@@ -51,7 +45,7 @@ export const area = (u: { widthMm: number; heightMm: number }) =>
 
 /** Mean of `f` over the units, weighted by the area each one occupies. Falls back
  *  to a plain mean when no unit has an area — a composite whose dimensions are
- *  unknown is still scored, just without the weighting that needed them. */
+ *  unknown is still judged, just without the weighting that needed them. */
 export function areaWeightedMean(units: ScoredUnit[], f: (u: ScoredUnit) => number): number {
   if (!units.length) return 0;
   const total = units.reduce((sum, u) => sum + area(u), 0);
@@ -60,128 +54,75 @@ export function areaWeightedMean(units: ScoredUnit[], f: (u: ScoredUnit) => numb
 }
 
 /**
- * The composite's thermal compliance.
+ * The make-up's thermal deviation — the one number the ladder tiers it by
+ * (spec §4.7, design §6.1).
  *
  * Two readings, and which applies is decided by the documents rather than by
  * preference:
  *
- *  • An energy report stated per-unit bands ⇒ each unit is graded against its
- *    own and the results are area-weighted. Averaging a per-lite requirement
- *    into one number would judge an awning against a fixed lite's target.
- *  • Otherwise ⇒ the units are averaged into ONE cell and that cell is graded
+ *  • An energy report stated per-unit bands ⇒ each unit is measured against its
+ *    OWN band and the deviations are area-weighted. Averaging a per-lite
+ *    requirement into one number would judge an awning against a fixed lite's
+ *    target — the misjudgement this branch exists to avoid.
+ *  • Otherwise ⇒ the units are averaged into ONE cell and that cell is measured
  *    against the opening's band. This is the owner's stated goal: average the
  *    U-value across the split and fit the average to the requirement, rather
  *    than pretending to a per-lite precision model nobody asked for.
+ *
+ * Unknown is contagious: a unit whose deviation cannot be measured makes the
+ * whole make-up unknown, because a mean over an absent number is a fiction
+ * (spec A2).
  */
-export function compositeCompliance(opening: OpeningInput, units: ScoredUnit[]): number {
-  if (!units.length) return 0;
+export function makeUpDeviation(
+  opening: OpeningInput,
+  units: ScoredUnit[],
+  requirement: ResolvedRequirement,
+): Deviation {
+  const unknown: Deviation = {
+    perAxis: { uValue: null, minShgc: null, maxShgc: null },
+    worstAxis: null, scalar: null, absoluteMiss: null,
+  };
+  const none: Deviation = { ...unknown, scalar: 0 };
+  if (!units.length) return unknown;
+  if (requirement.absent && !units.some((u) => u.ownBand)) return none;
+
   if (units.some((u) => u.ownBand)) {
-    return clamp01(areaWeightedMean(units, (u) => complianceScore(u.opening, u.variant)));
+    const perUnit = units.map((u) => deviationOf(
+      u.ownBand ? resolvedRequirement(u.opening) : requirement,
+      { uValue: u.variant?.uValue ?? null, shgc: u.variant?.shgc ?? null },
+    ));
+    if (perUnit.some((d) => d.scalar == null)) return unknown;
+    // A mean across DIFFERENT bands has no single worst axis and no absolute
+    // miss in any one unit — the scalar is the only honest output here.
+    return { ...unknown, scalar: round6(areaWeightedMean(units, (u) => perUnit[units.indexOf(u)].scalar ?? 0)) };
   }
-  const req = effectiveThermalRequirements(opening);
-  if (!req) {
-    // No band to meet. Mirror the per-opening reading — mildly prefer certified
-    // data — rather than inventing a composite-only rule for the same situation.
-    const certified = units.every((u) => u.variant?.certified);
-    return units.some((u) => u.variant) ? (certified ? 0.8 : 0.6) : 0.4;
-  }
+
   const cells = units.map((u) => ({
     widthMm: u.widthMm, heightMm: u.heightMm,
     uValue: u.variant?.uValue ?? null, shgc: u.variant?.shgc ?? null,
   }));
-  const uValue = compositeAveragedUw(cells);
-  const shgc = compositeAveragedShgc(cells);
-  if (uValue == null && shgc == null) return 0.4;
-  const band: ThermalBand = {
-    maxUValue: req.maxUValue ?? null, minShgc: req.minShgc ?? null, maxShgc: req.maxShgc ?? null, shgcTarget: null,
-  };
-  return gradedComplianceScore({
-    // The composite is not one catalogue cell, so it carries no glass identity of
-    // its own; the scorer reads only the numbers.
-    glassOptionSlug: "composite", variantId: "composite",
-    uValue, shgc,
-    certified: units.every((u) => !!u.variant?.certified),
-    pricingOptionSlugs: [],
-  }, band);
+  return deviationOf(requirement, {
+    uValue: compositeAveragedUw(cells),
+    shgc: compositeAveragedShgc(cells),
+  });
 }
 
-/** 1 when every unit shares a frame technology, else the largest share by area.
- *
- *  A system spans conventional and thermally-broken frames by the owner's
- *  grouping rule, so "same system" no longer implies "same technology" — and a
- *  conventional lite can still drift in beside a thermally-broken awning on
- *  price alone. This is a PREFERENCE and nothing more: it is folded into the
- *  configuration component at a fifth of its weight, so it breaks a tie and can
- *  never overturn compliance. The owner's ruling was prefer, never require. */
-export function technologyAgreement(units: ScoredUnit[]): number {
-  if (units.length < 2) return 1;
-  const byTech = new Map<string, number>();
-  let total = 0;
-  for (const u of units) {
-    const tech = u.variant?.frameTechnology ?? "unknown";
-    const a = Math.max(1, area(u));
-    byTech.set(tech, (byTech.get(tech) ?? 0) + a);
-    total += a;
-  }
-  return total > 0 ? clamp01(Math.max(...byTech.values()) / total) : 1;
-}
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
-export interface CompositeScore {
-  score: number;
-  components: ScoreComponents;
-}
-
-/**
- * Score one candidate make-up of a composite.
- *
- * `commercial` is supplied rather than computed: it is normalised ACROSS the
- * make-ups being compared (Σ of each one's unit totals), which only the caller
- * holding all of them can do. Passing 0.5 is the neutral reading used when there
- * is nothing to compare against — the same convention rank.ts uses when every
- * price is equal or missing.
- */
-export function scoreComposite(opening: OpeningInput, units: ScoredUnit[], commercial: number): CompositeScore {
-  const components: ScoreComponents = {
-    compliance: compositeCompliance(opening, units),
-    geometry: clamp01(areaWeightedMean(units, (u) => geometryScore(u.opening, u.candidate))),
-    // 80/20 against the technology preference, so the operation and glass
-    // affinity this component exists to measure still dominate it.
-    configuration: clamp01(
-      0.8 * areaWeightedMean(units, (u) => configurationScore(u.opening, u.candidate, u.variant))
-      + 0.2 * technologyAgreement(units),
-    ),
-    commercial: clamp01(commercial),
-    // Flat neutral, and deliberately not wired to the learned model. The
-    // recommendation corpus already excludes composites — captureRecommendationOutcomes
-    // records one configuration against another and a composite's answer is N
-    // units with their own products and geometry — so there is no signal to read.
-    // Feeding it a decision the corpus cannot represent would be worse than
-    // feeding it nothing.
-    historical: 0.5,
-    dataCompleteness: clamp01(areaWeightedMean(units, (u) => dataCompletenessScore(u.candidate, u.variant))),
-  };
-  const W = RANK_WEIGHTS;
-  const score =
-    W.compliance * components.compliance +
-    W.geometry * components.geometry +
-    W.configuration * components.configuration +
-    W.commercial * components.commercial +
-    W.historical * components.historical +
-    W.dataCompleteness * components.dataCompleteness;
-  return { score: Math.round(score * 1000) / 1000, components };
-}
-
-/** Normalise a set of make-up totals to the 0–1 commercial component, cheapest
- *  first. An unpriceable make-up scores neutral rather than worst: it has not
- *  been shown to be expensive, only to be unknown, and scoring absence as a
- *  penalty is how a catalogue gap turns into a product decision. */
-export function commercialScores(totals: (number | null)[]): number[] {
-  const finite = totals.filter((t): t is number => t != null && Number.isFinite(t));
-  const min = Math.min(...finite), max = Math.max(...finite);
-  return totals.map((t) =>
-    t == null || !Number.isFinite(t) || finite.length < 2 || max <= min ? 0.5 : clamp01(1 - (t - min) / (max - min)));
-}
-
-/** The glass identity a unit ended up with, for the one-glass check. */
+/** The glass identity a unit ended up with, for the one-glass check. The shared
+ *  glazing option is the glass IDENTITY; the variantId is the bridge until the
+ *  catalogue is fully migrated. */
 export const glassOf = (variant: PerformanceVariant | null): string | null =>
-  variant ? (variantCell(variant)?.glassOptionSlug ?? null) : null;
+  variant ? (variant.glazingOptionSlug ?? variant.variantId) : null;
+
+// compositeCompliance(), technologyAgreement(), scoreComposite(), CompositeScore
+// and commercialScores() lived here and are GONE (ADR 0007, AD4).
+//
+// The first three re-weighed rank.ts's six deleted components; the last was a
+// SECOND min–max normalisation, with the same independence-of-irrelevant-
+// alternatives defect as the first. `technologyAgreement` was a same-frame-
+// technology preference folded in at a fifth of the configuration weight, and a
+// cheapest-wins ladder has no channel for a preference to arrive through — the
+// owner's ruling was prefer, never require, and D9 names the learned layer as
+// the home for contextual preferences like it. A mixed-technology make-up is now
+// simply compared on price like any other.

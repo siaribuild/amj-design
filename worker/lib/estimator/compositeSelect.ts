@@ -51,11 +51,10 @@
 import type { CatalogueRepository } from "./catalogue";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import { selectForOpening, type PriceFn, type SelectionResult } from "./select";
-import type { HistoricalModel } from "./learning";
-import type { ScoreComponents } from "./rank";
 import { coveringSystems, isBuildableTogether, partnersOf, systemOf } from "./compatibility";
-import { area, commercialScores, glassOf, scoreComposite, type ScoredUnit } from "./compositeRank";
-import type { FilterOutcome } from "./rules";
+import { area, glassOf, makeUpDeviation, type ScoredUnit } from "./compositeRank";
+import { runLadder, type LadderCandidate } from "./ladder";
+import { resolvedRequirement, type FilterOutcome } from "./rules";
 
 /** One unit of the proposed make-up, ready to be selected for. */
 export interface CompositeSegmentInput {
@@ -90,8 +89,12 @@ export interface CompositeSelectionResult {
   /** Distinct glass identities across the units. More than one means the
    *  one-glass preference could not be met by the frames involved. */
   glazingSlugs: string[];
-  score: number | null;
-  components: ScoreComponents | null;
+  /** The make-up's requirement-relative thermal deviation — the fact the ladder
+   *  tiered it by. null when it could not be measured (spec A2). */
+  deviation: number | null;
+  /** The sum of the units' totals in integer cents. null when any unit was
+   *  unpriceable, because a partial sum is not a price. */
+  totalCents: number | null;
   /** What a reviewer needs told, or null when there is nothing to say. */
   note: string | null;
 }
@@ -126,9 +129,22 @@ export async function selectForComposite(
   segments: CompositeSegmentInput[],
   repo: CatalogueRepository,
   priceFn: PriceFn,
-  historical?: HistoricalModel,
 ): Promise<CompositeSelectionResult> {
-  if (segments.length < 2) return fallback(opening, segments, repo, priceFn, historical, null);
+  const makeUps = await enumerateMakeUps(opening, segments, repo, priceFn);
+  if ("fallback" in makeUps) return fallback(opening, segments, repo, priceFn, makeUps.fallback);
+  return choose(opening, segments, makeUps.makeUps);
+}
+
+/** Every complete, single-system make-up this opening can be built from. The
+ *  enumeration is the composite's own work; CHOOSING between the results is the
+ *  ladder's, exactly as it is for a single unit (AC-50). */
+async function enumerateMakeUps(
+  opening: OpeningInput,
+  segments: CompositeSegmentInput[],
+  repo: CatalogueRepository,
+  priceFn: PriceFn,
+): Promise<{ makeUps: MakeUp[] } | { fallback: string | null }> {
+  if (segments.length < 2) return { fallback: null };
 
   // Both categories per segment, up front. queryCandidates is cached per
   // (category, operation) for the life of the repository, so asking for the
@@ -144,9 +160,9 @@ export async function selectForComposite(
 
   const covering = coveringSystems(primary.map((p, i) => [...p, ...alternate[i]])).slice(0, MAX_SYSTEMS);
   if (!covering.length) {
-    return fallback(opening, segments, repo, priceFn, historical,
+    return { fallback:
       "No single frame system supplies every unit of this opening, so the units were chosen "
-      + "independently and may not couple — confirm the make-up at technical review.");
+      + "independently and may not couple — confirm the make-up at technical review." };
   }
 
   const combined = primary.map((p, i) => [...p, ...alternate[i]]);
@@ -158,7 +174,7 @@ export async function selectForComposite(
     // "does THIS system have one here" sent the unit across the category
     // boundary and found nothing.
     const partners = new Set(partnersOf(combined, system).keys());
-    const first = await selectAll(system, partners, null, segments, primary, alternate, repo, priceFn, historical, null);
+    const first = await selectAll(system, partners, null, segments, primary, alternate, repo, priceFn, null);
     if (!first) continue;
 
     // The glasses the units chose for themselves, largest area first. Trialling
@@ -186,7 +202,7 @@ export async function selectForComposite(
 
     let anyTrial = false;
     for (const glass of trials) {
-      const trial = await selectAll(system, partners, glass, segments, primary, alternate, repo, priceFn, historical, first);
+      const trial = await selectAll(system, partners, glass, segments, primary, alternate, repo, priceFn, first);
       if (trial) { makeUps.push(trial); anyTrial = true; }
     }
     // Every unification failed — no glass this system offers can be carried
@@ -200,21 +216,53 @@ export async function selectForComposite(
   }
 
   if (!makeUps.length) {
-    return fallback(opening, segments, repo, priceFn, historical,
+    return { fallback:
       "No frame system could supply a complete, priceable make-up for this opening — the units "
-      + "were chosen independently and may not couple; confirm at technical review.");
+      + "were chosen independently and may not couple; confirm at technical review." };
   }
+  return { makeUps };
+}
 
-  // Commercial is normalised across the make-ups, which is the only level it can
-  // honestly be normalised at: comparing one unit's price against another unit's
-  // would say a small lite is a better deal than a large sash.
-  const commercial = commercialScores(makeUps.map((m) => m.total));
-  let best: { makeUp: MakeUp; score: number; components: ScoreComponents } | null = null;
-  makeUps.forEach((makeUp, i) => {
-    const { score, components } = scoreComposite(opening, makeUp.scored, commercial[i]);
-    if (!best || score > best.score) best = { makeUp, score, components };
+/** Pick one make-up — through `runLadder`, the SAME comparator a single unit is
+ *  chosen by (AC-50). This module declares no weight set and holds no second
+ *  opinion about what matters; it converts each make-up into the four facts the
+ *  ladder reads and lets the ladder answer. */
+function choose(
+  opening: OpeningInput,
+  segments: CompositeSegmentInput[],
+  makeUps: MakeUp[],
+): CompositeSelectionResult {
+  const requirement = resolvedRequirement(opening);
+  const deviations = makeUps.map((m) => makeUpDeviation(opening, m.scored, requirement).scalar);
+  const totalCents = makeUps.map((m) => (m.total == null ? null : Math.round(m.total * 100)));
+
+  const ladderInput: LadderCandidate[] = makeUps.map((m, i) => {
+    // AD6: the largest-area unit is the make-up's identity, so the ladder's
+    // slug/variant tiebreak stays meaningful; splitKey separates two make-ups
+    // that happen to share it.
+    const lead = [...m.scored].sort((a, b) => area(b) - area(a))[0] ?? null;
+    return {
+      key: String(i),
+      productSlug: lead?.candidate.slug ?? m.system,
+      variantId: lead?.variant?.variantId ?? null,
+      splitKey: [m.system, m.glazingSlug ?? "-",
+        ...m.units.map((u) => u.result.selected?.candidate.slug ?? "?")].join("|"),
+      excluded: false,
+      // A make-up containing a unit that does not actually fit its segment is a
+      // last-resort answer, not a fitting one — the same fact, read the same way,
+      // as it is for a single unit.
+      fits: m.units.every((u) => u.result.selected?.candidateOutcome.fit.fits === true),
+      lastResort: true,
+      deviation: deviations[i],
+      thermalRequired: !requirement.absent,
+      priceCents: totalCents[i],
+    };
   });
-  const chosen = best!;
+
+  const ladder = runLadder(ladderInput);
+  const winner = ladder.selectedKey ?? ladder.ranked[0]?.key ?? "0";
+  const index = Number(winner);
+  const chosen = { makeUp: makeUps[index], deviation: deviations[index], totalCents: totalCents[index] };
 
   // Only the units that were ASKED to share a glass. A unit whose band an
   // engineer stated is deliberately left out of unification, so counting its
@@ -242,8 +290,8 @@ export async function selectForComposite(
     system: chosen.makeUp.system,
     mixedSystems: false,
     glazingSlugs,
-    score: chosen.score,
-    components: chosen.components,
+    deviation: chosen.deviation,
+    totalCents: chosen.totalCents,
     note: notes.length ? notes.join(" ") : null,
   };
 }
@@ -290,7 +338,6 @@ async function selectAll(
   alternate: CatalogueCandidate[][],
   repo: CatalogueRepository,
   priceFn: PriceFn,
-  historical: HistoricalModel | undefined,
   /** The unpinned pass, reused wherever pinning cannot change the answer. */
   reuse: MakeUp | null,
 ): Promise<MakeUp | null> {
@@ -313,7 +360,7 @@ async function selectAll(
       ? previous
       : await selectForOpening(
         { ...seg.opening, family: category ?? seg.opening.family ?? null },
-        repo, priceFn, historical,
+        repo, priceFn,
         { systems, glazingSlugs: seg.ownBand || !glazingSlug ? null : [glazingSlug] },
       );
 
@@ -355,7 +402,6 @@ async function fallback(
   segments: CompositeSegmentInput[],
   repo: CatalogueRepository,
   priceFn: PriceFn,
-  historical: HistoricalModel | undefined,
   note: string | null,
 ): Promise<CompositeSelectionResult> {
   const units: CompositeUnit[] = [];
@@ -363,10 +409,10 @@ async function fallback(
     const seg = segments[i];
     let crossedToCategory: string | null = null;
     let result = await selectForOpening({ ...seg.opening, family: seg.primaryCategory ?? seg.opening.family ?? null },
-      repo, priceFn, historical);
+      repo, priceFn);
     if (!result.selected && seg.alternateCategory) {
       const crossed = await selectForOpening({ ...seg.opening, family: seg.alternateCategory },
-        repo, priceFn, historical);
+        repo, priceFn);
       if (crossed.selected) { result = crossed; crossedToCategory = seg.alternateCategory; }
     }
     units.push({ index: i, result, crossedToCategory });
@@ -398,8 +444,8 @@ async function fallback(
     glazingSlugs: [...new Set(
       units.map((u) => glassOf(u.result.selected?.selectedVariant ?? null)).filter((g): g is string => !!g),
     )],
-    score: null,
-    components: null,
+    deviation: null,
+    totalCents: null,
     note,
   };
 }

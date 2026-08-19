@@ -23,6 +23,18 @@ export const FEEDBACK_CATEGORIES = [
 ] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 
+/** What is unresolved about the chosen line, as tokens a skin composes copy
+ *  from. A pick that met the requirement has nothing to warn about. */
+function warningTokens(tier: SelectionResult["evaluated"][number]["candidateOutcome"]["tier"]): string[] {
+  switch (tier) {
+    case "within_tolerance": return ["requirement_not_met"];
+    case "misses": return ["requirement_missed_beyond_tolerance"];
+    case "thermal_unknown": return ["no_thermal_data"];
+    case "does_not_fit": return ["does_not_fit"];
+    default: return [];
+  }
+}
+
 export interface PersistedSelection {
   selectionRunId: string;
   draftLineId: string | null;
@@ -39,28 +51,38 @@ export async function persistSelection(
   const stmts: D1PreparedStatement[] = [];
 
   stmts.push(env.DB.prepare(
-    `INSERT INTO selection_run (id, opening_id, project_id, catalogue_revision, rule_version, ranker_version, status)
-     VALUES (?,?,?,?,?,?, 'completed')`,
-  ).bind(selectionRunId, openingId, projectId, result.catalogueVersion, result.ruleVersion, result.rankerVersion));
+    `INSERT INTO selection_run (id, opening_id, project_id, catalogue_revision, rule_version, ranker_version, selection_json, status)
+     VALUES (?,?,?,?,?,?,?, 'completed')`,
+  ).bind(
+    selectionRunId, openingId, projectId, result.catalogueVersion, result.ruleVersion,
+    // The column keeps its name and now carries SELECTION_VERSION — a rename
+    // would ripple through four tables to say the same thing (AD16).
+    result.selectionVersion, JSON.stringify(result.selection),
+  ));
 
   let selectedCandidateRowId: string | null = null;
   for (const e of result.evaluated) {
     const candRowId = uuid();
-    if (e.selected) selectedCandidateRowId = candRowId;
+    if (e.candidateOutcome.selected) selectedCandidateRowId = candRowId;
     stmts.push(env.DB.prepare(
       `INSERT INTO candidate_result
          (id, selection_run_id, sanity_product_id, catalogue_rev, hard_rule_passed,
           hard_rule_outcome_json, score, score_components_json, reason_codes, rank,
-          selected, sanity_config_id, selected_variant_id, performance_snapshot_json, price_snapshot_json)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          selected, sanity_config_id, selected_variant_id, performance_snapshot_json, price_snapshot_json,
+          outcome_json)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       candRowId, selectionRunId, e.candidate.sanityProductId, e.candidate.catalogueRevision,
-      e.outcome.passed ? 1 : 0, JSON.stringify(e.outcome.filters), e.score,
-      e.components ? JSON.stringify(e.components) : null,
+      e.outcome.passed ? 1 : 0, JSON.stringify(e.outcome.filters),
+      // AC-25: the deleted score is STOPPED, not shimmed. Both columns stay in
+      // the schema (nothing is rebuilt) and are written NULL from here on.
+      null, null,
       JSON.stringify(e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean)),
-      e.rank, e.selected ? 1 : 0, e.selectedVariant?.variantId ?? null, e.selectedVariant?.variantId ?? null,
+      e.candidateOutcome.rank, e.candidateOutcome.selected ? 1 : 0,
+      e.selectedVariant?.variantId ?? null, e.selectedVariant?.variantId ?? null,
       e.selectedVariant ? JSON.stringify(e.selectedVariant) : null,
       e.price ? JSON.stringify(e.price) : null,
+      JSON.stringify(e.candidateOutcome),
     ));
   }
 
@@ -83,8 +105,12 @@ export async function persistSelection(
     ).bind(
       draftLineId, projectId, openingId, selectedCandidateRowId,
       JSON.stringify(catalogueSnapshot), s.price ? JSON.stringify(s.price) : null,
-      JSON.stringify(result.dominant ? [] : ["close_alternatives"]),
-      s.score, s.outcome.status,
+      // Tier-derived tokens replace `close_alternatives`, which meant "two
+      // scores were within 0.05" — a fact about the ranker, not about the line.
+      // These say what is actually unresolved about the pick (spec §4.11).
+      JSON.stringify(warningTokens(s.candidateOutcome.tier)),
+      // A12: there is no score, so there is nothing to put in `confidence`.
+      null, s.outcome.status,
     ));
   }
 
