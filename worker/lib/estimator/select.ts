@@ -1,15 +1,30 @@
-// Selection orchestration (spec §8.1 decision sequence, §18 pseudocode). Pure
-// core: given an opening, a CatalogueRepository and a pricing function, it queries
-// published candidates, applies the deterministic hard rules, prices the passing
-// ones, ranks them and picks with a confidence gate — producing the full
-// candidate set (persisted for reviewers) plus the draft line. D1 persistence is
-// a separate concern (persistSelection) so this is testable with a fixture.
+// Selection orchestration. Pure core: given an opening, a CatalogueRepository
+// and a pricing function, it queries published candidates, applies the
+// deterministic hard rules, prices every eligible configuration — and then hands
+// the whole set to the LADDER, which is the only thing in this codebase that
+// decides one candidate is better than another. D1 persistence is a separate
+// concern (persistSelection) so this is testable against a fixture.
+//
+// Two stages behind one public interface (design §5.2):
+//
+//   evaluateCandidates — what the catalogue offers for this opening, priced.
+//                        Knows nothing about which is best.
+//   decide             — stamps ladder facts, runs the ladder, builds the
+//                        emitted contract. Chooses nothing itself either; the
+//                        ladder does, and the ladder does it for every path.
 import { catalogueCandidateOfferability, type CatalogueRepository } from "./catalogue";
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
-import { checkHardRules, RULE_VERSION, type RuleOutcome, type OutcomeStatus } from "./rules";
-import { rankCandidates, selectWithConfidence, RANKER_VERSION, type RankedCandidate, type ScoreComponents } from "./rank";
+import {
+  checkHardRules, fitFacts, resolvedRequirement, RULE_VERSION,
+  type FitFacts, type RuleOutcome, type OutcomeStatus,
+} from "./rules";
+import {
+  deviationOf, runLadder, REQUIREMENT_TOLERANCE, SELECTION_VERSION,
+  type LadderCandidate, type ResolvedRequirement,
+} from "./ladder";
+import { buildOutcomes, priceCentsOf, type OutcomeCandidate } from "./outcome";
+import type { CandidateOutcome, SelectionOutcome } from "../../../src/data/recommendation";
 import type { PriceSnapshot } from "./pricing";
-import type { HistoricalModel } from "./learning";
 import { eligiblePerformanceVariants } from "./configuration";
 
 export type PriceFn = (
@@ -23,34 +38,31 @@ export interface EvaluatedCandidate {
   outcome: RuleOutcome;
   selectedVariant: PerformanceVariant | null;
   price: PriceSnapshot | null;
-  score: number | null;
-  /** Transparent per-component breakdown (incl. the learned historical nudge). */
-  components: ScoreComponents | null;
-  rank: number | null;
-  selected: boolean;
+  /** The emitted verdict — tier, rank, deviation, exclusions, price delta.
+   *  Replaces the deleted `score` / `components` / `rank` / `selected`. */
+  candidateOutcome: CandidateOutcome;
 }
 
 export interface SelectionResult {
   openingRef: string | null;
   ruleVersion: string;
-  rankerVersion: string;
+  /** 'ladder-v1'. Written to the ranker_version columns, which keep their names
+   *  so a rename does not ripple through four tables (AD16). */
+  selectionVersion: string;
   catalogueVersion: string;
   evaluated: EvaluatedCandidate[];
-  /** Chosen candidate (null when none passed). */
+  /** The run-level contract, persisted as selection_run.selection_json. */
+  selection: SelectionOutcome;
+  /** Chosen candidate (null when nothing could be selected). */
   selected: EvaluatedCandidate | null;
   /** Line status: the selected candidate's status, else the "best failure". */
-  status: OutcomeStatus | "no_candidate";
-  dominant: boolean;
-  alternatives: RankedCandidate[];
+  status: SelectionOutcome["status"];
   /** Products that WOULD have been candidates but were withheld as incomplete,
    *  with the gap codes that withheld them. Carried so a reviewer is told which
    *  record to fix instead of reading "no product fits" and re-measuring an
    *  opening that was never the problem. Empty on a healthy catalogue. */
   withheldIncomplete: { slug: string; gaps: string[] }[];
 }
-
-// Rank the failure states so an all-failed opening reports the most-actionable one.
-const FAILURE_ORDER: OutcomeStatus[] = ["needs_manual_review", "catalogue_data_incomplete", "unavailable"];
 
 /** What a UNIT of a composite may be chosen from. Absent on a plain opening,
  *  which is selected in isolation exactly as it always was. */
@@ -68,13 +80,29 @@ export interface SelectionRestriction {
   glazingSlugs?: readonly string[] | null;
 }
 
-export async function selectForOpening(
+/** One priced configuration, before the ladder has an opinion about it. */
+interface EvaluatedRow {
+  candidate: CatalogueCandidate;
+  outcome: RuleOutcome;
+  selectedVariant: PerformanceVariant | null;
+  price: PriceSnapshot | null;
+  fit: FitFacts;
+}
+
+export interface Evaluation {
+  rows: EvaluatedRow[];
+  /** Products that reached the rules engine at all. */
+  hadCandidates: boolean;
+  catalogueVersion: string;
+  withheldIncomplete: { slug: string; gaps: string[] }[];
+}
+
+export async function evaluateCandidates(
   opening: OpeningInput & { externalRef?: string | null },
   repo: CatalogueRepository,
   priceFn: PriceFn,
-  historical?: HistoricalModel,
   restrict?: SelectionRestriction | null,
-): Promise<SelectionResult> {
+): Promise<Evaluation> {
   const all = await repo.queryCandidates(opening.family ?? null, opening.operationType ?? null);
   // WITHDRAWN PRODUCTS ARE NEVER CHOSEN BY THE MACHINE.
   //
@@ -84,29 +112,19 @@ export async function selectForOpening(
   // configurations and revalidate a line. Filtering in the query would have taken
   // a disabled product away from ops too, and ops is exactly who still needs it —
   // an order placed before the product was withdrawn still has to be repriced.
-  //
-  // If EVERY candidate for an operation is disabled the line comes back
-  // unavailable, which is the honest answer: there is nothing left to sell.
   const sellable = all.filter((c) => !c.disabled);
   // INCOMPLETE PRODUCTS ARE NEVER CHOSEN BY THE MACHINE EITHER.
   //
   // A product whose catalogue record is missing a piece the estimator needs —
   // no usable glazing/thermal row, no dimension rule, no operation type, no
   // pricing ref — cannot be recommended to a customer on any honest basis. It
-  // used to reach the loop below and drop out silently at `!variants.length`,
-  // which read as "no product fits this opening" rather than "this product is
-  // half-authored", and told nobody which of the three records (product,
-  // thermal profile, rate card) was the one to go and fix.
+  // is withheld BEFORE the ladder and reported in withheldIncomplete (E3), so a
+  // reviewer is told which of the three records to go and fix rather than
+  // reading "no product fits this opening".
   //
   // Computed live from the candidates already in hand, NOT from the cached
   // reconcile verdict: this path has the real data, so it does not need — and
   // must not inherit — the staleness of a snapshot taken up to ten minutes ago.
-  // The cached verdict exists only for the browser, which has no other way to
-  // know (worker/lib/pricing-admin.ts computeOfferability).
-  //
-  // Same seam as `disabled` above and for the same reason: ops reaches the
-  // repository through queryCandidates + checkHardRules directly and still sees
-  // everything, because ops is who repairs these.
   const complete: CatalogueCandidate[] = [];
   const withheldIncomplete: { slug: string; gaps: string[] }[] = [];
   for (const c of sellable) {
@@ -120,23 +138,21 @@ export async function selectForOpening(
     : complete;
   const catalogueVersion = repo.catalogueVersion(candidates);
 
-  // Hard rules on every product, then evaluate every eligible exact performance
-  // configuration. Learning and pricing therefore influence the final variant,
-  // rather than being applied after a variant has already been collapsed.
-  const evaluated: EvaluatedCandidate[] = [];
+  const rows: EvaluatedRow[] = [];
   for (const candidate of candidates) {
+    const fit = fitFacts(opening, candidate.dimensionRule);
     const outcome = checkHardRules(opening, candidate, RULE_VERSION);
     if (outcome.passed && opening.thermalContext?.thermalPrecedentApplied === true) {
       outcome.status = "commercial_only_estimate";
       outcome.energyCertified = false;
     }
     if (!outcome.passed) {
-      evaluated.push({ candidate, outcome, selectedVariant: null, price: null, score: null, components: null, rank: null, selected: false });
+      rows.push({ candidate, outcome, selectedVariant: null, price: null, fit });
       continue;
     }
-    // The frame stays even on a thermal miss; the ranker (below) picks the best
-    // glass among eligible variants rather than a standalone band-matcher. Only a
-    // frame with zero eligible variants falls through to an unselected row.
+    // Every published variant that satisfies the schedule's glazing instruction
+    // is a candidate configuration. Thermal no longer culls this set — the
+    // ladder tiers the ones that miss, so a near-miss stays selectable (D4).
     const eligible = eligiblePerformanceVariants(candidate, outcome);
     // The composite's glass, applied per frame. Soft (see SelectionRestriction):
     // a frame rated for none of them keeps its own set, and the composite says so.
@@ -145,71 +161,183 @@ export async function selectForOpening(
       : eligible;
     const variants = pinned.length ? pinned : eligible;
     if (!variants.length) {
-      evaluated.push({ candidate, outcome, selectedVariant: null, price: null, score: null, components: null, rank: null, selected: false });
+      rows.push({ candidate, outcome, selectedVariant: null, price: null, fit });
       continue;
     }
     for (const variant of variants) {
-      const hasEnergyRequirement =
-        opening.requirements?.maxUValue != null ||
-        opening.requirements?.minShgc != null ||
-        opening.requirements?.maxShgc != null;
       const exactOutcome: RuleOutcome = {
         ...outcome,
-        energyCertified: !!(variant.certified && variant.dataSource === "certified"),
-        status: hasEnergyRequirement && !(variant.certified && variant.dataSource === "certified")
+        // Line STATUS only, never ordering (AC-49, A7). The comparator cannot
+        // see this field, so inverting every catalogue record's data source
+        // changes no rank anywhere.
+        energyCertified: isCertified(variant),
+        status: hasThermalRequirement(opening) && !isCertified(variant)
           ? "commercial_only_estimate"
           : outcome.status,
       };
       const price = await priceFn(candidate, opening, variant);
-      evaluated.push({ candidate, outcome: exactOutcome, selectedVariant: variant, price, score: null, components: null, rank: null, selected: false });
+      rows.push({ candidate, outcome: exactOutcome, selectedVariant: variant, price, fit });
     }
   }
 
-  const passing = evaluated.filter((e) => e.outcome.passed);
-  const priceable = passing.filter((e) => e.price?.ok);
-  const ranked = rankCandidates(opening, priceable.map((e) => ({
-    candidate: e.candidate, outcome: e.outcome, selectedVariant: e.selectedVariant, price: e.price,
-    // Learned preference (Phase 6); omitted ⇒ ranker treats it as neutral.
-    historicalAcceptance: historical ? historical.scoreFor(e.candidate, opening, e.selectedVariant) : undefined,
-  })));
-  // Attach scores/ranks/components back onto the passing candidates.
-  const byId = new Map(ranked.map((r) => [r.configurationId, r]));
-  for (const e of priceable) {
-    const r = byId.get(`${e.candidate.sanityProductId}::${e.selectedVariant?.variantId ?? "none"}`);
-    if (r) { e.score = r.score; e.rank = r.rank; e.components = r.components; }
-  }
+  return { rows, hadCandidates: candidates.length > 0, catalogueVersion, withheldIncomplete };
+}
 
-  const { selected: topRanked, dominant, alternatives } = selectWithConfidence(ranked);
-  const selected = topRanked ? priceable.find((e) =>
-    e.candidate.sanityProductId === topRanked.candidateId &&
-    (e.selectedVariant?.variantId ?? null) === topRanked.performanceVariantId
-  ) ?? null : null;
-  if (selected) selected.selected = true;
+const isCertified = (v: PerformanceVariant | null) =>
+  !!(v && v.certified && v.dataSource === "certified");
 
-  let status: SelectionResult["status"];
-  if (selected) status = selected.outcome.status;
-  // "no_candidate" means the catalogue sells nothing of this shape — a real,
-  // final answer. If products of this shape DO exist and were withheld as
-  // incomplete, that is a data fault wearing the same clothes, and saying
-  // "no_candidate" would send someone to check the opening instead of the
-  // catalogue. catalogue_data_incomplete already carries exactly that meaning.
-  else if (!candidates.length) status = withheldIncomplete.length ? "catalogue_data_incomplete" : "no_candidate";
-  else if (passing.length && !priceable.length) status = "catalogue_data_incomplete";
-  else {
-    const statuses = evaluated.map((e) => e.outcome.status);
-    status = FAILURE_ORDER.find((s) => statuses.includes(s)) ?? "unavailable";
-  }
+function hasThermalRequirement(opening: OpeningInput): boolean {
+  return !resolvedRequirement(opening).absent;
+}
+
+const rowKey = (row: EvaluatedRow) =>
+  `${row.candidate.sanityProductId}::${row.selectedVariant?.variantId ?? "none"}`;
+
+export function decide(
+  opening: OpeningInput & { externalRef?: string | null },
+  evaluation: Evaluation,
+  tolerance: number = REQUIREMENT_TOLERANCE,
+): SelectionResult {
+  const requirement = resolvedRequirement(opening);
+  const sizeKnown = !!opening.widthMm && !!opening.heightMm;
+  const lastResortIds = lastResortProductIds(evaluation.rows);
+
+  const ladderInput: LadderCandidate[] = evaluation.rows.map((row) => ({
+    key: rowKey(row),
+    productSlug: row.candidate.slug,
+    variantId: row.selectedVariant?.variantId ?? null,
+    splitKey: null,
+    excluded: !row.outcome.passed,
+    fits: row.fit.fits,
+    lastResort: row.outcome.passed && !row.fit.fits && lastResortIds.has(row.candidate.sanityProductId),
+    deviation: deviationOf(requirement, {
+      uValue: row.selectedVariant?.uValue ?? null,
+      shgc: row.selectedVariant?.shgc ?? null,
+    }).scalar,
+    thermalRequired: !requirement.absent,
+    priceCents: priceCentsOf(row.price),
+  }));
+
+  const ladder = runLadder(ladderInput, tolerance);
+  const { outcomes, selection } = buildOutcomes({
+    openingRef: opening.externalRef ?? null,
+    requirement,
+    tolerance,
+    ladder,
+    candidates: evaluation.rows.map((row) => outcomeCandidateOf(opening, row, requirement)),
+    withheldIncomplete: evaluation.withheldIncomplete,
+    hadCandidates: evaluation.hadCandidates,
+    sizeKnown,
+  });
+
+  const evaluated: EvaluatedCandidate[] = evaluation.rows.map((row, i) => ({
+    candidate: row.candidate,
+    outcome: row.outcome,
+    selectedVariant: row.selectedVariant,
+    price: row.price,
+    candidateOutcome: outcomes[i],
+  }));
 
   return {
     openingRef: opening.externalRef ?? null,
     ruleVersion: RULE_VERSION,
-    rankerVersion: RANKER_VERSION,
-    catalogueVersion,
+    selectionVersion: SELECTION_VERSION,
+    catalogueVersion: evaluation.catalogueVersion,
     evaluated,
-    selected,
-    status,
-    dominant,
-    alternatives,
-    withheldIncomplete,
+    selection,
+    selected: evaluated.find((e) => e.candidateOutcome.selected) ?? null,
+    status: selection.status,
+    withheldIncomplete: evaluation.withheldIncomplete,
   };
 }
+
+function outcomeCandidateOf(
+  opening: OpeningInput,
+  row: EvaluatedRow,
+  requirement: ResolvedRequirement,
+): OutcomeCandidate {
+  const glass = (opening.scheduleRequirements?.glassDescription ?? "").toLowerCase();
+  return {
+    key: rowKey(row),
+    productSlug: row.candidate.slug,
+    sanityProductId: row.candidate.sanityProductId,
+    variantId: row.selectedVariant?.variantId ?? null,
+    catalogueRevision: row.candidate.catalogueRevision,
+    form: "single",
+    filters: row.outcome.filters,
+    ruleStatus: row.outcome.status,
+    offered: {
+      operationTypes: row.candidate.configuration?.operationTypes ?? [],
+      glazingClasses: [...new Set(
+        row.candidate.performanceVariants
+          .filter((v) => v.published)
+          .map((v) => v.glazingClass)
+          .filter((cls): cls is string => !!cls),
+      )],
+      schemaVersion: row.candidate.schemaVersion,
+    },
+    required: {
+      operationType: opening.operationType ?? null,
+      doubleGlazed: opening.scheduleRequirements?.doubleGlazed ?? null,
+      lowE: /\blow[- ]?e\b/.test(glass),
+    },
+    thermal: {
+      uValue: row.selectedVariant?.uValue ?? null,
+      shgc: row.selectedVariant?.shgc ?? null,
+      deviation: deviationOf(requirement, {
+        uValue: row.selectedVariant?.uValue ?? null,
+        shgc: row.selectedVariant?.shgc ?? null,
+      }),
+      dataSource: row.selectedVariant
+        ? (row.selectedVariant.dataSource === "certified" ? "certified" : "estimated")
+        : null,
+    },
+    fit: row.fit,
+    price: row.price,
+  };
+}
+
+/** AD15 / spec §4.6. When NOTHING fits, the platform still owes an indicative
+ *  number plus a warning rather than "we sell nothing that shape" — so the
+ *  largest-capacity product of the required operation is promoted into tier E
+ *  and priced at the REAL opening dimensions. The ladder never picks which
+ *  product deserves this; the generator stamps it, and only when it has to.
+ *
+ *  Largest capacity, slug as the tiebreak, mirroring the anonymous matcher's
+ *  existing rule so both engines keep agreeing about the oversize promise. */
+function lastResortProductIds(rows: EvaluatedRow[]): Set<string> {
+  const usable = rows.filter((r) => r.outcome.passed);
+  if (usable.some((r) => r.fit.fits)) return new Set();
+
+  let best: { id: string; slug: string; capacity: number } | null = null;
+  for (const row of usable) {
+    const limit = row.fit.limit;
+    if (!limit) continue;
+    const capacity = (limit.maxWidthMm ?? 0) * (limit.maxHeightMm ?? 0);
+    if (!best || capacity > best.capacity || (capacity === best.capacity && row.candidate.slug < best.slug)) {
+      best = { id: row.candidate.sanityProductId, slug: row.candidate.slug, capacity };
+    }
+  }
+  return best ? new Set([best.id]) : new Set();
+}
+
+export async function selectForOpening(
+  opening: OpeningInput & { externalRef?: string | null },
+  repo: CatalogueRepository,
+  priceFn: PriceFn,
+  restrict?: SelectionRestriction | null,
+): Promise<SelectionResult> {
+  return decide(opening, await evaluateCandidates(opening, repo, priceFn, restrict));
+}
+
+/** The best single-unit candidate in the ranked order — the row a proposal line
+ *  is seeded from when a split wins (design §7.4, Phase 2), and the honest
+ *  runner-up to show beside a split. Null when nothing was in the running. */
+export function parentRepresentative(result: SelectionResult): EvaluatedCandidate | null {
+  const ranked = result.evaluated
+    .filter((e) => e.candidateOutcome.rank != null)
+    .sort((a, b) => (a.candidateOutcome.rank ?? 0) - (b.candidateOutcome.rank ?? 0));
+  return ranked[0] ?? null;
+}
+
+export type { OutcomeStatus };

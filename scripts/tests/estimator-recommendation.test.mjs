@@ -84,6 +84,40 @@ test("THE W01 REGRESSION: an impossible band (minShgc>maxShgc) still yields a pr
   assert.notEqual(r.status, "unavailable");
 });
 
+// ── The emitted contract (D14, D16) ─────────────────────────────────────────
+test("AC-22 every candidate carries a structured verdict, and the run carries one too", async () => {
+  const r = await selectForOpening(opening({ requirements: { maxUValue: 2.0 } }), repo, priceFn);
+
+  // Run level: the tolerance is stamped so a past run is reproducible (AC-4).
+  assert.equal(r.selection.version, "ladder-v1");
+  assert.equal(r.selection.tolerance, 0.05);
+  assert.equal(r.selection.competingTier, "meets");
+  assert.equal(r.selection.requirement.maxUValue, 2.0);
+  assert.equal(r.selection.requirement.absent, false);
+  assert.equal(r.selection.selectedProductSlug, r.selected.candidate.slug);
+  assert.equal(r.selectionVersion, "ladder-v1");
+
+  // Candidate level: a verdict on every row, ranked, with the pick at rank 1 and
+  // a zero delta against itself (A17's sign convention).
+  const outcomes = r.evaluated.map((e) => e.candidateOutcome);
+  assert.ok(outcomes.length >= 3, "every evaluated configuration is emitted");
+  const pick = outcomes.find((o) => o.selected);
+  assert.equal(pick.rank, 1);
+  assert.equal(pick.tier, "meets");
+  assert.equal(pick.competing, true);
+  assert.equal(pick.price.deltaToSelected, 0);
+  assert.equal(pick.price.currency, "AUD");
+  assert.equal(pick.form, "single");
+  assert.deepEqual(pick.exclusions, []);
+  assert.equal(pick.learned, null, "the learned layer is not wired in this phase");
+  assert.equal(pick.thermal.normalisedDeviation, 0);
+  assert.equal(pick.fit.fits, true);
+
+  // Ranks are dense and start at 1 over everything that was in the running.
+  const ranked = outcomes.filter((o) => o.rank != null).map((o) => o.rank).sort((a, b) => a - b);
+  assert.deepEqual(ranked, ranked.map((_, i) => i + 1));
+});
+
 // ── Glass is the U-value lever ───────────────────────────────────────────────
 test("glass is chosen to MEET the band when a meeting glass exists", async () => {
   const r = await selectForOpening(opening({ requirements: { maxUValue: 2.0, maxShgc: 0.45 } }), repo, priceFn);
@@ -111,41 +145,19 @@ test("oversize opening still assigns a product (dimension warning, not eliminati
   assert.equal(r.status, "commercial_only_estimate");
 });
 
-// ── Historical / LLM learning ────────────────────────────────────────────────
-test("reviewer-learned preference decides between two otherwise-equal products", async () => {
+// ── The learned layer ────────────────────────────────────────────────────────
+//
+// Two tests lived here that pinned the 0.10 historical weight: a reviewer-learned
+// preference broke a tie between two products, and a "bounded nudge" test proved
+// compliance outweighed it. Both asserted the weighted ranker's behaviour, which
+// D10 deletes — there is no weight for a preference to be, and `selectForOpening`
+// has no parameter to receive one. AC-32 ("removing the learned model changes no
+// selection") therefore holds by construction in this phase; the dark shadow
+// layer and its own tests arrive with Phase 3.
+test("AC-32 the ladder has no channel for a learned preference to arrive through", async () => {
   const op = opening({ requirements: { maxUValue: 2.0 } });
-  const key = contextKey(op);
-  // Reviewers repeatedly issued amj-awn2 in this context.
-  const historical = aggregateHistorical([
-    { context_key: key, final_product_slug: "amj-awn2", final_variant_id: "dg-lowe", decision: "accepted", reason_code: "HUMAN_ACCEPTED" },
-    { context_key: key, final_product_slug: "amj-awn2", final_variant_id: "dg-lowe", decision: "accepted", reason_code: "HUMAN_ACCEPTED" },
-    { context_key: key, final_product_slug: "amj-awn2", final_variant_id: "dg-lowe", decision: "accepted", reason_code: "HUMAN_ACCEPTED" },
-  ]);
-  const withoutLearning = await selectForOpening(op, repo, priceFn);
-  const withLearning = await selectForOpening(op, repo, priceFn, historical);
-  assert.equal(withLearning.selected.candidate.slug, "amj-awn2", "the learned choice wins the tie");
-  // And the learned signal is a NUDGE, not a rewrite: the same non-learned run
-  // still produced a valid product (the learning only broke the tie).
-  assert.ok(withoutLearning.selected, "selection works with no learning too");
-});
-
-test("learning is a bounded nudge: a clearly better thermal match is NOT overturned by history", async () => {
-  // History favours amj-awn2, but we force amj-awn to be the only in-band option
-  // by giving amj-awn2 no glass that meets a tight band. amj-awn should still win
-  // because compliance (0.35) dwarfs the historical weight (0.10).
-  const tight = { maxUValue: 1.7, maxShgc: 0.45 }; // only dg-lowe (1.6/0.40) meets
-  const awn2NoMeeting = product("amj-awn2", ["awning"], {
-    performanceVariants: [glass("dg-clear", 2.8, 0.55), glass("single", 5.4, 0.62)], // no in-band glass
-  });
-  const localRepo = {
-    async queryCandidates() { return [product("amj-awn", ["awning"]), awn2NoMeeting]; },
-    catalogueVersion() { return "cat-v1"; },
-  };
-  const op = opening({ requirements: tight });
-  const key = contextKey(op);
-  const historical = aggregateHistorical(
-    [1, 2, 3, 4].map(() => ({ context_key: key, final_product_slug: "amj-awn2", final_variant_id: "dg-clear", decision: "accepted", reason_code: "HUMAN_ACCEPTED" })),
-  );
-  const r = await selectForOpening(op, localRepo, priceFn, historical);
-  assert.equal(r.selected.candidate.slug, "amj-awn", "the in-band product beats a historically-preferred worse match");
+  const r = await selectForOpening(op, repo, priceFn);
+  // Selection depends on the opening, the catalogue and the price — nothing else.
+  assert.equal(r.selected.candidate.slug, "amj-awn", "the slug tiebreak, not a history");
+  assert.equal(r.evaluated.every((e) => e.candidateOutcome.learned === null), true);
 });
