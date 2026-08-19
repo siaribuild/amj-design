@@ -1,6 +1,9 @@
 import type { Env } from "../../types";
 import { uuid } from "../util";
-import { contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, isRetrievalOperation, isRequirementBasis } from "../estimator/learning";
+import {
+  contextKey, retrievalKey, RETRIEVAL_KEY_VERSION,
+  isRetrievalOperation, isRequirementBasis, hasThermalRequirement,
+} from "../estimator/learning";
 import type { OpeningInput } from "../estimator/types";
 
 export interface IssuedCartLine {
@@ -16,13 +19,6 @@ export interface IssuedCartLine {
   /** 'composite_parent' when the reviewer rebuilt this opening as joined units. */
   line_kind?: string | null;
 }
-
-/** Whether this opening carried a thermal requirement at all — the fourth
- *  field the retrieval key reads, and one the legacy context never recorded. */
-const hasThermalRequirement = (opening: OpeningInput): boolean => {
-  const r = opening.requirements ?? null;
-  return !!r && (r.maxUValue != null || r.minShgc != null || r.maxShgc != null);
-};
 
 const object = (value: string | null | undefined): Record<string, unknown> => {
   try {
@@ -81,6 +77,12 @@ export async function captureRecommendationOutcomes(
       qty: typeof rankingContext.quantity === "number" ? rankingContext.quantity : line.qty,
       requirements: rankingContext.requirements && typeof rankingContext.requirements === "object"
         ? rankingContext.requirements as OpeningInput["requirements"] : {},
+      // D4/E14: a band the PLATFORM computed reaches the opening here, and the
+      // ladder judged every candidate against it. Dropping it would bucket this
+      // row as "no thermal requirement" and file it beside openings nothing was
+      // required of — a mixture the corpus would then learn from.
+      advisoryRequirements: rankingContext.advisoryRequirements && typeof rankingContext.advisoryRequirements === "object"
+        ? rankingContext.advisoryRequirements as OpeningInput["advisoryRequirements"] : null,
       thermalContext: {
         ...context,
         requirementBasis: typeof context.requirementBasis === "string" ? context.requirementBasis : null,
@@ -151,12 +153,21 @@ export async function captureRecommendationOutcomes(
     // key would not be recomputable from `context_json` alone (AC-30) and a
     // later redefinition of the coarsening would be lost history instead of a
     // recompute.
+    // `thermalRequired` is DERIVED, and storing only a conclusion is what made
+    // the first version of this unfixable: the flag was computed from
+    // `requirements` alone, it was wrong for every platform-computed band, and
+    // no stored row carried enough to notice or correct it. A9 promised that
+    // redefining the coarsening is a recompute — so the INPUTS the flag comes
+    // from are recorded beside it, and a future correction is a pass over
+    // `context_json` rather than history that has to be thrown away.
     const recordedContext = {
       ...context,
       family: opening.family,
       operationType: opening.operationType,
       widthMm: opening.widthMm,
       heightMm: opening.heightMm,
+      requirements: opening.requirements ?? null,
+      advisoryRequirements: opening.advisoryRequirements ?? null,
       thermalRequired: hasThermalRequirement(opening) ? 1 : 0,
     };
     stmts.push(env.DB.prepare(

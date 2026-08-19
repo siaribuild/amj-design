@@ -13,6 +13,7 @@ await build({
   stdin: {
     contents: `
       export { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel } from ${p("worker/lib/estimator/learning.ts")};
+      export { resolvedRequirement } from ${p("worker/lib/estimator/rules.ts")};
       export { decide } from ${p("worker/lib/estimator/select.ts")};
       export { captureRecommendationOutcomes, captureBackfilledOutcomes } from ${p("worker/lib/ai/outcomes.ts")};
     `,
@@ -20,7 +21,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel, captureRecommendationOutcomes, captureBackfilledOutcomes, decide } = await import(pathToFileURL(outfile).href);
+const { aggregateApprovedThermal, contextKey, retrievalKey, RETRIEVAL_KEY_VERSION, aggregateShadow, SHADOW_MIN_OBSERVATIONS, buildShadowModel, captureRecommendationOutcomes, captureBackfilledOutcomes, decide, resolvedRequirement } = await import(pathToFileURL(outfile).href);
 
 const opening = {
   family: "windows",
@@ -657,4 +658,73 @@ test("AC-33 the learning point is quote ISSUE, and nowhere else", async () => {
   // Exactly one caller, and it is the issue path. A quote submitted to the
   // customer IS the review; anything earlier has no human in it.
   assert.deepEqual(callers, ["worker/lib/issue.ts"]);
+});
+
+test("D4/E14/AC-29 a PLATFORM-COMPUTED band is a thermal requirement, and buckets as one", () => {
+  // D4: "energy requirements are first-class whether they come from an energy
+  // report or are computed by the platform from the plans." The ladder already
+  // honours that — `resolvedRequirement` merges explicit ∩ advisory through the
+  // coherence guard — so a band that reached the opening as an advisory
+  // requirement tiers every candidate exactly as a reported one does.
+  //
+  // The retrieval key has to agree with the ladder or the bucket is a lie: an
+  // opening the machine judged against a real Uw cap would sit beside openings
+  // it judged against nothing, and the corpus would learn from the mixture.
+  // `aggregateApprovedThermal().apply()` sets `advisoryRequirements` from three
+  // or more approved thermal corrections, so this is a live path, and 0056's
+  // reset spares the thermal corpus that feeds it.
+  const model = aggregateShadow([]);
+  const base = {
+    family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1200,
+    thermalContext: { requirementBasis: "plan_derived" },
+  };
+  const advisoryOnly = { ...base, requirements: null, advisoryRequirements: { maxUValue: 4.0 } };
+  const noBand = { ...base, requirements: null, advisoryRequirements: null };
+
+  // The ladder's own answer, which is the one that has to be matched.
+  assert.equal(resolvedRequirement(advisoryOnly).absent, false, "the ladder sees a band");
+  assert.equal(resolvedRequirement(noBand).absent, true);
+
+  assert.equal(model.lookup(advisoryOnly).retrievalKey, "awning|plan_derived|m|1");
+  assert.equal(model.lookup(noBand).retrievalKey, "awning|plan_derived|m|0");
+  assert.notEqual(
+    model.lookup(advisoryOnly).retrievalKey,
+    model.lookup(noBand).retrievalKey,
+    "a computed band and no band are different questions",
+  );
+
+  // An explicit report still wins outright over the advisory band, and a band
+  // coerced away to nothing (AC-16) is honestly absent — the flag tracks the
+  // resolution, not the presence of a field.
+  assert.equal(model.lookup({ ...base, requirements: { maxUValue: 3.0 }, advisoryRequirements: { maxUValue: 2.0 },
+    thermalContext: { requirementBasis: "explicit_energy_report" } }).retrievalKey,
+    "awning|explicit_energy_report|m|1");
+  assert.equal(model.lookup({ ...base, requirements: { minShgc: 0.5, maxShgc: 0.41 } }).retrievalKey,
+    "awning|plan_derived|m|0", "an incoherent band coerces to none, and says so");
+});
+
+test("D4/AC-30 capture buckets a computed band as thermal, and records what it derived that from", () => {
+  // The lookup side is only half of it: capture builds its own opening from
+  // ranking_context_json, and if that opening drops `advisoryRequirements` the
+  // stored key is wrong at the source — permanently, for every row written.
+  const advisory = JSON.parse(PROPOSAL_ROW.ranking_context_json);
+  advisory.requirements = {};
+  advisory.advisoryRequirements = { maxUValue: 4.0 };
+  const env = captureDb({ ...PROPOSAL_ROW, ranking_context_json: JSON.stringify(advisory) });
+  return captureRecommendationOutcomes(env, "p_1", [ISSUED_LINE]).then(() => {
+    const row = env.batched[0];
+    const at = (column) => { const i = bindIndexOf(row.sql, column); return i == null ? null : row.args[i]; };
+    const context = JSON.parse(at("context_json"));
+
+    assert.equal(context.thermalRequired, 1, "a platform-computed band is a thermal requirement (D4)");
+    assert.equal(at("retrieval_key"), "awning|plan_derived|m|1");
+
+    // AC-30 / A9, properly delivered. The flag is DERIVED, so storing only the
+    // flag makes a wrong derivation unfixable — the promise was that redefining
+    // the coarsening is a recompute, and you cannot recompute from a conclusion.
+    // The inputs it was derived from are recorded beside it.
+    assert.deepEqual(context.requirements, {});
+    assert.deepEqual(context.advisoryRequirements, { maxUValue: 4.0 });
+    assert.equal(retrievalKey(context), at("retrieval_key"), "still recomputable from context_json alone");
+  });
 });

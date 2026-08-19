@@ -1,5 +1,6 @@
 import type { Env } from "../../types";
 import type { OpeningInput } from "./types";
+import { resolvedRequirement } from "./rules";
 
 export const LEARNING_VERSION = "v2-finalized-contextual";
 
@@ -48,6 +49,28 @@ export function contextKey(opening: OpeningInput): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const RETRIEVAL_KEY_VERSION = "rk-v1";
+
+/**
+ * Does this opening carry a thermal requirement at all — the fourth field the
+ * key reads?
+ *
+ * Answered through `resolvedRequirement`, the SAME coherence-guarded resolution
+ * the ladder tiers by, and that is the whole point of this function existing
+ * rather than an inline check. A band can reach an opening two ways: an energy
+ * report writes `requirements`, and the platform's own approved-thermal model
+ * writes `advisoryRequirements` (`aggregateApprovedThermal().apply()`). D4 says
+ * both are first-class — "energy requirements are first-class whether they come
+ * from an energy report or are computed by the platform from the plans" — and
+ * E14 keeps the explicit ∩ advisory merge intact.
+ *
+ * Reading `requirements` alone would put an opening the ladder judged against a
+ * real Uw cap in the same bucket as one it judged against nothing, and the
+ * corpus would then learn from the mixture. Resolution also coerces an
+ * impossible band away (AC-16), so an opening whose band collapsed is honestly
+ * absent here too: the flag tracks what was ENFORCED, never what was supplied.
+ */
+export const hasThermalRequirement = (opening: OpeningInput): boolean =>
+  !resolvedRequirement(opening).absent;
 
 /** The five requirement bases a key may carry. Anything else is 'none'. A
  *  choice made against a real energy report is a different kind of evidence
@@ -258,16 +281,8 @@ const shadowContext = (opening: OpeningInput) => ({
   operationType: opening.operationType ?? null,
   requirementBasis: opening.thermalContext?.requirementBasis ?? null,
   widthMm: opening.widthMm ?? null,
-  thermalRequired: !resolvedRequirementAbsent(opening),
+  thermalRequired: hasThermalRequirement(opening),
 });
-
-/** Whether this opening carries a thermal requirement at all. Read through the
- *  same coherence-guarded resolution selection uses, so the bucket a lookup
- *  lands in matches the bucket the capture wrote. */
-function resolvedRequirementAbsent(opening: OpeningInput): boolean {
-  const r = opening.requirements ?? null;
-  return !r || (r.maxUValue == null && r.minShgc == null && r.maxShgc == null);
-}
 
 // HistoricalRow, Counts, smooth(), HistoricalModel, aggregateHistorical() and
 // buildHistoricalModel() lived here and are GONE (ADR 0007).
