@@ -8,6 +8,7 @@
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import type { SelectionResult } from "./select";
+import { leadUnitOf } from "./splitCandidates";
 
 // The reason-code taxonomy (mirrors the migration 0014 CHECK). Only
 // preference_correction may ever train the ranker (enforced downstream).
@@ -61,9 +62,14 @@ export async function persistSelection(
   ));
 
   let selectedCandidateRowId: string | null = null;
-  for (const e of result.evaluated) {
+  const candidateRow = (args: {
+    sanityProductId: string; catalogueRevision: string; hardRulePassed: boolean;
+    hardRuleOutcome: unknown; reasonCodes: unknown; variantId: string | null;
+    performanceSnapshot: unknown | null; priceSnapshot: unknown | null;
+    outcome: SelectionResult["evaluated"][number]["candidateOutcome"];
+  }) => {
     const candRowId = uuid();
-    if (e.candidateOutcome.selected) selectedCandidateRowId = candRowId;
+    if (args.outcome.selected) selectedCandidateRowId = candRowId;
     stmts.push(env.DB.prepare(
       `INSERT INTO candidate_result
          (id, selection_run_id, sanity_product_id, catalogue_rev, hard_rule_passed,
@@ -72,51 +78,125 @@ export async function persistSelection(
           outcome_json)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
-      candRowId, selectionRunId, e.candidate.sanityProductId, e.candidate.catalogueRevision,
-      e.outcome.passed ? 1 : 0, JSON.stringify(e.outcome.filters),
+      candRowId, selectionRunId, args.sanityProductId, args.catalogueRevision,
+      args.hardRulePassed ? 1 : 0, JSON.stringify(args.hardRuleOutcome),
       // AC-25: the deleted score is STOPPED, not shimmed. Both columns stay in
       // the schema (nothing is rebuilt) and are written NULL from here on.
       null, null,
-      JSON.stringify(e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean)),
-      e.candidateOutcome.rank, e.candidateOutcome.selected ? 1 : 0,
-      e.selectedVariant?.variantId ?? null, e.selectedVariant?.variantId ?? null,
-      e.selectedVariant ? JSON.stringify(e.selectedVariant) : null,
-      e.price ? JSON.stringify(e.price) : null,
-      JSON.stringify(e.candidateOutcome),
+      JSON.stringify(args.reasonCodes),
+      args.outcome.rank, args.outcome.selected ? 1 : 0,
+      args.variantId, args.variantId,
+      args.performanceSnapshot ? JSON.stringify(args.performanceSnapshot) : null,
+      args.priceSnapshot ? JSON.stringify(args.priceSnapshot) : null,
+      JSON.stringify(args.outcome),
     ));
+  };
+
+  for (const e of result.evaluated) {
+    candidateRow({
+      sanityProductId: e.candidate.sanityProductId,
+      catalogueRevision: e.candidate.catalogueRevision,
+      hardRulePassed: e.outcome.passed,
+      hardRuleOutcome: e.outcome.filters,
+      reasonCodes: e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean),
+      variantId: e.selectedVariant?.variantId ?? null,
+      performanceSnapshot: e.selectedVariant ?? null,
+      priceSnapshot: e.price ?? null,
+      outcome: e.candidateOutcome,
+    });
   }
 
+  // A SPLIT IS A CANDIDATE ROW LIKE ANY OTHER (design §7.5, E15).
+  //
+  // It has no catalogue record of its own and these identity columns are NOT
+  // NULL, so the row is anchored to the largest-area unit's product and variant
+  // (AD6) and `outcome_json` carries the authoritative description — which is
+  // what ops2 reads. The legacy columns only have to not lie about which record
+  // the row hangs off. `hard_rule_passed` is 1 by construction: a make-up exists
+  // only because every one of its units passed within its system.
+  for (const split of result.splits) {
+    const lead = leadUnitOf(split)?.result.selected ?? null;
+    candidateRow({
+      sanityProductId: split.candidateOutcome.sanityProductId,
+      catalogueRevision: split.candidateOutcome.catalogueRevision,
+      hardRulePassed: true,
+      hardRuleOutcome: [],
+      reasonCodes: [],
+      variantId: split.candidateOutcome.variantId,
+      performanceSnapshot: lead?.selectedVariant ?? null,
+      priceSnapshot: split.totalCents == null ? null : {
+        ok: true,
+        total: split.totalCents / 100,
+        currency: "AUD",
+        // Says plainly that this is a SUM, and of what — a reviewer reading the
+        // row back sees the make-up's money without re-deriving it per unit.
+        composed: true,
+        unitTotals: split.units.map((u) => u.result.selected?.price?.total ?? null),
+      },
+      outcome: split.candidateOutcome,
+    });
+  }
+
+  // The draft line follows the WINNER, whichever form it took. A split wins by
+  // the same ladder a single unit does, so it earns the same line — the
+  // difference is only what the catalogue snapshot has to describe.
+  const winner = result.selected ?? result.selectedSplit ?? null;
   let draftLineId: string | null = null;
-  if (result.selected) {
+  if (winner) {
     draftLineId = uuid();
-    const s = result.selected;
-    const catalogueSnapshot = {
-      sanityProductId: s.candidate.sanityProductId,
-      catalogueRevision: s.candidate.catalogueRevision,
-      name: s.candidate.name,
-      configuration: s.candidate.configuration,
-      performanceVariant: s.selectedVariant,
-      energyCertified: s.outcome.energyCertified,
-    };
+    const catalogueSnapshot = result.selected
+      ? {
+          sanityProductId: result.selected.candidate.sanityProductId,
+          catalogueRevision: result.selected.candidate.catalogueRevision,
+          name: result.selected.candidate.name,
+          configuration: result.selected.candidate.configuration,
+          performanceVariant: result.selected.selectedVariant,
+          energyCertified: result.selected.outcome.energyCertified,
+        }
+      : {
+          // A make-up has no single catalogue record, so the snapshot describes
+          // the SET: the frame system it came from and every unit in it, which
+          // is what a reviewer needs to see and what materialisation rebuilt.
+          sanityProductId: winner.candidateOutcome.sanityProductId,
+          catalogueRevision: winner.candidateOutcome.catalogueRevision,
+          name: `${result.selectedSplit!.units.length}-unit composite`,
+          configuration: null,
+          composite: {
+            system: result.selectedSplit!.system,
+            axis: result.selectedSplit!.axis,
+            units: winner.candidateOutcome.units ?? [],
+          },
+          performanceVariant: null,
+          energyCertified: false,
+        };
+    const priceSnapshot = result.selected
+      ? result.selected.price
+      : result.selectedSplit!.totalCents == null
+        ? null
+        : { ok: true, total: result.selectedSplit!.totalCents / 100, currency: "AUD", composed: true };
     stmts.push(env.DB.prepare(
       `INSERT INTO draft_order_line
          (id, project_id, opening_id, selected_candidate_id, catalogue_snapshot_json, price_snapshot_json, warnings_json, confidence, status)
        VALUES (?,?,?,?,?,?,?,?,?)`,
     ).bind(
       draftLineId, projectId, openingId, selectedCandidateRowId,
-      JSON.stringify(catalogueSnapshot), s.price ? JSON.stringify(s.price) : null,
+      JSON.stringify(catalogueSnapshot), priceSnapshot ? JSON.stringify(priceSnapshot) : null,
       // Tier-derived tokens replace `close_alternatives`, which meant "two
       // scores were within 0.05" — a fact about the ranker, not about the line.
       // These say what is actually unresolved about the pick (spec §4.11).
-      JSON.stringify(warningTokens(s.candidateOutcome.tier)),
+      JSON.stringify(warningTokens(winner.candidateOutcome.tier)),
       // A12: there is no score, so there is nothing to put in `confidence`.
-      null, s.outcome.status,
+      null, result.selected ? result.selected.outcome.status : result.status,
     ));
   }
 
   // Reflect the outcome on the opening.
   stmts.push(env.DB.prepare("UPDATE opening_instance SET status = ? WHERE id = ?").bind(
-    result.selected ? result.selected.outcome.status : (result.status === "no_candidate" ? "unavailable" : result.status),
+    // The opening follows the winner in either form; only a run that selected
+    // nothing at all reports the failure state.
+    result.selected ? result.selected.outcome.status
+      : result.selectedSplit ? result.status
+        : (result.status === "no_candidate" ? "unavailable" : result.status),
     openingId,
   ));
 

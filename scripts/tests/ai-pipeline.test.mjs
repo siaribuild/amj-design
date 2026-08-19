@@ -802,7 +802,7 @@ test("AC-22/AC-25 the verdict is persisted and the deleted score is bound NULL",
   const result = {
     openingRef: "W01", ruleVersion: "v3-energy-objective", selectionVersion: "ladder-v1",
     catalogueVersion: "cat:1", status: "ready",
-    evaluated: [winner, loser, barred].map(candidate),
+    evaluated: [winner, loser, barred].map(candidate), splits: [], selectedSplit: null,
     selected: candidate(winner),
     selection: { version: "ladder-v1", tolerance: 0.05, competingTier: "meets", status: "ready" },
     withheldIncomplete: [],
@@ -846,7 +846,7 @@ test("spec 4.11 the draft line's warnings are tier-derived and its confidence is
       outcome: { passed: true, status: "commercial_only_estimate", filters: [], energyCertified: false },
       selectedVariant: { variantId: "v" }, price: { ok: true, total: 900 }, candidateOutcome,
     };
-    await persistSelection(env, { projectId: "p1", openingId: "o1", result: { ...base, evaluated: [c], selected: c } });
+    await persistSelection(env, { projectId: "p1", openingId: "o1", result: { ...base, evaluated: [c], splits: [], selected: c, selectedSplit: null } });
     return env.calls.find((x) => /INSERT INTO draft_order_line/.test(x.sql));
   };
 
@@ -859,4 +859,89 @@ test("spec 4.11 the draft line's warnings are tier-derived and its confidence is
   assert.deepEqual(JSON.parse(bound(await lineFor("does_not_fit"), "warnings_json")), ["does_not_fit"]);
   // A12: there is no score, so there is nothing to put in `confidence`.
   assert.equal(bound(await lineFor("meets"), "confidence"), null);
+});
+
+test("AD6/E15 a winning split is persisted as a candidate row, and the draft line points at it", async () => {
+  // A split has no catalogue record of its own, and candidate_result's identity
+  // columns are NOT NULL — so the row is anchored to the largest-area unit's
+  // product and variant, and `outcome_json` carries the authoritative
+  // description. The legacy columns only have to not lie about which record the
+  // row hangs off; nothing reads them for the make-up.
+  const env = recordingDb();
+  const unit = (slug, widthMm) => ({
+    index: slug === "big" ? 0 : 1,
+    result: { selected: { candidate: { slug, sanityProductId: `id-${slug}`, catalogueRevision: "rev-1" }, selectedVariant: { variantId: `v-${slug}` }, price: { ok: true, total: slug === "big" ? 800 : 400 } } },
+    crossedToCategory: null,
+  });
+  const splitOutcome = {
+    productSlug: "big", sanityProductId: "id-big", variantId: "v-big",
+    catalogueRevision: "rev-1", form: "split", tier: "meets", rank: 1,
+    selected: true, competing: true, exclusions: [],
+    units: [
+      { productSlug: "big", variantId: "v-big", widthMm: 2000, heightMm: 1000, operationType: "fixed" },
+      { productSlug: "small", variantId: "v-small", widthMm: 600, heightMm: 1000, operationType: "awning" },
+    ],
+    requirement: { maxUValue: null, minShgc: null, maxShgc: null, basis: null, absent: true },
+    thermal: { uValue: null, shgc: null, deviation: { uValue: null, minShgc: null, maxShgc: null }, worstAxis: null, normalisedDeviation: 0, absoluteMiss: null, dataSource: null },
+    fit: { fits: true, widthMm: 2600, heightMm: 1000, limit: null, breached: [] },
+    price: { total: 1200, currency: "AUD", ok: true, deltaToSelected: 0 },
+    learned: null,
+  };
+  const loserOutcome = {
+    ...splitOutcome, form: "single", productSlug: "big", sanityProductId: "id-big",
+    tier: "does_not_fit", rank: 2, selected: false, competing: false, units: undefined,
+    fit: { fits: false, widthMm: 2600, heightMm: 1000, limit: null, breached: ["width"] },
+    price: { total: 900, currency: "AUD", ok: true, deltaToSelected: -300 },
+  };
+
+  const single = {
+    candidate: { sanityProductId: "id-big", catalogueRevision: "rev-1", name: "n", configuration: null, slug: "big" },
+    outcome: { passed: true, status: "commercial_only_estimate", filters: [], energyCertified: false },
+    selectedVariant: { variantId: "v-big" }, price: { ok: true, total: 900 },
+    candidateOutcome: loserOutcome,
+  };
+  const split = {
+    key: "split::0", system: "sys-80", glazingSlug: "dg",
+    units: [unit("big"), unit("small")],
+    plan: [{ segment: { widthMm: 2000, heightMm: 1000 } }, { segment: { widthMm: 600, heightMm: 1000 } }],
+    totalCents: 120_000, fits: true, candidateOutcome: splitOutcome,
+  };
+
+  await persistSelection(env, { projectId: "p1", openingId: "o1", result: {
+    openingRef: "W07", ruleVersion: "v3-energy-objective", selectionVersion: "ladder-v1",
+    catalogueVersion: "cat:1", status: "commercial_only_estimate",
+    evaluated: [single], splits: [split], selected: null, selectedSplit: split,
+    selection: { version: "ladder-v1", tolerance: 0.05, competingTier: "meets", status: "commercial_only_estimate" },
+    withheldIncomplete: [],
+  } });
+
+  const rows = env.calls.filter((c) => /INSERT INTO candidate_result/.test(c.sql));
+  assert.equal(rows.length, 2, "both forms are persisted — no deduplication (E15)");
+
+  const splitRow = rows[1];
+  assert.equal(bound(splitRow, "sanity_product_id"), "id-big", "anchored to the largest-area unit");
+  assert.equal(bound(splitRow, "selected_variant_id"), "v-big");
+  assert.equal(bound(splitRow, "hard_rule_passed"), 1, "a make-up exists only if every unit passed");
+  assert.equal(bound(splitRow, "score"), null);
+  assert.equal(bound(splitRow, "score_components_json"), null);
+  assert.equal(bound(splitRow, "rank"), 1);
+  assert.equal(bound(splitRow, "selected"), 1);
+
+  const persisted = JSON.parse(bound(splitRow, "outcome_json"));
+  assert.equal(persisted.form, "split");
+  assert.deepEqual(persisted.units.map((u) => u.productSlug), ["big", "small"]);
+
+  // The price snapshot says it is a SUM, and of what — a reviewer reading the
+  // row back can see the make-up's money without re-deriving it from the units.
+  const price = JSON.parse(bound(splitRow, "price_snapshot_json"));
+  assert.equal(price.composed, true);
+  assert.equal(price.total, 1200);
+  assert.equal(price.currency, "AUD");
+  assert.deepEqual(price.unitTotals, [800, 400]);
+
+  // And the draft line points at the SPLIT's row, not the single unit's.
+  const line = env.calls.find((c) => /INSERT INTO draft_order_line/.test(c.sql));
+  const splitRowId = splitRow.args[columnsOf(splitRow.sql).indexOf("id")];
+  assert.equal(bound(line, "selected_candidate_id"), splitRowId);
+  assert.deepEqual(JSON.parse(bound(line, "warnings_json")), []);
 });
