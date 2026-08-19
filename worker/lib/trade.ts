@@ -388,16 +388,30 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   //    internal account (AB-P2-11).
   if (user.type !== "customer") return { ok: false, error: "forbidden" };
 
-  // 3. One open application per account (P2-A10 / E-P2-5). The partial unique
+  // 3. ALREADY GRANTED ON THIS EXACT ABN — nothing to decide (N-2).
+  //
+  //    This is not a new application, it is the same fact arriving twice: a
+  //    double-click, a retried request, a second tab. Deciding it again would
+  //    write a second approval row and a second audit event, and would re-send
+  //    "your trade account is active" for something that has not changed.
+  //
+  //    The partial unique index already guarantees only ONE standing grant
+  //    survives, so nothing was ever commercially wrong — the damage was purely
+  //    that the customer heard about it twice and the ledger recorded a decision
+  //    nobody made. Answered as the truth: the account is verified.
+  const standing = await standingGrant(env, user.id);
+  if (standing && normalizeAbn(standing.abn) === abn) return { ok: true, status: "verified" };
+
+  // 4. One open application per account (P2-A10 / E-P2-5). The partial unique
   //    index backs this against a race; this read is the polite answer.
   if (await pendingApplication(env, user.id)) return { ok: false, error: "application_pending" };
 
-  // 4. Rate caps, BEFORE any ABR spend (AB-P2-6).
+  // 5. Rate caps, BEFORE any ABR spend (AB-P2-6).
   const perAccount = await withinCap(env, `tradeapp:${user.id}`, MAX_APPLICATIONS_PER_ACCOUNT, RATE_WINDOW_SECONDS);
   const perSource = await withinCap(env, `tradeip:${input.ip}`, MAX_APPLICATIONS_PER_IP, RATE_WINDOW_SECONDS);
   if (!perAccount || !perSource) return { ok: false, error: "rate_limited" };
 
-  // 5. The duplicate rule (D2.1). Only a STANDING grant on another account
+  // 6. The duplicate rule (D2.1). Only a STANDING grant on another account
   //    counts — revoked, rejected and superseded holders do not (E-P2-8).
   const duplicates = await env.DB.prepare(
     `SELECT user_id FROM trade_application
@@ -406,10 +420,10 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   ).bind(abn, user.id).all<{ user_id: string }>();
   const duplicateOf = (duplicates.results ?? []).map((r) => r.user_id);
 
-  // 6. The register.
+  // 7. The register.
   const lookup = await lookupAbn(env, abn);
 
-  // 7. Evaluate. Criteria the outage made unevaluable are recorded as such
+  // 8. Evaluate. Criteria the outage made unevaluable are recorded as such
   //    rather than guessed at.
   const abrNames = lookup.outcome === "found" ? [lookup.entityName, ...lookup.businessNames] : [];
   const nameMatch = lookup.outcome === "found" ? nameMatches(businessName, abrNames) : { pass: false, matched: null };

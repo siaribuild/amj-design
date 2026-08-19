@@ -855,6 +855,39 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         "the rate is unchanged by a re-verification (AC-P2-29)");
     });
 
+    await t.test("E-P2-6: re-applying with the ABN already granted is a no-op (N-2)", async () => {
+      // Tester finding N-2. Two auto-pass applications for the SAME account
+      // both succeeded — one standing grant survived, because the partial index
+      // holds, but the ledger gained two approval rows, two audit events and
+      // two "your trade account is active" emails from what is, to the person,
+      // one double-click.
+      //
+      // The narrow, honest fix: an ABN this account is ALREADY verified on has
+      // nothing to decide. It is not a new application, it is the same fact
+      // arriving twice, and re-granting it would re-send the news of something
+      // that has not changed.
+      const business = spareBusiness(7);
+      const account = await newAccount("regrant", business.domain);
+
+      const first = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.deepEqual(await first.clone().json(), { ok: true, status: "verified" });
+
+      const again = await apply(account.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      assert.equal(again.status, 200, "the same ABN again is not an error");
+      assert.deepEqual(await again.clone().json(), { ok: true, status: "verified" },
+        "and it still reports the account as verified");
+
+      const rows = await applications(account.email);
+      assert.equal(rows.length, 1, "N-2: no second application row for an ABN already granted");
+      assert.equal(rows[0].status, "approved");
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5,
+        "and the rate is untouched");
+    });
+
     await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
       const staff = new Session(baseUrl);
       const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
