@@ -1815,8 +1815,24 @@ export default function App() {
   const [trade, setTrade] = useState<TradeStateDto | null>(null);
   /** Re-read the derived trade state. Called after any application outcome —
    *  the §7.1 response bodies are constant by design and carry no state. */
+  /** Generation guard. `fetchMe()` is in flight for a while, and whoever it was
+   *  started for may not be who is signed in when it lands.
+   *
+   *  Without this, a response begun for account A and resolving after A signed
+   *  out — or after B signed in on the same machine — wrote A's trade state onto
+   *  B's session. B would then be shown A's trade pricing status, and on a
+   *  shared trade counter that is somebody else's commercial standing on screen.
+   *  Every write is stamped and only the newest survives; signing out bumps the
+   *  counter too, so an in-flight response cannot land on an empty session. */
+  const tradeGeneration = useRef(0);
   const refreshTrade = useCallback(() => {
-    fetchMe().then((r) => setTrade(r.trade ?? null)).catch(() => {});
+    const gen = ++tradeGeneration.current;
+    fetchMe()
+      .then((r) => {
+        if (gen !== tradeGeneration.current) return;   // superseded; drop it
+        setTrade(r.trade ?? null);
+      })
+      .catch(() => {});
   }, []);
   // Keyed on IDENTITY, not on each sign-in call site.
   //
@@ -1829,8 +1845,12 @@ export default function App() {
   // by a fourth path, and clears the state on sign-out rather than leaving one
   // account's trade status visible to the next.
   useEffect(() => {
-    if (user?.id) refreshTrade();
-    else setTrade(null);
+    if (user?.id) { refreshTrade(); return; }
+    // Signing out invalidates anything already in flight as well as clearing
+    // what is held — otherwise the response that was already on its way lands a
+    // moment later and repopulates the session that just ended.
+    tradeGeneration.current++;
+    setTrade(null);
   }, [user?.id, refreshTrade]);
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
@@ -2201,7 +2221,7 @@ export default function App() {
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
-      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user && { ...user, tradeVerified: trade?.verified ?? false, tradePending: !!trade?.pending }} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => { setUser(toAuthUser(u)); refreshTrade(); }} onEditProfile={() => navigateTo("account")} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user && { ...user, tradeVerified: trade?.verified ?? false, tradePending: !!trade?.pending }} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => setUser(toAuthUser(u))} onEditProfile={() => navigateTo("account")} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
@@ -2210,7 +2230,7 @@ export default function App() {
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "not-found":        return <NotFoundPage setPage={navigateTo} />;
-      case "trade":            return <TradePage setPage={navigateTo} signedIn={Boolean(user)} user={user} trade={trade} onAuthed={(u) => { setUser(toAuthUser(u)); refreshTrade(); }} onTradeChanged={refreshTrade} />;
+      case "trade":            return <TradePage setPage={navigateTo} signedIn={Boolean(user)} user={user} trade={trade} onAuthed={(u) => setUser(toAuthUser(u))} onTradeChanged={refreshTrade} />;
       case "refer":            return <ReferPage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);

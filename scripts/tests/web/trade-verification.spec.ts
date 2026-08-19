@@ -590,3 +590,53 @@ test("a verified account sees no ABN field at the gate, however it signed in", a
     "AC-P2-19: a verified account is not asked for an ABN, whichever door it came through")
     .toHaveCount(0);
 });
+
+// ─── 12. One account's trade status never lands on another's session ─────────
+// Codex stop-gate finding. `fetchMe()` is in flight for a while, and whoever it
+// was started for may not be who is signed in when it lands: a response begun
+// for account A and resolving after A signed out — or after B signed in on the
+// same machine — wrote A's trade state onto B's session.
+//
+// On a shared trade counter that is somebody else's commercial standing on
+// screen, and the person looking at it has no way to tell.
+//
+// The race itself cannot be timed reliably from a browser test. What CAN be
+// asserted is the property the guard exists to protect: after a sign-out and a
+// second sign-in, the screen shows the SECOND account's trade state and nothing
+// of the first's.
+test("a second account never inherits the first account's trade status", async ({ page }) => {
+  const business = SPARE(6);
+  const verified = emailAt(business.domain);
+  const other = freshEmail("second-account");
+
+  // Account A: verified.
+  await apiSignIn(page.request, verified);
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: business.abn, businessName: business.businessName, source: "profile" },
+  });
+  expect((await applied.json()).status, "fixture must auto-pass").toBe("verified");
+  const named = await page.request.post("/api/auth/profile", { data: { name: "Ada Verified" } });
+  expect(named.ok()).toBeTruthy();
+
+  await page.goto("/account");
+  await expect(page.getByTestId("trade-application-card").getByText(/trade pricing applies to your account/i))
+    .toBeVisible({ timeout: 15_000 });
+
+  // Account B: a fresh private account on the same browser.
+  await page.request.post("/api/auth/logout");
+  await apiSignIn(page.request, other);
+  const namedB = await page.request.post("/api/auth/profile", { data: { name: "Bo Private" } });
+  expect(namedB.ok()).toBeTruthy();
+
+  await page.goto("/account");
+  const card = page.getByTestId("trade-application-card");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+
+  // B is private, and must be offered the invitation rather than A's status.
+  await expect(card.getByRole("button", { name: /apply for trade pricing/i }),
+    "the second account is offered the application form").toBeVisible();
+  const said = (await card.innerText()).replace(/\s+/g, " ");
+  expect(said, "and is NOT shown the first account's trade pricing")
+    .not.toMatch(/trade pricing applies to your account/i);
+  expect(said, "nor the first account's ABN").not.toContain(business.abn);
+});
