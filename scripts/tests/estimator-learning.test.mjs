@@ -728,3 +728,21 @@ test("D4/AC-30 capture buckets a computed band as thermal, and records what it d
     assert.equal(retrievalKey(context), at("retrieval_key"), "still recomputable from context_json alone");
   });
 });
+
+test("every ops route that changes a project's outcomes refreshes its example eligibility", () => {
+  // `learning_examples` carries a per-project verdict DERIVED from that
+  // project's recommendation_outcome rows, so any route that adds or adjudicates
+  // those rows has to recompute it or the stored verdict silently drifts from
+  // the rows it describes. The adjudication route does; the backfill route,
+  // which also writes rows, did not — a consistency gap rather than a
+  // vulnerability, but the kind that is invisible until someone trusts the
+  // stale verdict.
+  return readFile(join(projectRoot, "worker/routes/ops.ts"), "utf8").then((source) => {
+    const routes = [...source.matchAll(/ops\.(post|patch)\("(\/recommendation-outcomes[^"]*)"[\s\S]*?\n\}\);/g)];
+    assert.ok(routes.length >= 2, "both the backfill and the adjudication route are present");
+    for (const [body, , path] of routes) {
+      assert.match(body, /refreshLearningExampleEligibility/,
+        `${path} writes outcomes without refreshing the project's example verdict`);
+    }
+  });
+});

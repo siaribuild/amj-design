@@ -1705,6 +1705,22 @@ ops.post("/recommendation-outcomes/backfill", async (c) => {
   if (!projectId || !lines.length) return c.json({ error: "invalid_request" }, 400);
   const result = await captureBackfilledOutcomes(c.env, { projectId, lines });
   if (result.error) return c.json({ error: result.error }, 404);
+  // `learning_examples` carries a per-project verdict DERIVED from that
+  // project's outcome rows, so adding rows without recomputing it leaves the
+  // stored verdict describing a set that no longer exists — the same reason the
+  // adjudication route below refreshes.
+  //
+  // Safe in both directions here. A backfilled row is terminal and approved, so
+  // it can only confirm an existing verdict or leave it unchanged; it can never
+  // clear a `pending` row and promote a project that was not settled. And on a
+  // pre-platform project — the common case for backfill — there is no
+  // `learning_examples` row at all, so the UPDATE matches nothing.
+  //
+  // Best-effort, like the sibling: a stale derived verdict must not fail an
+  // ingest whose rows are already committed.
+  if (result.written) {
+    await refreshLearningExampleEligibility(c.env, projectId).catch(() => false);
+  }
   await logEvent(c.env, {
     actor: staff.id, entityType: "project", entityId: projectId,
     action: `backfilled ${result.written} learning outcome(s), ${result.refused.length} refused`,

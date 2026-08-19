@@ -34,7 +34,20 @@ export const tierRank = (t: Tier): number => TIER_ORDER.indexOf(t);
 export type RequirementBasis =
   | "explicit_energy_report" | "plan_derived" | "default_envelope" | "human_override";
 
-/** The hard constraint a candidate failed. */
+/** The hard constraint a candidate failed.
+ *
+ *  `split_combinability` is DECLARED AND NEVER EMITTED, deliberately. D3 makes
+ *  combinability hard, and the make-up enumerator honours it by construction —
+ *  it can only produce make-ups whose units come from one frame system, so a
+ *  cross-system make-up is not a candidate that was excluded, it is a candidate
+ *  that never existed. An ops surface rendering this constraint will therefore
+ *  never see it, and that is the correct behaviour rather than a gap.
+ *
+ *  It stays in the vocabulary because the run still has something to say when
+ *  no system could supply a make-up — `SelectionOutcome` carries it as a
+ *  run-level note — and because a future generator that DOES enumerate
+ *  cross-system candidates in order to show a reviewer why they were refused
+ *  would need this exact value rather than a new one. */
 export type ExclusionConstraint =
   | "operation" | "dimensions" | "split_combinability" | "glazing_instruction"
   | "offerability" | "disabled" | "publication";
