@@ -190,12 +190,33 @@ Three candidates, his to pick:
   same row. It is also the one idiom that differs in kind from `< Projects`, which names a
   type rather than an instance.
 
-**R4 — prev/next is conceptually right, the implementation does not scale.**
-*"scales very poorly on ipad in particular - just too massive buttons on the screen. But
-good placement of navigation controls indeed."* Keep the placement and the principle that
-neighbours are **identified rather than counted**; the two full-width labelled buttons are
-what fails as the viewport grows. A control sized for a 375px phone should not become
-furniture at 1024.
+**R4 — prev/next: right placement, wrong mechanism, at EVERY size.**
+First recorded as a tablet problem — *"scales very poorly on ipad in particular - just too
+massive buttons"* — then corrected: *"back/forth navigation fails equally on mobile as
+well, imo."* So two labelled full-width neighbour buttons are not a control that needs
+resizing; they are the wrong control. What survives is the **placement** (top, out of the
+thumb zone) and the **principle** that moving to an adjacent line must not require a trip
+through the list.
+
+Note the history, because it is a loop and the next attempt should not re-enter it:
+- `< 4/18 >` stepper in the header — rejected, *"not intuitive or convenient"*.
+- Bottom filmstrip scroller — **approved**, *"Scroller at the bottom - good direction"*.
+- R1e **removed** the filmstrip, arguing the top control made it redundant and citing the
+  owner's own point that the list serves distant jumps. That argument now looks weaker,
+  because the control it deferred to has since been rejected.
+- Top prev/current/next as two labelled buttons — rejected at all sizes.
+
+Two directions worth costing rather than one being assumed:
+1. **Restore the bottom scroller** he approved, and give the top nothing. Cheapest, and
+   returns to a thing he liked; costs the thumb-zone argument R1e made against it.
+2. **A compact control in the toolbar's end slot** — the iOS Mail idiom, a chevron pair
+   that consumes no row and is identical at 375 and 1024. Costs the "neighbours are
+   identified, not counted" property, which is exactly what the `< 4/18 >` rejection was
+   about, so it must earn that back some other way or argue the property was never the
+   point.
+
+A full row of chrome for line-to-line movement is what both rejected attempts had in
+common. That is the constraint to design against.
 
 **R5 — there are no line-level notes, and the field is not editable.**
 *"there are no item level notes, not in a form of growing list of comments like on the
