@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeRunDir, projectRoot } from "./helpers.mjs";
 
@@ -631,4 +632,29 @@ test("AC-56 free text in a backfill row is refused, not normalised into the corp
   }
   assert.deepEqual(result.refused.map((r) => r.field).sort(),
     ["context.operationType", "context.requirementBasis", "finalLineTotal", "finalProductSlug", "finalProductSlug"]);
+});
+
+test("AC-33 the learning point is quote ISSUE, and nowhere else", async () => {
+  // D13: the capture layer was already correct — only retrieval was broken — so
+  // this criterion is about what did NOT move. A source scan rather than a
+  // behavioural test, because the failure it guards is a second call site being
+  // added somewhere plausible: order acceptance, proposal publication, a cron.
+  // Each would train the model on something no human reviewed.
+  const callers = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(join(projectRoot, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { await walk(rel); continue; }
+      if (!/\.ts$/.test(entry.name) || rel.endsWith("lib/ai/outcomes.ts")) continue;
+      const code = (await readFile(join(projectRoot, rel), "utf8"))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+      if (/\bcaptureRecommendationOutcomes\s*\(/.test(code)) callers.push(rel);
+    }
+  };
+  await walk("worker");
+
+  // Exactly one caller, and it is the issue path. A quote submitted to the
+  // customer IS the review; anything earlier has no human in it.
+  assert.deepEqual(callers, ["worker/lib/issue.ts"]);
 });
