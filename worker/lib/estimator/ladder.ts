@@ -228,9 +228,18 @@ export function compareCandidates(a: TieredCandidate, b: TieredCandidate): numbe
     if (da !== db) return da - db;
   }
   if (pa && pb && a.priceCents !== b.priceCents) return a.priceCents! - b.priceCents!;
+  // The final tiebreak makes the order TOTAL, so two candidates alike on every
+  // fact that matters still rank in the same sequence on every run (AC-5, E10).
   if (a.productSlug !== b.productSlug) return a.productSlug < b.productSlug ? -1 : 1;
+  const va = nullFirst(a.variantId), vb = nullFirst(b.variantId);
+  if (va !== vb) return va < vb ? -1 : 1;
+  const sa = nullFirst(a.splitKey), sb = nullFirst(b.splitKey);
+  if (sa !== sb) return sa < sb ? -1 : 1;
   return 0;
 }
+
+// Sorts null before any string without special-casing the comparison itself.
+const nullFirst = (s: string | null) => s ?? "";
 
 export function runLadder(
   candidates: LadderCandidate[],

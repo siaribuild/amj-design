@@ -17,13 +17,17 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { deviationOf, runLadder } from ${p("worker/lib/estimator/ladder.ts")};
+      export { REQUIREMENT_TOLERANCE, SELECTION_VERSION, deviationOf, assignTiers, compareCandidates, runLadder } from ${p("worker/lib/estimator/ladder.ts")};
+      export { TIER_ORDER, tierRank } from ${p("src/data/recommendation.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { deviationOf, runLadder } = await import(pathToFileURL(outfile).href);
+const {
+  REQUIREMENT_TOLERANCE, SELECTION_VERSION, deviationOf, assignTiers, compareCandidates, runLadder,
+  TIER_ORDER, tierRank,
+} = await import(pathToFileURL(outfile).href);
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -265,4 +269,161 @@ test("AD3 an unpriceable candidate still anchors the tolerance band", () => {
   assert.equal(byKey(r, "inband").tier, "within_tolerance");
   assert.equal(byKey(r, "outband").tier, "misses");
   assert.equal(r.selectedKey, "inband");
+});
+
+// ── Determinism and the total order (AC-5, E10, E11) ────────────────────────
+
+test("AC-5/E10 the order is total, deterministic and input-order independent", () => {
+  const make = () => [
+    cand({ key: "a", deviation: 0, priceCents: 90_000, productSlug: "p-b", variantId: "v2" }),
+    cand({ key: "b", deviation: 0, priceCents: 90_000, productSlug: "p-a", variantId: "v1" }),
+    cand({ key: "c", deviation: 0, priceCents: 90_000, productSlug: "p-a", variantId: "v2" }),
+    cand({ key: "d", deviation: 0, priceCents: 90_000, productSlug: "p-b", variantId: null }),
+  ];
+  const forward = runLadder(make());
+  const reversed = runLadder(make().reverse());
+  assert.deepEqual(keysInOrder(forward), keysInOrder(reversed));
+  // Identical on tier, price and deviation ⇒ slug asc, then variantId asc with
+  // null sorting first.
+  assert.deepEqual(keysInOrder(forward), ["b", "c", "d", "a"]);
+  assert.equal(forward.selectedKey, "b");
+  // A splitKey breaks a tie two identical single-unit facts cannot.
+  const splits = runLadder([
+    cand({ key: "s2", deviation: 0, priceCents: 1_000, productSlug: "p-a", variantId: "v", splitKey: "sys-b|g" }),
+    cand({ key: "s1", deviation: 0, priceCents: 1_000, productSlug: "p-a", variantId: "v", splitKey: "sys-a|g" }),
+  ]);
+  assert.deepEqual(keysInOrder(splits), ["s1", "s2"]);
+});
+
+test("E11 quantity scales every candidate equally and cannot reorder", () => {
+  const base = () => [
+    cand({ key: "a", deviation: 0, priceCents: 90_000, productSlug: "p-a" }),
+    cand({ key: "b", deviation: 0, priceCents: 110_000, productSlug: "p-b" }),
+    cand({ key: "c", deviation: 0.2, priceCents: 40_000, productSlug: "p-c" }),
+  ];
+  const one = runLadder(base());
+  const seven = runLadder(base().map((c) => ({ ...c, priceCents: c.priceCents * 7 })));
+  assert.deepEqual(keysInOrder(one), keysInOrder(seven));
+  assert.equal(seven.selectedKey, "a");
+});
+
+// ── The negative criteria this redesign exists to kill (§5.8) ───────────────
+
+test("AC-43/AC-51 geometry cannot be expressed, so a dearer 'better fit' cannot win", () => {
+  // A rated 400–1000 mm at an opening of 900 mm (its edge) against B rated
+  // 800–1200 mm (its centre): the old geometryScore preferred B. Fit is a
+  // boolean here, so the cheaper candidate simply wins.
+  const r = runLadder([
+    cand({ key: "cheap-edge", deviation: 0, priceCents: 90_000, productSlug: "p-a" }),
+    cand({ key: "dear-centred", deviation: 0, priceCents: 110_000, productSlug: "p-b" }),
+  ]);
+  assert.equal(r.selectedKey, "cheap-edge");
+  assert.equal(byKey(r, "cheap-edge").rank, 1);
+  // The comparator's whole vocabulary: no geometry, no certification, no data
+  // completeness — there is no field to set, so no curve to tune.
+  assert.deepEqual(
+    Object.keys(cand()).filter((k) => /geometr|centre|center|certif|dataSource|complete|score|weight|affinity|technolog/i.test(k)),
+    [],
+  );
+});
+
+test("AC-44 a product missing the band never beats one meeting it on price alone", () => {
+  const r = runLadder([
+    cand({ key: "A", deviation: 0, priceCents: 120_000, productSlug: "p-a" }),
+    cand({ key: "B", deviation: 0.15, priceCents: 70_000, productSlug: "p-b" }),
+  ]);
+  assert.equal(r.selectedKey, "A");
+  assert.equal(byKey(r, "B").tier, "misses");
+  assert.equal(byKey(r, "B").competing, false);
+  // B is $500 cheaper than the pick and still loses. That is the whole point.
+  assert.equal(byKey(r, "B").rank, 2);
+});
+
+test("AC-45/AC-47 an IRRELEVANT third candidate moves neither the band nor the pick", () => {
+  // AC-45: a dearer candidate that also meets.
+  const two = () => [
+    cand({ key: "A", deviation: 0, priceCents: 90_000, productSlug: "p-a" }),
+    cand({ key: "B", deviation: 0, priceCents: 110_000, productSlug: "p-b" }),
+  ];
+  const pair = runLadder(two());
+  const trio = runLadder([...two(), cand({ key: "C", deviation: 0, priceCents: 400_000, productSlug: "p-c" })]);
+  assert.equal(pair.selectedKey, "A");
+  assert.equal(trio.selectedKey, "A");
+  assert.deepEqual(keysInOrder(trio).slice(0, 2), keysInOrder(pair));
+
+  // AC-47: none meets, and the newcomer's deviation is WORSE than the anchor.
+  const band = () => [
+    cand({ key: "A", deviation: 0.20, priceCents: 150_000, productSlug: "p-a" }),
+    cand({ key: "B", deviation: 0.24, priceCents: 90_000, productSlug: "p-b" }),
+  ];
+  const before = runLadder(band());
+  const after = runLadder([...band(), cand({ key: "C", deviation: 0.90, priceCents: 10_000, productSlug: "p-c" })]);
+  assert.equal(before.best, after.best);
+  assert.equal(before.selectedKey, "B");
+  assert.equal(after.selectedKey, "B");
+  assert.equal(byKey(after, "A").competing, true);
+  assert.equal(byKey(after, "C").competing, false);
+});
+
+test("AC-48 a BETTER new candidate tightens the band, and that is intended", () => {
+  const after = runLadder([
+    cand({ key: "A", deviation: 0.20, priceCents: 150_000, productSlug: "p-a" }),
+    cand({ key: "B", deviation: 0.24, priceCents: 90_000, productSlug: "p-b" }),
+    cand({ key: "C", deviation: 0.10, priceCents: 300_000, productSlug: "p-c" }),
+  ]);
+  // C proves the requirement is more nearly achievable, so the band is now
+  // ≤ 0.15 and both larger misses become demonstrably worse than necessary.
+  assert.equal(after.best, 0.10);
+  assert.equal(byKey(after, "C").tier, "within_tolerance");
+  assert.equal(byKey(after, "A").competing, false);
+  assert.equal(byKey(after, "B").competing, false);
+  assert.equal(after.selectedKey, "C");
+});
+
+test("AC-46 compareCandidates is PAIRWISE — a third candidate is not a parameter", () => {
+  assert.equal(compareCandidates.length, 2);
+  const facts = () => [
+    cand({ key: "A", deviation: 0.20, priceCents: 90_000, productSlug: "p-a" }),
+    cand({ key: "B", deviation: 0.90, priceCents: 40_000, productSlug: "p-b" }),
+  ];
+  const [a, b] = assignTiers(facts());
+  const sign = Math.sign(compareCandidates(a, b));
+  // Add a third candidate, and reprice it as extremely as you like: A and B's
+  // stamped facts are all the comparator can see, and it returns the same answer.
+  const bigger = assignTiers([...facts(), cand({ key: "C", deviation: 0.95, priceCents: 1, productSlug: "p-c" })]);
+  const a2 = bigger.find((c) => c.key === "A"), b2 = bigger.find((c) => c.key === "B");
+  assert.equal(Math.sign(compareCandidates(a2, b2)), sign);
+  assert.equal(Math.sign(compareCandidates(a, b)), sign);
+  // …and it is antisymmetric, which a normalised score is not obliged to be.
+  assert.equal(Math.sign(compareCandidates(b, a)), -sign);
+});
+
+test("AC-49 the comparator cannot see certified vs estimated at any position", () => {
+  const c = cand();
+  assert.ok(!("dataSource" in c));
+  assert.ok(!("certified" in c));
+});
+
+// ── The stamped constants and the tier vocabulary ───────────────────────────
+
+test("AC-4 REQUIREMENT_TOLERANCE is 0.05 and the model names itself", () => {
+  assert.equal(REQUIREMENT_TOLERANCE, 0.05);
+  assert.equal(SELECTION_VERSION, "ladder-v1");
+  // It is a parameter, not a hard-coded edge: a run can be replayed at the
+  // tolerance it was decided under.
+  const strict = runLadder([
+    cand({ key: "anchor", deviation: 0.10, priceCents: 200_000, productSlug: "p-a" }),
+    cand({ key: "edge", deviation: 0.14, priceCents: 50_000, productSlug: "p-b" }),
+  ], 0);
+  assert.equal(byKey(strict, "edge").tier, "misses");
+  assert.equal(strict.selectedKey, "anchor");
+});
+
+test("TIER_ORDER runs meets → excluded and tierRank agrees with it", () => {
+  assert.deepEqual([...TIER_ORDER], [
+    "meets", "within_tolerance", "misses", "thermal_unknown", "does_not_fit", "excluded",
+  ]);
+  for (let i = 1; i < TIER_ORDER.length; i++) {
+    assert.ok(tierRank(TIER_ORDER[i - 1]) < tierRank(TIER_ORDER[i]));
+  }
 });
