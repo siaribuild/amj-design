@@ -194,7 +194,17 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
 function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void }) {
   const TABS = tabsFor(user);
   // A manufacturer has no dashboard to land on — their first tab is their only tab.
-  const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? "dashboard");
+  const [tab, setTabState] = useState<Tab>(TABS[0]?.id ?? "dashboard");
+  /** The subview a navigation carried with it, consumed by the tab it opens.
+   *
+   *  Cleared on every other navigation so it cannot leak: pressing "Customers"
+   *  in the nav must land on the customer list even if a dashboard row sent
+   *  somebody to the queue a moment ago. */
+  const [customersView, setCustomersView] = useState<"all" | "queue">("all");
+  const setTab = (t: Tab, view?: "queue") => {
+    setCustomersView(view === "queue" ? "queue" : "all");
+    setTabState(t);
+  };
   const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="min-h-screen ground-bone flex font-body">
@@ -258,7 +268,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         <div className="p-4 md:p-8">
           {tab === "dashboard" ? <Dashboard setTab={setTab} />
             : tab === "projects" ? <Projects />
-            : tab === "customers" ? <Customers user={user} />
+            : tab === "customers" ? <Customers user={user} initialView={customersView} />
             : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "pricing" ? <Pricing />
             : tab === "referrals" ? <OpsReferrals />
@@ -364,7 +374,7 @@ function MobileNav({ open, onClose, tabs, tab, setTab, user, onSignOut }: {
   );
 }
 
-function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
+function Dashboard({ setTab }: { setTab: (t: Tab, view?: "queue") => void }) {
   const [s, setS] = useState<OpsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { opsSummary().then(setS).catch(e => setErr(String(e?.message ?? e))); }, []);
@@ -386,7 +396,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
   // becomes a second inbox competing with the sidebar, which is the disease the
   // project merge just cured. Rows with a zero count render nothing at all: a
   // permanent "0 pending" trains people to stop reading the screen.
-  const needsUs: { key: string; count: number; text: string; tab: Tab }[] = [
+  const needsUs: { key: string; count: number; text: string; tab: Tab; view?: "queue" }[] = [
     { key: "sub", count: s.submissions, text: "new submission|new submissions nobody has started", tab: "projects" },
     { key: "rev", count: s.inReview, text: "quote|quotes being priced", tab: "projects" },
     { key: "iss", count: s.readyToIssue, text: "quote is priced and ready to issue|quotes are priced and ready to issue", tab: "projects" },
@@ -397,7 +407,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
     // than sitting in its own tile so it obeys the same rule as everything
     // else: it is listed when it is waiting and absent when it is not, and a
     // permanent "0 pending" trains people to stop reading the screen.
-    { key: "trade", count: s.tradeApplications ?? 0, text: "trade application waiting on a decision|trade applications waiting on a decision", tab: "customers" },
+    { key: "trade", count: s.tradeApplications ?? 0, text: "trade application waiting on a decision|trade applications waiting on a decision", tab: "customers", view: "queue" },
   ].filter(r => r.count > 0);
 
   return (
@@ -413,7 +423,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
           {needsUs.map(r => {
             const [one, many] = r.text.split("|");
             return (
-              <button key={r.key} onClick={() => setTab(r.tab)}
+              <button key={r.key} onClick={() => setTab(r.tab, r.view)}
                 className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-bone flex items-baseline gap-3">
                 <span className="font-semibold text-ops font-display t-hd2">{r.count}</span>
                 <span className="text-ink-soft flex-1 t-bd-sm">{r.count === 1 ? one : many}</span>

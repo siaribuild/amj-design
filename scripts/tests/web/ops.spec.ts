@@ -561,3 +561,51 @@ test("a queued application is visible, explained, and decidable", async ({ page 
   // AC-P2-41: the rate travels with it, read-only.
   expect(verified.discountPercent, "and the rate the grant set").toBeGreaterThan(0);
 });
+
+// ─── The dashboard tile lands on the queue it advertised ─────────────────────
+// Found by the Codex stop-gate review.
+//
+// The tile counts trade applications waiting on a decision and says "Open →".
+// It opened the Customers area on its default "All customers" tab, so the
+// urgent thing somebody just clicked was one more click away and nothing said
+// so. A person who trusts the tile is looking at a list of every customer,
+// wondering where the work went.
+//
+// "Needs us" exists to route people to work. A row that counts one thing and
+// opens another is worse than no row, because it spends the trust the section
+// is built on.
+test("the trade tile opens the trade queue, not the customer list", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const email = `ops-tile-${Date.now().toString(36)}@example.com`;
+  const challenge = await page.request.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": "198.51.142.11" },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+
+  const queued = await page.request.post("/api/trade/application", {
+    data: { abn: QUEUE_ABN, businessName: "Smith Brothers Pty Ltd", source: "profile" },
+    headers: { "X-Forwarded-For": "198.51.142.12" },
+  });
+  expect((await queued.json()).status).toBe("under_review");
+
+  const staffEmail = `ops-tile-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  // Click the tile itself — the thing a person actually presses.
+  await page.getByRole("button", { name: /trade applications? waiting on a decision/i })
+    .click({ timeout: 15_000 });
+
+  // It must land ON the queue, not beside it.
+  await expect(page.getByTestId("trade-queue"),
+    "the tile lands on the queue it counted").toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("trade-queue").getByText(email)).toBeVisible();
+});

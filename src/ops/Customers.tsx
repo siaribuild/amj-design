@@ -40,9 +40,15 @@ const SOURCE_LABEL: Record<string, string> = {
   migration: "Grandfathered",
 };
 
-export function Customers({ user }: { user: OpsUser }) {
+export function Customers({ user, initialView = "all" }: {
+  user: OpsUser;
+  /** Which subview to open on. The dashboard's "Needs us" row counts trade
+   *  applications and must land ON them — a row that counts one thing and opens
+   *  another spends the trust that whole section is built on. */
+  initialView?: "all" | "queue";
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [view, setView] = useState<"all" | "queue">("all");
+  const [view, setView] = useState<"all" | "queue">(initialView);
   const [pending, setPending] = useState<OpsTradeApplication[] | null>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
 
@@ -145,11 +151,15 @@ function TradeQueue({ rows, error, onOpen, onDecided }: {
         <div key={a.id} className="bg-white border border-black/10 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
+              {/* A nameless account is the COMMON case here — someone who
+                  applied from the trade page has not been asked for a name yet.
+                  Printing the email as the link and again beneath it just says
+                  the same thing twice. */}
               <button type="button" onClick={() => onOpen(a.applicant.id)}
                 className="text-ink underline underline-offset-2 cursor-pointer t-bd-sm">
                 {a.applicant.name || a.applicant.email}
               </button>
-              <p className="text-body t-cap">{a.applicant.email}</p>
+              {a.applicant.name && <p className="text-body t-cap">{a.applicant.email}</p>}
               <p className="text-ink mt-2 t-bd-sm">{a.businessName || "—"}</p>
               <p className="text-body font-data t-cap">{a.abn || "No ABN"}</p>
             </div>
