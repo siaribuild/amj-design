@@ -1,253 +1,189 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE LINE BODY — the plate, the verdict index, and five open sections
+// THE LINE PLANE — reimagined, not repaired
 //
-// CRITIQUE 1 and the disclosure ruling both land here, and together they close
-// off two answers, not one:
+// "When I said 'remove accordions' as they are a cheat code for putting a lot of
+//  information into a single screen without thinking, which I think is correct
+//  still, you simply did exactly that."
 //
-//   • a lens CHIP STRIP is out — at 390px the five chips measure ≈435px, and
-//     R-68 deliberately let the fifth be cut so the strip would "read as
-//     scrollable". Nothing may require a sideways scroll to reach a destination.
-//   • an ACCORDION is out — "don't like the approach. not great UX pattern."
-//     Right on the merits: it hides content behind clicks, defeats scanning, and
-//     shifts the layout under the pointer. In a console whose whole job is seeing
-//     the state of a line at a glance, that is backwards.
+// He is right, and that sentence is the whole brief. The accordion was the
+// symptom; the disease was putting everything on one screen without deciding what
+// belonged there. Opening the lids did not treat it — it made the pile visible,
+// and then a verdict index was added on top: a contents page for a document
+// nobody chose to write.
 //
-// So the sections are simply OPEN. All five, in R-43's fixed order, in one
-// vertical column, nothing to press before anything can be read. A phone scrolls
-// vertically for free; that was never the scarce axis.
+// So this is not a re-layout of the same content. It starts from the job.
 //
-// What the chip strip was actually FOR was glanceability — five verdicts in one
-// look — and losing that would be a real loss, so it is paid for separately by
-// the VERDICT INDEX directly under the plate: five name/verdict pairs in a
-// wrapping grid, each an in-page link to its section. It hides nothing (the full
-// section is below in the flow), it wraps rather than scrolls, and it is an index
-// rather than a control.
+// ── WHAT THE REVIEWER IS DOING ─────────────────────────────────────────────────
+// A founder, on a phone, with the customer on the call. They tapped this line
+// from a list that ALREADY told them the code, the product, the size, the price
+// and whether it needs review. They did not come to re-read those. They came for
+// the two things a row cannot carry:
 //
-// Rules, and what each becomes:
-//   R-43  identical set and order on every line. KEPT — the section headings are
-//         the anchors the chips used to be. There is nothing left to collapse, so
-//         "pressing the active chip collapses it" has no referent.
-//   R-44  a panel that failed to load says so in its own heading. KEPT, and it is
-//         now strictly stronger: a failure cannot be collapsed out of sight
-//         because nothing collapses.
-//   R-45  verdicts come from real fields — never confidence_band; Trail carries
-//         the NOTE count, never an event count. KEPT.
-//   R-47  the arrival walk. CHANGED IN KIND: it used to expand the first section
-//         that matched. With nothing to expand, the walk becomes a MARK rather
-//         than a movement — the section and its index row are toned, and the
-//         reviewer's eye goes there without the page moving or the plate being
-//         scrolled away. That is the same intent with no hidden state.
-//   R-48  session memory of what a human opened or closed. GONE, with the
-//         mechanism it governed. Nothing to remember.
+//     "Show me the thing, and tell me what is wrong with it."
+//
+// That is the first two seconds. Everything on arrival serves it.
+//
+// ── PRIMARY INFORMATION ────────────────────────────────────────────────────────
+//  1. THE DRAWING. The highest-praised element in the product and the fastest
+//     answer to "is this the right thing" — shape, arrangement, which way it
+//     opens, real dimensions. It is also what the reviewer turns the phone around
+//     to show, and what lets them say "the wide one with the two openers" to a
+//     customer who does not read schedules. Primary, unarguably (R-17/R-154).
+//  2. THE VERDICT, IN WORDS. Not five verdicts — the problems, or the absence of
+//     them. One line each; there are rarely more than two.
+//
+// ── PRIMARY ACTION ─────────────────────────────────────────────────────────────
+// Edit. The grill settled it: adjudication is performed conversationally and
+// "its normal outcome is a change, not a tick". So the footer is Edit, not
+// Confirm (R-153, unchanged).
+//
+// ── WHAT EARNS A SECOND STEP, AND WHY ──────────────────────────────────────────
+// The test is not "is this more stuff" but "is this a different job".
+//
+//  • THE ALTERNATIVES — a different job: pricing a compromise while the customer
+//    is talking. "home owners might want to save money and choose the next-worse
+//    solution that is cheaper despite marginally failing to meet requirements."
+//    A real path, taken on a call, driven by a different motive than the one that
+//    opened the line. It is also the owner's own ruling: "winner's reasoning
+//    visible; losers one tap away, ranked, with their reason. But it stays
+//    collapsed by default so the common case isn't buried." R1c inverted that
+//    ruling by rendering the losers inline, as IDs, against the action panel.
+//    → Its own plane.
+//  • THE NOTES — a different job: recording what was said, which the grill calls
+//    load-bearing ("Taking notes — that requires another device or notebook").
+//    Short, frequent, and it needs a composer rather than a reading surface.
+//    → Its own plane, with the inline composer the record's Notes already uses.
+//
+// ── WHAT IS NOT ON THIS SCREEN AT ALL ──────────────────────────────────────────
+//  • The verdict index. A contents page for a screen you can see all of.
+//  • The five section headings. They were the accordion with its lids off.
+//  • The facts grid. The drawing dimensions the opening, the header names it, the
+//    row you tapped priced it. Restating them was filler.
+//  • "Source: no page reference recorded." Absent provenance is worth stating
+//    where provenance is the subject — the alternatives plane — not on the screen
+//    whose job is "show me the thing".
+//  • The candidates table. Moved, and it stops being a list of IDs.
+//
+// ── RULES THAT DIE WITH THE SECTIONS, AND WHY THAT IS SOUND ────────────────────
+//  R-43  "identical chip set and order on every line" — no chips, no sections.
+//  R-47  the arrival walk chose which section to open. Nothing opens now; the
+//        verdict block is always the first thing under the drawing, so the walk
+//        is not enacted — it is the layout.
+//  R-48  session memory of what was opened. Already gone in R1b.
+//  R-44  survives, and is stronger: a panel that could not be read becomes a
+//        PROBLEM in the verdict block, not a heading that has to be found.
+//  R-45  survives: verdicts come from real fields, and the note count is notes.
+//  R-53.x / R-56 move to the alternatives plane, where the candidate set lives.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { IonButton, IonNote } from "@ionic/react";
+import { IonButton, IonIcon, IonItem, IonLabel, IonList, IonNote } from "@ionic/react";
+import { chevronForward } from "ionicons/icons";
 import { Plate } from "./Plate";
-import { CANDIDATES, LENS_NAMES, RECORD, type Lens, type Line } from "./data";
-import { Money, mm } from "./ui";
+import { LENS_NAMES, type Line } from "./data";
+import { Money } from "./ui";
 import type { ElevationSize } from "./elevation";
 
-/** R-47 — one list, evaluated in order, first match wins. It now decides what is
- *  MARKED, not what is shown. */
-export function attentionSection(line: Line): string | null {
+export type Problem = { text: string; tone: "warning" | "danger" };
+
+/** What is wrong with this line, in the order it should be read.
+ *
+ *  From real fields, not synthesised: a failed read first, because nothing else
+ *  on the line can be trusted while it stands (R-44), then the estimator's own
+ *  flags verbatim. The missing-rate case is deliberately NOT repeated here — it
+ *  shows where the price would be, which is where someone looking for a price is
+ *  already looking. */
+export function problemsOf(line: Line): Problem[] {
+  const out: Problem[] = [];
   const failed = line.lenses.find((l) => l.failed);
-  if (failed) return failed.key;
-  if (!line.requirementMet) return "glass";
-  if (line.priceCents === null) return "price";
-  if (line.flags.length > 0) return "build";
-  return null;
+  if (failed) out.push({ text: `${LENS_NAMES[failed.key]} could not be read.`, tone: "danger" });
+  line.flags.forEach((f) => out.push({ text: f, tone: "warning" }));
+  return out;
 }
 
-const toneOf = (l: Lens) => (l.failed ? "danger" : l.tone === "attention" ? "warning" : undefined);
-
-/** The verdict index — what the chip strip was for, without the strip. */
-function Verdicts({ line }: { line: Line }) {
+/** The verdict, and the winner's reasoning beneath it.
+ *
+ *  The owner's ruling in one block: the reasoning for the CHOSEN product is
+ *  visible; the products it beat are one tap away. C4 governs the tone — a
+ *  problem is stated, never gated, and nothing here asks to be acknowledged. */
+function Verdict({ line, onAlternatives }: { line: Line; onAlternatives: () => void }) {
+  const problems = problemsOf(line);
+  const tone = problems.some((p) => p.tone === "danger") ? "danger"
+    : problems.length ? "warning" : "ok";
   return (
-    <nav className="verdicts" aria-label={`Sections on ${line.code}`}>
-      {line.lenses.map((l) => (
-        <a key={l.key} href={`#sec-${l.key}`} data-tone={toneOf(l)}>
-          <span className="vn">{LENS_NAMES[l.key]}</span>
-          <span className="vv">{l.verdict}</span>
-        </a>
-      ))}
-    </nav>
-  );
-}
+    <section className="verdict" data-tone={tone} aria-label={`Verdict on ${line.code}`}>
+      {problems.length === 0 ? (
+        <p className="v-ok">Nothing here needs a decision.</p>
+      ) : (
+        <ul className="v-problems">
+          {problems.map((p) => <li key={p.text} data-tone={p.tone}>{p.text}</li>)}
+        </ul>
+      )}
 
-function Section({ line, lens }: { line: Line; lens: Lens }) {
-  const tone = toneOf(lens);
-  return (
-    <section className="section" id={`sec-${lens.key}`} data-tone={tone}
-      aria-label={LENS_NAMES[lens.key]}>
-      <h2>
-        {LENS_NAMES[lens.key]}
-        <span className="sv">{lens.verdict}</span>
-      </h2>
-      <Body line={line} k={lens.key} failed={!!lens.failed} />
+      {/* The winner's reasoning — visible, per the ruling. Three lines, because
+          three facts are the whole argument: what it was chosen from, what it
+          had to meet, and what it actually achieves. */}
+      <dl className="v-why">
+        <div><dt>Chosen from</dt><dd>{line.basis}</dd></div>
+        <div><dt>Requirement</dt><dd>{line.requirement}</dd></div>
+        <div><dt>This product</dt>
+          <dd className={line.requirementMet ? undefined : "miss"}>
+            {line.requirementMet ? "Uw 3.7 · SHGC 0.41" : "Uw 4.1 · SHGC 0.52"}
+          </dd></div>
+      </dl>
+
+      <IonButton fill="outline" size="small" expand="block" onClick={onAlternatives}>
+        Show what it was chosen over
+        <IonIcon slot="end" icon={chevronForward} aria-hidden="true" />
+      </IonButton>
     </section>
   );
 }
 
-function Body({ line, k, failed }: { line: Line; k: Lens["key"]; failed: boolean }) {
-  if (failed) {
-    /* R-44 — and `danger` rather than `warning`, because this is not a decision
-       of ours to resolve: a read did not happen, and nothing on this section can
-       proceed until it does. Rule A2 keeps the two apart. */
-    return (
-      <>
-        <p>This section could not be read. Everything else on the line is current.</p>
-        <IonButton size="small" fill="outline" color="danger">Try again</IonButton>
-      </>
-    );
-  }
-
-  if (k === "why") {
-    return (
-      <>
-        {/* D8 — words and data, not drawings, and the absent visual is stated
-            rather than left blank. */}
-        <dl className="kv">
-          <div><dt>Chosen because</dt><dd>{line.basis}</dd></div>
-          <div><dt>Requirement</dt><dd>{line.requirement}</dd></div>
-          <div><dt>Source</dt><dd>Uploaded schedule · no page reference recorded</dd></div>
-        </dl>
-        <p className="quote">
-          {line.product} in {line.frame} with {line.glazing} — the nearest product in
-          the catalogue that satisfies the stated Uw and SHGC at this size.
-        </p>
-        {/* D9 — the losing candidates, ranked, with reasons. Visible, not behind
-            a disclosure: four rows cost less than the click did. */}
-        <table className="cands">
-          <caption>Ranked against {CANDIDATES.length - 1} alternatives</caption>
-          <thead>
-            <tr><th className="r" scope="col">#</th><th scope="col">Product</th>
-              <th scope="col">Verdict</th><th scope="col">Why</th></tr>
-          </thead>
-          <tbody>
-            {CANDIDATES.map((c) => (
-              <tr key={c.rank} data-chosen={c.verdict === "chosen" ? "" : undefined}
-                data-fails={c.verdict.startsWith("fails") ? "" : undefined}>
-                <td className="r">{c.rank}</td>
-                <td>{c.name}</td>
-                <td className="v">{c.verdict}</td>
-                <td className="why">{c.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <IonNote className="fact basis" style={{ display: "block", marginTop: 6 }}>
-          No price is stored against a candidate — the ranking is thermal and dimensional only.
-        </IonNote>
-      </>
-    );
-  }
-
-  if (k === "glass") {
-    return (
-      <>
-        <dl className="kv">
-          <div><dt>Requirement</dt><dd>{line.requirement}</dd></div>
-          <div><dt>This product</dt>
-            <dd>{line.requirementMet ? "Uw 3.7 · SHGC 0.41" : "Uw 4.1 · SHGC 0.52"}</dd></div>
-          <div><dt>Glazing</dt><dd>{line.glazing}</dd></div>
-        </dl>
-        {!line.requirementMet && (
-          /* C4 / rule A2 — WARNING, never danger, and never a gate. It states the
-             divergence, says who decides, and offers nothing to acknowledge. */
-          <div className="note-warning" role="note">
-            <b className="lede">This does not meet the stated requirement.</b>
-            Yours is the decision. The divergence is recorded once, on the quote,
-            when you issue it — nothing is recorded now and nothing is blocked.
-          </div>
-        )}
-      </>
-    );
-  }
-
-  if (k === "build") {
-    return (
-      <>
-        {line.parts ? (
-          <>
-            <p>
-              Made as {line.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} units, joined{" "}
-              {line.axis === "horizontal" ? "one above the other" : "side by side"}.
-            </p>
-            <ul className="units">
-              {line.parts.map((p) => <li key={p.label}>{p.label}</li>)}
-            </ul>
-          </>
-        ) : (
-          <p>One unit.</p>
-        )}
-        {line.flags.map((f) => (
-          <div key={f} className="note-warning" role="note">{f}</div>
-        ))}
-      </>
-    );
-  }
-
-  if (k === "price") {
-    return (
-      <>
-        <dl className="kv">
-          <div><dt>This line</dt>
-            <dd><Money cents={line.priceCents} absent="no rate for this configuration" /></dd></div>
-        </dl>
-        {line.priceCents === null ? (
-          /* R-66 — a price that refuses is correct behaviour, and the console
-             says WHICH number is missing, in full. Warning, not danger: these are
-             rates we can go and get. */
-          <div className="note-warning" role="note">
-            <b className="lede">Missing rates:</b>
-            <ul>
-              <li>{line.frame} · {line.glazing} · rate band 1,800–2,400 mm high</li>
-              <li>Zone 4 — Outer metro delivery rate</li>
-            </ul>
-          </div>
-        ) : (
-          <IonNote className="fact basis" style={{ display: "block" }}>
-            {/* "estimate" is struck project-wide: the owner asked for it, and the
-                glossary puts the word on Quote's own _Avoid_ line because the
-                estimator is a different concept. */}
-            {RECORD.gstMode} · this account's setting
-          </IonNote>
-        )}
-      </>
-    );
-  }
-
-  /* R-45 — Trail's verdict is the NOTE count, never an event count. */
+/** What it is, and what it costs. Three facts, not a grid of six: the product and
+ *  the glazing are what get changed on a call, and the price is what the customer
+ *  asks about. Size is absent on purpose — the drawing above dimensions it, and
+ *  repeating a number the drawing already draws is how the pile started. */
+function Spec({ line }: { line: Line }) {
   return (
-    <>
-      {line.notes.length === 0 ? (
-        <p className="absent">
-          No notes on this line yet. A note added here is stored against {line.code} and
-          shows against it thereafter.
-        </p>
-      ) : (
-        line.notes.map((n, i) => (
-          <div key={i} className="note-item">
-            <div className="who">{n.who}</div>
-            <div className="body">{n.body}</div>
-          </div>
-        ))
+    <section className="linespec" aria-label="Specification">
+      <div className="ls-row">
+        <span className="ls-k">Product</span>
+        <span className="ls-v">{line.product}</span>
+      </div>
+      <div className="ls-row">
+        <span className="ls-k">Glazing</span>
+        <span className="ls-v">{line.glazing}</span>
+      </div>
+      <div className="ls-row ls-money">
+        <span className="ls-k">Line total</span>
+        <span className="ls-v"><Money cents={line.priceCents} absent="no rate" basis /></span>
+      </div>
+      {line.priceCents === null && (
+        /* R-66 — a price that refuses is correct behaviour, and the console says
+           WHICH number is missing, in full. It sits where the price would be. */
+        <div className="note-warning" role="note">
+          <b className="lede">Missing rates:</b>
+          <ul>
+            <li>{line.frame} · {line.glazing} · rate band 1,800–2,400 mm high</li>
+            <li>Zone 4 — Outer metro delivery rate</li>
+          </ul>
+        </div>
       )}
-      <IonButton size="small" fill="outline">Add a note to {line.code}</IonButton>
-    </>
+    </section>
   );
 }
 
 export function LineBody({
   line, plateSize, showPlate = true, dirtyFrom, heightMm, widthMm,
+  onAlternatives, onNotes,
 }: {
   line: Line;
   plateSize: ElevationSize;
-  /** False while the plate is pinned above — R-18 keeps exactly one plate on
-   *  screen, and the pinned one is not this one. */
   showPlate?: boolean;
   dirtyFrom?: string | null;
   heightMm?: number;
   widthMm?: number;
+  onAlternatives: () => void;
+  onNotes: () => void;
 }) {
   return (
     <>
@@ -255,21 +191,29 @@ export function LineBody({
         <Plate line={line} size={plateSize} dirtyFrom={dirtyFrom}
           heightMm={heightMm} widthMm={widthMm} />
       )}
-      <Verdicts line={line} />
-      <section className="section" aria-label="Facts">
-        <h2>This opening</h2>
-        <dl className="kv">
-          <div><dt>Product</dt><dd>{line.product}</dd></div>
-          <div><dt>Size</dt>
-            <dd>{line.widthMm > 0
-              ? `${mm(line.heightMm)} × ${mm(line.widthMm)} mm (height × width)`
-              : <span className="absent">not read from the schedule</span>}</dd></div>
-          <div><dt>Frame system</dt><dd>{line.frame}</dd></div>
-          <div><dt>Line total</dt>
-            <dd><Money cents={line.priceCents} absent="no rate" /></dd></div>
-        </dl>
-      </section>
-      {line.lenses.map((l) => <Section key={l.key} line={line} lens={l} />)}
+      <Verdict line={line} onAlternatives={onAlternatives} />
+      <Spec line={line} />
+      {/* The second step for the other job. A push row — the same grammar the
+          approved list view uses for the project's blocks. */}
+      <IonList lines="full">
+        <IonItem button detail={false} onClick={onNotes}>
+          <IonLabel>
+            <strong>Notes</strong>
+            <p className={line.notes.length ? undefined : "absent"}>
+              {line.notes.length === 0
+                ? "Nothing recorded on this line"
+                : `${line.notes.length} on this line · latest ${line.notes[0].who}`}
+            </p>
+          </IonLabel>
+          <IonIcon slot="end" icon={chevronForward} color="medium" aria-hidden="true" />
+        </IonItem>
+      </IonList>
+      {line.parts && (
+        <IonNote className="fact basis linefoot">
+          Made as {line.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} units — tap the
+          drawing to see how they are joined.
+        </IonNote>
+      )}
     </>
   );
 }

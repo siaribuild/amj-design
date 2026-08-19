@@ -209,7 +209,9 @@ export function RecordPage() {
                   }}>
                   <LineBody line={selected} plateSize={canvasPlate} showPlate={!pinned}
                     dirtyFrom={draft?.from ?? null}
-                    heightMm={draft?.heightMm} widthMm={draft?.widthMm} />
+                    heightMm={draft?.heightMm} widthMm={draft?.widthMm}
+                    onAlternatives={() => history.push(`/record/${ref}/line/${selected.id}/alternatives`)}
+                    onNotes={() => history.push(`/record/${ref}/line/${selected.id}/notes`)} />
                 </div>
                 <div className="deck">
                   <LineScroller run={run} at={at} filtered={filterUnpriced}

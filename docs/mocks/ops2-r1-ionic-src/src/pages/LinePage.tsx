@@ -1,18 +1,30 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE LINE PLANE (< 1024) — §13.6's identity band, minus the stepper
+// THE LINE PLANE (< 1024)
 //
-// CRITIQUE 2. The band carries what §13.6 says it carries and nothing more:
+// Rebuilt for R1e. The reasoning is in LineBody.tsx's header — what the reviewer
+// is doing, what is primary, what earns a second step, what left the screen.
+// This file owns the frame around it:
 //
-//   Back  │  W04 · Bed 1                                                   ⋯
+//   ‹ Back      W04 · Bed 1                              ⋯     48   identity
+//   ‹ W03 Ensuite                          W05 WC ›            44   neighbours
+//   ────────────────────────────────────────────────────────
+//   [ the drawing ]                                            hero, primary
+//   the verdict, then the winner's reasoning
+//   product / glazing / price
+//   Notes · 1                                            ›
+//   ────────────────────────────────────────────────────────
+//   [ Edit W04 ]                                        [ ⋯ ]  56   one action
 //
-// The two arrow targets and the `4/18` readout are gone from it; the bottom deck
-// owns movement now (LineScroller.tsx). Two consequences worth naming, because
-// they are the point rather than side effects:
+// TWO CHANGES OF SHAPE, both his:
 //
-//   • the identity gets the whole width back, so a long room name stops
-//     truncating at 320px — the stepper's other cost, which nobody had priced;
-//   • movement lives in the thumb arc, on the same edge as the one action, which
-//     is where a phone's repeated actions belong.
+//  1. Line-to-line navigation moved to the TOP and names its neighbours. The
+//     rejected `‹ 4/18 ›` counted; this identifies. See LineScroller.tsx's
+//     LineNeighbours for why that distinction is the whole of the fix.
+//  2. The bottom filmstrip is GONE from this screen, so the deck is the action
+//     row alone. Two navigation mechanisms on one screen needed justifying and
+//     could not be justified: his own words give the far case to the list, which
+//     is one tap away and now approved. 44px out at the bottom pays for the 44px
+//     in at the top, and one mechanism replaces two.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import {
@@ -24,7 +36,7 @@ import { LINES, RECORD } from "../data";
 import { setStore, useShortViewport, useStore, visibleLines } from "../store";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
-import { LineScroller, LineSwitcher, useMoveKeys, useSiblingSwipe } from "../LineScroller";
+import { LineNeighbours, useMoveKeys, useSiblingSwipe } from "../LineScroller";
 
 export function LinePage() {
   const history = useHistory();
@@ -32,7 +44,6 @@ export function LinePage() {
   const { filterUnpriced } = useStore();
   const short = useShortViewport();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   /* R-18 — the page owns the 24px threshold and hands the plate its state. The
      plate is NEVER what starts hidden: arriving at a line, the drawing is the
@@ -80,6 +91,7 @@ export function LinePage() {
             away. Same component, different state: there is no second element a
             stray display rule could hide as well, which is exactly how the
             drawing vanished last time. */}
+        <LineNeighbours prev={run[at - 1]} next={run[at + 1]} onGo={goTo} />
         {pinned && <Plate line={line} size={heroSize} pinned onUnpin={() => setPinned(false)} />}
       </IonHeader>
 
@@ -89,7 +101,9 @@ export function LinePage() {
           if (y > 24 && !pinned) setPinned(true);
           if (y <= 2 && pinned) setPinned(false);
         }}>
-        <LineBody line={line} plateSize={heroSize} showPlate={!pinned} />
+        <LineBody line={line} plateSize={heroSize} showPlate={!pinned}
+          onAlternatives={() => history.push(`/record/${ref}/line/${line.id}/alternatives`)}
+          onNotes={() => history.push(`/record/${ref}/line/${line.id}/notes`)} />
       </IonContent>
 
       <IonFooter className="ion-no-border">
@@ -111,11 +125,10 @@ export function LinePage() {
             </div>
           </div>
         )}
-        {/* CRITIQUE 2 — the deck: the scroller and the action row as ONE
-            composition, 44 + 56, the only chrome on the bottom edge. */}
+        {/* R1e — the deck is the action row alone. The filmstrip moved to the
+            top and became named neighbours; keeping both would be two mechanisms
+            for one job. */}
         <div className="deck">
-          <LineScroller run={run} at={at} filtered={filterUnpriced} onPick={goTo}
-            onOpenList={() => setSwitcherOpen(true)} />
           <div className="actions">
             <IonButton onClick={() => history.push(`/record/${ref}/line/${line.id}/edit`)}>
               Edit {line.code}
@@ -126,8 +139,6 @@ export function LinePage() {
         </div>
       </IonFooter>
 
-      <LineSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)}
-        run={run} at={at} filtered={filterUnpriced} onPick={goTo} />
 
       <IonActionSheet
         isOpen={sheetOpen}
@@ -136,7 +147,8 @@ export function LinePage() {
         buttons={[
           { text: "Split into units" },
           ...(line.parts ? [{ text: "Merge back to one" }] : []),
-          { text: `Add a note to ${line.code}` },
+          { text: `Notes on ${line.code}`, handler: () => history.push(`/record/${ref}/line/${line.id}/notes`) },
+          { text: "Show what it was chosen over", handler: () => history.push(`/record/${ref}/line/${line.id}/alternatives`) },
           { text: `Copy a link to ${line.code}` },
           { text: `Delete ${line.code}`, role: "destructive", handler: () => setDeleteArmed(true) },
           { text: "This job — Progress", handler: () => history.push(`/record/${ref}/job/progress`) },

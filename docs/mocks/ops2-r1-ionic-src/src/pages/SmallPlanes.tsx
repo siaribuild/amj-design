@@ -4,9 +4,10 @@ import { useState } from "react";
 import {
   IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonBackButton,
   IonMenuButton, IonContent, IonFooter, IonInput, IonNote, IonTitle,
+  IonList, IonItem, IonLabel, IonTextarea,
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
-import { DELIVERY, RECORD } from "../data";
+import { CANDIDATES, DELIVERY, LINES, RECORD } from "../data";
 import { Money } from "../ui";
 import { ProjectBlockBody, ProjectList, blockName } from "../pieces";
 
@@ -121,6 +122,154 @@ export function DeliveryPage() {
           for any other project.
         </IonNote>
       </IonFooter>
+    </IonPage>
+  );
+}
+
+/** THE ALTERNATIVES — "one tap away, ranked, with their reason."
+ *
+ *  R1c rendered these inline at the foot of the line plane, as a table of
+ *  product IDs, hard against the action panel. That inverted the ruling twice
+ *  over: it buried the common case under the rare one, and it rendered a
+ *  conversation aid as a debug dump.
+ *
+ *  The motive is what shapes this screen. It is not "audit the estimator" — it is
+ *  "home owners might want to save money and choose the next-worse solution that
+ *  is cheaper despite marginally failing to meet requirements." Someone is on the
+ *  phone asking whether there is a cheaper way. So each row leads with the
+ *  PRODUCT as a person would say it, states plainly whether it passes or what it
+ *  misses, and offers the one thing the conversation actually needs next.
+ *
+ *  R-53.1 — there is NO price column: `candidate_result` stores no price, and
+ *  inventing one would be a fiction at exactly the moment money is being
+ *  discussed. Pricing an alternative is a real, separate, METERED read (R-56),
+ *  so it is an explicit per-row action and the meter is stated rather than
+ *  hidden.
+ *
+ *  R-53.2 — the panel states its own source per section and never implies one
+ *  read is the other. R-53.3 — the set is cascade-deleted on re-parse, and says
+ *  so, because a reviewer who saw it yesterday should know why it may be gone. */
+export function AlternativesPage() {
+  const { ref, lineId } = useParams<{ ref: string; lineId: string }>();
+  const line = LINES.find((l) => l.id === lineId) ?? LINES[3];
+  const [priced, setPriced] = useState<Record<number, string>>({});
+  const beaten = CANDIDATES.filter((c) => c.verdict !== "chosen");
+
+  return (
+    <IonPage>
+      <IonHeader className="ion-no-border">
+        <IonToolbar>
+          <IonButtons slot="start">
+            <IonBackButton defaultHref={`/record/${ref}/line/${lineId}`} text=""
+              aria-label={`Back to ${line.code}`} />
+          </IonButtons>
+          <IonTitle>Chosen over</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent>
+        <div className="section">
+          <p className="alt-lede">
+            <strong>{line.product}</strong> was chosen from {beaten.length + 1} products
+            that fit this opening. These are the {beaten.length} it beat.
+          </p>
+        </div>
+        <IonList lines="full">
+          {beaten.map((c) => {
+            const fails = c.verdict.startsWith("fails");
+            return (
+              <IonItem key={c.rank} lines="full" className="altrow">
+                <IonLabel className="ion-text-wrap">
+                  <span className="alt-name">{c.name}</span>
+                  <p className={fails ? "alt-miss" : "alt-pass"}>
+                    {fails ? c.verdict.replace("fails", "Misses") : "Meets the requirement"} · {c.reason}
+                  </p>
+                  {priced[c.rank] && <p className="alt-priced">{priced[c.rank]}</p>}
+                </IonLabel>
+                <IonButton slot="end" size="small" fill="outline"
+                  disabled={!!priced[c.rank]}
+                  onClick={() => setPriced((v) => ({ ...v, [c.rank]: "Priced just now · $1,655.00 ex GST · $185 less" }))}>
+                  {priced[c.rank] ? "Priced" : "Price it"}
+                </IonButton>
+              </IonItem>
+            );
+          })}
+        </IonList>
+        <div className="section">
+          <IonNote className="fact basis">
+            No price is stored against an alternative — the ranking is thermal and
+            dimensional only, so each price is fetched on request and counts
+            against the pricing meter. The set is rebuilt whenever the schedule is
+            re-parsed, so it can change without anyone editing this line.
+          </IonNote>
+        </div>
+      </IonContent>
+      <IonFooter className="ion-no-border">
+        <div className="actions">
+          <IonButton onClick={() => history.back()}>Back to {line.code}</IonButton>
+        </div>
+        <p className="reason">
+          Choosing an alternative is an edit to the line, made in the editor, so
+          nothing here changes the quote on its own.
+        </p>
+      </IonFooter>
+    </IonPage>
+  );
+}
+
+/** LINE NOTES — the other second step.
+ *
+ *  A different job from reviewing: capturing what was said while the reason is
+ *  still in the room, which the grill calls load-bearing. Same inline composer as
+ *  the record's Notes, because it is the same act at a different scope. */
+export function LineNotesPage() {
+  const { ref, lineId } = useParams<{ ref: string; lineId: string }>();
+  const line = LINES.find((l) => l.id === lineId) ?? LINES[3];
+  const [draft, setDraft] = useState("");
+  const [notes, setNotes] = useState(line.notes);
+  const add = () => {
+    const body = draft.trim();
+    if (!body) return;
+    setNotes([{ who: "Gedas · just now", body }, ...notes]);
+    setDraft("");
+  };
+  return (
+    <IonPage>
+      <IonHeader className="ion-no-border">
+        <IonToolbar>
+          <IonButtons slot="start">
+            <IonBackButton defaultHref={`/record/${ref}/line/${lineId}`} text=""
+              aria-label={`Back to ${line.code}`} />
+          </IonButtons>
+          <IonTitle>Notes · {line.code}</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent>
+        <div className="section">
+          <h3 className="sub-h">New note</h3>
+          <div className="composer">
+            <IonTextarea aria-label={`New note on ${line.code}`}
+              placeholder="What did the customer say?"
+              autoGrow rows={2} value={draft}
+              onIonInput={(e) => setDraft(String(e.detail.value ?? ""))} />
+            <div className="composer-act">
+              <IonNote className="fact basis">On {line.code}, not the project.</IonNote>
+              <IonButton size="small" disabled={!draft.trim()} onClick={add}>Add</IonButton>
+            </div>
+          </div>
+          <h3 className="sub-h">{notes.length} {notes.length === 1 ? "note" : "notes"}</h3>
+          {notes.length === 0 && (
+            <p className="absent">
+              Nothing recorded on this line yet. A note added here stays on {line.code}.
+            </p>
+          )}
+          {notes.map((n, i) => (
+            <div key={i} className="note-item">
+              <div className="who">{n.who}</div>
+              <div className="body">{n.body}</div>
+            </div>
+          ))}
+        </div>
+      </IonContent>
     </IonPage>
   );
 }

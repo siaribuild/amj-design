@@ -590,7 +590,7 @@ function Notes() {
         </div>
       </div>
 
-      <h3 className="sub-h">{notes.length} notes</h3>
+      <h3 className="sub-h">{notes.length} {notes.length === 1 ? "note" : "notes"}</h3>
       {notes.map((n, i) => (
         <div key={i} className="note-item">
           <div className="who">{n.who}</div>

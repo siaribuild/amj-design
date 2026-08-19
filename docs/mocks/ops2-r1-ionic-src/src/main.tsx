@@ -18,6 +18,7 @@ import "@ionic/react/css/palettes/dark.system.css";
    overrides. No palette, no fonts, no radii, no shadows. */
 import "./ops2.css";
 import "./ops2-record.css";
+import "./ops2-line.css";
 
 setupIonicReact({
   /* R-164: focus a heading on every navigation — Ionic config, not our code. */

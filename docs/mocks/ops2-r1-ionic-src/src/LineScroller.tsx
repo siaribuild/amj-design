@@ -55,6 +55,56 @@ import { Elevation } from "./elevation";
 import type { Line } from "./data";
 import { Money, mm } from "./ui";
 
+/** LINE-TO-LINE NAVIGATION, MOVED TO THE TOP.
+ *
+ *  "probably more to the top, with prev/current/next style navigation - user can
+ *   always go back into list and click on required item, if it is further away
+ *   within the list, doesn't he?"
+ *
+ *  The difference from the `< 4/18 >` stepper he rejected is that NEIGHBOURS ARE
+ *  IDENTIFIED, not counted. `W03 Ensuite` tells you what the back arrow will show
+ *  you; `4/18` told you only that something existed. You can decide whether to
+ *  move before you move, which is the whole of what was wrong with a counter.
+ *
+ *  DOES THE BOTTOM FILMSTRIP STILL EARN ITS PLACE HERE? No, and it is removed
+ *  from this screen. The argument is his own: the far case is the list, which is
+ *  one tap away and is now approved. Once the top names both neighbours, the
+ *  filmstrip's only remaining advantage was jumping several lines at once — the
+ *  exact case he says the list already serves better. Keeping both would be two
+ *  mechanisms for one job, costing 44px of the scarcest space on the phone, and
+ *  a second thing to learn. Removing it pays for this bar almost exactly: 44px
+ *  out at the bottom, 44px in at the top, and the net is one mechanism instead of
+ *  two, in the reachable half of the screen rather than under the thumb.
+ *
+ *  (The filmstrip stays on the DESKTOP canvas, where the rail is not one tap away
+ *  but permanently beside it, and where the horizontal budget is free.) */
+export function LineNeighbours({ prev, next, onGo }: {
+  prev?: Line;
+  next?: Line;
+  onGo: (id: string) => void;
+}) {
+  return (
+    <div className="neighbours" role="group" aria-label="Move to the line before or after this one">
+      <button type="button" className="nb nb-prev" disabled={!prev}
+        onClick={() => prev && onGo(prev.id)}
+        aria-label={prev ? `Previous line: ${prev.code}, ${prev.room}` : "This is the first line"}>
+        {prev ? (
+          <><span className="nb-arrow" aria-hidden="true">‹</span>
+            <span className="nb-txt"><b>{prev.code}</b><i>{prev.room}</i></span></>
+        ) : <span className="nb-end">First line</span>}
+      </button>
+      <button type="button" className="nb nb-next" disabled={!next}
+        onClick={() => next && onGo(next.id)}
+        aria-label={next ? `Next line: ${next.code}, ${next.room}` : "This is the last line"}>
+        {next ? (
+          <><span className="nb-txt"><b>{next.code}</b><i>{next.room}</i></span>
+            <span className="nb-arrow" aria-hidden="true">›</span></>
+        ) : <span className="nb-end">Last line</span>}
+      </button>
+    </div>
+  );
+}
+
 export function LineScroller({
   run, at, filtered, onPick, onOpenList,
 }: {
