@@ -50,7 +50,9 @@ export interface OutcomeCandidate {
     dataSource: "certified" | "estimated" | null;
   };
   fit: FitFacts;
-  price: PriceSnapshot | null;
+  /** Only the two facts the contract needs. A make-up has no PriceSnapshot of
+   *  its own — it is a sum — so the builder asks for the sum, not the shape. */
+  price: { ok: boolean; total: number | null } | null;
 }
 
 export interface OutcomeInput {
@@ -71,7 +73,7 @@ export interface OutcomeInput {
 /** A price that is missing, not `ok`, or ≤ 0 is not a price (spec A6, AC-52):
  *  the same single notion of priceable the ladder compares on, so the emitted
  *  contract and the selection can never disagree about what could be bought. */
-function priceFacts(snapshot: PriceSnapshot | null): { total: number | null; ok: boolean } {
+function priceFacts(snapshot: { ok: boolean; total: number | null } | null): { total: number | null; ok: boolean } {
   const total = snapshot?.total ?? null;
   const ok = snapshot?.ok === true && total != null && Number.isFinite(total) && total > 0;
   return { total: ok ? total : null, ok };

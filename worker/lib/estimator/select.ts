@@ -26,6 +26,9 @@ import { buildOutcomes, priceCentsOf, type OutcomeCandidate } from "./outcome";
 import type { CandidateOutcome, SelectionOutcome } from "../../../src/data/recommendation";
 import type { PriceSnapshot } from "./pricing";
 import { eligiblePerformanceVariants } from "./configuration";
+// Type-only, so no runtime cycle: splitCandidates.ts imports the VALUES here.
+import type { SplitCandidate } from "./splitCandidates";
+import { leadUnitOf } from "./splitCandidates";
 
 export type PriceFn = (
   candidate: CatalogueCandidate,
@@ -51,10 +54,16 @@ export interface SelectionResult {
   selectionVersion: string;
   catalogueVersion: string;
   evaluated: EvaluatedCandidate[];
+  /** Split make-ups that competed in the SAME ladder as the single units.
+   *  Empty when the opening was not eligible for one (D7, AC-18). */
+  splits: SplitCandidate[];
   /** The run-level contract, persisted as selection_run.selection_json. */
   selection: SelectionOutcome;
-  /** Chosen candidate (null when nothing could be selected). */
+  /** Chosen candidate (null when nothing could be selected, or a split won). */
   selected: EvaluatedCandidate | null;
+  /** The winning split, when one beat every single unit. Never both — one
+   *  competition produces one winner. */
+  selectedSplit: SplitCandidate | null;
   /** Line status: the selected candidate's status, else the "best failure". */
   status: SelectionOutcome["status"];
   /** Products that WOULD have been candidates but were withheld as incomplete,
@@ -196,13 +205,18 @@ const rowKey = (row: EvaluatedRow) =>
 export function decide(
   opening: OpeningInput & { externalRef?: string | null },
   evaluation: Evaluation,
-  tolerance: number = REQUIREMENT_TOLERANCE,
+  opts?: { splits?: SplitCandidate[]; tolerance?: number },
 ): SelectionResult {
   const requirement = resolvedRequirement(opening);
+  const tolerance = opts?.tolerance ?? REQUIREMENT_TOLERANCE;
+  const splits = opts?.splits ?? [];
   const sizeKnown = !!opening.widthMm && !!opening.heightMm;
-  const lastResortIds = lastResortProductIds(evaluation.rows);
+  // A last resort is only needed when nothing else can serve the opening. A
+  // complete split make-up CAN, so its existence retires the promotion entirely
+  // (design §7.2) — a non-fitting single unit is then simply excluded.
+  const lastResortIds = splits.length ? new Set<string>() : lastResortProductIds(evaluation.rows);
 
-  const ladderInput: LadderCandidate[] = evaluation.rows.map((row) => ({
+  const singleInput: LadderCandidate[] = evaluation.rows.map((row) => ({
     key: rowKey(row),
     productSlug: row.candidate.slug,
     variantId: row.selectedVariant?.variantId ?? null,
@@ -218,15 +232,21 @@ export function decide(
     priceCents: priceCentsOf(row.price),
   }));
 
-  const ladder = runLadder(ladderInput, tolerance);
+  // ONE ladder, both forms. A split and a single unit are compared by the same
+  // comparator over the same four facts, so the answer cannot depend on which
+  // shape the answer happens to take (AC-17, AC-50).
+  const ladder = runLadder([...singleInput, ...splits.map((split) => splitLadderCandidate(split, !requirement.absent))], tolerance);
   const { outcomes, selection } = buildOutcomes({
     openingRef: opening.externalRef ?? null,
     requirement,
     tolerance,
     ladder,
-    candidates: evaluation.rows.map((row) => outcomeCandidateOf(opening, row, requirement)),
+    candidates: [
+      ...evaluation.rows.map((row) => outcomeCandidateOf(opening, row, requirement)),
+      ...splits.map(splitOutcomeCandidate),
+    ],
     withheldIncomplete: evaluation.withheldIncomplete,
-    hadCandidates: evaluation.hadCandidates,
+    hadCandidates: evaluation.hadCandidates || splits.length > 0,
     sizeKnown,
   });
 
@@ -237,6 +257,7 @@ export function decide(
     price: row.price,
     candidateOutcome: outcomes[i],
   }));
+  splits.forEach((split, i) => { split.candidateOutcome = outcomes[evaluation.rows.length + i]; });
 
   return {
     openingRef: opening.externalRef ?? null,
@@ -244,10 +265,81 @@ export function decide(
     selectionVersion: SELECTION_VERSION,
     catalogueVersion: evaluation.catalogueVersion,
     evaluated,
+    splits,
     selection,
     selected: evaluated.find((e) => e.candidateOutcome.selected) ?? null,
+    selectedSplit: splits.find((s) => s.candidateOutcome.selected) ?? null,
     status: selection.status,
     withheldIncomplete: evaluation.withheldIncomplete,
+  };
+}
+
+/** A make-up, as the four facts the ladder reads. Its identity for the tiebreak
+ *  is the largest-area unit's (AD6); `splitKey` separates two make-ups that
+ *  happen to share it. */
+function splitLadderCandidate(split: SplitCandidate, thermalRequired: boolean): LadderCandidate {
+  const lead = leadUnitOf(split)?.result.selected ?? null;
+  return {
+    key: split.key,
+    productSlug: lead?.candidate.slug ?? split.system,
+    variantId: lead?.selectedVariant?.variantId ?? null,
+    splitKey: [split.system, split.glazingSlug ?? "-",
+      ...split.units.map((u) => u.result.selected?.candidate.slug ?? "?")].join("|"),
+    excluded: false,
+    fits: split.fits,
+    // A split that does not fit has failed at the one job it exists to do, so it
+    // can only ever be an answer of last resort — below every fitting candidate,
+    // in either form.
+    lastResort: true,
+    deviation: split.deviation.scalar,
+    thermalRequired,
+    priceCents: split.totalCents,
+  };
+}
+
+function splitOutcomeCandidate(split: SplitCandidate): OutcomeCandidate {
+  const lead = leadUnitOf(split);
+  const chosen = lead?.result.selected ?? null;
+  return {
+    key: split.key,
+    productSlug: chosen?.candidate.slug ?? split.system,
+    sanityProductId: chosen?.candidate.sanityProductId ?? split.system,
+    variantId: chosen?.selectedVariant?.variantId ?? null,
+    catalogueRevision: chosen?.candidate.catalogueRevision ?? "",
+    form: "split",
+    units: split.units.map((unit) => {
+      const plan = split.plan[unit.index];
+      const sel = unit.result.selected;
+      return {
+        productSlug: sel?.candidate.slug ?? "",
+        variantId: sel?.selectedVariant?.variantId ?? null,
+        widthMm: plan?.segment.widthMm ?? 0,
+        heightMm: plan?.segment.heightMm ?? 0,
+        operationType: plan?.opening.operationType ?? null,
+      };
+    }),
+    // A make-up exists only because every one of its units passed within its
+    // system, so there is no rules verdict left to report at the make-up level.
+    filters: [],
+    ruleStatus: "commercial_only_estimate",
+    offered: { operationTypes: [], glazingClasses: [], schemaVersion: null },
+    required: { operationType: null, doubleGlazed: null, lowE: false },
+    thermal: {
+      uValue: null,
+      shgc: null,
+      deviation: split.deviation,
+      // A composite is not one catalogue cell and carries no certification of
+      // its own; the units' own rows say where their figures came from.
+      dataSource: null,
+    },
+    fit: {
+      fits: split.fits,
+      widthMm: split.plan.reduce((sum, u) => sum + u.segment.widthMm, 0),
+      heightMm: split.plan[0]?.segment.heightMm ?? null,
+      limit: null,
+      breached: [],
+    },
+    price: split.totalCents == null ? null : { ok: true, total: split.totalCents / 100 },
   };
 }
 

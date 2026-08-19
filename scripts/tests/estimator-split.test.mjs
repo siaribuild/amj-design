@@ -15,13 +15,13 @@ await build({
   stdin: {
     contents: `
       export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
-      export { splitsAreEligible } from ${p("worker/lib/estimator/splitCandidates.ts")};
+      export { splitsAreEligible, selectWithSplits } from ${p("worker/lib/estimator/splitCandidates.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -532,4 +532,98 @@ test("AC-17/18/19 splits are eligible on a hint or a dimensional failure, and on
   // No candidates at all is a catalogue problem, not a dimensional one — but it
   // is also not evidence a single unit fits, so a split may still be tried.
   assert.equal(splitsAreEligible(null, { rows: [] }), true);
+});
+
+// ── The candidate set a split enters (AC-17, AC-20, E15) ────────────────────
+//
+// A fixture catalogue and a real `selectWithSplits` run. What is being proven
+// here is not that a split gets built — the old post-pass did that — but that it
+// is a CANDIDATE: tiered, ranked and priced by the same ladder as every single
+// unit, in one pass, with no pick made before it arrived.
+
+const glass = (slug, uValue, shgc) => ({
+  variantId: slug, glazingOptionSlug: slug,
+  glazingClass: slug.startsWith("dg") ? "double_clear" : "single_clear",
+  uValue, shgc, frameType: "aluminium", frameTechnology: "conventional",
+  certificationRef: "WERS-1", pricingOptionSlugs: [], dataSource: "certified",
+  certified: true, published: true,
+});
+const DG = glass("dg", 3.6, 0.45);
+const SG = glass("sg", 5.4, 0.60);
+
+const splitProduct = (slug, { operation, maxWidthMm, glasses = [DG, SG], system = "sys-80" }) => ({
+  sanityProductId: `id-${slug}`, catalogueRevision: "rev1", schemaVersion: 1,
+  name: slug, slug, family: "windows", series: `${operation}-window`,
+  configuration: { operationTypes: [operation] },
+  frameSystem: { slug: system, name: system, compatibleWith: [] },
+  dimensionRule: { minWidthMm: 300, maxWidthMm, minHeightMm: 300, maxHeightMm: 3000, maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1" },
+  performanceVariants: glasses.map((g) => ({ ...g })),
+  optionGroups: [], pricingRef: slug,
+});
+
+const splitRepo = (products) => ({
+  async queryCandidates(category, operation) {
+    return products.filter((c) => (!category || c.family === category)
+      && (!operation || c.configuration.operationTypes.includes(operation)));
+  },
+  catalogueVersion() { return "cat-v1"; },
+});
+
+/** Price by m², so a split of the same opening is not automatically cheaper or
+ *  dearer than one unit covering it — the comparison stays about the products. */
+const splitPrice = (perM2 = {}) => async (candidate, opening) => {
+  const rate = perM2[candidate.slug] ?? 400;
+  const area = ((opening.widthMm ?? 0) * (opening.heightMm ?? 0)) / 1_000_000;
+  const total = Math.round(rate * area * 100) / 100;
+  return { ok: true, unit: total, total, currency: "AUD", rateCardId: "r", rateCardVersion: "v1", pricingPolicyVersion: "v1" };
+};
+
+const splitCtx = (products, over = {}) => ({
+  repo: splitRepo(products),
+  priceFn: splitPrice(over.perM2 ?? {}),
+  pairing: null,
+  section: "window",
+  primaryCategory: "windows",
+  alternateCategory: null,
+  maxSegments: 4,
+  ...over,
+});
+
+test("AC-17 a split ENTERS the ranked set — it is not a rework of a pick already made", async () => {
+  // 3,600 mm wide: no awning frame is made that size, so the machine may propose
+  // a split on its own initiative (AC-17's opener is dimensional).
+  const products = [splitProduct("amj-awn", { operation: "awning", maxWidthMm: 1300 })];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 3600, heightMm: 2100, externalRef: "W07" },
+    null, splitCtx(products),
+  );
+
+  assert.ok(r.splits.length, "split candidates were generated");
+  assert.ok(r.selectedSplit, "and one of them won");
+  assert.equal(r.selected, null, "a split won, so no single unit did — never both");
+
+  // It was tiered and ranked by the SAME ladder, in the same numbering as the
+  // single units it beat. Its verdict is a CandidateOutcome like any other.
+  const o = r.selectedSplit.candidateOutcome;
+  assert.equal(o.form, "split");
+  assert.equal(o.rank, 1);
+  assert.equal(o.selected, true);
+  assert.equal(o.competing, true);
+  assert.equal(o.fit.fits, true, "the split is what makes this opening fit");
+  assert.equal(o.price.deltaToSelected, 0, "the pick is its own baseline");
+  assert.ok(o.units.length >= 2, "and it says what it is made of");
+  assert.equal(o.units.reduce((sum, u) => sum + u.widthMm, 0), 3600, "the units partition the opening");
+
+  // E15: the single unit that lost is still a persisted candidate in the same
+  // run — two forms of the same product, no deduplication that would hide one.
+  const singles = r.evaluated.map((e) => e.candidateOutcome);
+  assert.ok(singles.length, "the single-unit candidates are still here");
+  assert.ok(singles.every((s) => s.form === "single"));
+  // Every single unit is oversize, so fit — which is hard — excludes them all;
+  // the split is the only thing that actually serves the opening.
+  assert.ok(singles.every((s) => s.fit.fits === false));
+  assert.ok(singles.every((s) => !s.selected));
+  // Ranks are dense and shared across BOTH forms: one competition, one ordering.
+  const ranks = [o.rank, ...singles.map((s) => s.rank)].filter((x) => x != null).sort((a, b) => a - b);
+  assert.deepEqual(ranks, ranks.map((_, i) => i + 1));
 });

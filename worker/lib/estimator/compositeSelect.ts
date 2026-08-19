@@ -116,7 +116,7 @@ const MAX_SYSTEMS = 12;
  *  unit, and a composite is capped at a handful of units. */
 const MAX_GLASS_TRIALS = 3;
 
-interface MakeUp {
+export interface MakeUp {
   system: string;
   /** Position in the best-first covering order — how many units this system
    *  supplies ITSELF rather than reaching a partner for. Carried so an exact
@@ -144,7 +144,7 @@ export async function selectForComposite(
 /** Every complete, single-system make-up this opening can be built from. The
  *  enumeration is the composite's own work; CHOOSING between the results is the
  *  ladder's, exactly as it is for a single unit (AC-50). */
-async function enumerateMakeUps(
+export async function enumerateMakeUps(
   opening: OpeningInput,
   segments: CompositeSegmentInput[],
   repo: CatalogueRepository,
