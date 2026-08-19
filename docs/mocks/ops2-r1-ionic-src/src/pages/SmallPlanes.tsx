@@ -126,64 +126,6 @@ export function DeliveryPage() {
   );
 }
 
-/** LINE NOTES — the other second step.
- *
- *  A different job from reviewing: capturing what was said while the reason is
- *  still in the room, which the grill calls load-bearing. Same inline composer as
- *  the record's Notes, because it is the same act at a different scope. */
-export function LineNotesPage() {
-  const { ref, lineId } = useParams<{ ref: string; lineId: string }>();
-  const line = LINES.find((l) => l.id === lineId) ?? LINES[3];
-  const [draft, setDraft] = useState("");
-  const [notes, setNotes] = useState(line.notes);
-  const add = () => {
-    const body = draft.trim();
-    if (!body) return;
-    setNotes([{ who: "Gedas · just now", body }, ...notes]);
-    setDraft("");
-  };
-  return (
-    <IonPage>
-      <IonHeader className="ion-no-border">
-        <IonToolbar>
-          <IonButtons slot="start">
-            <IonBackButton defaultHref={`/record/${ref}/line/${lineId}`} text=""
-              aria-label={`Back to ${line.code}`} />
-          </IonButtons>
-          <IonTitle>Notes · {line.code}</IonTitle>
-        </IonToolbar>
-      </IonHeader>
-      <IonContent>
-        <div className="section">
-          <h3 className="sub-h">New note</h3>
-          <div className="composer">
-            <IonTextarea aria-label={`New note on ${line.code}`}
-              placeholder="What did the customer say?"
-              autoGrow rows={2} value={draft}
-              onIonInput={(e) => setDraft(String(e.detail.value ?? ""))} />
-            <div className="composer-act">
-              <IonNote className="fact basis">On {line.code}, not the project.</IonNote>
-              <IonButton size="small" disabled={!draft.trim()} onClick={add}>Add</IonButton>
-            </div>
-          </div>
-          <h3 className="sub-h">{notes.length} {notes.length === 1 ? "note" : "notes"}</h3>
-          {notes.length === 0 && (
-            <p className="absent">
-              Nothing recorded on this line yet. A note added here stays on {line.code}.
-            </p>
-          )}
-          {notes.map((n, i) => (
-            <div key={i} className="note-item">
-              <div className="who">{n.who}</div>
-              <div className="body">{n.body}</div>
-            </div>
-          ))}
-        </div>
-      </IonContent>
-    </IonPage>
-  );
-}
-
 /** The project list — the record's parent, and the home of the drawer opener.
  *  See RecordPage's header comment for why the opener is here rather than on the
  *  record. This is the stack ROOT, so it is the one screen that legitimately has

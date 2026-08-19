@@ -1,42 +1,48 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE LINE PLANE (< 1024)
+// THE LINE PLANE — view mode
 //
-// Rebuilt for R1e. The reasoning is in LineBody.tsx's header — what the reviewer
-// is doing, what is primary, what earns a second step, what left the screen.
-// This file owns the frame around it:
+// The screen itself is LineBody.tsx; this is the frame around it. Two decisions
+// live here.
 //
-//   ‹ Back      W04 · Bed 1                              ⋯     48   identity
-//   ‹ W03 Ensuite                          W05 WC ›            44   neighbours
-//   ────────────────────────────────────────────────────────
-//   [ the drawing ]                                            hero, primary
-//   the verdict, then the winner's reasoning
-//   product / glazing / price
-//   Notes · 1                                            ›
-//   ────────────────────────────────────────────────────────
-//   [ Edit W04 ]                                        [ ⋯ ]  56   one action
+// ── BACK NAMES ITS DESTINATION, AND FROM A LINE THAT IS THE RECORD ────────────
+// Three candidates were offered: `< Project`, `< Lines`, `< Wattle Grove - Lot 14`.
+// Taking `< Lines`:
 //
-// TWO CHANGES OF SHAPE, both his:
+//   • It names the ACTUAL return target. The row was tapped in the record's Lines
+//     tab and that is what comes back — `Lines` is a destination that exists on
+//     screen, in the record's own segment control.
+//   • `< Project` would be wrong twice: Project is the name of the SIBLING TAB in
+//     that same segment, so it promises the wrong half of the record.
+//   • `< Wattle Grove - Lot 14` names the project, not a destination, and at
+//     ~150px it crowds out the title and the neighbours and then truncates —
+//     spending the most width on the least navigational word.
+//   • It is ~52px, which is what leaves room for the other two things this
+//     toolbar has to carry.
 //
-//  1. Line-to-line navigation moved to the TOP and names its neighbours. The
-//     rejected `‹ 4/18 ›` counted; this identifies. See LineScroller.tsx's
-//     LineNeighbours for why that distinction is the whole of the fix.
-//  2. The bottom filmstrip is GONE from this screen, so the deck is the action
-//     row alone. Two navigation mechanisms on one screen needed justifying and
-//     could not be justified: his own words give the far case to the list, which
-//     is one tap away and now approved. 44px out at the bottom pays for the 44px
-//     in at the top, and one mechanism replaces two.
+// ── PREV / NEXT: SETTLED CONCEPT, NEW EXECUTION ──────────────────────────────
+// Top of the plane with neighbours visible is settled and not reopened. What
+// failed was the execution: two labelled full-width buttons taking a whole band
+// of chrome. Mail, photo and reader apps all solve this and none of them spends a
+// row on it — the pair sits in the toolbar's end slot.
+//
+// So: a chevron pair in `slot="end"`, each carrying its neighbour's CODE. That
+// keeps the settled property — you can see which line is next before you move,
+// which is what the rejected `< 4/18 >` stepper could not do — while costing
+// ~96px of an existing bar instead of 44px of new chrome. The room name is what
+// made the buttons wide, and it is what goes: the code is the identity ops reads
+// out, and the room is one line down on the screen you arrive at.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import {
   IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonBackButton,
-  IonContent, IonFooter, IonActionSheet,
+  IonContent, IonFooter, IonActionSheet, IonTitle,
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
 import { LINES, RECORD } from "../data";
 import { setStore, useShortViewport, useStore, visibleLines } from "../store";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
-import { LineNeighbours, useMoveKeys, useSiblingSwipe } from "../LineScroller";
+import { useMoveKeys, useSiblingSwipe } from "../LineScroller";
 
 export function LinePage() {
   const history = useHistory();
@@ -77,21 +83,25 @@ export function LinePage() {
       <IonHeader className="ion-no-border">
         <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/record/${ref}`} text="" aria-label="Back to the line list" />
+            <IonBackButton defaultHref={`/record/${ref}`} text="Lines"
+              aria-label="Back to the lines" />
           </IonButtons>
-          <div className="ident">
-            <h1><span className="mono">{line.code}</span> · {subtitle}</h1>
-          </div>
-          <IonButtons slot="end">
-            <IonButton onClick={() => setSheetOpen(true)}
-              aria-label="More about this line and job">···</IonButton>
+          <IonTitle>{line.code} · {subtitle}</IonTitle>
+          <IonButtons slot="end" className="nbpair">
+            <IonButton disabled={!run[at - 1]} onClick={() => run[at - 1] && goTo(run[at - 1].id)}
+              aria-label={run[at - 1] ? `Previous line: ${run[at - 1].code}, ${run[at - 1].room}` : "This is the first line"}>
+              <span className="nbp" aria-hidden="true">‹{run[at - 1]?.code ?? ""}</span>
+            </IonButton>
+            <IonButton disabled={!run[at + 1]} onClick={() => run[at + 1] && goTo(run[at + 1].id)}
+              aria-label={run[at + 1] ? `Next line: ${run[at + 1].code}, ${run[at + 1].room}` : "This is the last line"}>
+              <span className="nbp" aria-hidden="true">{run[at + 1]?.code ?? ""}›</span>
+            </IonButton>
           </IonButtons>
         </IonToolbar>
         {/* R-18 — once pinned, the plate lives in the header so it cannot scroll
             away. Same component, different state: there is no second element a
             stray display rule could hide as well, which is exactly how the
             drawing vanished last time. */}
-        <LineNeighbours prev={run[at - 1]} next={run[at + 1]} onGo={goTo} />
         {pinned && <Plate line={line} size={heroSize} pinned onUnpin={() => setPinned(false)} />}
       </IonHeader>
 
@@ -102,11 +112,10 @@ export function LinePage() {
           if (y <= 2 && pinned) setPinned(false);
         }}>
         <LineBody line={line} plateSize={heroSize} showPlate={!pinned}
-          onDimensions={() => history.push(`/record/${ref}/line/${line.id}/dimensions`)}
+          onSpec={() => history.push(`/record/${ref}/line/${line.id}/spec`)}
           onWhy={() => history.push(`/record/${ref}/line/${line.id}/why`)}
           onManufacturer={() => history.push(`/record/${ref}/line/${line.id}/price`)}
-          onNotes={() => history.push(`/record/${ref}/line/${line.id}/notes`)}
-          onEdit={() => history.push(`/record/${ref}/line/${line.id}/edit`)} />
+          onUnit={(i) => history.push(`/record/${ref}/line/${line.id}/unit/${i}`)} />
       </IonContent>
 
       <IonFooter className="ion-no-border">
@@ -132,6 +141,9 @@ export function LinePage() {
             top and became named neighbours; keeping both would be two mechanisms
             for one job. */}
         <div className="deck">
+          {/* Edit, and nothing else. There is nothing to Save on a read-only
+              screen — Save and Cancel live in edit mode where there is something
+              to commit. */}
           <div className="actions">
             <IonButton onClick={() => history.push(`/record/${ref}/line/${line.id}/edit`)}>
               Edit {line.code}
@@ -150,10 +162,9 @@ export function LinePage() {
         buttons={[
           { text: "Split into units" },
           ...(line.parts ? [{ text: "Merge back to one" }] : []),
-          { text: `Notes on ${line.code}`, handler: () => history.push(`/record/${ref}/line/${line.id}/notes`) },
+          { text: "Specification", handler: () => history.push(`/record/${ref}/line/${line.id}/spec`) },
           { text: "Why this product", handler: () => history.push(`/record/${ref}/line/${line.id}/why`) },
-          { text: "Dimensions and their source", handler: () => history.push(`/record/${ref}/line/${line.id}/dimensions`) },
-          { text: "Manufacturer's price", handler: () => history.push(`/record/${ref}/line/${line.id}/price`) },
+          { text: "Re-price", handler: () => history.push(`/record/${ref}/line/${line.id}/price`) },
           { text: `Copy a link to ${line.code}` },
           { text: `Delete ${line.code}`, role: "destructive", handler: () => setDeleteArmed(true) },
           { text: "This job — Progress", handler: () => history.push(`/record/${ref}/job/progress`) },

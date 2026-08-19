@@ -19,6 +19,7 @@ import "@ionic/react/css/palettes/dark.system.css";
 import "./ops2.css";
 import "./ops2-record.css";
 import "./ops2-line.css";
+import "./ops2-view.css";
 
 setupIonicReact({
   /* R-164: focus a heading on every navigation — Ionic config, not our code. */

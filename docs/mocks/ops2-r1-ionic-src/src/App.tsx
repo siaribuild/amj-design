@@ -7,8 +7,8 @@ import { IonReactHashRouter } from "@ionic/react-router";
 import { Redirect, Route, useHistory, useParams } from "react-router-dom";
 import { RecordPage } from "./pages/RecordPage";
 import { LinePage } from "./pages/LinePage";
-import { DeliveryPage, LineNotesPage, ProjectBlockPage, ProjectListPage } from "./pages/SmallPlanes";
-import { DimensionsPage, ManufacturerPricePage, WhyPage } from "./pages/LineJobs";
+import { DeliveryPage, ProjectBlockPage, ProjectListPage } from "./pages/SmallPlanes";
+import { ManufacturerPricePage, SpecPage, UnitPage, WhyPage } from "./pages/LineJobs";
 import { EditorDock, EditorPlane } from "./Editor";
 import { planeTransition } from "./transitions";
 import { setStore, useEditorPane, useStore, useWidthClass } from "./store";
@@ -104,10 +104,10 @@ export default function App() {
             <Route exact path="/record/:ref/line/:lineId/edit" component={EditRoute} />
             {/* The line plane's two second steps. Real routes, so both are deep
                 linkable and both survive a reload (D11). */}
-            <Route exact path="/record/:ref/line/:lineId/dimensions" component={DimensionsPage} />
+            <Route exact path="/record/:ref/line/:lineId/spec" component={SpecPage} />
+            <Route exact path="/record/:ref/line/:lineId/unit/:idx" component={UnitPage} />
             <Route exact path="/record/:ref/line/:lineId/why" component={WhyPage} />
             <Route exact path="/record/:ref/line/:lineId/price" component={ManufacturerPricePage} />
-            <Route exact path="/record/:ref/line/:lineId/notes" component={LineNotesPage} />
             <Route exact path="/">
               <Redirect to="/projects" />
             </Route>

@@ -118,7 +118,7 @@ export const LINES: Line[] = [
     heightMm: 2400, widthMm: 3600, qty: 1, room: "Alfresco",
     parts: [
       { op: "lift-slide", alongMm: 900, qty: 2, label: "D01-a/b · lift-slide 900" },
-      { op: "fixed", alongMm: 900, qty: 2, label: "D01-c/d · fixed 900" },
+      { op: "fixed", alongMm: 850, qty: 2, label: "D01-c/d · fixed 850" },
     ],
     axis: "vertical",
     frame: "AMJ150T", glazing: "DG Low-E 6-16-6", variantId: "amj150t-ls-le",
@@ -332,6 +332,13 @@ export type LineSource = {
   measuredBy: "" | "frame" | "opening" | "unsure";
   /** quote_line.edited_fields — field GROUPS only. No actor, no timestamp. */
   editedFields: string[];
+};
+
+/** The CUSTOMER'S note — quote_line.room_label, typed under "Note (optional)".
+ *  Not a thread, not editable by ops, not a comment list. Their words. */
+export const CUSTOMER_NOTE: Record<string, string> = {
+  l04: "Obscure glass to the ensuite side please. The middle panel is fixed, we only want the two outer ones to open.",
+  l07: "This is the main alfresco opening — needs to slide fully clear.",
 };
 
 export const SOURCES: Record<string, LineSource> = {
