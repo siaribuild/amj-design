@@ -208,6 +208,11 @@ export interface OpsWorkspace {
     statusInternalLabel: string; nextStates: string[];
     unresolvedLineCount: number;
     org: string | null; customerName: string | null; customerEmail: string | null;
+    /** The ACCOUNT's phone and address (registration Phase 1 collected both and
+     *  showed them nowhere in ops — the carried seam, AC-P2-55). Distinct from
+     *  the submission contact below: this is who the account is, that is who
+     *  sent this particular quote. */
+    customerPhone: string | null; customerAddress: string | null;
     // Submission contact, captured at submit time — the only identity an
     // anonymous submitter has, so the record must fall back to it.
     contactName: string | null; contactEmail: string | null;

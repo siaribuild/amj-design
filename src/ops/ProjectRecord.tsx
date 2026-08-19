@@ -227,6 +227,16 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             <p className="mt-0.5 t-bd-sm" style={{ color: MUTED }}>
               {[p.org, p.customerName ?? p.contactName, p.customerEmail ?? p.contactEmail].filter(Boolean).join(" · ")}
             </p>
+            {/* The carried Phase-1 seam (AC-P2-55). Phase 1 started collecting a
+                phone and an account address and showed them NOWHERE in ops, so
+                the person ringing a customer about their own quote had to go
+                find them on another screen. Read-only: this is the project
+                record, and the account is edited on the customer record. */}
+            {(p.customerPhone || p.customerAddress) && (
+              <p data-testid="record-contact" className="mt-0.5 t-cap" style={{ color: MUTED }}>
+                {[p.customerPhone, p.customerAddress].filter(Boolean).join(" · ")}
+              </p>
+            )}
           </div>
           <div className="text-right">
             <div className="t-bd-lg font-data" style={{ color: INK }}>{money(total)}</div>

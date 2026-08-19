@@ -643,3 +643,64 @@ test("pressing Customers returns to the customer list from the trade queue", asy
   await expect(page.getByTestId("trade-queue-view"),
     "pressing Customers leaves the queue").toBeHidden();
 });
+
+// ─── The customer record carries the trade decision, and can undo it ─────────
+// AC-P2-40 (status + decision history on the record) and AC-P2-30 (revoke puts
+// the account back on retail immediately).
+//
+// Revoke is addressed to the ACCOUNT, not to an application: "stop this customer
+// paying trade prices" is what a person means, and making them find the right
+// application first is an invitation to revoke the wrong one.
+test("the customer record shows trade status and history, and revoke returns them to retail", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // A customer whose details auto-pass, so there is a grant to look at.
+  const email = `ops-360-${Date.now().toString(36)}@spare9joinery.com.au`;
+  const challenge = await page.request.post("/api/auth/challenge", {
+    data: { email }, headers: { "X-Forwarded-For": "198.51.143.4" },
+  });
+  const { devCode } = await challenge.json();
+  expect(devCode).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+
+  const applied = await page.request.post("/api/trade/application", {
+    data: { abn: "81000143439", businessName: "Spare 9 Joinery Pty Ltd", source: "trade_page" },
+    headers: { "X-Forwarded-For": "198.51.143.5" },
+  });
+  expect((await applied.json()).status, "this fixture must auto-pass").toBe("verified");
+
+  const staffEmail = `ops-360-staff-${Date.now().toString(36)}@openframe.com.au`;
+  await page.goto(OPS);
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill(staffEmail);
+  await page.getByRole("button", { name: /send code/i }).click();
+  const staffCode = await page.getByText(/Dev mode/i).textContent();
+  await page.getByPlaceholder("\u2022\u2022\u2022\u2022\u2022\u2022").fill(staffCode?.match(/\d{6}/)?.[0] ?? "");
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
+  // Desktop table and mobile cards coexist responsively; target the table row's
+  // own Open control rather than the email text, which is a cell in one and part
+  // of a button label in the other.
+  await page.getByRole("row", { name: new RegExp(email) })
+    .getByRole("button", { name: /open/i }).click();
+
+  const trade = page.getByTestId("customer-trade");
+  await expect(trade, "the record carries the trade block").toBeVisible({ timeout: 15_000 });
+  const said = (await trade.innerText()).replace(/\s+/g, " ");
+  expect(said, "status").toMatch(/trade pricing|verified|active/i);
+  expect(said, "AC-P2-40: how it was decided is on the record").toMatch(/auto/i);
+  // AC-P2-41: the rate is shown to STAFF, read-only. Ops is the one surface
+  // where the percentage is allowed to exist.
+  expect(said, "the account's rate").toMatch(/\d\s*%/);
+
+  // AC-P2-30: revoke, and the account is on retail immediately.
+  page.once("dialog", (d) => void d.accept("Test revocation"));
+  await trade.getByRole("button", { name: /revoke/i }).click();
+
+  await expect.poll(async () => page.evaluate(async (addr) => {
+    const res = await fetch("/api/ops/customers", { credentials: "same-origin" });
+    const body = await res.json();
+    return body.customers.find((c: { email: string }) => c.email === addr)?.tradeVerified;
+  }, email), { timeout: 15_000 }).toBe(false);
+});

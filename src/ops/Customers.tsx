@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, Loader2, User, Mail, Phone, Building2, PenLine, Lock } from "lucide-react";
 import {
   opsCustomers, opsCustomer, opsUpdateCustomer,
-  opsTradeApplications, opsTradeApprove, opsTradeReject,
+  opsTradeApplications, opsTradeApprove, opsTradeReject, opsTradeRevoke,
   type OpsCustomer, type OpsCustomerDetail, type OpsUser, type OpsTradeApplication,
 } from "./api";
 
@@ -279,7 +279,9 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
   const [draft, setDraft] = useState({ name: "", phone: "", company: "", abn: "", email: "" });
   const [editErr, setEditErr] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { opsCustomer(id).then(setD).catch(() => setError(true)); }, [id]);
+  const [tradeErr, setTradeErr] = useState("");
+  const reload = useCallback(() => { opsCustomer(id).then(setD).catch(() => setError(true)); }, [id]);
+  useEffect(reload, [reload]);
   if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load this customer.</div>;
   if (!d) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   const cu = d.customer;
@@ -308,6 +310,7 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
   return (
     <div className="max-w-3xl">
       <button onClick={onBack} className="text-body hover:text-ops flex items-center gap-1 mb-4 t-cap"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
+      <TradeBlock d={d} onChanged={reload} error={tradeErr} setError={setTradeErr} />
       <div className="card p-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <h2 className="font-semibold text-ops flex items-center gap-2 font-display t-bd-lg"><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
@@ -388,5 +391,91 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="text-quiet mb-2 t-label">{title}</h3>
       <div className="card mb-5">{children}</div>
     </>
+  );
+}
+
+/** Trade verification, on the customer record (AC-P2-40/41, AC-P2-30).
+ *
+ *  THE ONE SURFACE WHERE THE PERCENTAGE MAY EXIST. Every customer-facing screen
+ *  in this phase is forbidden from naming a rate or letting one be derived; ops
+ *  is explicitly the exception, because a person negotiating or checking an
+ *  account has to see what it actually pays.
+ *
+ *  Read-only, deliberately: this phase ships no editor for the rate. A rate is
+ *  granted by a decision or negotiated by a deliberate write, never nudged from
+ *  a list.
+ */
+function TradeBlock({ d, onChanged, error, setError }: {
+  d: OpsCustomerDetail;
+  onChanged: () => void;
+  error: string;
+  setError: (v: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const trade = d.customer.trade;
+  const history = d.tradeHistory ?? [];
+  const rate = d.customer.discountPercent ?? 0;
+
+  const revoke = async () => {
+    if (busy) return;
+    // Addressed to the ACCOUNT rather than to an application: "stop this
+    // customer paying trade prices" is what a person means, and making them find
+    // the right application first invites revoking the wrong one.
+    const reason = window.prompt("Why is trade pricing being removed? (kept on the record)");
+    if (!reason?.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await opsTradeRevoke(d.customer.id, reason.trim());
+      onChanged();
+    } catch (e) {
+      const msg = String((e as { code?: string })?.code ?? e);
+      setError(msg.includes("not_verified")
+        ? "That account is not on trade pricing."
+        : "That didn't go through. Try again.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div data-testid="customer-trade" className="card p-5 mb-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-quiet t-label">Trade pricing</p>
+          <p className="text-ops mt-1 t-bd-sm">
+            {trade?.verified
+              ? `Verified${trade.provenance ? ` \u00b7 ${trade.provenance}` : ""}${trade.verifiedSince ? ` \u00b7 since ${trade.verifiedSince.slice(0, 10)}` : ""}`
+              : "Not on trade pricing"}
+          </p>
+          <p className="text-body mt-1 t-cap">
+            {d.customer.abn ? `ABN ${d.customer.abn}` : "No ABN on file"} \u00b7 account rate {rate}%
+          </p>
+        </div>
+        {trade?.verified && (
+          <button type="button" disabled={busy} onClick={() => void revoke()}
+            className="text-body border border-black/12 px-2.5 py-1.5 hover:border-sage hover:text-sage cursor-pointer disabled:opacity-50 t-cap">
+            Revoke trade pricing
+          </button>
+        )}
+      </div>
+
+      {error && <p className="text-red-600 mt-2 t-cap">{error}</p>}
+
+      {/* The decisions, with their reasons — ops-only detail. The customer's own
+          history outline carries dates and outcomes and nothing else. */}
+      {!!history.length && (
+        <div className="border-t border-black/[0.07] mt-3 pt-3 space-y-1">
+          {history.map((h) => (
+            <div key={h.id} className="flex flex-wrap justify-between gap-x-4 text-body t-cap">
+              <span>
+                {(h.decidedAt ?? h.createdAt ?? "").slice(0, 10)} \u00b7 {h.status}
+                {h.decidedVia ? ` (${h.decidedVia})` : ""}
+                {h.revokedAt ? ` \u00b7 revoked ${h.revokedAt.slice(0, 10)}` : ""}
+              </span>
+              <span className="text-quiet">{h.revokeReason || h.decisionReason || ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
