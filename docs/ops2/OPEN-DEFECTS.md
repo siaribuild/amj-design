@@ -27,6 +27,29 @@ Note the real endpoint gates download on scan state — `clean` serves, `quarant
 `scan_pending` 409s (register row 206) — so whatever the mock demonstrates must agree with
 that, not with a more generous fiction.
 
+**D3 — the header is a dashboard, not a toolbar.**
+Current shape is `< Projects / OF-Q-10482` + total on row 1, title on row 2, customer on
+row 3 — four pieces of information inside `IonHeader`, assembled as a bespoke CSS grid
+inside a standard component. The owner: *"header is messed up, isn't it: back button,
+title, project id, price - that is not how guidelines say it should be mobile, no?"* He is
+right, and it accreted from my own relayed requests rather than from a design decision.
+
+The convention — iOS HIG, Material, and Ionic's own `IonToolbar` structure — is one line:
+`IonButtons slot="start"` (back), `IonTitle`, `IonButtons slot="end"` (actions). A total is
+not an action. Ionic's sanctioned way to carry more is a **second `IonToolbar` inside the
+same `IonHeader`**, which also gives the money room to be read instead of squeezed into
+~80px. Rework to that, and stop composing bespoke grids inside standard components — that
+is the boundary rule being broken in the one place he keeps looking.
+
+**D4 — quantity: suppress the default, show the exception.**
+The owner believed qty is always 1 (*"remove qty from the lines - it's always 1 per line,
+actually"*). Checked against production `quote_line`: **283 lines at qty 1, four above it,
+max 6, of 287 total.** So the display is noise on 98.6% of rows and load-bearing on the
+rest — and those are the rows where an error is most expensive, since a 6x line read as 1x
+is a five-figure mistake. Render nothing when qty is 1; render it prominently when it is
+not. Do not remove the field. Fixture data should keep at least one multi-qty line so the
+case stays visible in the mock.
+
 ## Owner decisions still open
 
 1. **Is confirming delivery a gate on `Issue quote`?** The mock's blocked reason implies yes.
