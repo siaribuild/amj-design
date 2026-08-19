@@ -9,17 +9,19 @@
 // happened to want, and an AMJ67T lite beside an AMJ80 awning was the routine
 // outcome rather than the edge case.
 //
-// The fix is not a new ranker. It is the SAME ranker asked a bigger question:
-// which frame system should this opening be built from, given that every unit
-// must come out of it. So the loop is inverted —
+// The fix is not a new comparator. It is the SAME comparator asked a bigger
+// question: which frame system should this opening be built from, given that
+// every unit must come out of it. So the loop is inverted —
 //
 //     for each system that can supply every unit
 //         choose the best frame and glass for each unit WITHIN that system
 //         unify the glass across the units
-//         score the whole make-up: averaged thermal, summed price
-//     take the best make-up
+//         state the make-up as facts: averaged thermal deviation, summed price
+//     run the SAME ladder over the make-ups
 //
-// — and the six weighted components are rank.ts's own, aggregated by area.
+// — and this module declares no weight set of its own. That is AC-50: one
+// opening and the same opening split in two cannot disagree about which product
+// is better, because there is exactly one place a candidate is compared.
 //
 // ─── The three things it refuses to do ───────────────────────────────────────
 //
@@ -116,6 +118,10 @@ const MAX_GLASS_TRIALS = 3;
 
 interface MakeUp {
   system: string;
+  /** Position in the best-first covering order — how many units this system
+   *  supplies ITSELF rather than reaching a partner for. Carried so an exact
+   *  tie between two make-ups resolves on a real fact rather than an alphabet. */
+  coveringRank: number;
   glazingSlug: string | null;
   units: CompositeUnit[];
   scored: ScoredUnit[];
@@ -167,14 +173,14 @@ async function enumerateMakeUps(
 
   const combined = primary.map((p, i) => [...p, ...alternate[i]]);
   const makeUps: MakeUp[] = [];
-  for (const { slug: system } of covering) {
+  for (const [coveringRank, { slug: system }] of covering.entries()) {
     // The partners this system may reach through, resolved once. Without them a
     // unit the system cannot make itself is looked for in the wrong place: the
     // partner's product sits in the opening's own category, so asking only
     // "does THIS system have one here" sent the unit across the category
     // boundary and found nothing.
     const partners = new Set(partnersOf(combined, system).keys());
-    const first = await selectAll(system, partners, null, segments, primary, alternate, repo, priceFn, null);
+    const first = await selectAll(system, coveringRank, partners, null, segments, primary, alternate, repo, priceFn, null);
     if (!first) continue;
 
     // The glasses the units chose for themselves, largest area first. Trialling
@@ -202,7 +208,7 @@ async function enumerateMakeUps(
 
     let anyTrial = false;
     for (const glass of trials) {
-      const trial = await selectAll(system, partners, glass, segments, primary, alternate, repo, priceFn, first);
+      const trial = await selectAll(system, coveringRank, partners, glass, segments, primary, alternate, repo, priceFn, first);
       if (trial) { makeUps.push(trial); anyTrial = true; }
     }
     // Every unification failed — no glass this system offers can be carried
@@ -245,7 +251,14 @@ function choose(
       key: String(i),
       productSlug: lead?.candidate.slug ?? m.system,
       variantId: lead?.variant?.variantId ?? null,
-      splitKey: [m.system, m.glazingSlug ?? "-",
+      // The LAST tiebreak, reached only when tier, price and deviation are all
+      // equal — so it can never outrank anything the ladder actually judges on.
+      // It leads with the covering rank because `coveringSystems` already sorted
+      // best-first by how many units the system supplies ITSELF, and that is a
+      // real fact about the make-up; falling back to the system slug instead
+      // would hand an identical opening to whichever platform sorts earlier in
+      // the alphabet, which is the arbitrariness this tiebreak exists to avoid.
+      splitKey: [String(m.coveringRank).padStart(3, "0"), m.system, m.glazingSlug ?? "-",
         ...m.units.map((u) => u.result.selected?.candidate.slug ?? "?")].join("|"),
       excluded: false,
       // A make-up containing a unit that does not actually fit its segment is a
@@ -331,6 +344,7 @@ function sourceFor(
 
 async function selectAll(
   system: string,
+  coveringRank: number,
   partners: Set<string>,
   glazingSlug: string | null,
   segments: CompositeSegmentInput[],
@@ -387,7 +401,7 @@ async function selectAll(
     total = total == null || unitTotal == null ? null : total + unitTotal;
   }
 
-  return { system, glazingSlug, units, scored, total };
+  return { system, coveringRank, glazingSlug, units, scored, total };
 }
 
 /** Today's behaviour, unchanged, plus a warning that says so.

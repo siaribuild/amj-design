@@ -101,9 +101,14 @@ export function makeUpDeviation(
     widthMm: u.widthMm, heightMm: u.heightMm,
     uValue: u.variant?.uValue ?? null, shgc: u.variant?.shgc ?? null,
   }));
+  // compositeAveragedUw/Shgc skip the units they have no figure for, which is
+  // the right answer for a DISPLAY average and the wrong one for a judgement: an
+  // average over two of three lites is not this composite's Uw. Withhold the
+  // axis entirely instead, so the make-up reads unknown rather than flattering.
+  const complete = (f: (c: (typeof cells)[number]) => number | null) => cells.every((c) => f(c) != null);
   return deviationOf(requirement, {
-    uValue: compositeAveragedUw(cells),
-    shgc: compositeAveragedShgc(cells),
+    uValue: complete((c) => c.uValue) ? compositeAveragedUw(cells) : null,
+    shgc: complete((c) => c.shgc) ? compositeAveragedShgc(cells) : null,
   });
 }
 

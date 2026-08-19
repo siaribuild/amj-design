@@ -26,14 +26,15 @@ await build({
     contents: `
       export { selectForComposite } from ${p("worker/lib/estimator/compositeSelect.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
-      export { technologyAgreement, compositeCompliance } from ${p("worker/lib/estimator/compositeRank.ts")};
+      export { makeUpDeviation } from ${p("worker/lib/estimator/compositeRank.ts")};
+      export { resolvedRequirement } from ${p("worker/lib/estimator/rules.ts")};
       export { alternateCategoryFor } from ${p("worker/lib/estimator/estimate.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { selectForComposite, selectForOpening, technologyAgreement, compositeCompliance, alternateCategoryFor } =
+const { selectForComposite, selectForOpening, makeUpDeviation, resolvedRequirement, alternateCategoryFor } =
   await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
@@ -477,15 +478,13 @@ test("REGRESSION: report-banded units do not trigger the one-glass warning", asy
 
 // ── Frame technology: a preference, never a rule ─────────────────────────────
 
-test("technologyAgreement is the largest share by AREA, not by unit count", () => {
-  const u = (widthMm, frameTechnology) => ({ widthMm, heightMm: 2100, variant: { frameTechnology } });
-  assert.equal(technologyAgreement([u(600, "conventional"), u(600, "conventional")]), 1);
-  // Two small thermally-broken units beside one large conventional one: the
-  // conventional frame is most of the opening, so agreement is its share.
-  const mixed = technologyAgreement([u(600, "thermally_broken"), u(2000, "conventional"), u(600, "thermally_broken")]);
-  assert.ok(Math.abs(mixed - 2000 / 3200) < 1e-9, `${mixed}`);
-  assert.equal(technologyAgreement([u(600, "conventional")]), 1, "one unit always agrees with itself");
-});
+// AD4: `technologyAgreement` — the same-frame-technology preference, folded into
+// the configuration weight at a fifth of it — is deleted with the weights. A
+// cheapest-wins ladder has no channel a preference can arrive through, and the
+// owner's ruling was prefer, never require; D9 names the learned layer as the
+// home for contextual preferences like this one. Its test went with it; the test
+// below still proves a mixed-technology make-up is offered, which was the half
+// of the old behaviour that was actually load-bearing.
 
 test("a mixed-technology make-up is still selectable — prefer, never require", async () => {
   const products = [
@@ -503,21 +502,29 @@ test("a mixed-technology make-up is still selectable — prefer, never require",
 
 // ── The composite is judged as one thing ─────────────────────────────────────
 
-test("compliance reads the AREA-WEIGHTED composite against the opening's band", () => {
+test("AC-20 a make-up's deviation reads the AREA-WEIGHTED cell against the opening's band", () => {
   const cell = (widthMm, uValue) => ({
     opening: {}, candidate: null, variant: { uValue, shgc: 0.5, certified: true, frameTechnology: "conventional", variantId: "v", glazingOptionSlug: "v" },
     widthMm, heightMm: 2100, ownBand: false, total: 0,
   });
   const opening = { requirements: { maxUValue: 2.6 } };
+  const req = resolvedRequirement(opening);
   // Two 3.0 sashes and a 2.4 lite average to 2.625 — just outside a 2.6 band.
-  const near = compositeCompliance(opening, [cell(600, 3.0), cell(2000, 2.4), cell(600, 3.0)]);
+  const near = makeUpDeviation(opening, [cell(600, 3.0), cell(2000, 2.4), cell(600, 3.0)], req);
   // Widen the lite and the same three frames now sit inside it.
-  const inside = compositeCompliance(opening, [cell(300, 3.0), cell(2600, 2.4), cell(300, 3.0)]);
-  assert.equal(inside, 1, "an in-band composite scores a flat 1.0, as an in-band cell does");
-  assert.ok(near < 1 && near > 0, `a near miss is graded, not vetoed: ${near}`);
+  const inside = makeUpDeviation(opening, [cell(300, 3.0), cell(2600, 2.4), cell(300, 3.0)], req);
+  assert.equal(inside.scalar, 0, "an in-band composite deviates by nothing, as an in-band cell does");
+  assert.ok(near.scalar > 0 && near.scalar < 0.02, `a near miss is measured, not vetoed: ${near.scalar}`);
+  assert.equal(near.worstAxis, "uValue");
+  // The whole point of D8: the number is the miss over the requirement, so it is
+  // the SAME scale a single unit is tiered on and the same comparator reads it.
+  assert.equal(near.scalar, Math.round(((2.625 - 2.6) / 2.6) * 1e6) / 1e6);
+  // A2: a unit whose deviation cannot be measured makes the whole make-up
+  // unknown — a mean over an absent number is a fiction.
+  assert.equal(makeUpDeviation(opening, [cell(600, null), cell(2000, 2.4)], req).scalar, null);
 });
 
-test("per-unit bands are graded per unit, never averaged into one target", () => {
+test("AC-20 per-unit bands are measured per unit, never averaged into one target", () => {
   const cell = (widthMm, uValue, maxUValue) => ({
     opening: { requirements: { maxUValue } }, candidate: null,
     variant: { uValue, shgc: 0.5, certified: true, frameTechnology: "conventional", variantId: "v", glazingOptionSlug: "v" },
@@ -525,7 +532,8 @@ test("per-unit bands are graded per unit, never averaged into one target", () =>
   });
   // Each unit meets its OWN band. Averaged into one target (2.625 vs 2.6) it
   // would read as a miss — which is exactly the misjudgement being avoided.
-  const score = compositeCompliance({ requirements: { maxUValue: 2.6 } },
-    [cell(600, 3.0, 3.2), cell(2000, 2.4, 2.5), cell(600, 3.0, 3.2)]);
-  assert.equal(score, 1);
+  const opening = { requirements: { maxUValue: 2.6 } };
+  const d = makeUpDeviation(opening, [cell(600, 3.0, 3.2), cell(2000, 2.4, 2.5), cell(600, 3.0, 3.2)],
+    resolvedRequirement(opening));
+  assert.equal(d.scalar, 0);
 });

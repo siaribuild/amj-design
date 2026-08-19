@@ -596,19 +596,26 @@ test("selection ranks every eligible exact variant so finalized precedent can ch
       { ...awning.performanceVariants[0], variantId: "thermally-broken", uValue: 2.7, shgc: 0.42, frameTechnology: "thermally_broken" },
     ],
   }]);
-  const result = await selectForOpening(
-    { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200 },
-    repo,
-    async () => ({ ok: true, total: 1000, unit: 1000 }),
-    {
-      observations: 20,
-      version: "test",
-      scoreFor: (_candidate, _opening, exactVariant) =>
-        exactVariant?.variantId === "thermally-broken" ? 1 : 0,
-    },
-  );
-  assert.equal(result.evaluated.length, 2);
-  assert.equal(result.selected.selectedVariant.variantId, "thermally-broken");
+  const priceOf = { standard: 1000, "thermally-broken": 1400 };
+  const price = async (_c, _o, variant) => ({ ok: true, total: priceOf[variant.variantId], unit: priceOf[variant.variantId] });
+  const opening = { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200 };
+
+  // Every eligible EXACT variant is a candidate in its own right, so a band can
+  // change which glass wins without changing the product.
+  const noBand = await selectForOpening(opening, repo, price);
+  assert.equal(noBand.evaluated.length, 2);
+  assert.equal(noBand.selected.selectedVariant.variantId, "standard", "no band ⇒ cheapest glass");
+
+  // Tighten the requirement past the cheap glass and the dearer one is the only
+  // candidate that meets it — the ladder pays $400 to meet the brief (D2).
+  const banded = await selectForOpening({ ...opening, requirements: { maxUValue: 3.0 } }, repo, price);
+  assert.equal(banded.selected.selectedVariant.variantId, "thermally-broken");
+  assert.equal(banded.selected.candidateOutcome.tier, "meets");
+  const cheapMiss = banded.evaluated.find((e) => e.selectedVariant.variantId === "standard");
+  assert.equal(cheapMiss.candidateOutcome.tier, "misses");
+  assert.equal(cheapMiss.candidateOutcome.competing, false);
+  // AC-44's sign convention: the loser is $400 cheaper than the pick and loses.
+  assert.equal(cheapMiss.candidateOutcome.price.deltaToSelected, -400);
 });
 
 test("fixture CatalogueRepository filters by family + operation and stamps a version", async () => {
@@ -812,7 +819,8 @@ test("selection: picks a passing candidate, ranks it, never selects a rejected o
   assert.ok(res.selected, "a candidate was selected");
   assert.equal(res.selected.outcome.passed, true, "selected candidate passed the hard rules");
   assert.equal(res.status, "ready");
-  assert.equal(res.selected.rank, 1);
+  assert.equal(res.selected.candidateOutcome.rank, 1);
+  assert.equal(res.selected.candidateOutcome.tier, "meets");
   assert.match(res.catalogueVersion, /^cat:/);
 });
 
@@ -825,7 +833,14 @@ test("selection: an opening too big for the small unit selects the one that actu
   // The small unit is still evaluated (warned, indicative) but must NOT win when
   // a genuinely fitting product exists.
   const small = res.evaluated.find((e) => e.candidate.sanityProductId === "product-amj80-series-awning-window");
-  assert.equal(small.selected, false);
+  assert.equal(small.candidateOutcome.selected, false);
+  // D3: fit is HARD. The small unit does not serve this opening and was not the
+  // last resort (a fitting product exists), so it is excluded with the breach
+  // named — persisted and visible, never machine-selected.
+  assert.equal(small.candidateOutcome.tier, "excluded");
+  assert.deepEqual(small.candidateOutcome.exclusions, [
+    { constraint: "dimensions", detail: { breached: ["width"], limit: small.candidateOutcome.fit.limit } },
+  ]);
   assert.equal(small.outcome.status, "commercial_only_estimate");
 });
 
