@@ -331,11 +331,26 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
  *  orphaned one, and says so on the line. */
 export async function materialiseSelectedSplit(env: Env, pl: ProposalSelection): Promise<string[]> {
   const split = pl.result.selectedSplit;
-  if (!split) return [];
+  if (!split && !pl.result.splitNote) return [];
   const quoteLineId = pl.quoteLineId ?? (await env.DB.prepare(
     "SELECT quote_line_id FROM opening_instance WHERE id=?",
   ).bind(pl.openingId).first<{ quote_line_id: string | null }>())?.quote_line_id ?? null;
   if (!quoteLineId) return [];
+
+  // A MAKE-UP WAS TRIED AND NOTHING COULD SUPPLY IT.
+  //
+  // The reason belongs on the LINE, not only in the run summary: the AI upload
+  // pipeline drops `reviewWarnings`, so on the path a customer actually uses the
+  // sentence explaining why there is one oversize line instead of a composite
+  // reached nobody. The facts were persisted either way — `fits:false`,
+  // `review_required` — but a reviewer reading the line could not tell that a
+  // split had been considered at all, which is exactly the "dropped on the
+  // floor" failure the refused-split path above was fixed for.
+  if (!split) {
+    const note = `${pl.externalRef ?? "Opening"}: ${pl.result.splitNote}`;
+    await flagForReview(env, quoteLineId, note);
+    return [note];
+  }
 
   const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
     .bind(quoteLineId).first<{ options_json: string | null }>();

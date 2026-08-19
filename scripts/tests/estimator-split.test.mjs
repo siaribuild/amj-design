@@ -1022,3 +1022,43 @@ test("a split that WAS supplied carries no refusal note", async () => {
   assert.ok(r.splits.length);
   assert.equal(r.splitNote, null, "nothing to report when the make-up exists");
 });
+
+test("an unsuppliable split puts its reason ON THE LINE, not only in a run summary", async () => {
+  // The reviewer's only notice that a make-up was tried and nothing could
+  // supply it. It used to travel as prose on `reviewWarnings`, which the AI
+  // upload pipeline drops on the floor — so on the path a customer actually
+  // uses, the sentence explaining WHY there is one oversize line instead of a
+  // composite reached nobody. The facts survived (`fits:false`, review_required)
+  // but a reviewer reading the line could not tell a split had been considered.
+  const env = scriptedDb({
+    "SELECT options_json FROM quote_line": { options_json: "{}" },
+    "FROM composite_policy": { tolerance_mm: 5, default_joiner_mm: 0, max_segments: 6 },
+  });
+  const warnings = await materialiseSelectedSplit(env, {
+    openingId: "o1", quoteLineId: "ql1", externalRef: "W16",
+    opening: { widthMm: 3600 },
+    result: {
+      selectedSplit: null, splits: [],
+      splitNote: "No single frame system supplies every unit of this opening, so the units "
+        + "were chosen independently and may not couple — confirm the make-up at technical review.",
+    },
+  });
+
+  const flagged = env.writes.find((w) => /status='technical_review'/.test(w.sql));
+  assert.ok(flagged, "the line carries the refusal");
+  assert.equal(flagged.args[1], "ql1");
+  assert.match(JSON.parse(flagged.args[0]).composite, /single frame system/);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^W16: /);
+
+  // A run with nothing to say still writes nothing — the note is the trigger.
+  const quiet = scriptedDb({});
+  assert.deepEqual(
+    await materialiseSelectedSplit(quiet, {
+      openingId: "o1", quoteLineId: "ql1", externalRef: "W17",
+      opening: {}, result: { selectedSplit: null, splits: [], splitNote: null },
+    }),
+    [],
+  );
+  assert.deepEqual(quiet.writes, []);
+});
