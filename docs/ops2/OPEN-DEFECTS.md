@@ -16,6 +16,38 @@ wording because the reasoning is worth more than the status line.
 | D3 | bespoke CSS grid inside IonHeader | three IonToolbars, published slots only; header 190px, total at 17px |
 | D4 | quantity rendered | removed from view and fixtures; qtyPerParent untouched |
 
+### D5 — the wide layout lost the status row and the totals panel. INTRODUCED BY D3, FIXED.
+
+Not pre-existing: R1d's own D3 work created it, and the stop-gate caught it.
+
+Moving the waiting-on row out of the header was correct. Writing the move as
+`{!wide && stateRow}` was not — the gate was authored while thinking only about
+the phone header, and `listColumn` is shared by both branches, so at `desktop`
+and `wide` the row rendered nowhere. The same habit hit `{!wide && <Totals/>}`
+two lines away.
+
+Consequences, worst first:
+
+1. **The delivery confirm flow became unreachable at wide.** `Totals` carries the
+   delivery review row, so gating `Totals` removed the only route to a figure ops
+   must set before a quote can be issued — a flow designed two rounds earlier on
+   the owner's own reframing.
+2. **"Waiting on us / Technical review / 3 days" rendered nowhere at wide**, so
+   the answer to *does this need me* was missing from the desktop record.
+3. The goods/delivery/total breakdown vanished; only the grand total survived,
+   because `RecordSummaryBar` carries it in chrome.
+
+Fixed by removing the gates rather than by writing a desktop variant. `listColumn`
+IS the rail at 1024+, so both components land where they already belonged: the
+status row leads that column exactly as it leads the phone's content, and the
+totals panel sits beneath the list, which is the placement the owner approved.
+No new desktop design was needed or done.
+
+Audited for the same habit across the source: the only other `wide` branches are
+`App.tsx:60` (a route fork - record surface vs line plane) and `elevation.tsx:100`
+(the drawing's break-line for wide openings, an unrelated meaning of the word).
+Neither drops anything. Nothing else renders on narrow and nowhere else.
+
 ### Original wording
 
 **D1 — the record title truncates, and the spec claims it does not.**

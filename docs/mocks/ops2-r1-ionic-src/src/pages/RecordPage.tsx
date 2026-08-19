@@ -85,20 +85,31 @@ export function RecordPage() {
   /* D3 — the state row moves OUT of the header and leads the content. It is
      status, not navigation and not money, so it may scroll; keeping it in the
      header was what pushed a fourth band into chrome. It is still the first
-     thing read on arrival. */
+     thing read on arrival.
+
+     D5 — and it is NOT gated on width. R1d wrote `{!wide && stateRow}` while
+     thinking only about the phone header, which silently deleted the answer to
+     "does this need me?" from every wide layout. `listColumn` is the rail at
+     ≥1024, so the row leads that column exactly as it leads the phone's content
+     — the same placement, not a desktop variant of it. */
   const stateRow = <StateRow onOpenProgress={() => openBlock("progress")} />;
 
   const listColumn = segment === "lines" ? (
     <>
-      {!wide && stateRow}
+      {stateRow}
       <LineList lines={run} selectedId={selected?.id ?? null} dense={wide} onPick={pick} />
-      {!wide && <Totals onReviewDelivery={openDelivery} />}
+      {/* D5 — never gated. Totals carries the DELIVERY REVIEW ROW, so gating it
+          on width took the whole confirm flow off desktop: the one route to a
+          figure ops must set before a quote can be issued. It sits beneath the
+          line list here and beneath the rail's list at ≥1024 — the same place,
+          because "at the end of the list" is what he approved about it. */}
+      <Totals onReviewDelivery={openDelivery} />
     </>
   ) : (
     <>
-      {!wide && stateRow}
+      {stateRow}
       <ProjectBlocks current={wide ? block : undefined} onOpen={openBlock} />
-      {!wide && <Totals onReviewDelivery={openDelivery} />}
+      <Totals onReviewDelivery={openDelivery} />
     </>
   );
 

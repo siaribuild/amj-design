@@ -1097,6 +1097,27 @@ remaining `×` characters are dimension separators.
 The four production lines carrying 2/3/4/6 keep correct totals; only the
 multiplier goes unstated, and it disappears as those projects close.
 
+## 16.4b D5 — a regression D3 introduced, and the audit for its siblings
+
+Moving the waiting-on row out of the header (§16.1) was right; writing the move
+as `{!wide && stateRow}` was not. `listColumn` is shared by the narrow and wide
+branches, so the gate deleted the row from every wide layout — and the same
+habit two lines away deleted `Totals`, which **carries the delivery review row**
+and therefore took the whole confirm flow off desktop.
+
+Fixed by **removing the gates, not by adding a desktop variant**. `listColumn`
+is the rail at 1024 and above, so both land where they already belonged: the
+status row leads that column as it leads the phone's content, and the totals
+panel sits beneath the list — the placement the owner approved. Verified at 1440
+on both tabs: status row, totals and delivery review row all present in the rail,
+delivery plane reachable from it, no overflow. Narrow unchanged (header 190px,
+state row first in content).
+
+**Audit for the same habit.** The only other width branches in the source are
+`App.tsx:60` (route fork: record surface vs line plane) and `elevation.tsx:100`
+(the drawing's break-line for wide *openings* — an unrelated sense of the word).
+Neither drops anything, and nothing else renders on narrow and nowhere else.
+
 ## 16.5 Components — standard vs bespoke, after D3
 
 D3 **removed** the one real violation. The record surface now has no
