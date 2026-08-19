@@ -16,6 +16,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
@@ -565,4 +566,51 @@ test("AC-8 split combinability is HARD: a mixed-system make-up is never offered"
   // by — one comparator, one vocabulary (AC-50).
   assert.equal(r.totalCents, 300_000);
   assert.equal(r.deviation, 0, "no band to miss");
+});
+
+test("AC-50 the composite path declares no weight set and no second comparator", async () => {
+  // The criterion has two halves. The behavioural half — a segment prefers P
+  // over Q exactly as the same opening standalone would — is exercised by every
+  // test above, which drive selectForOpening inside selectForComposite. This is
+  // the INSPECTION half, and it is the one that catches a regression the
+  // behavioural tests would not: someone re-introducing a local comparison
+  // "just for composites", which is precisely how the deleted compositeRank
+  // came to reuse RANK_WEIGHTS and then diverge from it.
+  const source = async (rel) => (await readFile(join(projectRoot, rel), "utf8"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+
+  const select = await source("worker/lib/estimator/compositeSelect.ts");
+  const rank = await source("worker/lib/estimator/compositeRank.ts");
+
+  // ONE comparator, and it is imported rather than defined.
+  assert.match(select, /import\s*\{[^}]*\brunLadder\b[^}]*\}\s*from\s*"\.\/ladder"/,
+    "the composite path chooses through the shared ladder");
+  for (const [name, code] of [["compositeSelect", select], ["compositeRank", rank]]) {
+    assert.ok(!/function\s+compareCandidates|const\s+compareCandidates/.test(code),
+      `${name} defines a second comparator`);
+    // A `.sort()` whose comparator reads a PRICE or a DEVIATION is a ranking.
+    // Sorting by area to find the largest unit, or by covering rank, is not.
+    // Scanned by LINE rather than by a paren-matched body: an arrow comparator
+    // is full of nested parens (`(a, b) => (a.total ?? 0) - (b.total ?? 0)`) and
+    // a lazy `[^)]*` stops at the first one, which reads `(a, b` and finds
+    // nothing — a guard that passes for the wrong reason is worse than none.
+    for (const line of code.split("\n")) {
+      if (!line.includes(".sort(")) continue;
+      // Word boundaries, so the legitimate `[...m.scored].sort(by area)` — which
+      // finds the largest UNIT, not the best make-up — is not swept up by the
+      // substring "score" inside a variable name.
+      assert.ok(!/\b(price|priceCents|total|totalCents|cents|deviation)\b/i.test(line),
+        `${name} ranks candidates itself: ${line.trim()}`);
+    }
+    // And no weight set survives under any name.
+    assert.ok(!/WEIGHTS|\bweight\s*[:=]/i.test(code), `${name} declares a weight set`);
+  }
+
+  // The make-up is handed to the ladder as the SAME four facts a single unit is:
+  // tier inputs, not a precomputed opinion.
+  assert.match(select, /fits:/);
+  assert.match(select, /deviation:/);
+  assert.match(select, /priceCents:/);
+  assert.match(select, /thermalRequired:/);
 });
