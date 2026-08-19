@@ -56,8 +56,16 @@ export function TradeApplicationCard({
   /** Set only by an application this card made, so an auto-pass shows its
    *  outcome immediately rather than waiting on the parent's `me()` refetch. */
   const [outcome, setOutcome] = useState<"verified" | "under_review" | null>(null);
+  /** A VERIFIED account re-applying with a changed ABN (E-P2-6).
+   *
+   *  Disclosed rather than always open, and the distinction is the whole point:
+   *  a verified account's ABN must not sit on screen as an editable box
+   *  (AC-P2-11) — that is the shape P2-A4 exists to prevent, and the Worker
+   *  refuses the write anyway. But re-applying has to stay POSSIBLE, because an
+   *  ABN really does change. So the fact is displayed, and changing it is a
+   *  deliberate act behind an affordance rather than a text cursor. */
+  const [reapplying, setReapplying] = useState(false);
 
-  const verified = trade?.verified ?? false;
   const pending = trade?.pending ?? null;
   const digits = normalizeAbn(draft.abn);
   const abnLooksRight = abnValid(digits);
@@ -66,6 +74,11 @@ export function TradeApplicationCard({
   /** The most recent decided outcome, when there is no live state to show. Used
    *  ONLY to say "not active" plainly — never to explain why (rule 3). */
   const lastDecision = trade?.history?.length ? trade.history[trade.history.length - 1].outcome : null;
+
+  /** Holds trade pricing right now — either the server said so, or this card
+   *  just auto-passed and the parent's `me()` refetch has not landed yet. One
+   *  name for the condition so the panels cannot disagree about it mid-refresh. */
+  const isVerified = (trade?.verified ?? false) || outcome === "verified";
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
@@ -160,7 +173,7 @@ export function TradeApplicationCard({
   // ── Signed in. The two live facts render as their own blocks, in order.
   return (
     <div className="card p-6 space-y-5" data-testid="trade-application-card">
-      {(verified || outcome === "verified") && (
+      {isVerified && (
         <div className="space-y-2">
           <p className="font-semibold text-ink flex items-center gap-2">
             <WindowMark size={12} color={SAGE} />Trade pricing applies to your account
@@ -189,20 +202,29 @@ export function TradeApplicationCard({
 
       {/* A refusal costs nothing, and the screen says so plainly rather than
           reading as an error state (P2-UX-6). Never says why (rule 3). */}
-      {!verified && !pending && !outcome && lastDecision && lastDecision !== "approved" && (
+      {!isVerified && !pending && !outcome && lastDecision && lastDecision !== "approved" && (
         <p className="text-body t-bd-sm">
           Trade pricing isn't active on this account. Everything else works as normal, and you're
           welcome to apply again below.
         </p>
       )}
 
-      {/* The form: offered whenever there is no application in flight. A verified
-          account keeps it for a CHANGED ABN (E-P2-6) — and because a standing
-          grant plus a pending row is a representable state, applying does not
-          take the trade pricing away. */}
-      {!pending && outcome !== "under_review" && (
+      {/* A verified account's re-apply affordance, CLOSED by default: the ABN
+          above is a displayed fact, not an input. Because a standing grant plus a
+          pending row is a representable state, re-applying never takes the
+          existing trade pricing away while the new ABN is checked (E-P2-6). */}
+      {isVerified && !pending && outcome !== "under_review" && !reapplying && (
+        <button type="button" onClick={() => setReapplying(true)}
+          className="text-body hover:text-ink underline underline-offset-2 text-left cursor-pointer t-cap">
+          My ABN has changed
+        </button>
+      )}
+
+      {/* The form: offered when there is no application in flight, and — for a
+          verified account — only once re-applying has been asked for. */}
+      {!pending && outcome !== "under_review" && (!isVerified || reapplying) && (
         <div className="space-y-4">
-          {!verified && !outcome && (
+          {!isVerified && !outcome && (
             <div>
               <p className="font-semibold text-ink">Trade pricing</p>
               <p className="text-body mt-1 t-bd-sm">
@@ -211,12 +233,20 @@ export function TradeApplicationCard({
               </p>
             </div>
           )}
-          {verified && <p className="text-quiet t-label">Changed ABN?</p>}
+          {isVerified && <p className="text-quiet t-label">Your new ABN</p>}
           {fields}
-          <Btn variant="sage" size="md" onClick={() => void submit()} disabled={!canSubmit}>
-            {busy ? "Checking…" : "Check my ABN"}
-            {!busy && <Check className="w-4 h-4" />}
-          </Btn>
+          <div className="flex items-center gap-4">
+            <Btn variant="sage" size="md" onClick={() => void submit()} disabled={!canSubmit}>
+              {busy ? "Checking…" : "Check my ABN"}
+              {!busy && <Check className="w-4 h-4" />}
+            </Btn>
+            {isVerified && (
+              <button type="button" onClick={() => { setReapplying(false); setDraft(EMPTY); setError(""); }}
+                className="text-body hover:text-ink cursor-pointer t-bd-sm">
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
 

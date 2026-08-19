@@ -1336,17 +1336,15 @@ const PROFILE_FIELD_LABEL: Record<string, string> = {
   addressSuburb: "your suburb", addressState: "your state", addressPostcode: "your postcode",
 };
 
-function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean; embedded?: boolean }) {
+function ProfilePage({ user, setPage, setUser, authLoading, embedded, trade, onTradeChanged }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean; embedded?: boolean; trade: TradeStateDto | null; onTradeChanged: () => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [name, setName] = useState(user?.name ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
-  const [company, setCompany] = useState(user?.company ?? "");
-  const [abn, setAbn] = useState(user?.abn ?? "");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   useEffect(() => {
-    if (user) { setName(user.name); setPhone(user.phone); setCompany(user.company); setAbn(user.abn); }
+    if (user) { setName(user.name); setPhone(user.phone); }
   }, [user]);
   if (!user) { if (!authLoading) go("login"); return null; }
 
@@ -1356,7 +1354,11 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
     if (saving) return;
     setSaving(true); setSaveError("");
     try {
-      const r = await updateProfile({ name: name.trim(), phone: phone.trim(), company: company.trim(), abn: abn.trim() });
+      // `company` and `abn` are NOT in this patch any more: both are written by
+      // the trade application, which is the only path that can grant pricing.
+      // Sending them here would give the profile a second, unverified writer for
+      // the ABN — the exact shape P2-A4 exists to prevent.
+      const r = await updateProfile({ name: name.trim(), phone: phone.trim() });
       // The RAW name, and its display fallback recomputed from it. Binding the
       // fallback here is how a derived "j.smith92" used to become a stored one.
       setUser({
@@ -1401,10 +1403,23 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
           <div className="card p-5">
             <h3 className="font-semibold text-ink mb-1 t-bd-sm">Business details</h3>
             <p className="text-body mb-4 t-cap">Shown on your quotes and orders.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
-              <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
-            </div>
+            {/* WAS two free-text inputs (business name + ABN) saved with the rest
+                of the profile. Registration Phase 2 replaces them with the SAME
+                card `/trade-account` uses (door b, design §8.3): the ABN is no
+                longer a thing you type into your profile and press Save on — it
+                is a thing you APPLY with, because it now grants pricing.
+
+                That closes the P2-A4 swap at the UI as well as the server: a
+                verified account gets its ABN displayed, not offered as an
+                editable box. The Worker refuses the write too (`abn_locked`),
+                but a field that looks editable and then refuses the save is a
+                worse answer than a field that was never offered. */}
+            <TradeApplicationCard
+              user={user}
+              trade={trade}
+              source="profile"
+              onTradeChanged={onTradeChanged}
+            />
           </div>
         </div>
         {saveError && <p role="alert" className="text-red-700 flex items-center gap-1.5 t-bd-sm"><AlertCircle className="w-4 h-4" />{saveError}</p>}
@@ -1522,7 +1537,7 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT — the merged Profile + Settings destination (one page, two sections).
 // ═══════════════════════════════════════════════════════════════════════════════
-function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean }) {
+function AccountPage({ user, setPage, setUser, authLoading, trade, onTradeChanged }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean; trade: TradeStateDto | null; onTradeChanged: () => void }) {
   return (
     <div className="space-y-10">
       <header>
@@ -1531,7 +1546,7 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
       </header>
       <div>
         <h2 className="font-semibold text-ink mb-4 font-display t-bd-lg">Profile</h2>
-        <ProfilePage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} embedded />
+        <ProfilePage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} trade={trade} onTradeChanged={onTradeChanged} embedded />
       </div>
       <div className="border-t border-black/8 pt-8">
         <h2 className="font-semibold text-ink mb-4 font-display t-bd-lg">Settings</h2>
@@ -2185,7 +2200,7 @@ export default function App() {
       case "refer":            return <ReferPage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
-      case "account":          return inShell("account", <AccountPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />);
+      case "account":          return inShell("account", <AccountPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} trade={trade} onTradeChanged={refreshTrade} />);
       case "referrals":        return inShell("referrals", <ReferralsPage setPage={navigateTo} />);
       case "help":             return inShell("help", <HelpPage setPage={navigateTo} />);
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;

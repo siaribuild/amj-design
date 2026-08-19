@@ -202,3 +202,56 @@ test("a checksum-invalid ABN is refused in the browser, costing the register not
   expect(body.trade.pending, "no pending application from a malformed ABN").toBeNull();
   expect(body.trade.history, "and nothing in the ledger at all").toEqual([]);
 });
+
+// ─── 4. Door (b) — the account page is ABN's other home ──────────────────────
+// AC-P2-9/10/11. Door (b) runs the SAME verification as door (a) because it is
+// literally the same component, which is what makes "no behavioural difference
+// attributable to the entry point" structural rather than a coincidence.
+//
+// The load-bearing change: the ABN stops being a free-text profile input once
+// the account is verified. That is what closes the payout-path ABN swap at the
+// UI (P2-A4) — the server refuses it too, but a field that looks editable and
+// then refuses the save is a worse answer than a field that is not offered.
+test("the account page applies for trade pricing, and a verified ABN is not free text", async ({ page }) => {
+  const business = SPARE(2);
+  const email = emailAt(business.domain);
+
+  // Sign in cold through the trade page WITHOUT an ABN — an ordinary private
+  // account, exactly as Phase 1 shipped it.
+  await page.goto("/trade-account");
+  await otpSignIn(page, email);
+  // Anchor on a SIGNED-IN affordance. The card itself renders in both states, so
+  // waiting for it proves nothing and /account then bounces to /login — a
+  // failure that reads like a missing card rather than an unfinished sign-in.
+  await expect(page.getByTestId("trade-application-card").getByRole("button", { name: /check my abn/i }))
+    .toBeVisible({ timeout: 15_000 });
+
+  // SETUP, not an assertion: a brand-new account has no name, and Phase 1's name
+  // interstitial takes over every ACCOUNT route until one is given — so a cold
+  // trade signup reaches "What's your name?" before it ever reaches /account.
+  // That is correct Phase-1 behaviour (registration.spec.ts owns it) and it does
+  // NOT block the trade page, which is why journeys 1-3 render their outcome
+  // panels. Naming the account here gets this test to the surface it is about.
+  const named = await page.request.post("/api/auth/profile", { data: { name: "Sam Taylor" } });
+  expect(named.ok(), `name the account: ${await named.text()}`).toBeTruthy();
+
+  await page.goto("/account");
+  const card = page.getByTestId("trade-application-card");
+  await expect(card, "the account page carries the trade affordance (AC-P2-9)").toBeVisible();
+  await expectNoPercentage(page, "/account before applying");
+  await expectNoTradeLabelControl(page, "/account");
+
+  await card.getByLabel("Business name").fill(business.businessName);
+  await card.getByLabel("ABN").fill(business.abn);
+  await card.getByRole("button", { name: /check my abn/i }).click();
+
+  await expect(card.getByText(/trade pricing applies to your account/i)).toBeVisible({ timeout: 15_000 });
+  await expectNoPercentage(page, "/account when verified");
+
+  // Verified: the ABN is DISPLAYED, never offered as a free-text profile field.
+  await page.reload();
+  const verifiedCard = page.getByTestId("trade-application-card");
+  await expect(verifiedCard.getByText(/trade pricing applies to your account/i)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("textbox", { name: "ABN" }),
+    "a verified account is not given a free-text ABN box on the profile (AC-P2-11)").toHaveCount(0);
+});
