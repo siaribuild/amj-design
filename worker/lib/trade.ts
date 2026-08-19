@@ -671,12 +671,16 @@ export async function revokeTrade(
   // guards would still match the winner's row and it would run the dependent
   // writes while reporting `not_verified`.
   //
-  // Six random digits after the milliseconds make that unreachable. The value
-  // stays a lexicographically ordered timestamp string — history sorts on it and
-  // the UI slices the first ten characters for the date — so nothing downstream
-  // notices the extra precision.
-  const revokedAt = `${new Date().toISOString().replace("T", " ").slice(0, 23)}${
-    Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0")}`;
+  // A UUID, not a random suffix. Six random digits are 1,000,000 values and a
+  // probability argument, not a guarantee — and the thing being guarded is a
+  // call that refuses and writes anyway, which is not a failure worth pricing in
+  // odds. `uuid()` is the same collision-resistant source the application ids
+  // use.
+  //
+  // The timestamp PREFIX is kept so the column stays a lexicographically ordered
+  // timestamp string: history sorts on it and the console slices the first ten
+  // characters for the date, so nothing downstream notices the suffix.
+  const revokedAt = `${new Date().toISOString().replace("T", " ").slice(0, 23)}#${uuid()}`;
 
   const [claim] = await env.DB.batch([
     env.DB.prepare(
