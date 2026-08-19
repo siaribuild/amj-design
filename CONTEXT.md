@@ -47,6 +47,18 @@ _Avoid_: revision, draft quote, estimate (the estimator is a different concept)
 One configured opening (window/door) on a project: product, dimensions, options, quantity, price. A quote line becomes an order line after acceptance without changing identity.
 _Avoid_: item, row, position
 
+**Unit**:
+One physical frame inside a composite line — a real product that gets made and delivered, sharing an opening with its siblings. Referenced from its parent's code (W1 → W1A, W1B). Carries its own product, options and note; never its own price — the parent's total is the sum of its units'.
+_Avoid_: segment (the code artefact's name), sub-line, child item
+
+**Composite line**:
+A line built as joined units. The parent is the schedule line, not a product: it owns the code, the overall size and the total; the units own the specifications. Its product cell derives a noun from the units rather than naming one of them.
+_Avoid_: assembly, split line (the split is the decision, not the thing)
+
+**Split**:
+The decision of how many units a composite line is built from, and where the joins fall. An ops power, never a customer one — a customer may change what a unit is, never how many there are.
+_Avoid_: divide, break up
+
 **Price override**:
 An ops-set price on a line that replaces its computed price. The override is the fact; the computed price remains derivable.
 
@@ -84,6 +96,16 @@ _Avoid_: screen, page, view (none imply the stack)
 One of the five presentation tiers (phone, tabletp, compact, desktop, wide) resolved from
 measured width, moment to moment — never from device class.
 _Avoid_: breakpoint (implies viewport media queries), device type
+
+### The platform seam
+
+**Line core**:
+The shared body of line facts — types, predicates, label derivations, arithmetic, DTO adapters — consumed by both skins. The admission test: if the two skins could legitimately disagree about it, it is not core (ADR 0006).
+_Avoid_: shared components (components are skin, with two named SVG exceptions), common library
+
+**Skin**:
+One audience's presentation of the line core — rendering, chrome, interaction, and the judgement of which facts to show how prominently. The customer app and ops2 are the two skins; unifying the core never licenses merging the skins.
+_Avoid_: face, theme (a skin includes behaviour and judgement, not just look)
 
 ### Catalogue
 

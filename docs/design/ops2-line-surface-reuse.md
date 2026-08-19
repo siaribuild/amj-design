@@ -1,7 +1,11 @@
 # ops2 line surface — what the quote builder can lend, honestly
 
-Author: architect · Date: 2026-08-20 · Status: **investigation** (no design, no mock
-changes; the owner chooses a strategy). Referenced by `docs/ops2/OPEN-DEFECTS.md` R6.
+Author: architect · Date: 2026-08-20 · Status: **decided** — the owner chose Strategy C,
+scoped as a shared core with two thin skins; the binding record is
+**ADR 0006** (`docs/adr/0006-line-surface-shared-core-two-skins.md`), which carries the
+core admission rule, the hard-case rulings and the extraction plan. B and C are the same
+road: share by import now, extract when the dev lines merge. This document remains the
+investigation the decision was made on. Referenced by `docs/ops2/OPEN-DEFECTS.md` R6.
 
 All customer-side citations are from `feat/referral-program` (read via `git show`, never
 checked out). Mock citations are from `docs/mocks/ops2-r1-ionic-src/` on this branch.
