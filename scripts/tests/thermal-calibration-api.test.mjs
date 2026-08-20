@@ -296,6 +296,99 @@ test("thermal calibration endpoint, the dial, and the migration", { timeout: 240
       assert.deepEqual(second.basisCounts, first.basisCounts,
         "the basis counts share the source, so they need the same deduplication");
     });
+    // ── …and the other direction, which is the dangerous one ────────────────
+    // Deduplicating to the newest building model assumed the newest model is a
+    // complete reading. It is not. When the energy-report skill fails, the
+    // report block is skipped entirely, `applyDefaultEnvelope` computes a band
+    // for every opening, a model IS persisted, and the run finishes `partial`
+    // (worker/lib/ai/pipeline.ts:678, :1001). A model also survives a run that
+    // dies AFTER it is written — the batch commits at :897, `runProjectEstimate`
+    // runs at :987 — and a crashed worker leaves the run at `running` forever.
+    //
+    // So a newest-model rule silently DELETES real report demand and leaves a
+    // smaller, confident-looking number, on the one instrument whose purpose is
+    // telling the owner what real reports demanded. Over-counting was visible
+    // and suspicious; this would not be.
+    //
+    // `ai_runs.status` is the signal, and it is the only honest one available:
+    // `building_models.status` is written 'draft' and never updated by anything
+    // in the tree, so completeness cannot be read off the model, and inferring
+    // it from the model's CONTENTS is what makes a deleted report look like a
+    // failure. Three properties, because they only pin the contract together.
+    await t.test("a partial reprocessing run does not delete report-derived demand", async () => {
+      const owner = new Session(baseUrl);
+      await login(owner, "/api/auth", "thermal.partial@example.com");
+      await completeAccount(owner, { addressLine1: "4 Partial Place" });
+      await requestJson(owner, "/api/projects/current/lines",
+        { method: "PUT", json: { title: "Partially reprocessed job", items: [aLine()] } });
+      const { body: project } = await requestJson(owner, "/api/projects/current");
+      const projectId = project.project.id;
+
+      /** One pipeline pass: a run of a given status, the model it persisted, and
+       *  the requirement rows that model carried. */
+      const extractionRun = async (id, { projectId: forProject, status, createdAt, rows }) => {
+        await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version, status)
+                   VALUES ('run_${id}', '${forProject}', 'test', '${status}')`);
+        await sql(`INSERT INTO building_models
+                     (id, project_id, ai_run_id, schema_version, status, model_json, confidence_json, created_at)
+                   VALUES ('bm_${id}', '${forProject}', 'run_${id}', 'building-model/1.0', 'draft', '{}', '{}', '${createdAt}')`);
+        for (const [ref, basis, maxU] of rows) {
+          await sql(`INSERT INTO opening_requirements
+                       (id, project_id, building_model_id, external_ref, requirement_basis,
+                        max_u_value, confidence_json, requirement_json)
+                     VALUES ('bm_${id}_${ref}', '${forProject}', 'bm_${id}', '${ref}', '${basis}', ${maxU}, '{}', '{}')`);
+        }
+      };
+      const REPORTED = [["W01", "explicit_energy_report", 2.1], ["W02", "explicit_energy_report", 2.3]];
+      const COMPUTED = [["W01", "default_envelope", 3.4], ["W02", "default_envelope", 3.4]];
+
+      // A good run: the report was read, and two openings demanded a band.
+      await extractionRun("ok", { projectId, status: "completed", createdAt: "2026-08-20 11:00:00", rows: REPORTED });
+      const { body: afterGoodRun } = await requestJson(staff, CALIBRATION);
+
+      // The same project, reprocessed — and this time the energy-report skill
+      // failed. The schedule still parsed, the envelope stage still computed a
+      // default band for every opening, and the model was persisted anyway.
+      await extractionRun("degraded", { projectId, status: "partial", createdAt: "2026-08-20 12:00:00", rows: COMPUTED });
+      const { body: afterPartialRun } = await requestJson(staff, CALIBRATION);
+      assert.deepEqual(afterPartialRun.reportRows, afterGoodRun.reportRows,
+        "a run that could not READ the report has no opinion about what the report demanded");
+      assert.equal(afterPartialRun.basisCounts.explicit_energy_report,
+        afterGoodRun.basisCounts.explicit_energy_report,
+        "and the basis counts, which share the source, keep the same evidence");
+
+      // Deliberate: a project that has NEVER completed a run still counts. It
+      // has no better reading available, and dropping it would take it out of
+      // the evidence floor without saying so — the same silent deletion by
+      // another route.
+      const newcomer = new Session(baseUrl);
+      await login(newcomer, "/api/auth", "thermal.neverclean@example.com");
+      await completeAccount(newcomer, { addressLine1: "5 Newcomer Way" });
+      await requestJson(newcomer, "/api/projects/current/lines",
+        { method: "PUT", json: { title: "Never cleanly processed", items: [aLine()] } });
+      const { body: second } = await requestJson(newcomer, "/api/projects/current");
+      await extractionRun("onlypartial", {
+        projectId: second.project.id, status: "partial", createdAt: "2026-08-20 13:00:00",
+        rows: [["W09", "explicit_energy_report", 2.0]],
+      });
+      const { body: afterNewcomer } = await requestJson(staff, CALIBRATION);
+      assert.equal(afterNewcomer.reportRows.openings, afterPartialRun.reportRows.openings + 1,
+        "its one reported opening is counted — a best-available reading, not nothing");
+      assert.equal(afterNewcomer.reportRows.distinctProjects, afterPartialRun.reportRows.distinctProjects + 1,
+        "and it appears in the evidence floor rather than silently dropping out");
+
+      // …and staleness is NOT pinned forever. When the customer deletes the
+      // energy report and reprocesses, that run COMPLETES — no skill failed,
+      // there was simply nothing to read — so it becomes the current reading and
+      // the demand legitimately goes away. This is the case a contents-based
+      // rule gets wrong, and it is why the signal is the run's status.
+      await extractionRun("reportremoved", {
+        projectId, status: "completed", createdAt: "2026-08-20 14:00:00", rows: COMPUTED,
+      });
+      const { body: afterRemoval } = await requestJson(staff, CALIBRATION);
+      assert.equal(afterRemoval.reportRows.openings, afterNewcomer.reportRows.openings - 2,
+        "a completed run that sees no report retires the demand it used to carry");
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

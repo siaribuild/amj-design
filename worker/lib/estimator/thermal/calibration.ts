@@ -231,10 +231,9 @@ const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "rev": _rev, "rows": r
  *  answer once a rerun changes what was extracted:
  *
  *    - Every run rebuilds the model from ALL of the project's current files
- *      (`ingestProjectFiles(projectId)`), so the newest model is the complete
- *      current reading, never a partial one. There is nothing to lose by
- *      dropping the older models, and a corrected Uw REPLACES the misread one
- *      instead of being averaged with it.
+ *      (`ingestProjectFiles(projectId)`), so a run that completed is the whole
+ *      current reading and a corrected Uw REPLACES the misread one instead of
+ *      being averaged with it.
  *    - Deduping by opening ref would need its own tiebreak anyway ("which run's
  *      value for W04?"), and it would keep openings a corrected extraction no
  *      longer contains — reporting demand that no current report makes.
@@ -244,16 +243,50 @@ const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "rev": _rev, "rows": r
  *  A parent frame and its thermal children are distinct rows under one model and
  *  are meant to count separately, which is a second reason not to collapse refs.
  *
- *  `created_at` orders the runs; `rowid` breaks the tie when two land inside the
- *  same second. No identifier is selected out of this — the CTE exists only to
- *  be joined against. */
+ *  THE NEWEST MODEL IS NOT NECESSARILY A COMPLETE ONE, and taking it on faith
+ *  traded over-counting for something worse. When the energy-report skill fails
+ *  the report block is skipped whole, `applyDefaultEnvelope` computes a band for
+ *  every opening, a model is persisted regardless, and the run finishes `partial`
+ *  (pipeline.ts:678, :1001). A model also outlives a run that dies after the
+ *  batch commits at :897, and a crashed worker leaves its run at `running`
+ *  forever. Any of those would have REPLACED a good reading with one that had
+ *  lost the report — deleting real demand and leaving a smaller, confident number
+ *  on the instrument that exists to say what real reports demanded. Inflation is
+ *  at least visible; this would not be.
+ *
+ *  So: THE NEWEST MODEL FROM A `completed` RUN, and only when a project has never
+ *  completed one does its newest model of any status answer. `ai_runs.status` is
+ *  the signal because it is the only honest one — `building_models.status` is
+ *  written 'draft' and never updated by anything in this tree, and inferring
+ *  completeness from the model's CONTENTS is precisely what cannot distinguish
+ *  "the report failed to parse" from "the customer deleted the report". That
+ *  distinction is the whole point: a reprocess with the report removed COMPLETES
+ *  (nothing failed, there was simply nothing to read), so it becomes current and
+ *  the demand retires. Stale demand is never pinned forever.
+ *
+ *  Two consequences, both deliberate:
+ *    - A project whose runs have all been partial since its last good one keeps
+ *      answering from that good one, however old. Stale-but-real beats
+ *      fresh-but-blank on an evidence axis: a run that could not READ a report
+ *      has no opinion about what the report demanded.
+ *    - A project that has NEVER completed a run still counts, from its newest
+ *      model. It has no better reading available, and excluding it would drop it
+ *      out of `distinctProjects` and the evidence floor without saying so — the
+ *      same silent deletion by another route.
+ *
+ *  `(r.status = 'completed') DESC` is SQLite's 1/0, so completed runs sort ahead
+ *  of every other status and the fallback needs no second statement. `created_at`
+ *  orders within that; `rowid` breaks the tie when two land inside the same
+ *  second. `ai_run_id` is NOT NULL, so the join drops nothing. No identifier is
+ *  selected out of this — the CTE exists only to be joined against. */
 const CURRENT_MODEL = `
   WITH current_model AS (
     SELECT bm.id AS id
       FROM building_models bm
      WHERE bm.id = (SELECT b.id FROM building_models b
+                      JOIN ai_runs r ON r.id = b.ai_run_id
                      WHERE b.project_id = bm.project_id
-                     ORDER BY b.created_at DESC, b.rowid DESC
+                     ORDER BY (r.status = 'completed') DESC, b.created_at DESC, b.rowid DESC
                      LIMIT 1)
   )`;
 
