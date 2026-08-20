@@ -274,21 +274,37 @@ const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "rev": _rev, "rows": r
  *      out of `distinctProjects` and the evidence floor without saying so — the
  *      same silent deletion by another route.
  *
- *  `(r.status = 'completed') DESC` is SQLite's 1/0, so completed runs sort ahead
+ *  `(ar.status = 'completed') DESC` is SQLite's 1/0, so completed runs sort ahead
  *  of every other status and the fallback needs no second statement. `created_at`
  *  orders within that; `rowid` breaks the tie when two land inside the same
- *  second. `ai_run_id` is NOT NULL, so the join drops nothing. No identifier is
- *  selected out of this — the CTE exists only to be joined against. */
+ *  second. `ai_run_id` is NOT NULL, so the join drops nothing.
+ *
+ *  RANKED ONCE PER PROJECT, which is a property of the query's SHAPE rather than
+ *  its answer. Written as a correlated scalar subquery (`WHERE bm.id = (SELECT …
+ *  LIMIT 1)`) this gets flattened into whatever consumes it, so SQLite re-sorts a
+ *  project's entire model history for every `opening_requirements` row it
+ *  considers, and both axis-1 aggregates pay it — runtime growing with
+ *  requirements × models. That is the wrong direction for this query in
+ *  particular: requirements are insert-only and never pruned, and models
+ *  accumulate one per run, so BOTH factors only ever climb and the deduplication
+ *  written to survive many extraction runs would degrade fastest exactly where it
+ *  earns its keep. One window pass is O(models) however many requirement rows
+ *  join to it.
+ *
+ *  No identifier is selected out of this — `project_id` is a PARTITION key, never
+ *  a returned column, and `current_model` narrows to the id the aggregates join
+ *  against. */
 const CURRENT_MODEL = `
-  WITH current_model AS (
-    SELECT bm.id AS id
-      FROM building_models bm
-     WHERE bm.id = (SELECT b.id FROM building_models b
-                      JOIN ai_runs r ON r.id = b.ai_run_id
-                     WHERE b.project_id = bm.project_id
-                     ORDER BY (r.status = 'completed') DESC, b.created_at DESC, b.rowid DESC
-                     LIMIT 1)
-  )`;
+  WITH model_rank AS (
+    SELECT b.id AS id,
+           ROW_NUMBER() OVER (
+             PARTITION BY b.project_id
+             ORDER BY (ar.status = 'completed') DESC, b.created_at DESC, b.rowid DESC
+           ) AS rn
+      FROM building_models b
+      JOIN ai_runs ar ON ar.id = b.ai_run_id
+  ),
+  current_model AS (SELECT id FROM model_rank WHERE rn = 1)`;
 
 export async function readCalibration(env: Env, executor?: QueryExecutor): Promise<CalibrationReport> {
   const exec = executor ?? sanityExecutor(env);

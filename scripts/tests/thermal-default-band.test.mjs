@@ -329,16 +329,70 @@ test("TB-19: readCalibration prepares SELECTs only, and never asks for a project
   }
   // The aggregate is deliberately unscoped ACROSS accounts — that is its purpose
   // — so the guard moves to the output: project_id never leaves SQL. It may be
-  // JOINED and FILTERED on (the run-deduplication CTE does both); what it may
-  // never do is appear in a projection, other than inside a COUNT(DISTINCT …).
+  // JOINED on, FILTERED on, COUNTed DISTINCT, and PARTITIONed by — the
+  // run-deduplication CTE does all four. What it may never be is a column the
+  // statement RETURNS, which is the only way an identifier could reach a payload.
+  //
+  // So the two constructs that consume it as a key rather than yield it as data
+  // are removed before the check. A bare `project_id` anywhere else in a
+  // projection — including beside a window that legitimately partitions by it —
+  // still fails.
+  const asKeyNotData = (projection) => projection
+    .replace(/COUNT\(\s*DISTINCT\s+[\w.]*project_id\s*\)/gi, "")
+    .replace(/OVER\s*\((?:[^()]|\([^()]*\))*\)/gi, "");
   const projections = prepared.flatMap((sql) =>
     [...sql.matchAll(/\bSELECT\b([\s\S]*?)\bFROM\b/gi)].map((match) => match[1]));
-  const leaking = projections.filter((projection) =>
-    /project_id/i.test(projection.replace(/COUNT\(\s*DISTINCT\s+[\w.]*project_id\s*\)/gi, "")));
-  assert.deepEqual(leaking, [], "project_id is selected only inside a COUNT(DISTINCT …)");
+  const leaking = projections.filter((projection) => /project_id/i.test(asKeyNotData(projection)));
+  assert.deepEqual(leaking, [], "project_id is never a returned column");
+  // …and the strip is not a blanket exemption: a projection that returned the id
+  // outright would still be caught, window clause or no window clause.
+  assert.match(asKeyNotData("p.project_id, ROW_NUMBER() OVER (PARTITION BY p.project_id)"), /project_id/,
+    "a genuinely selected project_id survives the strip and would fail the check");
   assert.equal(groq.every((q) => /^\s*\*\[/.test(q)), true, "the catalogue is queried, never mutated");
   assert.equal(report.basisCounts.explicit_energy_report, 3);
   assert.equal(report.candidateCaps.length > 0, true);
+});
+
+// ── The shape of the deduplication, not just its answer ─────────────────────
+// The current model is resolved ONCE PER PROJECT, never once per requirement
+// row. A correlated scalar subquery (`WHERE bm.id = (SELECT … LIMIT 1)`) gets
+// flattened into the consumer by SQLite, so it re-sorts that project's whole
+// model history for every `opening_requirements` row it considers — and both
+// axis-1 aggregates pay it. Runtime then grows with requirements × models, which
+// is the wrong direction for this particular query: `opening_requirements` is
+// insert-only and never pruned, so BOTH factors only ever climb, and the query
+// written to survive many extraction runs would degrade fastest exactly where it
+// was needed. Ranking once per project is O(models) regardless of how many
+// requirement rows join to it.
+test("axis 1 resolves the current model once per project, not once per requirement row", async () => {
+  const prepared = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        prepared.push(sql);
+        return {
+          bind: () => ({ all: async () => ({ results: [] }) }),
+          all: async () => ({ results: [] }),
+          first: async () => ({ openings: 0, projects: 0, minU: null, maxU: null, meanU: null }),
+        };
+      },
+    },
+    SANITY_PROJECT_ID: "",
+  };
+  await readCalibration(env, async () => []);
+  const overModels = prepared.filter((sql) => /building_models/i.test(sql));
+  assert.equal(overModels.length, 2, "both axis-1 aggregates read the model history");
+  for (const sql of overModels) {
+    assert.match(sql, /ROW_NUMBER\(\)\s*OVER\s*\(\s*PARTITION BY\s+[\w.]*project_id/i,
+      "the model history is ranked once per project");
+    assert.doesNotMatch(sql, /=\s*\(\s*SELECT/i,
+      "no correlated scalar subquery — that is the per-row shape this replaces");
+    // The ranking that round 2 established has to survive the rewrite verbatim:
+    // a completed run wins, the newest of those wins, and rowid breaks a
+    // same-second tie deterministically.
+    assert.match(sql, /ORDER BY\s*\(\s*[\w.]*status\s*=\s*'completed'\s*\)\s*DESC\s*,\s*[\w.]*created_at DESC\s*,\s*[\w.]*rowid DESC/i,
+      "the completed-first, newest-next, rowid-tiebreak ordering is intact");
+  }
 });
 
 // ── AB-3, static leg: the dial has no HTTP write surface at all ──────────────
