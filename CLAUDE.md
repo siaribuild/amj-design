@@ -18,7 +18,23 @@ For substantive work — a new capability, schema change, or anything spanning m
 
 Pass each agent the previous agent's output. Steps 7–8 findings go back through the developer loop like any review.
 
-**Cross-cutting — Codex external review (not a stage by design):** the Codex stop-gate reviews every code-changing turn before it may end, automatically. Because turns end at each decision gate, the mock gate, and completion, a full-pipeline feature gets externally reviewed segment by segment as work lands — not once at the end. Its BLOCK findings route to the developer (see Review loops); it runs read-only and its verdict is independent of every agent above. Nothing in the pipeline needs to invoke it, and nothing in the pipeline can skip it.
+**Cross-cutting — Codex external review. THE STOP-GATE DOES NOT COVER ORCHESTRATED WORK. You must invoke it explicitly.**
+
+The stop-gate inspects **the main agent's turn**. When the orchestrator delegates implementation to subagents — which is what this pipeline does — the main turn contains no edits, so the gate allows, correctly by its own logic, having reviewed nothing.
+
+Measured on 2026-08-20: **50 stop-gate jobs, 50 ALLOWs, zero files read.** Every one passed on *"the previous Claude turn made no direct code changes."* Two features totalling ~12,400 lines — the recommendation-model redesign and the thermal model — reached production with no external review at all. Run afterwards, the review found three real defects, one of them a cross-project data-integrity hole in a staff route and one that had already inflated a production statistic 7.5×.
+
+**So the orchestrator MUST run an explicit review at the end of every feature, before PM acceptance:**
+
+```bash
+node "$CLAUDE_PLUGIN_ROOT/scripts/codex-companion.mjs" review --wait --base <feature-base-ref> --scope branch
+```
+
+(or `/codex:review --wait --base <ref> --scope branch` when a human is driving). Review each feature's diff separately — a combined review of two features skims. Findings route to the developer like any other review, test-first.
+
+**And check the gate is FINDING things, not merely switched on.** Confirming `stopReviewGate: true` at session start proves nothing; the jobs under `~/.claude/plugins/data/codex-inline/state/<workspace>/jobs/` record what each run actually inspected. A gate that is enabled and reviews nothing is worse than one that is off, because it leaves a record of review that never happened.
+
+Its verdict remains independent of every agent above, and it runs read-only.
 
 ### Oversized efforts: wayfinder first
 
@@ -80,13 +96,13 @@ A spawn costs a full context rebuild: the new agent re-discovers what the orches
 ## Enforced guardrails (don't fight them)
 
 - **TDD (Probity):** writes to `worker/**`, `src/data/**`, and `scripts/tests/**` are blocked unless recent session history shows a failing test the write addresses. Work red → green → refactor. Scope lives in `probity.config.ts`.
-- **Codex stop-gate:** when a turn changed code, a Codex review runs before the turn may end; address its findings rather than bypassing.
+- **Codex stop-gate:** fires when the MAIN turn changed code — which orchestrated work does not. It is not a substitute for the explicit end-of-feature review above; treat it as a backstop for direct edits only, and address any findings rather than bypassing.
 - **Codex infrastructure failure ≠ review findings.** If the gate blocks with a *task failure* (network, service outage, auth, quota, timeout) rather than actual findings: retry once, and if it fails again, stop and tell the user plainly — the work is done but unreviewed, and the options are (a) wait and run `/codex:review --wait` later, (b) temporarily disable the gate with `/codex:setup --disable-review-gate` and re-enable after, or (c) user pressing Esc to end the turn. Never grind retries against a dead service, and never present unreviewed work as reviewed. If the gate *silently skips* because the Codex CLI is missing (that path fails open), flag the missing review to the user rather than letting it pass unmentioned.
 - **Security — defence in depth, starting at design.** This product holds financial PII (payout/bank details, ABNs) and customer pricing data, with payments on the roadmap; security is a design input, not a review afterthought. The layers, in order of when they bite:
   1. **Design-time (architect):** every design touching sensitive data, auth, uploads, money, or sessions must carry a Security section — data classification, trust boundaries, per-endpoint authorization with the exact account-scoping filter, abuse cases. "Security: no sensitive surface" must be stated explicitly when it's true.
   2. **Spec-time (product-manager):** sensitive features get negative Given–When–Then abuse-case criteria; the tester executes them for real (attempts the forbidden action, records the denial).
   3. **Always-on (security-guidance plugin):** pattern warnings on edits + LLM security diff-review on Stop.
-  4. **Every code-changing turn:** the Codex stop-gate.
+  4. **Every feature, explicitly invoked:** the Codex review over that feature's diff (the stop-gate alone does not see subagent work — see the cross-cutting note above).
   5. **Stage gate:** for auth/upload/payment/PII-touching features, the orchestrator runs the `security-review` skill on the branch before PM acceptance; findings route to the developer.
   6. **Deterministic sweep (CI):** `.github/workflows/security-sweep.yml` runs the Semgrep OSS engine (registry rules, logged out, telemetry off) on every push — fails on ERROR-severity findings. Delete the file to remove the layer; nothing depends on it.
   7. **Deep scan (on demand):** the `claude-security` plugin (`/claude-security` → scan changes / scan codebase / suggest patches — findings adversarially verified before reporting). Run "scan changes" before merging any sensitive-surface feature; "scan codebase" at milestones.
