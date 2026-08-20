@@ -349,7 +349,18 @@ export function requirementSnapshot(
     opening: opening.externalRef,
     thermal: requirement,
     archetype: computed && archetype ? archetype : undefined,
-    defaultBand: computed ? dial : undefined,
+    // A PROJECTION of the dial record, not the record. TB-15 needs the value,
+    // the method, the citation and the date; `setBy` is a staff identity (an
+    // Access email) and `observations` is internal corpus bookkeeping, and a
+    // per-opening row on a customer's project has no business carrying either.
+    // Nothing reads `requirement_json` today, which is exactly why this is
+    // cheaper to prevent now than to remember when something does.
+    defaultBand: computed
+      ? {
+          version: dial.version, maxUValue: dial.maxUValue, method: dial.method,
+          source: dial.source, derivedAt: dial.derivedAt, interim: dial.interim,
+        }
+      : undefined,
   };
 }
 

@@ -32,10 +32,13 @@ const {
   computeCalibration, readCalibration, CALIBRATION_PROJECT_FLOOR, zoneCapValues,
 } = await import(pathToFileURL(outfile).href);
 
-// A dial fixture that is NOT today's value (TB-18): every calibration assertion
-// below reads this record.
+// A dial fixture that is deliberately NOT today's value (TB-18): every
+// calibration assertion below reads this record, so a test that had quietly
+// pinned the business default instead would fail here rather than pass by
+// coincidence. 4.4 sits in the same interval of the catalogue fixture as today's
+// value, so it changes no arithmetic — only what the arithmetic is read from.
 const activeDefault = (over = {}) => ({
-  version: "row:3", maxUValue: 4.0, method: "manual", source: "fixture record",
+  version: "row:3", maxUValue: 4.4, method: "manual", source: "fixture record",
   derivedAt: "2026-08-20", observations: null, setBy: "test", interim: false, ...over,
 });
 const calibrationInput = (over = {}) => ({
@@ -129,7 +132,7 @@ test("TB-22: calibration reports demand beside assertion", () => {
 // hand-picked list would be a fresh set of magic numbers, which is the thing
 // this whole feature is removing.
 test("TB-25: candidate caps are exactly active ∪ zone values ∪ report min/mean/max, deduped and sorted", () => {
-  const active = activeDefault({ maxUValue: 4.0 });
+  const active = activeDefault({ maxUValue: 4.4 });
   const stats = { openings: 255, projects: 2, minU: 1.69, maxU: 3.04, meanU: 1.9021 };
   const report = computeCalibration(calibrationInput({ activeDefault: active, reportStats: stats }));
   const expected = [...new Set([
@@ -138,7 +141,7 @@ test("TB-25: candidate caps are exactly active ∪ zone values ∪ report min/me
   assert.deepEqual(report.candidateCaps.map((c) => c.cap), expected);
   // Each cap says WHY it is on the list, so no number is unexplained.
   const byCap = new Map(report.candidateCaps.map((c) => [c.cap, c.origins]));
-  assert.deepEqual(byCap.get(4.0), ["active_default"]);
+  assert.deepEqual(byCap.get(4.4), ["active_default"]);
   assert.deepEqual(byCap.get(1.69), ["report_min"]);
   assert.deepEqual(byCap.get(1.9), ["report_mean"]);
   assert.deepEqual(byCap.get(3.04), ["report_max"]);
@@ -152,12 +155,13 @@ test("TB-25: candidate caps are exactly active ∪ zone values ∪ report min/me
 // ── Axis 3: what the PUBLISHED catalogue can deliver ─────────────────────────
 // The fixture mirrors the shape measured in the live catalogue on 2026-08-20:
 // 306 authored thermalProfile rows, 58 of them published, 49 of those meeting
-// Uw ≤ 4.0. These literals assert calibration ARITHMETIC over a fixture; none of
-// them says what the default ought to be (TB-18).
+// the cap in force. These literals assert calibration ARITHMETIC over a fixture;
+// none of them says what the default ought to be (TB-18), and the fixture dial
+// deliberately does not carry today's value.
 const catalogueFixture = () => {
   const profileRows = [];
-  // 49 published rows at 3.5 (meet 4.0, miss 3.04), 9 published at 4.5 (meet
-  // neither), and 248 authored-but-unpublished rows at 2.0.
+  // 49 published rows at 3.5 (meet the active cap, miss 3.04), 9 published at
+  // 4.5 (meet neither), and 248 authored-but-unpublished rows at 2.0.
   for (let i = 0; i < 49; i++) profileRows.push({ uValue: 3.5, published: true });
   for (let i = 0; i < 9; i++) profileRows.push({ uValue: 4.5, published: true });
   for (let i = 0; i < 248; i++) profileRows.push({ uValue: 2.0, published: false });
@@ -168,22 +172,24 @@ test("TB-23: axis 3 counts published rows and deliverable products at each candi
   const report = computeCalibration(calibrationInput({
     profileRows: catalogueFixture(),
     products: [
-      { disabled: false, rows: [{ uValue: 3.5, published: true }] },              // delivers at 4.0
+      { disabled: false, rows: [{ uValue: 3.5, published: true }] },              // delivers at the active cap
       { disabled: false, rows: [{ uValue: 4.5, published: true }] },              // delivers at neither
       { disabled: false, rows: [{ uValue: 2.0, published: false }] },             // authored, not published
       { disabled: true, rows: [{ uValue: 1.5, published: true }] },               // withdrawn: delivers nothing
     ],
   }));
   const at = (cap) => report.candidateCaps.find((c) => c.cap === cap);
-  assert.equal(at(4.0).publishedRowsTotal, 58, "58 of 306 authored rows are published");
-  assert.equal(at(4.0).publishedRowsMeeting, 49, "and 49 of those meet the active default");
+  // Read by the record's own value, never by a literal (TB-18).
+  const active = at(activeDefault().maxUValue);
+  assert.equal(active.publishedRowsTotal, 58, "58 of 306 authored rows are published");
+  assert.equal(active.publishedRowsMeeting, 49, "and 49 of those meet the active default");
   assert.equal(at(3.04), undefined, "3.04 is not a candidate without report rows to derive it from");
-  assert.equal(at(4.0).unpublishedRowsMeeting, 248,
+  assert.equal(active.unpublishedRowsMeeting, 248,
     "authored-but-unpublished counted SEPARATELY — the publishing state is a deliberate position, not a gap");
   // A product with no published row counts once in the denominator and never in
   // a numerator; a disabled product is in neither, and is surfaced instead.
-  assert.equal(at(4.0).productsTotal, 3);
-  assert.equal(at(4.0).productsWithPublishedRowMeeting, 1);
+  assert.equal(active.productsTotal, 3);
+  assert.equal(active.productsWithPublishedRowMeeting, 1);
   assert.equal(report.disabledProductsExcluded, 1);
 });
 
@@ -195,7 +201,7 @@ test("TB-24: every candidate other than the active one carries its cost against 
   const report = computeCalibration(calibrationInput({
     reportStats: { openings: 255, projects: 2, minU: 1.69, maxU: 3.04, meanU: 1.9021 },
     profileRows: catalogueFixture().concat(
-      // 28 more published rows at 3.0, which meet 3.04 as well as 4.0.
+      // 28 more published rows at 3.0, which meet 3.04 as well as the active cap.
       Array.from({ length: 28 }, () => ({ uValue: 3.0, published: true })),
     ),
     products: [
@@ -204,11 +210,12 @@ test("TB-24: every candidate other than the active one carries its cost against 
     ],
   }));
   const at = (cap) => report.candidateCaps.find((c) => c.cap === cap);
-  assert.equal(at(4.0).deltaVsActive, null, "the active cap has no cost against itself");
-  assert.equal(at(4.0).publishedRowsMeeting, 77);
+  const active = at(activeDefault().maxUValue);
+  assert.equal(active.deltaVsActive, null, "the active cap has no cost against itself");
+  assert.equal(active.publishedRowsMeeting, 77);
   assert.equal(at(3.04).publishedRowsMeeting, 28);
   assert.deepEqual(at(3.04).deltaVsActive, { publishedRows: -49, productsLosingAllPublishedRows: 1 },
-    "4.0 → 3.04 takes deliverable published rows from 77 to 28, and one product to none at all");
+    "tightening to 3.04 takes deliverable published rows from 77 to 28, and one product to none at all");
   // Loosening is a cost statement too, and it points the other way.
   assert.ok(at(4.6).deltaVsActive.publishedRows > 0);
   assert.equal(at(4.6).deltaVsActive.productsLosingAllPublishedRows, 0);

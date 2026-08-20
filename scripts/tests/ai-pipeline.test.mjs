@@ -32,7 +32,6 @@ await build({
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
-      export { SEED_DEFAULT_BAND } from ${p("worker/lib/estimator/thermal/defaultBand.ts")};
       export { computeThermalBand } from ${p("worker/lib/estimator/thermal/computedBand.ts")};
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
@@ -52,7 +51,7 @@ const {
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
-  SEED_DEFAULT_BAND, computeThermalBand,
+  computeThermalBand,
   proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
 
@@ -61,7 +60,10 @@ const {
 // test that accidentally pinned a business number would fail loudly here.
 const testDial = (over = {}) => ({
   version: "row:test", maxUValue: 2.5, method: "manual", source: "fixture record",
-  derivedAt: "2026-08-20T00:00:00Z", observations: null, setBy: "test", interim: false, ...over,
+  // setBy is email-shaped on purpose: it is a staff identity, and the snapshot
+  // assertions below prove it never reaches a per-opening customer row.
+  derivedAt: "2026-08-20T00:00:00Z", observations: null,
+  setBy: "ops.person@openframe.com.au", interim: false, ...over,
 });
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
@@ -781,7 +783,19 @@ test("TB-7/TB-15: the persisted requirement carries its derivation and the dial 
   // TB-15: the value AND the record's whole provenance travel with it, so a
   // later row superseding the default can never re-base what this run claimed.
   assert.equal(stored.thermal.maxUValue, dial.maxUValue);
-  assert.deepEqual(stored.defaultBand, dial);
+  // TB-15 needs four fields: the value, the method, the citation and the date.
+  // The snapshot carries exactly those — a PROJECTION, not the whole record.
+  // `setBy` is a staff identity (an Access email), and a per-opening row on a
+  // customer's project has no business carrying one: nothing reads
+  // requirement_json today, but a future customer-facing endpoint returning it
+  // verbatim would leak an internal address, and that is a cheaper thing to
+  // prevent now than to remember later.
+  assert.deepEqual(stored.defaultBand, {
+    version: dial.version, maxUValue: dial.maxUValue, method: dial.method,
+    source: dial.source, derivedAt: dial.derivedAt, interim: dial.interim,
+  });
+  assert.equal("setBy" in stored.defaultBand, false, "no staff identity in a per-opening row");
+  assert.equal(JSON.stringify(stored).includes(dial.setBy), false);
   assert.equal(stored.archetype.id, archetype.id, "the archetype snapshot rides along for any COMPUTED basis");
 });
 
