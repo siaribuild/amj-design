@@ -49,3 +49,59 @@ export const SEED_DEFAULT_BAND: ActiveDefaultBand = {
   setBy: "system_seed",
   interim: true,
 };
+
+interface DefaultBandRow {
+  id: number;
+  max_u_value: number;
+  method: string;
+  source: string;
+  derived_at: string;
+  observations_json: string | null;
+  set_by: string;
+  interim: number;
+}
+
+const METHODS: ReadonlySet<string> = new Set<DefaultBandMethod>([
+  "unsourced_legacy", "abcb_glazing_calculator", "manual",
+]);
+
+/** Resolve the default in force: the newest ledger row, else the seed.
+ *
+ *  NEVER THROWS. This is read once per extraction run, and a configuration value
+ *  that cannot be read is not a reason to fail an estimate — it is a reason to
+ *  fall back to the value that was in force before the ledger existed. A row
+ *  that cannot be a cap (non-positive, unreadable method) is treated the same
+ *  way: skipped, not coerced into something plausible. */
+export async function resolveActiveDefaultBand(db: D1Database): Promise<ActiveDefaultBand> {
+  let row: DefaultBandRow | null = null;
+  try {
+    row = await db.prepare(
+      `SELECT id, max_u_value, method, source, derived_at, observations_json, set_by, interim
+         FROM thermal_default_band
+        ORDER BY id DESC
+        LIMIT 1`,
+    ).first<DefaultBandRow>();
+  } catch {
+    return SEED_DEFAULT_BAND;
+  }
+  if (!row) return SEED_DEFAULT_BAND;
+  if (!(Number(row.max_u_value) > 0)) return SEED_DEFAULT_BAND;
+  if (!METHODS.has(row.method)) return SEED_DEFAULT_BAND;
+  let observations: ActiveDefaultBand["observations"] = null;
+  try {
+    const parsed = row.observations_json ? JSON.parse(row.observations_json) : null;
+    if (parsed && typeof parsed.openings === "number" && typeof parsed.projects === "number") {
+      observations = { openings: parsed.openings, projects: parsed.projects };
+    }
+  } catch { /* unreadable observations are absent observations, not a failure */ }
+  return {
+    version: `row:${row.id}`,
+    maxUValue: Number(row.max_u_value),
+    method: row.method as DefaultBandMethod,
+    source: row.source,
+    derivedAt: row.derived_at,
+    observations,
+    setBy: row.set_by,
+    interim: row.interim === 1,
+  };
+}

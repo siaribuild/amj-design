@@ -21,7 +21,7 @@ import { applyEnergyAuthority, mapEnergyToOpenings, normalizeOpeningRef } from "
 import { resolveDefaultEnvelope, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { computeThermalBand } from "../estimator/thermal/computedBand";
 import { readSourced, type CompassPoint, type ThermalModelInputs } from "../estimator/thermal/contract";
-import { SEED_DEFAULT_BAND, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
+import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
 import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
@@ -820,7 +820,7 @@ export async function runAiExtraction(
   // run — one read, and every requirement this run produces snapshots the same
   // record, so turning the dial mid-run cannot split a project across two
   // defaults. Snapshotted immutably into requirement_json below.
-  const dial = SEED_DEFAULT_BAND;
+  const dial = await resolveActiveDefaultBand(env.DB);
   const { archetype, counts: envelopeCounts } = applyDefaultEnvelope(model, dial);
 
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
