@@ -77,7 +77,10 @@ import { Money, mm } from "./ui";
  *
  *  So the claim is not deleted and not faked — the thing that must not truncate
  *  was moved somewhere it cannot. */
-export function RecordNavBar({ cta }: { cta?: { label: string; disabled?: boolean } }) {
+export function RecordNavBar({ cta, onMore }: {
+  cta?: { label: string; disabled?: boolean; blockedBy?: string };
+  onMore?: () => void;
+}) {
   return (
     <IonToolbar>
       <IonButtons slot="start">
@@ -90,8 +93,22 @@ export function RecordNavBar({ cta }: { cta?: { label: string; disabled?: boolea
           not. */}
       {cta && (
         <IonButtons slot="end">
+          {/* THE REASON TRAVELS IN THE ACCESSIBLE NAME, not in aria-describedby.
+              Measured twice: Ionic's React wrapper drops `aria-describedby` from
+              the props, and setting it on the element through a ref does not
+              survive either — the component manages the host's aria attributes.
+              aria-label IS preserved, so the blocked action states its own reason:
+              a screen reader hears the verb and why it will not run, which is the
+              adjacency R-153 required, achieved through the one channel Ionic
+              leaves alone. The row beside it carries the same sentence visually
+              and owns the fix. */}
           <IonButton disabled={cta.disabled}
+            aria-label={cta.disabled && cta.blockedBy
+              ? `${cta.label}. Blocked: ${cta.blockedBy}.` : cta.label}
             className={cta.disabled ? "inert hdr-cta" : "hdr-cta"}>{cta.label}</IonButton>
+          {onMore && (
+            <IonButton onClick={onMore} aria-label="More actions for this project">···</IonButton>
+          )}
         </IonButtons>
       )}
       {/* slot="end" is deliberately empty. The record's actions live in the
@@ -148,21 +165,56 @@ export function StateRow({ onOpenProgress }: { onOpenProgress: () => void }) {
   );
 }
 
-/** The one filter on this surface, and a full-width row — never a chip in a
- *  strip that has to be scrolled to. It now sits BELOW the segment because it
- *  filters the Lines list and belongs to it; above the segment it read as a
- *  property of the whole record and showed on the Project tab too. */
-export function FilterRow({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+/** THE BLOCKER ROW — the record's answer to "where does the reason live when
+ *  the action is in the header?"
+ *
+ *  R-153 required a blocked primary to say why, and put the sentence "beneath it
+ *  inside the footer" because that is where the primary was. The principle is
+ *  ADJACENCY, not the footer: the action and its reason must be read together.
+ *  So when the primary moves to the header's trailing slot, the reason moves into
+ *  the header stack with it — and it did not have to be invented, because this
+ *  row already existed, already stated the blocking condition, and already
+ *  offered the fix. It was simply never connected to the button it explains.
+ *
+ *  It is now: the disabled `Issue quote` carries `aria-describedby` pointing at
+ *  this row, so assistive technology reads the action and the reason as one
+ *  thing, exactly as it did when they were stacked in the footer.
+ *
+ *  Blockers are a QUEUE, not a list. It states the leading one with the control
+ *  that clears it, and counts the rest; as each clears the next surfaces. That
+ *  is how the work is actually done, and it keeps the row at one line. */
+export function BlockerRow({ on, onToggle, onDelivery, blockers }: {
+  on: boolean;
+  onToggle: () => void;
+  onDelivery: () => void;
+  /** Ordered. The first is the one this row acts on. */
+  blockers: { key: string; text: string; action: string }[];
+}) {
+  if (blockers.length === 0) {
+    return (
+      <button type="button" className="filterrow" aria-pressed={on} onClick={onToggle}>
+        <span className="fr-dot fr-clear" aria-hidden="true" />
+        <span className="fr-text">Nothing is blocking this quote</span>
+        <span className="fr-act">{on ? "show all" : ""}</span>
+      </button>
+    );
+  }
+  const lead = blockers[0];
+  const rest = blockers.length - 1;
   return (
-    <button type="button" className="filterrow" aria-pressed={on} onClick={onToggle}>
+    <button type="button" id="issue-blocker" className="filterrow"
+      aria-pressed={lead.key === "unpriced" ? on : undefined}
+      onClick={lead.key === "unpriced" ? onToggle : onDelivery}>
       <span className="fr-dot" aria-hidden="true" />
       <span className="fr-text">
-        {on ? `Showing the ${RECORD.unpricedCount} lines with no rate` : `${RECORD.unpricedCount} lines have no rate`}
+        {on && lead.key === "unpriced" ? `Showing the ${RECORD.unpricedCount} lines with no rate` : lead.text}
+        {rest > 0 && <span className="fr-more"> · +{rest} more</span>}
       </span>
-      <span className="fr-act">{on ? "show all" : "show only these"}</span>
+      <span className="fr-act">{on && lead.key === "unpriced" ? "show all" : lead.action}</span>
     </button>
   );
 }
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE LINES TAB
@@ -266,6 +318,7 @@ export function LineList({
  *      the eighteen lines — so the review sequence is lines, then delivery, then
  *      the total, in the order the eye already travels. The row carries a state
  *      and opens the same kind of small editing surface a line does. */
+
 export function Totals({ onReviewDelivery }: { onReviewDelivery: () => void }) {
   const confirmed = DELIVERY.finalCents !== null;
   const shown = confirmed ? DELIVERY.finalCents : DELIVERY.proposedCents;

@@ -40,7 +40,7 @@ import {
 import { useHistory, useParams } from "react-router-dom";
 import { LINES, RECORD } from "../data";
 import { setStore, useShortViewport, useStore, useTabBar, visibleLines } from "../store";
-import { ActionFab, HeaderCta, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
+import { ActionFab, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
 import { useMoveKeys, useSiblingSwipe } from "../LineScroller";
@@ -88,12 +88,31 @@ export function LinePage() {
           <IonButtons slot="start">
             <IonBackButton defaultHref={`/projects/record/${ref}`} text="Lines"
               aria-label="Back to the lines" />
+            {/* E — navigation groups at the leading edge, verbs at the trailing
+                edge. Maximum separation applied to the whole bar, not just to
+                the CTA. */}
+            {hasHeaderCta(variant) && (
+              <>
+                <IonButton disabled={!run[at - 1]} onClick={() => run[at - 1] && goTo(run[at - 1].id)}
+                  aria-label={run[at - 1] ? `Previous line: ${run[at - 1].code}` : "This is the first line"}>
+                  <span className="nbp" aria-hidden="true">‹{run[at - 1]?.code ?? ""}</span>
+                </IonButton>
+                <IonButton disabled={!run[at + 1]} onClick={() => run[at + 1] && goTo(run[at + 1].id)}
+                  aria-label={run[at + 1] ? `Next line: ${run[at + 1].code}` : "This is the last line"}>
+                  <span className="nbp" aria-hidden="true">{run[at + 1]?.code ?? ""}›</span>
+                </IonButton>
+              </>
+            )}
           </IonButtons>
           <IonTitle>{line.code} · {subtitle}</IonTitle>
           {hasHeaderCta(variant) && (
-            <HeaderCta label="Edit" onClick={edit} />
+            <IonButtons slot="end">
+              <IonButton className="hdr-cta" onClick={edit}>Edit</IonButton>
+              <IonButton onClick={() => setSheetOpen(true)}
+                aria-label="More actions for this line">···</IonButton>
+            </IonButtons>
           )}
-          <IonButtons slot="end" className="nbpair">
+          {!hasHeaderCta(variant) && <IonButtons slot="end" className="nbpair">
             <IonButton disabled={!run[at - 1]} onClick={() => run[at - 1] && goTo(run[at - 1].id)}
               aria-label={run[at - 1] ? `Previous line: ${run[at - 1].code}, ${run[at - 1].room}` : "This is the first line"}>
               <span className="nbp" aria-hidden="true">‹{run[at - 1]?.code ?? ""}</span>
@@ -102,7 +121,7 @@ export function LinePage() {
               aria-label={run[at + 1] ? `Next line: ${run[at + 1].code}, ${run[at + 1].room}` : "This is the last line"}>
               <span className="nbp" aria-hidden="true">{run[at + 1]?.code ?? ""}›</span>
             </IonButton>
-          </IonButtons>
+          </IonButtons>}
         </IonToolbar>
         {/* R-18 — once pinned, the plate lives in the header so it cannot scroll
             away. Same component, different state: there is no second element a

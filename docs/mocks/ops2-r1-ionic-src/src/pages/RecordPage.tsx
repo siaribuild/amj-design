@@ -45,7 +45,7 @@ import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
 import { EditorPane } from "../Editor";
 import { ActionFab, HeaderCta, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
 import {
-  FilterRow, LineList, ProjectBlockBody, ProjectBlocks,
+  BlockerRow, LineList, ProjectBlockBody, ProjectBlocks,
   RecordNavBar, RecordSummaryBar, StateRow, Totals,
 } from "../pieces";
 
@@ -97,6 +97,19 @@ export function RecordPage() {
      — the same placement, not a desktop variant of it. */
   const stateRow = <StateRow onOpenProgress={() => openBlock("progress")} />;
 
+  /* The blockers, ordered — a queue rather than a list. The row states the
+     leading one and offers the control that clears it; as each clears the next
+     surfaces. The header's disabled CTA points at the row by id, so the action
+     and its reason are read together (R-153's adjacency, honoured in the header
+     rather than the footer). */
+  const blockers = [
+    ...(RECORD.unpricedCount > 0 ? [{ key: "unpriced",
+      text: `${RECORD.unpricedCount} lines have no rate`, action: "show only these" }] : []),
+    ...(DELIVERY.finalCents === null ? [{ key: "delivery",
+      text: "Delivery is not confirmed", action: "confirm it" }] : []),
+  ];
+  const blocked = blockers.map((b) => b.text).join(", and ").toLowerCase();
+
   const listColumn = segment === "lines" ? (
     <>
       {stateRow}
@@ -119,8 +132,12 @@ export function RecordPage() {
   const header = (
     <IonHeader className="ion-no-border">
       {/* D3 — two toolbars, to the convention. See pieces.tsx RecordNavBar. */}
-      <RecordNavBar cta={hasHeaderCta(variant)
-        ? { label: "Issue quote", disabled: true } : undefined} />
+      <RecordNavBar
+        cta={hasHeaderCta(variant)
+          ? { label: "Issue quote", disabled: blockers.length > 0,
+              blockedBy: blockers.length > 0 ? blocked : undefined }
+          : undefined}
+        onMore={hasHeaderCta(variant) ? () => setSheetOpen(true) : undefined} />
       <RecordSummaryBar />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}
@@ -129,9 +146,13 @@ export function RecordPage() {
           <IonSegmentButton value="project"><IonLabel>Project</IonLabel></IonSegmentButton>
         </IonSegment>
       </IonToolbar>
-      {segment === "lines" && (
-        <FilterRow on={filterUnpriced}
-          onToggle={() => setStore({ filterUnpriced: !filterUnpriced })} />
+      {/* Always present in E, on both tabs: it is the reason the header's CTA is
+          disabled, so it may not disappear when the CTA is still on screen. In
+          the other variants it stays what it was — a filter on the Lines tab. */}
+      {(segment === "lines" || hasHeaderCta(variant)) && (
+        <BlockerRow on={filterUnpriced} blockers={blockers}
+          onToggle={() => setStore({ filterUnpriced: !filterUnpriced })}
+          onDelivery={openDelivery} />
       )}
     </IonHeader>
   );
@@ -142,9 +163,6 @@ export function RecordPage() {
      the list: add and delete keep their acceptance criteria (AC-95, AC-96), they
      just stop taking a permanent row for something "I don't anticipate that
      being a frequent action". */
-  const blocked = DELIVERY.finalCents === null
-    ? `${RECORD.unpricedCount} lines have no rate, and delivery is not confirmed`
-    : `${RECORD.unpricedCount} lines have no rate`;
   /* THE RECORD IS WHERE E, F AND G BREAK, and it is rendered so the break is
      visible. `Issue quote` is BLOCKED, and R-153 calls the footer "the ONE footer
      allowed a second line" precisely because a blocked primary must say why. A
@@ -163,7 +181,7 @@ export function RecordPage() {
           </div>
           <p className="reason">{blocked}</p>
         </>
-      ) : (
+      ) : hasHeaderCta(variant) ? null : (
         <p className="reason reason-alone">{blocked}</p>
       )}
     </IonFooter>

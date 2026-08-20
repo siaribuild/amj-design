@@ -65,3 +65,7 @@ ion-fab.ctafab {
 /* The switcher grows to carry readable names rather than initials. */
 .variantswitch { flex-wrap: wrap; max-width: min(96vw, 420px); justify-content: flex-end; }
 .variantswitch button { min-width: 0; padding: 0 7px; font-size: 9px; }
+
+/* The blocker row's secondary count, and the cleared state. */
+.fr-more { color: var(--ops-quiet); font-weight: 400; }
+.fr-dot.fr-clear { background: color-mix(in srgb, var(--ion-color-success, #2dd36f) 60%, var(--ops-text)); }

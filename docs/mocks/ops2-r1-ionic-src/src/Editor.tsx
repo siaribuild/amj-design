@@ -43,11 +43,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonContent, IonFooter,
   IonModal, IonList, IonInput, IonSelect, IonSelectOption, IonNote, IonItem,
+  IonTitle,
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
 import { Elevation } from "./elevation";
 import { GLAZING_OPTIONS, LINES, RECORD, type Line } from "./data";
-import { setStore, useWidthClass } from "./store";
+import { setStore, useTabBar, useWidthClass } from "./store";
+import { hasHeaderCta } from "./chrome";
 import { Money, mm } from "./ui";
 
 function useDraft(line: Line) {
@@ -183,8 +185,38 @@ function Actions({ onSave, onCancel }: { onSave: () => void; onCancel: () => voi
   );
 }
 
+/** E — THE NAV BAR BECOMES THE FORM ACTION BAR.
+ *
+ *  This is the half of the rule the mock was missing, and without it E was being
+ *  judged on a rule that held on one screen and not the next: view mode put the
+ *  primary in the header while the editor kept Save and Cancel in a footer.
+ *
+ *  Cancel leads, Save trails, and `···` IS ABSENT — deliberately. A bounded task
+ *  has no secondary actions, and the absence is the signal: there is nothing to
+ *  do here but finish or abandon. It is also the native modal-form idiom, so it
+ *  costs nothing to learn.
+ *
+ *  Cancel still routes through the discard guard rather than leaving directly —
+ *  R-39's guard protects data loss, which is not the same as gating a decision. */
+function FormActionBar({ code, onSave, onCancel }: {
+  code: string; onSave: () => void; onCancel: () => void;
+}) {
+  return (
+    <IonToolbar>
+      <IonButtons slot="start">
+        <IonButton onClick={onCancel}>Cancel</IonButton>
+      </IonButtons>
+      <IonTitle>{code}</IonTitle>
+      <IonButtons slot="end">
+        <IonButton className="hdr-cta" strong onClick={onSave}>Save</IonButton>
+      </IonButtons>
+    </IonToolbar>
+  );
+}
+
 /* ── < 768: the pushed plane ───────────────────────────────────────────────── */
 export function EditorPlane() {
+  const { variant } = useTabBar();
   const history = useHistory();
   const { lineId } = useParams<{ ref: string; lineId: string }>();
   const line = LINES.find((l) => l.id === lineId) ?? LINES[3];
@@ -196,22 +228,29 @@ export function EditorPlane() {
   return (
     <IonPage>
       <IonHeader className="ion-no-border">
-        <IonToolbar>
-          <IonButtons slot="start">
-            {/* not IonBackButton: the discard guard owns every route out */}
-            <IonButton onClick={tryLeave} aria-label="Close the editor">Close</IonButton>
-          </IonButtons>
-          <div className="ident">
-            <h1><span className="mono">{line.code}</span> · Edit</h1>
-            <span className="sub">{line.room} · {RECORD.ref}</span>
-          </div>
-        </IonToolbar>
+        {hasHeaderCta(variant) ? (
+          <FormActionBar code={`${line.code} · Edit`} onSave={leave} onCancel={tryLeave} />
+        ) : (
+          <IonToolbar>
+            <IonButtons slot="start">
+              {/* not IonBackButton: the discard guard owns every route out */}
+              <IonButton onClick={tryLeave} aria-label="Close the editor">Close</IonButton>
+            </IonButtons>
+            <div className="ident">
+              <h1><span className="mono">{line.code}</span> · Edit</h1>
+              <span className="sub">{line.room} · {RECORD.ref}</span>
+            </div>
+          </IonToolbar>
+        )}
       </IonHeader>
       <IonContent><EditorForm line={line} d={d} drawingSize="md" /></IonContent>
       <IonFooter className="ion-no-border">
+        {/* The read-back stays: it is INFORMATION (R-159 — the editor covers the
+            totals, so it carries their conclusion), and the rule moves actions,
+            not facts. */}
         <ReadBack line={line} d={d} />
         {guard && <DiscardGuard onDiscard={leave} onKeep={() => setGuard(false)} />}
-        <Actions onSave={leave} onCancel={tryLeave} />
+        {!hasHeaderCta(variant) && <Actions onSave={leave} onCancel={tryLeave} />}
       </IonFooter>
     </IonPage>
   );
@@ -249,6 +288,7 @@ export function EditorPane({ lineId, onClose }: { lineId: string; onClose: () =>
 
 function EditorBody({ lineId, onClose }: { lineId: string; onClose: () => void }) {
   const wc = useWidthClass();
+  const { variant } = useTabBar();
   const line = LINES.find((l) => l.id === lineId) ?? LINES[3];
   const d = useDraft(line);
   const [guard, setGuard] = useState(false);
@@ -270,21 +310,25 @@ function EditorBody({ lineId, onClose }: { lineId: string; onClose: () => void }
   return (
     <>
       <IonHeader className="ion-no-border">
-        <IonToolbar>
-          <div className="ident">
-            <h1><span className="mono">{line.code}</span> · Edit</h1>
-            <span className="sub">{line.room} · {RECORD.ref}</span>
-          </div>
-          <IonButtons slot="end">
-            <IonButton onClick={tryLeave} aria-label="Close editor">Close</IonButton>
-          </IonButtons>
-        </IonToolbar>
+        {hasHeaderCta(variant) ? (
+          <FormActionBar code={`${line.code} · Edit`} onSave={onClose} onCancel={tryLeave} />
+        ) : (
+          <IonToolbar>
+            <div className="ident">
+              <h1><span className="mono">{line.code}</span> · Edit</h1>
+              <span className="sub">{line.room} · {RECORD.ref}</span>
+            </div>
+            <IonButtons slot="end">
+              <IonButton onClick={tryLeave} aria-label="Close editor">Close</IonButton>
+            </IonButtons>
+          </IonToolbar>
+        )}
       </IonHeader>
       <IonContent><EditorForm line={line} d={d} drawingSize={feedCanvas ? "xs" : "md"} /></IonContent>
       <IonFooter className="ion-no-border">
         <ReadBack line={line} d={d} />
         {guard && <DiscardGuard onDiscard={onClose} onKeep={() => setGuard(false)} />}
-        <Actions onSave={onClose} onCancel={tryLeave} />
+        {!hasHeaderCta(variant) && <Actions onSave={onClose} onCancel={tryLeave} />}
       </IonFooter>
     </>
   );
