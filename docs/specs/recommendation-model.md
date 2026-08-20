@@ -298,7 +298,7 @@ distinct keys in production — every opening alone in its bucket, so the model 
 anything but the neutral 0.5 and never would. Retrieval uses four fields:
 
 ```
-retrievalKey = operationType | requirementBasis | sizeBand | thermalRequired
+retrievalKey = operationType | orientation | sizeBand | thermalRequired
 ```
 
 `ASSUMED:` (the owner asked to be guided on machine learning — this is the guidance, with the
@@ -307,10 +307,15 @@ reasoning):
 - **`operationType`** — normalised, `any` when unknown. `family` is deliberately dropped: it is
   a function of the operation (`operationForFamily`), so keeping both spends cardinality on no
   extra information.
-- **`requirementBasis`** — `explicit_energy_report` | `plan_derived` | `default_envelope` |
-  `human_override` | `none`. A choice made against a real energy report is a different kind of
-  evidence from one made against a default envelope, and merging them would let weak evidence
-  outvote strong.
+- **`orientation`** — one of the eight compass points `N NE E SE S SW W NW`, else `unknown`.
+  **Owner ruling at acceptance, replacing `requirementBasis`.** Orientation is what decides
+  whether Uw or SHGC dominates, and that competition is the specific contextual preference the
+  learned layer exists to discover (D9). Requirement basis is *provenance*, not physics: two
+  west-facing awnings behave the same whether their band arrived on an energy report or was
+  derived from the plans. The swap is close to density-neutral, because orientation comes from
+  the energy report (precedence 100) or the architectural schedule (precedence 80) and so
+  correlates with basis anyway — it partly encodes what basis was distinguishing, and adds the
+  physics on top. Recorded in `context_json` already, so the key stayed recomputable.
 - **`sizeBand`** — by **width**: `s` (<1800 mm), `m` (1800–3000 mm), `l` (>3000 mm), `unknown`.
   Width, not area, because width is what the frame series' max-width limits actually turn on,
   and it is the axis that decides whether a split is in play at all. Three bands rather than
@@ -1021,7 +1026,7 @@ Every user-owned call made in the owner's absence, in one place, for the accepta
 | A5 | D17's "prefer the dearer" is honoured as *no downward buffer + an unpriceable candidate never beats a priced one*, **not** as a price-proximity band | §4.5 | A band would be a second tuned constant, and D10 states the 5% tolerance is the only one |
 | A6 | A price of **≤ 0 or not `ok` is unpriceable** and can never be "cheapest" | §4.5, AC-52 | The obvious way a cheapest-wins rule gets exploited by a rate-card gap |
 | A7 | `certified`/`estimated` is excluded from **every** ordering position **including tiebreaks** | §4.5, AC-49 | Makes the negative criterion cleanly testable and removes the −0.085 defect entirely |
-| A8 | Retrieval key = `operationType \| requirementBasis \| sizeBand \| thermalRequired`, with `sizeBand` by **width** at 1800/3000 mm and `family` dropped | §4.8, AC-28/29 | ML guidance, reasoning in §4.8: width is what the frame series' limits turn on; family is a function of operation |
+| A8 | Retrieval key = `operationType \| orientation \| sizeBand \| thermalRequired` (**rk-v2**), with `sizeBand` by **width** at 1800/3000 mm and `family` dropped | §4.8, AC-28/29 | ML guidance, reasoning in §4.8: width is what the frame series' limits turn on; family is a function of operation. **Owner ruling at acceptance:** `orientation` replaced `requirementBasis` — orientation decides whether Uw or SHGC dominates and is the preference the layer exists to learn (D9), while basis is provenance rather than physics and correlates with orientation anyway. The version was bumped so a mixed-version corpus is detectable |
 | A9 | The retrieval key is **stored, versioned and recomputable** from `context_json` | §4.8, AC-30 | Feature-store discipline: a later redefinition becomes a recompute, not lost history |
 | A10 | Retrieval **density floor raised from 2 to 5** observations | §4.8, AC-31 | Laplace smoothing is unstable at n=2. Dark, so it only affects what ops is shown |
 | A11 | `dominant` is replaced by `competingTier` + `requirementMet`, with the mapping in §4.11 | §4.11, AC-26 | Deleting the 0.05 threshold forces a replacement; the tier is strictly more informative than a score gap |

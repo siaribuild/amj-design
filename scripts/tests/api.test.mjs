@@ -1161,7 +1161,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
           externalRef: "W-HIST",
           context: {
             operationType: "awning", requirementBasis: "explicit_energy_report",
-            widthMm: 2400, heightMm: 1500, thermalRequired: 1, family: "windows",
+            orientation: "W", widthMm: 2400, heightMm: 1500, thermalRequired: 1, family: "windows",
           },
           finalProductSlug: "amj80-series-awning-window",
           finalVariantId: "dg-lowe",
@@ -1200,8 +1200,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
            FROM recommendation_outcome WHERE external_ref='W-HIST'`,
       );
       assert.equal(row.provenance, "backfilled");
-      assert.equal(row.retrieval_key, "awning|explicit_energy_report|m|1");
-      assert.equal(row.retrieval_key_version, "rk-v1");
+      assert.equal(row.retrieval_key, "awning|W|m|1");
+      assert.equal(row.retrieval_key_version, "rk-v2");
       assert.equal(row.recommendation_eligible, 1);
       assert.equal(row.quality_state, "approved");
       assert.equal(row.reason_code, "BACKFILLED_HISTORY");

@@ -581,15 +581,21 @@ Each `SplitCandidate` writes one `candidate_result` row: `sanity_product_id`/`se
 ### 8.2 The retrieval key (`worker/lib/estimator/learning.ts`)
 
 ```ts
-export const RETRIEVAL_KEY_VERSION = "rk-v1";
+// rk-v2 as shipped: the owner replaced `requirementBasis` with `orientation` at
+// acceptance (spec A8). Orientation decides whether Uw or SHGC dominates, which
+// is the contextual preference D9 names as the thing to discover; basis is
+// provenance, not physics, and correlates with orientation anyway because both
+// come from the energy report or the architectural schedule. The version moved
+// with the definition so a mixed-version corpus is detectable.
+export const RETRIEVAL_KEY_VERSION = "rk-v2";
 
 /** Four enumerated categorical values, joined with '|'. No free text can
  *  traverse (AC-56): operation must match /^[a-z][a-z-]{0,23}$/ else 'other';
- *  basis must be one of the five enumerated values else 'none';
+ *  orientation must be one of the eight compass points else 'unknown';
  *  band in {s,m,l,unknown}; thermal in {'1','0'}. */
 export function retrievalKey(ctx: {
   operationType?: string | null;
-  requirementBasis?: string | null;
+  orientation?: string | null;
   widthMm?: number | null;
   thermalRequired?: boolean | number | null;
 }): string;

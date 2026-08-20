@@ -48,7 +48,27 @@ export function contextKey(opening: OpeningInput): string {
 // four" safe rather than lossy.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const RETRIEVAL_KEY_VERSION = "rk-v1";
+/** rk-v2 (owner ruling at acceptance, spec A8): the second field is ORIENTATION,
+ *  where rk-v1 had `requirementBasis`.
+ *
+ *  Orientation is what decides whether Uw or SHGC dominates, and that
+ *  competition is the specific contextual preference D9 named as the thing the
+ *  learned layer exists to discover rather than hard-code. Requirement basis is
+ *  PROVENANCE — where a band came from — and provenance is not physics: two
+ *  west-facing awnings behave the same whether their band arrived on an energy
+ *  report or was derived from the plans.
+ *
+ *  Close to density-neutral, too. Orientation comes from the energy report
+ *  (precedence 100) or the architectural schedule (precedence 80) at
+ *  energyMap.ts, so it CORRELATES with basis: when a report supplies a band it
+ *  usually supplies an orientation, and when there is no report both are
+ *  unknown. So orientation partly encodes what basis was distinguishing, and
+ *  adds the physics on top.
+ *
+ *  THE VERSION MOVES WITH THE DEFINITION. A key computed under one definition
+ *  and read under another is a silent mis-bucketing that nothing would surface;
+ *  the stamp is the only thing that makes a mixed corpus detectable. */
+export const RETRIEVAL_KEY_VERSION = "rk-v2";
 
 /**
  * Does this opening carry a thermal requirement at all — the fourth field the
@@ -72,13 +92,26 @@ export const RETRIEVAL_KEY_VERSION = "rk-v1";
 export const hasThermalRequirement = (opening: OpeningInput): boolean =>
   !resolvedRequirement(opening).absent;
 
-/** The five requirement bases a key may carry. Anything else is 'none'. A
- *  choice made against a real energy report is a different kind of evidence
- *  from one made against a default envelope, and merging them would let weak
- *  evidence outvote strong. */
+/** The five requirement bases. No longer a KEY field as of rk-v2 — it is
+ *  provenance, not physics — but still a recorded, enumerated context value:
+ *  the legacy twelve-field `contextKey` reads it and writes it to the indexed
+ *  NOT NULL `context_key` column, so free text there would still become a
+ *  cross-account queryable index. The backfill ingest keeps checking it. */
 const REQUIREMENT_BASES = new Set([
   "explicit_energy_report", "plan_derived", "default_envelope", "human_override", "none",
 ]);
+
+/** The eight compass points the platform records (`wallOrientation` in the AI
+ *  schema, the energy skill and the drawing reference all agree on these), plus
+ *  the honest absence.
+ *
+ *  WHITELISTED exactly as the operation type is: an orientation that is not one
+ *  of these is REPLACED by 'unknown', never escaped and never truncated. A
+ *  schedule comment is free text and this key is a cross-account index; there is
+ *  no transformation of "Mrs J. Whitmore, 14 Ellerslie Road" that belongs in a
+ *  bucket name. 'unknown' is the same convention the size band and the legacy
+ *  contextKey already use for an absent categorical. */
+const ORIENTATIONS = new Set(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
 
 /** An operation type is a catalogue enum, so it looks like one or it is 'other'.
  *  WHITELISTED, never escaped or truncated: escaping would let a customer's
@@ -97,6 +130,11 @@ export const isRetrievalOperation = (value: unknown): boolean =>
 
 export const isRequirementBasis = (value: unknown): boolean =>
   typeof value === "string" && REQUIREMENT_BASES.has(value);
+
+/** Case-insensitive, because a schedule may print "sw" or "SW" for the same
+ *  wall and they are the same bucket. Anything else is not an orientation. */
+export const isOrientation = (value: unknown): boolean =>
+  typeof value === "string" && ORIENTATIONS.has(value.toUpperCase());
 
 /** By WIDTH, at 1800 and 3000 mm — width is what the frame series' max-width
  *  limits actually turn on, and it is the axis that decides whether a split is
@@ -126,19 +164,19 @@ function sizeBand(widthMm: unknown): "s" | "m" | "l" | "unknown" {
  */
 export function retrievalKey(context: {
   operationType?: unknown;
-  requirementBasis?: unknown;
+  orientation?: unknown;
   widthMm?: unknown;
   thermalRequired?: unknown;
 }): string {
   const operation = isRetrievalOperation(context.operationType)
     ? String(context.operationType).toLowerCase()
     : "other";
-  const basis = isRequirementBasis(context.requirementBasis)
-    ? String(context.requirementBasis)
-    : "none";
+  const orientation = isOrientation(context.orientation)
+    ? String(context.orientation).toUpperCase()
+    : "unknown";
   const thermal = context.thermalRequired === true || context.thermalRequired === 1 || context.thermalRequired === "1"
     ? "1" : "0";
-  return [operation, basis, sizeBand(context.widthMm), thermal].join("|");
+  return [operation, orientation, sizeBand(context.widthMm), thermal].join("|");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -279,7 +317,7 @@ function modalSlug(bucket: Bucket): string | null {
 /** The four fields the key reads, off an opening rather than off a stored row. */
 const shadowContext = (opening: OpeningInput) => ({
   operationType: opening.operationType ?? null,
-  requirementBasis: opening.thermalContext?.requirementBasis ?? null,
+  orientation: opening.thermalContext?.orientation ?? null,
   widthMm: opening.widthMm ?? null,
   thermalRequired: hasThermalRequirement(opening),
 });

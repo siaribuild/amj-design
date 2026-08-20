@@ -2,7 +2,7 @@ import type { Env } from "../../types";
 import { uuid } from "../util";
 import {
   contextKey, retrievalKey, RETRIEVAL_KEY_VERSION,
-  isRetrievalOperation, isRequirementBasis, hasThermalRequirement,
+  isRetrievalOperation, isRequirementBasis, isOrientation, hasThermalRequirement,
 } from "../estimator/learning";
 import type { OpeningInput } from "../estimator/types";
 
@@ -272,6 +272,19 @@ export async function captureBackfilledOutcomes(
     }
     if (!isRequirementBasis(context.requirementBasis)) {
       problems.push("context.requirementBasis");
+    }
+    // Orientation became a KEY field at rk-v2, so it needs the same guard the
+    // operation type gets: the key is a cross-account queryable index and a
+    // pasted spreadsheet cell must not become a bucket.
+    //
+    // ABSENT is allowed, and refusing it would be wrong. Pre-platform records
+    // often do not say which wall an opening was on, and that is exactly the
+    // history D18 wants; an absent orientation buckets as 'unknown', which is an
+    // honest statement rather than a guess. A value that is PRESENT and
+    // unrecognised is a different thing — that is a mistake, and it goes back to
+    // be fixed at the source.
+    if (context.orientation != null && !isOrientation(context.orientation)) {
+      problems.push("context.orientation");
     }
     if (typeof line.finalProductSlug !== "string" || !SLUG.test(line.finalProductSlug)) {
       problems.push("finalProductSlug");

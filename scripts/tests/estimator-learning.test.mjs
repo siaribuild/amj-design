@@ -108,17 +108,20 @@ test("an explicit energy report always overrides learned thermal precedent", () 
 
 test("AC-28/AC-29 the retrieval key separates the four that matter and nothing else", () => {
   const base = {
-    operationType: "awning", requirementBasis: "explicit_energy_report",
+    operationType: "awning", orientation: "W",
     widthMm: 1200, thermalRequired: true,
   };
   const key = retrievalKey(base);
-  assert.equal(key, "awning|explicit_energy_report|s|1");
 
   // AC-28: two openings differing ONLY in a field retrieval does not read land
   // in the same bucket. Each of these is a real column on the recorded context;
   // none of them is dropped from the record, only from the lookup.
+  //
+  // `requirementBasis` is now one of them (rk-v2). It is PROVENANCE, and two
+  // west-facing awnings behave the same whether their band arrived on an energy
+  // report or was derived from the plans.
   for (const noise of [
-    { climateZone: "6" }, { orientation: "W" }, { jurisdiction: "VIC" },
+    { climateZone: "6" }, { requirementBasis: "plan_derived" }, { jurisdiction: "VIC" },
     { buildingClass: "1a" }, { envelopeClass: "high" }, { glazingToRoomFloorRatio: 0.4 },
     { family: "windows" }, { heightMm: 2400 }, { riskBand: "high" },
   ]) {
@@ -130,9 +133,13 @@ test("AC-28/AC-29 the retrieval key separates the four that matter and nothing e
 
   // AC-29: the four that DO matter each separate.
   assert.notEqual(retrievalKey({ ...base, operationType: "sliding" }), key);
-  assert.notEqual(retrievalKey({ ...base, requirementBasis: "plan_derived" }), key);
+  assert.notEqual(retrievalKey({ ...base, orientation: "S" }), key);
   assert.notEqual(retrievalKey({ ...base, widthMm: 2400 }), key);
   assert.notEqual(retrievalKey({ ...base, thermalRequired: false }), key);
+  // All eight compass points are their own bucket — east and west are the
+  // SHGC-dominant cases and must never be merged with each other.
+  const points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  assert.equal(new Set(points.map((orientation) => retrievalKey({ ...base, orientation }))).size, points.length);
 });
 
 test("AD8 the size band is by WIDTH, at 1800 and 3000 mm", () => {
@@ -156,41 +163,53 @@ test("AC-56 no free text can traverse into the key — the values are whiteliste
   // it is replaced, not escaped, not truncated.
   const hostile = "Mrs J. Whitmore, 14 Ellerslie Road Hawthorn VIC 3122 — match existing";
   const key = retrievalKey({
-    operationType: hostile, requirementBasis: hostile,
+    operationType: hostile, orientation: hostile,
     widthMm: 1200, thermalRequired: hostile,
   });
   // The thermal flag fails CLOSED: a requirement is something the platform
   // positively recorded, so anything that is not a recognisable positive is an
   // absence rather than a claim.
-  assert.equal(key, "other|none|s|0");
+  assert.equal(key, "other|unknown|s|0");
   for (const word of ["Whitmore", "Ellerslie", "Hawthorn", "3122", " "]) {
     assert.ok(!key.includes(word), `"${word}" reached the key`);
   }
   // A pipe would forge a bucket boundary; an operation that is nearly plausible
   // is still refused rather than trimmed into something that looks real.
-  assert.equal(retrievalKey({ operationType: "awning|sliding", requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
-  assert.equal(retrievalKey({ operationType: "AWNING", requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "awning", "case alone is normalised, not refused");
-  assert.equal(retrievalKey({ operationType: "a".repeat(40), requirementBasis: null, widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
-  // Only the five enumerated bases survive; anything else is 'none'.
-  for (const basis of ["explicit_energy_report", "plan_derived", "default_envelope", "human_override", "none"]) {
-    assert.equal(retrievalKey({ operationType: "awning", requirementBasis: basis, widthMm: 1, thermalRequired: 0 }).split("|")[1], basis);
+  assert.equal(retrievalKey({ operationType: "awning|sliding", widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
+  assert.equal(retrievalKey({ operationType: "AWNING", widthMm: 1, thermalRequired: 0 }).split("|")[0], "awning", "case alone is normalised, not refused");
+  assert.equal(retrievalKey({ operationType: "a".repeat(40), widthMm: 1, thermalRequired: 0 }).split("|")[0], "other");
+
+  // Only the eight compass points survive in the orientation slot (rk-v2), and
+  // case alone is normalised there too — a schedule may print "sw" or "SW" for
+  // the same wall and they are the same bucket.
+  for (const point of ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]) {
+    assert.equal(retrievalKey({ operationType: "awning", orientation: point, widthMm: 1, thermalRequired: 0 }).split("|")[1], point);
+    assert.equal(retrievalKey({ operationType: "awning", orientation: point.toLowerCase(), widthMm: 1, thermalRequired: 0 }).split("|")[1], point);
   }
-  assert.equal(retrievalKey({ operationType: "awning", requirementBasis: "made_up", widthMm: 1, thermalRequired: 0 }).split("|")[1], "none");
+  // Anything else is a single stable bucket, never an echo. "North" is not a
+  // near-miss to be helpfully corrected: a value the platform did not record is
+  // unknown, and pretending otherwise invents evidence.
+  for (const bad of ["made_up", "North", "NNE", "W|N", "", null, 42]) {
+    assert.equal(retrievalKey({ operationType: "awning", orientation: bad, widthMm: 1, thermalRequired: 0 }).split("|")[1], "unknown");
+  }
 });
 
 test("AC-30 the key is versioned, and recomputable from context_json alone", () => {
-  assert.equal(RETRIEVAL_KEY_VERSION, "rk-v1");
+  assert.equal(RETRIEVAL_KEY_VERSION, "rk-v2");
   // The recompute story is the whole reason the key is stored AND versioned: a
   // later redefinition of the coarsening is a pass over the stored context, not
   // lost history. So everything the key reads has to BE in context_json — which
-  // is why capture writes widthMm and thermalRequired alongside the twelve.
+  // is why capture writes widthMm and thermalRequired alongside the twelve, and
+  // why the rk-v1 → rk-v2 swap cost nothing: `orientation` was already one of
+  // the twelve recorded fields, so the new key is computable from every row the
+  // old one was.
   const contextJson = {
     family: "windows", operationType: "awning", requirementBasis: "plan_derived",
     orientation: "W", riskBand: "high", climateZone: "6", jurisdiction: "VIC",
     buildingClass: "1a", envelopeClass: "high", glazingToRoomFloorRatio: 0.4,
     widthMm: 2100, heightMm: 1500, thermalRequired: 1,
   };
-  assert.equal(retrievalKey(contextJson), "awning|plan_derived|m|1");
+  assert.equal(retrievalKey(contextJson), "awning|W|m|1");
   // …and the same object read back off a row round-trips to the same bucket.
   assert.equal(retrievalKey(JSON.parse(JSON.stringify(contextJson))), retrievalKey(contextJson));
 });
@@ -199,10 +218,10 @@ test("AC-30 the key is versioned, and recomputable from context_json alone", () 
 
 const shadowRow = (retrieval_key, final_product_slug, provenance = "in_platform") =>
   ({ retrieval_key, final_product_slug, provenance });
-const BUCKET = "awning|plan_derived|s|1";
+const BUCKET = "awning|W|s|1";
 const shadowOpening = (over = {}) => ({
   operationType: "awning", widthMm: 1200,
-  thermalContext: { requirementBasis: "plan_derived" },
+  thermalContext: { requirementBasis: "plan_derived", orientation: "W" },
   requirements: { maxUValue: 4.0 },
   ...over,
 });
@@ -263,14 +282,14 @@ test("a bucket is looked up by the SAME key the capture wrote", () => {
   // A different bucket is a different question, and an empty one is silent
   // rather than neutral-sounding.
   const elsewhere = model.lookup(shadowOpening({ widthMm: 4200 }));
-  assert.equal(elsewhere.retrievalKey, "awning|plan_derived|l|1");
+  assert.equal(elsewhere.retrievalKey, "awning|W|l|1");
   assert.equal(elsewhere.observations, 0);
   assert.equal(elsewhere.preferredSlug, null);
   assert.equal(elsewhere.supportFor("amj100"), 0);
 
   // An opening with no thermal requirement lands in its own bucket, because
   // "what did humans pick when a band was in play" is a different question.
-  assert.equal(model.lookup(shadowOpening({ requirements: null })).retrievalKey, "awning|plan_derived|s|0");
+  assert.equal(model.lookup(shadowOpening({ requirements: null })).retrievalKey, "awning|W|s|0");
 });
 
 test("AC-35 provenance is counted and reported, and it does not weight the evidence", () => {
@@ -399,7 +418,7 @@ test("AC-27/AC-30/AC-34 capture records twelve, retrieves four, and stamps prove
 
   // AC-30: the key and its version are stored, and the key recomputes EXACTLY
   // from the recorded context alone.
-  assert.equal(at("retrieval_key"), "awning|plan_derived|m|1");
+  assert.equal(at("retrieval_key"), "awning|W|m|1");
   assert.equal(at("retrieval_key_version"), RETRIEVAL_KEY_VERSION);
   assert.equal(retrievalKey(context), at("retrieval_key"), "recomputable from context_json");
 
@@ -420,7 +439,7 @@ test("AC-30 an opening with no band records thermalRequired 0 and buckets apart"
   const at = (column) => { const i = bindIndexOf(row.sql, column); return i == null ? null : row.args[i]; };
   const context = JSON.parse(at("context_json"));
   assert.equal(context.thermalRequired, 0);
-  assert.equal(at("retrieval_key"), "awning|plan_derived|m|0");
+  assert.equal(at("retrieval_key"), "awning|W|m|0");
   assert.equal(retrievalKey(context), at("retrieval_key"));
 });
 
@@ -448,14 +467,14 @@ const darkEvaluation = (prices) => ({
 
 const darkOpening = {
   family: "windows", operationType: "awning", widthMm: 1200, heightMm: 1500,
-  externalRef: "W20", thermalContext: { requirementBasis: "plan_derived" },
+  externalRef: "W20", thermalContext: { requirementBasis: "plan_derived", orientation: "W" },
 };
 
 
 test("AC-32 the learned layer records what it would have said, and moves nothing", () => {
   // The bucket overwhelmingly names amj-b. The ladder's competing set selects
   // amj-a, because amj-a is cheaper and cheapest-wins is the whole rule.
-  const shadow = aggregateShadow([1, 2, 3, 4, 5, 6, 7].map(() => shadowRow("awning|plan_derived|s|0", "amj-b")));
+  const shadow = aggregateShadow([1, 2, 3, 4, 5, 6, 7].map(() => shadowRow("awning|W|s|0", "amj-b")));
   const evaluation = darkEvaluation({ "amj-a": 900, "amj-b": 1400 });
 
   const withModel = decide(darkOpening, evaluation, { shadow });
@@ -480,7 +499,7 @@ test("AC-32 the learned layer records what it would have said, and moves nothing
   assert.equal(b.observations, 7);
   assert.equal(b.support, 7);
   assert.equal(a.support, 0, "nobody ever issued A in this bucket");
-  assert.equal(b.retrievalKey, "awning|plan_derived|s|0");
+  assert.equal(b.retrievalKey, "awning|W|s|0");
   assert.equal(b.retrievalKeyVersion, RETRIEVAL_KEY_VERSION);
 
   // With no model at all the block is null, not a neutral-looking zero — an
@@ -490,10 +509,10 @@ test("AC-32 the learned layer records what it would have said, and moves nothing
 
 test("AC-31/AC-35 below the floor it prefers nothing, and the evidence names its provenance", () => {
   const shadow = aggregateShadow([
-    shadowRow("awning|plan_derived|s|0", "amj-b"),
-    shadowRow("awning|plan_derived|s|0", "amj-b"),
-    shadowRow("awning|plan_derived|s|0", "amj-b"),
-    shadowRow("awning|plan_derived|s|0", "amj-b", "backfilled"),
+    shadowRow("awning|W|s|0", "amj-b"),
+    shadowRow("awning|W|s|0", "amj-b"),
+    shadowRow("awning|W|s|0", "amj-b"),
+    shadowRow("awning|W|s|0", "amj-b", "backfilled"),
   ]);
   const r = decide(darkOpening, darkEvaluation({ "amj-a": 900, "amj-b": 1400 }), { shadow });
   const b = r.evaluated.find((e) => e.candidate.slug === "amj-b").candidateOutcome.learned;
@@ -551,7 +570,7 @@ const BACKFILL_LINE = {
   externalRef: "W03",
   context: {
     operationType: "awning", requirementBasis: "explicit_energy_report",
-    widthMm: 2400, heightMm: 1500, thermalRequired: 1,
+    orientation: "W", widthMm: 2400, heightMm: 1500, thermalRequired: 1,
     family: "windows", climateZone: "6",
   },
   finalProductSlug: "amj80-series-awning-window",
@@ -585,7 +604,7 @@ test("AC-34 a backfilled row is marked as such and lands in the same bucket", as
 
   // It buckets by the SAME key the live capture writes, or it is not comparable
   // evidence at all.
-  assert.equal(at("retrieval_key"), "awning|explicit_energy_report|m|1");
+  assert.equal(at("retrieval_key"), "awning|W|m|1");
   assert.equal(at("retrieval_key_version"), RETRIEVAL_KEY_VERSION);
   assert.equal(retrievalKey(JSON.parse(at("context_json"))), at("retrieval_key"));
   assert.equal(at("final_product_slug"), "amj80-series-awning-window");
@@ -676,7 +695,7 @@ test("D4/E14/AC-29 a PLATFORM-COMPUTED band is a thermal requirement, and bucket
   const model = aggregateShadow([]);
   const base = {
     family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1200,
-    thermalContext: { requirementBasis: "plan_derived" },
+    thermalContext: { requirementBasis: "plan_derived", orientation: "W" },
   };
   const advisoryOnly = { ...base, requirements: null, advisoryRequirements: { maxUValue: 4.0 } };
   const noBand = { ...base, requirements: null, advisoryRequirements: null };
@@ -685,8 +704,8 @@ test("D4/E14/AC-29 a PLATFORM-COMPUTED band is a thermal requirement, and bucket
   assert.equal(resolvedRequirement(advisoryOnly).absent, false, "the ladder sees a band");
   assert.equal(resolvedRequirement(noBand).absent, true);
 
-  assert.equal(model.lookup(advisoryOnly).retrievalKey, "awning|plan_derived|m|1");
-  assert.equal(model.lookup(noBand).retrievalKey, "awning|plan_derived|m|0");
+  assert.equal(model.lookup(advisoryOnly).retrievalKey, "awning|W|m|1");
+  assert.equal(model.lookup(noBand).retrievalKey, "awning|W|m|0");
   assert.notEqual(
     model.lookup(advisoryOnly).retrievalKey,
     model.lookup(noBand).retrievalKey,
@@ -696,11 +715,13 @@ test("D4/E14/AC-29 a PLATFORM-COMPUTED band is a thermal requirement, and bucket
   // An explicit report still wins outright over the advisory band, and a band
   // coerced away to nothing (AC-16) is honestly absent — the flag tracks the
   // resolution, not the presence of a field.
+  // …and note the basis moving does NOT move the bucket any more (rk-v2): same
+  // wall, same physics, whatever document the band arrived on.
   assert.equal(model.lookup({ ...base, requirements: { maxUValue: 3.0 }, advisoryRequirements: { maxUValue: 2.0 },
-    thermalContext: { requirementBasis: "explicit_energy_report" } }).retrievalKey,
-    "awning|explicit_energy_report|m|1");
+    thermalContext: { ...base.thermalContext, requirementBasis: "explicit_energy_report" } }).retrievalKey,
+    "awning|W|m|1");
   assert.equal(model.lookup({ ...base, requirements: { minShgc: 0.5, maxShgc: 0.41 } }).retrievalKey,
-    "awning|plan_derived|m|0", "an incoherent band coerces to none, and says so");
+    "awning|W|m|0", "an incoherent band coerces to none, and says so");
 });
 
 test("D4/AC-30 capture buckets a computed band as thermal, and records what it derived that from", () => {
@@ -717,7 +738,7 @@ test("D4/AC-30 capture buckets a computed band as thermal, and records what it d
     const context = JSON.parse(at("context_json"));
 
     assert.equal(context.thermalRequired, 1, "a platform-computed band is a thermal requirement (D4)");
-    assert.equal(at("retrieval_key"), "awning|plan_derived|m|1");
+    assert.equal(at("retrieval_key"), "awning|W|m|1");
 
     // AC-30 / A9, properly delivered. The flag is DERIVED, so storing only the
     // flag makes a wrong derivation unfixable — the promise was that redefining
@@ -744,5 +765,55 @@ test("every ops route that changes a project's outcomes refreshes its example el
       assert.match(body, /refreshLearningExampleEligibility/,
         `${path} writes outcomes without refreshing the project's example verdict`);
     }
+  });
+});
+
+test("A8 the retrieval key's second field is ORIENTATION, at version rk-v2", () => {
+  // Owner ruling at acceptance. Orientation decides whether Uw or SHGC
+  // dominates, and that competition is the specific preference the learned
+  // layer exists to discover (D9). Requirement basis is PROVENANCE, not
+  // physics — and close to redundant here anyway, because orientation and basis
+  // arrive from the same documents: the energy report supplies both or neither.
+  //
+  // The version moves with the definition. That is what the version is for: a
+  // key computed under one definition and read under another is a silent
+  // mis-bucketing, and only the stamp makes a mixed corpus detectable.
+  assert.equal(RETRIEVAL_KEY_VERSION, "rk-v2");
+  const base = { operationType: "awning", orientation: "W", widthMm: 1200, thermalRequired: true };
+  assert.equal(retrievalKey(base), "awning|W|s|1");
+  assert.notEqual(retrievalKey({ ...base, orientation: "S" }), retrievalKey(base));
+  assert.equal(retrievalKey({ ...base, requirementBasis: "plan_derived" }), retrievalKey(base));
+});
+
+test("AC-56 a backfilled orientation is checked, because it now reaches the key", () => {
+  // Orientation became a key field at rk-v2, and the key is a cross-account
+  // queryable index — so the ingest has to guard it the way it guards the
+  // operation type. A staff typo or a pasted spreadsheet cell must not become
+  // a bucket.
+  //
+  // ABSENT is allowed, though, and refusing it would be wrong: pre-platform
+  // records often do not record which wall an opening was on, and that is
+  // exactly the history D18 wants. An absent orientation buckets as 'unknown',
+  // which is an honest statement rather than a guess.
+  const env = backfillDb();
+  return captureBackfilledOutcomes(env, {
+    projectId: "p_real",
+    lines: [
+      { ...BACKFILL_LINE, context: { ...BACKFILL_LINE.context, orientation: "Mrs J. Whitmore, Hawthorn" } },
+      { ...BACKFILL_LINE, context: { ...BACKFILL_LINE.context, orientation: "North" } },
+      { ...BACKFILL_LINE, context: { ...BACKFILL_LINE.context, orientation: undefined } },
+      BACKFILL_LINE,
+    ],
+  }).then((result) => {
+    assert.equal(result.written, 2, "the well-formed row and the honestly-unknown one");
+    assert.deepEqual(result.refused.map((r) => r.field), ["context.orientation", "context.orientation"]);
+    for (const refusal of result.refused) {
+      assert.ok(!JSON.stringify(refusal).includes("Whitmore"), "a refusal never echoes the input");
+    }
+    const keys = env.batched.map((row) => {
+      const i = bindIndexOf(row.sql, "retrieval_key");
+      return row.args[i];
+    });
+    assert.deepEqual(keys, ["awning|unknown|m|1", "awning|W|m|1"]);
   });
 });
