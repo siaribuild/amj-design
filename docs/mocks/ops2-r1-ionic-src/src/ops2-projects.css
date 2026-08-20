@@ -1,0 +1,76 @@
+/* The Projects root is a queue. The phone view is the product; the nine-column
+   table appears only when the canvas is wide enough to keep every destination
+   and value visible without horizontal scrolling. */
+ion-toolbar.project-filterbar { --min-height: auto; }
+/* Segment takes the width; the funnel is fixed. Two axes, side by side, so the
+   primary question is always answerable in one tap and the refinements never
+   push it off the edge. */
+.project-filters {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px;
+}
+.project-filters ion-segment { flex: 1 1 auto; min-width: 0; }
+.project-filters ion-segment-button {
+  min-width: 0; --padding-start: 2px; --padding-end: 2px;
+  font-size: .6875rem; text-transform: none; letter-spacing: 0;
+}
+.pf-count { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .7; }
+/* The funnel carries a count of active refinements. Without it a filtered
+   empty list is indistinguishable from an empty queue, which is the difference
+   between "nothing to do" and "you cannot see the work". */
+.pf-funnel { flex: none; position: relative; margin: 0; --padding-start: 8px; --padding-end: 8px; }
+.pf-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 999px; font-size: .625rem; line-height: 16px;
+}
+.project-escape { border-bottom: 1px solid var(--ops-line); }
+.project-escape ion-button { margin: 0 4px; text-transform: none; }
+.project-empty { min-height: 220px; padding: 48px 20px; text-align: center; display: grid; place-content: center; gap: 8px; }
+.project-cards { display: block; padding: 0; }
+.project-table-wrap { display: none; }
+.project-card { display: grid; gap: 2px; width: 100%; min-width: 0; padding-block: 4px; }
+.pc-top, .pc-bottom { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.pc-ref { font-size: .75rem; font-weight: 700; white-space: nowrap; }
+/* The status is a WORD first and a colour second - it reads identically in
+   greyscale, which is rule L3 and also what makes it survive a bad screen in
+   sunlight. The age is deliberately quiet: it qualifies the status rather than
+   being one. */
+.pc-wait {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .75rem; color: var(--ops-quiet); flex: none;
+}
+.pc-wait b { font-weight: 600; }
+.pc-wait[data-wait="us"] b { color: var(--ion-color-warning-shade); }
+.pc-wait[data-wait="customer"] b { color: var(--ion-color-primary); }
+.pc-wait[data-wait="nobody"] b { color: var(--ops-quiet); font-weight: 500; }
+.pc-age { color: var(--ops-quiet); }
+.pc-title { margin-top: 2px; font-size: .9375rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-customer { font-size: .8125rem; color: var(--ops-quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-bottom { margin-top: 7px; font-size: .75rem; color: var(--ops-quiet); }
+.pc-bottom .money { flex: none; color: var(--ops-text); }
+.pc-flags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+/* The edge marks WAITING ON US - the row's headline status - not `flagged`.
+   The chips already say what is wrong; an edge that repeats a chip earns
+   nothing. Leading edge, never the bottom divider: a divider belongs to neither
+   of the two rows it separates, so it cannot say which one it means. */
+ion-item.project-needs-us::part(native) { box-shadow: inset 4px 0 0 var(--ion-color-warning-shade); }
+@media (min-width: 560px) {
+  .project-filters ion-segment-button { font-size: .75rem; }
+}
+@media (min-width: 1280px) {
+  .project-cards { display: none; }
+  .project-table-wrap { display: block; }
+  .project-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .8125rem; }
+  .project-table th, .project-table td { padding: 11px 8px; border-bottom: 1px solid var(--ops-line); text-align: left; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-table th { color: var(--ops-quiet); font-size: .6875rem; letter-spacing: .05em; text-transform: uppercase; }
+  .project-table tbody tr { cursor: pointer; }
+  .project-table tbody tr:hover { background: var(--ops-surface-2); }
+  .project-table tbody tr:focus-visible { outline: 2px solid var(--ion-color-primary); outline-offset: -2px; }
+  .project-table th:nth-child(1) { width: 106px; }
+  .project-table th:nth-child(2) { width: 17%; }
+  .project-table th:nth-child(3) { width: 16%; }
+  .project-table th:nth-child(4), .project-table th:nth-child(8) { width: 52px; }
+  .project-table th:nth-child(5) { width: 118px; }
+  .project-table th:nth-child(6) { width: 124px; }
+  .project-table th:nth-child(7) { width: 102px; }
+  .project-table th:nth-child(9) { width: 104px; }
+}

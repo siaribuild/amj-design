@@ -156,8 +156,8 @@ export function LinePage() {
             <p><strong>Delete {line.code}?</strong></p>
             <p className="absent">
               {line.parts
-                ? `Its ${line.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} units go with it. Notes stay.`
-                : "Its notes stay on the job."}
+                ? `This removes the line and its ${line.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} units.`
+                : "This removes the line from the project."}
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <IonButton color="danger" style={{ flex: 1 }}
@@ -196,17 +196,17 @@ export function LinePage() {
         onDidDismiss={() => setSheetOpen(false)}
         header={`${line.code} · ${subtitle}`}
         buttons={[
-          { text: "Split into units" },
-          ...(line.parts ? [{ text: "Merge back to one" }] : []),
-          { text: "Specification", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/spec`) },
-          { text: "Why this product", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/why`) },
+
+          ...(line.parts ? [] : [
+            { text: "Specification", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/spec`) },
+            { text: "Why this product", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/why`) },
+          ]),
           { text: "Re-price", handler: () => history.push(`/projects/record/${ref}/line/${line.id}/price`) },
-          { text: `Copy a link to ${line.code}` },
           { text: `Delete ${line.code}`, role: "destructive", handler: () => setDeleteArmed(true) },
-          { text: "This job — Progress", handler: () => history.push(`/projects/record/${ref}/job/progress`) },
-          { text: "This job — Payments", handler: () => history.push(`/projects/record/${ref}/job/payments`) },
-          { text: "This job — Files", handler: () => history.push(`/projects/record/${ref}/job/files`) },
-          { text: "This job — History", handler: () => history.push(`/projects/record/${ref}/job/history`) },
+          { text: "Project — Progress", handler: () => history.push(`/projects/record/${ref}/project/progress`) },
+          { text: "Project — Payments", handler: () => history.push(`/projects/record/${ref}/project/payments`) },
+          { text: "Project — Files", handler: () => history.push(`/projects/record/${ref}/project/files`) },
+          { text: "Project — History", handler: () => history.push(`/projects/record/${ref}/project/history`) },
           { text: "Cancel", role: "cancel" },
         ]}
       />
