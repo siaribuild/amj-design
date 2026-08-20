@@ -181,13 +181,24 @@ export function ProjectsPage() {
   const [query, setQuery] = useState("");
 
   const q = query.trim().toLowerCase();
-  const rows = PROJECT_QUEUE
-    .filter((p) => wait === "all" || p.waitingOn === wait)
-    .filter((p) => extra.every((f) => EXTRA[f].test(p)))
-    .filter((p) => !q || (p.ref + " " + p.title + " " + p.customer).toLowerCase().includes(q))
-    .sort(sortProjects);
-  const waitCount = (k: WaitFilter) =>
-    k === "all" ? PROJECT_QUEUE.length : PROJECT_QUEUE.filter((p) => p.waitingOn === k).length;
+
+  /* ONE selector, used for the list and for every count on screen. A count that
+     is computed differently from the result it predicts will eventually
+     disagree with it, and the reader has no way to tell which is lying. */
+  const select = (w: WaitFilter, ex: ExtraFilter[]) => PROJECT_QUEUE
+    .filter((p) => w === "all" || p.waitingOn === w)
+    .filter((p) => ex.every((f) => EXTRA[f].test(p)))
+    .filter((p) => !q || (p.ref + " " + p.title + " " + p.customer).toLowerCase().includes(q));
+
+  const rows = select(wait, extra).sort(sortProjects);
+
+  /* Each count answers "what would I be left with", not "how many exist". So a
+     segment is counted against the refinements already on and the search
+     already typed - otherwise Needs us says 2 while showing none, and the
+     number quietly becomes noise. */
+  const waitCount = (k: WaitFilter) => select(k, extra).length;
+  const extraCount = (k: ExtraFilter) =>
+    select(wait, extra.includes(k) ? extra : [...extra, k]).length;
   const open = (ref: string) => history.push("/projects/record/" + ref);
 
   return (
@@ -312,7 +323,7 @@ export function ProjectsPage() {
           <IonContent>
             <IonList lines="full">
               {(Object.keys(EXTRA) as ExtraFilter[]).map((key) => {
-                const matches = PROJECT_QUEUE.filter((p) => EXTRA[key].test(p)).length;
+                const matches = extraCount(key);
                 return (
                   <IonItem key={key}>
                     <IonCheckbox checked={extra.includes(key)} justify="space-between"
