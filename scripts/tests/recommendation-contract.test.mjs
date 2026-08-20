@@ -304,7 +304,7 @@ test("AC-4 no PREFERENCE constant exists anywhere in the selection path", async 
   assert.deepEqual(offenders, [], "a fractional constant in the selection path is a weight");
 });
 
-test("the enumeration caps are bounds on work, and are documented as such", async () => {
+test("A18 the one surviving enumeration bound cannot bind, and says why", async () => {
   const code = await readFile(join(projectRoot, "worker/lib/estimator/compositeSelect.ts"), "utf8");
   const capOf = (name) => Number(code.match(new RegExp(`const ${name} = ([0-9]+)`))?.[1]);
 
@@ -315,14 +315,27 @@ test("the enumeration caps are bounds on work, and are documented as such", asyn
   // after "1", "6" and "7". A bound has to bound runaway work, not act as a
   // lexical filter on which frames get a hearing.
   assert.ok(capOf("MAX_SYSTEMS") >= 12, "the cap must exceed the catalogue's system count");
-  assert.ok(Number.isInteger(capOf("MAX_GLASS_TRIALS")));
 
-  // And each is documented with WHY, so the next person to tighten one knows
-  // what breaks. A bare number here is how the six weights happened.
-  for (const name of ["MAX_SYSTEMS", "MAX_GLASS_TRIALS"]) {
-    const preamble = code.slice(Math.max(0, code.indexOf(`const ${name}`) - 1200), code.indexOf(`const ${name}`));
-    assert.match(preamble, /\/\*\*|\/\//, `${name} carries no reasoning`);
-    assert.ok(/bound|cap|budget|work|runaway|enumerat/i.test(preamble),
-      `${name}'s comment does not say it bounds WORK rather than expressing a preference`);
-  }
+  // MAX_GLASS_TRIALS is GONE (owner ruling A18/AD35). It was defended as a bound
+  // on work and it was not one: on four or more units suggesting four or more
+  // distinct glazing options it truncated the shortlist and dropped a candidate
+  // unified make-up that could have been cheaper. Asserted absent, because
+  // "we removed it" and "nobody reintroduces it" are different promises.
+  assert.equal(code.match(/MAX_GLASS_TRIALS\s*=/), null, "the glass-trial cap must not come back");
+  // Exactly ONE enumeration is truncated by a constant, and it is the systems
+  // list. MAX_SYSTEMS is allowed to slice because it is guarded above to sit
+  // above the catalogue's system count, so it never actually cuts anything;
+  // the glass trials have no such guarantee available, which is why the answer
+  // there was removal rather than a bigger number.
+  assert.deepEqual(
+    [...code.matchAll(/\.slice\(0,\s*(MAX_[A-Z_]+)\)/g)].map((m) => m[1]),
+    ["MAX_SYSTEMS"],
+  );
+
+  // And what survives is documented with WHY, so the next person to tighten it
+  // knows what breaks. A bare number here is how the six weights happened.
+  const preamble = code.slice(Math.max(0, code.indexOf("const MAX_SYSTEMS") - 1200), code.indexOf("const MAX_SYSTEMS"));
+  assert.match(preamble, /\/\*\*|\/\//, "MAX_SYSTEMS carries no reasoning");
+  assert.ok(/bound|cap|budget|work|runaway|enumerat/i.test(preamble),
+    "MAX_SYSTEMS's comment does not say it bounds WORK rather than expressing a preference");
 });

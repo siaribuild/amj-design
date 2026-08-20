@@ -614,3 +614,52 @@ test("AC-50 the composite path declares no weight set and no second comparator",
   assert.match(select, /priceCents:/);
   assert.match(select, /thermalRequired:/);
 });
+
+test("A18: EVERY single-glass make-up is priced, not the top few by area", () => {
+  // The cap on glass trials was not a bound on work — it BOUND. A composite of
+  // four or more units suggesting four or more distinct glazing options had its
+  // shortlist truncated by area, and what got dropped was a candidate UNIFIED
+  // make-up: a real answer, single-glassed, that could have been cheaper than
+  // anything that survived. Dropping a cheaper candidate before the comparator
+  // sees it is a preference, and the whole point of this feature is that the
+  // ladder is the only thing allowed to express one.
+  //
+  // Owner's ruling (A18/AD35): MAX_SYSTEMS stays, MAX_GLASS_TRIALS goes. The
+  // cost side is settled by his own domain input — glazing options are not
+  // freely varied in practice, nobody specifies half a split in clear and half
+  // in privacy, so the shortlist is short and the distinct-glass count is
+  // bounded by the unit count regardless.
+  const G = ["g1", "g2", "g3", "g4"].map((slug) => glass(slug, 2.0, 0.45));
+  const products = ["awning", "fixed", "casement", "louvre"].map((operation) =>
+    product(`p-${operation}`, { system: "sys-80", operation, glasses: G }));
+
+  // Each unit's OWN cheapest glass is a different one, so the unpinned seed pass
+  // produces four distinct glasses to trial. Ordered by area — largest first —
+  // g4 is the smallest unit's glass and is exactly what a cap of three drops.
+  const prices = {};
+  for (const [i, operation] of ["awning", "fixed", "casement", "louvre"].entries()) {
+    for (const [j, g] of G.entries()) {
+      // Its own glass is cheapest for it; g4 is cheap for EVERYONE, which is what
+      // makes the unified g4 make-up the best answer on the board.
+      prices[`p-${operation}:${g.variantId}`] = i === j ? 100 : j === 3 ? 150 : 300;
+    }
+  }
+
+  return selectForComposite(
+    { family: "windows", operationType: "awning", widthMm: 5000, heightMm: 2100 },
+    [unit("awning", 2000), unit("fixed", 1500), unit("casement", 1000), unit("louvre", 500)],
+    makeRepo(products), makePrice(prices),
+  ).then((r) => {
+    assert.equal(r.system, "sys-80");
+    assert.deepEqual(r.glazingSlugs, ["g4"], "the make-up the cap used to drop");
+    // g4 unified: 150 + 150 + 150 + 100. Every surviving alternative was 1,000.
+    assert.equal(r.totalCents, 55_000);
+
+    // AND THE SEED STILL NEVER COMPETES. Every unit picking its own cheapest
+    // glass totals $400 — cheaper than any unified make-up, by construction —
+    // so letting the unpinned pass into the running would repeal the one-glass
+    // rule using the very pass that exists to discover it.
+    assert.notEqual(r.totalCents, 40_000);
+    assert.equal(r.glazingSlugs.length, 1, "one glass across the composite (D4)");
+  });
+});

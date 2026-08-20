@@ -119,24 +119,33 @@ export interface CompositeSelectionResult {
   note: string | null;
 }
 
-// ── TWO BOUNDS ON WORK, AND WHY THEY ARE NOT TUNED CONSTANTS ────────────────
+// ── ONE BOUND ON WORK, AND WHY IT IS NOT A TUNED CONSTANT ───────────────────
 //
-// ASSUMED: the Definition of Done says `REQUIREMENT_TOLERANCE` is the only tuned
-// constant in the SELECTION PATH, and these two numbers sit in it — they prune
-// the candidate set before the ladder ever sees it. They are kept, on the
-// grounds that a bound on enumeration is a different kind of thing from a
-// preference weight: a weight says one candidate is BETTER than another, which
-// is exactly the judgement this redesign moved into one comparator, while a cap
-// says how much searching is enough and then lets the ladder decide among
-// everything it found, equally. The owner may prefer a spec amendment naming
-// them instead; either way this goes to acceptance.
+// The Definition of Done says `REQUIREMENT_TOLERANCE` is the only tuned constant
+// in the SELECTION PATH. Two numbers here sat in that path — they prune the
+// candidate set before the ladder ever sees it — and the owner ruled on them
+// separately (A18/AD35), which was the right split:
 //
-// What makes the distinction enforceable rather than rhetorical: a weight is a
-// FRACTION (a share of something) and a bound is a COUNT.
-// recommendation-contract.test.mjs asserts that every module-level numeric
+//   MAX_SYSTEMS = 12  KEPT. A genuine bound on work. Six systems exist in the
+//     catalogue and a test guards this to stay above that count, so it never
+//     actually cuts anything; it exists to stop a pathological catalogue turning
+//     the search unbounded.
+//
+//   MAX_GLASS_TRIALS  REMOVED. It was defended on the same grounds and did not
+//     deserve them: on four or more units suggesting four or more distinct
+//     glazing options it BOUND, and what it dropped was a candidate unified
+//     make-up — a real answer that could have been cheaper than anything that
+//     survived. A cap that changes which candidate can win is a preference, and
+//     the only thing allowed to prefer one candidate over another is the ladder.
+//
+// ASSUMED: the distinction is that a bound says how much searching is enough and
+// then lets the ladder decide among everything it found, equally, while a weight
+// says one candidate is BETTER than another. What makes that enforceable rather
+// than rhetorical: a weight is a FRACTION (a share of something) and a bound is
+// a COUNT. recommendation-contract.test.mjs asserts every module-level numeric
 // constant in the selection path is a whole number, with the tolerance named as
-// the single exception — so a resurrected `.15` cannot slip back in under a new
-// name, whatever it is called.
+// the single exception, and that the systems list is the only enumeration a
+// constant is allowed to truncate.
 
 /** How many covering systems are actually tried.
  *
@@ -150,16 +159,22 @@ export interface CompositeSelectionResult {
  *  catalogue, because "8" sorts after "1", "6" and "7". A bound has to be a
  *  bound on runaway work, not a lexical filter on which frames get a hearing. */
 const MAX_SYSTEMS = 12;
-/** Distinct glasses trialled across the units — a bound on WORK, like the one
- *  above, not a statement that three glasses are enough to be right.
- *
- *  The unpinned pass produces at most one glass per unit and a composite is a
- *  handful of units, so the realistic ceiling is already small; this stops a
- *  pathological opening from turning the search quadratic. The trials are taken
- *  largest-area-first, so what a tighter cap drops is the glass carried by the
- *  smallest lite — and every trial that survives is compared by the same ladder
- *  with no thumb on the scale. */
-const MAX_GLASS_TRIALS = 3;
+// MAX_GLASS_TRIALS lived here and is GONE (owner ruling A18/AD35, on review).
+//
+// It capped the distinct glasses trialled at three, taken largest-area-first,
+// and it was defended as a bound on work. It was not: on a composite of four or
+// more units suggesting four or more distinct glazing options it BOUND, and what
+// it dropped was a candidate UNIFIED make-up — a real, single-glassed answer
+// that could have been cheaper than anything that survived. Discarding a cheaper
+// candidate before the comparator ever sees it is a preference, and the only
+// thing allowed to prefer one candidate over another is the ladder.
+//
+// Removing it costs almost nothing, and the reason is domain rather than
+// algorithmic: glazing options are not freely varied in practice — nobody
+// specifies half a split in clear and half in privacy — so the shortlist is
+// short, and the distinct-glass count is bounded by the unit count regardless.
+// MAX_SYSTEMS stays: six systems in the catalogue, guarded to stay above that
+// count, so it cannot bind.
 
 export interface MakeUp {
   system: string;
@@ -238,9 +253,12 @@ export async function enumerateMakeUps(
       const glass = glassOf(u.result.selected?.selectedVariant ?? null);
       if (glass) byGlass.set(glass, (byGlass.get(glass) ?? 0) + area(segments[i]));
     });
+    // EVERY distinct glass, not a shortlist. Largest area first — that ordering
+    // still decides which make-up wins an exact tie, and the biggest lite is the
+    // most defensible tiebreak — but nothing is dropped, so no unified make-up
+    // is refused a price before the ladder has seen it.
     const trials = [...byGlass.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, MAX_GLASS_TRIALS)
       .map(([glass]) => glass);
 
     // THE UNPINNED PASS IS A SEED, NOT A COMPETITOR. Every unit picked its own
