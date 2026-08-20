@@ -316,7 +316,11 @@ export function thermalInputsFor(model: BuildingModelV1, opening: OpeningV1): Th
 export function modelReachCounters(energyApplied: number, counts: DefaultEnvelopeCounts) {
   return {
     basisCounts: {
-      explicit_energy_report: energyApplied,
+      // An opening whose report band coerced away to nothing was recomputed, and
+      // the row it ends up with says so. It is counted where it landed, not
+      // where it passed through — so this sums to the openings it describes and
+      // agrees with the group-by over `opening_requirements`.
+      explicit_energy_report: Math.max(0, energyApplied - counts.recomputedOverReport),
       plan_derived: counts.plan_derived,
       default_envelope: counts.default_envelope,
     },
@@ -355,6 +359,16 @@ export interface DefaultEnvelopeCounts {
   withShgc: number;
   plan_derived: number;
   default_envelope: number;
+  /** Of `computed`, how many openings ALREADY carried a requirement row when the
+   *  envelope stage reached them — a report band that coerced away to nothing,
+   *  so the opening was never actually answered (spec §8).
+   *
+   *  The energy map has already tallied these under `energyApplied`: it did
+   *  write them a row. The recomputation then decides their real basis, and the
+   *  persisted row records that one. Without this number the run summary would
+   *  report the same opening twice under two different bases, and disagree with
+   *  the `GROUP BY requirement_basis` it exists to save anyone running. */
+  recomputedOverReport: number;
 }
 
 // ── Pure: Path 3 — compute the requirement for every unanswered opening ──────
@@ -376,7 +390,9 @@ export function applyDefaultEnvelope(
   model: BuildingModelV1,
   dial: ActiveDefaultBand,
 ): { archetype: EnvelopeArchetype | null; dial: ActiveDefaultBand; counts: DefaultEnvelopeCounts } {
-  const counts: DefaultEnvelopeCounts = { computed: 0, withShgc: 0, plan_derived: 0, default_envelope: 0 };
+  const counts: DefaultEnvelopeCounts = {
+    computed: 0, withShgc: 0, plan_derived: 0, default_envelope: 0, recomputedOverReport: 0,
+  };
   const archetype = resolveDefaultEnvelope(model);
   if (!archetype) return { archetype: null, dial, counts };
   for (const o of model.openings) {
@@ -394,7 +410,13 @@ export function applyDefaultEnvelope(
       // allows.
       if (effective) continue;
     }
+    // This opening is about to get a computed basis. If it arrived carrying a
+    // report row, the energy map has already counted it once — record that here
+    // so the run summary does not count it twice.
+    if (existing) counts.recomputedOverReport++;
     const result = computeThermalBand(thermalInputsFor(model, o), dial);
+    // What the calculation actually CONSUMED, not what the model was carrying.
+    const citedOrientation = result.inputsUsed.find((used) => used.field === "orientation")?.value ?? null;
     o.thermalRequirement = {
       basis: result.basis,
       maxUValue: result.band.maxUValue,
@@ -403,7 +425,10 @@ export function applyDefaultEnvelope(
       shgcMax: result.band.maxShgc,
       zoneType: null,
       operablePercent: null,
-      notes: `${archetype.defaultOpeningBand.note} (orientation ${o.wallOrientation ?? "unknown"})`,
+      // Named from the consumed input: an orientation the contract refused
+      // contributed nothing, and prose claiming it would tell a reviewer the
+      // opposite of what `inputsMissing` records.
+      notes: `${archetype.defaultOpeningBand.note} (orientation ${citedOrientation ?? "unknown"})`,
       derivation: {
         inputsUsed: result.inputsUsed,
         inputsMissing: result.inputsMissing,

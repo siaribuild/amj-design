@@ -682,7 +682,7 @@ test("TB-10: applyDefaultEnvelope fills only unanswered openings, never override
   assert.equal(ARCHETYPES[0].defaultOpeningBand.maxUValue, undefined,
     "one place per fact: the archetype no longer carries a Uw cap of its own");
   assert.equal(model.envelope.defaultArchetypeId, archetype.id);
-  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1 });
+  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1, recomputedOverReport: 0 });
   const assumption = model.assumptions.find((a) => a.fact.startsWith("default_envelope:"));
   assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
 });
@@ -735,7 +735,7 @@ test("TB-3/TB-8: a band that rests on nothing says so, by field", () => {
   assert.ok(req.derivation.inputsMissing.includes("orientation"));
   assert.deepEqual(req.derivation.inputsUsed.filter((u) => u.source !== "envelope_default"), [],
     "nothing about this opening informed its requirement, and the record says exactly that");
-  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1 });
+  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1, recomputedOverReport: 0 });
 });
 
 // TB-4. The mapping's values are pinned once, in thermal-selection.test.mjs;
@@ -1036,6 +1036,57 @@ test("TB-20: a requirement produced under one dial record is never re-based by t
     if (/UPDATE\s+opening_requirements/i.test(code)) updates.push(rel);
   }
   assert.deepEqual(updates, [], "opening_requirements is insert-only — a past estimate has nothing to re-base it");
+});
+
+// TB-9, the overlapping case. An opening can be counted by BOTH stages: the
+// energy map gives it a requirement row, then the envelope stage finds that band
+// coerces away to nothing and recomputes it. The persisted row says what the
+// recomputation decided, so the summary must say the same thing — otherwise
+// basisCounts disagrees with the DB group-by that TB-11 is read through, and
+// does not sum to the openings it describes.
+test("TB-9: an opening the envelope stage recomputed is counted once, under its final basis", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
+  const model = linesToBuildingModel("prj_recounted", merged, []);
+  applyPlanContext(model, [planned([planOpening("W01", "E")])]);
+  // A report requirement row that carries no usable constraint at all.
+  model.openings[0].thermalRequirement = {
+    basis: "explicit_energy_report", maxUValue: 0, shgcTarget: null,
+    shgcMin: 1.4, shgcMax: -0.2, zoneType: null, operablePercent: null, notes: null,
+  };
+  const { counts } = applyDefaultEnvelope(model, testDial());
+  assert.equal(bandOf(model, "W01").basis, "plan_derived", "the persisted row says plan_derived");
+
+  // …so the summary must too. `1` is the energy map's own tally: it did apply a
+  // requirement to this opening.
+  const reach = modelReachCounters(1, counts);
+  assert.deepEqual(reach.basisCounts, { explicit_energy_report: 0, plan_derived: 1, default_envelope: 0 });
+  const total = Object.values(reach.basisCounts).reduce((a, b) => a + b, 0);
+  assert.equal(total, model.openings.length, "basisCounts sums to the openings it describes");
+});
+
+// The note is prose a reviewer reads, so it must agree with the field-level
+// record TB-8 exists to make trustworthy. It has to name what the calculation
+// ACTUALLY consumed, not what the model happened to be carrying: an orientation
+// the contract refused contributed nothing, and a note claiming it would tell a
+// reviewer the opposite of what inputsMissing says.
+test("the note names the orientation the band used, and says unknown when none was used", () => {
+  const build = (mutate) => {
+    const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
+    const model = linesToBuildingModel("prj_notes", merged, []);
+    mutate(model);
+    applyDefaultEnvelope(model, testDial());
+    return bandOf(model, "W01");
+  };
+  const cited = build((model) => applyPlanContext(model, [planned([planOpening("W01", "E")])]));
+  assert.match(cited.notes, /\(orientation E\)$/, "a cited orientation is named");
+
+  // Present on the opening, refused by the contract: no source, so no evidence.
+  const refused = build((model) => { model.openings[0].wallOrientation = "W"; });
+  assert.ok(refused.derivation.inputsMissing.includes("orientation"));
+  assert.equal(refused.shgcTarget, null);
+  assert.match(refused.notes, /\(orientation unknown\)$/,
+    "the prose must not claim an orientation the band refused");
+  assert.equal(/orientation W\)/.test(refused.notes), false);
 });
 
 test("thermal context persists meaningful case-learning keys and review reasons", () => {
