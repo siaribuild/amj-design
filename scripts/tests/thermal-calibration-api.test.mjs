@@ -239,6 +239,63 @@ test("thermal calibration endpoint, the dial, and the migration", { timeout: 240
       // rule rather than a broken route.
       await requestJson(b, `/api/projects/${bProjectId}`);
     });
+    // ── The demand axis counts REPORTS, not extraction runs ─────────────────
+    // Every pipeline pass writes a fresh building model with a fresh set of
+    // `opening_requirements` rows — the table is insert-only by design, so a
+    // reprocessed project accumulates one row per opening PER RUN. Counting the
+    // table raw made axis 1 a record of retry and upload history: measured in
+    // production at 255 rows against 34 distinct (project, opening) pairs, a
+    // 7.5x inflation on the one instrument the owner reads before moving the
+    // default cap. An inflated instrument is worse than none, because it looks
+    // authoritative.
+    //
+    // The property under test is not a number: it is that a second extraction
+    // run over the same project moves nothing.
+    await t.test("a second extraction run of the same project does not move the demand axis", async () => {
+      const owner = new Session(baseUrl);
+      await login(owner, "/api/auth", "thermal.rerun@example.com");
+      await completeAccount(owner, { addressLine1: "3 Rerun Road" });
+      await requestJson(owner, "/api/projects/current/lines",
+        { method: "PUT", json: { title: "Reprocessed job", items: [aLine()] } });
+      const { body: project } = await requestJson(owner, "/api/projects/current");
+      const projectId = project.project.id;
+      assert.ok(projectId);
+
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version, status)
+                 VALUES ('run_rerun', '${projectId}', 'test', 'completed')`);
+      // One pass of the pipeline: a new building model, and the same two
+      // openings the one energy report demanded, filed under it.
+      const extractionRun = async (modelId, createdAt) => {
+        await sql(`INSERT INTO building_models
+                     (id, project_id, ai_run_id, schema_version, status, model_json, confidence_json, created_at)
+                   VALUES ('${modelId}', '${projectId}', 'run_rerun', 'building-model/1.0', 'draft', '{}', '{}', '${createdAt}')`);
+        for (const [ref, maxU] of [["W01", 2.2], ["W02", 2.6]]) {
+          await sql(`INSERT INTO opening_requirements
+                       (id, project_id, building_model_id, external_ref, requirement_basis,
+                        max_u_value, confidence_json, requirement_json)
+                     VALUES ('${modelId}_${ref}', '${projectId}', '${modelId}', '${ref}',
+                             'explicit_energy_report', ${maxU}, '{}', '{}')`);
+        }
+      };
+
+      await extractionRun("bm_rerun_1", "2026-08-20 09:00:00");
+      const { body: first } = await requestJson(staff, CALIBRATION);
+      assert.equal(first.reportRows.openings, 2, "one report, two openings");
+      assert.equal(first.basisCounts.explicit_energy_report, 2);
+
+      // The SAME documents, extracted again — a retry, a re-upload, a reprocess.
+      // The rows double; the demand does not.
+      await extractionRun("bm_rerun_2", "2026-08-20 10:00:00");
+      const [{ n: rowsInTable }] = await sql(
+        "SELECT COUNT(*) AS n FROM opening_requirements WHERE requirement_basis = 'explicit_energy_report'");
+      assert.equal(rowsInTable, 4, "the table really did accumulate a second run's rows");
+
+      const { body: second } = await requestJson(staff, CALIBRATION);
+      assert.deepEqual(second.reportRows, first.reportRows,
+        "openings, distinct projects and the U-value statistics all read the same demand");
+      assert.deepEqual(second.basisCounts, first.basisCounts,
+        "the basis counts share the source, so they need the same deduplication");
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

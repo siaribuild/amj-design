@@ -217,25 +217,79 @@ function capConsequences(activeCap: number, input: CalibrationInput): CapConsequ
  *  catalogue state it was taken against. */
 const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "rev": _rev, "rows": rows[]{ uValue, published } }`;
 
+/** THE CURRENT EXTRACTION OF EACH PROJECT, and the reason axis 1 is a reading of
+ *  demand rather than of upload history.
+ *
+ *  `opening_requirements` is insert-only by design: every pipeline pass writes a
+ *  NEW `building_models` row and a fresh set of requirement rows under it, so a
+ *  project reprocessed eight times carries eight copies of every opening its one
+ *  energy report demanded. Counting the table raw made axis 1 report retries.
+ *  Measured in production: 255 explicit-report rows against 34 distinct
+ *  (project, opening) pairs across 2 projects — 7.5x.
+ *
+ *  DEDUPED BY BUILDING MODEL, NOT BY OPENING REF, and the two are not the same
+ *  answer once a rerun changes what was extracted:
+ *
+ *    - Every run rebuilds the model from ALL of the project's current files
+ *      (`ingestProjectFiles(projectId)`), so the newest model is the complete
+ *      current reading, never a partial one. There is nothing to lose by
+ *      dropping the older models, and a corrected Uw REPLACES the misread one
+ *      instead of being averaged with it.
+ *    - Deduping by opening ref would need its own tiebreak anyway ("which run's
+ *      value for W04?"), and it would keep openings a corrected extraction no
+ *      longer contains — reporting demand that no current report makes.
+ *    - One model also keeps the axis internally coherent: openings, min, max and
+ *      mean all describe the same reading, rather than a mixture of readings.
+ *
+ *  A parent frame and its thermal children are distinct rows under one model and
+ *  are meant to count separately, which is a second reason not to collapse refs.
+ *
+ *  `created_at` orders the runs; `rowid` breaks the tie when two land inside the
+ *  same second. No identifier is selected out of this — the CTE exists only to
+ *  be joined against. */
+const CURRENT_MODEL = `
+  WITH current_model AS (
+    SELECT bm.id AS id
+      FROM building_models bm
+     WHERE bm.id = (SELECT b.id FROM building_models b
+                     WHERE b.project_id = bm.project_id
+                     ORDER BY b.created_at DESC, b.rowid DESC
+                     LIMIT 1)
+  )`;
+
 export async function readCalibration(env: Env, executor?: QueryExecutor): Promise<CalibrationReport> {
   const exec = executor ?? sanityExecutor(env);
   // One repository instance: it holds its own cache, so two would query twice.
   const repo = createCatalogueRepository(exec);
 
-  // Axis 1 — counts by basis. No identifier column is selected.
+  // Axis 1 — counts by basis. No identifier column is selected. Deduped by
+  // current building model for the same reason the statistics below are: these
+  // counts are read as "what the reports said", and a reprocessed project would
+  // otherwise weight itself by how many times it was reprocessed.
   const basis = await env.DB.prepare(
-    "SELECT requirement_basis, COUNT(*) AS n FROM opening_requirements GROUP BY requirement_basis",
+    `${CURRENT_MODEL}
+     SELECT r.requirement_basis AS requirement_basis, COUNT(*) AS n
+       FROM opening_requirements r
+       JOIN current_model m ON m.id = r.building_model_id
+      GROUP BY r.requirement_basis`,
   ).all<{ requirement_basis: string; n: number }>();
 
   // Axis 1 — what reports have demanded. `project_id` appears ONLY inside a
   // COUNT(DISTINCT …): the aggregate is deliberately unscoped across accounts
   // because that is its purpose, so the guard is that no identifier can come
   // back out of it.
+  //
+  // `distinctProjects` rides the same join, and its meaning tightens with it: a
+  // project counts when its CURRENT extraction demands something explicit, not
+  // when some superseded run once did. That is the reading the evidence floor
+  // wants — five projects whose reports still say so.
   const stats = await env.DB.prepare(
-    `SELECT COUNT(*) AS openings, COUNT(DISTINCT project_id) AS projects,
-            MIN(max_u_value) AS minU, MAX(max_u_value) AS maxU, AVG(max_u_value) AS meanU
-       FROM opening_requirements
-      WHERE requirement_basis = 'explicit_energy_report' AND max_u_value IS NOT NULL`,
+    `${CURRENT_MODEL}
+     SELECT COUNT(*) AS openings, COUNT(DISTINCT r.project_id) AS projects,
+            MIN(r.max_u_value) AS minU, MAX(r.max_u_value) AS maxU, AVG(r.max_u_value) AS meanU
+       FROM opening_requirements r
+       JOIN current_model m ON m.id = r.building_model_id
+      WHERE r.requirement_basis = 'explicit_energy_report' AND r.max_u_value IS NOT NULL`,
   ).first<{ openings: number; projects: number; minU: number | null; maxU: number | null; meanU: number | null }>();
 
   // Axis 2 — what the default asserts, and on whose authority.
