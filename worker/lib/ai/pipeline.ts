@@ -304,6 +304,51 @@ export function thermalInputsFor(model: BuildingModelV1, opening: OpeningV1): Th
   };
 }
 
+/** The run's THERMAL REACH, as counts (TB-9).
+ *
+ *  The defect this feature repairs was invisible for months because nobody could
+ *  see it without writing a GROUP BY: 444 identical bands and a tier that had
+ *  never been assigned looked exactly like a working model. These two figures put
+ *  the answer in every run's summary, so the drawing thread's arrival shows up as
+ *  `plan_derived` rising and `withShgc` with it, with no query by hand.
+ *
+ *  Customer-safe by construction: counts only, all from this project's own run. */
+export function modelReachCounters(energyApplied: number, counts: DefaultEnvelopeCounts) {
+  return {
+    basisCounts: {
+      explicit_energy_report: energyApplied,
+      plan_derived: counts.plan_derived,
+      default_envelope: counts.default_envelope,
+    },
+    computedBands: { total: counts.computed, withShgc: counts.withShgc },
+  };
+}
+
+/** The immutable per-opening record written to `opening_requirements.requirement_json`.
+ *
+ *  Pure and exported so the thing that actually lands in the column can be read
+ *  back in a test rather than inferred from the SQL around it.
+ *
+ *  Both snapshots ride along for a COMPUTED requirement and neither for a
+ *  reported one, keyed on the derivation's presence rather than on a basis name:
+ *  a requirement must stay readable as the claim it made WHEN IT WAS MADE, so
+ *  neither a registry change nor a superseding dial row can re-base history. A
+ *  reported band was stated rather than derived, so it snapshots neither. */
+export function requirementSnapshot(
+  opening: OpeningV1,
+  archetype: EnvelopeArchetype | null,
+  dial: ActiveDefaultBand,
+) {
+  const requirement = opening.thermalRequirement;
+  const computed = !!requirement?.derivation;
+  return {
+    opening: opening.externalRef,
+    thermal: requirement,
+    archetype: computed && archetype ? archetype : undefined,
+    defaultBand: computed ? dial : undefined,
+  };
+}
+
 /** What one run's envelope stage did, for the summary counters (TB-9). */
 export interface DefaultEnvelopeCounts {
   computed: number;
@@ -391,6 +436,11 @@ export interface AiExtractionSummary {
   conflicts: number;
   /** Path-1 outcome: openings that received an explicit report requirement. */
   energyApplied: number;
+  /** THERMAL REACH (TB-9): how many openings ended on each requirement basis,
+   *  and how many computed bands actually carried an SHGC constraint. Absent on
+   *  a failed run, which computed no bands to count. */
+  basisCounts?: { explicit_energy_report: number; plan_derived: number; default_envelope: number };
+  computedBands?: { total: number; withShgc: number };
   buildingModelId: string | null;
   estimate: { openings: number; selected: number } | null;
   cartApplied?: number;
@@ -801,15 +851,7 @@ export async function runAiExtraction(
     ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, tr.basis,
       tr.maxUValue, tr.shgcTarget, tr.shgcMin, tr.shgcMax,
       JSON.stringify(o.confidence),
-      JSON.stringify({
-        opening: o.externalRef, thermal: tr,
-        // Immutable archetype snapshot (§10.3): a registry change never mutates history.
-        archetype: tr?.derivation && archetype ? archetype : undefined,
-        // Immutable DIAL snapshot, for the same reason and on the same terms: a
-        // requirement must stay readable as what it claimed WHEN IT WAS MADE,
-        // so a later row superseding the default can never re-base it.
-        defaultBand: tr?.derivation ? dial : undefined,
-      })),
+      JSON.stringify(requirementSnapshot(o, archetype, dial))),
     );
   }
   await env.DB.batch(stmts);
@@ -920,6 +962,7 @@ export async function runAiExtraction(
   const summary: AiExtractionSummary = {
     runId: run.id, status, documents: docs.length,
     extractedLines: merged.lines.length, conflicts: model.conflicts.length, energyApplied,
+    ...modelReachCounters(energyApplied, envelopeCounts),
     buildingModelId, estimate: { openings: estimate.openings, selected: estimate.selected },
     cartApplied: estimate.appliedToCart,
     stageWarnings: warnings,

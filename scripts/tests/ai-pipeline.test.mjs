@@ -18,7 +18,7 @@ await build({
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
-      export { applyDefaultEnvelope, thermalInputsFor } from ${p("worker/lib/ai/pipeline.ts")};
+      export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
       export { SEED_DEFAULT_BAND } from ${p("worker/lib/estimator/thermal/defaultBand.ts")};
       export { computeThermalBand } from ${p("worker/lib/estimator/thermal/computedBand.ts")};
@@ -38,7 +38,8 @@ const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
-  applyDefaultEnvelope, thermalInputsFor, resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
+  applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
+  resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
   SEED_DEFAULT_BAND, computeThermalBand,
   proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
@@ -723,6 +724,72 @@ test("TB-3/TB-8: a band that rests on nothing says so, by field", () => {
   assert.deepEqual(req.derivation.inputsUsed.filter((u) => u.source !== "envelope_default"), [],
     "nothing about this opening informed its requirement, and the record says exactly that");
   assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1 });
+});
+
+// TB-4. The mapping's values are pinned once, in thermal-selection.test.mjs;
+// what this asks is only the thing TB-4 is about — that a child is banded from
+// ITS OWN inputs and inherits nothing implicitly from the parent frame.
+test("TB-4: a composite child is banded from its own inputs, not the parent's", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [
+    line("W04", 3200, 2100), line("W04A", 1600, 2100), line("W04B", 1600, 2100),
+  ] }]);
+  const model = linesToBuildingModel("prj_composite", merged, []);
+  applyPlanContext(model, [planned([
+    planOpening("W04", "N"), planOpening("W04A", "E"), planOpening("W04B", "S"),
+  ])]);
+  applyDefaultEnvelope(model, testDial());
+  const child = (ref) => model.openings.find((o) => o.externalRef === ref);
+  assert.equal(child("W04A").parentRef, "W04");
+  for (const [ref, orientation] of [["W04A", "E"], ["W04B", "S"]]) {
+    assert.deepEqual(bandOf(model, ref).derivation.inputsUsed.find((u) => u.field === "orientation"),
+      { field: "orientation", value: orientation, source: "plan" },
+      `${ref} cites its own orientation`);
+  }
+  assert.notDeepEqual(bandOf(model, "W04A").shgcTarget, bandOf(model, "W04").shgcTarget,
+    "a differently-oriented child does not carry the parent's band");
+  assert.notDeepEqual(bandOf(model, "W04A").shgcMax, bandOf(model, "W04B").shgcMax,
+    "and the two children differ from each other for the same reason");
+});
+
+test("TB-7/TB-15: the persisted requirement carries its derivation and the dial record that produced it", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
+  const model = linesToBuildingModel("prj_snapshot", merged, []);
+  applyPlanContext(model, [planned([planOpening("W01", "W")])]);
+  const dial = testDial();
+  const { archetype } = applyDefaultEnvelope(model, dial);
+  // What actually lands in opening_requirements.requirement_json, read back.
+  const stored = JSON.parse(JSON.stringify(requirementSnapshot(model.openings[0], archetype, dial)));
+  assert.equal(stored.opening, "W01");
+  const d = stored.thermal.derivation;
+  assert.ok(d.inputsUsed.every((u) => typeof u.source === "string" && u.field), "every input carries a source");
+  assert.ok(Array.isArray(d.inputsMissing));
+  assert.ok(d.rulesApplied.every((r) => r.ruleId && r.version && r.provenance), "every rule carries a version");
+  assert.equal(d.defaultBandVersion, dial.version);
+  assert.equal(d.contractVersion, "tic-v1");
+  // TB-15: the value AND the record's whole provenance travel with it, so a
+  // later row superseding the default can never re-base what this run claimed.
+  assert.equal(stored.thermal.maxUValue, dial.maxUValue);
+  assert.deepEqual(stored.defaultBand, dial);
+  assert.equal(stored.archetype.id, archetype.id, "the archetype snapshot rides along for any COMPUTED basis");
+});
+
+test("TB-9: the model's reach is a number in the run summary, not a query somebody has to think of", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [
+    line("W01", 1810, 1200), line("W02", 900, 600), line("W03", 900, 600),
+  ] }]);
+  const model = linesToBuildingModel("prj_reach", merged, []);
+  // W01 answered by a report; W02 has a plan orientation; W03 has nothing.
+  model.openings.find((o) => o.externalRef === "W01").thermalRequirement = {
+    basis: "explicit_energy_report", maxUValue: 2.3, shgcTarget: null,
+    shgcMin: 0.37, shgcMax: 0.41, zoneType: null, operablePercent: null, notes: null,
+  };
+  applyPlanContext(model, [planned([planOpening("W02", "W")])]);
+  const { counts } = applyDefaultEnvelope(model, testDial());
+  const reach = modelReachCounters(1, counts);
+  assert.deepEqual(reach.basisCounts, { explicit_energy_report: 1, plan_derived: 1, default_envelope: 1 },
+    "the tier that had never existed in the platform's history is now a count");
+  assert.deepEqual(reach.computedBands, { total: 2, withShgc: 1 },
+    "the extraction thread's arrival will show up here as a rising number");
 });
 
 test("thermal context persists meaningful case-learning keys and review reasons", () => {
