@@ -145,7 +145,7 @@ The structured facts the estimator emits per candidate — tier, rank, per-axis 
 The estimator's memory of what humans actually issued, consulted per candidate and applied to nothing: it records what it would have preferred and shows that to staff, and moves no recommendation until it is deliberately switched on.
 
 **Retrieval key vs recorded context**:
-An outcome records its full context; the learned layer retrieves by a deliberately coarse, versioned key (operation, requirement basis, width band, whether thermal was required) so evidence accumulates in buckets dense enough to mean something. Redefining the key is a recompute over the stored context, never lost history.
+An outcome records its full context; the learned layer retrieves by a deliberately coarse, versioned key (operation, orientation, width band, whether thermal was required) so evidence accumulates in buckets dense enough to mean something. Redefining the key is a recompute over the stored context, never lost history.
 
 **Corpus provenance**:
 Whether a learning outcome came from the platform's own review flow (`in_platform`) or was backfilled from pre-platform history (`backfilled`). A reviewer told "3 of 4 similar openings went this way" can see which of the four were real in-platform reviews.
