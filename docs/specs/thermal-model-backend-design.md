@@ -144,8 +144,12 @@ export interface ComputedBandResult {
 | `zone_u_cap` | `v1` | always | `maxUValue` | the dial's version + method for CZ6/fallback (e.g. `thermal_default_band seed:1 (unsourced_legacy)`); `zone-table:v1 (unsourced_legacy)` for the seven non-CZ6 zones no production path reaches (TB-21) |
 | `orientation_shgc` | `v1` | `inputs.orientation` non-null | `shgcTarget`, `maxShgc` | `unsourced_legacy — southern-hemisphere heuristic retained from pre-provenance code (spec A14); superseding it is a recorded version change, not an edit` |
 
-The mapping is retained **exactly** — N ⇒ target 0.5 no cap; E/W ⇒ 0.35 cap 0.43; NE/NW/SE/SW ⇒
-0.4 cap 0.5; S ⇒ 0.4 no cap — wrapped with the version and label, code-resident, not DB-settable.
+The mapping is retained — N ⇒ target 0.5 no cap; E/W ⇒ 0.35 cap 0.43; NE/NW/SE/SW ⇒
+0.4 cap 0.5; S ⇒ 0.4 no cap — with one conformance-time adjudication (AD-T17):
+the live code's `o.startsWith("N")` prefix test shadowed its own explicitly-enumerated NE/NW
+branch, so the code *behaved* as NE/NW ⇒ 0.5/no-cap while *stating* NE/NW ⇒ 0.4/0.5. The two
+readings could not both be "retained exactly"; the enumerated table above is the ruling (see the
+conformance review), and the shadowed prefix behaviour is the recorded losing reading — wrapped with the version and label, code-resident, not DB-settable.
 Nothing is re-derived (A14). `shading_relief` and `glazing_ratio_tightening` are **named in a
 comment block beside the rule table as the two declared attachment points, and no code ships for
 either** (A15): when the drawing thread delivers `shadingProjectionMm` /
@@ -429,7 +433,8 @@ existing file is `0056_learning_retrieval_and_provenance.sql`.
 -- Additive only: one new table. No existing table is altered, dropped or rebuilt.
 -- Cascade audit (d1-migration-safety): thermal_default_band is brand new — nothing REFERENCES it
 -- and it REFERENCES nothing, so no ON DELETE CASCADE edge exists on either side and none of the
--- schema's 53 cascade clauses can fire. Children affected: none.
+-- schema's 61 cascade clauses can fire (61 measured 2026-08-20; the d1-migration-safety
+-- skill text's "53" is stale). Children affected: none.
 --
 -- This is a LEDGER: rows are inserted, never updated or deleted. The newest row is the active
 -- default band (the owner's dial); the code-resident seed (thermal/defaultBand.ts, value 4.0 =
@@ -720,6 +725,7 @@ Changes from design revision 1 are marked.
 | AD-T13 *(new)* | "Effectively answered" = `coerceCoherent(band).band !== null`, using the existing single normalisation; `human_override` is never recomputed regardless of content | Spec §8's coerces-to-nothing edge; adding a second coherence test would violate the one-normalisation rule (ladder AC-16) |
 | AD-T14 *(new)* | Axis 3 rows are counted on `thermalProfile` **documents** (matches the 306/58 measurement; shared profiles counted once); the products axis uses each product's effective row set (profile rows else legacy variants, mirroring `toCandidate`); `disabled` products excluded from both numerator and denominator and surfaced as `disabledProductsExcluded` | Row counts must reproduce the owner's measured reality; "can deliver" must mean what the estimator can actually select; a withdrawn product can deliver nothing and would distort the ratio the dial-turner reads |
 | AD-T15 *(new)* | Rule versions start at `zone_u_cap@v1` and `orientation_shgc@v1`; the SHGC mapping's provenance string names A14 and `unsourced_legacy` in every result that used it | The label must travel with every band that cites the rule, not sit in a comment (the spec: "its status visible wherever a band cites it") |
+| AD-T17 *(conformance ruling)* | The orientation→SHGC mapping ships as the **enumerated table** (NE/NW/SE/SW ⇒ 0.4/0.5), not the live prefix behaviour (`startsWith("N")` gave NE/NW ⇒ 0.5/no-cap via a shadowed branch) | The dead branch naming NE and NW is direct evidence of intent; the prefix test is a bug of the same class TB-19's "N/A" guard exists for; the spec states the table twice; zero production rows ever carried an SHGC value, so no estimate moves. A14's "retained exactly" was unachievable as written — the code disagreed with itself — so "retained" means the enumerated intent, and the losing reading is recorded here so it is never re-litigated |
 | AD-T16 *(new)* | The drawing design's guard-rail note ("route computed orientation into advisoryRequirements — it hard-filters at rules.ts:136") is **stale** and is not built | Verified against shipped code: `RULE_VERSION v3-energy-objective` never rejects on energy (rules.ts:297-362); TB-36/AC-10 require computed bands to bind exactly like reported ones. Handed back to that thread as a doc correction (§5) |
 
 ## 13. `CONTEXT.md` additions (architect owns; developer applies verbatim)

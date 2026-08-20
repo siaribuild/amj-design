@@ -5,7 +5,18 @@ description: Safety procedure for writing and applying D1 migrations in this rep
 
 # D1 migration safety
 
-Database: `apertly-db` (Cloudflare D1 / SQLite). Migrations are append-only, numbered after the highest existing file in `migrations/`. This schema currently declares **53 `ON DELETE CASCADE` clauses** — treat every structural change as happening inside a minefield.
+Database: `apertly-db` (Cloudflare D1 / SQLite). Migrations are append-only, numbered after the highest existing file in `migrations/`. This schema declares roughly **52 `ON DELETE CASCADE` clauses** — treat every structural change as
+happening inside a minefield. **Re-measure rather than trusting that figure**; it drifts as migrations
+land, and counting it wrongly is easy:
+
+```bash
+grep -rh 'ON DELETE CASCADE' migrations/*.sql | grep -v '^\s*--' | wc -l
+```
+
+The `grep -v` matters. A plain count returns 62, because ten of the mentions are inside SQL comments
+describing past migrations — two separate agents recently reported "61 cascades" by counting comment
+text as live constraints. What matters for your change is never the total anyway: it is which children
+reference *the table you are touching*, which the next rule tells you how to find.
 
 ## The incident this skill encodes
 
