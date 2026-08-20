@@ -261,8 +261,34 @@ export async function captureBackfilledOutcomes(
     .bind(args.projectId).first<{ id: string }>();
   if (!project) return { written: 0, refused: [], error: "project_not_found" };
 
+  // AND SO IS THE QUOTE LINE. Verifying one foreign key is not verifying the
+  // ROW: `project_id` was checked here from the first version and
+  // `quote_line_id` went straight into the insert, so one request could file an
+  // outcome whose project is one job and whose quote line is another. Both the
+  // project-level corpus and the eligibility verdict derived from these rows
+  // read the PAIR, so a mismatched pair is corruption neither column can reveal
+  // on its own.
+  //
+  // Resolved in one pass rather than per line — the ids are known before the
+  // loop, and a staff paste of a hundred rows should not be a hundred round
+  // trips. Chunked because a bound-parameter list is not unbounded.
+  const claimed = [...new Set(args.lines
+    .map((line) => line.quoteLineId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0))];
+  const ownedQuoteLines = new Map<string, string>();
+  for (let i = 0; i < claimed.length; i += 50) {
+    const chunk = claimed.slice(i, i + 50);
+    const rows = await env.DB.prepare(
+      `SELECT id FROM quote_line WHERE project_id = ? AND id IN (${chunk.map(() => "?").join(",")})`,
+    ).bind(project.id, ...chunk).all<{ id: string }>();
+    for (const row of rows.results ?? []) ownedQuoteLines.set(row.id, row.id);
+  }
+
   const refused: BackfillResult["refused"] = [];
   const stmts: D1PreparedStatement[] = [];
+  /** Which request line each prepared statement came from, so a row the unique
+   *  constraint swallows can be reported against the line that sent it. */
+  const stmtLine: number[] = [];
 
   args.lines.forEach((line, index) => {
     const context = line.context ?? {};
@@ -292,6 +318,12 @@ export async function captureBackfilledOutcomes(
     if (typeof line.finalLineTotal !== "number" || !Number.isFinite(line.finalLineTotal)) {
       problems.push("finalLineTotal");
     }
+    // Naming NO quote line is allowed and common — a pre-platform decision often
+    // predates the line entirely. Naming one that is not this project's is not.
+    if (line.quoteLineId != null &&
+      (typeof line.quoteLineId !== "string" || !ownedQuoteLines.has(line.quoteLineId))) {
+      problems.push("quoteLineId");
+    }
     if (problems.length) {
       // The field name only. A refusal that echoed the offending value would put
       // the customer document text it just refused into a response and a log.
@@ -317,16 +349,39 @@ export async function captureBackfilledOutcomes(
           thermal_eligible, quality_state, retrieval_key, retrieval_key_version, provenance)
        VALUES (?,?,?,NULL,?,?,?,NULL,NULL,NULL,NULL,?,?,?,?,NULL,'adjusted','BACKFILLED_HISTORY',1,0,'approved',?,?,'backfilled')`,
     ).bind(
-      uuid(), project.id, line.quoteLineId ?? null, line.externalRef ?? null,
+      // Both identifiers are the RESOLVED ones — what the database returned, not
+      // what the body claimed.
+      uuid(), project.id,
+      line.quoteLineId == null ? null : ownedQuoteLines.get(line.quoteLineId as string) ?? null,
+      line.externalRef ?? null,
       contextKey(backfillOpening(recordedContext)), JSON.stringify(recordedContext),
       line.finalProductSlug, line.finalVariantId ?? null,
       JSON.stringify(line.finalConfig ?? {}), line.finalLineTotal,
       retrievalKey(recordedContext), RETRIEVAL_KEY_VERSION,
     ));
+    stmtLine.push(index);
   });
 
-  if (stmts.length) await env.DB.batch(stmts);
-  return { written: stmts.length, refused };
+  // WHAT WAS WRITTEN, NOT WHAT WAS ATTEMPTED. `INSERT OR IGNORE` writes nothing
+  // when a quote line already carries an outcome (the UNIQUE on `quote_line_id`
+  // fires), and reporting the statement count made a retried backfill claim a
+  // success it never had — the route refreshes derived eligibility and logs an
+  // audit event off this number.
+  //
+  // `OR IGNORE` stays: a batch is one transaction, and letting a single repeated
+  // line abort a hundred good ones would be a worse answer than reporting it.
+  // The swallowed row is reported the way every other rejection here is — by
+  // line and field — so a retry reads as "already filed" rather than "written".
+  let written = 0;
+  if (stmts.length) {
+    const results = await env.DB.batch(stmts);
+    stmts.forEach((_stmt, i) => {
+      const changes = Number((results?.[i] as { meta?: { changes?: number } } | undefined)?.meta?.changes ?? 0);
+      if (changes > 0) { written++; return; }
+      refused.push({ line: stmtLine[i], field: "quoteLineId" });
+    });
+  }
+  return { written, refused };
 }
 
 /** The legacy twelve-field key is NOT NULL on this table, so a backfilled row

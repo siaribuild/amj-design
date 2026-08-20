@@ -560,15 +560,41 @@ test("buildShadowModel reads only quality-gated, keyed rows", async () => {
 
 // ── The backfill ingest (D18, AC-34) ────────────────────────────────────────
 
-/** A D1 stub whose project lookup can be made to fail. */
-function backfillDb({ projectExists = true } = {}) {
+/** A D1 stub whose project lookup can be made to fail, which knows which quote
+ *  lines exist and whose project each belongs to, and whose batch reports
+ *  per-statement affected-row counts the way D1 does — zero for a row the unique
+ *  constraint on `quote_line_id` swallowed. */
+function backfillDb({ projectExists = true, quoteLines = [], duplicateQuoteLineIds = [] } = {}) {
   const batched = [];
   const prepare = (sql) => ({
     sql,
     bind(...args) { this.args = args; return this; },
     async first() { return /FROM project/.test(sql) && projectExists ? { id: "p_real" } : null; },
+    async all() {
+      if (!/FROM quote_line/.test(sql)) return { results: [] };
+      const [projectId, ...ids] = this.args;
+      return {
+        results: quoteLines
+          .filter((line) => line.projectId === projectId && ids.includes(line.id))
+          .map((line) => ({ id: line.id })),
+      };
+    },
   });
-  return { batched, DB: { prepare, async batch(stmts) { batched.push(...stmts); return []; } } };
+  return {
+    batched,
+    DB: {
+      prepare,
+      async batch(stmts) {
+        batched.push(...stmts);
+        return stmts.map((stmt) => {
+          const index = bindIndexOf(stmt.sql, "quote_line_id");
+          const quoteLineId = index == null ? null : stmt.args[index];
+          const ignored = quoteLineId != null && duplicateQuoteLineIds.includes(quoteLineId);
+          return { success: true, meta: { changes: ignored ? 0 : 1 } };
+        });
+      },
+    },
+  };
 }
 
 const BACKFILL_LINE = {
@@ -617,6 +643,59 @@ test("AC-34 a backfilled row is marked as such and lands in the same bucket", as
 
   // The project id written is the one that was VERIFIED, never the body's.
   assert.equal(at("project_id"), "p_real");
+});
+
+test("a backfill row's quote line is verified against the SAME project, not just the project", async () => {
+  // Verifying one foreign key is not verifying the row. `project_id` was checked
+  // and `quote_line_id` went in as it arrived, so a single request could file an
+  // outcome whose project is one job and whose quote line is another — and both
+  // project-level learning and the eligibility verdict derived from these rows
+  // read the pair, not either column alone.
+  //
+  // The rule matches the project check exactly: resolve the row, refuse what
+  // does not resolve, and bind the RESOLVED value rather than the request's.
+  const env = backfillDb({
+    quoteLines: [{ id: "ql_mine", projectId: "p_real" }, { id: "ql_theirs", projectId: "p_other" }],
+  });
+  const result = await captureBackfilledOutcomes(env, {
+    projectId: "p_real",
+    lines: [
+      { ...BACKFILL_LINE, quoteLineId: "ql_theirs" },
+      { ...BACKFILL_LINE, quoteLineId: "ql_no_such_line" },
+      { ...BACKFILL_LINE, quoteLineId: "ql_mine" },
+      BACKFILL_LINE,
+    ],
+  });
+  assert.equal(result.written, 2, "the owned line and the one that names no line at all");
+  assert.deepEqual(result.refused, [
+    { line: 0, field: "quoteLineId" },
+    { line: 1, field: "quoteLineId" },
+  ]);
+  const written = env.batched.map((row) => row.args[bindIndexOf(row.sql, "quote_line_id")]);
+  assert.deepEqual(written, ["ql_mine", null], "no unresolved identifier reached an insert");
+  // A refusal names the field and never echoes the identifier it refused.
+  assert.equal(JSON.stringify(result.refused).includes("ql_theirs"), false);
+});
+
+test("a retried backfill reports the rows it WROTE, not the rows it attempted", async () => {
+  // `INSERT OR IGNORE` writes nothing when a quote line already has an outcome,
+  // and reporting the statement count as `written` made a retry claim a success
+  // it never had: the route refreshes derived eligibility and logs an audit
+  // event off that number. A duplicate is a refusal, reported by field name like
+  // every other refusal this ingest makes.
+  const env = backfillDb({
+    quoteLines: [{ id: "ql_a", projectId: "p_real" }, { id: "ql_b", projectId: "p_real" }],
+    duplicateQuoteLineIds: ["ql_a"],
+  });
+  const result = await captureBackfilledOutcomes(env, {
+    projectId: "p_real",
+    lines: [
+      { ...BACKFILL_LINE, quoteLineId: "ql_a" },
+      { ...BACKFILL_LINE, quoteLineId: "ql_b" },
+    ],
+  });
+  assert.equal(result.written, 1, "one row existed already, so one row was written");
+  assert.deepEqual(result.refused, [{ line: 0, field: "quoteLineId" }]);
 });
 
 test("a backfill row for a project that does not exist writes nothing", async () => {
