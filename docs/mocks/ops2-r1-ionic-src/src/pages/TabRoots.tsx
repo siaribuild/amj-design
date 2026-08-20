@@ -5,7 +5,7 @@ import { useState } from "react";
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
   IonLabel, IonBadge, IonNote, IonListHeader, IonButton, IonButtons, IonIcon,
-  IonSegment, IonSegmentButton, IonSearchbar,
+  IonSegment, IonSegmentButton, IonSearchbar, IonModal, IonCheckbox,
 } from "@ionic/react";
 import { searchOutline, funnelOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
@@ -177,6 +177,7 @@ export function ProjectsPage() {
   const [wait, setWait] = useState<WaitFilter>("all");
   const [extra, setExtra] = useState<ExtraFilter[]>([]);
   const [searching, setSearching] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const q = query.trim().toLowerCase();
@@ -223,7 +224,7 @@ export function ProjectsPage() {
                 cannot see is how an empty list gets read as good news. */}
             <IonButton className="pf-funnel" fill="outline" size="small"
               aria-label={extra.length ? "Filters, " + extra.length + " active" : "Filters"}
-              onClick={() => setExtra(extra.length ? [] : ["unpriced"])}>
+              onClick={() => setFiltersOpen(true)}>
               <IonIcon slot="icon-only" icon={funnelOutline} />
               {extra.length > 0 && <IonBadge className="pf-badge" color="primary">{extra.length}</IonBadge>}
             </IonButton>
@@ -231,10 +232,13 @@ export function ProjectsPage() {
         </IonToolbar>
       </IonHeader>
       <IonContent scrollEvents>
+        {/* Every active refinement, named. The funnel's badge says HOW MANY are
+            on; this says WHICH, because a count alone still leaves you guessing
+            at why a row you expected is missing. */}
         {extra.length > 0 && (
           <div className="project-escape">
             <IonButton fill="clear" size="small" onClick={() => setExtra([])}>
-              {EXTRA[extra[0]].label} - clear
+              {extra.map((f) => EXTRA[f].label).join(" + ")} - clear
             </IonButton>
           </div>
         )}
@@ -291,6 +295,43 @@ export function ProjectsPage() {
             ))}</tbody>
           </table></div>
         </>}
+        {/* A real filter control: every refinement listed, each independently
+            settable, the effect of each stated as a count so nothing is chosen
+            blind, and one way to clear the lot. The funnel used to toggle a
+            single filter while wearing a badge that implied a set. */}
+        <IonModal isOpen={filtersOpen} onDidDismiss={() => setFiltersOpen(false)}
+          initialBreakpoint={0.5} breakpoints={[0, 0.5]}>
+          <IonHeader className="ion-no-border">
+            <IonToolbar>
+              <IonTitle>Filters</IonTitle>
+              <IonButtons slot="end">
+                <IonButton onClick={() => setFiltersOpen(false)}>Done</IonButton>
+              </IonButtons>
+            </IonToolbar>
+          </IonHeader>
+          <IonContent>
+            <IonList lines="full">
+              {(Object.keys(EXTRA) as ExtraFilter[]).map((key) => {
+                const matches = PROJECT_QUEUE.filter((p) => EXTRA[key].test(p)).length;
+                return (
+                  <IonItem key={key}>
+                    <IonCheckbox checked={extra.includes(key)} justify="space-between"
+                      onIonChange={(e) => setExtra(e.detail.checked
+                        ? [...extra, key]
+                        : extra.filter((x) => x !== key))}>
+                      {EXTRA[key].label}
+                      <span className="pf-count">{matches}</span>
+                    </IonCheckbox>
+                  </IonItem>
+                );
+              })}
+            </IonList>
+            <div className="project-escape">
+              <IonButton fill="clear" size="small" disabled={extra.length === 0}
+                onClick={() => setExtra([])}>Clear all filters</IonButton>
+            </div>
+          </IonContent>
+        </IonModal>
       </IonContent>
     </IonPage>
   );
