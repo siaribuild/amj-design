@@ -5,6 +5,13 @@
 // Design intent (§8.3): the normalized model is independent of any provider
 // response format. The LLM's job is to fill THIS structure with evidence-linked
 // facts; it is never the source of truth for regulation, catalogue or price.
+//
+// The one import is TYPE-ONLY and to a module that itself imports nothing (the
+// thermal input contract), so the dependency-free property above is intact at
+// runtime: a derivation's `source` must be spelled the same here as in the
+// contract that produced it, and two spellings of that vocabulary is exactly the
+// drift this field exists to prevent.
+import type { InputSource } from "../estimator/thermal/contract";
 
 // ── §8.2 Observation classes ─────────────────────────────────────────────────
 // Every extracted fact carries one origin. model_inferred facts must NEVER be
@@ -131,6 +138,22 @@ export interface EnergyRequirementV1 {
   zoneType: string | null;
   operablePercent: number | null;
   notes: string | null;
+  /** Present on COMPUTED requirements only (basis plan_derived | default_envelope);
+   *  never set on the report path, which states a band rather than deriving one.
+   *
+   *  This is what makes a band derived from evidence distinguishable BY FIELD
+   *  from one derived from nothing — the question the platform could not answer
+   *  when 444 of 444 openings carried the same constant. It rides in the
+   *  requirement itself (and so in `requirement_json`) rather than a side table,
+   *  because the requirement is the record of the claim and a side channel could
+   *  drift from it. */
+  derivation?: {
+    inputsUsed: { field: string; value: unknown; source: InputSource }[];
+    inputsMissing: string[];
+    rulesApplied: { ruleId: string; version: string; provenance: string }[];
+    defaultBandVersion: string;
+    contractVersion: string;
+  };
 }
 
 // ── OpeningV1 (§8.4) ─────────────────────────────────────────────────────────
@@ -144,6 +167,14 @@ export interface OpeningV1 {
   level: string | null;
   roomId: string | null;
   wallOrientation: "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW" | null;
+  /** Which document class supplied `wallOrientation`. CONSUMPTION-SIDE
+   *  BOOKKEEPING ONLY: it is set where the two EXISTING producers already write
+   *  wallOrientation (applyPlanContext, applyEnergyAuthority) — one line each,
+   *  no precedence logic and no new producer. Resolving between competing
+   *  orientation producers belongs to the drawing/scanning thread; this field
+   *  records what that resolution decided, so the thermal contract can say where
+   *  an orientation came from instead of asserting a band on an uncitable one. */
+  wallOrientationSource: "energy_report" | "plan" | "schedule" | null;
   elementType: "window" | "door";
   widthMm: number | null;
   heightMm: number | null;

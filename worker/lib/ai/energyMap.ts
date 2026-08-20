@@ -96,7 +96,13 @@ export function applyEnergyAuthority(opening: OpeningV1, authority: EnergyOpenin
     : null;
   if (authority.operationType) opening.configuration.familyRequested = authority.operationType;
   if (authority.room) opening.roomId = authority.room;
-  if (authority.orientation) opening.wallOrientation = authority.orientation as OpeningV1["wallOrientation"];
+  if (authority.orientation) {
+    opening.wallOrientation = authority.orientation as OpeningV1["wallOrientation"];
+    // Bookkeeping beside the existing write (no precedence change): the thermal
+    // contract refuses an orientation it cannot cite, and this is where a report
+    // -supplied one gets its citation.
+    opening.wallOrientationSource = "energy_report";
+  }
   const description = authority.performanceDescription ?? authority.glazingNote;
   if (description) {
     opening.scheduleRequirements.glassDescription = description;

@@ -13,9 +13,13 @@
 // Until that studio type is provisioned, this code-resident registry IS the
 // published set — version-locked, snapshotted immutably into each run's
 // requirement_json, so a later registry change can never mutate a past estimate.
-import type { BuildingModelV1, EnergyRequirementV1 } from "./schema";
+import type { BuildingModelV1 } from "./schema";
 
-export const ARCHETYPE_REGISTRY_VERSION = "v1";
+// v2: the archetype no longer carries a Uw cap of its own. The default Uw is the
+// owner's dial (estimator/thermal/defaultBand.ts) — one place per fact, and a
+// live-looking 4.0 sitting in code beside it is exactly how the constant this
+// feature replaced became invisible in the first place.
+export const ARCHETYPE_REGISTRY_VERSION = "v2";
 
 export interface EnvelopeArchetype {
   id: string;
@@ -29,9 +33,11 @@ export interface EnvelopeArchetype {
   shadingProfile: string;
   /** Widened prediction interval when this archetype substitutes for evidence. */
   uncertaintyPenalty: number;
-  /** Conservative per-opening band for Path 3. SHGC stays null in Mode A —
-   *  orientation is unknown, and §11.3 forbids "lower SHGC is always better". */
-  defaultOpeningBand: { maxUValue: number; shgcMin: null; shgcMax: null; note: string };
+  /** Conservative per-opening band for Path 3. It carries NO Uw cap: the cap is
+   *  the active default record's, resolved per run and snapshotted into every
+   *  requirement it produces. SHGC stays null here — orientation is a contract
+   *  input, and §11.3 forbids "lower SHGC is always better". */
+  defaultOpeningBand: { shgcMin: null; shgcMax: null; note: string };
 }
 
 // §3.1 minimum context: Melbourne, new build, current energy requirements. The
@@ -51,7 +57,7 @@ export const ARCHETYPES: EnvelopeArchetype[] = [
     shadingProfile: "typical_suburban",
     uncertaintyPenalty: 0.25,
     defaultOpeningBand: {
-      maxUValue: 4.0, shgcMin: null, shgcMax: null,
+      shgcMin: null, shgcMax: null,
       note: "interim assumption-based band applied nationally pending the delivery postcode; confirm with plans or an energy report",
     },
   },
@@ -74,10 +80,10 @@ const INTERIM_DEFAULT_ARCHETYPE = ARCHETYPES[0];
  *  `thermalRequirement` stayed absent and nothing downstream could reason about
  *  thermal. That is a bigger fabrication than applying a stated assumption.
  *
- *  The band is deliberately conservative rather than climate-correct: VIC CZ6
- *  caps Uw at 4.0 where CZ1/CZ2 (Darwin, Brisbane) would allow 5.8, so a hot-
- *  climate job is held to a TIGHTER bar than its climate requires. That errs
- *  toward review and never toward under-speccing, and every application is
+ *  The archetype resolves the CLIMATE ZONE and the assumption note; the Uw cap
+ *  it once carried is now the active default record's, so a hot-climate job is
+ *  still held to the Melbourne bar until climate-zone resolution lands. That
+ *  errs toward review and never toward under-speccing, and every application is
  *  recorded as an `envelope_default` assumption carrying the note above.
  *
  *  Replace this with climate-zone resolution once the delivery postcode is known
@@ -88,20 +94,7 @@ export function resolveDefaultEnvelope(model: Pick<BuildingModelV1, "jurisdictio
   return ARCHETYPES.find((a) => a.jurisdiction === state) ?? INTERIM_DEFAULT_ARCHETYPE;
 }
 
-/** The Path 3 requirement an archetype implies for one opening. */
-// SCAFFOLD WS6 (thermal rework): make this per-opening — accept the opening +
-// thermalContext (orientation/room/glazing-ratio) and derive an orientation-aware
-// band incl. SHGC when known, instead of a flat archetype constant with SHGC null.
-// Superseded by thermal/computedBand.computeDefaultBand. Plan §5/WS6.
-export function defaultRequirement(archetype: EnvelopeArchetype): EnergyRequirementV1 {
-  return {
-    basis: "default_envelope",
-    maxUValue: archetype.defaultOpeningBand.maxUValue,
-    shgcTarget: null,
-    shgcMin: archetype.defaultOpeningBand.shgcMin,
-    shgcMax: archetype.defaultOpeningBand.shgcMax,
-    zoneType: null,
-    operablePercent: null,
-    notes: archetype.defaultOpeningBand.note,
-  };
-}
+// The flat per-opening requirement this file used to imply is GONE. It was a
+// jurisdiction constant with SHGC null — the "444 of 444 identical" defect in
+// its purest form — and `computeThermalBand` is total, so the fallback branch
+// that called it is unreachable by construction rather than merely unused.

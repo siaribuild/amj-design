@@ -18,8 +18,10 @@ await build({
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
-      export { applyDefaultEnvelope } from ${p("worker/lib/ai/pipeline.ts")};
-      export { resolveDefaultEnvelope, defaultRequirement, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
+      export { applyDefaultEnvelope, thermalInputsFor } from ${p("worker/lib/ai/pipeline.ts")};
+      export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
+      export { SEED_DEFAULT_BAND } from ${p("worker/lib/estimator/thermal/defaultBand.ts")};
+      export { computeThermalBand } from ${p("worker/lib/estimator/thermal/computedBand.ts")};
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
@@ -36,9 +38,18 @@ const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
-  applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
+  applyDefaultEnvelope, thermalInputsFor, resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
+  SEED_DEFAULT_BAND, computeThermalBand,
   proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
+
+// The dial every pipeline test runs against. TB-18: it deliberately does NOT
+// carry today's default value — every assertion below reads this record, so a
+// test that accidentally pinned a business number would fail loudly here.
+const testDial = (over = {}) => ({
+  version: "row:test", maxUValue: 2.5, method: "manual", source: "fixture record",
+  derivedAt: "2026-08-20T00:00:00Z", observations: null, setBy: "test", interim: false, ...over,
+});
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
 function pngBytes(width, height) {
@@ -628,7 +639,7 @@ test("a non-VIC job gets a tier-3 band rather than none at all", () => {
   const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1200, 900)] }]);
   const model = linesToBuildingModel("prj_nonvic", merged, []);
   model.jurisdiction.state = "QLD"; // uncovered by the registry
-  const archetype = applyDefaultEnvelope(model);
+  const { archetype } = applyDefaultEnvelope(model, testDial());
   assert.ok(archetype, "an uncovered state still resolves the interim default");
   const req = model.openings[0].thermalRequirement;
   assert.ok(req, "the opening carries a band — the whole point of the change");
@@ -636,28 +647,29 @@ test("a non-VIC job gets a tier-3 band rather than none at all", () => {
   assert.ok(req.maxUValue > 0);
 });
 
-test("default band: default_envelope basis, Uw cap only — SHGC stays null in Mode A (§11.3)", () => {
-  const req = defaultRequirement(ARCHETYPES[0]);
-  assert.equal(req.basis, "default_envelope");
-  assert.ok(req.maxUValue > 0);
-  assert.equal(req.shgcMin, null, "no SHGC default without orientation evidence");
-  assert.equal(req.shgcMax, null);
-});
-
-test("applyDefaultEnvelope: fills only bare openings, never overrides an explicit report value", () => {
+test("TB-10: applyDefaultEnvelope fills only unanswered openings, never overrides an explicit report value", () => {
   const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200), line("W02", 900, 600)] }]);
   const model = linesToBuildingModel("prj_1", merged, []);
   model.jurisdiction.state = "VIC";
   // W01 got an explicit report requirement first (Path 1).
   const explicit = { basis: "explicit_energy_report", maxUValue: 2.3, shgcTarget: null, shgcMin: 0.37, shgcMax: 0.41, zoneType: null, operablePercent: null, notes: null };
   model.openings.find((o) => o.externalRef === "W01").thermalRequirement = explicit;
-  const archetype = applyDefaultEnvelope(model);
+  const dial = testDial();
+  const { archetype, counts } = applyDefaultEnvelope(model, dial);
   assert.ok(archetype, "VIC default context resolves the archetype");
-  assert.equal(model.openings.find((o) => o.externalRef === "W01").thermalRequirement.maxUValue, 2.3, "explicit value untouched");
+  const w01 = model.openings.find((o) => o.externalRef === "W01").thermalRequirement;
+  assert.equal(w01.maxUValue, 2.3, "explicit value untouched");
+  assert.equal(w01.basis, "explicit_energy_report", "and the calculation did not run for it");
+  assert.equal(w01.derivation, undefined, "a reported band has no derivation — it was stated, not derived");
   const w02 = model.openings.find((o) => o.externalRef === "W02").thermalRequirement;
   assert.equal(w02.basis, "default_envelope");
-  assert.equal(w02.maxUValue, archetype.defaultOpeningBand.maxUValue);
+  // TB-15: the cap is the ACTIVE RECORD's value, not a constant in the archetype.
+  assert.equal(w02.maxUValue, dial.maxUValue);
+  assert.equal(w02.derivation.defaultBandVersion, dial.version);
+  assert.equal(ARCHETYPES[0].defaultOpeningBand.maxUValue, undefined,
+    "one place per fact: the archetype no longer carries a Uw cap of its own");
   assert.equal(model.envelope.defaultArchetypeId, archetype.id);
+  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1 });
   const assumption = model.assumptions.find((a) => a.fact.startsWith("default_envelope:"));
   assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
 });
@@ -666,7 +678,7 @@ test("thermal context persists meaningful case-learning keys and review reasons"
   const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
   const model = linesToBuildingModel("prj_1", merged, []);
   model.jurisdiction.buildingClass = "1a";
-  const archetype = applyDefaultEnvelope(model);
+  const { archetype } = applyDefaultEnvelope(model, testDial());
   const context = thermalContextFor(model, model.openings[0], [
     "energy_requirement_ambiguous", "energy_requirement_ambiguous",
   ]);

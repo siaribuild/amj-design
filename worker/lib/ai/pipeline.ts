@@ -18,8 +18,11 @@ import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/sche
 import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
 import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/plan";
 import { applyEnergyAuthority, mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
-import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
-import { computeDefaultBand } from "../estimator/thermal/computedBand";
+import { resolveDefaultEnvelope, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
+import { computeThermalBand } from "../estimator/thermal/computedBand";
+import { readSourced, type CompassPoint, type ThermalModelInputs } from "../estimator/thermal/contract";
+import { SEED_DEFAULT_BAND, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
+import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
@@ -87,7 +90,7 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     openingId: `op_${l.tag || `untagged_${i + 1}`}`,
     externalRef: l.tag || `UNTAGGED-${i + 1}`,
     parentRef: l.tag ? parentTagOf(l.tag) : null,
-    level: null, roomId: null, wallOrientation: null,
+    level: null, roomId: null, wallOrientation: null, wallOrientationSource: null,
     elementType: l.elementType ?? (l.tag.toUpperCase().startsWith("D") ? "door" : "window"),
     widthMm: l.widthMm, heightMm: l.heightMm,
     quantity: Math.max(1, Math.floor(l.qty ?? 1)),
@@ -185,6 +188,11 @@ export function applyPlanContext(
       if (!mapped) continue;
       opening.roomId ??= mapped.roomId;
       opening.wallOrientation ??= mapped.orientation as OpeningV1["wallOrientation"];
+      // Bookkeeping only, beside the write that just happened: record WHICH
+      // document class supplied the orientation the thermal contract will read.
+      // No precedence logic and no new producer — `??=` above still decides who
+      // wins, exactly as before.
+      if (opening.wallOrientation && !opening.wallOrientationSource) opening.wallOrientationSource = "plan";
       if (mapped.horizontalProjectionMm != null) {
         opening.shading = {
           horizontalProjectionMm: mapped.horizontalProjectionMm,
@@ -251,53 +259,127 @@ export function thermalContextFor(
   } as const;
 }
 
-// ── Pure: Path 3 default-envelope application (§10.1, Phase 4) ───────────────
-// Openings still lacking an explicit requirement get the archetype's conservative
-// band, recorded as an envelope_default ASSUMPTION — the §10.5 default-basis
-// language flows from requirement_basis, never silently. Returns the archetype
-// used (for the immutable per-run snapshot) or null when none covers the region.
-// SCAFFOLD WS6 (thermal rework): this is precedence TIER 3. It must (a) defer to a
-// tier-2 shared/per-type band, (b) compute PER opening via thermal/computedBand
-// (orientation/room aware, not one flat jurisdiction constant), and (c) assign
-// per-lite bands to composite children. Plan §2/§4/WS6.
-export function applyDefaultEnvelope(model: BuildingModelV1): EnvelopeArchetype | null {
+// ── Pure: assemble one opening's THERMAL INPUT CONTRACT record ───────────────
+//
+// Assembly READS the model; it never extracts. Every field below is a fact the
+// building model already holds, and each document-derived one is stamped with
+// the document class that supplied it — an orientation whose producer we cannot
+// name is not evidence, so it is assembled as absent rather than as an unsourced
+// value the band would then rest on invisibly.
+//
+// In production today every `plan`-sourced field is null (0 of 38 models carry
+// rooms or shading) and orientation arrives only via an energy report, for
+// openings that report gave no band to. That availability is the extraction
+// thread's to change; nothing here has to move when it does.
+export function thermalInputsFor(model: BuildingModelV1, opening: OpeningV1): ThermalModelInputs {
   const archetype = resolveDefaultEnvelope(model);
-  if (!archetype) return null;
-  let applied = 0;
+  const room = model.rooms.find((r) => r.roomId === opening.roomId);
+  const areaM2 = opening.areaM2;
+  // Same rounding as thermalContextFor — one derivation of this ratio, not two.
+  const glazingRatio = areaM2 != null && room?.areaM2
+    ? Math.round((areaM2 / room.areaM2) * 1000) / 1000
+    : null;
+  const schedule = opening.scheduleRequirements;
+  const hasGlazingInstruction = schedule.doubleGlazed != null || schedule.glassDescription != null;
+  return {
+    climateZone: archetype?.nccClimateZone ?? null,
+    elementType: opening.elementType,
+    isCompositeChild: opening.parentRef != null,
+    widthMm: opening.widthMm,
+    heightMm: opening.heightMm,
+    areaM2,
+    orientation: readSourced<CompassPoint>(
+      { value: opening.wallOrientation, source: opening.wallOrientationSource },
+      { compass: true },
+    ),
+    roomAreaM2: room?.areaM2 != null ? { value: room.areaM2, source: "plan" } : null,
+    glazingToRoomFloorRatio: glazingRatio != null ? { value: glazingRatio, source: "plan" } : null,
+    shadingProjectionMm: opening.shading?.horizontalProjectionMm != null
+      ? { value: opening.shading.horizontalProjectionMm, source: "plan" }
+      : null,
+    zoneType: room?.zoneType != null ? { value: room.zoneType, source: "plan" } : null,
+    glazingInstruction: hasGlazingInstruction
+      ? { value: { doubleGlazed: schedule.doubleGlazed, note: schedule.glassDescription }, source: "schedule" }
+      : null,
+  };
+}
+
+/** What one run's envelope stage did, for the summary counters (TB-9). */
+export interface DefaultEnvelopeCounts {
+  computed: number;
+  withShgc: number;
+  plan_derived: number;
+  default_envelope: number;
+}
+
+// ── Pure: Path 3 — compute the requirement for every unanswered opening ──────
+//
+// This is precedence TIER 3, and it is where a computed requirement is born.
+//
+// "Unanswered" is a question about the BAND, not about the row. The old test
+// (`if (o.thermalRequirement) continue`) skipped on the row's existence, so an
+// opening whose report band was incoherent and coerced away to nothing kept a
+// requirement that constrained nothing at all and never reached the
+// calculation. It now runs for that opening and the basis is computed —
+// `coerceCoherent` is the single existing normalisation and is not duplicated
+// here. A human's edit is never recomputed regardless of content.
+//
+// Composite children are just openings in this loop: each is banded from its own
+// inputs and inherits nothing implicitly. Report-defined `thermalComponents`
+// keep their own report requirements and never reach here.
+export function applyDefaultEnvelope(
+  model: BuildingModelV1,
+  dial: ActiveDefaultBand,
+): { archetype: EnvelopeArchetype | null; dial: ActiveDefaultBand; counts: DefaultEnvelopeCounts } {
+  const counts: DefaultEnvelopeCounts = { computed: 0, withShgc: 0, plan_derived: 0, default_envelope: 0 };
+  const archetype = resolveDefaultEnvelope(model);
+  if (!archetype) return { archetype: null, dial, counts };
   for (const o of model.openings) {
-    if (o.thermalRequirement) continue; // explicit report values stay authoritative
-    // WS6: compute the band PER opening — orientation-aware where the wall
-    // orientation is known (a cooling-control SHGC cap for hard-to-shade E/W),
-    // Uw-cap-only otherwise (§11.3). Never sets a minShgc, so it can never form
-    // an impossible interval. Falls back to the flat archetype band if the
-    // computation yields nothing usable.
-    const band = computeDefaultBand(
-      { climateZone: archetype.nccClimateZone, orientation: o.wallOrientation },
-      o.elementType,
-    );
-    o.thermalRequirement = band
-      ? {
-          basis: "default_envelope",
-          maxUValue: band.maxUValue,
-          shgcTarget: band.shgcTarget,
-          shgcMin: band.minShgc,
-          shgcMax: band.maxShgc,
-          zoneType: null,
-          operablePercent: null,
-          notes: `${archetype.defaultOpeningBand.note} (orientation ${o.wallOrientation ?? "unknown"})`,
-        }
-      : defaultRequirement(archetype);
-    applied++;
+    const existing = o.thermalRequirement;
+    if (existing) {
+      // The human is the highest-precedence source, full stop.
+      if (existing.basis === "human_override") continue;
+      const effective = coerceCoherent({
+        maxUValue: existing.maxUValue, minShgc: existing.shgcMin,
+        maxShgc: existing.shgcMax, shgcTarget: existing.shgcTarget,
+      }).band;
+      // An effective report band ends the matter: the calculation contributes
+      // NOTHING to an opening a report has already answered, so it can never add
+      // an SHGC cap the report never asked for and exclude a product the report
+      // allows.
+      if (effective) continue;
+    }
+    const result = computeThermalBand(thermalInputsFor(model, o), dial);
+    o.thermalRequirement = {
+      basis: result.basis,
+      maxUValue: result.band.maxUValue,
+      shgcTarget: result.band.shgcTarget,
+      shgcMin: result.band.minShgc,
+      shgcMax: result.band.maxShgc,
+      zoneType: null,
+      operablePercent: null,
+      notes: `${archetype.defaultOpeningBand.note} (orientation ${o.wallOrientation ?? "unknown"})`,
+      derivation: {
+        inputsUsed: result.inputsUsed,
+        inputsMissing: result.inputsMissing,
+        rulesApplied: result.rulesApplied,
+        defaultBandVersion: result.defaultBandVersion,
+        contractVersion: result.contractVersion,
+      },
+    };
+    counts.computed++;
+    if (result.band.shgcTarget != null || result.band.maxShgc != null) counts.withShgc++;
+    counts[result.basis]++;
   }
-  if (applied) {
+  if (counts.computed) {
     model.envelope.defaultArchetypeId = archetype.id;
     model.assumptions.push({
       fact: `default_envelope:${archetype.id}`,
       origin: "envelope_default",
-      note: `${archetype.defaultOpeningBand.note} — registry ${ARCHETYPE_REGISTRY_VERSION}, applied to ${applied} opening(s)`,
+      note: `${archetype.defaultOpeningBand.note} — registry ${ARCHETYPE_REGISTRY_VERSION}, applied to ${counts.computed} opening(s)`,
     });
   }
-  return applied ? archetype : null;
+  return { archetype: counts.computed ? archetype : null, dial, counts };
 }
 
 // ── Orchestration ────────────────────────────────────────────────────────────
@@ -683,9 +765,13 @@ export async function runAiExtraction(
     }
   }
 
-  // Path 3 (Phase 4): conservative default band for openings with no explicit
-  // requirement; snapshotted immutably into requirement_json below.
-  const archetype = applyDefaultEnvelope(model);
+  // Path 3 (Phase 4): compute the requirement for every opening no report has
+  // effectively answered, against the OWNER'S DIAL resolved once for the whole
+  // run — one read, and every requirement this run produces snapshots the same
+  // record, so turning the dial mid-run cannot split a project across two
+  // defaults. Snapshotted immutably into requirement_json below.
+  const dial = SEED_DEFAULT_BAND;
+  const { archetype, counts: envelopeCounts } = applyDefaultEnvelope(model, dial);
 
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
 
@@ -718,7 +804,11 @@ export async function runAiExtraction(
       JSON.stringify({
         opening: o.externalRef, thermal: tr,
         // Immutable archetype snapshot (§10.3): a registry change never mutates history.
-        archetype: tr?.basis === "default_envelope" && archetype ? archetype : undefined,
+        archetype: tr?.derivation && archetype ? archetype : undefined,
+        // Immutable DIAL snapshot, for the same reason and on the same terms: a
+        // requirement must stay readable as what it claimed WHEN IT WAS MADE,
+        // so a later row superseding the default can never re-base it.
+        defaultBand: tr?.derivation ? dial : undefined,
       })),
     );
   }
