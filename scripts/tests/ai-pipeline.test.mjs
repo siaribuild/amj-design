@@ -674,6 +674,57 @@ test("TB-10: applyDefaultEnvelope fills only unanswered openings, never override
   assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
 });
 
+// ── The calculation, through the pipeline (spec §7.1) ────────────────────────
+//
+// A plan context is used to supply orientation because that is how a real job
+// will supply it once the drawing thread lands — and because it exercises the
+// one-line source stamp beside the existing producer at the same time.
+const planned = (openings, rooms = []) => ({
+  fileId: "plan",
+  context: {
+    jurisdiction: { state: "VIC", postcode: null, buildingClass: null },
+    storeys: null, totalFloorAreaM2: null, conditionedFloorAreaM2: null, northRotationDeg: null,
+    rooms, openings, issues: [],
+  },
+});
+const planOpening = (ref, orientation, over = {}) =>
+  ({ ref, roomId: null, orientation, horizontalProjectionMm: null, ...over });
+const bandOf = (model, ref) => model.openings.find((o) => o.externalRef === ref).thermalRequirement;
+
+test("TB-1/TB-2: two openings in one project get DIFFERENT bands, and the SHGC path is reachable", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200), line("W02", 1810, 1200)] }]);
+  const model = linesToBuildingModel("prj_1", merged, []);
+  applyPlanContext(model, [planned([planOpening("W01", "W"), planOpening("W02", "N")])]);
+  const { counts } = applyDefaultEnvelope(model, testDial());
+  const w01 = bandOf(model, "W01");
+  const w02 = bandOf(model, "W02");
+  // The defect this feature exists for: identical openings, identical bands,
+  // 444 times out of 444. Same frame, same size, different aspect ⇒ different band.
+  assert.deepEqual([w01.shgcTarget, w01.shgcMax], [0.35, 0.43], "west controls cooling");
+  assert.deepEqual([w02.shgcTarget, w02.shgcMax], [0.5, null], "north keeps solar access");
+  const rule = w01.derivation.rulesApplied.find((r) => r.ruleId === "orientation_shgc");
+  assert.equal(rule.version, "v1", "the rule that fired is named and versioned");
+  assert.deepEqual(w01.derivation.inputsUsed.find((u) => u.field === "orientation"),
+    { field: "orientation", value: "W", source: "plan" },
+    "and the input it consumed is recorded with the document class that supplied it");
+  assert.equal(counts.withShgc, 2, "the SHGC path executed — it never had in production");
+});
+
+test("TB-3/TB-8: a band that rests on nothing says so, by field", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
+  const model = linesToBuildingModel("prj_blind", merged, []);
+  const { counts } = applyDefaultEnvelope(model, testDial());
+  const req = bandOf(model, "W01");
+  assert.equal(req.shgcTarget, null);
+  assert.equal(req.shgcMax, null);
+  assert.equal(req.basis, "default_envelope");
+  assert.ok(!req.derivation.rulesApplied.some((r) => r.ruleId === "orientation_shgc"));
+  assert.ok(req.derivation.inputsMissing.includes("orientation"));
+  assert.deepEqual(req.derivation.inputsUsed.filter((u) => u.source !== "envelope_default"), [],
+    "nothing about this opening informed its requirement, and the record says exactly that");
+  assert.deepEqual(counts, { computed: 1, withShgc: 0, plan_derived: 0, default_envelope: 1 });
+});
+
 test("thermal context persists meaningful case-learning keys and review reasons", () => {
   const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
   const model = linesToBuildingModel("prj_1", merged, []);
