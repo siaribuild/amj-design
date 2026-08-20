@@ -43,6 +43,7 @@ import { getProductBySlug, families } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
+import { opsThermal } from "./ops-thermal";
 
 export const ops = new Hono<{ Bindings: Env }>();
 
@@ -50,6 +51,11 @@ export const ops = new Hono<{ Bindings: Env }>();
 // policy) plus catalogue reconciliation. Its own file: it is a distinct surface
 // with its own role gates, and ops.ts is already long enough.
 ops.route("/pricing", opsPricing);
+
+// The thermal calibration read: what reports have demanded, what the default
+// asserts, and what the published catalogue can deliver at each candidate cap.
+// Its own file because the ABSENCE of a write verb there is a tested property.
+ops.route("/thermal", opsThermal);
 
 // Internal workflow state machine (status_internal). 'issued' is reached via
 // issue-quote; 'customer_clarification_required' via request-clarification.
