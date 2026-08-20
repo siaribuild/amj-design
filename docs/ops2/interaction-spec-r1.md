@@ -2189,7 +2189,7 @@ retained panel on the record, F's FAB presence, H's strip — all read from the 
    behaviour it would need was not built, because building it is the argument
    against H rather than a step toward it.
 
-## 32.6 Recommendation
+## 32.6 Recommendation (E is now specified as a RULE in section 33)
 
 **E**, with **A** as the conservative fallback.
 
@@ -2208,3 +2208,152 @@ tempting on the line and impossible on the record, so it would mean two differen
 action models on two adjacent screens. **H** costs the framework's tab behaviour
 for one pixel. **D** remains attractive if he prefers A's shape, but it is the
 only option whose central mechanism still needs a device to confirm.
+
+---
+
+# 33. R1m — E as a rule across modes
+
+## 33.1 The rule, and its rationale
+
+> **The header's trailing slot is the primary-action slot, whatever the primary
+> action currently is.**
+
+| Mode | Leading | Trailing |
+|---|---|---|
+| Record, viewing | `‹ Projects` | `Issue quote` · `⋯` |
+| Line, viewing | `‹ Lines` · `‹W03` · `W05›` | `Edit` · `⋯` |
+| **Editing** | `Cancel` | `Save` — **no `⋯`** |
+
+**The rationale is maximum separation, and it is a better argument than the pixel
+count:** put the verb at the opposite end of the screen from the destinations, so
+a verb and a place are never confused.
+
+Applied consistently, that also moves the line's **neighbour pair to the leading
+edge** beside back. Everything that *navigates* is at one end, everything that
+*acts* is at the other, and a reader never has to ask which half of the bar they
+are looking at. In R1l's version of E the neighbours were still trailing, which
+put a place among the verbs.
+
+**In edit mode the `⋯` is absent, deliberately.** A bounded task has no secondary
+actions, and the absence is the signal: there is nothing to do here but finish or
+abandon. This is the native modal-form idiom, so it costs nothing to learn.
+
+**What R1l was missing:** the editor still carried Save/Cancel in a footer, so the
+header was the action slot on one screen and not the next. He was judging half the
+rule. It now holds through record view, line view and the editor — including the
+docked editor at ≥768.
+
+The read-back strip **stays in the editor's footer**: it is information (R-159 —
+the editor covers the totals, so it carries their conclusion), and the rule moves
+actions, not facts. R-39's discard guard still expands from the footer, triggered
+by the header's `Cancel`.
+
+## 33.2 The blocked primary — the case that decides it
+
+**Answered, and it needed no invention.**
+
+R-153 put the reason *"beneath it inside the footer"* because that is where the
+primary was. **The principle is adjacency, not the footer.** The record already
+carried a row that stated the blocking condition and offered the fix — the filter
+row — and it was simply never wired to the button it explains.
+
+It is now the **blocker row**, and it treats blockers as a **queue rather than a
+list**: it states the leading one with the control that clears it and counts the
+rest, so it stays one line as the work is done.
+
+```
+Issue quote (disabled, inert)          ← nav bar, trailing slot
+● 2 lines have no rate · +1 more     show only these   ← in the header stack
+```
+
+As the lines are priced it becomes `Delivery is not confirmed · confirm it`, and
+when nothing blocks, `Nothing is blocking this quote`.
+
+**Rendered in the blocked state, not the happy path.** Both blockers are live and
+`Issue quote` is disabled and inert (rule A1b — full opacity, legible label).
+
+**The consequence for the bottom edge:** with the reason in the header stack, the
+record's footer is **0px**. E is now the only option that genuinely clears the
+bottom edge on the record, rather than shrinking the panel to a 29px strip as it
+did in R1l.
+
+### One accessibility gap, unresolved and stated
+
+The reason should also reach a screen reader from the button. **It does not, and
+I could not make it.** Measured twice: Ionic's React `IonButton` drops
+`aria-describedby` from props, and setting it on the element through a ref does
+not survive either — the component manages the host's aria attributes.
+`aria-label` was tried next and is also absent from the rendered host.
+
+**What saves it in practice:** the CTA is `disabled`, so it is not focusable and a
+keyboard or screen-reader user does not land on it at all — they reach the
+**blocker row**, which is a real focusable control that states the reason and
+performs the fix. That is a coherent path, and arguably better than a dead button
+that merely describes itself.
+
+**It still needs confirming on a device**, and it is on the inferred list.
+
+## 33.3 What the totals did — nothing
+
+They did not have to yield. **The total sits on bar 2, not the nav bar** (D3's
+design), so the CTA and `⋯` join back and title on bar 1 without touching it.
+Measured: `$48,802.40 ex GST` intact at 97px, and the header holds at
+**56 / 46 / 48 = 190px**. The property paid for twice is not given back.
+
+## 33.4 What pays: the title
+
+| | 375×812 | 320×690 |
+|---|---|---|
+| Record title | **69px** | **40px** |
+| Line title | **66px** | **40px** |
+
+**40px is about four characters.** At 320 the title is effectively gone on both
+screens. The title was already the element allowed to truncate (§16.2) and the
+ref beside it never does — so nothing becomes *unknowable* — but this is the one
+thing in R1m that needs his ruling rather than my judgement.
+
+Two mitigations exist if he wants one, neither taken unilaterally:
+1. Shorten the back label to a bare chevron **at 320 only** — but back-names-its-
+   destination is settled, so this reopens a closed decision.
+2. Move the line's neighbour pair out of bar 1 at 320 — but that reopens the
+   settled placement.
+
+## 33.5 Measurements
+
+Content height, indicator on, E throughout:
+
+| Screen | 375×812 | 320×690 | footer |
+|---|---|---|---|
+| Record | **531** (OFF 481, A 456) | **409** (OFF 359, A 334) | **0** |
+| Line | **665** (OFF 707, A 614) | **543** (OFF 585, A 492) | **0** |
+| Editor | — | 490 | 53 (read-back only) |
+
+No horizontal overflow at either width on any of the three modes.
+
+## 33.6 Two things from his screenshots deliberately **not** copied
+
+1. **His edit screen labels back with a bare chevron and titles it "Edit
+   project"** — naming where you *are*. He has already ruled that back names its
+   *destination*, so ours keeps `Cancel` in that slot and the title carries the
+   identity. Not copied, on his own earlier ruling.
+2. **His record body is a summary** — line count, three sample rows, project
+   details. **Not adopted.** The list he approved is the working surface, and
+   replacing it with a summary would put the day's work one tap further away.
+   Flagged so the difference reads as a decision rather than an oversight.
+
+## 33.7 Exercised vs inferred (§31.5)
+
+**Exercised:** the rule in all three modes at both widths — slot contents read
+from the DOM (`Lines/‹W03/W05›` leading, `Edit/⋯` trailing; `Cancel` leading,
+`Save` trailing, no `⋯`); the blocked CTA's disabled and inert state; the blocker
+row's queue text and its two destinations; footer heights of 0 on both view
+modes; the header holding at 190px; the totals intact; the title widths above;
+zero overflow.
+
+**Inferred, needing a device:**
+1. Whether the blocked reason reaches a screen reader — §33.2. The visual and
+   keyboard paths are verified; the announced one is not.
+2. Whether a 40px title at 320 is acceptable in the hand, or merely acceptable on
+   paper.
+3. The three carried over: D's scroll trigger under a finger, whether `More`
+   opens the drawer, and F's FAB overlap.
