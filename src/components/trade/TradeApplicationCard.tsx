@@ -157,6 +157,14 @@ export function TradeApplicationCard({
         : code === "invalid_business_name" ? "Add the business name as it's registered."
         : code === "application_pending" ? "There's already an application on this account."
         : code === "rate_limited" ? "That's a few attempts in a row. Try again a little later."
+        // A STAFF account can never hold trade pricing (AB-P2-11; staff are
+        // pinned to 0% by owner ruling D4). This used to fall through to the
+        // generic line below, which says "try again" about something that will
+        // never succeed however many times it is tried — a dead end dressed as
+        // a transient failure. Say what is actually true instead.
+        : code === "forbidden" ? "This is a staff account, so it can't hold trade pricing. Sign in with a customer account to apply."
+        // Likewise: a lapsed session is not a failed application.
+        : code === "unauthorized" ? "Your sign-in has expired. Sign in again and your details will still be here."
         : "We couldn't send that just now. Try again.",
       );
     } finally {
