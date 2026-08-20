@@ -92,12 +92,29 @@ The frontier was **not** empty. Open when the session stopped:
 - **Q11 — whether to tighten the default immediately**, ahead of the map. One constant, reversible,
   and every day at 4.0 is a day of estimates biased low. Recommended yes, with the ABCB figure
   sourced first.
-- **Q12 — what happens to the 444 openings on the old band.** Recommended: leave them. A quote
-  issued under stated assumptions should not be silently re-based; new estimates get the new
-  number, existing lines get it when re-estimated, which is a visible act.
-- **AMBIGUITY to settle first next time.** The owner said *"i dont mind having that table, don't
-  [think] it is a major effort"*. "That table" is either the eight-zone climate table (keep it, it
-  is cheap) or the orientation→SHGC table. Both readings are plausible in context; do not guess.
+- **Q12 — SETTLED by the owner: the 444 openings are test data and will be purged once testing
+  completes.** So there is nothing to migrate, re-base or preserve, and the "do not silently
+  re-base an issued quote" concern does not apply to them. Note the principle still holds for
+  real quotes issued later.
+- **AMBIGUITY RESOLVED by the owner, 2026-08-20.** "That table" is the **eight-zone climate
+  table** — keep it. And "not a major effort" referred to **adding a postcode prompt before
+  parsing**, as a UI/UX change. That is a meaningful signal: what blocked climate-zone resolution
+  was never the table or the lookup, it was having a location at estimate time, and the owner
+  considers that UI change cheap. Climate zone therefore stays on the map, is not urgent
+  (Melbourne first, T4), and is inexpensive when it comes up.
+
+### 4.1 Design note — the site postcode is a THIRD fact
+
+If a postcode is collected before parsing (owner: cheap UI work), it is the **site** location and
+must be kept distinct from both the account address and the delivery destination. `CONTEXT.md`
+already establishes that discipline for delivery-vs-account, for the same reason: a tradie's
+delivery address is frequently not the job's address.
+
+Concretely: the site postcode feeds the thermal model and nothing else. It must not silently
+become the delivery postcode, must not be back-filled from it, and neither may write the other.
+Otherwise a builder who quotes a Geelong job and ships to their own yard gets the wrong climate
+zone with full confidence and no flag — the same failure mode that got IP geolocation rejected
+(T5).
 
 ## 5. Recommended sequence when this resumes
 
