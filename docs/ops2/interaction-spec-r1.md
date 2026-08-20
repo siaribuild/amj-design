@@ -2300,7 +2300,7 @@ design), so the CTA and `⋯` join back and title on bar 1 without touching it.
 Measured: `$48,802.40 ex GST` intact at 97px, and the header holds at
 **56 / 46 / 48 = 190px**. The property paid for twice is not given back.
 
-## 33.4 What pays: the title
+## 33.4 What pays: the title (three treatments measured in section 34)
 
 | | 375×812 | 320×690 |
 |---|---|---|
@@ -2357,3 +2357,139 @@ zero overflow.
    paper.
 3. The three carried over: D's scroll trigger under a finger, whether `More`
    opens the drawer, and F's FAB overlap.
+
+---
+
+# 34. R1n — three header treatments
+
+A second switcher row appears inside E: **labelled back · bare chevron · path
+title**. Everything else in E is as R1m left it.
+
+## 34.1 Both of his positions, recorded
+
+**Earlier:** *"We used `< Projects`… the earlier, if you ask me."* — the labelled
+back.
+
+**Now, reversing it himself:** *"on the flipside, if I'm on the line, I know that
+back goes to the list, and then back goes to a project…"* — in a strict hierarchy
+the back **destination is structurally determined**, so you cannot be surprised by
+it. What you *cannot* infer is which project and which line you are on. Width
+should go to the non-inferable thing.
+
+He made the counter-argument himself, so this is a decision, not drift. His
+criteria: **consistency**, and **being able to tell where ops is** across many
+levels. Depth today is Projects → record → line → editor: four levels, kept
+shallow per tab by the tab stacks.
+
+**Consistency holds in all three** — the rule was one idiom, not one word.
+
+## 34.2 The measurements
+
+Title width, and **characters of the real fixture names** that fit.
+`W` = "Wattle Grove — Lot 14", `L` = "W04 · Bed 1", `LONG` = the 67-character
+project name already in the fixtures.
+
+**Record — 375 / 320**
+
+| Treatment | back | title | real name | LONG |
+|---|---|---|---|---|
+| labelled | 131 | 69 / 40px | **7 / 3 chars** | 7 / 3 |
+| **bare** | 48 | **152 / 97px** | **15 / 10 chars** | 16 / 10 |
+| path | 48 | 152 / 97px | 10 / 8 of `OF-Q-10482` | 16 / 10 |
+
+**Line — 375 / 320**
+
+| Treatment | back | title | real name | LONG |
+|---|---|---|---|---|
+| labelled | 96 | 66 / 40px | **6 / 2 chars** | 7 / 3 |
+| **bare** | 48 | **114 / 59px** | **11 / 6 chars** | 11 / 6 |
+| path | 48 | 114 / 59px | 10 / 5 of `OF-Q-10482 › W04` | 11 / 6 |
+
+No horizontal overflow in any treatment at either width.
+
+## 34.3 What the measurement overturns
+
+### On the record his argument lands hard
+
+3 characters → **15** at 375; 3 → **10** at 320. The back label was the *only*
+thing competing there, so freeing it hands the whole 83px to the title. At 375
+"Wattle Grove — " is legible where "Wat" was not.
+
+### On the line it barely helps — the back label was never the constraint
+
+Freeing it buys 2 → 6 characters at 320. Still not a usable title. **The leading
+slot also carries the neighbour chevrons** that R1m put there for maximum
+separation, and the trailing slot carries `Edit` and `⋯`. At 320 those two
+clusters take ~206px of a 320px bar between them; the back label is the smaller
+part of the problem.
+
+**So the title question and the back-label question are not the same question.**
+On the record they are; on the line they are not.
+
+### Path is worse than bare on both screens — the surprise
+
+It spends the characters it just won on a prefix the reader already knows:
+
+- **On the record** it truncates its own ref at 320 — `OF-Q-104…` from 10
+  characters of `OF-Q-10482`. It shows *less* than bare shows of the friendly
+  name, and loses the friendly name as well.
+- **On the line** it shows five characters of `OF-Q-10482 › W04` at 320. Five
+  characters of `W04 · Bed 1` identify the line; five characters of the path
+  identify nothing — every line on the project starts the same way.
+
+**Depth legibility costs more than it returns when the width is this tight.** It
+would earn its place at six or seven levels, or on a wider phone; at four levels
+on a 320px bar it is a net loss.
+
+## 34.4 His actual test: does each still answer both questions at 320?
+
+| | *Where am I?* | *Where does back go?* |
+|---|---|---|
+| **labelled** | **No** — 3 chars on the record, 2 on the line | Yes, in words |
+| **bare** | **Record yes** (10 chars) · **line no** (6 chars) | Yes to a screen reader; by structure to the eye |
+| **path** | No — truncates the prefix, not the identifier | Same as bare |
+
+**Bare is the only one that answers both anywhere**, and it answers "where am I"
+on the record but not on the line. That is the honest state: **no treatment fixes
+the line at 320**, because the line's problem is the two button clusters, not the
+label.
+
+If the line's title matters at 320, the next lever is one of the two settled
+decisions — the neighbour chevrons' placement, or the trailing pair — and neither
+is mine to reopen.
+
+## 34.5 The breadcrumb-on-bar-2 judgement
+
+Building the path treatment **confirms your call to leave it out.** Path is the
+cheap version of a breadcrumb and it already fails at four levels, for the same
+reason a bar-2 breadcrumb would: the levels above the current one are prefixes the
+reader can infer, and spending width on them costs the identifier. A breadcrumb
+would spend a whole 46px band to say what the back button says in one word. It
+would earn its place if depth grew past four, and not before.
+
+## 34.6 Two Ionic findings
+
+1. **`text=""` does not empty `ion-back-button`.** Measured: the host carried
+   `text=""` while the shadow still rendered an 83px span reading "Projects", so
+   the width never came back. The label is hidden through **`part="text"`**, which
+   is published — and the `aria-label` on the native button is untouched, so the
+   destination is still announced.
+2. **`ion-back-button` ignores `text` changing after hydration.** Once it had a
+   label it kept it; once hidden it never came back. The control is now **keyed**
+   on the treatment to force a remount. Beyond the mock: anything that changes a
+   back label at runtime needs the same.
+
+## 34.7 Exercised vs inferred (§31.5)
+
+**Exercised:** every number above — title and back widths read from the DOM per
+treatment per screen per width, character counts computed against the title's
+real rendered font, the switcher driving all three live after the remount fix,
+`aria-label` confirmed present on the native button in bare and path, and zero
+overflow throughout.
+
+**Inferred, needing a device:** whether a bare chevron *feels* unambiguous in the
+hand at four levels deep — my measurements say the destination is structurally
+determined, but that is an argument, not an observation of him using it. Plus the
+five carried forward: the blocked reason's announcement, D's scroll trigger,
+`More` opening the drawer, F's FAB overlap, and whether 40px titles are
+acceptable in the hand.
