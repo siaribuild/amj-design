@@ -224,10 +224,19 @@ export function decide(
   const tolerance = opts?.tolerance ?? REQUIREMENT_TOLERANCE;
   const splits = opts?.splits ?? [];
   const sizeKnown = !!opening.widthMm && !!opening.heightMm;
-  // A last resort is only needed when nothing else can serve the opening. A
-  // complete split make-up CAN, so its existence retires the promotion entirely
-  // (design §7.2) — a non-fitting single unit is then simply excluded.
-  const lastResortIds = splits.length ? new Set<string>() : lastResortProductIds(evaluation.rows);
+  // A last resort is only needed when nothing else can SERVE the opening, and a
+  // split that does not fit cannot serve it. So the promotion is retired by a
+  // make-up that FITS, never by one merely existing (design §7.2).
+  //
+  // This pairing is load-bearing. `proposeSplit` partitions width, so an opening
+  // too TALL for every product keeps its full height in every unit and produces
+  // make-ups that all miss on fit. Retiring the last resort on `splits.length`
+  // and then excluding non-fitting splits (A20) would leave that opening with no
+  // candidate at all — the empty line the whole non-blocking contract exists to
+  // prevent.
+  const lastResortIds = splits.some((s) => s.fits)
+    ? new Set<string>()
+    : lastResortProductIds(evaluation.rows);
 
   const singleInput: LadderCandidate[] = evaluation.rows.map((row) => ({
     key: rowKey(row),
@@ -303,10 +312,16 @@ function splitLadderCandidate(split: SplitCandidate, thermalRequired: boolean): 
       ...split.units.map((u) => u.result.selected?.candidate.slug ?? "?")].join("|"),
     excluded: false,
     fits: split.fits,
-    // A split that does not fit has failed at the one job it exists to do, so it
-    // can only ever be an answer of last resort — below every fitting candidate,
-    // in either form.
-    lastResort: true,
+    // A20 (owner ruling, reversing AD24): a split that does not fit is EXCLUDED,
+    // not demoted to the bottom tier. Ops can build their own splits, so a
+    // make-up that cannot physically be built is not help — it is noise on the
+    // reviewer's list, sitting among candidates they might actually pick.
+    //
+    // It is still PERSISTED with its reason, so the list answers "a split was
+    // considered and rejected on fit" rather than "no split was tried". Only the
+    // single-unit last resort (A4/AD15) may occupy tier E, which is what keeps
+    // the line from coming back empty.
+    lastResort: false,
     deviation: split.deviation.scalar,
     thermalRequired,
     priceCents: split.totalCents,
@@ -352,8 +367,18 @@ function splitOutcomeCandidate(split: SplitCandidate): OutcomeCandidate {
       fits: split.fits,
       widthMm: split.plan.reduce((sum, u) => sum + u.segment.widthMm, 0),
       heightMm: split.plan[0]?.segment.heightMm ?? null,
+      // A make-up has no single dimension rule of its own — its units each have
+      // one — so there is no `limit` to report.
       limit: null,
-      breached: [],
+      // Which axes the FAILING units breached, so the exclusion says why the
+      // split could not be built rather than only that it could not. Splitting
+      // partitions width, so a height breach here is the reviewer's signal that
+      // no split of this opening was ever going to help.
+      breached: [...new Set(
+        split.units
+          .filter((u) => u.result.selected?.candidateOutcome.fit.fits === false)
+          .flatMap((u) => u.result.selected?.candidateOutcome.fit.breached ?? []),
+      )],
     },
     price: split.totalCents == null ? null : { ok: true, total: split.totalCents / 100 },
   };

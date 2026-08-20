@@ -1062,3 +1062,92 @@ test("an unsuppliable split puts its reason ON THE LINE, not only in a run summa
   );
   assert.deepEqual(quiet.writes, []);
 });
+
+test("A20 SAFETY: a line can never come back empty because every split misses on fit", () => {
+  // THE CONFIGURATION THAT MAKES THIS DANGEROUS, and it is not exotic.
+  //
+  // `proposeSplit` partitions WIDTH. An opening too TALL for every product in
+  // the catalogue cannot be rescued by splitting it: every unit keeps the full
+  // height, so every unit's chosen product still misses, and the make-up as a
+  // whole has fits:false.
+  //
+  // So on this opening nothing fits — not as one unit, not as a split. Excluding
+  // non-fitting splits is only safe if the last-resort single unit is still
+  // there to answer, and it is only there if its promotion is retired by a split
+  // that FITS rather than by a split merely existing.
+  const tall = (slug, operation) => ({
+    ...splitProduct(slug, { operation, maxWidthMm: 1300 }),
+    dimensionRule: { minWidthMm: 300, maxWidthMm: 1300, minHeightMm: 300, maxHeightMm: 3000, maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1" },
+  });
+  const products = [tall("amj-awn", "awning"), tall("amj-fixed", "fixed")];
+
+  return selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 3600, heightMm: 4000, externalRef: "W30" },
+    null, splitCtx(products),
+  ).then((r) => {
+    // Splits WERE generated — the opening is oversize, so the gate opened.
+    assert.ok(r.splits.length, "the machine did try to split it");
+    // And not one of them can actually be built at this height.
+    assert.ok(r.splits.every((s) => s.fits === false), "every make-up misses on fit");
+
+    // THE LINE STILL HAS AN ANSWER. This is the whole non-blocking contract:
+    // an oversize opening gets an indicative price and a warning, never
+    // "we sell nothing that shape".
+    assert.ok(r.selected || r.selectedSplit, "a candidate answers the opening");
+    assert.notEqual(r.status, "no_candidate");
+    // Specifically, the last-resort SINGLE unit in tier E (A4/AD15) — the
+    // largest-capacity product of the required operation, priced at the real
+    // opening size.
+    assert.ok(r.selected, "the answer is a single unit, not an unbuildable split");
+    assert.equal(r.selected.candidateOutcome.tier, "does_not_fit");
+  });
+});
+
+test("A20 a split that cannot be built is EXCLUDED, and says why it was rejected", () => {
+  // Owner ruling, reversing AD24. Ops can build their own splits, so a make-up
+  // that cannot physically be built is not help — it is noise sitting on the
+  // reviewer's list among candidates they might actually pick.
+  //
+  // The drawing-hint path (AC-19), where a single unit DOES fit: the comment
+  // asks for an awning beside a fixed lite, but the fixed product is not made
+  // narrow enough for its half of the opening, so the make-up misses on fit.
+  const narrowFixed = {
+    ...splitProduct("fix-wide-only", { operation: "fixed", maxWidthMm: 2400 }),
+    dimensionRule: { minWidthMm: 1400, maxWidthMm: 2400, minHeightMm: 300, maxHeightMm: 3000, maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1" },
+  };
+  const products = [splitProduct("amj-awn", { operation: "awning", maxWidthMm: 2400 }), narrowFixed];
+
+  return selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, externalRef: "W31" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products),
+  ).then((r) => {
+    assert.ok(r.splits.length, "the comment put a split in the running");
+    assert.ok(r.splits.every((s) => s.fits === false), "and it cannot be built at these widths");
+
+    for (const split of r.splits) {
+      const o = split.candidateOutcome;
+      // EXCLUDED, not demoted. It carries no rank, so it is not a position on
+      // the list of things a reviewer might choose.
+      assert.equal(o.tier, "excluded");
+      assert.equal(o.rank, null);
+      assert.equal(o.selected, false);
+      assert.equal(o.competing, false);
+
+      // But it is still PERSISTED, with the reason. "A split was considered and
+      // rejected on fit" is a different message from "no split was tried", and
+      // the reviewer needs to be able to tell them apart.
+      assert.deepEqual(o.exclusions.map((e) => e.constraint), ["dimensions"]);
+      assert.deepEqual(o.exclusions[0].detail.breached, ["width"]);
+      assert.equal(o.form, "split");
+      assert.ok(o.units.length >= 2, "and what it would have been made of");
+    }
+
+    // The single unit that DOES fit answers the opening, and it is a genuine
+    // fit rather than a last resort — no tier-E promotion was needed.
+    assert.ok(r.selected);
+    assert.equal(r.selected.candidate.slug, "amj-awn");
+    assert.equal(r.selected.candidateOutcome.tier, "meets");
+    assert.equal(r.selectedSplit, null);
+  });
+});

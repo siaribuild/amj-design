@@ -611,6 +611,11 @@ variants,
 row — it is selectable, saveable and priceable by a human (ops2 AC-3). It is never filtered out
 of existence.
 
+This is about a THERMAL near-miss, and only that. A candidate that cannot physically be built —
+failing on FIT rather than on the requirement — is a hard-constraint failure (§4.1) and is
+excluded, because offering a reviewer something unbuildable is not a choice. See A20 for split
+make-ups specifically.
+
 ### 5.3 Requirement-relative thermal normalisation (D8)
 
 **AC-13 (D8) — deviation is miss ÷ requirement.**
@@ -647,7 +652,9 @@ requirement (tier `meets` for every fitting candidate) rather than eliminating e
 **When** it is selected,
 **Then** the ranked candidate set contains split candidates alongside single-unit candidates,
 they were tiered and compared by the same comparator, and no post-selection rework replaced an
-already-made pick.
+already-made pick. A make-up that can be BUILT is ranked; one that cannot is persisted as
+excluded with its reason (A20), so the list distinguishes "a split was considered and rejected
+on fit" from "no split was tried".
 
 **AC-18 (D7) — a split is never conjured to meet a thermal band.**
 **Given** an opening that a single unit fits dimensionally, and a thermal requirement that no
@@ -660,7 +667,9 @@ in tier `within_tolerance` or `misses`.
 **Given** an opening that a single unit fits, whose schedule comment implies a multi-unit
 configuration (the existing hint vocabulary, or type "OFFSET AWNING"),
 **When** candidates are generated,
-**Then** a split candidate is present and competes in the same ranking as the single unit.
+**Then** a split candidate is present and, provided its units can actually be built at their
+proposed sizes, competes in the same ranking as the single unit. A make-up that misses on fit is
+excluded rather than ranked below the single (A20) — it is still persisted with its reason.
 
 **AC-20 (D7) — a split is scored as its units in the original opening.**
 **Given** a two-unit split whose units price at $700 and $500 in an opening whose band is
@@ -1051,6 +1060,7 @@ Every user-owned call made in the owner's absence, in one place, for the accepta
 | A17 | `deltaToSelected` is **candidate minus pick** — negative means cheaper than the pick | §4.10, AC-44 | The sign has to be fixed somewhere or the developer guesses and the ops surface renders it backwards |
 | A18 | `MAX_SYSTEMS = 12` (`worker/lib/estimator/compositeSelect.ts`) is **retained** as a work bound; **`MAX_GLASS_TRIALS` was DELETED** | §11, AC-4 | Raised at acceptance on the tester's finding and **settled by the owner**, who split the two. `MAX_SYSTEMS` bounds enumeration and cannot bind: six systems exist and a test forces the cap above that count. `MAX_GLASS_TRIALS = 3` was not a work bound — on four or more units suggesting four or more distinct glazing options it truncated the shortlist and dropped a candidate *unified* make-up that could have been cheaper, which is a preference effect. Removing it costs almost nothing because glazing options are not freely varied in practice and the distinct-glass count is bounded by the unit count. History that sharpened the ruling: `MAX_SYSTEMS` was originally **4**, and at 4 it silently excluded AMJ80 — the largest platform in the catalogue — from all-fixed composites via an alphabetical tiebreak. Registered as AD35 in the design |
 | A19 | Within a tier, **deviation is compared before priceability**: an unpriceable candidate that is the closest thermal match sorts *above* a priced worse one, and sorts last only among candidates of equal deviation | §4.5, AC-52 | **Owner ruling at acceptance, reversing AD18.** The reviewer's losing-candidate list should lead with "this is the best thermal answer and we cannot price it at this size". Restores design §4.2's numbered sequence, which the developer had overridden in favour of §4.5's categorical "sorts last within its tier" and which the conformance review had upheld. Verified safe before landing: selection reads the `competing` flag — set only on priceable members of the competing tier — never sort position, and between two priceable candidates the priceability step is a no-op, so the order of candidates that can win is unchanged. One consequence was found and fixed: `proposalSeed` took rank 1, which can now be unpriceable, and would have dropped a split-winning line into the empty-line branch; it now takes the best *priceable* single |
+| A20 | A split make-up that does **not fit** is **excluded**, not placed in tier E; it is still persisted with a `dimensions` exclusion naming the breached axes | §4.1, AC-12, AC-17, AC-19 | **Owner ruling at acceptance, reversing AD24.** Ops can build their own splits, so proposing a make-up that cannot physically be built is not help — it is noise among candidates a reviewer might actually pick. Persisting it with its reason keeps "a split was considered and rejected on fit" distinguishable from "no split was tried". **A paired change was required for safety and is part of this decision:** the single-unit last resort (A4/AD15) is now retired by a split that FITS rather than by one merely existing. Without it, an opening too TALL for every product — which splitting on width can never rescue — would have had every single excluded AND every split excluded, and come back empty. That is the failure mode the non-blocking contract exists to prevent, and it is guarded by a named regression test. **AD20 is deliberately NOT unified with this**: `selectForComposite`'s make-up enumeration is a different path, where make-ups are the *only* candidates and excluding a non-fitting one would genuinely empty the run |
 
 ---
 
