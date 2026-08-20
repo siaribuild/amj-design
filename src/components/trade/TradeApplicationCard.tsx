@@ -163,8 +163,12 @@ export function TradeApplicationCard({
         // never succeed however many times it is tried — a dead end dressed as
         // a transient failure. Say what is actually true instead.
         : code === "forbidden" ? "This is a staff account, so it can't hold trade pricing. Sign in with a customer account to apply."
-        // Likewise: a lapsed session is not a failed application.
-        : code === "unauthorized" ? "Your sign-in has expired. Sign in again and your details will still be here."
+        // Likewise: a lapsed session is not a failed application. NO PROMISE
+        // ABOUT THE DETAILS SURVIVING: `draft` is component state with no
+        // backing store, so signing in again means navigating away and losing
+        // it. An earlier draft of this line said they would still be here —
+        // reassuring, and untrue.
+        : code === "unauthorized" ? "Your sign-in has expired. Sign in again, then apply."
         : "We couldn't send that just now. Try again.",
       );
     } finally {
