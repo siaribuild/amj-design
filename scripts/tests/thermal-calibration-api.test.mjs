@@ -145,6 +145,31 @@ test("thermal calibration endpoint, the dial, and the migration", { timeout: 240
         }
       }
     });
+    // ── AB-6: the aggregate that crosses accounts carries no identifier ─────
+    // The calibration is deliberately unscoped — a cross-account aggregate is
+    // what it is for — so the guard is not a scoping filter but the payload.
+    await t.test("AB-6: the served body carries counts and statistics only", async () => {
+      const { body } = await requestJson(staff, CALIBRATION);
+      const keys = [];
+      const walk = (node, path) => {
+        if (Array.isArray(node)) return node.forEach((v) => walk(v, `${path}[]`));
+        if (!node || typeof node !== "object") return;
+        for (const [k, v] of Object.entries(node)) { keys.push(`${path}.${k}`); walk(v, `${path}.${k}`); }
+      };
+      walk(body, "");
+      const identifying = keys.filter((k) =>
+        /project|account|customer|user|owner|email|file|externalRef|productId|sanity|_id|slug/i.test(k));
+      assert.deepEqual(identifying, [".reportRows.distinctProjects"],
+        "the only project-shaped field is a COUNT of projects, which is the opposite of naming one");
+      // Unpublished evidence — the owner's forward product intentions — appears
+      // as a count and nothing else. And the seeded corpus's own identifiers
+      // must be absent from a body computed over it.
+      for (const value of ["prj_", "@example.com", "@openframe", "amj80-series"]) {
+        assert.equal(JSON.stringify(body).includes(value), false, `the body leaked ${value}`);
+      }
+      assert.ok(body.candidateCaps.every((c) => typeof c.unpublishedRowsMeeting === "number"));
+    });
+
     // ── AB-3: nothing can turn the dial over HTTP ───────────────────────────
     await t.test("AB-3: no HTTP verb, on any session, can write the default band", async () => {
       const before = await sql("SELECT COUNT(*) AS n FROM thermal_default_band");
