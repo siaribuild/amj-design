@@ -245,6 +245,31 @@ worthless, exported beforehand. This is why it is a condition and not a rejectio
 
 ---
 
+### DISCHARGED — applied to production 2026-08-20
+
+Condition 1 is satisfied. AC-36 is now proven on real data rather than by static check, and
+all three of its Thens hold.
+
+| Step | Result |
+|---|---|
+| Export before applying | `backup-2026-08-20-pre-0055-0056.sql`, 19.8 MB, full database |
+| Before-count of the filter | **9** — exactly the predicted number, so the gate passed and the filter selects what we thought |
+| `wrangler d1 migrations apply --remote` | 0055 ✅, 0056 ✅ |
+| After-count of the filter | **0** |
+| `recommendation_outcome` total | 18 → **9** (exactly −9) |
+| Surviving rows | the 9 `pending`/`rejected` audit records, untouched, all `provenance='in_platform'` |
+| `provenance IS NULL` | **0** — AC-36's third Then, now on production data |
+| Every other table | zero delta: project 22, quote_line 287, ai_proposal_line 96, order_line 20, payment 4, candidate_result 4049, selection_run 96, draft_order_line 567 — all identical before and after |
+| `PRAGMA foreign_key_check` | empty |
+| New columns present | `retrieval_key`, `retrieval_key_version`, `provenance` on `recommendation_outcome`; `outcome_json` on `candidate_result`; `selection_json` on `selection_run` |
+
+**No worker deploy accompanied this**, and none is needed: the columns are additive with
+defaults, and the deployed worker's `buildHistoricalModel` reads a corpus that now returns zero
+rows — which produces the neutral 0.5 it was already returning, because 9 rows across 11
+distinct keys never cleared the density floor. Production behaviour is unchanged.
+
+---
+
 ## 8. What this unblocks
 
 The ops2 "Derivation" surface (region R3) can now be built. It needed "losing candidates ranked
