@@ -136,7 +136,25 @@ A candidate's verdict class on the ladder. An excluded candidate is recorded wit
 The single tuned constant in selection: when no candidate meets a thermal requirement, candidates within 5% (of the requirement value) beyond the best achieved deviation still compete on price. Stamped on every run so a past selection is reproducible.
 
 **Requirement basis**:
-Where an opening's thermal requirement came from: an energy report, derivation from the plans, a default envelope, or a human override. A computed requirement binds selection exactly as a reported one does; only the basis differs, and staff see the basis.
+Where an opening's thermal requirement came from: an energy report, this project's documents (`plan_derived`), the default band alone (`default_envelope`), or a human override. **`plan_derived` means "derived from this project's documents"** — any of them: an energy report can supply orientation for an opening it states no band for, and the computed band that uses it is plan-derived. A plan-derived requirement always records the inputs that made it so; a default-envelope requirement records that nothing did. A computed requirement binds selection exactly as a reported one does; only the basis differs, and staff see the basis.
+
+**Thermal input contract**:
+The declared set of facts the thermal calculation may consult. Every document-derived input arrives as a value with its source or not at all — an unsourced value cannot be represented, so provenance cannot be forgotten. Document extraction produces these inputs; the calculation only consumes them.
+
+**Rule contribution**:
+One named, versioned piece of the computed band, firing only when its input exists — the band is composed from contributions, never from a formula that imputes what it was not given. A rule whose input the platform cannot yet supply is a declared attachment point, not code.
+
+**Default band (the owner's dial)**:
+The Uw cap asserted when no document evidence constrains an opening. A versioned record with provenance, never a bare constant; setting it is the owner's business decision, and every requirement it produces snapshots the record's version. Changing it affects future runs only — a past estimate is never re-based.
+
+**Band provenance**:
+What a thermal value rests on: the method, its citation, when, by whom, and whether anything citable stands behind it. `unsourced_legacy` says honestly that a value predates provenance and awaits a sourced supersession — it is a label, never a hidden default.
+
+**Calibration**:
+The staff-read-only measurement that puts three facts beside the dial: what parsed reports have demanded, what the default asserts, and what the published catalogue can deliver at each candidate cap — with the cost of any change stated before it is made. Calibration informs the human who turns the dial; it never turns it, and it never recommends a number.
+
+**Evidence floor**:
+The minimum breadth below which calibration's report-demand axis is labelled inadequate: five distinct projects. Below it the report says "thin evidence", never a number dressed as advice.
 
 **Candidate outcome**:
 The structured facts the estimator emits per candidate — tier, rank, per-axis deviation, price delta against the pick, exclusion constraints. Facts only, never sentences: each surface composes its own wording. This is the contract the ops derivation surface reads.
