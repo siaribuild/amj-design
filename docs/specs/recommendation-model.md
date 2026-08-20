@@ -227,10 +227,19 @@ Rules that make "cheapest" honest:
 - The compared quantity is `PriceSnapshot.total`, on the same basis for every candidate in a run.
 - Comparison is on **integer cents**, so float noise cannot flap an order.
 - A candidate whose price is missing, not `ok`, or **≤ 0** is **unpriceable**: it is never
-  selected and sorts last within its tier. A rate-card gap that computes a $0 total must never
-  become "the cheapest product". `ASSUMED:` — this guard is not in the grill; it is the obvious
-  way a cheapest-wins rule gets exploited by a data gap, and the fail-closed price posture
-  already exists elsewhere in the Worker.
+  selected, and it sorts last **among the candidates the requirement cannot separate**. A
+  rate-card gap that computes a $0 total must never become "the cheapest product".
+  `ASSUMED:` — this guard is not in the grill; it is the obvious way a cheapest-wins rule gets
+  exploited by a data gap, and the fail-closed price posture already exists elsewhere in the
+  Worker.
+  **Owner ruling at acceptance (A18), reversing AD18:** within tier C, deviation is compared
+  **before** priceability, so an unpriceable candidate that is the closest thermal match sorts
+  *above* a priced worse one. The reviewer's losing-candidate list should lead with "this is the
+  best thermal answer and we cannot price it at this size", which is more useful first than
+  last. This changes what is *shown*, never what is *chosen*: selection reads the `competing`
+  flag, which is only ever set on a priceable member of the competing tier, and between two
+  priceable candidates the priceability step is a no-op — so the order of the candidates that
+  can actually win is untouched.
 - **`certified` vs `estimated` never enters the ordering at any position, including tiebreaks.**
   It still determines the *line status* (`commercial_only_estimate` vs `ready`), which is
   existing behaviour and is retained.
@@ -874,7 +883,11 @@ same `compareCandidates`.
 **AC-52 — a $0 rate-card gap must not win.**
 **Given** a candidate whose computed price is `0`, negative, or `ok: false`,
 **When** the opening is selected,
-**Then** it is never selected, it sorts last within its tier, and a priced candidate is chosen.
+**Then** it is never selected, a priced candidate is chosen, and it sorts last among the
+candidates the requirement cannot separate — i.e. behind every priced candidate of equal
+deviation. Where deviation *does* separate them (within tier C) deviation leads, so an
+unpriceable closest-match may sort above a priced worse one; it still cannot be selected from
+there, because selection reads `competing` and not sort position (A18, reversing AD18).
 
 ### 5.9 Abuse-case criteria (negative, security)
 
@@ -1036,7 +1049,8 @@ Every user-owned call made in the owner's absence, in one place, for the accepta
 | A15 | `CONTEXT.md` gains a new **`Visitor`** term rather than widening `Customer` | §3 | The two are served by different engines with different guarantees (D5); the architect owns the final call and no criterion depends on it |
 | A16 | Four deployable phases, in the order given, with phase 4 free to ship first | §8 | The owner's standing directive to break multi-area work into deployable phases |
 | A17 | `deltaToSelected` is **candidate minus pick** — negative means cheaper than the pick | §4.10, AC-44 | The sign has to be fixed somewhere or the developer guesses and the ops surface renders it backwards |
-| A18 | `MAX_SYSTEMS = 12` and `MAX_GLASS_TRIALS = 3` (`worker/lib/estimator/compositeSelect.ts`) are **retained** as work bounds rather than deleted as tuned constants. They prune which make-ups are *enumerated*, never which one *wins* | §11, AC-4 | Added at acceptance on the tester's finding, and the ruling is the ORCHESTRATOR's, not the developer's or the PM's — the owner was unavailable. History that sharpens it: `MAX_SYSTEMS` was originally **4**, and at 4 it silently excluded AMJ80 — the largest platform in the catalogue — from all-fixed composites via an alphabetical tiebreak. So these caps HAVE changed which product could win. A test now forces the cap above the catalogue's system count. Registered as AD35 in the design. **Owner's choice: keep the caps (recommended, with the §11 amendment above), or delete them and accept unbounded enumeration** |
+| A18 | `MAX_SYSTEMS = 12` (`worker/lib/estimator/compositeSelect.ts`) is **retained** as a work bound; **`MAX_GLASS_TRIALS` was DELETED** | §11, AC-4 | Raised at acceptance on the tester's finding and **settled by the owner**, who split the two. `MAX_SYSTEMS` bounds enumeration and cannot bind: six systems exist and a test forces the cap above that count. `MAX_GLASS_TRIALS = 3` was not a work bound — on four or more units suggesting four or more distinct glazing options it truncated the shortlist and dropped a candidate *unified* make-up that could have been cheaper, which is a preference effect. Removing it costs almost nothing because glazing options are not freely varied in practice and the distinct-glass count is bounded by the unit count. History that sharpened the ruling: `MAX_SYSTEMS` was originally **4**, and at 4 it silently excluded AMJ80 — the largest platform in the catalogue — from all-fixed composites via an alphabetical tiebreak. Registered as AD35 in the design |
+| A19 | Within a tier, **deviation is compared before priceability**: an unpriceable candidate that is the closest thermal match sorts *above* a priced worse one, and sorts last only among candidates of equal deviation | §4.5, AC-52 | **Owner ruling at acceptance, reversing AD18.** The reviewer's losing-candidate list should lead with "this is the best thermal answer and we cannot price it at this size". Restores design §4.2's numbered sequence, which the developer had overridden in favour of §4.5's categorical "sorts last within its tier" and which the conformance review had upheld. Verified safe before landing: selection reads the `competing` flag — set only on priceable members of the competing tier — never sort position, and between two priceable candidates the priceability step is a no-op, so the order of candidates that can win is unchanged. One consequence was found and fixed: `proposalSeed` took rank 1, which can now be unpriceable, and would have dropped a split-winning line into the empty-line branch; it now takes the best *priceable* single |
 
 ---
 

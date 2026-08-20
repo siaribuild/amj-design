@@ -207,26 +207,43 @@ function tierOf(c: LadderCandidate, best: number | null, tolerance: number): Tie
   return c.deviation <= round6(best + tolerance) ? "within_tolerance" : "misses";
 }
 
-/** Pairwise, pure and set-independent over stamped facts (AC-46): tier asc,
- *  then price asc, then productSlug asc.
+/** Pairwise, pure and set-independent over stamped facts (AC-46). The sequence,
+ *  which is design §4.2's, in its order:
+ *
+ *    1. tier ascending
+ *    2. within tier C, deviation ascending
+ *    3. priced before unpriceable
+ *    4. price ascending
+ *    5. productSlug → variantId → splitKey
+ *
+ *  DEVIATION BEFORE PRICEABILITY (spec A18, owner ruling at acceptance). The
+ *  losing-candidate list a reviewer reads should lead with "this is the closest
+ *  thermal answer and we cannot price it at this size", which is more useful
+ *  first than last. This changes what is SHOWN and not what is CHOSEN: selection
+ *  reads `competing`, which `assignTiers` sets only on priceable members of the
+ *  competing tier, so an unpriceable candidate cannot be selected from any
+ *  position. And between two PRICEABLE candidates step 3 is a no-op, so the
+ *  order of the candidates that can actually win is untouched.
  *
  *  `certified` / `estimated` appears nowhere in this list — AC-49 holds by
  *  construction, because the comparator cannot even see the field. */
 export function compareCandidates(a: TieredCandidate, b: TieredCandidate): number {
   const byTier = tierRank(a.tier) - tierRank(b.tier);
   if (byTier !== 0) return byTier;
-  // Spec §4.5: an unpriceable candidate sorts LAST within its tier — ahead of
-  // the within-tier rule, not after it, so no rate-card gap can lead a tier.
-  const pa = isPriceable(a), pb = isPriceable(b);
-  if (pa !== pb) return pa ? -1 : 1;
   // Tier C is the one tier whose members are NOT interchangeable on the
   // requirement: they all miss it, by measurably different amounts, so the
-  // smaller miss leads and price decides only between equal misses. Every other
-  // tier has already agreed on the requirement, so price alone decides.
+  // smaller miss leads. Every other tier has already agreed on the requirement
+  // — A is met, B is within tolerance of the best achievable, D is unknown and
+  // E does not fit — so there is nothing there for deviation to separate.
   if (a.tier === "misses") {
     const da = a.deviation ?? Infinity, db = b.deviation ?? Infinity;
     if (da !== db) return da - db;
   }
+  // Among candidates the requirement cannot separate, a rate-card gap sorts
+  // last: it is not a cheap product, and it must not lead on price it does not
+  // have (spec A6, AC-52).
+  const pa = isPriceable(a), pb = isPriceable(b);
+  if (pa !== pb) return pa ? -1 : 1;
   if (pa && pb && a.priceCents !== b.priceCents) return a.priceCents! - b.priceCents!;
   // The final tiebreak makes the order TOTAL, so two candidates alike on every
   // fact that matters still rank in the same sequence on every run (AC-5, E10).

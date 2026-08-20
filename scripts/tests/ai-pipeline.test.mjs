@@ -1030,3 +1030,46 @@ test("a proposed split is never a final answer — the line is always reviewed",
   // simply does not get the last word on one.
   assert.equal(proposalVerdict({ ...base, isSplit: true }).confidence, "high");
 });
+
+test("A18 fallout: the proposal seed is the best PRICEABLE single, not merely rank 1", () => {
+  // A consequence of moving deviation ahead of priceability. `parentRepresentative`
+  // returns rank 1, and rank 1 can now be a candidate nobody can price — so a
+  // split-winning opening whose closest single-unit thermal match is unpriceable
+  // would have produced NO seed, and the proposal line for that opening would
+  // have gone down the empty-line branch instead of being written and split.
+  //
+  // The seed's job is to carry a price until splitLine reprices it into
+  // segments, so "best" here has always meant "best that can carry one". Rank 1
+  // happened to satisfy that before; now it has to be asked for explicitly.
+  const outcome = (rank) => ({
+    productSlug: "p", sanityProductId: "id", variantId: "v", catalogueRevision: "r",
+    form: "single", tier: "misses", rank, selected: false, competing: false, exclusions: [],
+    fit: { fits: true, widthMm: 1, heightMm: 1, limit: null, breached: [] },
+    price: { total: null, currency: "AUD", ok: false, deltaToSelected: null },
+  });
+  const unpriceable = {
+    candidate: { slug: "closest-but-unpriced" }, selectedVariant: { variantId: "v" },
+    price: { ok: false, total: null }, outcome: { status: "commercial_only_estimate" },
+    candidateOutcome: outcome(1),
+  };
+  const priced = {
+    candidate: { slug: "worse-but-priced" }, selectedVariant: { variantId: "v" },
+    price: { ok: true, total: 900 }, outcome: { status: "commercial_only_estimate" },
+    candidateOutcome: outcome(2),
+  };
+  const split = { candidateOutcome: { ...outcome(0), form: "split", selected: true, competing: true } };
+  const result = {
+    evaluated: [unpriceable, priced], splits: [split],
+    selected: null, selectedSplit: split, splitNote: null,
+  };
+
+  // The runner-up a reviewer is shown is still genuinely rank 1 — that surface
+  // wants the closest thermal answer, which is the whole point of the reorder.
+  assert.equal(parentRepresentative(result).candidate.slug, "closest-but-unpriced");
+  // The line that gets WRITTEN is the one that can carry a price.
+  assert.equal(proposalSeed(result).candidate.slug, "worse-but-priced");
+
+  // And when nothing single-unit can be priced at all there is still no seed —
+  // the empty-line branch is the honest outcome, not a line with no price.
+  assert.equal(proposalSeed({ ...result, evaluated: [unpriceable] }), null);
+});

@@ -216,7 +216,17 @@ test("A4/E12 a last-resort non-fitting candidate is tier E, below every fitting 
 
 // ── Unpriceable candidates (A6, AC-52, E9, AD2, AD3) ────────────────────────
 
-test("AC-52 a $0 / negative / unpriced candidate never wins and sorts last in its tier", () => {
+test("AC-52 a $0 / negative / unpriced candidate never wins, and sorts last among equals", () => {
+  // TWO HALVES, and only the second moved (spec A18).
+  //
+  // NEVER SELECTED — unconditional, whatever the ordering does. A rate-card gap
+  // computing $0 must never become "the cheapest product".
+  //
+  // SORTS LAST — now qualified: among candidates the REQUIREMENT cannot
+  // separate. Where deviation does separate them, deviation leads and the
+  // unpriceable candidate can sort above a priced one (see A18 above). Here the
+  // deviations are equal, so priceability is the first thing left to decide, and
+  // the gap goes to the back exactly as it always did.
   for (const bad of [0, -100, null]) {
     const r = runLadder([
       cand({ key: "gap", deviation: 0, priceCents: bad, productSlug: "p-a" }),
@@ -224,10 +234,20 @@ test("AC-52 a $0 / negative / unpriced candidate never wins and sorts last in it
     ]);
     assert.equal(r.selectedKey, "real", `priceCents ${bad} must not win`);
     assert.equal(byKey(r, "gap").competing, false);
-    // Same tier, but a rate-card gap sorts behind every priced candidate in it.
     assert.equal(byKey(r, "gap").tier, "meets");
-    assert.deepEqual(keysInOrder(r), ["real", "gap"]);
+    assert.deepEqual(keysInOrder(r), ["real", "gap"], "equal deviation ⇒ the gap sorts last");
   }
+
+  // And equal deviation INSIDE tier C behaves the same way — the qualification
+  // is about what deviation can separate, not about which tier you are in.
+  const tierC = runLadder([
+    cand({ key: "anchor", deviation: 0.10, priceCents: 10_000, productSlug: "p-a" }),
+    cand({ key: "gap", deviation: 0.60, priceCents: null, productSlug: "p-b" }),
+    cand({ key: "real", deviation: 0.60, priceCents: 200_000, productSlug: "p-c" }),
+  ]);
+  assert.equal(byKey(tierC, "gap").tier, "misses");
+  assert.deepEqual(keysInOrder(tierC), ["anchor", "real", "gap"]);
+  assert.equal(tierC.selectedKey, "anchor");
 });
 
 test("E9 when nothing anywhere is priceable, nothing is selected", () => {
@@ -426,4 +446,41 @@ test("TIER_ORDER runs meets → excluded and tierRank agrees with it", () => {
   for (let i = 1; i < TIER_ORDER.length; i++) {
     assert.ok(tierRank(TIER_ORDER[i - 1]) < tierRank(TIER_ORDER[i]));
   }
+});
+
+test("A18 within a tier, DEVIATION is compared before priceability", () => {
+  // Owner ruling at acceptance, reversing AD18 and restoring design §4.2's
+  // numbered sequence. The reviewer's losing-candidate list should lead with
+  // "this is the closest thermal answer, and we cannot price it at this size" —
+  // which is a more useful thing to see first than last.
+  //
+  // The anchor is unpriceable too, so tier B holds nothing anyone could buy and
+  // the competing tier falls through to C (AD2). That puts the sharpest version
+  // of the question on the table: an unpriceable candidate now sorts ABOVE the
+  // one that gets selected, in the very tier the selection comes from.
+  const r = runLadder([
+    cand({ key: "anchor", deviation: 0.10, priceCents: null, productSlug: "p-a" }),
+    cand({ key: "closest-unpriced", deviation: 0.30, priceCents: null, productSlug: "p-b" }),
+    cand({ key: "worse-priced", deviation: 0.50, priceCents: 90_000, productSlug: "p-c" }),
+  ]);
+
+  assert.equal(r.best, 0.10, "an unpriceable candidate still anchors the band (AD3)");
+  assert.equal(byKey(r, "anchor").tier, "within_tolerance");
+  assert.equal(byKey(r, "closest-unpriced").tier, "misses");
+  assert.equal(byKey(r, "worse-priced").tier, "misses");
+
+  // THE ORDER CHANGES: the closest thermal match leads its tier even though
+  // nobody can price it. Under the old sequence the priced 0.50 came first.
+  assert.deepEqual(keysInOrder(r), ["anchor", "closest-unpriced", "worse-priced"]);
+  assert.equal(byKey(r, "closest-unpriced").rank, 2);
+  assert.equal(byKey(r, "worse-priced").rank, 3);
+
+  // THE WINNER DOES NOT. Selection is guarded by `competing`, which is only ever
+  // set on a PRICEABLE member of the competing tier — so sort position cannot
+  // promote a candidate nobody can buy, however high it now appears.
+  assert.equal(r.competingTier, "misses");
+  assert.equal(r.selectedKey, "worse-priced");
+  assert.equal(byKey(r, "closest-unpriced").competing, false);
+  assert.equal(byKey(r, "closest-unpriced").selected, false);
+  assert.equal(byKey(r, "anchor").competing, false, "a whole tier of rate-card gaps is skipped");
 });

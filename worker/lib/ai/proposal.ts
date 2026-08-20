@@ -95,10 +95,21 @@ export function proposalVerdict(input: {
 export function proposalSeed(result: SelectionResult): SelectionResult["selected"] {
   if (result.selected?.price?.ok) return result.selected;
   if (!result.selectedSplit) return null;
-  const representative = parentRepresentative(result);
-  // A parent line has to carry a price before splitLine can reprice it into
-  // segments, so an unpriceable representative is no seed at all.
-  return representative?.price?.ok ? representative : null;
+  // THE BEST SINGLE THAT CAN CARRY A PRICE, which is not always rank 1.
+  //
+  // Since deviation sorts ahead of priceability (A18), rank 1 can be a candidate
+  // nobody can price — and taking it here would return null and send a
+  // split-winning opening down the empty-line branch, losing a line the machine
+  // had an answer for. The seed's job has always been to carry a price until
+  // splitLine reprices it into segments; rank 1 merely used to satisfy that by
+  // accident, so it is now asked for explicitly.
+  //
+  // `parentRepresentative` is deliberately left alone: the runner-up a reviewer
+  // is shown beside a split should be the closest thermal answer, which is the
+  // whole reason the order moved.
+  return result.evaluated
+    .filter((e) => e.candidateOutcome.rank != null && e.price?.ok)
+    .sort((a, b) => (a.candidateOutcome.rank ?? 0) - (b.candidateOutcome.rank ?? 0))[0] ?? null;
 }
 
 const parseArray = (value: string | null | undefined): string[] => {
