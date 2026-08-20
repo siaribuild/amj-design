@@ -16,7 +16,7 @@ import {
 } from "./ladder";
 import type { FilterOutcome, FitFacts, OutcomeStatus } from "./rules";
 import type { PriceSnapshot } from "./pricing";
-import type { ShadowLearnedModel } from "./learning";
+import type { ShadowLearnedModel, ShadowLookup } from "./learning";
 import type { OpeningInput } from "./types";
 
 /** One candidate as the engine knows it, before the contract is stamped on it. */
@@ -146,6 +146,58 @@ function exclusionsOf(c: OutcomeCandidate, fitExcluded: boolean): CandidateOutco
   return out;
 }
 
+/**
+ * Which product the learned layer WOULD have promoted (spec A21).
+ *
+ * The model reports every product at maximum support and stops there, because
+ * it holds slugs and counts and no prices — a price is per
+ * (product × size × options) and does not exist until an opening is being
+ * priced. This is where those prices are, so this is where a tie is broken.
+ *
+ * PRICE IS A TIEBREAK, NOT A RE-RANKING. It only ever chooses among the tied
+ * products; letting it reach past them into products with fewer observations
+ * would quietly turn the learned layer into a second cheapest-wins rule with
+ * less evidence behind it than the first one.
+ *
+ * THE LAST RESORT IS THE SLUG, NOT A COIN FLIP. `leaders` arrives sorted, so
+ * equal prices — and a tie where nothing can be priced for this opening —
+ * resolve to the first slug, identically on every read. Everything in this
+ * system is built so a decision stays explicable: versions stamped on every
+ * run, the retrieval key stored rather than derived. A random tiebreak would let
+ * the layer name different products for identical evidence on two reads, so a
+ * quote issued today could not be explained the same way tomorrow. The slug is
+ * also the ladder's own final tiebreak (AC-5), so there is one convention here
+ * rather than two.
+ *
+ * Runs AFTER the ladder, on the builder's own inputs. Nothing computed here
+ * reaches a comparator — see the note on `OutcomeInput.shadow`.
+ */
+function resolvePreference(
+  learned: ShadowLookup,
+  candidates: OutcomeCandidate[],
+): string | null {
+  if (!learned.leaders.length) return null;
+  if (learned.leaders.length === 1) return learned.leaders[0];
+
+  let best: string | null = null;
+  let bestPrice = Infinity;
+  for (const slug of learned.leaders) {
+    // The cheapest priceable configuration of this product in THIS run: one
+    // product can appear as several candidates, one per eligible glass.
+    let price = Infinity;
+    for (const c of candidates) {
+      if (c.productSlug !== slug) continue;
+      const total = c.price?.total ?? null;
+      if (c.price?.ok !== true || total == null || !Number.isFinite(total) || total <= 0) continue;
+      if (total < price) price = total;
+    }
+    // Strictly cheaper, so `leaders`' sorted order carries the tie — which is
+    // what makes the answer the same on every read.
+    if (price < bestPrice) { best = slug; bestPrice = price; }
+  }
+  return best ?? learned.leaders[0];
+}
+
 export function buildOutcomes(input: OutcomeInput): {
   outcomes: CandidateOutcome[];
   selection: SelectionOutcome;
@@ -167,6 +219,7 @@ export function buildOutcomes(input: OutcomeInput): {
   // Looked up ONCE per run, not per candidate: the bucket is a property of the
   // opening, and only `supportFor` varies between candidates.
   const learned = input.shadow && input.opening ? input.shadow.lookup(input.opening) : null;
+  const preferredSlug = learned ? resolvePreference(learned, input.candidates) : null;
 
   const outcomes = input.candidates.map((c) => {
     const t = tiered.get(c.key);
@@ -226,7 +279,7 @@ export function buildOutcomes(input: OutcomeInput): {
         retrievalKeyVersion: input.shadow!.version,
         observations: learned.observations,
         support: learned.supportFor(c.productSlug),
-        wouldPrefer: learned.preferredSlug != null && learned.preferredSlug === c.productSlug,
+        wouldPrefer: preferredSlug != null && preferredSlug === c.productSlug,
         applied: false,
         provenance: learned.provenance,
       } : null,

@@ -247,11 +247,12 @@ test("AC-31 the density floor: a bucket speaks at five observations, not at four
   assert.equal(atFive.supportFor("never-seen"), 0);
 });
 
-test("the preference is the UNIQUE modal product — a tie is not a preference", () => {
-  // A bare argmax on a tie is an alphabetical coin flip dressed up as "the layer
-  // would have preferred X". The reviewer is shown the counts either way, so
-  // suppressing the claim costs them nothing and asserting it would cost them
-  // their trust the first time they checked.
+test("the preference is the modal product; a tie is reported, not resolved here", () => {
+  // A21 (owner ruling) changed what happens to a tie, and NOT what this model
+  // is willing to claim on evidence alone. Two products at two each is still not
+  // a lead — `preferredSlug` stays null — and the tie is handed on as `leaders`
+  // for the builder to break on price, because a price does not exist until an
+  // opening is being priced.
   const tied = aggregateShadow([
     shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
     shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
@@ -260,8 +261,10 @@ test("the preference is the UNIQUE modal product — a tie is not a preference",
   const split = tied.lookup(shadowOpening());
   assert.equal(split.observations, 5);
   assert.equal(split.preferredSlug, null, "two products at two each is not a lead");
+  assert.deepEqual(split.leaders, ["amj100", "amj80"], "…but which two is reported");
   assert.equal(split.supportFor("amj80"), 2);
   assert.equal(split.supportFor("amj100"), 2);
+  assert.equal(split.supportFor("amj150"), 1, "the trailing product is not a leader");
 
   // A thin but genuine lead IS reported, with the counts beside it so a reviewer
   // can discount it. Withholding a 3-of-5 majority would be a second judgement
@@ -465,6 +468,8 @@ const darkEvaluation = (prices) => ({
   hadCandidates: true, catalogueVersion: "cat-v1", withheldIncomplete: [],
 });
 
+/** darkOpening carries no thermal requirement, so it buckets on |0. */
+const DARK_BUCKET = "awning|W|s|0";
 const darkOpening = {
   family: "windows", operationType: "awning", widthMm: 1200, heightMm: 1500,
   externalRef: "W20", thermalContext: { requirementBasis: "plan_derived", orientation: "W" },
@@ -816,4 +821,103 @@ test("AC-56 a backfilled orientation is checked, because it now reaches the key"
     });
     assert.deepEqual(keys, ["awning|unknown|m|1", "awning|W|m|1"]);
   });
+});
+
+test("A21 a tie EXPOSES the tied products, so the builder can resolve it on price", () => {
+  // The model works on slugs and counts and has no prices — a price is per
+  // (product × size × options) and only exists once an opening is being priced.
+  // So a tie cannot be resolved here. It is reported instead, and the outcome
+  // builder, which already holds the candidates and their prices, breaks it.
+  const tied = aggregateShadow([
+    shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+    shadowRow(BUCKET, "amj150"),
+  ]).lookup(shadowOpening());
+  assert.equal(tied.observations, 5);
+  assert.deepEqual(tied.leaders, ["amj100", "amj80"], "the products at maximum support, sorted");
+  assert.equal(tied.preferredSlug, null, "no single product is preferred on evidence alone");
+
+  // A UNIQUE winner is untouched: one leader, and it is the preference.
+  const clear = aggregateShadow([
+    shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+  ]).lookup(shadowOpening());
+  assert.deepEqual(clear.leaders, ["amj80"]);
+  assert.equal(clear.preferredSlug, "amj80");
+
+  // BELOW THE FLOOR there is nothing to resolve. A tiebreak on four
+  // observations would dress up noise as a finding (AC-31).
+  const thin = aggregateShadow([
+    shadowRow(BUCKET, "amj80"), shadowRow(BUCKET, "amj80"),
+    shadowRow(BUCKET, "amj100"), shadowRow(BUCKET, "amj100"),
+  ]).lookup(shadowOpening());
+  assert.deepEqual(thin.leaders, [], "silent below the floor, tie or no tie");
+  assert.equal(thin.preferredSlug, null);
+});
+
+test("A21 a tie is broken by PRICE, among the tied products only", () => {
+  // Three products. The corpus has seen amj-b and amj-c three times each and
+  // amj-a never — so the tie is between b and c, and a is not in it however
+  // cheap it is. Price is a TIEBREAK here, not a re-ranking: letting it reach
+  // past the tie would quietly turn the learned layer into a second cheapest-
+  // wins rule with fewer observations behind it.
+  const shadow = aggregateShadow([
+    shadowRow(DARK_BUCKET, "amj-b"), shadowRow(DARK_BUCKET, "amj-b"), shadowRow(DARK_BUCKET, "amj-b"),
+    shadowRow(DARK_BUCKET, "amj-c"), shadowRow(DARK_BUCKET, "amj-c"), shadowRow(DARK_BUCKET, "amj-c"),
+  ]);
+  const prices = { "amj-a": 900, "amj-b": 1400, "amj-c": 1200 };
+  const r = decide(darkOpening, darkEvaluation(prices), { shadow });
+  const learnedFor = (slug) => r.evaluated.find((e) => e.candidate.slug === slug).candidateOutcome.learned;
+
+  // The cheaper of the two TIED products is preferred.
+  assert.equal(learnedFor("amj-c").wouldPrefer, true, "1,200 beats 1,400 between the tied");
+  assert.equal(learnedFor("amj-b").wouldPrefer, false);
+  // The cheapest product overall is NOT preferred — nobody ever issued it here.
+  assert.equal(learnedFor("amj-a").wouldPrefer, false, "price never reaches past the tie");
+  assert.equal(learnedFor("amj-a").support, 0);
+  assert.equal(learnedFor("amj-c").support, 3);
+  assert.equal(learnedFor("amj-c").observations, 6);
+
+  // STILL DARK. The ladder picked the cheapest that meets — amj-a — which is a
+  // different product from the one the layer would have promoted, and removing
+  // the model changes neither the winner nor the order.
+  assert.equal(r.selected.candidate.slug, "amj-a");
+  assert.equal(learnedFor("amj-c").applied, false);
+  const without = decide(darkOpening, darkEvaluation(prices));
+  const order = (x) => x.evaluated.map((e) => [e.candidate.slug, e.candidateOutcome.tier, e.candidateOutcome.rank]);
+  assert.deepEqual(order(r), order(without));
+  assert.equal(without.selected.candidate.slug, "amj-a");
+});
+
+test("A21 equal or missing prices fall to a STABLE tiebreak, never a coin flip", () => {
+  // The owner's first instinct was a coin flip and he took the stable version.
+  // Everything here is built so a decision stays explicable — versions stamped
+  // on every run, the retrieval key stored rather than derived — and a random
+  // tiebreak would let the layer name different products for identical evidence
+  // on two reads, so a quote issued today could not be explained the same way
+  // tomorrow.
+  const shadow = aggregateShadow([
+    shadowRow(DARK_BUCKET, "amj-b"), shadowRow(DARK_BUCKET, "amj-b"), shadowRow(DARK_BUCKET, "amj-b"),
+    shadowRow(DARK_BUCKET, "amj-c"), shadowRow(DARK_BUCKET, "amj-c"), shadowRow(DARK_BUCKET, "amj-c"),
+  ]);
+  const preferredIn = (result) =>
+    result.evaluated.find((e) => e.candidateOutcome.learned?.wouldPrefer)?.candidate.slug ?? null;
+
+  // Identical prices ⇒ the tiebreak decides, and it decides the same way twice.
+  const level = { "amj-a": 900, "amj-b": 1200, "amj-c": 1200 };
+  assert.equal(preferredIn(decide(darkOpening, darkEvaluation(level), { shadow })), "amj-b");
+  assert.equal(preferredIn(decide(darkOpening, darkEvaluation(level), { shadow })), "amj-b");
+
+  // A tied product nobody can price for THIS opening does not win on a null.
+  const gap = darkEvaluation({ "amj-a": 900, "amj-b": 1400, "amj-c": 1200 });
+  gap.rows.find((row) => row.candidate.slug === "amj-c").price = { ok: false, total: null };
+  assert.equal(preferredIn(decide(darkOpening, gap, { shadow })), "amj-b",
+    "the priceable tied product wins over an unpriceable cheaper one");
+
+  // Neither priceable ⇒ still an answer, still the same answer every time.
+  const blind = darkEvaluation({ "amj-a": 900, "amj-b": 1400, "amj-c": 1200 });
+  for (const slug of ["amj-b", "amj-c"]) {
+    blind.rows.find((row) => row.candidate.slug === slug).price = { ok: false, total: null };
+  }
+  assert.equal(preferredIn(decide(darkOpening, blind, { shadow })), "amj-b");
 });

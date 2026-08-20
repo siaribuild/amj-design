@@ -212,7 +212,16 @@ export interface ShadowLookup {
   /** Rows in this bucket naming THIS product. Raw counts, always exposed, so a
    *  reviewer can discount a thin lead themselves. */
   supportFor(productSlug: string): number;
-  /** The unique modal product, or null below the floor / on a tie (AC-31). */
+  /** Every product at maximum support, sorted; empty below the floor (AC-31).
+   *
+   *  One entry is a settled preference. TWO OR MORE IS A TIE THIS MODEL CANNOT
+   *  BREAK, and reporting it rather than collapsing it to null is the point:
+   *  the tiebreak is price, a price is per (product × size × options), and no
+   *  price exists until an opening is being priced. So the tie is handed to the
+   *  outcome builder, which holds the candidates and their prices (A21). */
+  leaders: string[];
+  /** The unique modal product, or null below the floor / on a tie. Callers that
+   *  cannot resolve a tie read this; the builder reads `leaders`. */
   preferredSlug: string | null;
 }
 
@@ -258,12 +267,14 @@ export function aggregateShadow(rows: ShadowRow[]): ShadowLearnedModel {
     lookup(opening) {
       const key = retrievalKey(shadowContext(opening));
       const bucket = buckets.get(key) ?? EMPTY;
+      const leaders = leadingSlugs(bucket);
       return {
         retrievalKey: key,
         observations: bucket.total,
         provenance: { inPlatform: bucket.inPlatform, backfilled: bucket.backfilled },
         supportFor: (slug) => bucket.bySlug.get(slug) ?? 0,
-        preferredSlug: modalSlug(bucket),
+        leaders,
+        preferredSlug: leaders.length === 1 ? leaders[0] : null,
       };
     },
   };
@@ -296,22 +307,24 @@ export async function buildShadowModel(env: Env): Promise<ShadowLearnedModel> {
   return aggregateShadow(results ?? []);
 }
 
-/** The UNIQUE modal product, above the floor. A bare argmax on a tie is an
- *  alphabetical coin flip dressed up as "the layer would have preferred X"; the
- *  reviewer sees the counts either way, so suppressing the claim costs them
- *  nothing and asserting it would cost them their trust the first time they
- *  checked. A thin but genuine lead IS reported — withholding a 3-of-5 majority
- *  would need a second threshold with nothing behind it. */
-function modalSlug(bucket: Bucket): string | null {
-  if (bucket.total < SHADOW_MIN_OBSERVATIONS) return null;
-  let best: string | null = null;
+/** Every product at maximum support, above the floor, sorted for a stable read.
+ *
+ *  A thin but genuine lead IS reported — withholding a 3-of-5 majority would
+ *  need a second threshold with nothing behind it, and the reviewer sees the
+ *  counts either way. Below the floor nothing is reported at all: a tiebreak on
+ *  four observations would dress up noise as a finding.
+ *
+ *  Sorted so the SET is stable across reads. Which of them wins is not decided
+ *  here — see `ShadowLookup.leaders`. */
+function leadingSlugs(bucket: Bucket): string[] {
+  if (bucket.total < SHADOW_MIN_OBSERVATIONS) return [];
   let bestCount = 0;
-  let tied = false;
-  for (const [slug, count] of bucket.bySlug) {
-    if (count > bestCount) { best = slug; bestCount = count; tied = false; }
-    else if (count === bestCount) tied = true;
-  }
-  return tied ? null : best;
+  for (const count of bucket.bySlug.values()) if (count > bestCount) bestCount = count;
+  if (!bestCount) return [];
+  return [...bucket.bySlug.entries()]
+    .filter(([, count]) => count === bestCount)
+    .map(([slug]) => slug)
+    .sort();
 }
 
 /** The four fields the key reads, off an opening rather than off a stored row. */

@@ -339,3 +339,40 @@ test("A18 the one surviving enumeration bound cannot bind, and says why", async 
   assert.ok(/bound|cap|budget|work|runaway|enumerat/i.test(preamble),
     "MAX_SYSTEMS's comment does not say it bounds WORK rather than expressing a preference");
 });
+
+test("AC-32 the shadow model has no channel into the ladder, structurally", async () => {
+  // `applied: false` is not a promise the code makes, it is a shape the code
+  // has. A21 gave the learned layer a price-based tiebreak, and prices are a
+  // selection input — so this is exactly the change that could have opened a
+  // channel by accident. It did not, and here is why, asserted rather than said.
+  const strip = async (rel) => (await readFile(join(projectRoot, rel), "utf8"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+
+  // 1. The ladder does not know the learning module exists.
+  const ladder = await strip("worker/lib/estimator/ladder.ts");
+  assert.ok(!/from\s+"\.\/learning"/.test(ladder), "ladder.ts imports the learning module");
+  assert.ok(!/shadow|learned|preferredSlug|leaders/i.test(ladder), "a learned signal is nameable inside the ladder");
+
+  // 2. Its inputs cannot carry one: LadderCandidate is four facts and an
+  //    identity, and none of them is a preference.
+  const fields = (ladder.match(/export interface LadderCandidate \{([\s\S]*?)\n\}/)?.[1] ?? "")
+    .split("\n").map((l) => l.trim().match(/^([a-zA-Z]+)[?]?:/)?.[1]).filter(Boolean);
+  assert.deepEqual(fields.sort(), [
+    "deviation", "excluded", "fits", "key", "lastResort",
+    "priceCents", "productSlug", "splitKey", "thermalRequired", "variantId",
+  ]);
+
+  // 3. And the caller does not hand it one. `decide` receives the shadow and
+  //    passes it to buildOutcomes; the runLadder call site is untouched by it.
+  const select = await strip("worker/lib/estimator/select.ts");
+  const runLadderCall = select.match(/runLadder\([\s\S]*?\);/)?.[0] ?? "";
+  assert.ok(runLadderCall, "found the ladder call");
+  assert.ok(!/shadow/i.test(runLadderCall), `a shadow reached the ladder: ${runLadderCall}`);
+
+  // 4. The tiebreak itself lives in the builder, which runs after the pick.
+  const outcome = await strip("worker/lib/estimator/outcome.ts");
+  assert.match(outcome, /function resolvePreference/, "the tie is broken in the outcome builder");
+  assert.ok(!/resolvePreference/.test(select) && !/resolvePreference/.test(ladder),
+    "the tiebreak leaked out of the builder");
+});
