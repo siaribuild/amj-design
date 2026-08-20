@@ -69,3 +69,18 @@ ion-fab.ctafab {
 /* The blocker row's secondary count, and the cleared state. */
 .fr-more { color: var(--ops-quiet); font-weight: 400; }
 .fr-dot.fr-clear { background: color-mix(in srgb, var(--ion-color-success, #2dd36f) 60%, var(--ops-text)); }
+
+/* The switcher's second row, shown only in E. */
+.variantswitch .vs-row { display: flex; align-items: center; gap: 2px; }
+
+/* BARE / PATH — hide the back button's label through its PUBLISHED SHADOW PART.
+   Setting `text=""` is not enough: measured, Ionic still renders the previous
+   label in the shadow (a 83px span reading "Projects" with text="" on the host),
+   so the width is never handed back. `part="text"` is documented, so this is
+   extending through the API rather than piercing it.
+
+   The semantic label is untouched: Ionic puts aria-label="Back to Projects" on
+   the native button itself, so the eye spends nothing and a screen reader still
+   hears the destination. Visually bare, semantically labelled. */
+:root[data-hdr="bare"] ion-back-button::part(text),
+:root[data-hdr="path"] ion-back-button::part(text) { display: none; }

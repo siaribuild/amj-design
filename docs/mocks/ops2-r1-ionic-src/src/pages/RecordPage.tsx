@@ -36,8 +36,8 @@ import {
 import { useHistory, useParams } from "react-router-dom";
 import { DELIVERY, LINES, RECORD } from "../data";
 import {
-  setStore, useEditorPane, useShortViewport, useStore, useTabBar, useWidthClass,
-  visibleLines,
+  setStore, useEditorPane, useHeaderStyle, useShortViewport, useStore, useTabBar,
+  useWidthClass, visibleLines,
 } from "../store";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
@@ -58,6 +58,7 @@ export function RecordPage() {
   const canvasPlate = short ? "sm" : "md";
   const paneBand = useEditorPane();
   const { variant } = useTabBar();
+  const hdr = useHeaderStyle();
   const { selectedId, filterUnpriced, draft, editing } = useStore();
   const [segment, setSegment] = useState<"lines" | "project">("lines");
   const [block, setBlock] = useState("progress");
@@ -137,7 +138,8 @@ export function RecordPage() {
           ? { label: "Issue quote", disabled: blockers.length > 0,
               blockedBy: blockers.length > 0 ? blocked : undefined }
           : undefined}
-        onMore={hasHeaderCta(variant) ? () => setSheetOpen(true) : undefined} />
+        onMore={hasHeaderCta(variant) ? () => setSheetOpen(true) : undefined}
+        style={hdr} />
       <RecordSummaryBar />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}

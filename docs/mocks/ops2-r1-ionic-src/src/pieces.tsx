@@ -13,6 +13,7 @@ import {
   PROJECT_NOTES, RECORD, type FileRow, type Line,
 } from "./data";
 import { Money, mm } from "./ui";
+import type { HeaderStyle } from "./store";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE HEADER
@@ -77,16 +78,29 @@ import { Money, mm } from "./ui";
  *
  *  So the claim is not deleted and not faked — the thing that must not truncate
  *  was moved somewhere it cannot. */
-export function RecordNavBar({ cta, onMore }: {
+export function RecordNavBar({ cta, onMore, style = "labelled" }: {
   cta?: { label: string; disabled?: boolean; blockedBy?: string };
   onMore?: () => void;
+  style?: HeaderStyle;
 }) {
+  /* bare/path: the chevron carries no text, but it still NAMES ITS DESTINATION
+     to assistive technology. Visually bare, semantically labelled — the eye
+     spends nothing and a screen reader still hears where back goes. */
   return (
     <IonToolbar>
       <IonButtons slot="start">
-        <IonBackButton defaultHref="/projects" text="Projects" />
+        {/* key: ion-back-button does NOT react to `text` changing after
+            hydration — measured, once it rendered a label it kept it, and once
+            hidden it never came back. Keying on the treatment remounts it so the
+            switcher actually switches. Worth knowing beyond the mock: any runtime
+            change to a back label needs a remount. */}
+        <IonBackButton key={style} defaultHref="/projects"
+          text={style === "labelled" ? "Projects" : ""}
+          aria-label="Back to Projects" />
       </IonButtons>
-      <IonTitle>{RECORD.title}</IonTitle>
+      {/* path trades the friendly name for the ref, because the ref is what
+          composes into the deeper levels. */}
+      <IonTitle>{style === "path" ? RECORD.ref : RECORD.title}</IonTitle>
       {/* E only. The end slot was deliberately empty (§16.1: "a toolbar is
           allowed to have no trailing action; it is not allowed to carry a
           total") — a CTA is an action, so it may sit here where the total may

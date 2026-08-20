@@ -59,8 +59,9 @@ import { EditorDock, EditorPlane } from "./Editor";
 import { BottomAppBar } from "./chrome";
 import { planeTransition } from "./transitions";
 import {
-  setStore, setTabVariant, useEditorPane, useScrollAwayBar, useStore, useTabBar,
-  useWidthClass, type TabVariant,
+  setStore, setHeaderStyle, setTabVariant, useEditorPane, useHeaderStyle,
+  useScrollAwayBar, useStore, useTabBar, useWidthClass,
+  type HeaderStyle, type TabVariant,
 } from "./store";
 
 const DESTINATIONS = [
@@ -114,7 +115,7 @@ function EditRoute() {
  *  on the same screen instead of argued about in prose. The ⌂ button switches
  *  the home-indicator inset on, because a desktop browser reports it as 0 and
  *  would flatter every variant equally. */
-function VariantSwitch({ variant }: { variant: TabVariant }) {
+function VariantSwitch({ variant, hdrStyle }: { variant: TabVariant; hdrStyle: HeaderStyle }) {
   return (
     <div className="variantswitch" role="group" aria-label="Mock control: tab bar variant">
       <span className="vs-tag">tabs</span>
@@ -125,6 +126,16 @@ function VariantSwitch({ variant }: { variant: TabVariant }) {
         <button key={v} type="button" aria-pressed={variant === v}
           onClick={() => setTabVariant(v)}>{label}</button>
       ))}
+      {variant === "e" && (
+        <span className="vs-row">
+          <span className="vs-tag">header</span>
+          {([["labelled", "labelled back"], ["bare", "bare chevron"], ["path", "path title"]] as
+            [HeaderStyle, string][]).map(([h, label]) => (
+            <button key={h} type="button" aria-pressed={hdrStyle === h}
+              onClick={() => setHeaderStyle(h)}>{label}</button>
+          ))}
+        </span>
+      )}
       <button type="button" className="vs-inset" title="Simulate the home indicator"
         onClick={() => {
           const r = document.documentElement;
@@ -154,6 +165,7 @@ export default function App() {
   const wide = wc === "desktop" || wc === "wide";
   const paneBand = useEditorPane();
   const { variant, visible: barVisible } = useTabBar();
+  const hdrStyle = useHeaderStyle();
   useScrollAwayBar(variant === "d" && barVisible);
   const wideNow = wide;
   /* D unmounts the bar rather than sliding it: ion-tab-bar cannot be moved or
@@ -268,7 +280,7 @@ export default function App() {
         {editing && !paneBand && wc !== "phone" && (
           <EditorDock lineId={editing} onClose={() => setStore({ editing: null })} />
         )}
-        <VariantSwitch variant={variant} />
+        <VariantSwitch variant={variant} hdrStyle={hdrStyle} />
       </IonReactHashRouter>
     </IonApp>
   );

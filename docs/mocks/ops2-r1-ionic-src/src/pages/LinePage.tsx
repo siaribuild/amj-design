@@ -39,7 +39,7 @@ import {
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
 import { LINES, RECORD } from "../data";
-import { setStore, useShortViewport, useStore, useTabBar, visibleLines } from "../store";
+import { setStore, useHeaderStyle, useShortViewport, useStore, useTabBar, visibleLines } from "../store";
 import { ActionFab, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
@@ -51,6 +51,7 @@ export function LinePage() {
   const { filterUnpriced } = useStore();
   const short = useShortViewport();
   const { variant } = useTabBar();
+  const hdr = useHeaderStyle();
   const edit = () => history.push(`/projects/record/${ref}/line/${line.id}/edit`);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
@@ -86,8 +87,9 @@ export function LinePage() {
       <IonHeader className="ion-no-border">
         <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/projects/record/${ref}`} text="Lines"
-              aria-label="Back to the lines" />
+            <IonBackButton key={hdr} defaultHref={`/projects/record/${ref}`}
+              text={hdr === "labelled" ? "Lines" : ""}
+              aria-label="Back to Lines" />
             {/* E — navigation groups at the leading edge, verbs at the trailing
                 edge. Maximum separation applied to the whole bar, not just to
                 the CTA. */}
@@ -104,7 +106,10 @@ export function LinePage() {
               </>
             )}
           </IonButtons>
-          <IonTitle>{line.code} · {subtitle}</IonTitle>
+          {/* path shows both levels in one string: which project, which line. */}
+          <IonTitle>{hdr === "path"
+            ? `${RECORD.ref} › ${line.code}`
+            : `${line.code} · ${subtitle}`}</IonTitle>
           {hasHeaderCta(variant) && (
             <IonButtons slot="end">
               <IonButton className="hdr-cta" onClick={edit}>Edit</IonButton>

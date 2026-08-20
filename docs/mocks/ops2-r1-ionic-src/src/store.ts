@@ -253,3 +253,42 @@ export function useScrollAwayBar(active: boolean) {
     };
   }, [active]);
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE HEADER TREATMENT — who gets the width, the back label or the title.
+
+   His argument, which reframes it: in a strict hierarchy the back DESTINATION is
+   structurally determined — from a line, back goes to the list; from the list, to
+   the project. You cannot be surprised by it. What you cannot infer is WHICH
+   project and WHICH line you are on. So the width should go to the non-inferable
+   thing.
+
+   That reverses his earlier lean ("We used `< Projects`… the earlier, if you ask
+   me"), knowingly — he made the counter-argument himself. Both positions are in
+   the spec so the reversal reads as a decision rather than drift.
+
+     labelled  `< Projects` / `< Lines`. Two levels across two controls.
+     bare      `<` alone, aria-label still naming the destination. Eye spends
+               nothing; the screen reader still hears "Back to Lines".
+     path      `<` bare, and the title carries the path: OF-Q-10482 > W04.
+
+   Consistency holds in all three — the rule was one idiom, not one word. */
+export type HeaderStyle = "labelled" | "bare" | "path";
+
+export function useHeaderStyle(): HeaderStyle {
+  const [hs, setHs] = useState<HeaderStyle>(
+    () => (localStorage.getItem("ops2-hdr") as HeaderStyle) || "labelled");
+  useEffect(() => {
+    const on = (e: Event) => setHs((e as CustomEvent).detail as HeaderStyle);
+    window.addEventListener("ops2-hdr", on as EventListener);
+    return () => window.removeEventListener("ops2-hdr", on as EventListener);
+  }, []);
+  useEffect(() => { document.documentElement.dataset.hdr = hs; }, [hs]);
+  return hs;
+}
+
+export function setHeaderStyle(v: HeaderStyle) {
+  localStorage.setItem("ops2-hdr", v);
+  window.dispatchEvent(new CustomEvent("ops2-hdr", { detail: v }));
+}
