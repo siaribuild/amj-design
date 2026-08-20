@@ -296,3 +296,82 @@ against numbers that were being deleted underneath it.
 The engineering is sound and unusually well evidenced — the negative criteria hold by
 construction rather than by test, which is the difference between a defect that is fixed and a
 defect that cannot recur.
+
+---
+
+## 10. The owner's decisions — walked one by one, 2026-08-20
+
+The owner returned and walked all 52 register entries individually rather than accepting them
+as a block. This section is the authoritative record of that walk; where an entry below differs
+from its register row, **this section wins** and the register rows have been struck through and
+marked reversed.
+
+### Confirmed as built — 43 entries
+
+A1–A4, A6, A7, A9–A17, AD1–AD9, AD11–AD17, AD19–AD22, AD25–AD29, AD31–AD34.
+
+Including every entry with a genuine alternative: unknown-thermal ranking below a measurable
+miss (A2), the schedule glazing instruction staying a hard constraint (A3), certified-vs-estimated
+excluded from ordering entirely (A7), backfilled slugs shape-checked rather than looked up
+(AD28), and backfilled rows counting equally with in-platform ones (AD32).
+
+### Changed by the owner — 6 entries
+
+| Entry | Decision |
+|---|---|
+| **A5** | **Reworded, not reversed.** The register implied the machine partially expresses the 105% asymmetry ("honoured as no downward buffer"). The owner: *"it's a business target for the platform, not pricing method."* 105% is a platform accuracy KPI measured over time; nothing in selection should express it. No code change. |
+| **A8** | **Retrieval key changed:** `requirementBasis` → `orientation`. Key version `rk-v1` → `rk-v2`. Owner's reasoning: orientation decides whether Uw or SHGC dominates, and that competition is the specific preference the layer exists to learn; requirement basis is provenance, not physics. Near density-neutral, because orientation arrives from the energy report or the architectural schedule and so correlates with basis anyway. **Free at this moment only** — migration 0056 had emptied the corpus hours earlier, so no recompute and no mixed-version corpus. |
+| **A18 / AD35** | **Split.** `MAX_SYSTEMS = 12` stays (six systems in the catalogue, test-guarded above that count, cannot bind). `MAX_GLASS_TRIALS = 3` **removed** — it bound on composites of four-plus units with four-plus distinct glazing options, and when it bound it dropped a candidate *unified* make-up that could have been cheaper. That is a preference effect, not a work bound. §11 amended to distinguish the two categories. |
+| **AD18** | **Reversed.** Within a tier, thermal deviation is now compared **before** priceability, restoring design §4.2's numbered order over the prose the developer had followed. So an unpriceable candidate that is the closest thermal match appears at the *top* of the reviewer's list — "this is the best answer but we cannot price it at this size" is more useful first than last. Selection is unaffected: it is guarded by the `competing` flag, not by sort position. |
+| **AD24** | **Reversed.** A split whose geometry does not cover the opening is now **excluded**, not shown in the bottom tier. Owner: *"ops can build their own splits, so suggesting ones that do not physically make it — don't see it helpful."* Deliberately NOT unified with AD20, which is a different code path where make-ups are the only candidates. |
+| **AD30** | **Changed.** A tie in the learned layer now prefers the **cheaper** of the equally-chosen products, then a **stable deterministic tiebreak**. The owner's first instinct was a coin flip; the objection raised and accepted was that a random tiebreak lets the layer name different products for identical evidence on two reads, so a quote issued today could not be explained the same way tomorrow. |
+
+### Confirmed after investigation — AD23
+
+The owner initially challenged the framing, and was right to. "Cross-system make-up" was the
+orchestrator's phrasing and it was wrong: the `frameSystem` compatibility matrix **is** used and
+working. A make-up may span platforms whenever either names the other in `compatibleWith`, and
+untagged products are treated permissively. The refusal fires only when `coveringSystems` comes
+back empty — no system, even reaching through its declared partners, covers every unit. Per the
+owner's own D13 in `docs/product-compatibility-design.md`, that is mainly AMJ125T, which was
+deliberately given no matrix edge.
+
+So the question was narrower than first put: *when the matrix is silent, build the joint anyway
+and warn, or decline and hand it to a person?* Owner: **decline and flag.** An unauthored pair
+means the manufacturer has not said those depths can be joined. If a pair should couple, that is
+a `compatibleWith` edge to author in Sanity — content, not code — and composites for it resume
+building automatically with no change to this branch.
+
+### Two safety clearances the orchestrator got wrong
+
+Recorded because the pattern matters more than either bug. Both owner-requested changes were
+cleared as safe by the orchestrator and both were unsafe; the developer caught each before it
+landed:
+
+1. **AD18** — selection was verified to be guarded by the `competing` flag, which was true. But
+   sort position had a *second* reader: `proposalSeed` took rank 1 and returned null if it was
+   not priceable. After the reorder rank 1 can be unpriceable, so a split-winning opening whose
+   closest thermal match had no price would have silently lost its proposal line.
+2. **AD24** — the last-resort single was said to survive and keep a line from emptying. It would
+   not have: the promotion was retired by splits *existing*, not by splits *fitting*. An opening
+   too **tall** for every product is the reachable case, since splitting partitions width — every
+   unit keeps the full height, so every make-up misses. Fixed by retiring the promotion on a
+   split that fits.
+
+### Follow-ups raised during the walk, out of scope for this branch
+
+- **Glass identity falls back to the frame-specific `variantId`** when a variant has no
+  `glazingOptionSlug` (`compositeRank.ts:121`, `select.ts:173`), so two unlinked products in one
+  composite can never be found to share a glass. The M6 legacy-variant gap reaching a path nobody
+  was watching.
+- **The `certified` field.** Owner: *"rogue-ly introduced by AI, it has no value — the Uw value is
+  authoritative."* Removed from all ordering by this work, but it still drives a validation that
+  can drop a product from sale (`catalogue.ts:187`) and the `commercial_only_estimate` downgrade
+  (`rules.ts:329`). Needs scoping against the live data before removal — a WERS import exists and
+  may be where the field originated.
+- **The plan parser should return split ratios**, superseding the family defaults. The seam already
+  exists: `proposeSplit` checks a document hint before the family rule, and `pairing.ts:116`
+  anticipates it in a comment.
+- **The owner will validate the computed thermal model** once this feature work completes. Noted
+  because the AC-29 fix is a precondition: before it, a platform-computed band read as "no thermal
+  requirement", so every computed-band opening would have been mislabelled during that exercise.
