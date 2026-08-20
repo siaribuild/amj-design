@@ -26,7 +26,7 @@ import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
-import { runProjectEstimate } from "../estimator/estimate";
+import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 import { sha256hex } from "./hash";
 import type { SkillFailureKind } from "../estimator/skills/types";
@@ -441,6 +441,10 @@ export interface AiExtractionSummary {
    *  a failed run, which computed no bands to count. */
   basisCounts?: { explicit_energy_report: number; plan_derived: number; default_envelope: number };
   computedBands?: { total: number; withShgc: number };
+  /** Openings by competing tier, so a change to the default band shows up as a
+   *  shift in review load rather than being discovered through it. Null when no
+   *  estimate ran. */
+  selectionTiers?: TierCounts | null;
   buildingModelId: string | null;
   estimate: { openings: number; selected: number } | null;
   cartApplied?: number;
@@ -963,6 +967,7 @@ export async function runAiExtraction(
     runId: run.id, status, documents: docs.length,
     extractedLines: merged.lines.length, conflicts: model.conflicts.length, energyApplied,
     ...modelReachCounters(energyApplied, envelopeCounts),
+    selectionTiers: estimate.tierCounts ?? null,
     buildingModelId, estimate: { openings: estimate.openings, selected: estimate.selected },
     cartApplied: estimate.appliedToCart,
     stageWarnings: warnings,

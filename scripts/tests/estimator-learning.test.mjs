@@ -921,3 +921,37 @@ test("A21 equal or missing prices fall to a STABLE tiebreak, never a coin flip",
   }
   assert.equal(preferredIn(decide(darkOpening, blind, { shadow })), "amj-b");
 });
+
+// ── TB-34: the recorded context and riskBand are unchanged ──────────────────
+// The thermal assessment recommended deleting `riskBand` because its only
+// consumer had been removed. That premise expired within a day: learning.ts
+// folds it into the legacy twelve-field context_key, which is written to an
+// indexed NOT NULL column, and D12/AC-27 require all twelve recorded fields to
+// keep being written unchanged. Retiring it belongs with the legacy key — one
+// coherent change, on the map — so it is PINNED here instead.
+test("TB-34: the legacy context key still carries exactly twelve fields, riskBand at index 4", () => {
+  const fields = contextKey(opening).split("|");
+  assert.equal(fields.length, 12, "arity unchanged — the indexed column's shape is a shipped contract");
+  // The documented order, position by position. A reordering would silently
+  // invalidate every stored key without changing the arity.
+  assert.deepEqual(fields, [
+    "windows",       // 0  family
+    "awning",        // 1  operationType
+    "plan_derived",  // 2  requirementBasis
+    "W",             // 3  orientation
+    "high",          // 4  riskBand  ← the field the assessment wanted deleted
+    "unknown",       // 5  climateZone
+    "unknown",       // 6  jurisdiction
+    "unknown",       // 7  buildingClass
+    "unknown",       // 8  envelopeClass
+    "g1",            // 9  width bucket
+    "g1",            // 10 height bucket
+    "g2",            // 11 glazingToRoomFloorRatio bucket
+  ]);
+  assert.equal(fields[4], "high", "riskBand still occupies index 4");
+  // …and it still varies with its input, so it is a live field rather than a
+  // constant nobody would notice going stale.
+  const low = contextKey({ ...opening, thermalContext: { ...opening.thermalContext, riskBand: "low" } });
+  assert.notEqual(low, contextKey(opening));
+  assert.equal(low.split("|")[4], "low");
+});

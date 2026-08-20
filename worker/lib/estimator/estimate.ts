@@ -150,12 +150,37 @@ export function toOpeningInput(row: OpeningRow): OpeningInput & { externalRef: s
   };
 }
 
+export const COMPETING_TIERS = ["meets", "within_tolerance", "misses", "thermal_unknown", "does_not_fit"] as const;
+export type TierCounts = Record<typeof COMPETING_TIERS[number], number>;
+
+/** Openings tallied by the tier their WINNER landed in.
+ *
+ *  This is what makes a change to the default band observable: tightening it
+ *  moves openings out of `meets` and into `misses`, which is review load, and
+ *  review load is the cost the owner is actually trading when he turns the dial.
+ *  Better to read it as a number beforehand than to discover it as a backlog.
+ *
+ *  An opening whose run selected nothing is in no competing tier and is counted
+ *  in none — `openings − selected` already carries it, and inventing a bucket
+ *  would blur exactly the signal this exists for. */
+export function tallyTiers(
+  results: { selected?: { candidateOutcome?: { tier?: string } } | null; selectedSplit?: { candidateOutcome?: { tier?: string } } | null }[],
+): TierCounts {
+  const counts = Object.fromEntries(COMPETING_TIERS.map((tier) => [tier, 0])) as TierCounts;
+  for (const result of results) {
+    const tier = (result.selected ?? result.selectedSplit)?.candidateOutcome?.tier;
+    if (tier && tier in counts) counts[tier as keyof TierCounts]++;
+  }
+  return counts;
+}
+
 export interface EstimateSummary {
   openings: number;
   selected: number;
   appliedToCart: number;
   lines: { openingId: string; externalRef: string | null; status: string; selectedProduct: string | null; total: number | null }[];
   reviewWarnings: string[];
+  tierCounts: TierCounts;
 }
 
 export async function runProjectEstimate(env: Env, projectId: string, proposal?: {
@@ -237,6 +262,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   };
 
   const lines: EstimateSummary["lines"] = [];
+  const selectionResults: Parameters<typeof tallyTiers>[0] = [];
   let selectedCount = 0;
   let appliedToCart = 0;
   const proposalLines: ProposalSelection[] = [];
@@ -285,6 +311,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       result,
     });
     if (result.selected) selectedCount++;
+    selectionResults.push(result);
     lines.push({
       openingId: row.id,
       externalRef: row.external_ref,
@@ -293,6 +320,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       total: result.selected?.price?.total ?? null,
     });
   }
+  const tierCounts = tallyTiers(selectionResults);
   if (proposal) {
     const published = await publishAiProposal(env, {
       projectId,
@@ -313,9 +341,9 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     for (const pl of proposalLines) {
       splitWarnings.push(...await materialiseSelectedSplit(env, pl));
     }
-    return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(splitWarnings)] };
+    return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(splitWarnings)], tierCounts };
   }
-  return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(unsuppliedSplits)] };
+  return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [...new Set(unsuppliedSplits)], tierCounts };
 }
 
 /** Turn the make-up that WON into a composite quote line (design §7.3).

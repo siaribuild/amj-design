@@ -240,7 +240,7 @@ test("TB-19/TB-27: the calibration module contains no write verb and cannot move
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
   for (const verb of ["INSERT", "UPDATE", "DELETE", "REPLACE INTO", "CREATE TABLE", "DROP"]) {
-    assert.equal(new RegExp(`\b${verb}\b`, "i").test(code), false, `calibration must not contain ${verb}`);
+    assert.equal(new RegExp(`\\b${verb}\\b`, "i").test(code), false, `calibration must not contain ${verb}`);
   }
   // Computing it any number of times leaves the record it read exactly as it was.
   const active = activeDefault();

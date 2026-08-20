@@ -376,3 +376,52 @@ test("AC-32 the shadow model has no channel into the ladder, structurally", asyn
   assert.ok(!/resolvePreference/.test(select) && !/resolvePreference/.test(ladder),
     "the tiebreak leaked out of the builder");
 });
+
+// ── TB-35: no new tuned constant enters SELECTION ───────────────────────────
+// The thermal model adds four tuned numbers to the codebase — the owner's dial,
+// the zone table, the SHGC mapping and calibration's evidence floor. Every one
+// of them belongs to requirement DERIVATION or to calibration, and each carries
+// its provenance there. None may reach the comparator: the ladder judges a
+// candidate against whatever band it is handed, and a constant that leaked into
+// it would be a second, unprovenanced opinion about the same question.
+const SELECTION_MODULES = [
+  "worker/lib/estimator/ladder.ts",
+  "worker/lib/estimator/select.ts",
+  "worker/lib/estimator/compositeSelect.ts",
+];
+
+test("TB-35 the ladder and its comparator import nothing from the thermal derivation layer", async () => {
+  const offenders = [];
+  for (const rel of SELECTION_MODULES) {
+    const text = await readFile(join(projectRoot, rel), "utf8");
+    for (const module of ["thermal/defaultBand", "thermal/calibration", "thermal/contract", "thermal/computedBand"]) {
+      if (new RegExp(`from\\s+["'][^"']*${module}["']`).test(text)) offenders.push(`${rel}: ${module}`);
+    }
+    // …nor the values themselves, under any name.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    for (const symbol of ["SEED_DEFAULT_BAND", "ZONE_U_CAP", "SHGC_BY_ORIENTATION", "CALIBRATION_PROJECT_FLOOR", "zoneCapValues"]) {
+      if (new RegExp(`\\b${symbol}\\b`).test(code)) offenders.push(`${rel}: ${symbol}`);
+    }
+  }
+  assert.deepEqual(offenders, [], "a derivation constant reached selection");
+});
+
+test("TB-35 the four new tuned constants each live in exactly one module, in derivation or calibration", async () => {
+  const files = [...await sourceFiles("worker"), ...await sourceFiles("src")];
+  const homes = { SEED_DEFAULT_BAND: [], ZONE_U_CAP: [], SHGC_BY_ORIENTATION: [], CALIBRATION_PROJECT_FLOOR: [] };
+  for (const rel of files) {
+    const code = (await readFile(join(projectRoot, rel), "utf8"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    for (const symbol of Object.keys(homes)) {
+      if (new RegExp(`(const|let|var)\\s+${symbol}\\b`).test(code)) homes[symbol].push(rel);
+    }
+  }
+  assert.deepEqual(homes, {
+    SEED_DEFAULT_BAND: ["worker/lib/estimator/thermal/defaultBand.ts"],
+    ZONE_U_CAP: ["worker/lib/estimator/thermal/computedBand.ts"],
+    SHGC_BY_ORIENTATION: ["worker/lib/estimator/thermal/computedBand.ts"],
+    CALIBRATION_PROJECT_FLOOR: ["worker/lib/estimator/thermal/calibration.ts"],
+  });
+});

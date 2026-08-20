@@ -22,12 +22,13 @@ await build({
   stdin: {
     contents: `
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
+      export { tallyTiers } from ${p("worker/lib/estimator/estimate.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { selectForOpening } = await import(pathToFileURL(outfile).href);
+const { selectForOpening, tallyTiers } = await import(pathToFileURL(outfile).href);
 
 // ── Fixture catalogue ────────────────────────────────────────────────────────
 const glass = (variantId, uValue, shgc, over = {}) => ({
@@ -314,4 +315,57 @@ test("E3/E7 a catalogue data gap and a measuring gap are different answers", asy
   assert.ok(unknownSize.evaluated.length, "candidates are still persisted");
   assert.deepEqual(unknownSize.evaluated[0].candidateOutcome.exclusions,
     [{ constraint: "dimensions", detail: { sizeUnknown: true } }]);
+});
+
+// ── TB-36: a computed requirement binds exactly like a reported one ──────────
+// The band is the band. Provenance is not physics — a west-facing awning behaves
+// the same whether its Uw cap arrived on an energy report or was derived from
+// the plans — so nothing about selection may key on the basis. Only staff see it.
+test("TB-36: identical openings on explicit_energy_report and plan_derived select identically", async () => {
+  const band = { maxUValue: 2.0, minShgc: null, maxShgc: 0.5 };
+  const of = async (basis) => selectForOpening(
+    opening({ requirements: { ...band }, thermalContext: { requirementBasis: basis } }),
+    repo, priceFn,
+  );
+  const reported = await of("explicit_energy_report");
+  const computed = await of("plan_derived");
+
+  assert.equal(computed.selection.competingTier, reported.selection.competingTier);
+  assert.equal(computed.selected.candidate.sanityProductId, reported.selected.candidate.sanityProductId);
+  assert.equal(computed.selected.selectedVariant.variantId, reported.selected.selectedVariant.variantId);
+  assert.equal(computed.status, reported.status);
+  // The whole competing set, ranked, tier for tier.
+  const shape = (r) => r.evaluated.map((e) => [
+    e.candidateOutcome.sanityProductId, e.candidateOutcome.variantId,
+    e.candidateOutcome.tier, e.candidateOutcome.rank,
+  ]);
+  assert.deepEqual(shape(computed), shape(reported));
+  // …and the ONLY difference is the basis the requirement records.
+  assert.equal(reported.selection.requirement.basis, "explicit_energy_report");
+  assert.equal(computed.selection.requirement.basis, "plan_derived");
+});
+
+// ── TB-37: the effect of turning the dial is observable ──────────────────────
+// A change to the default shows up as a shift in review load rather than being
+// discovered through it.
+test("TB-37: the run tallies openings by competing tier, and the tally sums to what was selected", async () => {
+  const results = [
+    await selectForOpening(opening({ requirements: { maxUValue: 2.0 } }), repo, priceFn),        // meets
+    // Nothing meets a 1.0 cap, so the closest glass wins the tier below `meets`
+    // — which is the review-load signal this counter exists to surface.
+    await selectForOpening(opening({ requirements: { maxUValue: 1.0 } }), repo, priceFn),
+    await selectForOpening(opening({}), repo, priceFn),                                          // no band ⇒ meets
+  ];
+  const counts = tallyTiers(results);
+  assert.deepEqual(Object.keys(counts).sort(),
+    ["does_not_fit", "meets", "misses", "thermal_unknown", "within_tolerance"],
+    "all five tiers are always present — a zero is a finding, not an absence");
+  const selected = results.filter((r) => r.selected || r.selectedSplit).length;
+  assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), selected,
+    "an opening with no pick is in no competing tier, and no bucket is invented for it");
+  assert.equal(counts.meets, 2, "an absent band and a met band both land in meets");
+  assert.equal(counts.within_tolerance, 1, "and the unmeetable one lands where a reviewer will see it");
+  // A run that selected nothing at all tallies zeros, never NaN or undefined.
+  assert.deepEqual(tallyTiers([]),
+    { meets: 0, within_tolerance: 0, misses: 0, thermal_unknown: 0, does_not_fit: 0 });
 });
