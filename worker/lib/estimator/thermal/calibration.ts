@@ -209,11 +209,18 @@ function capConsequences(activeCap: number, input: CalibrationInput): CapConsequ
  *  a profile referenced by several products must be counted once — going through
  *  products would double it and make the owner's own measured 306/58 impossible
  *  to reproduce. Published is `published !== false`, the reading the rest of the
- *  catalogue layer already uses. */
-const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "id": _id, "rev": _rev, "rows": rows[]{ uValue, published } }`;
+ *  catalogue layer already uses.
+ *
+ *  `_id` is deliberately NOT projected. Nothing here needs a document identity,
+ *  and identity that is never fetched cannot leak into a cross-account aggregate
+ *  by a later careless mapping. `_rev` is, because the report states which
+ *  catalogue state it was taken against. */
+const PROFILE_ROWS_QUERY = `*[_type == "thermalProfile"]{ "rev": _rev, "rows": rows[]{ uValue, published } }`;
 
 export async function readCalibration(env: Env, executor?: QueryExecutor): Promise<CalibrationReport> {
   const exec = executor ?? sanityExecutor(env);
+  // One repository instance: it holds its own cache, so two would query twice.
+  const repo = createCatalogueRepository(exec);
 
   // Axis 1 — counts by basis. No identifier column is selected.
   const basis = await env.DB.prepare(
@@ -243,9 +250,7 @@ export async function readCalibration(env: Env, executor?: QueryExecutor): Promi
       published: row?.published !== false,
     })));
 
-  const candidates = env.SANITY_PROJECT_ID
-    ? await createCatalogueRepository(exec).queryCandidates(null, null)
-    : [];
+  const candidates = env.SANITY_PROJECT_ID ? await repo.queryCandidates(null, null) : [];
   const products: CalibrationProduct[] = candidates.map((candidate) => ({
     disabled: candidate.disabled === true,
     // `performanceVariants` is already the EFFECTIVE row set — profile rows when
@@ -259,7 +264,7 @@ export async function readCalibration(env: Env, executor?: QueryExecutor): Promi
 
   const revisions = (Array.isArray(profiles) ? profiles : [])
     .map((profile: any) => String(profile?.rev ?? "")).sort().join("|");
-  const catalogueRevision = `${createCatalogueRepository(exec).catalogueVersion(candidates)}+p${fnv1a(revisions)}`;
+  const catalogueRevision = `${repo.catalogueVersion(candidates)}+p${fnv1a(revisions)}`;
 
   return computeCalibration({
     computedAt: new Date().toISOString(),
