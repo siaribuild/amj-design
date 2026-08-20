@@ -375,3 +375,70 @@ landed:
 - **The owner will validate the computed thermal model** once this feature work completes. Noted
   because the AC-29 fix is a precondition: before it, a platform-computed band read as "no thermal
   requirement", so every computed-band opening would have been mislabelled during that exercise.
+
+---
+
+## 11. Final verification after the owner's decisions
+
+The owner's six changes moved the diff substantially after the round-2 PASS, so the tester
+re-verified from scratch rather than checking a delta — a verdict against a diff that no longer
+exists proves nothing.
+
+**Round 3 — FAIL, on a documentation defect.** The A8 ruling had been propagated to §4.8 and to
+the register row but not to §5.6, so AC-28 and AC-29 asserted the reverse of what shipped:
+AC-28 still listed `orientation` among the fields that must *not* separate a bucket, AC-29 still
+listed `requirement basis` among those that must. The code was correct throughout. Reported as a
+FAIL rather than a note because the spec is the contract, and two of its criteria were
+demonstrably false against the code.
+
+**Round 4 — PASS.** All 58 criteria hold. Gates: `typecheck:gate` clean of fatal errors,
+`test:pure` 560/560, `test:heavy` 241/241.
+
+### What the verification actually established
+
+Beyond re-walking the criteria, the tester built its own adversarial cases rather than trusting
+the developer's:
+
+- **AD18's safety property** — 20,000 random candidate sets produced **8,489 with an unpriceable
+  candidate at rank 1**, and **zero** selected one. Then the *old* comparator was reimplemented
+  and compared against the new one across all 132 ordered pairs of 12 priceable candidates:
+  **zero disagreements**, proving the competing set's internal order is unchanged rather than
+  merely still legal.
+- **AD24's empty-line risk** — the tall-opening case (3600 × 4000 against products capped at
+  3000 high) reproduced from scratch, plus three further shapes hunted for the same failure and
+  none found.
+- **AD30's tie resolution** — a product 14× cheaper with a third of the evidence still loses,
+  proving price breaks the tie *within* it and never reaches past it.
+- **The dark guarantee** — attacked by planting an 11th `LadderCandidate` field and smuggling a
+  shadow argument into the `runLadder` call site; both caught by the guards.
+- **29 abuse cases executed and denied.**
+
+### Two safety clearances the orchestrator got wrong, both caught before landing
+
+Recorded in §10; repeated here because it is the pattern worth keeping. Both owner-requested
+changes were cleared as safe by the orchestrator and both were unsafe. The developer found each
+by looking rather than by trusting the clearance. The lesson for future rounds is that an
+orchestrator's "I checked and it is safe" is a hypothesis, not evidence.
+
+### One documentation gap the sweep missed, and how it was found
+
+After the AC fix, the developer swept for the same staleness and reported the rest of the spec
+clean. The orchestrator asked the tester to **check that sweep rather than take it** — and it
+did not hold: the sweep stopped at "the rest of the spec" and never reached `CONTEXT.md:148`,
+where the Retrieval key glossary entry still described rk-v1, nor the design's own summary
+blockquote at `:67`. `CONTEXT.md` is the one document the house rules tell a future designer to
+read first, so left alone they would have built against the old key. Corrected by the architect,
+who owns that file.
+
+Non-blocking: no acceptance criterion or Definition-of-Done clause references `CONTEXT.md`.
+
+### Condition status
+
+| Condition | Status |
+|---|---|
+| 1 — the learning-corpus reset applied and verified in production | **DISCHARGED** (§7) |
+| 2 — AD23 confirmed or vetoed by the owner | **DISCHARGED** — confirmed, after the owner correctly challenged the framing (§10) |
+| 3 — A18/AD35 decided | **DISCHARGED** — split: `MAX_SYSTEMS` kept, `MAX_GLASS_TRIALS` removed (§10) |
+| 4 — both registers walked | **DISCHARGED** — all 52 entries walked individually, 43 confirmed, 6 changed, 1 confirmed after investigation (§10) |
+
+**Acceptance is unconditional as of this section.** The branch is ready to merge.
