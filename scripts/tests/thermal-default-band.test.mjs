@@ -319,12 +319,23 @@ test("TB-19: readCalibration prepares SELECTs only, and never asks for a project
   const report = await readCalibration(env, async (q) => { groq.push(q); return []; });
   assert.ok(prepared.length >= 2, "axis 1 and axis 2 are read");
   for (const sql of prepared) {
-    assert.match(sql.trim(), /^SELECT\b/i, `every statement is a SELECT: ${sql.trim().slice(0, 40)}`);
+    // A read, and the guard is the WRITE VERB rather than the first word: axis 1
+    // deduplicates extraction runs through a CTE, so a statement legitimately
+    // opens with WITH. SQLite will happily attach a write to one of those, which
+    // is exactly what is being excluded here.
+    assert.match(sql.trim(), /^(SELECT|WITH)\b/i, `every statement reads: ${sql.trim().slice(0, 40)}`);
+    assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAGMA)\b/i,
+      `no write verb anywhere in: ${sql.trim().slice(0, 40)}`);
   }
   // The aggregate is deliberately unscoped ACROSS accounts — that is its purpose
-  // — so the guard moves to the output: project_id never leaves SQL.
-  const selectsProjectId = prepared.some((sql) => /project_id/i.test(sql) && !/COUNT\(DISTINCT project_id\)/i.test(sql));
-  assert.equal(selectsProjectId, false, "project_id appears only inside a COUNT(DISTINCT …)");
+  // — so the guard moves to the output: project_id never leaves SQL. It may be
+  // JOINED and FILTERED on (the run-deduplication CTE does both); what it may
+  // never do is appear in a projection, other than inside a COUNT(DISTINCT …).
+  const projections = prepared.flatMap((sql) =>
+    [...sql.matchAll(/\bSELECT\b([\s\S]*?)\bFROM\b/gi)].map((match) => match[1]));
+  const leaking = projections.filter((projection) =>
+    /project_id/i.test(projection.replace(/COUNT\(\s*DISTINCT\s+[\w.]*project_id\s*\)/gi, "")));
+  assert.deepEqual(leaking, [], "project_id is selected only inside a COUNT(DISTINCT …)");
   assert.equal(groq.every((q) => /^\s*\*\[/.test(q)), true, "the catalogue is queried, never mutated");
   assert.equal(report.basisCounts.explicit_energy_report, 3);
   assert.equal(report.candidateCaps.length > 0, true);
