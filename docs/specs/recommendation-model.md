@@ -730,16 +730,24 @@ shimmed.
 **Then** `context_json` still contains all twelve context fields, unchanged from today.
 
 **AC-28 (D12) — retrieval uses four.**
-**Given** two openings differing only in `climateZone` (or orientation, jurisdiction, building
-class, envelope class, glazing ratio, family, or height band),
+**Given** two openings differing only in `climateZone` (or **requirement basis**, jurisdiction,
+building class, envelope class, glazing ratio, family, or height band),
 **When** their retrieval keys are computed,
 **Then** the keys are **equal** — they land in the same bucket.
 
 **AC-29 (D12) — retrieval separates the four that matter.**
-**Given** two openings differing in operation type, or in requirement basis, or in width band,
+**Given** two openings differing in operation type, or in **orientation**, or in width band,
 or in whether a thermal requirement existed,
 **When** their retrieval keys are computed,
 **Then** the keys **differ**.
+
+Both criteria carry the **A8 ruling (rk-v2)**: `orientation` replaced `requirementBasis` as the
+key's second field, so each criterion's list gained the field the other one lost. The substance
+of neither changed — retrieval still reads exactly four fields and the other eight still do not
+separate a bucket. Orientation decides whether Uw or SHGC dominates, which is the preference the
+learned layer exists to discover (D9); requirement basis is provenance rather than physics, and
+correlates with orientation anyway because both arrive from the energy report or the
+architectural schedule.
 
 **AC-30 (D12) — the key is versioned and recomputable.**
 **Given** a captured outcome row,

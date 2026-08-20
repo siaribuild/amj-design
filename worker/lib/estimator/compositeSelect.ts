@@ -336,6 +336,18 @@ function choose(
   });
 
   const ladder = runLadder(ladderInput);
+  // TRAP FOR WHOEVER REVIVES THIS. The `ranked[0]` fallback predates spec A18,
+  // which moved deviation ahead of priceability inside a tier — so rank 1 can
+  // now be a make-up nobody can price, and this line would select it. Every
+  // other reader of rank order was audited and fixed or cleared (`proposalSeed`
+  // takes the best PRICEABLE single; `parentRepresentative` is deliberately
+  // rank 1 and only ever displayed; `persist` writes the rank and decides
+  // nothing). This one was left alone because `choose()` has no production
+  // caller — see the header — so it is unreachable rather than correct.
+  //
+  // Reviving `selectForComposite` means fixing this first: fall back to the
+  // best PRICEABLE make-up, or return no selection, but do not sell something
+  // that has no price.
   const winner = ladder.selectedKey ?? ladder.ranked[0]?.key ?? "0";
   const index = Number(winner);
   const chosen = { makeUp: makeUps[index], deviation: deviations[index], totalCents: totalCents[index] };
