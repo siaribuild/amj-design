@@ -22,8 +22,17 @@ import type { Env } from "../../types";
 // split. Bump so the stage idempotency key moves with the new contract.
 // 2026-08-02.1: energy-report component rows stay separate, report geometry and
 // operation win over plan values, and reconciliation warnings reach review.
-export const PIPELINE_VERSION = "2026-08-02.1";
-export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.1";
+// 2026-08-20.1: the thermal band is COMPUTED rather than constant — composed
+// from named, versioned rule contributions over a declared input contract, with
+// its derivation recorded and the Uw cap read from the owner's dial. The
+// envelope stage now produces a different output for the same input (a band that
+// varies with orientation, a basis that can be plan_derived, and a derivation
+// that did not exist before), so the stage idempotency key must move with it.
+// No skill promptVersion changes: extraction is untouched.
+export const PIPELINE_VERSION = "2026-08-20.1";
+// 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
+// additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
+export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):
 // everything runs on the primary model; the escalation model is configured but
