@@ -16,8 +16,48 @@ import react from '@vitejs/plugin-react'
 // `docs/adr/0005-ops2-ionic-adopted.md` — both on the `design/ops2-planning`
 // branch; `docs/adr/0009-frameflow-themes-ops2.md` on this branch is the map.
 // `scripts/tests/ops2-deps.test.mjs` is what notices if the split rots.
+// Vite's dev server has no idea this config owns a different entry: `input` is
+// a BUILD option, so in dev the SPA fallback rewrote every navigation to the
+// repository's index.html and port 5174 served the CUSTOMER app. Measured
+// before this existed:
+//
+//   /                    → <title>Aluminium Windows &amp; Doors</title>
+//   /ops2                → <title>OpenFrame ops2</title>   ← right, by accident
+//   /ops2/record/p_demo  → <title>Aluminium Windows &amp; Doors</title>
+//
+// `/ops2` passed only because Vite's fallback tries `<path>.html` and ops2.html
+// happens to sit at the root — an accident that reads as "it works" right up
+// until someone reloads a deep link.
+//
+// So this server answers every NAVIGATION with ops2.html: `/`, `/ops2`, a deep
+// link, and index.html or ops.html by name too. On this port those are the
+// wrong application, and the most plausible way to open one is to type its
+// filename. Pinned by scripts/tests/ops2-dev-server.test.mjs.
+function ops2DevShell() {
+  return {
+    name: 'ops2-dev-shell',
+    configureServer(server) {
+      // Registered in the body, so it runs BEFORE Vite's own middlewares —
+      // after them the fallback has already answered and the response is sent.
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url ?? '/'
+        // Only what a browser ASKS FOR AS A PAGE. Module and asset requests
+        // send `*/*`, so the module graph is untouched; `/@vite/client` and
+        // `/@react-refresh` are excluded by name as well, because a rewrite
+        // that swallowed them would serve a page that then failed to boot.
+        const isNavigation = (req.method === 'GET' || req.method === 'HEAD')
+          && (req.headers.accept ?? '').includes('text/html')
+          && !url.startsWith('/@')
+        if (isNavigation) req.url = '/ops2.html'
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
+    ops2DevShell(),
     // Same plugin set as the customer config — Make requires both, even where
     // Tailwind is not actively used.
     react(),
@@ -53,8 +93,23 @@ export default defineConfig({
     emptyOutDir: false,
   },
 
+  // No SPA fallback of Vite's own. ops2DevShell() above supplies the fallback,
+  // aimed at the right entry; 'mpa' turns off the one aimed at index.html. A
+  // navigation the plugin somehow missed now 404s loudly instead of quietly
+  // serving the customer site, which is how the original defect stayed hidden.
+  appType: 'mpa',
+
   // `npm run dev:ops2` — its own port, so the customer dev server keeps 5173
   // and neither graph is ever loaded by the other's dev server.
+  //
+  // WHAT THIS SERVER IS AND IS NOT. It is where you develop ops2's UI, and
+  // scripts/tests/ops2-dev-server.test.mjs keeps it honest about serving ops2.
+  // It is NOT where ops2's routing is verified: it has no host routing and no
+  // opsShellFor, so `/ops2` resolves here because the plugin above rewrites it,
+  // not because anything selected a shell. Shell selection, the ops host and
+  // deep-link reload are tested against the real Worker —
+  // scripts/tests/api.test.mjs and scripts/tests/web/ops2.spec.ts. If those two
+  // and this one ever disagree, the Worker is right.
   server: {
     port: 5174,
     proxy: {
