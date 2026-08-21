@@ -1,8 +1,9 @@
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { IonBadge, IonItem, IonLabel, IonList } from "@ionic/react";
 import { useHistory } from "react-router-dom";
 import { browserHref } from "../shellBase";
 import {
-  ageLabel, nextActionOf, priceOf, waitingSentence, type ProjectQueueRow,
+  ageLabel, nextActionOf, priceOf, unresolvedBadge, waitingSentence, type ProjectQueueRow,
 } from "./queue";
 
 /** Where a row goes. Nested under `/projects` so the tab and the rail stay lit —
@@ -16,15 +17,28 @@ function useOpenRow() {
 }
 
 /** Chips are the EXCEPTION, never the default: a row with nothing wrong carries
- *  none at all, so the eye learns that a chip means something. */
+ *  none at all, so the eye learns that a chip means something. The word comes
+ *  from the model, which explains why it is not "Unpriced". */
 function Flags({ row }: { row: ProjectQueueRow }) {
-  if (row.unresolved <= 0) return null;
+  const badge = unresolvedBadge(row);
+  if (!badge) return null;
   return (
     <span className="pq-flags">
-      <IonBadge color="warning">Unpriced {row.unresolved}</IonBadge>
+      <IonBadge color="warning">{badge}</IonBadge>
     </span>
   );
 }
+
+/**
+ * Was this an ordinary left click, or an instruction to the browser?
+ *
+ * Ctrl/Cmd/Shift/Alt-click and middle-click mean "open it somewhere else", and
+ * the anchor already knows how. Swallowing them takes away the very affordance
+ * the anchor exists for — two projects open side by side at a desk — while
+ * leaving it looking present.
+ */
+const isPlainClick = (event: ReactMouseEvent) =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 /**
  * The phone list — the owner's own card anatomy, in his order: reference
@@ -130,8 +144,10 @@ export function ProjectTable({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 data-waiting={row.waitingOn}
                 onClick={(event) => {
                   // The anchor handles its own activation; re-handling it here
-                  // would push the same route twice.
+                  // would push the same route twice. And a modified click is
+                  // the browser's to answer, wherever in the row it landed.
                   if ((event.target as HTMLElement).closest("a")) return;
+                  if (!isPlainClick(event)) return;
                   open(row);
                 }}
               >
@@ -139,7 +155,11 @@ export function ProjectTable({ rows }: { rows: readonly ProjectQueueRow[] }) {
                   <a
                     className="pq-open"
                     href={browserHref(recordPath(row))}
-                    onClick={(event) => { event.preventDefault(); open(row); }}
+                    onClick={(event) => {
+                      if (!isPlainClick(event)) return;
+                      event.preventDefault();
+                      open(row);
+                    }}
                   >
                     <span className="pq-ref">{row.ref}</span>
                     <strong className="pq-title">{row.title}</strong>

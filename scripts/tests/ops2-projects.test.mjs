@@ -88,8 +88,8 @@ test("every number on screen IS the length of the list its own control produces"
   for (const query of [
     M.EMPTY_QUERY,
     { chip: "all", refinements: [], search: "" },
-    { chip: "us", refinements: ["unpriced"], search: "" },
-    { chip: "customer", refinements: ["ready", "unpriced"], search: "" },
+    { chip: "us", refinements: ["unresolved"], search: "" },
+    { chip: "customer", refinements: ["ready", "unresolved"], search: "" },
     { chip: "us", refinements: [], search: "OF-Q-10000" },
     { chip: "all", refinements: ["production"], search: "zzz" },
   ]) {
@@ -128,11 +128,39 @@ test("the headline stats are the four the owner drew, in his order", () => {
     ["needUs", "Need us", 2],
     ["waitingCustomer", "Waiting on customer", 1],
     ["readyToIssue", "Ready to issue", 1],
-    ["allActive", "All active", 4],
+    ["allActive", "All", 4],
   ]);
   // "Ready to issue" is a claim that the work is finished, so a job of ours in
   // pricing whose lines are NOT priced is not it — b is ours and in pricing.
   assert.deepEqual(M.selectProjects(rows, stats[2].query).map((r) => r.ref), ["a"]);
+});
+
+test("a label says what it actually counts, or it is the wrong label", () => {
+  // TWO LABELS THAT OVERSTATED THEIR OWN DATA, both caught in review.
+  //
+  // 1. "Unpriced" was reading the server's `unresolved`, which counts lines with
+  //    `status <> 'ready' OR line_total IS NULL` (worker/routes/ops.ts). A line
+  //    that is fully priced and waiting on technical review is unresolved and is
+  //    NOT unpriced, and calling it unpriced sends a reviewer to fix a price
+  //    that is already there. The server's own word is `unresolved`; the screen
+  //    uses the same word rather than a friendlier one that is false.
+  const priced = row({ unresolved: 2, value: 5000, phase: "Pricing" });
+  const refinement = M.REFINEMENTS.find((r) => r.key === "unresolved");
+  assert.ok(refinement, "the refinement is keyed on what it counts");
+  assert.equal(refinement.label, "Unresolved lines");
+  assert.equal(refinement.test(priced), true, "a priced line can still be unresolved");
+  assert.equal(M.unresolvedBadge(priced), "Unresolved 2");
+  assert.equal(M.unresolvedBadge(row({ unresolved: 0 })), null, "no chip on a row with nothing wrong");
+
+  // 2. "All active" was the SAME query as All, and the endpoint returns every
+  //    non-draft job including completed ones (`after_sales`). Nothing in this
+  //    codebase says which stage ends a job — the dashboard's `active_orders`
+  //    excludes after_sales and cancelled, the list excludes neither — so the
+  //    honest fix is the label, not an invented cut-off. It is `All`, it equals
+  //    the All chip, and what "active" should mean is a question for the owner.
+  const stats = M.headlineStats([row({})], M.EMPTY_QUERY);
+  assert.equal(stats[3].label, "All");
+  assert.deepEqual(stats[3].query, { chip: "all", refinements: [], search: "" });
 });
 
 test("a row says who it waits on in WORDS, and the age only qualifies it", () => {
@@ -270,12 +298,31 @@ test("search reaches the three things a reviewer has in hand", () => {
   const found = (search) =>
     M.selectProjects(rows, { ...M.EMPTY_QUERY, search }).map((r) => r.ref);
 
-  assert.deepEqual(found("10468"), ["OF-Q-10468"], "by reference — and across the chip");
-  assert.deepEqual(found("northcote"), ["OF-Q-10468"], "by project, case-insensitively");
-  assert.deepEqual(found("Manna"), ["OF-Q-10468"], "by customer");
-  assert.deepEqual(found("  wattle  "), ["OF-Q-10482"], "surrounding whitespace is not a term");
-  assert.deepEqual(found("zzz"), [], "and no match is an empty list, not everything");
-  assert.deepEqual(found(""), ["OF-Q-10482"], "empty text is not a filter; the chip is back in force");
+  const all = (search) =>
+    M.selectProjects(rows, { chip: "all", refinements: [], search }).map((r) => r.ref);
+
+  assert.deepEqual(all("10468"), ["OF-Q-10468"], "by reference");
+  assert.deepEqual(all("northcote"), ["OF-Q-10468"], "by project, case-insensitively");
+  assert.deepEqual(all("Manna"), ["OF-Q-10468"], "by customer");
+  assert.deepEqual(all("  wattle  "), ["OF-Q-10482"], "surrounding whitespace is not a term");
+  assert.deepEqual(all("zzz"), [], "and no match is an empty list, not everything");
+
+  // SEARCH INTERSECTS THE CHIP — it does not neutralise it. The first version
+  // dropped the wait filter whenever a term was present, so that whoever was on
+  // the phone would find the job whatever chip happened to be selected. It made
+  // every label on the page lie: with a customer-owned project matched, `Needs
+  // us` and `Customer` produced identical lists and the strip read "1 need us"
+  // about a job we were not holding. The escape is the empty state below, which
+  // is honest about where the matches actually are.
+  assert.deepEqual(found("northcote"), [], "the customer's job is not ours, whatever was typed");
+  assert.deepEqual(found("wattle"), ["OF-Q-10482"]);
+  assert.deepEqual(found(""), ["OF-Q-10482"], "empty text is not a filter");
+
+  // And the way out is offered WITH THE TRUE COUNT, so it is worth the tap.
+  const stranded = M.emptyStateFor(rows, { ...M.EMPTY_QUERY, search: "northcote" });
+  assert.match(stranded.headline, /northcote/);
+  assert.equal(stranded.clear.label, "Search all 1 project");
+  assert.deepEqual(stranded.clear.query, { chip: "all", refinements: [], search: "northcote" });
 });
 
 test("three quick filters, and the fourth the mock had is now a refinement", () => {

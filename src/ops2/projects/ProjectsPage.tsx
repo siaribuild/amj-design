@@ -85,6 +85,14 @@ export function ProjectsPage() {
 
   const closeSearch = () => { setSearching(false); setQuery((q) => ({ ...q, search: "" })); };
 
+  // A RETAINED SEARCH REVEALS ITS OWN FIELD. `searching` is the phone's toggle,
+  // but the desk's field is permanent and never sets it — so a term typed at
+  // 1440 and carried under the change point (a Fold is opened and closed
+  // mid-task) went on filtering the list from behind a search ICON: rows
+  // missing, no field, no clear, and nothing on screen saying why. The text
+  // itself is the second reason to be open, and it outranks the toggle.
+  const searchOpen = searching || query.search.trim() !== "";
+
   // THE SEARCH FIELD REPLACES THE TITLE ROW IN PLACE, at the same height —
   // "keep within one line, search entry field shall not add another line". The
   // no-growth guarantee is structural (see OpsPage), not a tuned number.
@@ -119,7 +127,7 @@ export function ProjectsPage() {
       lede={wide
         ? "Find the work that needs a decision, then stay in project context through line review and editing."
         : undefined}
-      headActions={!wide && !searching ? (
+      headActions={!wide && !searchOpen ? (
         <IonButton
           fill="clear"
           className="pq-search-toggle"
@@ -133,7 +141,7 @@ export function ProjectsPage() {
           <span className="ops2-sr-only">Search projects</span>
         </IonButton>
       ) : undefined}
-      headOverlay={!wide && searching ? (
+      headOverlay={!wide && searchOpen ? (
         <>
           {searchField}
           <IonButton

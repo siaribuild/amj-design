@@ -72,7 +72,7 @@ export interface QueueQuery {
   search: string;
 }
 
-export type RefinementKey = "ready" | "unpriced" | "production";
+export type RefinementKey = "ready" | "unresolved" | "production";
 
 /**
  * The chips — WHO IS WAITING, which is the question the queue exists to answer,
@@ -121,7 +121,12 @@ export const REFINEMENTS: readonly {
     key: "ready", label: "Ready to issue",
     test: (r) => r.waitingOn === "Us" && r.phase === "Pricing" && r.unresolved === 0,
   },
-  { key: "unpriced", label: "Unpriced lines", test: (r) => r.unresolved > 0 },
+  // UNRESOLVED, NOT "UNPRICED", and the difference is the server's own. The
+  // endpoint counts `status <> 'ready' OR line_total IS NULL`, so a line that is
+  // fully priced and sitting in technical review is unresolved and is not
+  // unpriced. Calling it unpriced sends a reviewer to fix a price that is
+  // already there — and this queue's whole job is directing attention.
+  { key: "unresolved", label: "Unresolved lines", test: (r) => r.unresolved > 0 },
   { key: "production", label: "In production", test: (r) => r.phase === "Production" },
 ];
 
@@ -229,7 +234,15 @@ export function headlineStats(
     { key: "needUs", label: "Need us", query: { ...base, chip: "us", refinements: [] } },
     { key: "waitingCustomer", label: "Waiting on customer", query: { ...base, chip: "customer", refinements: [] } },
     { key: "readyToIssue", label: "Ready to issue", query: { ...base, chip: "all", refinements: ["ready"] } },
-    { key: "allActive", label: "All active", query: { ...base, chip: "all", refinements: [] } },
+    // "ALL", NOT the owner's drawn "All active", and the label is what changed
+    // rather than the query. The endpoint returns every non-draft job including
+    // completed ones (`after_sales`), and nothing in this codebase says which
+    // stage ends a job: the dashboard's `active_orders` excludes after_sales and
+    // cancelled, this list excludes neither. Inventing a cut-off here would be
+    // inventing a business rule; overstating the work in hand would be worse.
+    // So it says what it counts, it equals the All chip exactly, and what
+    // "active" should mean goes to the owner as a question.
+    { key: "allActive", label: "All", query: { ...base, chip: "all", refinements: [] } },
   ];
   return stats.map((stat) => controlFor(
     rows, stat.key, stat.label, stat.query, sameQuery(stat.query, query),
@@ -321,6 +334,21 @@ export function emptyStateFor(
 
   const term = query.search.trim();
   if (term) {
+    // IS IT STRANDED, OR IS IT ABSENT? Those are different sentences and only
+    // one of them is worth a tap. A term that matches nothing anywhere is a
+    // dead end; a term that matches somewhere else is a job sitting one chip
+    // away while somebody waits on the phone.
+    const elsewhere = selectProjects(rows, { chip: "all", refinements: [], search: query.search });
+    if (elsewhere.length > 0 && query.chip !== "all") {
+      return {
+        headline: `Nothing matches “${term}” in this filter.`,
+        detail: `${elsewhere.length === 1 ? "One project" : `${elsewhere.length} projects`} elsewhere in the queue.`,
+        clear: {
+          label: `Search all ${elsewhere.length} project${elsewhere.length === 1 ? "" : "s"}`,
+          query: { chip: "all", refinements: [], search: query.search },
+        },
+      };
+    }
     return {
       headline: `Nothing matches “${term}”.`,
       detail: "Search covers the reference, the project and the customer.",
@@ -453,6 +481,18 @@ export function priceOf(row: ProjectQueueRow): RowPrice {
   };
 }
 
+/**
+ * The row's one chip, or nothing at all.
+ *
+ * The exception is shown and the default suppressed: a row with nothing wrong
+ * carries no chip, so the eye learns that a chip means something. The count is
+ * the server's `unresolved` and the word is the server's word — see the
+ * refinement above for why it is not "Unpriced".
+ */
+export function unresolvedBadge(row: ProjectQueueRow): string | null {
+  return row.unresolved > 0 ? `Unresolved ${row.unresolved}` : null;
+}
+
 /** The three things a reviewer has in hand when a phone rings — and exactly the
  *  three the search field's own placeholder promises. */
 function matches(row: ProjectQueueRow, term: string): boolean {
@@ -466,13 +506,20 @@ export function selectProjects(
   query: QueueQuery,
 ): ProjectQueueRow[] {
   const term = query.search.trim().toLowerCase();
-  // SEARCH OVERRIDES THE CHIP, and that is a decision rather than a shortcut.
-  // Someone rings about a job; which chip happens to be selected is not
-  // something the caller knows, and "I can see it, it just isn't in this
-  // filter" is the shape of a wasted minute on the phone. The refinements are
-  // left in force — they were ticked deliberately, and the funnel's badge says
-  // they are on.
-  const waiting = term ? null : CHIP_BY_KEY.get(query.chip)?.waitingOn ?? null;
+  // SEARCH INTERSECTS THE CHIP — it does not neutralise it.
+  //
+  // The first version did neutralise it, for a real reason: someone rings about
+  // a job and the caller does not know which chip happens to be selected. But
+  // it made every label on the page lie. With a customer-owned project matched,
+  // `Needs us` and `Customer` produced identical lists, and the attention strip
+  // read "1 need us" about a job we were not holding — a count that was
+  // arithmetically consistent with its own control and still wrong, because the
+  // WORD on the control is part of the contract too.
+  //
+  // The phone call is answered by `emptyStateFor` instead: when a term matches
+  // nothing here but something elsewhere, the empty state says so and offers the
+  // wider search WITH ITS TRUE COUNT, so the tap is worth making.
+  const waiting = CHIP_BY_KEY.get(query.chip)?.waitingOn ?? null;
   const refinements = query.refinements
     .map((key) => REFINEMENT_BY_KEY.get(key))
     .filter((r): r is (typeof REFINEMENTS)[number] => r !== undefined);

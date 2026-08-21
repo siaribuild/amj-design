@@ -28,11 +28,20 @@ const PROJECTS = `${OPS2}/projects`;
 // through the API rather than the legacy console's form: this is an ops2 spec,
 // and driving another console's sign-in screen would make its layout a
 // dependency of this one.
+//
+// u_staff2, NOT u_staff1, and the difference is a suite-level fact rather than a
+// preference: scripts/tests/web/ops.spec.ts signs the legacy console in as
+// u_staff1, and code issuance refuses a second challenge to the same address
+// inside `RESEND_COOLDOWN_MS` (60s, worker/lib/auth.ts). Both files run in the
+// same battery against one Worker, so sharing a mailbox made whichever ran
+// second fail at its OTP — reported as "Dev mode text not found", which reads
+// like broken auth rather than like a rate limit doing its job. The seed carries
+// both founders; the two consoles' specs take one each.
 const seedSql = readFileSync(join(process.cwd(), "scripts", "db", "seed.sql"), "utf8");
 const STAFF_EMAIL = (() => {
-  const row = seedSql.split("\n").find((l) => l.includes("'u_staff1'") && l.includes("@"));
+  const row = seedSql.split("\n").find((l) => l.includes("'u_staff2'") && l.includes("@"));
   const email = row?.match(/'([^']+@[^']+)'/)?.[1];
-  if (!email) throw new Error("seed.sql: no email for u_staff1");
+  if (!email) throw new Error("seed.sql: no email for u_staff2");
   return email;
 })();
 
@@ -176,7 +185,7 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   const refinements = page.getByTestId("queue-refinement");
   await expect(refinements).toHaveCount(3);
   await expect(sheet.getByText("Ready to issue")).toBeVisible();
-  await expect(sheet.getByText("Unpriced lines")).toBeVisible();
+  await expect(sheet.getByText("Unresolved lines")).toBeVisible();
   // The fourth quick filter the mock argued for, demoted rather than deleted —
   // "what you hunt for when a customer rings about work already underway".
   await expect(sheet.getByText("In production")).toBeVisible();
@@ -266,9 +275,12 @@ test("a row says who it waits on, in words and at its leading edge", async ({ pa
   expect(shadows[2], "nobody's carries none — that is not a problem and must not look like one").not.toContain("inset");
 
   // The exception is shown and the default suppressed: only the row with
-  // unpriced lines carries a chip.
-  await expect(rows.nth(0)).toContainText("Unpriced 2");
-  await expect(rows.nth(1)).not.toContainText("Unpriced");
+  // unfinished lines carries a chip — and it says UNRESOLVED, the server's own
+  // word. "Unpriced" was the first wording and it overstated the data: the
+  // endpoint counts `status <> 'ready' OR line_total IS NULL`, so a fully priced
+  // line awaiting technical review is unresolved and is not unpriced.
+  await expect(rows.nth(0)).toContainText("Unresolved 2");
+  await expect(rows.nth(1)).not.toContainText("Unresolved");
   // A figure nobody has costed is NOT $0 — the absence this queue exists to hunt.
   await expect(rows.nth(2)).toContainText("Not priced");
 });
@@ -387,4 +399,70 @@ test("no rendered corner on this surface exceeds the owner's 5px cap, in either 
         .sort((a, b) => b.px - a.px)[0]);
     expect(worst.px, `${mode}: widest corner is on <${worst.tag}>`).toBeLessThanOrEqual(5);
   }
+});
+
+test("a modified click on a project opens it beside, not instead", async ({ page, context }) => {
+  // The wide row carries a REAL anchor precisely so two projects can be open at
+  // once at a desk. The first build then called `preventDefault()` on every
+  // click, including Ctrl/Cmd/Shift ones, which took the affordance away again
+  // while leaving it looking present — a control that is there and does not do
+  // the thing it is there for.
+  await page.goto(PROJECTS);
+  const link = page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).locator("a.pq-open");
+  await expect(link).toHaveAttribute("href", "/ops2/projects/p_submitted");
+
+  const opened = context.waitForEvent("page");
+  await link.click({ modifiers: ["ControlOrMeta"] });
+  const second = await opened;
+  await second.waitForLoadState();
+  expect(new URL(second.url()).pathname).toBe("/ops2/projects/p_submitted");
+  await expect(second.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await second.close();
+
+  // And the tab it was opened FROM did not move.
+  expect(new URL(page.url()).pathname).toBe("/ops2/projects");
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+});
+
+test("a search survives the change point instead of hiding behind an icon", async ({ page }) => {
+  // At the desk the field is permanent; on the phone it is revealed. A search
+  // typed at one width and carried across the change point was left filtering
+  // the list from behind a search ICON — rows missing, no field, no clear, and
+  // nothing on screen saying why. A Fold is opened and closed mid-task, so this
+  // is a real width transition and not a resize-handle curiosity.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(PROJECTS);
+  await page.getByTestId("queue-search").locator("input").fill("Northcote");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("queue-search")).toBeVisible();
+  await expect(page.getByTestId("queue-search").locator("input")).toHaveValue("Northcote");
+  await expect(page.getByTestId("queue-search-cancel")).toBeVisible();
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+});
+
+test("coming back to the queue re-reads it, rather than showing what was there", async ({ page }) => {
+  // Ionic's router outlet KEEPS a page mounted in its view stack, so a mount
+  // effect runs once per session and never again. The queue would then be as
+  // old as the last time the console was reloaded — on the one surface whose
+  // entire purpose is telling you what changed while you were not looking, and
+  // whose governing constraint is that a delayed glance costs a working day.
+  let served = 0;
+  await page.route(QUEUE_URL, (route) => {
+    served += 1;
+    return route.fulfill({ json: { projects: [
+      fixtureRow({ id: "p_first", ref: "OF-Q-1", title: served === 1 ? "Before" : "After" }),
+    ] } });
+  });
+
+  await page.goto(PROJECTS);
+  await expect(page.getByText("Before")).toBeVisible();
+
+  await page.getByTestId("queue-row").first().click();
+  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByText("After")).toBeVisible();
+  expect(served, "the queue was read again on the way back in").toBeGreaterThan(1);
 });
