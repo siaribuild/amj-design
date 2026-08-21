@@ -162,6 +162,25 @@ export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: ""
  * the thing we have to do underneath the thing that just happened. The client
  * re-sorts rather than trusting arrival order because it filters, and a
  * filtered list that quietly changed its own order would be unreadable.
+ *
+ * ── WHAT `daysInStage` ACTUALLY MEASURES, AND WHY IT IS NOT FIXED HERE ───────
+ * KNOWN LIMITATION, raised in review and escalated rather than patched. The
+ * server derives it from `project.updated_at`, which is not a stage-entry
+ * timestamp:
+ *
+ *   - An in-stage line edit resets it (`worker/routes/ops.ts` bumps the project
+ *     row on every line save), so a job nine days in pricing reads "today" the
+ *     moment someone touches a line. That is the failure direction that matters
+ *     for a queue whose purpose is spotting neglect.
+ *   - Order-stage transitions write `order.updated_at`, which this query does
+ *     not read at all, so once an order exists the age stops moving.
+ *
+ * It is NOT changed here for two reasons. The number is the legacy console's
+ * too, and moving what ops staff read every day is the owner's call rather than
+ * a side effect of building a list. And the correct fix needs a stage-entry
+ * timestamp that no table records — `max(project.updated_at, order.updated_at)`
+ * would fix the order half and leave the other, which is differently wrong and
+ * harder to explain than the current answer.
  */
 const WAIT_RANK: Record<WaitingOn, number> = { Us: 0, Customer: 1, Nobody: 2 };
 

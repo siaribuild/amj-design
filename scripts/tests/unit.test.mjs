@@ -36,7 +36,7 @@ await build({
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
       export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
-      export { ISSUABLE_FROM, issuableNow } from ${p("worker/lib/issue.ts")};
+      export { ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES, issuableNow } from ${p("worker/lib/issue.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
     `,
     resolveDir: projectRoot,
@@ -1329,15 +1329,15 @@ test("`issuableNow` is the issue gate's own answer, so a list cannot promise wha
   // So the predicate lives HERE, beside ISSUABLE_FROM and the guards it mirrors,
   // and the list reports its answer rather than re-deriving one.
   const ready = {
-    statusInternal: "estimator_assigned", lineCount: 3, unresolved: 0, deliverySettled: true,
+    statusInternal: "estimator_assigned", lineCount: 3, blocking: 0, deliverySettled: true,
   };
   assert.equal(M.issuableNow(ready), true);
 
   // Each guard, one at a time.
   assert.equal(M.issuableNow({ ...ready, statusInternal: "issued" }), false, "already issued");
   assert.equal(M.issuableNow({ ...ready, lineCount: 0 }), false,
-    "an empty quote is refused as not_ready, and has nothing unresolved to give it away");
-  assert.equal(M.issuableNow({ ...ready, unresolved: 1 }), false, "a line without a total, or flagged");
+    "an empty quote is refused as not_ready, and has nothing blocking to give it away");
+  assert.equal(M.issuableNow({ ...ready, blocking: 1 }), false, "a line without a total, or flagged");
   assert.equal(M.issuableNow({ ...ready, deliverySettled: false }), false,
     "guard 8: NULL delivery is the absence of an answer, not a zero");
 
@@ -1351,4 +1351,33 @@ test("`issuableNow` is the issue gate's own answer, so a list cannot promise wha
   for (const status of M.ISSUABLE_FROM) {
     assert.equal(M.issuableNow({ ...ready, statusInternal: status }), true, status);
   }
+
+  // BLOCKING IS NOT "UNRESOLVED", AND THE DIFFERENCE IS FOUR LINE STATUSES.
+  // `quote_line.status` admits incomplete / ready / technical_review /
+  // policy_exception / unavailable / superseded / ordered (migrations/0001), and
+  // `issueQuote` blocks on exactly two of them plus a NULL total. The first
+  // version fed this predicate the list's `unresolved` count, which is every
+  // status that is not `ready` — so a priced line carrying `policy_exception`
+  // was reported as not issuable while the button would have issued it. A stat
+  // claiming to be the gate's answer has to be the gate's answer in both
+  // directions, or the claim is the defect.
+  assert.deepEqual([...M.ISSUE_BLOCKING_LINE_STATUSES], ["technical_review", "incomplete"]);
+});
+
+test("the issue gate's blocking statuses are written once, and both readers build from them", async () => {
+  // The predicate above only agrees with `issueQuote` while the two are reading
+  // the same list, and the second reader is SQL in another file. A status added
+  // to the guard and not to the query is a queue that quietly disagrees with
+  // the button it points at — the kind of drift no type checks and no test of
+  // either side alone would notice.
+  const read = async (rel) => readFile(join(projectRoot, rel), "utf8");
+  const issue = await read("worker/lib/issue.ts");
+  assert.match(issue, /ISSUE_BLOCKING_LINE_STATUSES[\s\S]{0,40}\.includes\(/,
+    "issueQuote's own guard must read the shared list, not a literal");
+
+  const ops = await read("worker/routes/ops.ts");
+  const subselect = ops.match(/AS blocking[\s\S]{0,40}/);
+  assert.ok(subselect, "the projects list must count blocking lines");
+  assert.match(ops, /ISSUE_BLOCKING_LINE_STATUSES/,
+    "…and must build that count from the shared list rather than repeating the statuses in SQL");
 });

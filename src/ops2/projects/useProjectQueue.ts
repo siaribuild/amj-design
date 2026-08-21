@@ -56,6 +56,13 @@ export function useProjectQueue(): { load: QueueLoad; reload: () => void } {
 
     fetch("/api/ops/projects", { credentials: "same-origin" })
       .then(async (res) => {
+        // CHECKED TWICE, and the second one is the load-bearing one. Between
+        // the headers arriving and the body finishing, the reader can leave and
+        // come back — which starts a NEWER request — and this continuation
+        // would then commit its older rows over the fresh ones, or over the
+        // error state the fresh one landed in. `res.json()` is the await that
+        // makes the window real; a guard placed only before it looks correct
+        // and closes nothing.
         if (!live) return;
         if (res.status === 403 || res.status === 401) {
           // SAID PLAINLY, because behind Cloudflare Access the person IS signed
@@ -76,7 +83,9 @@ export function useProjectQueue(): { load: QueueLoad; reload: () => void } {
           });
           return;
         }
-        setLoad({ status: "ready", rows: parseProjectQueue(await res.json()) });
+        const rows = parseProjectQueue(await res.json());
+        if (!live) return;
+        setLoad({ status: "ready", rows });
       })
       .catch(() => {
         if (!live) return;

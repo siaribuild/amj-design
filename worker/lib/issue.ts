@@ -92,6 +92,24 @@ export async function drainLearningOutbox(env: Env, limit = 25): Promise<{ attem
 // Exported: the delivery panel's editable set (E7, design doc §6.3) is this
 // set PLUS 'draft' — a project that has not even reached the queue yet can
 // still have its postcode corrected.
+/**
+ * The line statuses that BLOCK issuing — written once, read twice.
+ *
+ * `quote_line.status` admits seven values (migrations/0001): incomplete, ready,
+ * technical_review, policy_exception, unavailable, superseded, ordered. The gate
+ * refuses on exactly two of them, plus a NULL total. That is narrower than "not
+ * ready", and the difference is not academic: a priced line carrying
+ * `policy_exception` issues fine, and the ops2 queue's "Ready to issue" stat
+ * originally counted it as blocked because it was fed the list's broader
+ * `unresolved` figure. A stat claiming to be the gate's answer has to be the
+ * gate's answer in BOTH directions.
+ *
+ * Both readers build from this constant — the guard below, and the projects
+ * list's `blocking` subselect in worker/routes/ops.ts — so a status added to one
+ * cannot be forgotten by the other. `scripts/tests/unit.test.mjs` holds that.
+ */
+export const ISSUE_BLOCKING_LINE_STATUSES = ["technical_review", "incomplete"] as const;
+
 export const ISSUABLE_FROM = new Set([
   "estimator_assigned", "technical_review_required", "customer_clarification_required",
   "submitted", "triage_pending",
@@ -113,10 +131,13 @@ export const ISSUABLE_FROM = new Set([
  *
  *   statusInternal   — `ISSUABLE_FROM`, the first guard.
  *   lineCount        — parent lines, `lines.length === 0`.
- *   unresolved       — parent lines with a NULL total or a non-`ready` status.
- *                      STRICTER than the gate, which names `technical_review`
- *                      and `incomplete`; erring towards refusing is the safe
- *                      direction for a stat that sends someone somewhere.
+ *   blocking         — parent lines with a NULL total or a status in
+ *                      `ISSUE_BLOCKING_LINE_STATUSES`. NOT the list's broader
+ *                      `unresolved` count, which is every status that is not
+ *                      `ready`: fed that, this reported a priced
+ *                      `policy_exception` line as unissuable while the button
+ *                      would have issued it. Erring towards refusing sounds
+ *                      safe and is not — it hides work that could go out today.
  *   deliverySettled  — `delivery_amount != null`. NOT truthiness: zero delivery
  *                      is a trade customer arranging their own freight, which is
  *                      an answer, and NULL is the absence of one (guard 8,
@@ -129,12 +150,12 @@ export const ISSUABLE_FROM = new Set([
 export function issuableNow(project: {
   statusInternal: string;
   lineCount: number;
-  unresolved: number;
+  blocking: number;
   deliverySettled: boolean;
 }): boolean {
   return ISSUABLE_FROM.has(project.statusInternal)
     && project.lineCount > 0
-    && project.unresolved === 0
+    && project.blocking === 0
     && project.deliverySettled;
 }
 
@@ -189,7 +210,7 @@ export async function issueQuote(env: Env, projectId: string): Promise<IssueResu
   // Nor issue while a line still carries an unresolved technical-review flag — a
   // material substitution, out-of-range unit, or glazing conflict must be cleared
   // by staff before the quote goes out. Readiness is enforced here, at the gate.
-  if (lines.some((l) => l.status === "technical_review" || l.status === "incomplete")) return { ok: false, error: "not_ready" };
+  if (lines.some((l) => (ISSUE_BLOCKING_LINE_STATUSES as readonly string[]).includes(l.status))) return { ok: false, error: "not_ready" };
 
   // GUARD 8 — delivery must be SETTLED, not non-zero. A trade customer
   // arranging their own freight is priced at 0 and that is an answer; NULL is

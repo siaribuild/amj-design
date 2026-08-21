@@ -12,7 +12,7 @@ import {
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
-import { drainLearningOutbox, issuableNow, issueQuote, ISSUABLE_FROM } from "../lib/issue";
+import { drainLearningOutbox, issuableNow, issueQuote, ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
   type DeliveryZone,
@@ -366,6 +366,12 @@ ops.get("/queues/submissions", async (c) => {
 // Sorted by "ours first, then longest neglected". Deliberately NOT updated_at:
 // that moves when the CUSTOMER replies, which buries the thing we have to do
 // underneath the thing that just happened.
+// The gate's blocking statuses, quoted for SQLite. Built from the shared list
+// rather than typed out here, so the query and `issueQuote`'s own guard cannot
+// drift apart. Safe to interpolate: the values are a module constant, never
+// anything a request supplies.
+const BLOCKING_STATUS_SQL = ISSUE_BLOCKING_LINE_STATUSES.map((status) => `'${status}'`).join(", ");
+
 ops.get("/projects", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const { results } = await c.env.DB.prepare(`
@@ -375,7 +381,15 @@ ops.get("/projects", async (c) => {
            ord.id AS order_id, ord.order_no, ord.stage AS order_stage, ord.total AS order_total,
            (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL) AS line_count,
            (SELECT COALESCE(sum(l.line_total), 0) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL) AS draft_total,
-           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL AND (l.status <> 'ready' OR l.line_total IS NULL)) AS unresolved
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL AND (l.status <> 'ready' OR l.line_total IS NULL)) AS unresolved,
+           -- TWO DIFFERENT COUNTS, deliberately. "unresolved" is not-finished
+           -- and is what the row chip reports. "blocking" is what the ISSUE
+           -- GATE actually refuses on, which is narrower: a priced line
+           -- carrying policy_exception is unresolved and still issues. The
+           -- statuses are built from worker/lib/issue.ts own list so the query
+           -- and the guard cannot drift; unit.test.mjs holds that.
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL
+              AND (l.line_total IS NULL OR l.status IN (${BLOCKING_STATUS_SQL}))) AS blocking
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u   ON u.id   = p.owner_user_id
@@ -415,7 +429,7 @@ ops.get("/projects", async (c) => {
       issuable: issuableNow({
         statusInternal: r.status_internal,
         lineCount: Number(r.line_count ?? 0),
-        unresolved: Number(r.unresolved ?? 0),
+        blocking: Number(r.blocking ?? 0),
         // `!= null`, never truthiness: zero delivery is a trade customer
         // arranging their own freight, and that is an answer (migrations/0044).
         deliverySettled: r.delivery_amount != null,
