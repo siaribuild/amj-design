@@ -560,19 +560,33 @@ export interface RowFlag {
  * not one.
  *
  * The first is the exception the queue exists to hunt: lines nobody has
- * finished. The second names the row's own claim on a human — it is the same
- * fact as the status at the top right, deliberately, because the owner drew it
- * on both of his `Waiting on us` cards and a card is scanned bottom-up as often
- * as top-down.
+ * finished. The second names the row's own claim on a human, which the owner
+ * drew on both of his `Waiting on us` cards — both of them sitting in pricing.
+ *
+ * `Needs review` IS NOT `waitingOn === "Us"`, and the difference is a false
+ * statement on a card. `lifecycleOf` (worker/lib/lifecycle.ts) returns "Us" for
+ * everything the CUSTOMER is not holding, which includes manufacturing,
+ * dispatch and delivery — so an unconditional chip told a reviewer that a job
+ * already on a truck needed reviewing, on the same card whose state line read
+ * "Dispatched". The chip means what the owner drew it to mean: STILL ON OUR
+ * DESK, BEFORE THE QUOTE GOES OUT. That is the two pre-issue phases and
+ * nothing after them.
+ *
+ * The unresolved chip carries no such condition: an unfinished line is worth
+ * saying wherever the job has got to, and arguably more so once it has moved on.
  *
  * A row with neither carries no chip row at all, which is what makes a chip
  * mean something.
  */
+const PRE_ISSUE: ReadonlySet<Phase> = new Set<Phase>(["Intake", "Pricing"]);
+
 export function rowFlags(row: ProjectQueueRow): RowFlag[] {
   const flags: RowFlag[] = [];
   const unresolved = unresolvedBadge(row);
   if (unresolved) flags.push({ key: "unresolved", label: unresolved, tone: "warning" });
-  if (row.waitingOn === "Us") flags.push({ key: "review", label: "Needs review", tone: "neutral" });
+  if (row.waitingOn === "Us" && PRE_ISSUE.has(row.phase)) {
+    flags.push({ key: "review", label: "Needs review", tone: "neutral" });
+  }
   return flags;
 }
 

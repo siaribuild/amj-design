@@ -162,6 +162,25 @@ test("a label says what it actually counts, or it is the wrong label", () => {
   assert.equal(M.unresolvedBadge(priced), "Unresolved 2");
   assert.equal(M.unresolvedBadge(row({ unresolved: 0 })), null, "no chip on a row with nothing wrong");
 
+  // 1b. `Needs review` IS NOT `waitingOn === "Us"`, and the difference is a
+  //     false statement on a card. `lifecycleOf` returns "Us" for every state
+  //     the customer is not holding — which includes manufacturing, dispatch
+  //     and delivery, where nobody is reviewing anything and the card's own
+  //     state line says so. Read as "still on our desk BEFORE the quote goes
+  //     out": the two pre-issue phases, and nothing after them.
+  const keys = (r) => M.rowFlags(r).map((f) => f.key);
+  assert.deepEqual(keys(row({ waitingOn: "Us", phase: "Pricing", unresolved: 2 })),
+    ["unresolved", "review"], "both chips, the owner's own card");
+  assert.deepEqual(keys(row({ waitingOn: "Us", phase: "Intake", unresolved: 0 })), ["review"]);
+  for (const phase of ["Issued", "Accepted", "Production", "Delivered"]) {
+    assert.deepEqual(keys(row({ waitingOn: "Us", phase, unresolved: 0 })), [],
+      `nothing is being reviewed in ${phase}`);
+  }
+  assert.deepEqual(keys(row({ waitingOn: "Us", phase: "Production", unresolved: 3 })),
+    ["unresolved"], "an unfinished line still shows, wherever the job is");
+  assert.deepEqual(keys(row({ waitingOn: "Customer", phase: "Pricing" })), [],
+    "a card we are not holding carries neither");
+
   // 2. "All active" was the SAME query as All, and the endpoint returns every
   //    non-draft job including completed ones (`after_sales`). Nothing in this
   //    codebase says which stage ends a job — the dashboard's `active_orders`
