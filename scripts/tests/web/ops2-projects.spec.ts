@@ -466,3 +466,54 @@ test("coming back to the queue re-reads it, rather than showing what was there",
   await expect(page.getByText("After")).toBeVisible();
   expect(served, "the queue was read again on the way back in").toBeGreaterThan(1);
 });
+
+test("back from a record pops the queue rather than stacking another copy of it", async ({ page }) => {
+  // `< Projects` used to PUSH `/projects`, so the history read
+  // queue → record → queue. Browser Back from the queue then reopened the record
+  // you had just left, and every trip through a record grew the stack by two.
+  // On a phone that is the hardware Back button, which is the one control a
+  // person presses without looking.
+  await page.goto(PROJECTS);
+  await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+  await page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).click();
+  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  expect(new URL(page.url()).pathname).toBe("/ops2/projects");
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toHaveCount(0);
+  expect(new URL(page.url()).pathname, "back re-entered the record it had just left").not.toBe("/ops2/projects/p_submitted");
+
+  // AND A COLD DEEP LINK STILL HAS A WAY OUT. There is nothing to pop into when
+  // the record is the first page of the session, so the control falls back to
+  // naming its destination — which is the whole reason it says "Projects".
+  await page.goto(`${OPS2}/projects/p_submitted`);
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+});
+
+test("revealing search takes the focus with it, and cancelling gives it back", async ({ page }) => {
+  // Tapping Search unmounts the control that was focused and mounts a field in
+  // its place. Without moving focus, a keyboard user is dropped at the top of
+  // the document and a phone gets no keyboard after a deliberate tap on a
+  // search icon — which reads as the control not working.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(PROJECTS);
+  await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+  await page.getByTestId("queue-search-toggle").click();
+  await expect(page.getByTestId("queue-search")).toBeVisible();
+  await expect(page.locator("ion-searchbar input")).toBeFocused();
+
+  // Typed straight in, with no second tap — which is the point of the focus.
+  await page.keyboard.type("Northcote");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+
+  await page.getByTestId("queue-search-cancel").click();
+  await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
+  // Focus comes back to the control it left from, rather than to the document.
+  await expect(page.getByTestId("queue-search-toggle")).toBeFocused();
+});

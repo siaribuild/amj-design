@@ -420,3 +420,21 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   margin-top: var(--theme-spacing-lg);
 }
 .pq-skeleton ion-skeleton-text { border-radius: var(--ds-radius-surface); }
+
+/* The phone's search toggle. A plain button rather than IonButton — see the
+   note at its call site: the Ionic host strips `aria-label` and cannot hold
+   focus, and this control needs both. Sized to the same 44px target as the bell
+   beside it, which is a plain button for its own stated reason. */
+.pq-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+}
+.pq-icon-btn:hover { color: var(--ds-text-primary); }

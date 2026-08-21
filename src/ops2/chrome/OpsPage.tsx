@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import {
-  IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonToolbar,
+  IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonToolbar, useIonRouter,
 } from "@ionic/react";
 import { chevronBack, notificationsOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
@@ -71,6 +71,7 @@ export function OpsPage({
   const wide = useRailWidth();
   const account = useOps2Account();
   const history = useHistory();
+  const router = useIonRouter();
 
   return (
     <IonPage>
@@ -111,12 +112,24 @@ export function OpsPage({
           {/* A plain <button>, not IonBackButton: `ion-back-button` ignores
               `text=""` and ignores `text` changing after hydration (the
               handover's table), and this one names its destination — which is
-              the settled rule and the thing that component makes hardest. */}
+              the settled rule and the thing that component makes hardest.
+
+              IT POPS WHEN THERE IS SOMETHING TO POP. Pushing the destination
+              instead read as queue → record → queue in the history, so browser
+              Back from the queue re-opened the record just left, and every trip
+              through a record grew the stack by two. On a phone that is the
+              hardware Back button — the one control a person presses without
+              looking. The push survives as the COLD-LINK fallback, which is the
+              case the label exists for: arrive at a record from an email and
+              there is no queue behind you to return to. */}
           {backTo && (
             <button
               type="button"
               className="ops2-page__back ds-type-caption"
-              onClick={() => history.push(backTo.href)}
+              onClick={() => {
+                if (router.canGoBack()) router.goBack();
+                else router.push(backTo.href, "back");
+              }}
             >
               <IonIcon icon={chevronBack} aria-hidden="true" />
               {backTo.label}

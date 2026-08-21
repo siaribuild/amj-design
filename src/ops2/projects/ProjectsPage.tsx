@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
 } from "@ionic/react";
@@ -93,6 +93,33 @@ export function ProjectsPage() {
   // itself is the second reason to be open, and it outranks the toggle.
   const searchOpen = searching || query.search.trim() !== "";
 
+  // FOCUS FOLLOWS THE CONTROL THAT REPLACED THE ONE YOU PRESSED. Revealing the
+  // field unmounts the focused button and mounts an input where it was; without
+  // this a keyboard user is dropped at the top of the document and a phone gets
+  // no keyboard after a deliberate tap on a search icon — which reads as the
+  // control not working. Cancelling hands focus back to the toggle rather than
+  // to the document, so the tab position survives the round trip.
+  //
+  // Narrow only: at the desk the field is always there, and grabbing focus on
+  // arrival would take the caret away from whatever the person was doing.
+  const searchbar = useRef<HTMLIonSearchbarElement>(null);
+  const searchToggle = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wide) { wasOpen.current = searchOpen; return; }
+    // `getInputElement()` rather than `setFocus()`, and the difference is
+    // timing: the effect runs the moment the field mounts, and the custom
+    // element has not necessarily upgraded yet — `setFocus()` then resolves
+    // against nothing and returns quietly, which is exactly what it did
+    // (measured: field visible, input present, focus still on the document).
+    // The component's own promise waits for the input it is going to focus.
+    if (searchOpen && !wasOpen.current) {
+      void searchbar.current?.getInputElement().then((input) => input?.focus());
+    }
+    if (!searchOpen && wasOpen.current) searchToggle.current?.focus();
+    wasOpen.current = searchOpen;
+  }, [wide, searchOpen]);
+
   // THE SEARCH FIELD REPLACES THE TITLE ROW IN PLACE, at the same height —
   // "keep within one line, search entry field shall not add another line". The
   // no-growth guarantee is structural (see OpsPage), not a tuned number.
@@ -106,6 +133,7 @@ export function ProjectsPage() {
   // only reliably the word if we render it.
   const searchField = (
     <IonSearchbar
+      ref={searchbar}
       className="pq-search"
       data-testid="queue-search"
       value={query.search}
@@ -127,19 +155,26 @@ export function ProjectsPage() {
       lede={wide
         ? "Find the work that needs a decision, then stay in project context through line review and editing."
         : undefined}
+      // A PLAIN <button>, and the reason is disqualifier 2 of the Ionic boundary
+      // — behaviour, not looks. This control needs two things `IonButton` takes
+      // away: a name a screen reader can read (the host strips `aria-label` and
+      // `aria-describedby`, per the handover's table) and a HOST THAT CAN HOLD
+      // FOCUS, because cancelling search has to hand focus back to it and
+      // `ion-button`'s focusable element is a native button inside its shadow
+      // root. Measured: `.focus()` on the host did nothing at all. The bell in
+      // OpsPage is a plain button beside it for its own stated reason, so this
+      // is the established shape rather than a new one.
       headActions={!wide && !searchOpen ? (
-        <IonButton
-          fill="clear"
-          className="pq-search-toggle"
+        <button
+          type="button"
+          ref={searchToggle}
+          className="pq-icon-btn"
           data-testid="queue-search-toggle"
           onClick={() => setSearching(true)}
         >
           <IonIcon icon={searchOutline} aria-hidden="true" />
-          {/* REAL TEXT, not `aria-label`: IonButton strips `aria-label` and
-              `aria-describedby` from the host (the handover's table), so a name
-              written as an attribute here reaches nobody. */}
           <span className="ops2-sr-only">Search projects</span>
-        </IonButton>
+        </button>
       ) : undefined}
       headOverlay={!wide && searchOpen ? (
         <>

@@ -336,13 +336,20 @@ export function emptyStateFor(
   if (term) {
     // IS IT STRANDED, OR IS IT ABSENT? Those are different sentences and only
     // one of them is worth a tap. A term that matches nothing anywhere is a
-    // dead end; a term that matches somewhere else is a job sitting one chip
-    // away while somebody waits on the phone.
+    // dead end; a term that matches somewhere else is a job sitting behind a
+    // filter while somebody waits on the phone.
+    //
+    // ANY narrowing strands it — the chip, the refinements, or both. Testing
+    // only the chip meant that with `All` selected and a refinement on, a search
+    // for a project that refinement excluded reported "Nothing matches" and
+    // blamed the term. The term was fine; a filter the reader had switched on
+    // was hiding the job.
+    const narrowed = query.chip !== "all" || query.refinements.length > 0;
     const elsewhere = selectProjects(rows, { chip: "all", refinements: [], search: query.search });
-    if (elsewhere.length > 0 && query.chip !== "all") {
+    if (elsewhere.length > 0 && narrowed) {
       return {
         headline: `Nothing matches “${term}” in this filter.`,
-        detail: `${elsewhere.length === 1 ? "One project" : `${elsewhere.length} projects`} elsewhere in the queue.`,
+        detail: `${elsewhere.length === 1 ? "One project" : `${elsewhere.length} projects`} elsewhere in the queue — the filters are hiding ${elsewhere.length === 1 ? "it" : "them"}, not the search.`,
         clear: {
           label: `Search all ${elsewhere.length} project${elsewhere.length === 1 ? "" : "s"}`,
           query: { chip: "all", refinements: [], search: query.search },

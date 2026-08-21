@@ -282,6 +282,35 @@ test("an empty list says WHY it is empty, because the reasons are opposites", ()
   assert.deepEqual(filtered.clear.query.refinements, []);
 });
 
+test("a search stranded by a REFINEMENT is offered the same way out as one stranded by a chip", () => {
+  // The first version of the escape only looked at the chip, so with `All`
+  // selected and a refinement on, a search that matched a project the refinement
+  // excluded reported "Nothing matches" and offered nothing but Clear search.
+  // The term was fine and the queue held the job; a filter the reader had
+  // switched on was hiding it, and the screen blamed the search.
+  //
+  // Any narrowing counts — the chip, the refinements, or both — because the
+  // question the reader is asking is "is this job in here at all", and the only
+  // useful answer names the true count.
+  const rows = [
+    row({ ref: "OF-Q-1", title: "Harbourview", waitingOn: "Nobody", phase: "Production" }),
+    row({ ref: "OF-Q-2", title: "Fitzroy", waitingOn: "Us", phase: "Pricing" }),
+  ];
+
+  const hiddenByRefinement = M.emptyStateFor(rows, {
+    chip: "all", refinements: ["production"], search: "fitzroy",
+  });
+  assert.equal(hiddenByRefinement.clear.label, "Search all 1 project");
+  assert.deepEqual(hiddenByRefinement.clear.query, { chip: "all", refinements: [], search: "fitzroy" });
+
+  // And a term nothing in the queue matches is still a dead end, not a
+  // widening that would find nothing either.
+  const genuinelyAbsent = M.emptyStateFor(rows, {
+    chip: "all", refinements: ["production"], search: "zzz",
+  });
+  assert.equal(genuinelyAbsent.clear.label, "Clear search");
+});
+
 test("search reaches the three things a reviewer has in hand", () => {
   // The placeholder promises "project, customer or reference" and the search
   // must keep that promise exactly — a field that quietly searches fewer things
