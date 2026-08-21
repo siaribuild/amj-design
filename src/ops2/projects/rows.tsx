@@ -1,9 +1,11 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { IonBadge, IonItem, IonLabel, IonList } from "@ionic/react";
+import { IonIcon, IonItem, IonLabel, IonList } from "@ionic/react";
+import { alertCircleOutline, eyeOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
 import { browserHref } from "../shellBase";
 import {
-  ageLabel, nextActionOf, priceOf, unresolvedBadge, waitingSentence, type ProjectQueueRow,
+  ageLabel, nextActionOf, priceOf, rowFlags, waitingSentence,
+  type ProjectQueueRow, type RowFlag,
 } from "./queue";
 
 /** Where a row goes. Nested under `/projects` so the tab and the rail stay lit —
@@ -16,15 +18,43 @@ function useOpenRow() {
   return (row: ProjectQueueRow) => history.push(recordPath(row));
 }
 
-/** Chips are the EXCEPTION, never the default: a row with nothing wrong carries
- *  none at all, so the eye learns that a chip means something. The word comes
- *  from the model, which explains why it is not "Unpriced". */
-function Flags({ row }: { row: ProjectQueueRow }) {
-  const badge = unresolvedBadge(row);
-  if (!badge) return null;
+/** Each chip's glyph. The icon is redundant with the word ON PURPOSE — it is
+ *  what makes the chip row legible at a glance from arm's length, and the word
+ *  is what makes it legible at all. Neither carries the meaning alone. */
+const FLAG_ICON: Record<RowFlag["key"], string> = {
+  unresolved: alertCircleOutline,
+  review: eyeOutline,
+};
+
+/**
+ * The card's chip row — the owner's drawn anatomy: an icon and a word, twice.
+ *
+ * A PLAIN SPAN, NOT `IonBadge`. The badge host paints a filled Ionic colour and
+ * takes `--background`/`--color` only; the drawn chip is a tinted wash with its
+ * own text colour, a leading glyph and a radius under the owner's 5px cap, and
+ * every one of those is a token this stylesheet already owns.
+ *
+ * Chips are the EXCEPTION, never the default: a row with nothing on it carries
+ * no chip row at all, so the eye learns that a chip means something. The
+ * unresolved word comes from the model, which explains why it is not "Unpriced".
+ */
+function Flags({ row, compact = false }: { row: ProjectQueueRow; compact?: boolean }) {
+  // The wide table asks for the unresolved chip only: its NEXT ACTION column
+  // already reads `Us · Technical review` two lines above, and a `Needs review`
+  // chip beside it would be the same sentence twice on one row. The card has no
+  // such column, which is why the owner drew the chip there.
+  const flags = compact
+    ? rowFlags(row).filter((flag) => flag.key === "unresolved")
+    : rowFlags(row);
+  if (flags.length === 0) return null;
   return (
     <span className="pq-flags">
-      <IonBadge color="warning">{badge}</IonBadge>
+      {flags.map((flag) => (
+        <span key={flag.key} className="pq-flag" data-tone={flag.tone}>
+          <IonIcon icon={FLAG_ICON[flag.key]} aria-hidden="true" />
+          {flag.label}
+        </span>
+      ))}
     </span>
   );
 }
@@ -193,7 +223,7 @@ export function ProjectTable({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 <td>
                   <span className="pq-next" data-waiting={row.waitingOn}>{nextActionOf(row)}</span>
                   {age && <span className="pq-age">{age}</span>}
-                  <Flags row={row} />
+                  <Flags row={row} compact />
                 </td>
                 <td className="pq-stage">{row.phase}</td>
                 <td className="pq-num">{row.lineCount}</td>

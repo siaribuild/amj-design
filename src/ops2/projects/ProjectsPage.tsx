@@ -206,11 +206,27 @@ export function ProjectsPage() {
 
       {load.status === "ready" && (
         <>
-          {/* The attention strip. The bold number is the queue's whole reason
+          {/* The attention strip — THE DESK ONLY, and its absence on the phone
+              is the owner's drawing rather than an omission.
+              
+              His phone drawing goes title → chips → cards with nothing between
+              them, and the reason holds up once you look at the two widths side
+              by side: at 1440 the strip costs a band of otherwise empty page
+              beside the search card, while at 390 it is the first two hundred
+              pixels of a screen whose entire value is how much of the LIST you
+              can see before scrolling. Every number in it is reachable on the
+              phone anyway — three through the chips, `Ready to issue` through
+              the funnel — so what is lost is the glance, not the information.
+              
+              This is a real either/or (`wide ? … : …` never `!wide && …`): the
+              habit of writing only the negative half is what made both the
+              status row and the totals panel render nowhere at desktop width
+              (`OPEN-DEFECTS.md` D5). The bold number is the queue's whole reason
               for existing; the three columns beside it are the other states a
               reviewer orients by. Every one of them is a control, and each
               carries the query it is counted with — so a stat cannot promise a
               number and then show a different list. */}
+          {wide ? (
           <div className="pq-attention" data-testid="queue-attention">
             <button
               type="button"
@@ -243,6 +259,7 @@ export function ProjectsPage() {
               ))}
             </div>
           </div>
+          ) : null}
 
           <div className="pq-controls" data-wide={wide}>
             {/* At the desk the field is permanent — there is room, and a

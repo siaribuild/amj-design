@@ -207,16 +207,22 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   gap: var(--theme-spacing-2xs);
 }
 /* Three, and never scrollable. A fixed set that must all be reachable cannot
-   hide members off the edge — the destinations rule, one level down. */
+   hide members off the edge — the destinations rule, one level down.
+   THEY HUG THEIR OWN WORDS — `0 1 auto`, not `1 1 auto`. Stretched to fill the
+   row they read as a segmented control, which is a claim that the three are one
+   exhaustive axis you are always somewhere on; the owner drew three separate
+   chips sitting left with the funnel pushed away from them, and a chip that is
+   as wide as its label is also a chip whose label you can find again in the
+   same place after the counts change. */
 .pq-chip {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--theme-spacing-2xs);
   min-height: 2.5rem;
-  padding: var(--theme-spacing-xs) var(--theme-spacing-md);
+  padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
   background: var(--ds-surface-card);
   border: 1px solid var(--ds-border-default);
   border-radius: var(--ds-radius-control);
@@ -237,6 +243,11 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
 }
+/* `All · 5`, the owner's own separator. Without it the two run together as
+   "All 5", which reads as one phrase rather than a label and its count — the
+   same reason the funnel sheet's counts carry a margin. Scoped to the chip: the
+   sheet sets its own spacing and would print the dot twice. */
+.pq-chip .pq-count::before { content: "·"; margin-right: 0.3em; }
 .pq-funnel {
   flex: none;
   position: relative;
@@ -286,6 +297,12 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
    because the gap is the separator; a divider as well would say it twice. */
 .pq-cards ion-item {
   --background: var(--ds-surface-card);
+  /* The table's sage wash, said in Ionic's vocabulary. `--background-hover`
+     alone does nothing visible: the host multiplies it by
+     `--background-hover-opacity`, which defaults to Ionic's own low value, so
+     a fully-specified colour arrives at roughly 4% and reads as nothing. */
+  --background-hover: var(--ds-color-brand-subtle);
+  --background-hover-opacity: 1;
   --padding-start: var(--theme-spacing-md);
   --border-radius: var(--ds-radius-surface);
   margin-bottom: var(--theme-spacing-sm);
@@ -351,7 +368,31 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
 .pq-money { flex: none; color: var(--ds-text-primary); font-variant-numeric: tabular-nums; }
 .pq-money[data-priced="false"] { color: var(--ds-text-muted); font-style: italic; }
 .pq-basis { color: var(--ds-text-muted); font-style: normal; }
-.pq-flags { display: flex; flex-wrap: wrap; gap: var(--theme-spacing-2xs); margin-top: var(--theme-spacing-2xs); }
+.pq-flags { display: flex; flex-wrap: wrap; gap: var(--theme-spacing-2xs); margin-top: var(--theme-spacing-xs); }
+/* Tinted wash, own text colour, leading glyph, radius under the owner's 5px cap
+   — four things `ion-badge` does not do, which is why these are plain spans. */
+.pq-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.15rem var(--theme-spacing-xs);
+  border-radius: var(--theme-radius-xs);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  white-space: nowrap;
+}
+.pq-flag ion-icon { font-size: 0.95em; }
+.pq-flag[data-tone="warning"] {
+  background: var(--ds-color-warning-subtle);
+  color: var(--ds-color-warning-text);
+}
+/* Neutral, and quieter than the warning beside it on purpose: `Needs review`
+   restates the status at the top of the same card, so it orients rather than
+   alerts. Two chips shouting is two chips nobody reads. */
+.pq-flag[data-tone="neutral"] {
+  background: var(--ds-surface-sunken);
+  color: var(--ds-text-secondary);
+}
 
 /* ── Rows: the wide table ───────────────────────────────────────────────────
  * A real table, named against disqualifier 3 of the Ionic boundary — row and
@@ -380,7 +421,10 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
 }
 .pq-table tbody tr { cursor: pointer; }
 .pq-table tbody tr:last-child td { border-bottom: 0; }
-.pq-table tbody tr:hover { background: var(--ds-surface-sunken); }
+/* THE HOVER IS SAGE, not the neutral sunken step — the owner's reference, and
+   it is the one place a pointer says "this whole row is the target". A neutral
+   wash at this weight is indistinguishable from the zebra of a dense table. */
+.pq-table tbody tr:hover { background: var(--ds-color-brand-subtle); }
 .pq-table tbody tr[data-waiting="Us"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
 .pq-table tbody tr[data-waiting="Customer"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-info); }
 .pq-table .pq-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -430,11 +474,20 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 0;
+  border: 1px solid var(--ds-border-default);
   border-radius: var(--ds-radius-control);
-  background: transparent;
+  background: var(--ds-surface-card);
   color: var(--ds-text-secondary);
   font-size: 20px;
   cursor: pointer;
 }
-.pq-icon-btn:hover { color: var(--ds-text-primary); }
+/* A BORDERED BOX, as drawn, and it earns the border rather than borrowing it:
+   this control sits alone at the end of the title row with no neighbour to
+   group with, and a bare glyph up there reads as decoration on the heading. It
+   matches the funnel below it, which is the other icon-only control on the
+   surface. */
+.pq-icon-btn:hover {
+  color: var(--ds-text-primary);
+  background: var(--ds-surface-brand-subtle);
+  border-color: var(--ds-border-brand);
+}

@@ -548,6 +548,34 @@ export function unresolvedBadge(row: ProjectQueueRow): string | null {
   return row.unresolved > 0 ? `Unresolved ${row.unresolved}` : null;
 }
 
+/** One chip on a card: what it says, and which of the two tones it carries. */
+export interface RowFlag {
+  key: "unresolved" | "review";
+  label: string;
+  tone: "warning" | "neutral";
+}
+
+/**
+ * The card's chip row — the owner's drawn anatomy, which carries TWO chips and
+ * not one.
+ *
+ * The first is the exception the queue exists to hunt: lines nobody has
+ * finished. The second names the row's own claim on a human — it is the same
+ * fact as the status at the top right, deliberately, because the owner drew it
+ * on both of his `Waiting on us` cards and a card is scanned bottom-up as often
+ * as top-down.
+ *
+ * A row with neither carries no chip row at all, which is what makes a chip
+ * mean something.
+ */
+export function rowFlags(row: ProjectQueueRow): RowFlag[] {
+  const flags: RowFlag[] = [];
+  const unresolved = unresolvedBadge(row);
+  if (unresolved) flags.push({ key: "unresolved", label: unresolved, tone: "warning" });
+  if (row.waitingOn === "Us") flags.push({ key: "review", label: "Needs review", tone: "neutral" });
+  return flags;
+}
+
 /** The three things a reviewer has in hand when a phone rings — and exactly the
  *  three the search field's own placeholder promises. */
 function matches(row: ProjectQueueRow, term: string): boolean {

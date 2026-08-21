@@ -134,7 +134,11 @@ test("search replaces the title row in place, and the header does not grow", asy
 
   const head = page.locator(".ops2-page__head");
   const before = await head.boundingBox();
-  const stripBefore = await page.getByTestId("queue-attention").boundingBox();
+  // THE FIRST THING BELOW THE HEAD ROW, whatever that is — on the phone it is
+  // the filter row, because the attention strip is the desk's and the owner's
+  // phone drawing goes title → chips → cards. Measuring the strip here pinned
+  // the guarantee to a element that is not rendered at this width.
+  const belowBefore = await page.locator(".pq-controls").boundingBox();
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
 
   await page.getByTestId("queue-search-toggle").click();
@@ -151,9 +155,9 @@ test("search replaces the title row in place, and the header does not grow", asy
   await expect(page.getByTestId("queue-search-cancel")).toHaveText("Cancel");
 
   const after = await head.boundingBox();
-  const stripAfter = await page.getByTestId("queue-attention").boundingBox();
+  const belowAfter = await page.locator(".pq-controls").boundingBox();
   expect(after!.height, "the head row's height").toBe(before!.height);
-  expect(stripAfter!.y, "nothing below the head row moved").toBe(stripBefore!.y);
+  expect(belowAfter!.y, "nothing below the head row moved").toBe(belowBefore!.y);
 
   // And it searches — across the quick filter, because whoever is on the phone
   // does not know which chip happens to be selected.
@@ -169,6 +173,36 @@ test("search replaces the title row in place, and the header does not grow", asy
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
   await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
   expect((await head.boundingBox())!.height).toBe(before!.height);
+});
+
+test("the attention strip is the desk's, and the phone goes straight to the work", async ({ page }) => {
+  // THE OWNER'S DRAWING, and its absence on the phone is the specification
+  // rather than an omission: his phone drawing goes title → chips → cards with
+  // nothing between them, and the strip had been carried over from the DESKTOP
+  // drawing by assumption. At 390 it is the first two hundred pixels of a
+  // screen whose entire value is how much of the LIST you can see before
+  // scrolling.
+  //
+  // Both halves are asserted. A `wide &&` written without its else is how both
+  // the status row and the totals panel came to render nowhere at desktop
+  // width (`OPEN-DEFECTS.md` D5), and a test that only checks the phone would
+  // pass just as happily if the strip had been deleted outright.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(PROJECTS);
+  await expect(page.getByTestId("queue-row").first()).toBeVisible();
+  await expect(page.getByTestId("queue-attention")).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("queue-attention")).toHaveCount(0);
+
+  // And nothing of the strip's is lost with it — every number it carried is
+  // still reachable, three through the chips and `Ready to issue` through the
+  // funnel. The chips are what sits under the title now.
+  await expect(page.getByTestId("queue-chip")).toHaveCount(3);
+  const title = await page.locator(".ops2-page__head").boundingBox();
+  const chips = await page.locator(".pq-chips").boundingBox();
+  expect(chips!.y - (title!.y + title!.height), "the gap the strip used to fill")
+    .toBeLessThan(40);
 });
 
 test("the funnel opens the mock's panel, and its bubble counts what is on", async ({ page }) => {
@@ -303,6 +337,12 @@ test("a row says who it waits on, in words and at its leading edge", async ({ pa
   // line awaiting technical review is unresolved and is not unpriced.
   await expect(rows.nth(0)).toContainText("Unresolved 2");
   await expect(rows.nth(1)).not.toContainText("Unresolved");
+  // The owner drew TWO chips on his `Waiting on us` cards and one shipped. The
+  // second names the row's own claim on a human; a card waiting on the customer
+  // carries neither, which is what keeps a chip meaning something.
+  await expect(rows.nth(0)).toContainText("Needs review");
+  await expect(rows.nth(1)).not.toContainText("Needs review");
+  await expect(rows.nth(2)).not.toContainText("Needs review");
   // A figure nobody has costed is NOT $0 — the absence this queue exists to hunt.
   await expect(rows.nth(2)).toContainText("Not priced");
 });
