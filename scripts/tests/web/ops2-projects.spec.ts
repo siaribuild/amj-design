@@ -207,48 +207,80 @@ test("the attention strip is the desk's, and the phone goes straight to the work
 
 test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {
   // A SKELETON IS A PROMISE ABOUT THE COMING LAYOUT, so it is wrong in a way a
-  // spinner cannot be: it can promise a block that never lands. The narrow
-  // layout dropped the attention strip and the skeleton went on reserving its
-  // height, so the controls and the whole list jumped up the moment the data
-  // arrived — on the surface whose entire argument for a skeleton is that
-  // nothing moves when it resolves.
+  // spinner cannot be: it can promise a block that never lands, or a block the
+  // wrong size. Both were shipped here. The narrow layout dropped the attention
+  // strip and the skeleton went on reserving its height; then the `Needs review`
+  // chip added a row to every arrival card and the placeholder stayed at 96.
   //
-  // Measured as a DISPLACEMENT rather than by counting blocks: the defect is
-  // the jump, and a count would pass just as happily if the same total height
-  // were redistributed.
+  // FOUR ROWS, WHICH IS WHAT THE SKELETON DRAWS. Against the seeded pair the
+  // desk's table is half the height its placeholder claims, so there is no
+  // honest comparison to make; with four the promise and the arrival are the
+  // same shape and every edge can be checked. They are pre-issue and ours,
+  // which is the arrival view the placeholder was measured against — and the
+  // tall card, the one that carries a chip.
+  const queue = { projects: [0, 1, 2, 3].map((i) => fixtureRow({
+    id: `p_${i}`, ref: `OF-Q-${i}`, title: `Project ${i}`,
+    waitingOn: "Us", phase: "Pricing", stateLabel: "Technical review", daysInStage: i,
+  })) };
+
   for (const [width, height] of [[390, 844], [1440, 900]] as const) {
     await page.setViewportSize({ width, height });
+
+    // ONE handler, held open deliberately so the state is seen rather than
+    // raced for. Not a fixture route with a holding route layered over it:
+    // `fallback()` hands on to the NETWORK, not to the other handler, so the
+    // seeded pair arrived and the four-row comparison had nothing to compare.
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => { release = resolve; });
-    await page.route(QUEUE_URL, async (route) => { await held; await route.continue(); });
+    await page.route(QUEUE_URL, async (route) => { await held; await route.fulfill({ json: queue }); });
     const loading = page.goto(PROJECTS);
 
     const skeleton = page.getByTestId("queue-skeleton");
     await expect(skeleton).toBeVisible();
-    const during = (await skeleton.boundingBox())!.y;
-    // AND WHERE THE LIST ITSELF WILL START. Measuring only the top of the
-    // skeleton catches a band that vanished and nothing else: a placeholder
-    // card 45px shorter than the card that lands leaves the top edge exactly
-    // where it was and shoves everything below it, which is most of the screen.
-    const blocks = skeleton.locator("ion-skeleton-text");
-    const listDuring = (await blocks.nth(width >= 1024 ? 2 : 1).boundingBox())!.y;
+    await expect(page.locator("ion-spinner")).toHaveCount(0);
+    const promised = await Promise.all(
+      (await skeleton.locator("ion-skeleton-text").all())
+        .map(async (b) => (await b.boundingBox())!),
+    );
 
     release();
     await loading;
-    await expect(page.getByTestId("queue-row").first()).toBeVisible();
-    // Whatever renders first after the head row — the strip at the desk, the
-    // filter row on the phone — has to start where the skeleton started.
-    const settled = (await page.locator(width >= 1024 ? ".pq-attention" : ".pq-controls")
-      .boundingBox())!.y;
-    expect(Math.abs(settled - during), `the head of the list jumps at ${width}px`)
+    await expect(page.getByTestId("queue-row")).toHaveCount(4);
+
+    // 1. THE HEAD OF THE LIST. Whatever renders first under the head row — the
+    //    strip at the desk, the filter row on the phone — starts where the
+    //    skeleton started, or the whole page moves.
+    const head = (await page.locator(width >= 1024 ? ".pq-attention" : ".pq-controls")
+      .boundingBox())!;
+    expect(Math.abs(head.y - promised[0].y), `the head of the list jumps at ${width}px`)
       .toBeLessThanOrEqual(2);
-    // The desk's list is ONE bordered surface with its own header row, so the
-    // block that stands in for it is measured against the surface; the phone's
-    // is a stack of separate cards, so it is measured against the first card.
-    const listSettled = (await page.locator(width >= 1024 ? ".pq-table-wrap" : "[data-testid=queue-row]")
-      .first().boundingBox())!.y;
-    expect(Math.abs(listSettled - listDuring), `the list body jumps at ${width}px`)
-      .toBeLessThanOrEqual(2);
+
+    if (width >= 1024) {
+      // 2a. THE DESK'S LIST IS ONE BORDERED SURFACE with its own header row, so
+      //     its placeholder is one block — and both EDGES are checked, because
+      //     the top alone is set by the two blocks above it and says nothing
+      //     about whether this one is the right size.
+      const table = (await page.locator(".pq-table-wrap").boundingBox())!;
+      const block = promised[2];
+      expect(Math.abs(table.y - block.y), "the table starts where it was promised")
+        .toBeLessThanOrEqual(2);
+      expect(Math.abs(table.height - block.height), "the table is the promised height")
+        .toBeLessThanOrEqual(4);
+    } else {
+      // 2b. THE PHONE'S IS A STACK OF SEPARATE CARDS, so EVERY card is checked
+      //     against the block that stood in for it. A placeholder 45px short
+      //     leaves the first edge exactly where it was and shoves the three
+      //     below it, which is most of the screen.
+      const cards = await page.getByTestId("queue-row").all();
+      for (const [i, card] of cards.entries()) {
+        const box = (await card.boundingBox())!;
+        const block = promised[i + 1];
+        expect(Math.abs(box.y - block.y), `card ${i} lands where it was promised`)
+          .toBeLessThanOrEqual(2);
+        expect(Math.abs(box.height - block.height), `card ${i} is the promised height`)
+          .toBeLessThanOrEqual(4);
+      }
+    }
     await page.unroute(QUEUE_URL);
   }
 });

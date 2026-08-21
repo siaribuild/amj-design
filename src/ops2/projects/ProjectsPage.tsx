@@ -388,7 +388,8 @@ function EmptyPanel({
  * understating drops it downward past whatever the reader was about to touch.
  *
  * The desk is a TABLE — one bordered surface with a header row, not gapped
- * cards — so its list is one block rather than four, and the strip and controls
+ * cards — so its list is one block rather than four (a header and four rows,
+ * which is what the phone draws as four cards), and the strip and controls
  * are their own measured heights. The strip's block is 70 rather than its own
  * 66: it carries a 12px bottom margin against this column's 8px gap, and the
  * placeholder has to absorb the difference or everything under it sits 4px
@@ -403,7 +404,7 @@ function QueueSkeleton({ wide }: { wide: boolean }) {
       {wide && <IonSkeletonText animated style={{ height: "70px" }} />}
       <IonSkeletonText animated style={{ height: wide ? "58px" : "40px" }} />
       {wide
-        ? <IonSkeletonText animated style={{ height: "312px" }} />
+        ? <IonSkeletonText animated style={{ height: "305px" }} />
         : [0, 1, 2, 3].map((i) => (
           <IonSkeletonText key={i} animated style={{ height: "141px" }} />
         ))}
