@@ -467,7 +467,14 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   gap: var(--theme-spacing-sm);
   margin-top: var(--theme-spacing-lg);
 }
-.pq-skeleton ion-skeleton-text { border-radius: var(--ds-radius-surface); }
+/* ZERO MARGIN, and it is not tidiness: `ion-skeleton-text` ships `margin: 4px 0`,
+   so every block sat 4px low and every gap was 8 + 4 + 4 = 16 against the 8 the
+   real list uses. The measured heights above are only true if the spacing here
+   is the flex gap and nothing else. */
+.pq-skeleton ion-skeleton-text {
+  margin: 0;
+  border-radius: var(--ds-radius-surface);
+}
 
 /* The phone's search toggle. A plain button rather than IonButton — see the
    note at its call site: the Ionic host strips `aria-label` and cannot hold

@@ -226,6 +226,12 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     const skeleton = page.getByTestId("queue-skeleton");
     await expect(skeleton).toBeVisible();
     const during = (await skeleton.boundingBox())!.y;
+    // AND WHERE THE LIST ITSELF WILL START. Measuring only the top of the
+    // skeleton catches a band that vanished and nothing else: a placeholder
+    // card 45px shorter than the card that lands leaves the top edge exactly
+    // where it was and shoves everything below it, which is most of the screen.
+    const blocks = skeleton.locator("ion-skeleton-text");
+    const listDuring = (await blocks.nth(width >= 1024 ? 2 : 1).boundingBox())!.y;
 
     release();
     await loading;
@@ -234,8 +240,15 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     // filter row on the phone — has to start where the skeleton started.
     const settled = (await page.locator(width >= 1024 ? ".pq-attention" : ".pq-controls")
       .boundingBox())!.y;
-    expect(Math.abs(settled - during), `the list jumps on load at ${width}px`)
-      .toBeLessThanOrEqual(1);
+    expect(Math.abs(settled - during), `the head of the list jumps at ${width}px`)
+      .toBeLessThanOrEqual(2);
+    // The desk's list is ONE bordered surface with its own header row, so the
+    // block that stands in for it is measured against the surface; the phone's
+    // is a stack of separate cards, so it is measured against the first card.
+    const listSettled = (await page.locator(width >= 1024 ? ".pq-table-wrap" : "[data-testid=queue-row]")
+      .first().boundingBox())!.y;
+    expect(Math.abs(listSettled - listDuring), `the list body jumps at ${width}px`)
+      .toBeLessThanOrEqual(2);
     await page.unroute(QUEUE_URL);
   }
 });

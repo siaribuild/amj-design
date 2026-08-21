@@ -371,23 +371,42 @@ function EmptyPanel({
   );
 }
 
-/** A skeleton OF THE COMING SHAPE, never a spinner — R-161, and the boundary
- *  document's own ruling on `IonLoading`. The rows are the shape the list will
- *  land in, so nothing jumps when it does. */
+/**
+ * A skeleton OF THE COMING SHAPE, never a spinner — R-161, and the boundary
+ * document's own ruling on `IonLoading`.
+ *
+ * THE HEIGHTS ARE MEASURED, not chosen. A skeleton is a promise about the
+ * layout that is arriving, which is a way of being wrong a spinner cannot be:
+ * every pixel of difference is a jump at the moment the data lands, on the
+ * surface whose whole argument for a skeleton is that nothing moves.
+ *
+ * Measured against the arrival view (`Needs us`, so a pre-issue card on our own
+ * desk — which carries the `Needs review` chip, and is therefore the tall
+ * variant) at 390px: controls 40, card 141, gap 8. A card with no chip row is
+ * 112, so the placeholder overstates that one by 29 — deliberately, because
+ * overstating settles the list UPWARD into space it already occupied, and
+ * understating drops it downward past whatever the reader was about to touch.
+ *
+ * The desk is a TABLE — one bordered surface with a header row, not gapped
+ * cards — so its list is one block rather than four, and the strip and controls
+ * are their own measured heights. The strip's block is 70 rather than its own
+ * 66: it carries a 12px bottom margin against this column's 8px gap, and the
+ * placeholder has to absorb the difference or everything under it sits 4px
+ * high.
+ */
 function QueueSkeleton({ wide }: { wide: boolean }) {
   return (
     <div className="pq-skeleton" data-testid="queue-skeleton" aria-busy="true">
-      {/* The strip's block, and ONLY where the strip lands. A skeleton is a
-          promise about the coming layout, which is a way of being wrong that a
-          spinner cannot be: reserving 92px for a band the phone no longer
-          renders made the controls and the whole list jump upward the moment
-          the data arrived — on the surface whose entire argument for a skeleton
-          is that nothing moves when it resolves. */}
-      {wide && <IonSkeletonText animated style={{ height: "76px" }} />}
-      <IonSkeletonText animated style={{ height: "44px" }} />
-      {[0, 1, 2, 3].map((i) => (
-        <IonSkeletonText key={i} animated style={{ height: wide ? "52px" : "96px" }} />
-      ))}
+      {/* The strip's block, and ONLY where the strip lands. Reserving it on the
+          phone, where the strip is no longer rendered, moved the controls and
+          the entire list on load. */}
+      {wide && <IonSkeletonText animated style={{ height: "70px" }} />}
+      <IonSkeletonText animated style={{ height: wide ? "58px" : "40px" }} />
+      {wide
+        ? <IonSkeletonText animated style={{ height: "312px" }} />
+        : [0, 1, 2, 3].map((i) => (
+          <IonSkeletonText key={i} animated style={{ height: "141px" }} />
+        ))}
     </div>
   );
 }
