@@ -110,9 +110,16 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
 
   // Arrival is the queue's reason for existing, not a menu: the seed's two
   // non-draft projects are both ours, and both are on screen without a tap.
+  //
+  // ASSERTED BY IDENTITY, NEVER BY TOTAL. Every spec file in this battery shares
+  // one Worker and one D1, and several of them submit projects — so the number
+  // of rows here depends on which files happen to be running alongside. The
+  // first version counted, passed alone, and failed in the full battery with
+  // three rows. Anything that needs a controlled row SET intercepts the
+  // endpoint instead; anything reading the real one names what it expects.
   await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
   await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  await expect(page.getByText("Northcote extension")).toBeVisible();
 });
 
 test("search replaces the title row in place, and the header does not grow", async ({ page }) => {
@@ -151,13 +158,16 @@ test("search replaces the title row in place, and the header does not grow", asy
   // And it searches — across the quick filter, because whoever is on the phone
   // does not know which chip happens to be selected.
   await field.locator("input").fill("Northcote");
-  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  // NARROWING SHOWN BY IDENTITY: the match is there and the other seeded row is
+  // gone. Counting the whole list would depend on which other spec files in the
+  // battery have submitted projects into the shared database.
   await expect(page.getByText("Northcote extension")).toBeVisible();
+  await expect(page.getByText("Fitzroy townhouses")).toHaveCount(0);
 
   // Cancel puts the title back, still in one row.
   await page.getByTestId("queue-search-cancel").click();
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
   expect((await head.boundingBox())!.height).toBe(before!.height);
 });
 
@@ -168,9 +178,21 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   // stating what it would leave — and never toggles one filter while wearing a
   // badge that implies a set. That was its predecessor's defect, and the mock
   // fixed it in the open (`02623bae` on `design/ops2-planning`).
+  //
+  // AGAINST AN INTERCEPTED SET, because this test is about numbers and the
+  // battery shares one database: other spec files submit projects, so the count
+  // beside a refinement depends on which of them happen to be running. What is
+  // under test is the panel's own behaviour, and that is the client's alone.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_us", ref: "OF-Q-1", title: "Ours", waitingOn: "Us" }),
+      fixtureRow({ id: "p_prod", ref: "OF-Q-2", title: "Underway", waitingOn: "Nobody", phase: "Production" }),
+    ] },
+  }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(PROJECTS);
-  await expect(page.getByTestId("queue-row").first()).toBeVisible();
+  await page.getByTestId("queue-chip").first().click();      // All
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
 
   // Nothing on, nothing claimed.
   await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
@@ -190,8 +212,8 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   // "what you hunt for when a customer rings about work already underway".
   await expect(sheet.getByText("In production")).toBeVisible();
 
-  // Each states its effect BEFORE it is chosen. One of the seed's two projects
-  // is in manufacturing, so this one is not chosen blind.
+  // Each states its effect BEFORE it is chosen: one of the two is in
+  // production, so nothing here is ticked blind.
   await expect(sheet.getByTestId("queue-refinement-count").nth(2)).toHaveText("1");
 
   await refinements.nth(2).click();
@@ -202,7 +224,7 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(page.getByTestId("queue-funnel-count")).toHaveText("1");
   await expect(page.getByTestId("queue-active-filters")).toContainText("In production");
   await expect(page.getByTestId("queue-row")).toHaveCount(1);
-  await expect(page.getByText("Northcote extension")).toBeVisible();
+  await expect(page.getByText("Underway")).toBeVisible();
 
   // And one way to clear the lot.
   await page.getByTestId("queue-active-filters").getByRole("button", { name: "Clear" }).click();
@@ -292,15 +314,19 @@ test("empty, loading and error are three different screens", async ({ page }) =>
   // how a project sits for a day, which is the cost this console exists to
   // avoid. Each one is proved separately.
 
-  // 1. FILTERED EMPTY, against the real seed — both its projects are ours, so
-  //    `Customer` is genuinely empty and the screen says which kind of empty.
+  // 1. FILTERED EMPTY — a chip with nothing in it, which is the best news of
+  //    the day and must not look like the worst.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [fixtureRow({ id: "p_us", ref: "OF-Q-1", title: "Ours", waitingOn: "Us" })] },
+  }));
   await page.goto(PROJECTS);
   await page.getByTestId("queue-chip").nth(2).click();
   const empty = page.getByTestId("queue-empty");
   await expect(empty).toContainText("Nothing is waiting on the customer.");
   await expect(empty.getByRole("button", { name: "Show all" })).toBeVisible();
   await empty.getByRole("button", { name: "Show all" }).click();
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await page.unroute(QUEUE_URL);
 
   // 2. NOTHING AT ALL blames nothing — with no rows the filters are not why the
   //    list is empty, and offering "Show all" would send a reader hunting
@@ -341,7 +367,7 @@ test("empty, loading and error are three different screens", async ({ page }) =>
   await page.unroute(QUEUE_URL);
   await page.getByTestId("queue-error").getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("queue-error")).toHaveCount(0);
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
 });
 
 test("a row opens its project, and the destination stays lit", async ({ page }) => {
@@ -359,9 +385,9 @@ test("a row opens its project, and the destination stays lit", async ({ page }) 
   await expect(rail).toHaveAttribute("aria-current", "page");
 
   // Back NAMES ITS DESTINATION — the settled rule — and the destination from a
-  // record is the list.
+  // record is the list. Identified, not counted: the battery shares one D1.
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
 
   // And the address survives a cold load, which is the property path routing
   // buys and hash routing does not.
@@ -421,7 +447,7 @@ test("a modified click on a project opens it beside, not instead", async ({ page
 
   // And the tab it was opened FROM did not move.
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
 
   // ANYWHERE THE ROW SAYS IT IS CLICKABLE. The whole row carries a pointer
   // cursor and an ordinary click on any cell opens the record, so a modified
@@ -447,13 +473,15 @@ test("a search survives the change point instead of hiding behind an icon", asyn
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(PROJECTS);
   await page.getByTestId("queue-search").locator("input").fill("Northcote");
-  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Northcote extension")).toBeVisible();
+  await expect(page.getByText("Fitzroy townhouses")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId("queue-search")).toBeVisible();
   await expect(page.getByTestId("queue-search").locator("input")).toHaveValue("Northcote");
   await expect(page.getByTestId("queue-search-cancel")).toBeVisible();
-  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Northcote extension")).toBeVisible();
+  await expect(page.getByText("Fitzroy townhouses")).toHaveCount(0);
 });
 
 test("coming back to the queue re-reads it, rather than showing what was there", async ({ page }) => {
@@ -494,7 +522,7 @@ test("back from a record pops the queue rather than stacking another copy of it"
   await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
 
   await page.goBack();
@@ -506,7 +534,7 @@ test("back from a record pops the queue rather than stacking another copy of it"
   // naming its destination — which is the whole reason it says "Projects".
   await page.goto(`${OPS2}/projects/p_submitted`);
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
 });
 
 test("revealing search takes the focus with it, and cancelling gives it back", async ({ page }) => {
@@ -524,7 +552,8 @@ test("revealing search takes the focus with it, and cancelling gives it back", a
 
   // Typed straight in, with no second tap — which is the point of the focus.
   await page.keyboard.type("Northcote");
-  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Northcote extension")).toBeVisible();
+  await expect(page.getByText("Fitzroy townhouses")).toHaveCount(0);
 
   await page.getByTestId("queue-search-cancel").click();
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
