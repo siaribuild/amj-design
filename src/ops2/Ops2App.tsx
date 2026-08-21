@@ -12,6 +12,7 @@ import { DESTINATION_ICON } from "./nav/icons";
 import { NAV_DRAWER_ID, SHELL_CONTENT_ID, openNavDrawer } from "./nav/drawer";
 import { NavPanel } from "./nav/NavPanel";
 import { useRailWidth } from "./nav/useRailWidth";
+import { useBasenameCorrectedTabHrefs } from "./nav/tabHrefs";
 import { DestinationRoot } from "./pages/DestinationRoot";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
@@ -90,6 +91,10 @@ setupIonicReact({ focusManagerPriority: ["heading", "content"] });
  */
 export function Ops2App() {
   const wide = useRailWidth();
+
+  // The tab bar's anchors carry the basename; its `href` PROP must not. Both
+  // halves of that sentence are load-bearing and the reason is in tabHrefs.ts.
+  useBasenameCorrectedTabHrefs(!wide);
 
   // WHO OWNS THE HOME-INDICATOR INSET, published document-wide.
   //

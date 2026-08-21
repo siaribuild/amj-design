@@ -1,5 +1,6 @@
 import { IonContent, IonIcon } from "@ionic/react";
 import { useHistory, useLocation } from "react-router-dom";
+import { browserHref } from "../shellBase";
 import { DESTINATIONS, SECTIONS, isDestinationActive } from "./destinations";
 import { DESTINATION_ICON } from "./icons";
 import { closeNavDrawer } from "./drawer";
@@ -42,7 +43,11 @@ export function NavPanel() {
                     <li key={d.id}>
                       <a
                         className="ops2-nav__item"
-                        href={d.path}
+                        // BROWSER-facing, so it carries the basename; the
+                        // click handler below navigates with the ROUTER path,
+                        // which must not. See browserHref() for what went wrong
+                        // when these were the same string.
+                        href={browserHref(d.path)}
                         aria-current={active ? "page" : undefined}
                         onClick={(event) => {
                           // A real href so the row is a link — middle-click,

@@ -1,4 +1,4 @@
-import { ops2RouterBase } from "../data/ops2Routing";
+import { ops2RouterBase, withBase } from "../data/ops2Routing";
 
 /**
  * The router's base, detected ONCE at boot from the URL the browser actually
@@ -18,3 +18,19 @@ import { ops2RouterBase } from "../data/ops2Routing";
  * prints it so a wrong base is VISIBLE rather than merely wrong.
  */
 export const BASENAME = ops2RouterBase(window.location.pathname);
+
+/**
+ * A path the BROWSER will resolve, from a path the ROUTER understands.
+ *
+ * BASENAME bound to `withBase()`, which is where the rule and its reasoning
+ * live — beside `ops2RouterBase()`, because "where the router mounts" and "what
+ * an href must say" are two halves of one boundary and the file that owns one
+ * owns the other. Read it before touching either.
+ *
+ * Every browser-facing URL ops2 emits goes through here: the rail and drawer
+ * links, the tab bar's anchors (corrected after render — see
+ * ./nav/tabHrefs.ts), and the sign-out fallback. Router paths must NOT.
+ */
+export function browserHref(routerPath: string): string {
+  return withBase(BASENAME, routerPath);
+}

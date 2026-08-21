@@ -65,7 +65,7 @@ test("navigation is on the screen at every width — the twice-repeated regressi
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 812 });
     const reachProjects = width >= RAIL_FROM
-      ? page.locator('.ops2-nav__item[href="/projects"]')
+      ? page.locator('.ops2-nav__item[href$="/projects"]')
       : page.locator('ion-tab-button[tab="projects"]');
     await expect(reachProjects, `no way to reach Projects at ${width}px`).toBeVisible();
 
@@ -184,7 +184,7 @@ test("every destination is reachable from the rail, and lights when you arrive",
   await expect(page.locator(".ops2-nav__section-label")).toHaveText(["WORKSPACE", "SYSTEM"]);
 
   for (const [label, path] of expected) {
-    await page.locator(`.ops2-nav__item[href="${path}"]`).click();
+    await page.locator(`.ops2-nav__item[href$="${path}"]`).click();
     await expect(page.getByRole("heading", { name: label, level: 1 })).toBeVisible();
     expect(new URL(page.url()).pathname, `${label} did not change the address`).toBe(`/ops2${path}`);
     // The sage-filled block, and exactly one of them.
@@ -305,10 +305,90 @@ test("the two navigation surfaces agree about the back button", async ({ page })
   await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator('.ops2-nav__item[href="/products"]')).toBeVisible();
-  await page.locator('.ops2-nav__item[href="/products"]').click();
+  await expect(page.locator('.ops2-nav__item[href$="/products"]')).toBeVisible();
+  await page.locator('.ops2-nav__item[href$="/products"]').click();
   await expect(page.getByRole("heading", { name: "Products", level: 1 })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
   expect(new URL(page.url()).pathname, "the rail left no history entry behind it").toBe("/ops2/attention");
+});
+
+test("every browser-facing link stays inside ops2 while it coexists under /ops2", async ({ page, context }) => {
+  // THE COEXISTENCE DEFECT. The router mounts at a basename, so every path the
+  // ROUTER handles is basename-relative and React Router adds `/ops2` back on.
+  // An `href` is not handled by the router: the browser resolves it against the
+  // document. So `href="/projects"` requests /projects on the ops host, where
+  // opsShellFor() serves the LEGACY console — and only the intercepted primary
+  // click ever reached history.push().
+  //
+  // Which means: primary click works, and every other way a person navigates
+  // silently leaves ops2. Middle-click a destination, copy the link address and
+  // send it to the other founder, Ctrl-click to open Projects in a second tab.
+  // It is the deep-link problem ADR 0002 exists to solve, arriving through the
+  // one door nobody was watching.
+  //
+  // Asserted on the RESOLVED absolute URL (`el.href`, not `getAttribute`),
+  // because that is what the browser would actually request.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(OPS2);
+  await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
+
+  const railHrefs = await page.locator(".ops2-nav__item").evaluateAll(
+    (nodes) => nodes.map((n) => (n as HTMLAnchorElement).href));
+  expect(railHrefs).toEqual([
+    "/attention", "/projects", "/products", "/pricing", "/customers",
+    "/files", "/audit", "/settings",
+  ].map((p) => `http://ops.localhost:8788/ops2${p}`));
+
+  // And the behavioural proof, not just the attribute: a Ctrl-click opens a new
+  // tab, and that tab must be ops2 — not the console it replaces.
+  const opened = context.waitForEvent("page");
+  await page.locator('.ops2-nav__item[href$="/products"]').click({ modifiers: ["ControlOrMeta"] });
+  const tab = await opened;
+  // waitForURL, not waitForLoadState: a Ctrl-click opens the tab at about:blank
+  // and navigates a moment later, so the load state is already "complete" for a
+  // page that has not been asked for anything yet.
+  await tab.waitForURL("**/ops2/products");
+  await expect(tab.getByRole("heading", { name: "Products", level: 1 })).toBeVisible();
+  await tab.close();
+
+  // The tab bar's buttons are anchors too. ion-tab-button renders
+  // <a part="native" href> in its shadow root, and that anchor is what a
+  // middle-click follows.
+  await page.setViewportSize({ width: 390, height: 812 });
+  // Wait for the bar to mount before reading it: evaluateAll() does not
+  // auto-retry, and the surface swap is asynchronous (see the C6 test).
+  await expect(page.locator("ion-tab-button")).toHaveCount(4);
+  const tabHrefs = await page.locator("ion-tab-button").evaluateAll(
+    (nodes) => nodes.map((n) => {
+      const anchor = n.shadowRoot?.querySelector("a.button-native") as HTMLAnchorElement | null;
+      return anchor?.getAttribute("href") === null ? null : anchor?.href ?? null;
+    }));
+  expect(tabHrefs).toEqual([
+    "http://ops.localhost:8788/ops2/attention",
+    "http://ops.localhost:8788/ops2/projects",
+    "http://ops.localhost:8788/ops2/products",
+    // `More` carries no href at all — it is a verb, and there is nowhere to open
+    // in a new tab.
+    null,
+  ]);
+
+  // Behavioural on the bar too — and MIDDLE-click, not Ctrl-click, which is a
+  // measured constraint rather than a preference. ion-tab-button's `selectTab`
+  // calls `preventDefault()` UNCONDITIONALLY, with no modifier-key check
+  // (node_modules/@ionic/core/components/ion-tab-button.js), so every gesture
+  // that produces a `click` event is swallowed by the component and switches
+  // tabs in place. The anchor's href is reached only by the gestures that do
+  // not: a middle-click, and the context menu's "Open link in new tab" and
+  // "Copy link address". Those are the ones that were leaving ops2.
+  //
+  // This also proves the correction SURVIVES a re-render, which the attribute
+  // assertion above cannot: Ionic rewrites the active button's href on every
+  // navigation, and three have happened by now.
+  const openedTab = context.waitForEvent("page");
+  await page.locator('ion-tab-button[tab="products"]').click({ button: "middle" });
+  const fromTab = await openedTab;
+  await fromTab.waitForURL("**/ops2/products");
+  await expect(fromTab.getByRole("heading", { name: "Products", level: 1 })).toBeVisible();
+  await fromTab.close();
 });

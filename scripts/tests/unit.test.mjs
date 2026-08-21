@@ -36,7 +36,7 @@ await build({
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
       export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
-      export { OPS2_BASE, isUnderOps2, ops2RouterBase } from ${p("src/data/ops2Routing.ts")};
+      export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1206,6 +1206,46 @@ test("the ops2 path prefix is a boundary, not a substring", () => {
     assert.equal(M.isUnderOps2(path), false, `${path} is not ops2`);
     assert.equal(M.ops2RouterBase(path), "/", `${path} mounts the router at the root`);
   }
+});
+
+// The OTHER half of that boundary, and the direction that bites during
+// coexistence rather than after it.
+test("a browser-facing ops2 path carries the base exactly once", () => {
+  // ops2's router mounts at a basename, so every path the ROUTER handles is
+  // basename-relative and React Router puts the base back on. An `href` is not
+  // handled by the router — the browser resolves it against the document — so
+  // it has to carry the base itself. Get that wrong and, while ops2 lives under
+  // /ops2, href="/projects" requests /projects on the ops host, where
+  // opsShellFor() serves the LEGACY console: primary click fine, middle-click,
+  // Ctrl-click, "open in new tab" and "copy link address" all silently out.
+  for (const [path, href] of [
+    ["/projects", "/ops2/projects"],
+    ["/attention", "/ops2/attention"],
+    ["/projects/record/OF-Q-10482", "/ops2/projects/record/OF-Q-10482"],
+    ["/", "/ops2/"],
+  ]) {
+    assert.equal(M.withBase("/ops2", path), href);
+  }
+
+  // IDEMPOTENT, and that is a requirement rather than a nicety. The tab bar's
+  // anchors are corrected in place by a MutationObserver (Ionic's IonTabButton
+  // uses one `href` prop as both its routing key and its anchor), so the
+  // function reads its own output on the very next mutation. Written without
+  // this it prefixed forever — /ops2/ops2/projects, then again, and the page
+  // hung. Seven browser tests timed out before the cause was obvious.
+  assert.equal(M.withBase("/ops2", "/ops2/projects"), "/ops2/projects");
+  assert.equal(M.withBase("/ops2", M.withBase("/ops2", "/projects")), "/ops2/projects");
+  assert.equal(M.withBase("/ops2", "/ops2"), "/ops2");
+
+  // A base of "/" is the post-switch-over state, and then this is the identity
+  // — the property that lets one bundle be correct in every rollout state.
+  for (const path of ["/", "/projects", "/ops2/projects"]) {
+    assert.equal(M.withBase("/", path), path);
+  }
+
+  // And the same boundary rule as isUnderOps2: containing the prefix is not
+  // being under it, so these get the base added rather than left alone.
+  assert.equal(M.withBase("/ops2", "/ops2extra"), "/ops2/ops2extra");
 });
 
 // The ops2 scaffold reads no catalogue — deliberately, so that "did ops2 load?"

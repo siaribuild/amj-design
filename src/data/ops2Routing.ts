@@ -36,3 +36,42 @@ export function isUnderOps2(pathname: string): boolean {
 export function ops2RouterBase(pathname: string): string {
   return isUnderOps2(pathname) ? OPS2_BASE : "/";
 }
+
+/**
+ * The same boundary, in the other direction: a BROWSER-facing path from a
+ * ROUTER path.
+ *
+ * `ops2RouterBase()` above answers "where does the router mount"; this answers
+ * "what does an href have to say". They are two halves of one rule and they
+ * live together for the reason stated at the top of this file — written twice,
+ * they disagree by one character and a link quietly leaves the application.
+ *
+ * The distinction they encode:
+ *
+ *   - Router paths (`Route path`, `history.push`, active-state comparisons) are
+ *     basename-RELATIVE. React Router adds the base back on, so prefixing one
+ *     yields `/ops2/ops2/projects`.
+ *   - An `href` is never seen by the router. The browser resolves it against
+ *     the document, so it must carry the base itself.
+ *
+ * Missing that is a defect that exists ONLY in the coexistence rollout state:
+ * while ops2 is served under /ops2, `href="/projects"` requests /projects on
+ * the ops host, and `opsShellFor()` answers with the legacy console. The
+ * intercepted primary click went through `history.push` and was fine — so
+ * middle-click, Ctrl/Cmd-click, "open in new tab" and "copy link address" were
+ * the only ways to find it.
+ *
+ * IDEMPOTENT, deliberately. ops2's tab-bar anchors are corrected in place by a
+ * MutationObserver (Ionic's IonTabButton spends one `href` prop on both its
+ * routing key and its anchor), which means this function reads its own output
+ * on the next mutation. Without idempotence that is an infinite loop, and it
+ * was: the page hung and seven browser tests timed out.
+ *
+ * With `base` of "/" — the post-switch-over state — it is the identity, which
+ * is what lets one bundle be correct in every rollout state.
+ */
+export function withBase(base: string, routerPath: string): string {
+  if (base === "/") return routerPath;
+  if (routerPath === base || routerPath.startsWith(`${base}/`)) return routerPath;
+  return `${base}${routerPath}`;
+}

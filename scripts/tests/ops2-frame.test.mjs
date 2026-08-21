@@ -66,3 +66,49 @@ test("the tab bar belongs to the shell, and no region can render or delete one",
   const shellSource = read(shell);
   assert.equal((shellSource.match(/<IonTabBar[\s>]/g) ?? []).length, 1);
 });
+
+test("every browser-facing URL in ops2 carries the basename, and the one exception is paired with its fix", () => {
+  // THE COEXISTENCE CLASS, kept shut. While ops2 is served under /ops2 the
+  // router's paths are basename-relative and React Router adds the base back
+  // on — but an `href` is resolved by the BROWSER, so a raw one requests
+  // /projects on the ops host, where opsShellFor() answers with the legacy
+  // console. Primary click was fine; middle-click, "open link in new tab" and
+  // "copy link address" left ops2 without saying so.
+  //
+  // scripts/tests/web/ops2-navigation.spec.ts proves the links that exist today
+  // are right. This is what stops the NEXT one being added raw, which a browser
+  // test cannot do because it can only check what someone remembered to render.
+  const sources = [...new Set([
+    ...globSync("src/ops2/**/*.tsx", { cwd: projectRoot }),
+    ...globSync("src/ops2/**/*.ts", { cwd: projectRoot }),
+  ])].map((file) => file.split("\\").join("/"));
+
+  for (const file of sources) {
+    const code = read(file);
+    // Strip comments: this file's own prose discusses `href="/projects"` at
+    // length, and so does tabHrefs.ts.
+    const bare = code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+    assert.doesNotMatch(bare, /href="\//,
+      `${file}: a literal href — it must go through browserHref(), or the browser will resolve it outside /ops2`);
+
+    for (const [, expression] of bare.matchAll(/href=\{([^}]*)\}/g)) {
+      // ONE exception, and it is a real one: IonTabButton's `href` is Ionic's
+      // ROUTING key — matched against a basename-stripped pathname and pushed
+      // through a history that re-applies the base — so prefixing it breaks
+      // selection AND doubles the path. Its anchor is corrected after render
+      // instead.
+      const isTabButtonKey = expression.trim() === "d.path" && /IonTabButton/.test(bare);
+      assert.ok(expression.includes("browserHref(") || isTabButtonKey,
+        `${file}: href={${expression}} is neither browserHref() nor IonTabButton's routing key`);
+    }
+  }
+
+  // And the exception is never left on its own. If the tab bar keeps the raw
+  // routing key, the shell must also be running the thing that fixes the anchor.
+  const shell = read("src/ops2/Ops2App.tsx");
+  if (/<IonTabButton[^>]*href=\{d\.path\}/.test(shell)) {
+    assert.match(shell, /useBasenameCorrectedTabHrefs\(/,
+      "the tab bar keeps Ionic's routing key as its href but nothing corrects the anchor");
+  }
+});

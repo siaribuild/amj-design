@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BASENAME } from "../shellBase";
 
 // The signed-in staffer, and the one way out of the console.
 //
@@ -118,5 +119,8 @@ export async function ops2SignOut(): Promise<void> {
     // The local session may or may not have been destroyed. Fall through: in
     // Access mode the redirect is what matters and it does not depend on this.
   }
-  window.location.href = accessLogout ?? "/";
+  // BASENAME, not "/". On the ops host during coexistence "/" is the LEGACY
+  // console, so a dev-mode sign-out landed the staffer in the console ops2
+  // replaces. After switch-over BASENAME is "/" and this is the same thing.
+  window.location.href = accessLogout ?? BASENAME;
 }
