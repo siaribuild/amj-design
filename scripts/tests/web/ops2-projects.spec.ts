@@ -422,6 +422,20 @@ test("a modified click on a project opens it beside, not instead", async ({ page
   // And the tab it was opened FROM did not move.
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
   await expect(page.getByTestId("queue-row")).toHaveCount(2);
+
+  // ANYWHERE THE ROW SAYS IT IS CLICKABLE. The whole row carries a pointer
+  // cursor and an ordinary click on any cell opens the record, so a modified
+  // click on the Stage or Total cell has to mean the same thing there. It used
+  // to mean nothing at all — the guard returned, and the affordance the cursor
+  // advertised silently failed everywhere except inside the first cell.
+  const stage = page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).locator("td.pq-stage");
+  const alsoOpened = context.waitForEvent("page");
+  await stage.click({ modifiers: ["ControlOrMeta"] });
+  const third = await alsoOpened;
+  await third.waitForLoadState();
+  expect(new URL(third.url()).pathname).toBe("/ops2/projects/p_submitted");
+  await third.close();
+  expect(new URL(page.url()).pathname).toBe("/ops2/projects");
 });
 
 test("a search survives the change point instead of hiding behind an icon", async ({ page }) => {

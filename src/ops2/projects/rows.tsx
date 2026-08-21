@@ -33,12 +33,37 @@ function Flags({ row }: { row: ProjectQueueRow }) {
  * Was this an ordinary left click, or an instruction to the browser?
  *
  * Ctrl/Cmd/Shift/Alt-click and middle-click mean "open it somewhere else", and
- * the anchor already knows how. Swallowing them takes away the very affordance
+ * an anchor already knows how. Swallowing them takes away the very affordance
  * the anchor exists for — two projects open side by side at a desk — while
  * leaving it looking present.
  */
 const isPlainClick = (event: ReactMouseEvent) =>
   event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+
+/**
+ * A click anywhere in a wide row.
+ *
+ * THE WHOLE ROW IS THE TARGET, so the whole row has to answer the same way. The
+ * first cell holds a real anchor and the browser handles modified clicks on it
+ * for free; the other five cells are table data with a pointer cursor, and a
+ * Ctrl-click landing on `Stage` or `Total` used to do nothing at all — the
+ * affordance the cursor advertised, failing everywhere except one cell.
+ *
+ * `window.open` rather than a stretched anchor: a table row cannot be a
+ * positioning context that one cell's link could cover, and making every cell
+ * its own anchor would put six links on one row for a screen reader to read.
+ * Inside a user gesture this is not a popup.
+ */
+function openFromRow(
+  event: ReactMouseEvent,
+  row: ProjectQueueRow,
+  open: (row: ProjectQueueRow) => void,
+): void {
+  // The anchor answers for itself; re-handling it here would push twice.
+  if ((event.target as HTMLElement).closest("a")) return;
+  if (isPlainClick(event)) { open(row); return; }
+  window.open(browserHref(recordPath(row)), "_blank", "noopener,noreferrer");
+}
 
 /**
  * The phone list — the owner's own card anatomy, in his order: reference
@@ -142,13 +167,12 @@ export function ProjectTable({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 key={row.id}
                 data-testid="queue-row"
                 data-waiting={row.waitingOn}
-                onClick={(event) => {
-                  // The anchor handles its own activation; re-handling it here
-                  // would push the same route twice. And a modified click is
-                  // the browser's to answer, wherever in the row it landed.
-                  if ((event.target as HTMLElement).closest("a")) return;
-                  if (!isPlainClick(event)) return;
-                  open(row);
+                onClick={(event) => openFromRow(event, row, open)}
+                // Middle click never reaches `onClick` — it is an aux click —
+                // and the row advertises itself as openable with the same
+                // cursor everywhere, so it has to answer there too.
+                onAuxClick={(event) => {
+                  if (event.button === 1) openFromRow(event, row, open);
                 }}
               >
                 <td>

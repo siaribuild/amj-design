@@ -478,7 +478,23 @@ export interface RowPrice {
  */
 export function priceOf(row: ProjectQueueRow): RowPrice {
   const value = row.value;
-  if (value == null || !Number.isFinite(value) || value <= 0) {
+  // ZERO IS TWO DIFFERENT FACTS AND THE SUM ALONE CANNOT TELL THEM APART.
+  //
+  // The server COALESCEs the line sum to 0, so a job whose lines carry no
+  // totals arrives looking like a free job. But $0 is ALSO a real price here:
+  // staff can override a line to zero (worker/routes/ops.ts) and issuing only
+  // refuses NULL totals (worker/lib/issue.ts). Reading `value <= 0` as absence
+  // made a fully resolved zero-dollar job say both "ready to issue" and "not
+  // priced" on the same row.
+  //
+  // So the ABSENCE is read from the lines, which is where it actually lives: a
+  // zero sum with unresolved lines is nobody having costed it, and a zero sum
+  // with no lines at all is nothing to cost. A zero sum with every line
+  // resolved is a figure, and it prints.
+  const missing = value == null
+    || !Number.isFinite(value)
+    || (value === 0 && (row.unresolved > 0 || row.lineCount === 0));
+  if (missing) {
     return { text: "Not priced", basis: null, priced: false };
   }
   return {

@@ -214,6 +214,17 @@ test("a figure that is not a price says so, and a price says what kind it is", (
     text: "Not priced", basis: null, priced: false,
   });
   assert.equal(M.priceOf(row({ value: null })).text, "Not priced");
+  assert.equal(M.priceOf(row({ value: 0, lineCount: 0 })).text, "Not priced",
+    "nothing to price is not a price either");
+
+  // BUT ZERO IS ALSO A REAL PRICE. Staff can override a line to $0
+  // (worker/routes/ops.ts) and issuing only refuses NULL totals
+  // (worker/lib/issue.ts) — so a fully resolved job really can be worth nothing,
+  // and reading `value <= 0` as absence made the same row say both "ready to
+  // issue" and "not priced". Resolved lines and a zero sum is a figure.
+  assert.deepEqual(M.priceOf(row({ value: 0, valueBasis: "issued", unresolved: 0, lineCount: 3 })), {
+    text: "$0", basis: "issued", priced: true,
+  });
 });
 
 test("the parser lets a bad row through as an honest row, never as a lie", () => {
