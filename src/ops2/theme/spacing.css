@@ -1,0 +1,19 @@
+/* FrameFlow — theme/spacing.css
+ *
+ * Verbatim from docs/design/frameflow.md. Tight spacing groups related
+ * elements; generous gaps separate sections. The contrast between dense
+ * clusters and open breathing room is what creates the cadence.
+ */
+:root {
+  --theme-spacing-2xs: 0.125rem;
+  --theme-spacing-xs: 0.25rem;
+  --theme-spacing-sm: 0.5rem;
+  --theme-spacing-md: 0.75rem;
+  --theme-spacing-lg: 1rem;
+  --theme-spacing-xl: 1.5rem;
+  --theme-spacing-2xl: 2rem;
+  --theme-spacing-3xl: 3rem;
+  --theme-spacing-4xl: 4rem;
+  --theme-spacing-5xl: 6rem;
+  --theme-spacing-6xl: 8rem;
+}

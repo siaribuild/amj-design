@@ -1,0 +1,36 @@
+/* FrameFlow — theme/shadows.css
+ *
+ * Verbatim from docs/design/frameflow.md. Warm-tinted and layered, so cards
+ * float, modals lift and recessed areas sink — nothing sits flat on the same
+ * plane. The focus ring is sage-tinted for brand consistency.
+ */
+:root {
+  /* Subtle lift — cards at rest, inputs */
+  --theme-shadow-xs: 0 1px 2px rgba(42, 40, 38, 0.04);
+
+  /* Default card elevation */
+  --theme-shadow-sm:
+    0 1px 3px rgba(42, 40, 38, 0.06),
+    0 1px 2px rgba(42, 40, 38, 0.04);
+
+  /* Raised elements — hover states, dropdowns */
+  --theme-shadow-md:
+    0 4px 8px rgba(42, 40, 38, 0.06),
+    0 2px 4px rgba(42, 40, 38, 0.04);
+
+  /* Prominent — modals, popovers */
+  --theme-shadow-lg:
+    0 10px 24px rgba(42, 40, 38, 0.08),
+    0 4px 8px rgba(42, 40, 38, 0.04);
+
+  /* Top layer — command palettes, overlays */
+  --theme-shadow-xl:
+    0 20px 40px rgba(42, 40, 38, 0.10),
+    0 8px 16px rgba(42, 40, 38, 0.05);
+
+  /* Inner shadow — pressed states, inset inputs */
+  --theme-shadow-inner: inset 0 1px 3px rgba(42, 40, 38, 0.08);
+
+  /* Focus ring — sage-tinted for brand consistency */
+  --theme-shadow-focus: 0 0 0 3px rgba(90, 122, 106, 0.3);
+}

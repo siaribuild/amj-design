@@ -1,0 +1,15 @@
+/* FrameFlow — the two faces, at the weights the design document specifies.
+ *
+ *   Inter          300, 400, 500, 600   fallback: sans-serif
+ *   Space Grotesk  500, 600, 700        fallback: sans-serif
+ *
+ * ops2 loads its own faces rather than sharing src/styles/fonts.css: that file
+ * is trimmed to exactly what the customer site and the legacy console
+ * reference (400/500/600 of each), and this system asks for Inter 300 and
+ * Space Grotesk 700 as well. Loading a weight the browser then synthesises is
+ * a rendering fault, not a saving.
+ *
+ * Both bundles are served on separate hosts, so nothing is downloaded twice by
+ * anyone: the customer never loads this file and ops never loads the other.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap');

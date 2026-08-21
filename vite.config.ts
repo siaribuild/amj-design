@@ -34,13 +34,16 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
-  // Two SPA entries: the customer site (index.html) and the ops console
-  // (ops.html), served on separate hosts by the Worker.
+  // Three SPA entries: the customer site (index.html), the ops console
+  // (ops.html) and its successor (ops2.html). The Worker picks between them in
+  // `opsShellFor()` — customer vs ops by host, ops vs ops2 by path prefix while
+  // the two coexist (ADR 0002, spec §12).
   build: {
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         ops: path.resolve(__dirname, 'ops.html'),
+        ops2: path.resolve(__dirname, 'ops2.html'),
       },
     },
   },

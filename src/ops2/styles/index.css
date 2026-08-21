@@ -1,0 +1,56 @@
+/* ops2 — the single stylesheet entry, imported once by main.tsx.
+ *
+ * Layer order matters and is the design system's own: raw theme values first,
+ * then the semantic tokens that name them, then the recipes that use the
+ * tokens. Nothing here reaches back up a layer.
+ *
+ * ops2 deliberately does NOT import src/styles/index.css. That file carries
+ * the customer site's Tailwind build and the legacy console's theme; pulling
+ * it in would put two design systems in one bundle and make every later "why
+ * is this component grey" a two-system question. ops2 is a separate Vite
+ * entry on its own shell precisely so it can be a clean sheet.
+ */
+@import './../theme/fonts.css';
+@import './../theme/colors.css';
+@import './../theme/motion.css';
+@import './../theme/radii.css';
+@import './../theme/shadows.css';
+@import './../theme/spacing.css';
+@import './../theme/typography.css';
+@import './tokens.css';
+@import './recipes/surface.css';
+@import './recipes/type.css';
+
+/* Base — the page itself. Deliberately tiny: no reset library, no utility
+ * framework. The scaffold renders one screen and the next step (navigation)
+ * should be free to choose. */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ds-surface-page);
+  color: var(--ds-text-primary);
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-base);
+  line-height: var(--theme-line-height-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Sage is the focus tint throughout — the brand signals interactivity rather
+ * than hiding as a quiet accent. */
+:focus-visible {
+  outline: 2px solid var(--ds-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-control);
+}
+
+/* Motion is decoration here; anyone who has asked for less gets none. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

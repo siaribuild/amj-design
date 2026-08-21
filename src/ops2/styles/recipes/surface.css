@@ -1,0 +1,21 @@
+/* FrameFlow — styles/recipes/surface.css
+ *
+ * ONLY the recipes the scaffold actually renders. The design document defines
+ * six surface recipes (card, raised, sunken, overlay, brand, dark); five of
+ * them have nothing to sit on yet, and a stylesheet full of classes no element
+ * carries is dead weight that later reads as an inventory of what exists. They
+ * get added when a screen needs them, copied from
+ * docs/design/frameflow.md — which stays the reference.
+ *
+ * The corner comes from --ds-radius-surface, not from --theme-radius-lg as the
+ * document's version of this recipe does. That is the owner's cap; see the
+ * block in ../tokens.css before changing it.
+ */
+
+/* Card — default elevated surface */
+.ds-surface-card {
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+}

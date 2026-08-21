@@ -27,6 +27,7 @@ import { debug } from "./routes/debug";
 import { buildSitemap, buildRobots, renderShell } from "./lib/shell";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
+import { isUnderOps2 } from "../src/data/ops2Routing";
 import { drainLearningOutbox } from "./lib/issue";
 import { reconcilePricing } from "./lib/pricing-admin";
 import { referralSweep } from "./lib/referrals";
@@ -101,6 +102,46 @@ api.route("/api/debug", debug);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
+
+// ── Shell selection — the one place the ops2 rollout is flipped ─────────────
+//
+// The successor to `isOps ? "/ops.html" : "/index.html"`. Spec §12 gives it
+// three states, and each flip is a one-line, versions-revertible deploy
+// (ADR 0002) — `wrangler versions upload` for a preview that does not move
+// production traffic, then `wrangler versions deploy` to promote:
+//
+//   1. BUILD (live now) — legacy at the ops root, ops2 reachable at /ops2.
+//      Nobody's daily work moves.
+//   2. SWITCH-OVER — ops2 at the root, legacy at /legacy: the fire escape,
+//      unadvertised, used only if ops2 fails at something.
+//   3. DELETION — legacy gone from the bundle, with its Vite entry and the
+//      domain-based identity path.
+//
+// States 2 and 3 are written out as comments below, not implemented, and are
+// deliberately one edit each. Switch-over and deletion are two events, two
+// commits, two deploys, separated by a soak.
+//
+// AUTHENTICATION IS NOT INVOLVED. ops2 lives on the ops HOST, so Cloudflare
+// Access protects it at the edge exactly as it protects the legacy console,
+// and `isOps` still decides host-level behaviour on its own. That is the whole
+// reason ops2 took a path prefix instead of a hostname (spec §9): a second
+// hostname would need a second Access audience and a widened `isOps`, which is
+// a security-path change for a cosmetic reason.
+type Shell = "/index.html" | "/ops.html" | "/ops2.html";
+
+export function opsShellFor(isOps: boolean, pathname: string): Shell {
+  if (!isOps) return "/index.html";                       // the customer site, unchanged
+
+  // ── State 1: BUILD ────────────────────────────────────────────────────────
+  return isUnderOps2(pathname) ? "/ops2.html" : "/ops.html";
+
+  // ── State 2: SWITCH-OVER ──────────────────────────────────────────────────
+  // return pathname === "/legacy" || pathname.startsWith("/legacy/")
+  //   ? "/ops.html" : "/ops2.html";
+
+  // ── State 3: DELETION ─────────────────────────────────────────────────────
+  // return "/ops2.html";
+}
 
 // Route a request to its response. Every `return` below is a page or a payload;
 // the security policy is attached once, by the fetch handler that wraps this.
@@ -224,7 +265,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return api.fetch(request, env, ctx);
     }
 
-    const shell = isOps ? "/ops.html" : "/index.html";
+    const shell = opsShellFor(isOps, url.pathname);
     const res = await env.ASSETS.fetch(new URL(shell, url.origin).toString());
 
     // Rewrite the customer shell's <head> for this URL. The SPA injects its own

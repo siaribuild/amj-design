@@ -1,0 +1,35 @@
+/* FrameFlow — theme/radii.css
+ *
+ * The scale is verbatim from docs/design/frameflow.md and stays complete: the
+ * document is the reference, and a half-copied scale is worse than none.
+ *
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ OWNER OVERRIDE — corner radii are capped at --theme-radius-sm (5px).      ║
+ * ║                                                                          ║
+ * ║ The owner's instruction, verbatim: "Radii for corners should not exceed   ║
+ * ║ --theme-radius-sm".                                                      ║
+ * ║                                                                          ║
+ * ║ This DIVERGES FROM THE FRAMEFLOW DOCUMENT ON PURPOSE. That document's     ║
+ * ║ prose asks for "softened corners (8-16px radii)" and its recipes reach    ║
+ * ║ for --theme-radius-lg (12px) on cards and --theme-radius-xl (16px) on     ║
+ * ║ overlays and dark panels. The owner has seen that and asked for tighter   ║
+ * ║ corners anyway. The owner wins.                                          ║
+ * ║                                                                          ║
+ * ║ It is enforced in ONE place — --ds-radius-surface in ../styles/tokens.css ║
+ * ║ — which every recipe uses. Do not "fix" a recipe back to -lg or -xl to    ║
+ * ║ match the document, and do not raise the cap without asking the owner.    ║
+ * ║ --theme-radius-full stays available for pills and dots: it is a shape,    ║
+ * ║ not a softened corner, and the cap is about corners.                      ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+:root {
+  /* Radii — softened geometry, architectural not bubbly */
+  --theme-radius-none: 0;
+  --theme-radius-xs: 3px;
+  --theme-radius-sm: 5px;
+  --theme-radius-md: 8px;   /* defined, not used — above the owner's cap */
+  --theme-radius-lg: 12px;  /* defined, not used — above the owner's cap */
+  --theme-radius-xl: 16px;  /* defined, not used — above the owner's cap */
+  --theme-radius-2xl: 20px; /* defined, not used — above the owner's cap */
+  --theme-radius-full: 9999px;
+}

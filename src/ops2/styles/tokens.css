@@ -1,0 +1,97 @@
+/* FrameFlow — styles/tokens.css
+ *
+ * The semantic layer, verbatim from docs/design/frameflow.md. Everything ops2
+ * renders names a token from here; only this file names a palette step from
+ * ../theme/colors.css. One indirection, so a palette change is a palette
+ * change and not a find-and-replace across the console.
+ */
+:root {
+  /* === Brand === */
+  --ds-color-brand: var(--theme-sage-500);
+  --ds-color-brand-hover: var(--theme-sage-600);
+  --ds-color-brand-active: var(--theme-sage-700);
+  --ds-color-brand-subtle: var(--theme-sage-100);
+  --ds-color-brand-wash: var(--theme-sage-50);
+
+  /* === Text === */
+  --ds-text-primary: var(--theme-ink-900);
+  --ds-text-secondary: var(--theme-neutral-600);
+  --ds-text-muted: var(--theme-neutral-500);
+  --ds-text-disabled: var(--theme-neutral-400);
+  --ds-text-inverse: var(--theme-neutral-0);
+  --ds-text-brand: var(--theme-sage-600);
+  --ds-text-link: var(--theme-sage-600);
+  --ds-text-link-hover: var(--theme-sage-700);
+
+  /* === Surfaces === */
+  --ds-surface-page: var(--theme-neutral-50);
+  --ds-surface-card: var(--theme-neutral-0);
+  --ds-surface-raised: var(--theme-neutral-0);
+  --ds-surface-sunken: var(--theme-neutral-100);
+  --ds-surface-overlay: var(--theme-neutral-0);
+  --ds-surface-brand: var(--theme-sage-500);
+  --ds-surface-brand-subtle: var(--theme-sage-50);
+  --ds-surface-dark: var(--theme-ink-800);
+  --ds-surface-darker: var(--theme-ink-900);
+
+  /* === Borders === */
+  --ds-border-subtle: var(--theme-neutral-200);
+  --ds-border-default: var(--theme-neutral-300);
+  --ds-border-strong: var(--theme-neutral-400);
+  --ds-border-brand: var(--theme-sage-400);
+  --ds-border-focus: var(--theme-sage-500);
+  --ds-border-input: var(--theme-neutral-300);
+  --ds-border-input-hover: var(--theme-neutral-400);
+  --ds-border-input-focus: var(--theme-sage-500);
+
+  /* === Interactive === */
+  --ds-interactive-primary: var(--theme-sage-500);
+  --ds-interactive-primary-hover: var(--theme-sage-600);
+  --ds-interactive-primary-active: var(--theme-sage-700);
+  --ds-interactive-secondary: var(--theme-neutral-100);
+  --ds-interactive-secondary-hover: var(--theme-neutral-200);
+  --ds-interactive-ghost-hover: var(--theme-sage-50);
+  --ds-interactive-dark: var(--theme-ink-800);
+  --ds-interactive-dark-hover: var(--theme-ink-700);
+
+  /* === Status === */
+  --ds-color-success: var(--theme-positive-500);
+  --ds-color-success-subtle: var(--theme-positive-50);
+  --ds-color-success-text: var(--theme-positive-700);
+  --ds-color-warning: var(--theme-warning-500);
+  --ds-color-warning-subtle: var(--theme-warning-50);
+  --ds-color-warning-text: var(--theme-warning-700);
+  --ds-color-error: var(--theme-attention-500);
+  --ds-color-error-subtle: var(--theme-attention-50);
+  --ds-color-error-text: var(--theme-attention-700);
+  --ds-color-info: var(--theme-info-500);
+  --ds-color-info-subtle: var(--theme-info-50);
+  --ds-color-info-text: var(--theme-info-700);
+
+  /* === Layer / Elevation === */
+  --ds-layer-base: var(--theme-shadow-xs);
+  --ds-layer-raised: var(--theme-shadow-sm);
+  --ds-layer-floating: var(--theme-shadow-md);
+  --ds-layer-overlay: var(--theme-shadow-lg);
+  --ds-layer-top: var(--theme-shadow-xl);
+
+  /* === Focus === */
+  --ds-focus-ring: var(--theme-shadow-focus);
+
+  /* === Corner radius — THE OWNER'S OVERRIDE, ENFORCED HERE ==================
+   *
+   * Owner's instruction, verbatim: "Radii for corners should not exceed
+   * --theme-radius-sm". Every recipe in this system takes its corner from
+   * --ds-radius-surface (or --ds-radius-control), so this is the one place the
+   * cap is applied and the one place it could be broken.
+   *
+   * THIS DIVERGES FROM docs/design/frameflow.md ON PURPOSE. That document asks
+   * for 8-16px corners and its own recipes use --theme-radius-lg (12px) for
+   * cards and --theme-radius-xl (16px) for overlays and dark panels. The owner
+   * has ruled otherwise. Do not restore the document's values to "match the
+   * design system" — the divergence IS the decision, and raising the cap needs
+   * the owner, not a reading of the doc. See ../theme/radii.css.
+   */
+  --ds-radius-surface: var(--theme-radius-sm);  /* cards, panels, overlays */
+  --ds-radius-control: var(--theme-radius-xs);  /* inputs, buttons, chips */
+}

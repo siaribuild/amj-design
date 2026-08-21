@@ -1,0 +1,99 @@
+/* FrameFlow — theme/colors.css
+ *
+ * Verbatim from docs/design/frameflow.md. This is the raw palette layer: it is
+ * never referenced by a component directly. Components use the semantic tokens
+ * in ../styles/tokens.css, which are the only thing allowed to name a ramp step.
+ *
+ * Earthy sage as the hero brand colour, warm bone/sand neutrals (never cold
+ * grey), warm charcoal darks with olive undertones instead of cold black.
+ */
+:root {
+  /* Sage — the brand colour, promoted from accent to hero */
+  --theme-sage-50: #f4f8f6;
+  --theme-sage-100: #e6efe9;
+  --theme-sage-200: #cddfd4;
+  --theme-sage-300: #a8c9b4;
+  --theme-sage-400: #7dab8e;
+  --theme-sage-500: #5a7a6a;
+  --theme-sage-600: #4a6858;
+  --theme-sage-700: #3f5a4c;
+  --theme-sage-800: #344a3f;
+  --theme-sage-900: #2a3d33;
+  --theme-sage-950: #1a2b23;
+
+  /* Warm neutrals — bone, sand, never cold grey */
+  --theme-neutral-0: #ffffff;
+  --theme-neutral-50: #fafaf7;
+  --theme-neutral-100: #f5f4f0;
+  --theme-neutral-150: #edecea;
+  --theme-neutral-200: #e4e2dd;
+  --theme-neutral-300: #d4d1cb;
+  --theme-neutral-400: #b5b2ab;
+  --theme-neutral-500: #8b8880;
+  --theme-neutral-600: #6f6c67;
+  --theme-neutral-700: #5c5a56;
+  --theme-neutral-800: #3a3835;
+  --theme-neutral-900: #2a2826;
+  --theme-neutral-950: #1d1b19;
+
+  /* Ink — warm charcoal darks, never cold black */
+  --theme-ink-50: #f7f6f5;
+  --theme-ink-100: #e8e7e4;
+  --theme-ink-200: #d1cfcc;
+  --theme-ink-300: #a5a29d;
+  --theme-ink-400: #7a7771;
+  --theme-ink-500: #55524d;
+  --theme-ink-600: #3d3b37;
+  --theme-ink-700: #2c2a27;
+  --theme-ink-800: #1f1d1b;
+  --theme-ink-900: #161412;
+  --theme-ink-950: #0f0e0c;
+
+  /* Positive — earthy green for success states */
+  --theme-positive-50: #f0f9f4;
+  --theme-positive-100: #d9f0e3;
+  --theme-positive-200: #b0e0c6;
+  --theme-positive-300: #7ccaa2;
+  --theme-positive-400: #4aad7a;
+  --theme-positive-500: #2c7a54;
+  --theme-positive-600: #236243;
+  --theme-positive-700: #1d4f37;
+  --theme-positive-800: #183f2d;
+  --theme-positive-900: #133325;
+
+  /* Warning — warm amber */
+  --theme-warning-50: #fdf9f0;
+  --theme-warning-100: #f9efd5;
+  --theme-warning-200: #f0dba5;
+  --theme-warning-300: #e4c06e;
+  --theme-warning-400: #d4a03c;
+  --theme-warning-500: #8a6a2a;
+  --theme-warning-600: #7a5410;
+  --theme-warning-700: #624410;
+  --theme-warning-800: #4d3610;
+  --theme-warning-900: #3d2b0e;
+
+  /* Attention — warm red for errors/destructive */
+  --theme-attention-50: #fdf4f3;
+  --theme-attention-100: #fbe5e3;
+  --theme-attention-200: #f5c7c2;
+  --theme-attention-300: #eda19a;
+  --theme-attention-400: #df6e64;
+  --theme-attention-500: #c0392b;
+  --theme-attention-600: #a02f23;
+  --theme-attention-700: #82261d;
+  --theme-attention-800: #6b2019;
+  --theme-attention-900: #591c16;
+
+  /* Info — muted blue-grey */
+  --theme-info-50: #f3f6f9;
+  --theme-info-100: #e2e9f0;
+  --theme-info-200: #c4d3e0;
+  --theme-info-300: #96b2c8;
+  --theme-info-400: #6a90ab;
+  --theme-info-500: #4c6a88;
+  --theme-info-600: #3d5670;
+  --theme-info-700: #31485f;
+  --theme-info-800: #283a4d;
+  --theme-info-900: #213040;
+}

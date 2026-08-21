@@ -1,0 +1,48 @@
+/* FrameFlow — theme/typography.css
+ *
+ * Verbatim from docs/design/frameflow.md. Space Grotesk for headings brings
+ * geometric character; Inter for body stays quiet and readable. The big jump
+ * between display and body sizes is the hierarchy — headings command, body
+ * recedes.
+ *
+ * The faces themselves are loaded in fonts.css.
+ */
+:root {
+  /* Font families */
+  --theme-font-display: 'Space Grotesk', sans-serif;
+  --theme-font-sans: 'Inter', sans-serif;
+
+  /* Font weights */
+  --theme-font-weight-light: 300;
+  --theme-font-weight-regular: 400;
+  --theme-font-weight-medium: 500;
+  --theme-font-weight-semibold: 600;
+  --theme-font-weight-bold: 700;
+
+  /* Font sizes — pushed contrast: bigger display, smaller body */
+  --theme-font-size-xs: 0.75rem;
+  --theme-font-size-sm: 0.8125rem;
+  --theme-font-size-base: 0.9375rem;
+  --theme-font-size-md: 1rem;
+  --theme-font-size-lg: 1.125rem;
+  --theme-font-size-xl: 1.3125rem;
+  --theme-font-size-2xl: 1.625rem;
+  --theme-font-size-3xl: 2rem;
+  --theme-font-size-4xl: 2.75rem;
+  --theme-font-size-5xl: 3.5rem;
+  --theme-font-size-6xl: 4.5rem;
+
+  /* Line heights */
+  --theme-line-height-none: 1;
+  --theme-line-height-tight: 1.1;
+  --theme-line-height-snug: 1.25;
+  --theme-line-height-normal: 1.5;
+  --theme-line-height-relaxed: 1.625;
+
+  /* Letter spacing — tight for display, open for labels */
+  --theme-letter-spacing-tighter: -0.03em;
+  --theme-letter-spacing-tight: -0.02em;
+  --theme-letter-spacing-normal: 0em;
+  --theme-letter-spacing-wide: 0.025em;
+  --theme-letter-spacing-wider: 0.05em;
+}

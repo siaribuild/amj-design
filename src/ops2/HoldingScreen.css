@@ -1,0 +1,62 @@
+/* The holding screen's own layout. Recipes (ds-*) carry the design system;
+ * everything here is arrangement, and every value is a theme token — the
+ * scaffold sets the habit that the rest of ops2 inherits.
+ *
+ * Corners come from --ds-radius-surface via .ds-surface-card, which is capped
+ * at 5px by the owner's override (see styles/tokens.css). Nothing in this file
+ * sets a radius of its own. */
+
+.ops2-holding {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--theme-spacing-2xl);
+}
+
+.ops2-holding__card {
+  width: min(34rem, 100%);
+  padding: var(--theme-spacing-2xl);
+}
+
+.ops2-holding__eyebrow {
+  margin: 0;
+  color: var(--ds-text-brand);
+}
+
+/* Tight to the eyebrow above, generous before the paragraph below: the
+ * grouping is the rhythm the system asks for. */
+.ops2-holding__title {
+  margin: var(--theme-spacing-sm) 0 0;
+  color: var(--ds-text-primary);
+}
+
+.ops2-holding__body {
+  margin: var(--theme-spacing-lg) 0 0;
+  color: var(--ds-text-secondary);
+  max-width: 46ch;
+}
+
+.ops2-holding__facts {
+  margin: var(--theme-spacing-xl) 0 0;
+  padding: var(--theme-spacing-lg) 0 0;
+  border-top: 1px solid var(--ds-border-subtle);
+  display: grid;
+  gap: var(--theme-spacing-sm);
+  color: var(--ds-text-muted);
+}
+
+.ops2-holding__fact {
+  display: flex;
+  gap: var(--theme-spacing-sm);
+}
+
+.ops2-holding__fact dt {
+  min-width: 6.5rem;
+  color: var(--ds-text-muted);
+}
+
+.ops2-holding__fact dd {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,42 @@
+/* FrameFlow — styles/recipes/type.css
+ *
+ * ONLY the type recipes the scaffold actually renders, for the reason given at
+ * the top of surface.css. The full set — display xl/lg/md, heading xl/lg/md/sm,
+ * body lg/md/sm, label lg/md, caption — is in docs/design/frameflow.md and is
+ * copied across a recipe at a time as screens need them.
+ */
+
+/* Display — hero-level headline, Space Grotesk */
+.ds-type-display-md {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-4xl);
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: var(--theme-line-height-tight);
+  letter-spacing: var(--theme-letter-spacing-tight);
+}
+
+/* Body — Inter, everyday content */
+.ds-type-body-md {
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-base);
+  font-weight: var(--theme-font-weight-regular);
+  line-height: var(--theme-line-height-normal);
+}
+
+/* Label — small, uppercase, wide-tracked */
+.ds-type-label-md {
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  line-height: var(--theme-line-height-none);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+}
+
+/* Caption — small supporting text */
+.ds-type-caption {
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-regular);
+  line-height: var(--theme-line-height-normal);
+}

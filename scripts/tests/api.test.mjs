@@ -892,6 +892,86 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.match(opsShell.body, /<title>OpenFrame Ops Console<\/title>/);
     });
 
+    // ── ops2 rollout state 1: "Build" ────────────────────────────────────────
+    // Shell selection is the single point where the ops2 rollout is flipped
+    // (spec §12, ADR 0002): legacy at the ops root, ops2 reachable at /ops2,
+    // nobody's daily work moved. The interesting failure is not "ops2 doesn't
+    // load" — that one announces itself — it is "something that was legacy
+    // quietly became ops2", so every negative below is asserted as hard as the
+    // positive: other ops paths, paths that merely CONTAIN "ops2", the customer
+    // host, the API, the referral redirect and real static assets.
+    await t.test("ops2 shell selection: /ops2 on the ops host, and nowhere else", async () => {
+      const onOpsHost = (path) => new Promise((resolve, reject) => {
+        const req = httpRequest({
+          hostname: "127.0.0.1", port, path,
+          headers: { Host: `ops.localhost:${port}` },
+        }, (response) => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk) => { body += chunk; });
+          response.on("end", () => resolve({
+            status: response.statusCode, headers: response.headers, body,
+          }));
+        });
+        req.on("error", reject);
+        req.end();
+      });
+      const OPS2 = /<title>OpenFrame ops2<\/title>/;
+      const LEGACY = /<title>OpenFrame Ops Console<\/title>/;
+
+      // The prefix and every deep link beneath it — the SPA fallback has to
+      // answer a path with no file behind it, because that is what path-based
+      // routing (ADR 0002) asks of the Worker on a cold reload.
+      for (const path of ["/ops2", "/ops2/record/p_demo", "/ops2/a/deep/link"]) {
+        const res = await onOpsHost(path);
+        assert.equal(res.status, 200, `${path} is served a shell`);
+        assert.match(res.body, OPS2, `${path} is the ops2 shell`);
+      }
+
+      // Everything else on the ops host is still the console people work in.
+      // "/ops2extra" and "/nested/ops2" only CONTAIN the prefix; a startsWith
+      // test that forgets the boundary hands them to ops2 by accident.
+      for (const path of ["/", "/orders/deep-link", "/ops2extra", "/ops2-archive", "/nested/ops2"]) {
+        const res = await onOpsHost(path);
+        assert.equal(res.status, 200, `${path} is served a shell`);
+        assert.match(res.body, LEGACY, `${path} is still the legacy ops shell`);
+      }
+
+      // Off the ops host nothing changed. /ops2 is an unknown customer route:
+      // the customer shell with a 404 status, exactly as before ops2 existed.
+      const customerOps2 = await customer.request("/ops2");
+      assert.equal(customerOps2.status, 404, "/ops2 is not a customer route");
+      const customerOps2Html = await customerOps2.text();
+      assert.doesNotMatch(customerOps2Html, OPS2, "the ops2 shell is not reachable off the ops host");
+      assert.ok(customerOps2Html.includes("og:title"), "the customer shell is untouched");
+
+      // The API answers on both hosts, unswallowed by the ops2 fallback.
+      const opsApi = await onOpsHost("/api/health");
+      assert.equal(opsApi.status, 200);
+      assert.equal(JSON.parse(opsApi.body).ok, true);
+      assert.equal((await customer.request("/api/health")).status, 200);
+
+      // /r/<CODE> is intercepted on EVERY host, ahead of the shell. ops2 must
+      // never own a /r/… path, and the ops2 fallback must not swallow this one.
+      for (const [what, res] of [
+        ["ops host", await onOpsHost("/r/ABC-DEF")],
+        ["customer host", await customer.request("/r/ABC-DEF", { redirect: "manual" })],
+      ]) {
+        assert.equal(res.status, 302, `${what}: the referral link still redirects`);
+        const location = res.headers.get?.("location") ?? res.headers.location;
+        assert.equal(location, "/refer", `${what}: to /refer`);
+      }
+
+      // Real static assets still resolve to ASSETS — the SPA fallback sits
+      // behind the extension check, not in front of it.
+      const assetPath = (await onOpsHost("/ops2")).body.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
+      assert.ok(assetPath, "the ops2 shell references its bundle");
+      const asset = await onOpsHost(assetPath);
+      assert.equal(asset.status, 200, "the ops2 bundle is served as an asset");
+      assert.doesNotMatch(asset.body, /<title>/, "an asset is not the shell");
+      assert.equal((await onOpsHost("/assets/not-present.js")).status, 404);
+    });
+
     await t.test("security headers are on every exit path", async () => {
       // The repository had three security headers, all on private file downloads.
       // Shells, assets and API responses carried none. These assert the policy is
