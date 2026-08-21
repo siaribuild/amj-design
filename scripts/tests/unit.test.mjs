@@ -36,6 +36,7 @@ await build({
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
       export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
+      export { OPS2_BASE, isUnderOps2, ops2RouterBase } from ${p("src/data/ops2Routing.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1181,4 +1182,26 @@ test("the trade application source list agrees across worker, route and client",
 
   assert.deepEqual(route, worker, "the route's allowlist must match TradeSource");
   assert.deepEqual(client, worker, "the client's argument type must match TradeSource");
+});
+
+// ops2 coexists with the legacy console under a path prefix (ADR 0002): the
+// Worker picks the shell by prefix, and the router picks its base by prefix,
+// and if those two disagree by one character a deep link serves the ops2 bundle
+// and then 404s inside it. One rule, one file, both callers — this pins the
+// boundary cases, which is where a `startsWith` written twice goes wrong.
+test("the ops2 path prefix is a boundary, not a substring", () => {
+  assert.equal(M.OPS2_BASE, "/ops2");
+
+  for (const path of ["/ops2", "/ops2/", "/ops2/record/p_1", "/ops2/a/deep/link"]) {
+    assert.equal(M.isUnderOps2(path), true, `${path} is ops2`);
+    assert.equal(M.ops2RouterBase(path), "/ops2", `${path} mounts the router at /ops2`);
+  }
+
+  // Merely CONTAINING the prefix is not being under it. "/ops2extra" is the one
+  // a naive startsWith hands to ops2 by accident; the rest are here so a later
+  // "simplification" back to that has something to fail against.
+  for (const path of ["/", "/ops2extra", "/ops2-archive", "/nested/ops2", "/orders/o_1", "/OPS2"]) {
+    assert.equal(M.isUnderOps2(path), false, `${path} is not ops2`);
+    assert.equal(M.ops2RouterBase(path), "/", `${path} mounts the router at the root`);
+  }
 });
