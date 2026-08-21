@@ -40,3 +40,14 @@
   font-weight: var(--theme-font-weight-regular);
   line-height: var(--theme-line-height-normal);
 }
+
+/* Heading — Space Grotesk, the destination's own name at the head of its page.
+ * Copied across from docs/design/frameflow.md verbatim, a recipe at a time, as
+ * the file above says. */
+.ds-type-heading-lg {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-2xl);
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: var(--theme-line-height-snug);
+  letter-spacing: var(--theme-letter-spacing-tight);
+}

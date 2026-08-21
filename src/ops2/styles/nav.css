@@ -1,0 +1,360 @@
+/* ops2 — the navigation frame.
+ *
+ * Layout Ionic has no component for, plus the handful of functional overrides
+ * the shell needs. No palette: every colour here names a --ds-* token.
+ *
+ * ── THE ONE RULE THAT IS NOT OBVIOUS ─────────────────────────────────────────
+ * There is NO `@media (min-width: 1024px)` in this file, and there must not be
+ * one. The change point is `RAIL_MEDIA_QUERY` in ../nav/destinations.ts, read
+ * once by useRailWidth(); the split pane, the tab bar's mounting and the inset
+ * attribute all follow that single boolean. A media query here would be a
+ * SECOND copy of 1024, and the two would only have to disagree by a pixel to
+ * produce a width showing both navigation surfaces — or neither.
+ *
+ * ── QUIET ROLES, AND WHY THEY ARE color-mix ──────────────────────────────────
+ * `--ion-color-step-*` and `--ion-text-color-rgb` are NOT defined in this
+ * stylesheet set (`docs/ops2/UX-HANDOVER.md` §5). Anything leaning on them
+ * resolves to full-strength black: contrast passes, hierarchy is gone. So every
+ * muted tone below is a color-mix over two tokens that always resolve.
+ */
+
+/* ── The split pane and its main node ─────────────────────────────────────── */
+
+ion-split-pane.ops2-splitpane {
+  /* 224px, register row 17 and the plane-shell spec §2.1. Both bounds are set:
+     Ionic's defaults are min 270px / max 28%, so setting only one leaves the
+     other governing and the rail lands somewhere between. */
+  --side-min-width: 224px;
+  --side-max-width: 224px;
+  --border: 1px solid var(--ds-surface-dark);
+}
+
+/* Exists only to carry the split pane's contentId as a DIRECT child. Do not
+   move the id onto the outlet: ion-split-pane resolves its main node once, in
+   connectedCallback, by walking its own children — with IonTabs in between it
+   finds nothing and the rail overlays the content instead of offsetting it.
+   Measured at 1440: outlet left:0 width:1440, no split-pane-main class. */
+.ops2-shell-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+  display: flex;
+}
+.ops2-shell-main > ion-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ── The navigation surface: rail above the change point, drawer below ────── */
+
+ion-menu.ops2-nav-menu {
+  /* The drawer's width, per the plane-shell spec §2.1. At rail width
+     ion-split-pane's --side-*-width governs instead and this is ignored. */
+  --width: min(82vw, 264px);
+  --background: var(--ds-surface-darker);
+}
+ion-menu.ops2-nav-menu ion-content.ops2-nav__content {
+  --background: var(--ds-surface-darker);
+  --color: var(--ds-text-inverse);
+  --padding-start: 0;
+  --padding-end: 0;
+}
+
+.ops2-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  /* The drawer sits under the status bar and over the home indicator; the rail
+     sits under neither, and env() is 0 there, so one rule serves both. */
+  padding: calc(var(--theme-spacing-lg) + var(--ion-safe-area-top, 0px))
+           var(--theme-spacing-sm)
+           calc(var(--theme-spacing-md) + var(--ion-safe-area-bottom, 0px));
+  gap: var(--theme-spacing-lg);
+}
+
+.ops2-nav__brand {
+  padding: 0 var(--theme-spacing-sm);
+}
+
+.ops2-nav__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-lg);
+}
+
+.ops2-nav__section-label {
+  margin: 0 0 var(--theme-spacing-xs);
+  padding: 0 var(--theme-spacing-sm);
+  color: color-mix(in srgb, var(--ds-text-inverse) 46%, var(--ds-surface-darker));
+}
+
+.ops2-nav__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ops2-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-md);
+  /* 44px in the constrained axis, under a coarse pointer as much as a mouse —
+     the drawer is used one-handed on a phone. */
+  min-height: 44px;
+  padding: 0 var(--theme-spacing-sm);
+  border-radius: var(--ds-radius-control);
+  color: color-mix(in srgb, var(--ds-text-inverse) 82%, var(--ds-surface-darker));
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-base);
+  text-decoration: none;
+}
+.ops2-nav__icon {
+  font-size: 18px;
+  flex: none;
+}
+.ops2-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .ops2-nav__item:hover {
+    background: color-mix(in srgb, var(--ds-text-inverse) 8%, var(--ds-surface-darker));
+    color: var(--ds-text-inverse);
+  }
+}
+
+/* The active destination is a FILLED BLOCK, not tinted text — the owner's
+   instruction. A left border was the earlier shape (register row 16); a filled
+   block is what he drew, and it survives being glanced at from arm's length on
+   a phone, which a 2px border does not. */
+.ops2-nav__item[aria-current="page"] {
+  background: var(--ds-surface-brand);
+  color: var(--ds-text-inverse);
+  font-weight: var(--theme-font-weight-medium);
+}
+
+.ops2-nav__foot {
+  margin-top: auto;
+  padding-top: var(--theme-spacing-md);
+  border-top: 1px solid color-mix(in srgb, var(--ds-text-inverse) 12%, var(--ds-surface-darker));
+}
+
+/* ── The wordmark ─────────────────────────────────────────────────────────── */
+
+.ops2-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-xs);
+  min-width: 0;
+}
+.ops2-wordmark__logo {
+  align-self: center;
+  height: 20px;
+  width: auto;
+  border-radius: var(--ds-radius-control);
+}
+.ops2-wordmark__name {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-lg);
+  font-weight: var(--theme-font-weight-semibold);
+  letter-spacing: var(--theme-letter-spacing-tight);
+  color: var(--ds-text-inverse);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops2-wordmark__suffix {
+  color: color-mix(in srgb, var(--ds-text-inverse) 52%, var(--ds-surface-darker));
+}
+/* In the content top bar the ground is the page, not the rail, so the same
+   wordmark has to invert. */
+.ops2-wordmark--bar {
+  padding-inline-start: var(--theme-spacing-md);
+}
+.ops2-wordmark--bar .ops2-wordmark__name {
+  color: var(--ds-text-primary);
+  font-size: var(--theme-font-size-md);
+}
+.ops2-wordmark--bar .ops2-wordmark__suffix {
+  color: var(--ds-text-muted);
+}
+
+/* ── The account block ────────────────────────────────────────────────────── */
+
+.ops2-account {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-sm);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  font-family: var(--theme-font-sans);
+}
+.ops2-account__avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  /* A rounded square, not a disc: the owner's 5px corner cap is a cap, and a
+     circular avatar would be the one place in the console quietly ignoring it. */
+  border-radius: var(--ds-radius-surface);
+  background: var(--ds-surface-brand);
+  color: var(--ds-text-inverse);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-semibold);
+  letter-spacing: var(--theme-letter-spacing-wide);
+}
+.ops2-account__who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ops2-account__name,
+.ops2-account__role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops2-account__name {
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-medium);
+}
+.ops2-account__chevron {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 14px;
+}
+
+.ops2-account--rail {
+  color: var(--ds-text-inverse);
+}
+.ops2-account--rail .ops2-account__role {
+  color: color-mix(in srgb, var(--ds-text-inverse) 58%, var(--ds-surface-darker));
+}
+@media (hover: hover) {
+  .ops2-account--rail:hover {
+    background: color-mix(in srgb, var(--ds-text-inverse) 8%, var(--ds-surface-darker));
+  }
+}
+
+.ops2-account--topbar {
+  width: auto;
+  color: var(--ds-text-primary);
+  padding-inline-end: var(--theme-spacing-md);
+}
+
+ion-popover.ops2-account-menu {
+  --width: 232px;
+}
+
+/* ── The content top bar ──────────────────────────────────────────────────── */
+
+ion-toolbar.ops2-topbar {
+  --background: var(--ds-surface-card);
+  --color: var(--ds-text-primary);
+  --border-width: 0 0 1px 0;
+  --border-color: var(--ds-border-subtle);
+  --min-height: 52px;
+}
+
+.ops2-bell {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+  font-size: 20px;
+}
+@media (hover: hover) {
+  .ops2-bell:hover { color: var(--ds-text-primary); }
+}
+
+/* ── The tab bar ──────────────────────────────────────────────────────────── */
+
+ion-tab-bar.ops2-tabbar {
+  --background: var(--ds-surface-card);
+  --color: var(--ds-text-muted);
+  --color-selected: var(--ds-text-primary);
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+/* The active tab's TOP INDICATOR LINE — the owner's, and the reason the label
+   also darkens: colour alone is not a state. Drawn on the button rather than
+   the bar because ion-tab-bar carries `contain: strict` and paints nothing
+   outside itself. */
+ion-tab-bar.ops2-tabbar ion-tab-button {
+  position: relative;
+}
+ion-tab-bar.ops2-tabbar ion-tab-button.tab-selected::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 20%;
+  height: 2px;
+  background: var(--ds-surface-brand);
+}
+ion-tab-bar.ops2-tabbar ion-tab-button.tab-selected {
+  font-weight: var(--theme-font-weight-medium);
+}
+
+/* ── The destination roots ────────────────────────────────────────────────── */
+
+ion-content.ops2-page {
+  --background: var(--ds-surface-page);
+}
+.ops2-page__body {
+  padding: var(--theme-spacing-lg);
+  /* A console read on a Fold beside other apps and on a 27" monitor. The
+     measure is the text's, not the window's. */
+  max-width: 72ch;
+}
+.ops2-page__title {
+  margin: 0 0 var(--theme-spacing-sm);
+  color: var(--ds-text-primary);
+}
+.ops2-page__blurb {
+  margin: 0 0 var(--theme-spacing-sm);
+  color: var(--ds-text-secondary);
+}
+.ops2-page__pending {
+  margin: 0;
+  color: var(--ds-text-muted);
+}
+
+.ops2-facts {
+  margin: var(--theme-spacing-xl) 0 0;
+  padding: var(--theme-spacing-md);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  background: var(--ds-surface-card);
+  color: var(--ds-text-secondary);
+}
+.ops2-facts__row {
+  display: flex;
+  gap: var(--theme-spacing-md);
+}
+.ops2-facts__row dt {
+  min-width: 88px;
+  color: var(--ds-text-muted);
+}
+.ops2-facts__row dd {
+  margin: 0;
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+}

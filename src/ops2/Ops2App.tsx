@@ -1,8 +1,18 @@
-import { IonApp, IonRouterOutlet, setupIonicReact } from "@ionic/react";
+import { useEffect } from "react";
+import {
+  IonApp, IonIcon, IonLabel, IonMenu, IonRouterOutlet, IonSplitPane, IonTabBar,
+  IonTabButton, IonTabs, setupIonicReact,
+} from "@ionic/react";
 import { IonReactRouter } from "@ionic/react-router";
-import { Route } from "react-router-dom";
-import { ops2RouterBase } from "../data/ops2Routing";
-import { HoldingScreen } from "./HoldingScreen";
+import { Redirect, Route } from "react-router-dom";
+import { ellipsisHorizontal } from "ionicons/icons";
+import { BASENAME } from "./shellBase";
+import { DESTINATIONS, HOME_PATH, TAB_DESTINATIONS } from "./nav/destinations";
+import { DESTINATION_ICON } from "./nav/icons";
+import { NAV_DRAWER_ID, SHELL_CONTENT_ID, openNavDrawer } from "./nav/drawer";
+import { NavPanel } from "./nav/NavPanel";
+import { useRailWidth } from "./nav/useRailWidth";
+import { DestinationRoot } from "./pages/DestinationRoot";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
 // on React Router 5 while the customer site stays on 7. Never import the bare
@@ -28,46 +38,175 @@ import { HoldingScreen } from "./HoldingScreen";
 //   and among the behavioural rules ADR 0005 says Ionic hosts rather than
 //   replaces. Pinned by scripts/tests/ops2-frame.test.mjs.
 //
+//   Now that there are eight destinations to move between, it has something to
+//   do: OpsPage puts an <h1> at the head of every page for it to land on.
+//
 //   mode — DEFAULT, and must stay so. Ionic picks the iOS idiom on an iPhone
 //   and Material elsewhere, and that dual idiom is what the owner judged on his
 //   own phone when he ruled for adoption (ADR 0005 keeps it as an explicit
 //   ASSUMED). Pinning a mode here would overturn a decision he made on a
 //   device, from a config file.
-//
-// With one catch-all route the focus manager has nothing to do yet. It is set
-// now so the foundation is right before navigation arrives, not because it
-// changes anything visible today.
 setupIonicReact({ focusManagerPriority: ["heading", "content"] });
 
-// The router's base, detected ONCE at boot from the URL the browser actually
-// loaded (`docs/adr/0002-ops2-path-routing-not-hash.md`, on the
-// `design/ops2-planning` branch — not this branch's 0002, which is unrelated).
-// During coexistence the Worker serves this bundle under /ops2, so the router
-// mounts there; after switch-over it serves it at the root, so the same bundle
-// mounts at "/". The rollout is a Worker deploy and the client reads the result
-// rather than being told.
-//
-// Read at module scope on purpose: the base is a property of how this document
-// was served, not of where the user has navigated since, and recomputing it
-// from a later location is how a router quietly re-bases itself mid-session.
-const BASENAME = ops2RouterBase(window.location.pathname);
-
-// One route, catching everything. Navigation is the next step of the build and
-// this is deliberately not the place to guess at its shape: any address under
-// the base renders the holding screen, so a deep link that survives Cloudflare
-// Access lands on something rather than a blank page.
-//
-// IonRouterOutlet rather than a bare Switch even for one route — it is the
-// component that owns Ionic's page stack and transitions, and starting without
-// it means the first real navigation is also the first time the shell is
-// exercised.
+/**
+ * ops2's shell — ONE navigation surface, mounted two ways, and never absent.
+ *
+ * ── THE COMPOSITION, AND THE TRAP IN IT ──────────────────────────────────────
+ * `ion-split-pane` finds its main node among its DIRECT children, in
+ * `connectedCallback`, ONCE (node_modules/@ionic/core/components/ion-split-pane.js
+ * — `styleMainElement()` walks `this.el.children` and never runs again). So the
+ * element carrying `contentId` has to be a direct child at first mount.
+ *
+ * Putting the id on IonRouterOutlet is the obvious thing and it is wrong here,
+ * because IonTabs sits between them. The planning thread hit this exactly
+ * (`7f8e6e4d fix(ops2 R1i): the split pane lost its content when IonTabs
+ * wrapped the outlet`) and measured the result: at 1440 the rail OVERLAID the
+ * record instead of offsetting it — outlet at left:0 width:1440, no
+ * `split-pane-main` class anywhere. IonTabs takes no `id` prop, so the id goes
+ * on a plain host element wrapped around it.
+ *
+ * There are three symptoms of getting it wrong and all three are checked in
+ * scripts/tests/web/ops2-navigation.spec.ts, because two of them are silent:
+ * the missing `split-pane-main` class, the content not being offset by the
+ * rail's width, and the console warning Ionic emits
+ * ("[ion-split-pane] - Does not have a specified main node").
+ *
+ * ── WHY THE TAB BAR IS UNMOUNTED ABOVE THE CHANGE POINT, NOT HIDDEN ──────────
+ * `ion-tab-bar` carries `contain: strict` and cannot be moved or resized from
+ * outside — three techniques were measured and all three failed
+ * (`docs/mocks/ops2-r1-ionic-src/src/ops2-tabs.css`). Unmounting is what the
+ * component allows. It also makes C6 — exactly one navigation surface — a fact
+ * about the DOM rather than about paint: above 1024 there is no bar to reveal
+ * by accident, and below it there is no rail.
+ *
+ * ── WHY `IonTabs` AT ALL ─────────────────────────────────────────────────────
+ * The ban in `docs/design/ops2-ionic-boundary.md` was on tabs INSIDE a record —
+ * Lines and Job are two views of one thing and dressing them as tabs would
+ * claim otherwise. THAT BAN STANDS. These four are different in kind: three
+ * genuine top-level destinations with nothing in common but the account, plus
+ * the control that reveals the rest. Hand-building that bar would mean
+ * reimplementing the active state, the stack-per-tab behaviour and the
+ * safe-area inset IonTabBar already has.
+ */
 export function Ops2App() {
+  const wide = useRailWidth();
+
+  // WHO OWNS THE HOME-INDICATOR INSET, published document-wide.
+  //
+  // Carried forward from the mock's `ops2-tabs.css`, where it was measured:
+  // "when a TAB BAR is below [an action panel], the bar is bottom-most and the
+  // bar owns the inset — the panel must drop its own or the two of them pad for
+  // the same 34px twice, which is 34px of nothing between the primary action
+  // and the tabs. Measured with the inset simulated at 34px: the double-pad
+  // cost 34px on every action screen before this rule existed."
+  //
+  // Nothing in THIS task has a bottom-edge action panel, so nothing reads it
+  // yet. It is published now because the rule is about the bar's presence and
+  // the bar is what this task adds — the next surface with a footer inherits a
+  // stated answer instead of rediscovering a 34px gap.
+  //
+  // On <html> rather than on the console container, which is where the width
+  // class belongs (interaction spec §10.6). The distinction is real: the width
+  // class is "how much room does this zone have", and a 380px pane must read
+  // its own. Inset ownership is "who is bottom-most on the SCREEN" — a fact
+  // about the viewport, read by overlays (ion-modal, action sheets) that Ionic
+  // portals to <body>, outside the console container entirely.
+  useEffect(() => {
+    document.documentElement.dataset.ops2Tabbar = wide ? "off" : "on";
+  }, [wide]);
+
   return (
     <IonApp>
       <IonReactRouter basename={BASENAME}>
-        <IonRouterOutlet>
-          <Route path="/" render={() => <HoldingScreen basename={BASENAME} />} />
-        </IonRouterOutlet>
+        <IonSplitPane contentId={SHELL_CONTENT_ID} when={wide} className="ops2-splitpane">
+          {/* The rail above the change point, the drawer below it — one
+              ion-menu, and ion-split-pane decides which. `type="overlay"` fixes
+              the drawer's presentation: an overlay, never a route (register row
+              19). */}
+          <IonMenu
+            contentId={SHELL_CONTENT_ID}
+            // BOTH, and they are not the same thing. `menuId` sets the
+            // `menu-id` ATTRIBUTE that Ionic's own menuController indexes by;
+            // `id` is the DOM id. openNavDrawer() looks the element up by DOM
+            // id, and with only `menuId` set the lookup returned null and
+            // `More` silently did nothing — measured in the dev server, and the
+            // same twice-recorded "drawer with no trigger" outcome arrived at
+            // from a third direction. The id is also what the opener's
+            // aria-controls will point at.
+            id={NAV_DRAWER_ID}
+            menuId={NAV_DRAWER_ID}
+            side="start"
+            type="overlay"
+            className="ops2-nav-menu"
+          >
+            <NavPanel />
+          </IonMenu>
+
+          {/* This div exists ONLY to carry the id, and it must stay a direct
+              child of the split pane. See the note above before moving it. */}
+          <div id={SHELL_CONTENT_ID} className="ops2-shell-main">
+            <IonTabs>
+              <IonRouterOutlet>
+                {/* One route per destination, non-exact, so everything that
+                    lands below a destination keeps that destination lit —
+                    Ionic's own `matchesTab` is a segment-prefix match and
+                    isDestinationActive() mirrors it. The record routes the
+                    Projects list will add nest under /projects for exactly this
+                    reason; flat `/record/...` routes would match no tab and
+                    leave the bar dark for most of the working day. */}
+                {DESTINATIONS.map((d) => (
+                  <Route key={d.id} path={d.path} render={() => <DestinationRoot id={d.id} />} />
+                ))}
+                <Route exact path="/"><Redirect to={HOME_PATH} /></Route>
+                {/* The not-found route, replacing the scaffold's catch-all
+                    rather than dropping it. Its reason is carried forward
+                    verbatim: "any address under the base renders [something],
+                    so a deep link that survives Cloudflare Access lands on
+                    something rather than a blank page." An unmatched route
+                    inside an IonRouterOutlet renders NOTHING — not an error, a
+                    blank console — and behind Access that is indistinguishable
+                    from an outage.
+
+                    NO `path` PROP, and that is the whole trick. Ionic's
+                    `matchRoute` (node_modules/@ionic/react-router/dist/index.js)
+                    keeps the LAST child that matches, not the first — it is not
+                    a Switch — and only falls back to a child with neither
+                    `path` nor `from` when nothing matched at all. Written as
+                    `path="*"` it matched every address, won by being last, and
+                    every destination rendered blank while the tab bar carried
+                    on lighting correctly. Measured: h1 absent, four tab buttons
+                    present, on every route. */}
+                <Route render={() => <Redirect to={HOME_PATH} />} />
+              </IonRouterOutlet>
+
+              {/* Below the change point only. Mounted by the SHELL and by
+                  nothing else: a region that could render a bar could also lose
+                  one, which is how navigation vanished at narrow width twice
+                  (LEARNINGS.md §3.10, then again in the rejected pass).
+                  scripts/tests/ops2-frame.test.mjs holds that ownership. */}
+              {!wide && (
+                <IonTabBar slot="bottom" className="ops2-tabbar">
+                  {TAB_DESTINATIONS.map((d) => (
+                    <IonTabButton key={d.id} tab={d.id} href={d.path}>
+                      <IonIcon icon={DESTINATION_ICON[d.id]} aria-hidden="true" />
+                      <IonLabel>{d.label}</IonLabel>
+                    </IonTabButton>
+                  ))}
+                  {/* `More` opens the drawer — the SAME list the rail shows,
+                      reached the other way. It carries no `href` and so never
+                      lights, which is correct rather than a limitation: the bar
+                      says where you are, and `More` does not move you. The
+                      defence, and what is unverified about it, is in the report
+                      and in docs/ops2/UX-HANDOVER.md §5. */}
+                  <IonTabButton tab="more" onClick={openNavDrawer}>
+                    <IonIcon icon={ellipsisHorizontal} aria-hidden="true" />
+                    <IonLabel>More</IonLabel>
+                  </IonTabButton>
+                </IonTabBar>
+              )}
+            </IonTabs>
+          </div>
+        </IonSplitPane>
       </IonReactRouter>
     </IonApp>
   );

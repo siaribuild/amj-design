@@ -130,3 +130,20 @@
 ion-card {
   border-radius: var(--ds-radius-surface);
 }
+
+/* The components navigation adds. Each one ships its own per-platform radius —
+ * ion-popover is 4px on Material and 10px on iOS, ion-button 4px and 14px — so
+ * every one of them has to be brought under the cap here by name. There is no
+ * global radius variable in Ionic to do it once; that was checked and it does
+ * not exist. scripts/tests/web/ops2-navigation.spec.ts measures what is
+ * actually rendered, in both platform modes, and is the backstop for
+ * forgetting the next one. */
+ion-popover {
+  --border-radius: var(--ds-radius-surface);
+}
+ion-button {
+  --border-radius: var(--ds-radius-control);
+}
+ion-item {
+  --border-radius: var(--ds-radius-control);
+}

@@ -9,7 +9,7 @@
 // between — with a single catch-all route a focus manager has nothing to do.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectRoot } from "./helpers.mjs";
 
@@ -38,4 +38,31 @@ test("setupIonicReact carries R-164's focus priority, and nothing else", () => {
   // Fold — because that is what the owner judged when he ruled for adoption.
   // Pinning a mode here would quietly overturn a decision he made on a device.
   assert.doesNotMatch(args, /\bmode\s*:/, "the platform mode stays Ionic's, per ADR 0005's ASSUMED");
+});
+
+test("the tab bar belongs to the shell, and no region can render or delete one", () => {
+  // THE TWICE-RECORDED REGRESSION, AND WHY THIS IS A TEST RATHER THAN A HABIT.
+  // `docs/ops-redesign/LEARNINGS.md` §3.10 records the drawer losing its only
+  // opener when the header that hosted it was deleted — no navigation and no
+  // sign-out below 768px — and the same defect was then repeated in the
+  // rejected pass. Both times the cause was the same shape: a REGION owned the
+  // navigation control, so deleting the region deleted navigation.
+  //
+  // The structural fix is ownership. Exactly one file may render an IonTabBar,
+  // and it is the shell. A destination root cannot remove the bar because it
+  // never had one, and cannot add a second because this fails if it does.
+  const shell = "src/ops2/Ops2App.tsx";
+  const sources = [...new Set([
+    ...globSync("src/ops2/**/*.tsx", { cwd: projectRoot }),
+    ...globSync("src/ops2/**/*.ts", { cwd: projectRoot }),
+  ])].map((file) => file.split("\\").join("/"));
+
+  const renderers = sources.filter((file) => /<IonTabBar[\s>]/.test(read(file)));
+  assert.deepEqual(renderers, [shell],
+    "IonTabBar is the shell's alone — a region that can render one can also lose one");
+
+  // And the shell renders exactly one. Two bars is C6's forbidden second
+  // navigation band, arrived at by accident rather than by decision.
+  const shellSource = read(shell);
+  assert.equal((shellSource.match(/<IonTabBar[\s>]/g) ?? []).length, 1);
 });
