@@ -171,6 +171,10 @@
   gap: var(--theme-spacing-sm);
   margin-bottom: var(--theme-spacing-sm);
 }
+/* On the phone this is the first thing under the title, so it carries the gap
+   the attention strip used to open. The skeleton reserves the same space, which
+   is the difference between a skeleton and a promise it does not keep. */
+.pq-controls[data-wide="false"] { margin-top: var(--theme-spacing-lg); }
 .pq-controls[data-wide="true"] {
   flex-direction: row;
   align-items: center;

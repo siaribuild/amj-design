@@ -377,7 +377,13 @@ function EmptyPanel({
 function QueueSkeleton({ wide }: { wide: boolean }) {
   return (
     <div className="pq-skeleton" data-testid="queue-skeleton" aria-busy="true">
-      <IonSkeletonText animated style={{ height: wide ? "76px" : "92px" }} />
+      {/* The strip's block, and ONLY where the strip lands. A skeleton is a
+          promise about the coming layout, which is a way of being wrong that a
+          spinner cannot be: reserving 92px for a band the phone no longer
+          renders made the controls and the whole list jump upward the moment
+          the data arrived — on the surface whose entire argument for a skeleton
+          is that nothing moves when it resolves. */}
+      {wide && <IonSkeletonText animated style={{ height: "76px" }} />}
       <IonSkeletonText animated style={{ height: "44px" }} />
       {[0, 1, 2, 3].map((i) => (
         <IonSkeletonText key={i} animated style={{ height: wide ? "52px" : "96px" }} />

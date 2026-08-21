@@ -205,6 +205,41 @@ test("the attention strip is the desk's, and the phone goes straight to the work
     .toBeLessThan(40);
 });
 
+test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {
+  // A SKELETON IS A PROMISE ABOUT THE COMING LAYOUT, so it is wrong in a way a
+  // spinner cannot be: it can promise a block that never lands. The narrow
+  // layout dropped the attention strip and the skeleton went on reserving its
+  // height, so the controls and the whole list jumped up the moment the data
+  // arrived — on the surface whose entire argument for a skeleton is that
+  // nothing moves when it resolves.
+  //
+  // Measured as a DISPLACEMENT rather than by counting blocks: the defect is
+  // the jump, and a count would pass just as happily if the same total height
+  // were redistributed.
+  for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(QUEUE_URL, async (route) => { await held; await route.continue(); });
+    const loading = page.goto(PROJECTS);
+
+    const skeleton = page.getByTestId("queue-skeleton");
+    await expect(skeleton).toBeVisible();
+    const during = (await skeleton.boundingBox())!.y;
+
+    release();
+    await loading;
+    await expect(page.getByTestId("queue-row").first()).toBeVisible();
+    // Whatever renders first after the head row — the strip at the desk, the
+    // filter row on the phone — has to start where the skeleton started.
+    const settled = (await page.locator(width >= 1024 ? ".pq-attention" : ".pq-controls")
+      .boundingBox())!.y;
+    expect(Math.abs(settled - during), `the list jumps on load at ${width}px`)
+      .toBeLessThanOrEqual(1);
+    await page.unroute(QUEUE_URL);
+  }
+});
+
 test("the funnel opens the mock's panel, and its bubble counts what is on", async ({ page }) => {
   // The owner: "3 quick filters max + filter icon with bubble. Filter panel at
   // the bottom is to be taken from the mock." So the funnel opens the mock's
