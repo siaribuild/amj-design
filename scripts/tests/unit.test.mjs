@@ -1184,7 +1184,9 @@ test("the trade application source list agrees across worker, route and client",
   assert.deepEqual(client, worker, "the client's argument type must match TradeSource");
 });
 
-// ops2 coexists with the legacy console under a path prefix (ADR 0002): the
+// ops2 coexists with the legacy console under a path prefix
+// (`docs/adr/0002-ops2-path-routing-not-hash.md` on `design/ops2-planning` —
+// NOT this branch's 0002; see docs/adr/0009 for the map): the
 // Worker picks the shell by prefix, and the router picks its base by prefix,
 // and if those two disagree by one character a deep link serves the ops2 bundle
 // and then 404s inside it. One rule, one file, both callers — this pins the
@@ -1203,5 +1205,68 @@ test("the ops2 path prefix is a boundary, not a substring", () => {
   for (const path of ["/", "/ops2extra", "/ops2-archive", "/nested/ops2", "/orders/o_1", "/OPS2"]) {
     assert.equal(M.isUnderOps2(path), false, `${path} is not ops2`);
     assert.equal(M.ops2RouterBase(path), "/", `${path} mounts the router at the root`);
+  }
+});
+
+// The ops2 scaffold reads no catalogue — deliberately, so that "did ops2 load?"
+// is never a question about Sanity. Dropping hydrateFromSanity() from the client
+// only removed half of that: the Worker awaited the catalogue one layer ABOVE
+// shell selection, so with Sanity configured and slow the very shell people open
+// to check that routing and Access work was the thing that looked broken.
+//
+// Driven in-process against a fetch that never settles, which is the honest
+// shape of the failure rather than a stopwatch: a failed load is NOT cached
+// (worker/lib/catalogue.ts), so in production every ops2 request pays the 3s
+// timeout, not merely the first one in an isolate.
+//
+// The Worker is bundled separately from the shared bundle at the top of this
+// file so that an import-time break in any route cannot take the pure tests
+// down with it.
+test("the ops2 shell does not wait for a catalogue it never reads", async () => {
+  const outfile = join(runDir, "worker-bundle.mjs");
+  await build({
+    stdin: {
+      contents: `export { default as worker } from ${p("worker/index.ts")};`,
+      resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
+    },
+    bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  });
+  const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+
+  const env = {
+    APP_ENV: "development",
+    SANITY_PROJECT_ID: "stub-project",   // configured, so hydration is attempted
+    ASSETS: {
+      fetch: async (u) => new Response(`shell:${new URL(u).pathname}`,
+        { headers: { "content-type": "text/html" } }),
+    },
+  };
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => new Promise(() => {});   // a Sanity that never answers
+  const within = async (path, ms) => {
+    let timer;
+    const settled = await Promise.race([
+      worker.fetch(new Request(`http://ops.localhost${path}`), env, ctx),
+      new Promise((r) => { timer = setTimeout(() => r("WAITED"), ms); }),
+    ]);
+    clearTimeout(timer);
+    return settled === "WAITED" ? "WAITED" : settled.text();
+  };
+  try {
+    // Run the ops2 requests FIRST: an implementation that awaits hydration here
+    // also parks the never-settling load in the module cache, and then every
+    // assertion after it passes for the wrong reason.
+    assert.equal(await within("/ops2", 500), "shell:/ops2.html");
+    assert.equal(await within("/ops2/record/p_1", 500), "shell:/ops2.html");
+
+    // Nothing else moved in front of hydration. The API serves live catalogue
+    // content and the legacy console reads it too — both must still wait, or
+    // this has quietly changed what they are served rather than when.
+    assert.equal(await within("/api/locations", 500), "WAITED", "the API still waits for the catalogue");
+    assert.equal(await within("/orders/o_1", 500), "WAITED", "the legacy ops shell still waits for the catalogue");
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });

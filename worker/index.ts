@@ -105,9 +105,23 @@ api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 
 // ── Shell selection — the one place the ops2 rollout is flipped ─────────────
 //
-// The successor to `isOps ? "/ops.html" : "/index.html"`. Spec §12 gives it
-// three states, and each flip is a one-line, versions-revertible deploy
-// (ADR 0002) — `wrangler versions upload` for a preview that does not move
+// ┌─ WHERE THE DOCUMENTS ARE ────────────────────────────────────────────────┐
+// │ Both sources below live ONLY on the `design/ops2-planning` branch today:  │
+// │   docs/adr/0002-ops2-path-routing-not-hash.md   (cited here as "the       │
+// │     routing ADR" — read it with `git show design/ops2-planning:<path>`)   │
+// │   docs/specs/ops2.md §9, §12                                             │
+// │                                                                          │
+// │ Do NOT read this branch's docs/adr/0002-*.md as the routing decision: on  │
+// │ this branch and on main, 0002 is                                         │
+// │ `0002-trade-status-derived-from-application-ledger.md`, an unrelated ADR. │
+// │ The two branches have colliding ADR numbers (0001 as well as 0002); the   │
+// │ renumbering is the planning thread's to make. Until it does, the filename │
+// │ is the citation and the number is not.                                    │
+// └──────────────────────────────────────────────────────────────────────────┘
+//
+// The successor to `isOps ? "/ops.html" : "/index.html"`. The spec's §12 gives
+// it three states, and each flip is a one-line, versions-revertible deploy
+// (routing ADR) — `wrangler versions upload` for a preview that does not move
 // production traffic, then `wrangler versions deploy` to promote:
 //
 //   1. BUILD (live now) — legacy at the ops root, ops2 reachable at /ops2.
@@ -124,7 +138,7 @@ api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 // AUTHENTICATION IS NOT INVOLVED. ops2 lives on the ops HOST, so Cloudflare
 // Access protects it at the edge exactly as it protects the legacy console,
 // and `isOps` still decides host-level behaviour on its own. That is the whole
-// reason ops2 took a path prefix instead of a hostname (spec §9): a second
+// reason ops2 took a path prefix instead of a hostname (the spec's §9): a second
 // hostname would need a second Access audience and a widened `isOps`, which is
 // a security-path change for a cosmetic reason.
 type Shell = "/index.html" | "/ops.html" | "/ops2.html";
@@ -145,9 +159,12 @@ export function opsShellFor(isOps: boolean, pathname: string): Shell {
 
 // Route a request to its response. Every `return` below is a page or a payload;
 // the security policy is attached once, by the fetch handler that wraps this.
-// There are eight exits here — two redirects, sitemap, robots, static assets, the
-// API, the ops shell, the customer shell and the shell-render fallback — and
-// before the wrapper existed, every one of them answered with no policy at all.
+// There are nine exits here — two redirects, sitemap, robots, static assets, the
+// API, the ops2 shell, the ops shell, the customer shell and the shell-render
+// fallback — and before the wrapper existed, every one of them answered with no
+// policy at all. Adding an exit means adding it to that wrapper's blast radius,
+// which is why the count is written down: an exit nobody counted is an exit
+// nobody checked.
 async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
@@ -256,6 +273,23 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // The liveness probe must stay cheap — it also never waits on Sanity.
     if (url.pathname === "/api/health") return api.fetch(request, env, ctx);
 
+    // The shell is chosen here, before hydration, because ONE of them needs to
+    // be served before it: ops2 reads no catalogue.
+    //
+    // Everything else below stays behind ensureCatalogue and must: the API
+    // serves live catalogue content, and the legacy console reads it too. Only
+    // the ops2 exit moves in front, and it is the ops2 exit — not `isOps` —
+    // that is tested, so switch-over and deletion carry it automatically.
+    //
+    // Why it matters more than a cold-start milliseconds argument: a failed
+    // load is deliberately not cached (worker/lib/catalogue.ts), so while Sanity
+    // is slow or down EVERY request pays the 3s timeout. Behind hydration, the
+    // one screen whose job is to show that routing and Access work would be the
+    // screen that looks broken during a CMS outage — which is exactly the
+    // dependency src/ops2/main.tsx refuses on the client side.
+    const shell = opsShellFor(isOps, url.pathname);
+    if (shell === "/ops2.html") return env.ASSETS.fetch(new URL(shell, url.origin).toString());
+
     // Load the catalogue from Sanity once per isolate (no-op unless configured),
     // so pricing + snapshots use live content. Cheap after the first request, and
     // time-bounded so a slow CMS can't stall the response (see ensureCatalogue).
@@ -265,7 +299,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return api.fetch(request, env, ctx);
     }
 
-    const shell = opsShellFor(isOps, url.pathname);
     const res = await env.ASSETS.fetch(new URL(shell, url.origin).toString());
 
     // Rewrite the customer shell's <head> for this URL. The SPA injects its own
