@@ -1,0 +1,132 @@
+/* FrameFlow → Ionic. The one file that binds the two.
+ *
+ * `docs/adr/0005-ops2-ionic-adopted.md` (on `design/ops2-planning`) says ops2
+ * ships Ionic's default theme outright and that no file under src/ops2 restates
+ * a palette. THE OWNER HAS SINCE RULED THAT FRAMEFLOW THEMES ops2, which
+ * supersedes that clause — recorded on this branch in
+ * `docs/adr/0009-frameflow-themes-ops2.md`. Read that before changing anything
+ * here, and note what it does NOT overturn: ops2 is still not chasing the
+ * customer site's design language. FrameFlow is its own system, not
+ * `src/styles/theme.css` copied across.
+ *
+ * The binding runs one way. Ionic's variables read FrameFlow's; nothing here
+ * reads an Ionic value back, so a FrameFlow palette change lands everywhere and
+ * an Ionic upgrade cannot silently move a brand colour.
+ *
+ * Ionic needs `-rgb` triples as well as hex, because it composes translucency
+ * (ripples, activated states, borders) with rgba(). They are written out rather
+ * than computed: CSS cannot derive them, and a wrong pair shows up as a colour
+ * that is right until something goes semi-transparent.
+ */
+:root {
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  --ion-font-family: var(--theme-font-sans);
+
+  /* ── Page surface and text ─────────────────────────────────────────────── */
+  --ion-background-color: var(--theme-neutral-50);
+  --ion-background-color-rgb: 250, 250, 247;
+  --ion-text-color: var(--theme-ink-900);
+  --ion-text-color-rgb: 22, 20, 18;
+
+  /* Cards sit on the page, so they are the lighter surface, not the same one.
+   * Bound here rather than left to Ionic's fallback chain, which would resolve
+   * a card's background to --ion-background-color and flatten the two planes. */
+  --ion-card-background: var(--theme-neutral-0);
+  --ion-card-color: var(--theme-ink-900);
+
+  /* ── Primary: sage, the brand, doing the job it does in FrameFlow ──────── */
+  --ion-color-primary: var(--theme-sage-500);
+  --ion-color-primary-rgb: 90, 122, 106;
+  --ion-color-primary-contrast: var(--theme-neutral-0);
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: var(--theme-sage-600);
+  --ion-color-primary-tint: var(--theme-sage-400);
+
+  /* Secondary and tertiary are DERIVED, not designed. FrameFlow has one hero
+   * hue and no second or third; these keep Ionic's palette complete so a
+   * component asking for `color="secondary"` does not fall back to Ionic blue
+   * mid-screen. A surface that genuinely needs a second brand colour is a
+   * question for the ui-designer, not a value to pick here. */
+  --ion-color-secondary: var(--theme-sage-700);
+  --ion-color-secondary-rgb: 63, 90, 76;
+  --ion-color-secondary-contrast: var(--theme-neutral-0);
+  --ion-color-secondary-contrast-rgb: 255, 255, 255;
+  --ion-color-secondary-shade: var(--theme-sage-800);
+  --ion-color-secondary-tint: var(--theme-sage-600);
+
+  --ion-color-tertiary: var(--theme-info-500);
+  --ion-color-tertiary-rgb: 76, 106, 136;
+  --ion-color-tertiary-contrast: var(--theme-neutral-0);
+  --ion-color-tertiary-contrast-rgb: 255, 255, 255;
+  --ion-color-tertiary-shade: var(--theme-info-600);
+  --ion-color-tertiary-tint: var(--theme-info-400);
+
+  /* ── Status ────────────────────────────────────────────────────────────────
+   * warning and danger are bound to DIFFERENT FrameFlow ramps and must stay
+   * that way. In this product they carry a hard distinction: warning means
+   * "ours to resolve, the human proceeds"; danger means "nothing proceeds, or
+   * this destroys something". Collapsing them makes the machine read as
+   * objecting to a human's decision, which the spec's I1 forbids. */
+  --ion-color-success: var(--theme-positive-500);
+  --ion-color-success-rgb: 44, 122, 84;
+  --ion-color-success-contrast: var(--theme-neutral-0);
+  --ion-color-success-contrast-rgb: 255, 255, 255;
+  --ion-color-success-shade: var(--theme-positive-600);
+  --ion-color-success-tint: var(--theme-positive-400);
+
+  --ion-color-warning: var(--theme-warning-500);
+  --ion-color-warning-rgb: 138, 106, 42;
+  --ion-color-warning-contrast: var(--theme-neutral-0);
+  --ion-color-warning-contrast-rgb: 255, 255, 255;
+  --ion-color-warning-shade: var(--theme-warning-600);
+  --ion-color-warning-tint: var(--theme-warning-400);
+
+  --ion-color-danger: var(--theme-attention-500);
+  --ion-color-danger-rgb: 192, 57, 43;
+  --ion-color-danger-contrast: var(--theme-neutral-0);
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: var(--theme-attention-600);
+  --ion-color-danger-tint: var(--theme-attention-400);
+
+  /* ── Neutrals ──────────────────────────────────────────────────────────── */
+  --ion-color-medium: var(--theme-neutral-500);
+  --ion-color-medium-rgb: 139, 136, 128;
+  --ion-color-medium-contrast: var(--theme-neutral-0);
+  --ion-color-medium-contrast-rgb: 255, 255, 255;
+  --ion-color-medium-shade: var(--theme-neutral-600);
+  --ion-color-medium-tint: var(--theme-neutral-400);
+
+  --ion-color-light: var(--theme-neutral-100);
+  --ion-color-light-rgb: 245, 244, 240;
+  --ion-color-light-contrast: var(--theme-ink-900);
+  --ion-color-light-contrast-rgb: 22, 20, 18;
+  --ion-color-light-shade: var(--theme-neutral-200);
+  --ion-color-light-tint: var(--theme-neutral-50);
+
+  --ion-color-dark: var(--theme-ink-800);
+  --ion-color-dark-rgb: 31, 29, 27;
+  --ion-color-dark-contrast: var(--theme-neutral-0);
+  --ion-color-dark-contrast-rgb: 255, 255, 255;
+  --ion-color-dark-shade: var(--theme-ink-900);
+  --ion-color-dark-tint: var(--theme-ink-700);
+}
+
+/* ── The owner's corner cap, applied to Ionic's own components ──────────────
+ *
+ * Ionic ships radii per platform mode, and the mode is chosen at runtime: an
+ * ion-card is 4px on Material and 8px on iOS. The owner's cap is 5px, so on the
+ * iPhone — the device he actually judged the mocks on — Ionic's default would
+ * break it while every Material screenshot looked compliant.
+ *
+ * So the cap is applied to the element, not left to the mode. An author rule
+ * targeting the custom element outranks the component's own `:host` rule, which
+ * is why this works from outside the shadow root.
+ *
+ * EVERY Ionic component added later needs its corner brought here too. There is
+ * no global radius variable in Ionic to do it once — checked, it does not
+ * exist. `scripts/tests/web/ops2.spec.ts` measures what is actually rendered,
+ * in both platform modes, which is the backstop for forgetting.
+ */
+ion-card {
+  border-radius: var(--ds-radius-surface);
+}

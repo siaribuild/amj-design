@@ -85,6 +85,11 @@
    * --ds-radius-surface (or --ds-radius-control), so this is the one place the
    * cap is applied and the one place it could be broken.
    *
+   * Recorded on this branch in `docs/adr/0009-frameflow-themes-ops2.md`, which
+   * is also where the Ionic side of the cap lives — Ionic's components carry
+   * their own per-platform radii and are brought under this token one at a time
+   * in ../theme/ionic.css.
+   *
    * THIS DIVERGES FROM docs/design/frameflow.md ON PURPOSE. That document asks
    * for 8-16px corners and its own recipes use --theme-radius-lg (12px) for
    * cards and --theme-radius-xl (16px) for overlays and dark panels. The owner

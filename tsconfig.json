@@ -16,6 +16,24 @@
     "moduleResolution": "bundler",
     "types": ["@cloudflare/workers-types"],
 
+    // Mirror of vite.ops2.config.ts's alias, for the type-checker.
+    //
+    // ops2 imports `react-router-dom` (v5, typed by @types/react-router-dom@5),
+    // whose types import `react-router` — and that resolves to the root copy,
+    // which is v7. The result is v5 code checked against v7's types: `render`
+    // and `basename` reported as unknown props, on code that is correct. tsc
+    // has one project here, so the alias is stated once, globally.
+    //
+    // SAFE ONLY WHILE NOTHING OUTSIDE src/ops2 IMPORTS `react-router`, which is
+    // true today and is asserted by scripts/tests/ops2-deps.test.mjs (the
+    // shared files import no router at all, and the customer site imports none).
+    // The day the customer site adopts v7 routing, this line starts type-checking
+    // it against v5 and must be replaced by a separate ops2 tsconfig project.
+    // Remove it entirely when Ionic supports v7 and the alias package goes away.
+    "paths": {
+      "react-router": ["./node_modules/react-router-5"]
+    },
+
     "noEmit": true,
     "skipLibCheck": true,
     "allowJs": false,

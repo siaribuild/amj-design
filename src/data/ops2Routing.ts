@@ -1,7 +1,11 @@
 // ops2's path prefix — one rule, two callers.
 //
-// ops2 and the legacy console coexist on the same host, split by path (ADR
-// 0002, spec §12): the Worker's `opsShellFor()` decides which BUNDLE to serve,
+// ops2 and the legacy console coexist on the same host, split by path
+// (`docs/adr/0002-ops2-path-routing-not-hash.md` and `docs/specs/ops2.md` §12,
+// both currently on the `design/ops2-planning` branch only — and NOT this
+// branch's docs/adr/0002, which is a trade-status ADR; the number is contested
+// between branches, so cite the filename):
+// the Worker's `opsShellFor()` decides which BUNDLE to serve,
 // and the ops2 router decides which BASE to mount at. Those are two decisions
 // about one boundary, and they have to be the same boundary — if the Worker
 // serves the ops2 shell for a path the router does not consider its own, the

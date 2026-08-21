@@ -4,17 +4,17 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && vite build -c vite.ops2.config.ts",
     "dev": "vite",
     "dev:api": "wrangler dev --var APP_ENV:development --var ACCESS_TEAM_DOMAIN: --var ACCESS_AUD:",
     "db:migrate:local": "wrangler d1 migrations apply apertly-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply apertly-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
-    "cf:deploy": "vite build && wrangler deploy --var APP_ENV:production",
+    "cf:deploy": "npm run build && wrangler deploy --var APP_ENV:production",
     "preflight": "node scripts/preflight.mjs",
     "test": "npm run typecheck:gate && npm run test:pure && npm run test:heavy",
     "test:all": "npm run test && npm run test:web",
-    "test:pure": "node --test --test-concurrency=12 scripts/tests/docs.test.mjs scripts/tests/unit.test.mjs scripts/tests/catalogue.test.mjs scripts/tests/catalogue-ndjson.test.mjs scripts/tests/seo.test.mjs scripts/tests/scan.test.mjs scripts/tests/estimator-derive.test.mjs scripts/tests/estimator-rules.test.mjs scripts/tests/estimator-learning.test.mjs scripts/tests/estimator-recommendation.test.mjs scripts/tests/recommendation-ladder.test.mjs scripts/tests/recommendation-contract.test.mjs scripts/tests/thermal-selection.test.mjs scripts/tests/thermal-default-band.test.mjs scripts/tests/ai-foundation.test.mjs scripts/tests/ai-jobs.test.mjs scripts/tests/ai-pipeline.test.mjs scripts/tests/schedule.test.mjs scripts/tests/composite.test.mjs scripts/tests/estimator-split.test.mjs scripts/tests/drawing.test.mjs scripts/tests/pairing.test.mjs scripts/tests/compatibility.test.mjs scripts/tests/composite-select.test.mjs scripts/tests/email-templates.test.mjs scripts/tests/pricing-golden.test.mjs scripts/tests/referral-codes.test.mjs scripts/tests/referral-screens.test.mjs",
+    "test:pure": "node --test --test-concurrency=12 scripts/tests/docs.test.mjs scripts/tests/unit.test.mjs scripts/tests/ops2-deps.test.mjs scripts/tests/catalogue.test.mjs scripts/tests/catalogue-ndjson.test.mjs scripts/tests/seo.test.mjs scripts/tests/scan.test.mjs scripts/tests/estimator-derive.test.mjs scripts/tests/estimator-rules.test.mjs scripts/tests/estimator-learning.test.mjs scripts/tests/estimator-recommendation.test.mjs scripts/tests/recommendation-ladder.test.mjs scripts/tests/recommendation-contract.test.mjs scripts/tests/thermal-selection.test.mjs scripts/tests/thermal-default-band.test.mjs scripts/tests/ai-foundation.test.mjs scripts/tests/ai-jobs.test.mjs scripts/tests/ai-pipeline.test.mjs scripts/tests/schedule.test.mjs scripts/tests/composite.test.mjs scripts/tests/estimator-split.test.mjs scripts/tests/drawing.test.mjs scripts/tests/pairing.test.mjs scripts/tests/compatibility.test.mjs scripts/tests/composite-select.test.mjs scripts/tests/email-templates.test.mjs scripts/tests/pricing-golden.test.mjs scripts/tests/referral-codes.test.mjs scripts/tests/referral-screens.test.mjs",
     "test:heavy": "node --test --test-concurrency=2 scripts/tests/build.test.mjs scripts/tests/api.test.mjs scripts/tests/api-edge.test.mjs scripts/tests/registration.test.mjs scripts/tests/trade-verification.test.mjs scripts/tests/delivery.test.mjs scripts/tests/referral-lifecycle.test.mjs scripts/tests/referral-pricing.test.mjs scripts/tests/referral-security.test.mjs scripts/tests/thermal-calibration-api.test.mjs",
     "test:unit": "node --test scripts/tests/unit.test.mjs",
     "test:schedule": "node --test scripts/tests/schedule.test.mjs",
@@ -46,11 +46,15 @@
     "test:email": "node --test scripts/tests/email-templates.test.mjs",
     "test:referral": "node --test --test-concurrency=1 scripts/tests/pricing-golden.test.mjs scripts/tests/referral-lifecycle.test.mjs scripts/tests/referral-pricing.test.mjs scripts/tests/referral-codes.test.mjs scripts/tests/referral-screens.test.mjs scripts/tests/referral-security.test.mjs",
     "test:docs": "node --test scripts/tests/docs.test.mjs",
-    "test:registration": "node --test --test-concurrency=1 scripts/tests/registration.test.mjs"
+    "test:registration": "node --test --test-concurrency=1 scripts/tests/registration.test.mjs",
+    "dev:ops2": "vite -c vite.ops2.config.ts",
+    "test:ops2": "node --test scripts/tests/ops2-deps.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "@ionic/react": "8.8.18",
+    "@ionic/react-router": "8.8.18",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",
     "@popperjs/core": "2.11.8",
@@ -92,18 +96,23 @@
     "groq": "6.5.0",
     "hono": "4.6.14",
     "input-otp": "1.4.2",
+    "ionicons": "8.1.0",
     "leaflet": "^1.9.4",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "next-themes": "0.4.6",
+    "react": "18.3.1",
     "react-day-picker": "8.10.1",
     "react-dnd": "16.0.1",
     "react-dnd-html5-backend": "16.0.1",
+    "react-dom": "18.3.1",
     "react-hook-form": "7.55.0",
     "react-popper": "2.3.0",
     "react-resizable-panels": "2.1.7",
     "react-responsive-masonry": "2.7.1",
     "react-router": "7.13.0",
+    "react-router-5": "npm:react-router@5.3.4",
+    "react-router-dom": "5.3.4",
     "react-slick": "0.31.0",
     "recharts": "2.15.2",
     "sonner": "2.0.3",
@@ -117,6 +126,9 @@
     "@nizos/probity": "^1.10.0",
     "@playwright/test": "^1.49.1",
     "@tailwindcss/vite": "4.1.12",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@types/react-router-dom": "^5.3.3",
     "@vitejs/plugin-react": "4.7.0",
     "c8": "^10.1.3",
     "esbuild": "0.25.12",
@@ -135,6 +147,14 @@
     },
     "react-dom": {
       "optional": true
+    }
+  },
+  "overrides": {
+    "@ionic/react-router": {
+      "react-router": "5.3.4"
+    },
+    "react-router-dom": {
+      "react-router": "5.3.4"
     }
   },
   "pnpm": {

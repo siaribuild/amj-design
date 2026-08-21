@@ -34,16 +34,19 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
-  // Three SPA entries: the customer site (index.html), the ops console
-  // (ops.html) and its successor (ops2.html). The Worker picks between them in
-  // `opsShellFor()` — customer vs ops by host, ops vs ops2 by path prefix while
-  // the two coexist (ADR 0002, spec §12).
+  // Two SPA entries: the customer site (index.html) and the legacy ops console
+  // (ops.html), served on separate hosts by the Worker.
+  //
+  // ops2.html is NOT here, and must not be added. It is built by
+  // `vite.ops2.config.ts` as its own graph, because it rides React Router 5
+  // (Ionic 8's peer) while these two stay on React Router 7. An ops2 entry in
+  // this config would be built a second time without that graph's alias, and
+  // the copy the Worker served would be whichever landed last.
   build: {
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         ops: path.resolve(__dirname, 'ops.html'),
-        ops2: path.resolve(__dirname, 'ops2.html'),
       },
     },
   },

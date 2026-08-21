@@ -9,6 +9,13 @@
       "autoPort": false
     },
     {
+      "name": "vite-ops2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:ops2"],
+      "port": 5174,
+      "autoPort": false
+    },
+    {
       "name": "worker-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:api"],

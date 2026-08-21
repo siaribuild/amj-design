@@ -45,6 +45,11 @@ const env = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: 
 // process env overrides it): the real key can't verify on localhost, which would
 // leave the contact form's submit disabled and dead-lock the e2e run.
 await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"], { env: { VITE_TURNSTILE_SITE_KEY: "" } });
+// ops2's own graph, second pass into the same directory (see vite.ops2.config.ts:
+// React Router 5 + Ionic, kept out of the customer graph by an alias). Without
+// it the Worker serves nothing at /ops2 and scripts/tests/web/ops2.spec.ts is
+// testing a 404.
+await run(process.execPath, [viteCli, "build", "-c", "vite.ops2.config.ts", "--outDir", assets]);
 await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env });
 await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env });
 

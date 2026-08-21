@@ -10,6 +10,17 @@
  * is this component grey" a two-system question. ops2 is a separate Vite
  * entry on its own shell precisely so it can be a clean sheet.
  */
+/* Ionic first: it is the component vocabulary, and everything below it is the
+ * theming of that vocabulary. core.css carries the variables and component
+ * base; normalize/structure/typography are the standard companions. The
+ * optional utility sheets (padding, flex-utils, text-alignment…) are NOT
+ * imported — ops2 has no utility-class habit to feed yet, and importing a
+ * utility layer is how one starts. */
+@import '@ionic/react/css/core.css';
+@import '@ionic/react/css/normalize.css';
+@import '@ionic/react/css/structure.css';
+@import '@ionic/react/css/typography.css';
+
 @import './../theme/fonts.css';
 @import './../theme/colors.css';
 @import './../theme/motion.css';
@@ -18,25 +29,18 @@
 @import './../theme/spacing.css';
 @import './../theme/typography.css';
 @import './tokens.css';
+@import './../theme/ionic.css';
 @import './recipes/surface.css';
 @import './recipes/type.css';
 
-/* Base — the page itself. Deliberately tiny: no reset library, no utility
- * framework. The scaffold renders one screen and the next step (navigation)
- * should be free to choose. */
+/* Base — deliberately tiny. Ionic's normalize already owns the body's
+ * background, colour and font, and it takes all three from the --ion-*
+ * variables the theme layer above binds to FrameFlow. Restating them here would
+ * create a second source for the same fact, and the two would drift the first
+ * time one of them was edited. */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
-
-body {
-  margin: 0;
-  background: var(--ds-surface-page);
-  color: var(--ds-text-primary);
-  font-family: var(--theme-font-sans);
-  font-size: var(--theme-font-size-base);
-  line-height: var(--theme-line-height-normal);
-  -webkit-font-smoothing: antialiased;
-}
 
 /* Sage is the focus tint throughout — the brand signals interactivity rather
  * than hiding as a quiet accent. */

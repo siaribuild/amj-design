@@ -1,10 +1,10 @@
-/* The holding screen's own layout. Recipes (ds-*) carry the design system;
- * everything here is arrangement, and every value is a theme token — the
- * scaffold sets the habit that the rest of ops2 inherits.
+/* The holding screen's own layout. Ionic supplies the components, FrameFlow's
+ * recipes (ds-*) supply the type, and everything here is arrangement — every
+ * value a theme token, which is the habit the rest of ops2 inherits.
  *
- * Corners come from --ds-radius-surface via .ds-surface-card, which is capped
- * at 5px by the owner's override (see styles/tokens.css). Nothing in this file
- * sets a radius of its own. */
+ * Corners are not set here at all. The card's corner comes from ion-card's rule
+ * in ../theme/ionic.css, which reads --ds-radius-surface and is capped at 5px by
+ * the owner's override (see styles/tokens.css). One place, not two. */
 
 .ops2-holding {
   min-height: 100%;
@@ -13,25 +13,15 @@
   padding: var(--theme-spacing-2xl);
 }
 
+/* Ionic's card carries its own margins for list contexts; this one is centred
+ * in an empty page, so it sets its own width and drops them. */
 .ops2-holding__card {
   width: min(34rem, 100%);
-  padding: var(--theme-spacing-2xl);
-}
-
-.ops2-holding__eyebrow {
   margin: 0;
-  color: var(--ds-text-brand);
-}
-
-/* Tight to the eyebrow above, generous before the paragraph below: the
- * grouping is the rhythm the system asks for. */
-.ops2-holding__title {
-  margin: var(--theme-spacing-sm) 0 0;
-  color: var(--ds-text-primary);
 }
 
 .ops2-holding__body {
-  margin: var(--theme-spacing-lg) 0 0;
+  margin: 0;
   color: var(--ds-text-secondary);
   max-width: 46ch;
 }
@@ -42,7 +32,6 @@
   border-top: 1px solid var(--ds-border-subtle);
   display: grid;
   gap: var(--theme-spacing-sm);
-  color: var(--ds-text-muted);
 }
 
 .ops2-holding__fact {

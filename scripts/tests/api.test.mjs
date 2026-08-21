@@ -24,6 +24,13 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
   try {
     const wranglerEnv = { WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
+    // ops2 is a SECOND graph, not a third entry — it rides React Router 5 with
+    // Ionic while these two stay on 7, and the alias that keeps them apart
+    // lives in vite.ops2.config.ts. `npm run build` runs both passes; a harness
+    // that runs only the first serves a bundle with no ops2.html in it, and the
+    // shell-selection test below then fails on a 404 that has nothing to do
+    // with shell selection.
+    await run(process.execPath, [viteCli, "build", "-c", "vite.ops2.config.ts", "--outDir", assets]);
     await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
     const migrationRerun = await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
     assert.match(migrationRerun.stdout + migrationRerun.stderr, /No migrations to apply/i);
@@ -894,7 +901,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
 
     // ── ops2 rollout state 1: "Build" ────────────────────────────────────────
     // Shell selection is the single point where the ops2 rollout is flipped
-    // (spec §12, ADR 0002): legacy at the ops root, ops2 reachable at /ops2,
+    // (`docs/specs/ops2.md` §12 and `docs/adr/0002-ops2-path-routing-not-hash.md`,
+    // both on `design/ops2-planning`; map in docs/adr/0009 on this branch):
+    // legacy at the ops root, ops2 reachable at /ops2,
     // nobody's daily work moved. The interesting failure is not "ops2 doesn't
     // load" — that one announces itself — it is "something that was legacy
     // quietly became ops2", so every negative below is asserted as hard as the
@@ -921,7 +930,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
 
       // The prefix and every deep link beneath it — the SPA fallback has to
       // answer a path with no file behind it, because that is what path-based
-      // routing (ADR 0002) asks of the Worker on a cold reload.
+      // routing (the routing ADR above) asks of the Worker on a cold reload.
       for (const path of ["/ops2", "/ops2/record/p_demo", "/ops2/a/deep/link"]) {
         const res = await onOpsHost(path);
         assert.equal(res.status, 200, `${path} is served a shell`);
