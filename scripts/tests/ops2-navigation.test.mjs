@@ -24,7 +24,7 @@ const outfile = join(runDir, "ops2-nav-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
+      export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -132,4 +132,29 @@ test("a destination stays lit for everything below it, not only for its own root
     const lit = M.DESTINATIONS.filter((d) => M.isDestinationActive(path, d.path));
     assert.equal(lit.length, 1, `${path} lit ${lit.length} destinations`);
   }
+});
+
+test("an address nobody claims goes back to its own destination, not to the front door", () => {
+  // WHY THIS EXISTS. Destination routes used to be non-exact, so anything below
+  // one rendered that destination. `/projects` had to become exact the moment it
+  // grew a record route beneath it — Ionic's outlet re-uses a non-exact parent
+  // view item and the child never renders — and that quietly changed what
+  // happens to `/projects/anything/deeper`: it stopped matching any route and
+  // fell to the catch-all, which sent it to Attention.
+  //
+  // Landing on SOMETHING was the original requirement and it is still met. But
+  // the something should be the place the address named. A stale or mistyped
+  // link under Projects is a link to Projects; answering it with the console's
+  // front door throws away the only information the URL carried, and behind
+  // Cloudflare Access "I clicked a project link and ended up on Attention" is
+  // indistinguishable from being signed out and bounced.
+  assert.equal(M.destinationRootFor("/projects/anything/deeper"), "/projects");
+  assert.equal(M.destinationRootFor("/projects/p_1"), "/projects");
+  assert.equal(M.destinationRootFor("/projects"), "/projects");
+
+  // Segment-prefix, exactly as isDestinationActive() and Ionic's own matchesTab
+  // do it — never a substring, or `/projectsomething` would answer as Projects.
+  assert.equal(M.destinationRootFor("/projectsomething"), null);
+  assert.equal(M.destinationRootFor("/nowhere"), null);
+  assert.equal(M.destinationRootFor("/"), null);
 });

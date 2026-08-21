@@ -147,3 +147,25 @@ ion-button {
 ion-item {
   --border-radius: var(--ds-radius-control);
 }
+
+/* The components the Projects queue adds. Same rule, same reason — and the
+ * count bubble on the funnel is deliberately NOT exempted as a pill. The
+ * radius test allows an exemption for a shape that is genuinely a dot, and
+ * taking it here would be spending the owner's one escape hatch on a badge
+ * that reads perfectly well as a small rounded square. */
+ion-searchbar {
+  --border-radius: var(--ds-radius-control);
+}
+ion-badge {
+  --border-radius: var(--ds-radius-control);
+  border-radius: var(--ds-radius-control);
+}
+ion-modal {
+  --border-radius: var(--ds-radius-surface);
+}
+ion-checkbox {
+  --border-radius: var(--ds-radius-control);
+}
+ion-skeleton-text {
+  --border-radius: var(--ds-radius-control);
+}

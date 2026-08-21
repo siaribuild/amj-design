@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import {
   IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonToolbar,
 } from "@ionic/react";
-import { notificationsOutline } from "ionicons/icons";
+import { chevronBack, notificationsOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
 import type { Destination } from "../nav/destinations";
 import { HOME_PATH } from "../nav/destinations";
@@ -31,11 +31,41 @@ import { useRailWidth } from "../nav/useRailWidth";
  *
  * IonPage is not dressing: IonRouterOutlet's page stack expects each route to
  * render exactly one, and this is the only place ops2 renders it.
+ *
+ * ── THE HEAD ROW, AND WHY IT HAS A FLOOR ─────────────────────────────────────
+ * `eyebrow`, `lede`, `headActions` and `headOverlay` exist for the Projects
+ * queue and are optional everywhere else. `headOverlay` is the owner's rule
+ * about search, stated by him and built structurally rather than tuned:
+ *
+ *   "Keep within one line, search entry field shall not add another line."
+ *
+ * So the overlay is ABSOLUTELY POSITIONED over the heading block and the
+ * heading block is hidden with `visibility`, not unmounted — a hidden box still
+ * occupies its space, so the row cannot change height when the two swap, and
+ * nothing below it can reflow. The row also carries a floor (`--ops2-head-row`)
+ * big enough for a control, because a one-line `<h1>` is shorter than an input
+ * and the taller of the two has to set the height in BOTH states or the
+ * guarantee is only true in one direction.
  */
 export function OpsPage({
-  destination, children,
+  destination, title, backTo, eyebrow, lede, headActions, headOverlay,
+  width = "measure", children,
 }: {
   destination: Destination;
+  /** Overrides the destination's own name in the `<h1>`. For pages BELOW a
+   *  destination, which keep its route (and so keep its tab lit) but are not it. */
+  title?: string;
+  /** Back names its DESTINATION, never where you are — the settled rule. */
+  backTo?: { label: string; href: string };
+  eyebrow?: { text: string; icon?: string };
+  lede?: string;
+  /** The trailing edge of the head row: the surface's own controls. */
+  headActions?: ReactNode;
+  /** Replaces the heading IN PLACE, at the same height. See the note above. */
+  headOverlay?: ReactNode;
+  /** `measure` caps the body at a reading measure; `full` releases it for a
+   *  surface whose value is columns across the available width. */
+  width?: "measure" | "full";
   children?: ReactNode;
 }) {
   const wide = useRailWidth();
@@ -77,8 +107,36 @@ export function OpsPage({
         </IonToolbar>
       </IonHeader>
       <IonContent className="ops2-page">
-        <div className="ops2-page__body">
-          <h1 className="ops2-page__title ds-type-heading-lg">{destination.label}</h1>
+        <div className={`ops2-page__body ops2-page__body--${width}`}>
+          {/* A plain <button>, not IonBackButton: `ion-back-button` ignores
+              `text=""` and ignores `text` changing after hydration (the
+              handover's table), and this one names its destination — which is
+              the settled rule and the thing that component makes hardest. */}
+          {backTo && (
+            <button
+              type="button"
+              className="ops2-page__back ds-type-caption"
+              onClick={() => history.push(backTo.href)}
+            >
+              <IonIcon icon={chevronBack} aria-hidden="true" />
+              {backTo.label}
+            </button>
+          )}
+          <div className="ops2-page__head">
+            <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
+              {eyebrow && (
+                <p className="ops2-page__eyebrow ds-type-label-md">
+                  {eyebrow.icon && <IonIcon icon={eyebrow.icon} aria-hidden="true" />}
+                  {eyebrow.text}
+                </p>
+              )}
+              <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
+              {lede && <p className="ops2-page__lede ds-type-body-md">{lede}</p>}
+            </div>
+            {headOverlay
+              ? <div className="ops2-page__head-overlay">{headOverlay}</div>
+              : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
+          </div>
           {children}
         </div>
       </IonContent>

@@ -7,13 +7,17 @@ import { IonReactRouter } from "@ionic/react-router";
 import { Redirect, Route } from "react-router-dom";
 import { ellipsisHorizontal } from "ionicons/icons";
 import { BASENAME } from "./shellBase";
-import { DESTINATIONS, HOME_PATH, TAB_DESTINATIONS } from "./nav/destinations";
+import {
+  DESTINATIONS, HOME_PATH, TAB_DESTINATIONS, destinationRootFor, type DestinationId,
+} from "./nav/destinations";
 import { DESTINATION_ICON } from "./nav/icons";
 import { NAV_DRAWER_ID, SHELL_CONTENT_ID, openNavDrawer } from "./nav/drawer";
 import { NavPanel } from "./nav/NavPanel";
 import { useRailWidth } from "./nav/useRailWidth";
 import { useBasenameCorrectedTabHrefs } from "./nav/tabHrefs";
 import { DestinationRoot } from "./pages/DestinationRoot";
+import { ProjectsPage } from "./projects/ProjectsPage";
+import { ProjectRecordPage } from "./projects/ProjectRecordPage";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
 // on React Router 5 while the customer site stays on 7. Never import the bare
@@ -48,6 +52,21 @@ import { DestinationRoot } from "./pages/DestinationRoot";
 //   ASSUMED). Pinning a mode here would overturn a decision he made on a
 //   device, from a config file.
 setupIonicReact({ focusManagerPriority: ["heading", "content"] });
+
+/**
+ * Destinations that own routes BELOW their own path, and so must not match them.
+ *
+ * A destination route is non-exact by default so a deep link that survives
+ * Cloudflare Access lands on the destination rather than on nothing. The moment
+ * a destination gains a child route that rule inverts: a non-exact parent
+ * already sitting in Ionic's view stack matches its own children first and the
+ * outlet re-uses it, so the child never renders. See the note at the Route.
+ *
+ * `scripts/tests/ops2-navigation.test.mjs` holds this set against the routes
+ * that actually exist, so a record surface added without its parent being
+ * listed here fails in node rather than as a page that quietly does not change.
+ */
+const NESTS_BELOW = new Set<DestinationId>(["projects"]);
 
 /**
  * ops2's shell — ONE navigation surface, mounted two ways, and never absent.
@@ -160,8 +179,32 @@ export function Ops2App() {
                     reason; flat `/record/...` routes would match no tab and
                     leave the bar dark for most of the working day. */}
                 {DESTINATIONS.map((d) => (
-                  <Route key={d.id} path={d.path} render={() => <DestinationRoot id={d.id} />} />
+                  <Route
+                    key={d.id}
+                    path={d.path}
+                    // EXACT ONLY WHERE SOMETHING NESTS BELOW, and the reason is
+                    // a behaviour of Ionic's view stack rather than of React
+                    // Router. `matchRoute` does keep the LAST matching child,
+                    // so writing `/projects/:id` after this one is enough to
+                    // win THAT lookup — but `findViewItemByPathname` searches
+                    // the already-created view items with `.some()` and takes
+                    // the FIRST match (node_modules/@ionic/react-router/dist/
+                    // index.js, `matchView`). A non-exact `/projects` view item
+                    // is already on the stack the moment the list has rendered,
+                    // so it matched `/projects/p_submitted` first and the outlet
+                    // reused it. Measured: the URL changed, the rail stayed lit,
+                    // and the page kept rendering the list it was opened from —
+                    // three of the four things you would check, all correct.
+                    exact={NESTS_BELOW.has(d.id)}
+                    render={() => (
+                      d.id === "projects" ? <ProjectsPage /> : <DestinationRoot id={d.id} />
+                    )}
+                  />
                 ))}
+                {/* The record, nested under its destination exactly as the note
+                    above anticipated — which is what keeps Projects lit while
+                    one is open. */}
+                <Route exact path="/projects/:id" render={() => <ProjectRecordPage />} />
                 <Route exact path="/"><Redirect to={HOME_PATH} /></Route>
                 {/* The not-found route, replacing the scaffold's catch-all
                     rather than dropping it. Its reason is carried forward
@@ -181,7 +224,16 @@ export function Ops2App() {
                     every destination rendered blank while the tab bar carried
                     on lighting correctly. Measured: h1 absent, four tab buttons
                     present, on every route. */}
-                <Route render={() => <Redirect to={HOME_PATH} />} />
+                {/* IT GOES BACK TO THE DESTINATION THE ADDRESS NAMED, and only
+                    to Attention when no destination claims it. That distinction
+                    arrived with `exact` above: `/projects/anything/deeper` used
+                    to render Projects because the route was non-exact, and
+                    would otherwise now land on the console's front door —
+                    throwing away the only information the URL carried, and
+                    behind Access looking exactly like being bounced by auth. */}
+                <Route render={({ location }) => (
+                  <Redirect to={destinationRootFor(location.pathname) ?? HOME_PATH} />
+                )} />
               </IonRouterOutlet>
 
               {/* Below the change point only. Mounted by the SHELL and by

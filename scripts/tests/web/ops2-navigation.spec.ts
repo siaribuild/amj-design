@@ -281,8 +281,24 @@ test("a deep link below a destination survives reload and keeps that destination
   // At @ionic/react 8.8.18 it is a segment-PREFIX match (`matchesTab`), so it
   // holds. Pinned here because it is the difference between a lit bar and a
   // dark one for most of the working day, and because it is not our code.
+  // AGAINST A REAL NESTED ROUTE, which this now has: the project record. It
+  // used to be checked against `/projects/anything/deeper`, an address no route
+  // claimed — which proved the same Ionic property but only while every
+  // destination route was non-exact. `/projects` had to become exact once it
+  // grew a child (a non-exact parent is re-used by Ionic's view stack and the
+  // child never renders), so that address stopped matching anything at all.
+  // A route that exists is better evidence anyway.
+  await page.goto(`${OPS2}/projects/p_submitted`);
+  await expect(page.locator("ion-tab-button.tab-selected")).toHaveAttribute("tab", "projects");
+  expect(new URL(page.url()).pathname, "a real record route is not a redirect").toBe("/ops2/projects/p_submitted");
+
+  // And an address NOBODY claims still lands on something — now on the
+  // destination it named rather than on the console's front door. A stale link
+  // under Projects is still a link to Projects, and answering it with Attention
+  // throws away the only thing the URL said.
   await page.goto(`${OPS2}/projects/anything/deeper`);
   await expect(page.locator("ion-tab-button.tab-selected")).toHaveAttribute("tab", "projects");
+  expect(new URL(page.url()).pathname).toBe("/ops2/projects");
 
   // The rail agrees with the bar about the same address, at the other width.
   await page.setViewportSize({ width: 1440, height: 900 });

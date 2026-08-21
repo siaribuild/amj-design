@@ -1,0 +1,422 @@
+/* ops2 — the Projects queue.
+ *
+ * FrameFlow tokens throughout; no hex, and no `--ion-color-step-*`. Those steps
+ * and `--ion-text-color-rgb` are not defined in this stylesheet set, so a quiet
+ * role written against them renders full-strength black — contrast passes and
+ * the hierarchy dies (the handover's table, found the hard way). Quiet roles
+ * here name `--ds-text-secondary` / `--ds-text-muted`, which always resolve.
+ *
+ * The phone cards and the wide table are chosen in TS by the shell's own change
+ * point, not by a media query here. One change point, stated once
+ * (`../nav/destinations.ts`), because two of them a pixel apart is how a width
+ * ends up with both presentations or neither.
+ */
+
+/* A name that reaches a screen reader when an attribute would not: IonButton
+ * strips `aria-label` from its host, so icon-only controls carry real text. */
+.ops2-sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── The head row ───────────────────────────────────────────────────────────
+ * The owner's rule, verbatim: "Keep within one line, search entry field shall
+ * not add another line." So the search field is laid OVER the heading and the
+ * heading is hidden with `visibility` rather than unmounted — a hidden box
+ * still occupies its space, so the swap cannot change the row's height and
+ * nothing below it can reflow. The floor exists because a one-line <h1> is
+ * shorter than an input: the taller of the two has to set the height in BOTH
+ * states, or the promise only holds in one direction. */
+.ops2-page__head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--theme-spacing-md);
+  min-height: 2.75rem;
+}
+.ops2-page__heading { min-width: 0; }
+.ops2-page__heading[data-quiet="true"] { visibility: hidden; }
+.ops2-page__head-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+}
+.ops2-page__head-overlay > * { flex: 1 1 auto; min-width: 0; }
+/* The word, at the field's right, and it does not shrink: "Cancel" truncated to
+   "Canc" on a narrow phone would be the one control on this row nobody can read. */
+.ops2-page__head-overlay > .pq-search-cancel { flex: none; margin: 0; }
+.ops2-page__head-actions { flex: none; }
+
+.ops2-page__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-2xs);
+  margin: 0 0 var(--theme-spacing-2xs);
+  color: var(--ds-text-brand);
+}
+.ops2-page__lede {
+  margin: var(--theme-spacing-2xs) 0 0;
+  max-width: 62ch;
+  color: var(--ds-text-secondary);
+}
+.ops2-page__body--full { max-width: none; }
+
+.ops2-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--theme-spacing-2xs);
+  margin: 0 0 var(--theme-spacing-sm);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--ds-text-link);
+  cursor: pointer;
+}
+.ops2-page__back:hover { color: var(--ds-text-link-hover); }
+
+/* ── The attention strip ────────────────────────────────────────────────────
+ * A warm wash, because this is the one band on the page that is allowed to
+ * claim a glance. `warning`, never `danger`: in this product warning means
+ * "ours to resolve, the human proceeds" and danger means "nothing proceeds"
+ * (../theme/ionic.css). A queue with work in it is the former. */
+.pq-attention {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--theme-spacing-md);
+  margin: var(--theme-spacing-lg) 0 var(--theme-spacing-md);
+  padding: var(--theme-spacing-md);
+  background: var(--ds-color-warning-subtle);
+  border: 1px solid var(--theme-warning-200);
+  border-radius: var(--ds-radius-surface);
+}
+.pq-attention__lead {
+  display: flex;
+  flex: 1 1 16rem;
+  align-items: center;
+  gap: var(--theme-spacing-sm);
+  padding: 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.pq-attention__lead > span:last-child { display: block; min-width: 0; }
+.pq-attention__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75rem; height: 1.75rem;
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-color-warning);
+  color: var(--ds-text-inverse);
+  font-weight: var(--theme-font-weight-bold);
+}
+.pq-attention__lead strong {
+  display: block;
+  font-size: var(--theme-font-size-lg);
+  color: var(--ds-color-warning-text);
+}
+.pq-attention__why {
+  display: block;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-secondary);
+}
+.pq-attention__stats {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: stretch;
+}
+/* Hairlines BETWEEN the columns, never around them: a rule that belongs to
+   neither of the two things it separates cannot claim either. */
+.pq-stat {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-2xs);
+  padding: 0 var(--theme-spacing-sm);
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--theme-warning-200);
+  text-align: left;
+  cursor: pointer;
+}
+.pq-stat:first-child { border-left: 0; padding-left: 0; }
+.pq-stat__label { color: var(--ds-text-secondary); }
+.pq-stat__value {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-2xl);
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: var(--theme-line-height-none);
+  color: var(--ds-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.pq-attention__lead[aria-pressed="true"],
+.pq-stat[aria-pressed="true"] .pq-stat__value { color: var(--ds-color-brand-active); }
+
+/* ── Search + filters ───────────────────────────────────────────────────────
+ * At the desk they share one card, the owner's own arrangement. On the phone
+ * the search is in the title row and only the filter row is here. */
+.pq-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-sm);
+  margin-bottom: var(--theme-spacing-sm);
+}
+.pq-controls[data-wide="true"] {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--theme-spacing-lg);
+  padding: var(--theme-spacing-sm);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+}
+.pq-controls[data-wide="true"] .pq-search { flex: 1 1 22rem; max-width: 30rem; }
+
+ion-searchbar.pq-search {
+  --background: var(--ds-surface-sunken);
+  --color: var(--ds-text-primary);
+  --placeholder-color: var(--ds-text-muted);
+  --icon-color: var(--ds-text-muted);
+  --box-shadow: none;
+  --border-radius: var(--ds-radius-control);
+  padding: 0;
+  min-height: 2.5rem;
+}
+ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--theme-font-size-sm); }
+
+.pq-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-xs);
+}
+.pq-chips {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--theme-spacing-2xs);
+}
+/* Three, and never scrollable. A fixed set that must all be reachable cannot
+   hide members off the edge — the destinations rule, one level down. */
+.pq-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--theme-spacing-2xs);
+  min-height: 2.5rem;
+  padding: var(--theme-spacing-xs) var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-secondary);
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pq-chip:hover { border-color: var(--ds-border-brand); }
+/* Sage is the brand and the selected state. */
+.pq-chip[aria-pressed="true"] {
+  background: var(--ds-surface-brand);
+  border-color: var(--ds-surface-brand);
+  color: var(--ds-text-inverse);
+}
+.pq-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.pq-funnel {
+  flex: none;
+  position: relative;
+  margin: 0;
+  --padding-start: var(--theme-spacing-xs);
+  --padding-end: var(--theme-spacing-xs);
+}
+.pq-funnel__count {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  min-width: 1rem;
+  padding: 0 0.25rem;
+  font-size: var(--theme-font-size-xs);
+  line-height: 1rem;
+}
+
+.pq-active {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--theme-spacing-sm);
+  margin-bottom: var(--theme-spacing-sm);
+  padding-left: var(--theme-spacing-2xs);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+}
+
+/* The predicted count sits away from the label it qualifies. Without this it
+   renders as "Ready to issue0" — a number touching a word reads as part of it. */
+.pq-sheet .pq-count {
+  margin-left: var(--theme-spacing-sm);
+  color: var(--ds-text-muted);
+}
+.pq-sheet__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-2xs);
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+}
+
+/* ── Rows: the phone card ───────────────────────────────────────────────────*/
+.pq-cards { padding: 0; background: transparent; }
+/* SEPARATE CARDS, not a ruled list — the owner drew them apart, and the reason
+   holds up: the leading edge is a property of ONE row, and an edge running down
+   the side of a continuous list reads as a bracket around several. `lines="none"`
+   because the gap is the separator; a divider as well would say it twice. */
+.pq-cards ion-item {
+  --background: var(--ds-surface-card);
+  --padding-start: var(--theme-spacing-md);
+  --border-radius: var(--ds-radius-surface);
+  margin-bottom: var(--theme-spacing-sm);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  overflow: hidden;
+}
+/* The edge marks WAITING ON US — the row's headline status — and not `flagged`:
+   the chips already say what is wrong, and an edge that repeats a chip earns
+   nothing. Leading edge, never the bottom divider: a divider belongs to neither
+   of the two rows it separates, so it cannot say which one it means. */
+.pq-cards ion-item[data-waiting="Us"]::part(native) {
+  box-shadow: inset 3px 0 0 var(--ds-color-warning);
+}
+.pq-cards ion-item[data-waiting="Customer"]::part(native) {
+  box-shadow: inset 3px 0 0 var(--ds-color-info);
+}
+.pq-card { display: grid; gap: 2px; width: 100%; min-width: 0; padding-block: var(--theme-spacing-2xs); }
+.pq-card__top, .pq-card__bottom {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--theme-spacing-sm); min-width: 0;
+}
+.pq-card__bottom { margin-top: var(--theme-spacing-2xs); }
+.pq-ref {
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-semibold);
+  letter-spacing: var(--theme-letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+  white-space: nowrap;
+}
+.pq-title {
+  display: block;
+  font-size: var(--theme-font-size-base);
+  color: var(--ds-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pq-customer {
+  display: block;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* WORD FIRST, COLOUR SECOND. It reads identically in greyscale, which is what
+   makes it survive a phone in sunlight — and what makes it survive a reader who
+   cannot separate amber from blue-grey. Amber: ours. Blue-grey: theirs. Muted:
+   nobody's, which is not a problem and should not look like one. */
+.pq-wait {
+  flex: none; min-width: 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pq-wait b, .pq-next { font-weight: var(--theme-font-weight-semibold); }
+.pq-wait[data-waiting="Us"] b, .pq-next[data-waiting="Us"] { color: var(--ds-color-warning-text); }
+.pq-wait[data-waiting="Customer"] b, .pq-next[data-waiting="Customer"] { color: var(--ds-color-info-text); }
+.pq-wait[data-waiting="Nobody"] b, .pq-next[data-waiting="Nobody"] {
+  color: var(--ds-text-muted);
+  font-weight: var(--theme-font-weight-medium);
+}
+.pq-age { color: var(--ds-text-muted); font-size: var(--theme-font-size-xs); }
+.pq-card__bottom { font-size: var(--theme-font-size-xs); color: var(--ds-text-secondary); }
+.pq-money { flex: none; color: var(--ds-text-primary); font-variant-numeric: tabular-nums; }
+.pq-money[data-priced="false"] { color: var(--ds-text-muted); font-style: italic; }
+.pq-basis { color: var(--ds-text-muted); font-style: normal; }
+.pq-flags { display: flex; flex-wrap: wrap; gap: var(--theme-spacing-2xs); margin-top: var(--theme-spacing-2xs); }
+
+/* ── Rows: the wide table ───────────────────────────────────────────────────
+ * A real table, named against disqualifier 3 of the Ionic boundary — row and
+ * column typography under direct token control. `IonGrid` is a flex layout with
+ * no column relationship and no header association; this surface's value IS the
+ * column relationship. */
+.pq-table-wrap {
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  overflow-x: auto;
+}
+.pq-table { width: 100%; border-collapse: collapse; font-size: var(--theme-font-size-sm); }
+.pq-table th, .pq-table td {
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  border-bottom: 1px solid var(--ds-border-subtle);
+  text-align: left;
+  vertical-align: middle;
+}
+.pq-table th {
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+.pq-table tbody tr { cursor: pointer; }
+.pq-table tbody tr:last-child td { border-bottom: 0; }
+.pq-table tbody tr:hover { background: var(--ds-surface-sunken); }
+.pq-table tbody tr[data-waiting="Us"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
+.pq-table tbody tr[data-waiting="Customer"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-info); }
+.pq-table .pq-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pq-table .pq-stage { color: var(--ds-text-secondary); }
+.pq-table .pq-chevron { width: 1.5rem; color: var(--ds-text-muted); text-align: right; }
+.pq-table .pq-basis { display: block; font-size: var(--theme-font-size-xs); }
+.pq-table .pq-age { display: block; }
+.pq-open { display: block; color: inherit; text-decoration: none; }
+.pq-open:hover .pq-title { text-decoration: underline; }
+
+/* ── The states that are not a list ─────────────────────────────────────────*/
+.pq-empty, .pq-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--theme-spacing-xs);
+  padding: var(--theme-spacing-2xl) var(--theme-spacing-lg);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+}
+.pq-empty { align-items: center; text-align: center; }
+.pq-error {
+  flex-direction: row;
+  align-items: center;
+  padding: var(--theme-spacing-lg);
+  border-color: var(--theme-attention-200);
+  background: var(--ds-color-error-subtle);
+}
+.pq-error ion-icon { flex: none; font-size: 1.5rem; color: var(--ds-color-error); }
+.pq-error > div { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--theme-spacing-2xs); }
+
+.pq-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-sm);
+  margin-top: var(--theme-spacing-lg);
+}
+.pq-skeleton ion-skeleton-text { border-radius: var(--ds-radius-surface); }

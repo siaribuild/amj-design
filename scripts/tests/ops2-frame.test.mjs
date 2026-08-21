@@ -112,3 +112,45 @@ test("every browser-facing URL in ops2 carries the basename, and the one excepti
       "the tab bar keeps Ionic's routing key as its href but nothing corrects the anchor");
   }
 });
+
+test("a destination that owns nested routes is exact, and the shell knows it", () => {
+  // A GUARD OVER CODE THAT IS CURRENTLY CORRECT, said plainly rather than
+  // implied: there was no red phase available for it, because the bug it
+  // watches for was found in the browser and fixed before this was written.
+  //
+  // What it watches: Ionic's outlet finds a page by searching the view items it
+  // has ALREADY CREATED and taking the first match
+  // (`findViewItemByPathname`/`matchView`, node_modules/@ionic/react-router/
+  // dist/index.js). A non-exact `/projects` view item is on that stack the
+  // moment the list has rendered, so it matches `/projects/:id` first and the
+  // outlet re-uses it. The record never renders and NOTHING SAYS SO: the URL
+  // changes, the rail stays lit, the tab stays lit, and the page keeps showing
+  // the list it was opened from. Three of the four things anyone would check
+  // are correct, which is why this is a test and not a habit.
+  const shell = read("src/ops2/Ops2App.tsx");
+  const bare = shell.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  const declared = new Set(
+    [...(bare.match(/NESTS_BELOW = new Set<DestinationId>\(\[([^\]]*)\]\)/)?.[1] ?? "")
+      .matchAll(/["']([a-z]+)["']/g)].map((m) => m[1]),
+  );
+
+  // Every route whose path sits BELOW a destination's path, from the source.
+  const nested = new Set();
+  for (const [, routePath] of bare.matchAll(/<Route[^>]*\spath="(\/[^"]+)"/g)) {
+    const owner = routePath.split("/")[1];
+    if (routePath !== `/${owner}`) nested.add(owner);
+  }
+
+  for (const owner of nested) {
+    assert.ok(declared.has(owner),
+      `a route nests under /${owner} but "${owner}" is not in NESTS_BELOW — its parent will swallow it, silently`);
+  }
+  // And the set is not allowed to accumulate entries nothing needs: an
+  // unnecessary `exact` turns a deep link under that destination into a
+  // redirect to Attention, which is the opposite failure and just as quiet.
+  for (const owner of declared) {
+    assert.ok(nested.has(owner),
+      `"${owner}" is in NESTS_BELOW but nothing nests under it — that makes its own deep links redirect away`);
+  }
+});

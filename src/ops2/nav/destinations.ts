@@ -144,6 +144,26 @@ export function isDestinationActive(pathname: string, destinationPath: string): 
   return pathname === destinationPath || pathname.startsWith(`${destinationPath}/`);
 }
 
+/**
+ * The destination an address belongs to, or null if none claims it.
+ *
+ * The shell's not-found route reads this so that an address nobody routes goes
+ * back to the place it NAMED rather than to the console's front door. It became
+ * necessary when `/projects` had to become an exact route (a non-exact parent
+ * swallows its own child routes inside Ionic's view stack — see Ops2App), which
+ * turned `/projects/anything/deeper` from "renders Projects" into "matches
+ * nothing". Landing on something was always the requirement; landing on the
+ * right something is what this adds, because a stale link under Projects still
+ * tells you it was a link to Projects, and answering it with Attention throws
+ * that away — indistinguishably, behind Access, from being bounced by auth.
+ *
+ * Segment-prefix, via the same predicate the rail and the bar use, so all three
+ * answer one question one way.
+ */
+export function destinationRootFor(pathname: string): string | null {
+  return DESTINATIONS.find((d) => isDestinationActive(pathname, d.path))?.path ?? null;
+}
+
 const BY_PATH = new Map(DESTINATIONS.map((d) => [d.path, d]));
 const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]));
 
