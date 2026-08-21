@@ -1,0 +1,485 @@
+// The Projects queue — what the list IS, with nothing about how it is drawn.
+//
+// ── WHY THIS IS NOT IN src/data ──────────────────────────────────────────────
+// ADR 0006's admission rule (`docs/adr/0006-line-surface-shared-core-two-skins.md`
+// on `design/ops2-planning`) admits a module to the shared core only if ALL four
+// of its tests hold, and rule 2 is "BOTH SKINS CONSUME IT — a helper only one
+// skin wants is that skin's helper." An operations queue is ops-only: the
+// customer never sees who a project is waiting on, let alone a list of other
+// people's. So it sits in the ops2 skin, exactly as `../nav/destinations.ts`
+// states its own reason for doing the same.
+//
+// It is nevertheless written to pass rules 1, 3 and 4 — facts and derivations
+// only, no React, no Ionic, no router, no CSS, no fetch client — so that it is
+// testable from node today (scripts/tests/ops2-projects.test.mjs bundles it with
+// esbuild) and so a future obligation to share it is a move, not a rewrite.
+//
+// ── THE ONE RULE THAT GOVERNS THIS FILE ──────────────────────────────────────
+// ONE SELECTOR. The list and every number on screen go through `selectProjects`.
+// The mock had to fix this in the open (`9e5f11b6` on `design/ops2-planning`):
+// a count computed by a different path from the result it predicts will
+// eventually disagree with it, and nothing on screen tells the reader which of
+// the two is lying. `Needs us` read 2 and showed none.
+
+/** Who the job is waiting on. The server's own word, from `worker/lib/lifecycle.ts`. */
+export type WaitingOn = "Us" | "Customer" | "Nobody";
+
+/** The six coarse segments a job moves through — `worker/lib/lifecycle.ts`. */
+export type Phase = "Intake" | "Pricing" | "Issued" | "Accepted" | "Production" | "Delivered";
+
+/**
+ * One row of `GET /api/ops/projects`, narrowed to what the queue reads.
+ *
+ * Narrow on purpose, and declared here rather than imported from
+ * `src/ops/api.ts`: that file is the LEGACY skin, and ops2 importing it would
+ * tie the console being built to the console it replaces. The same reasoning
+ * `../nav/account.ts` gives for narrowing `/api/ops/me`.
+ *
+ * `value` is DOLLARS, not cents (worker/routes/ops.ts sums `quote_line.line_total`
+ * and `order.total`, both dollars). The mock's `totalCents` is a mock fixture
+ * and is not this.
+ */
+export interface ProjectQueueRow {
+  id: string;
+  ref: string;
+  title: string;
+  customerName: string | null;
+  org: string | null;
+  lineCount: number;
+  /** Dollars. `null` is a real state — a job nobody has priced yet. */
+  value: number | null;
+  /** Which kind of number `value` is: an estimate, an issued quote, a contract. */
+  valueBasis: string;
+  /** Lines that are not `ready`, or carry no total. The server's `unresolved`. */
+  unresolved: number;
+  waitingOn: WaitingOn;
+  /** Whole days since the job last moved. `null` when the server could not say. */
+  daysInStage: number | null;
+  phase: Phase;
+  /** The precise state in words, under the phase. Never instead of it. */
+  stateLabel: string;
+  orderNo: string | null;
+}
+
+/** Which of the three chips is on. Three is the owner's cap, stated as a rule:
+ *  "3 quick filters max + filter icon with bubble." */
+export type ChipKey = "all" | "us" | "customer";
+
+export interface QueueQuery {
+  chip: ChipKey;
+  refinements: readonly RefinementKey[];
+  /** Raw text as typed. Trimming and casing are this module's business. */
+  search: string;
+}
+
+export type RefinementKey = "ready" | "unpriced" | "production";
+
+/**
+ * The chips — WHO IS WAITING, which is the question the queue exists to answer,
+ * and the only axis that stays visible without a tap.
+ *
+ * THREE, and the cap is the owner's own rule: "3 quick filters max + filter icon
+ * with bubble." It overturns the mock, which had reasoned its way to four
+ * (`72abbe7b` on `design/ops2-planning`) on the grounds that "waiting on nobody
+ * is where a project sits once it is in production, which is exactly what you
+ * hunt for when a customer rings about work already underway". That reason is
+ * carried forward rather than deleted with the segment — see `production` below.
+ *
+ * Never scrollable, and never a fourth: a fixed set that must all be reachable
+ * cannot hide members off the edge (the destinations rule, applied one level
+ * down). The `Nobody` state is still reachable, through the funnel.
+ */
+export const WAIT_CHIPS: readonly { key: ChipKey; label: string; waitingOn: WaitingOn | null }[] = [
+  { key: "all", label: "All", waitingOn: null },
+  { key: "us", label: "Needs us", waitingOn: "Us" },
+  { key: "customer", label: "Customer", waitingOn: "Customer" },
+];
+
+/**
+ * The funnel's refinements — everything that is not the wait axis, each one
+ * independently settable, each carrying the count of what it would leave.
+ *
+ * `production` is the fourth chip's reason, kept and renamed to what it is
+ * actually for. Naming the PHASE rather than the negative wait state also keeps
+ * it off the chips' axis, so `Needs us` + `In production` is an honest empty
+ * rather than a contradiction the reader has to work out — and the count beside
+ * it says so before it is ticked.
+ *
+ * `ready` is the desktop strip's "Ready to issue" stat, expressed as a
+ * refinement so the mobile layout, which has no room for a fourth chip, still
+ * reaches it. Its rule mirrors the dashboard summary's SQL
+ * (`worker/routes/ops.ts` — `status_internal IN ('estimator_assigned',
+ * 'technical_review_required') AND no unresolved lines`) through the lifecycle's
+ * derived vocabulary instead of the raw column, so the two cannot drift on a
+ * status rename. ASSUMED: it therefore also admits the two legacy approval
+ * states, which `lifecycleOf` maps to the same phase and which the SQL excludes.
+ */
+export const REFINEMENTS: readonly {
+  key: RefinementKey; label: string; test: (row: ProjectQueueRow) => boolean;
+}[] = [
+  {
+    key: "ready", label: "Ready to issue",
+    test: (r) => r.waitingOn === "Us" && r.phase === "Pricing" && r.unresolved === 0,
+  },
+  { key: "unpriced", label: "Unpriced lines", test: (r) => r.unresolved > 0 },
+  { key: "production", label: "In production", test: (r) => r.phase === "Production" },
+];
+
+const REFINEMENT_BY_KEY = new Map(REFINEMENTS.map((r) => [r.key, r]));
+const CHIP_BY_KEY = new Map(WAIT_CHIPS.map((c) => [c.key, c]));
+
+/**
+ * Arrival state.
+ *
+ * `us`, not `all`. The eyebrow calls this an OPERATIONS QUEUE and the governing
+ * constraint is that a delayed glance costs a working day, so the first screen
+ * answers "what needs a decision" rather than "here is everything". The owner's
+ * desktop drawing marks `Needs us` selected; his later mobile drawing marks
+ * `All`. ASSUMED: the desktop drawing decides it, and the mobile one is read as
+ * illustrating chip states rather than specifying the default. One line to flip.
+ */
+export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: "" };
+
+/**
+ * Fixed order, not user-sortable: ours first, then longest neglected.
+ *
+ * The server already sorts this way (`worker/routes/ops.ts`) and states why —
+ * NOT `updated_at`, because that moves when the CUSTOMER replies, which buries
+ * the thing we have to do underneath the thing that just happened. The client
+ * re-sorts rather than trusting arrival order because it filters, and a
+ * filtered list that quietly changed its own order would be unreadable.
+ */
+const WAIT_RANK: Record<WaitingOn, number> = { Us: 0, Customer: 1, Nobody: 2 };
+
+function byUrgency(a: ProjectQueueRow, b: ProjectQueueRow): number {
+  return WAIT_RANK[a.waitingOn] - WAIT_RANK[b.waitingOn]
+    || (b.daysInStage ?? 0) - (a.daysInStage ?? 0);
+}
+
+/**
+ * A control on screen, reporting itself.
+ *
+ * THE COUNT AND THE QUERY TRAVEL TOGETHER, and that is the whole design. A
+ * component renders `count` and, when tapped, applies `query` — so there is no
+ * second path down which a number and the list it promises could disagree. The
+ * mock had the two computed separately and they did disagree; the fix
+ * (`9e5f11b6` on `design/ops2-planning`) was one selector, and this is that fix
+ * made structural rather than remembered.
+ */
+export interface QueueControl {
+  key: string;
+  label: string;
+  /** How many projects this control WOULD LEAVE — never "how many exist". */
+  count: number;
+  /** The state tapping it produces. Counted with exactly this. */
+  query: QueueQuery;
+  /** Is this control's state the one already on? */
+  active: boolean;
+}
+
+const controlFor = (
+  rows: readonly ProjectQueueRow[],
+  key: string, label: string, query: QueueQuery, active: boolean,
+): QueueControl => ({ key, label, count: selectProjects(rows, query).length, query, active });
+
+/**
+ * The chips, each counted against the refinements already on and the text
+ * already typed — "what would I be left with", never "how many exist".
+ */
+export function chipStates(
+  rows: readonly ProjectQueueRow[], query: QueueQuery,
+): QueueControl[] {
+  return WAIT_CHIPS.map((chip) => controlFor(
+    rows, chip.key, chip.label, { ...query, chip: chip.key }, query.chip === chip.key,
+  ));
+}
+
+/**
+ * The funnel's refinements. Each count answers "what if I tick THIS one, with
+ * everything else exactly as it is" — and for one already on, "what if I untick
+ * it", because the query it carries is the toggle, not the addition.
+ */
+export function refinementStates(
+  rows: readonly ProjectQueueRow[], query: QueueQuery,
+): QueueControl[] {
+  return REFINEMENTS.map((refinement) => {
+    const active = query.refinements.includes(refinement.key);
+    const refinements = active
+      ? query.refinements.filter((k) => k !== refinement.key)
+      : [...query.refinements, refinement.key];
+    return controlFor(rows, refinement.key, refinement.label, { ...query, refinements }, active);
+  });
+}
+
+/**
+ * The attention strip's four numbers: the bold "N need us" and the three stat
+ * columns beside it.
+ *
+ * Each REPLACES the filter state rather than adding to it — that is what a stat
+ * column means when you tap it — so each carries a whole query with the
+ * refinements cleared. The typed text is kept: a stat is an orientation within
+ * whatever you are looking for, and silently dropping the search would move the
+ * ground under a reviewer mid-hunt.
+ */
+export function headlineStats(
+  rows: readonly ProjectQueueRow[], query: QueueQuery,
+): QueueControl[] {
+  const base = { search: query.search };
+  const stats: { key: string; label: string; query: QueueQuery }[] = [
+    { key: "needUs", label: "Need us", query: { ...base, chip: "us", refinements: [] } },
+    { key: "waitingCustomer", label: "Waiting on customer", query: { ...base, chip: "customer", refinements: [] } },
+    { key: "readyToIssue", label: "Ready to issue", query: { ...base, chip: "all", refinements: ["ready"] } },
+    { key: "allActive", label: "All active", query: { ...base, chip: "all", refinements: [] } },
+  ];
+  return stats.map((stat) => controlFor(
+    rows, stat.key, stat.label, stat.query, sameQuery(stat.query, query),
+  ));
+}
+
+function sameQuery(a: QueueQuery, b: QueueQuery): boolean {
+  return a.chip === b.chip
+    && a.search === b.search
+    && a.refinements.length === b.refinements.length
+    && a.refinements.every((k) => b.refinements.includes(k));
+}
+
+// ── What a row says about itself ─────────────────────────────────────────────
+// Sentences, not markup. Each one is the SERVER'S vocabulary passed through —
+// `stateLabel` comes from worker/lib/lifecycle.ts, which exists so that "the
+// record plane and the list cannot drift apart". A second vocabulary invented
+// here would be a status rename that half the console never heard about.
+
+/** Who is next, and at what: `Us · Technical review`. The desktop table's
+ *  NEXT ACTION column, which is the reviewer's whole reason for scanning it. */
+export function nextActionOf(row: ProjectQueueRow): string {
+  return `${row.waitingOn} · ${row.stateLabel}`;
+}
+
+/** The card's status, top-right, in the owner's own wording — "the customer",
+ *  not "customer". Colour never carries this alone: it reads in greyscale. */
+export function waitingSentence(row: ProjectQueueRow): string {
+  return row.waitingOn === "Customer" ? "Waiting on the customer"
+    : row.waitingOn === "Nobody" ? "Waiting on nobody"
+    : "Waiting on us";
+}
+
+/**
+ * How long it has been sitting. Quiet by design — it qualifies the status
+ * rather than being one.
+ *
+ * NULL IS RENDERED AS ABSENCE, never as zero. `daysSince()`
+ * (worker/lib/lifecycle.ts) returns null on a timestamp it cannot parse, and
+ * printing that as "0 days" would claim the job moved today: the most
+ * reassuring possible lie about the one number this queue exists to surface.
+ * The caller omits the element rather than printing a dash into the layout.
+ */
+export function ageLabel(
+  row: ProjectQueueRow, options: { short?: boolean } = {},
+): string | null {
+  const days = row.daysInStage;
+  if (days == null) return null;
+  if (options.short) return `${days}d`;
+  if (days === 0) return "today";
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+/** An empty list, and the reason it is empty. */
+export interface QueueEmptyState {
+  headline: string;
+  detail: string;
+  /** The one way out, when the reader is the reason. Null when nothing is on. */
+  clear: { label: string; query: QueueQuery } | null;
+}
+
+/**
+ * WHY the list is empty — and the two reasons are opposites.
+ *
+ * "a filtered empty list and an empty queue are otherwise the same picture, and
+ * they mean opposite things" (`72abbe7b` on `design/ops2-planning`). One is the
+ * best news of the working day; the other is work that exists and cannot be
+ * seen. So the screen never leaves the reader to infer which, and where the
+ * reader is the cause it hands back the way out rather than describing it.
+ *
+ * The refinements are NAMED, never counted. A count says how many filters are
+ * on and still leaves you guessing which row went missing and why — the same
+ * argument the funnel's own escape strip was rebuilt on (`02623bae`).
+ */
+export function emptyStateFor(
+  rows: readonly ProjectQueueRow[], query: QueueQuery,
+): QueueEmptyState {
+  // NOTHING AT ALL COMES FIRST, and the order is the point. With no rows the
+  // chip and the refinements are not why the list is empty, so blaming them —
+  // "Nothing is waiting on us", with a Show all that reveals nothing — sends a
+  // reader hunting through filters for work that does not exist.
+  if (rows.length === 0) {
+    return {
+      headline: "No projects yet.",
+      detail: "A project appears the moment a customer submits one.",
+      clear: null,
+    };
+  }
+
+  const term = query.search.trim();
+  if (term) {
+    return {
+      headline: `Nothing matches “${term}”.`,
+      detail: "Search covers the reference, the project and the customer.",
+      clear: { label: "Clear search", query: { ...query, search: "" } },
+    };
+  }
+
+  const active = query.refinements
+    .map((key) => REFINEMENT_BY_KEY.get(key)?.label)
+    .filter((label): label is string => !!label);
+  if (active.length > 0) {
+    return {
+      headline: "No projects match these filters.",
+      detail: `${active.join(" + ")} — nothing is left once these are on.`,
+      clear: { label: "Clear filters", query: { ...query, refinements: [] } },
+    };
+  }
+
+  if (query.chip === "us") {
+    return {
+      headline: "Nothing is waiting on us.",
+      detail: "New submissions and enquiries land here as they arrive.",
+      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "" } },
+    };
+  }
+  if (query.chip === "customer") {
+    return {
+      headline: "Nothing is waiting on the customer.",
+      detail: "Issued quotes and invoices sent for payment land here.",
+      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "" } },
+    };
+  }
+
+  // `All`, no refinements, no search — and rows exist. Unreachable while the
+  // selector is consistent with itself (that state filters nothing out), and it
+  // says so rather than inventing a fourth explanation for a fifth situation.
+  return {
+    headline: "No projects match.",
+    detail: "Nothing is filtered, so this is unexpected — reload the console.",
+    clear: null,
+  };
+}
+
+// ── Reading the endpoint ─────────────────────────────────────────────────────
+
+const WAITING: readonly WaitingOn[] = ["Us", "Customer", "Nobody"];
+const PHASES: readonly Phase[] = ["Intake", "Pricing", "Issued", "Accepted", "Production", "Delivered"];
+
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/**
+ * `GET /api/ops/projects` → rows, with absence preserved.
+ *
+ * The endpoint is staff-gated and behind Access, so a malformed body is not the
+ * threat model. The reason to parse at all is narrower and worse: EVERY FIELD
+ * THIS QUEUE READS MEANS SOMETHING WHEN ABSENT, and JavaScript's defaults for
+ * absence are all reassuring. `undefined` days renders NaN; a missing figure
+ * becomes $0, which is a priced-at-nothing claim; and a missing `waitingOn`
+ * defaulting to "Us" would put a row into the queue's own attention bucket and
+ * invent work. So absence stays absent, and the one guess made — an unknown
+ * wait is `Nobody` — errs towards under-claiming rather than over-claiming.
+ *
+ * A row with no `id` is dropped outright: there is nothing to open, and nothing
+ * stable to key a list on.
+ */
+export function parseProjectQueue(body: unknown): ProjectQueueRow[] {
+  const projects = (body as { projects?: unknown } | null)?.projects;
+  if (!Array.isArray(projects)) return [];
+
+  return projects.flatMap((raw): ProjectQueueRow[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const r = raw as Record<string, unknown>;
+    const id = str(r.id);
+    if (!id) return [];
+    const waitingOn = WAITING.find((w) => w === r.waitingOn) ?? "Nobody";
+    const phase = PHASES.find((p) => p === r.phase) ?? "Intake";
+    return [{
+      id,
+      ref: str(r.ref) ?? id,
+      title: str(r.title) ?? "Untitled project",
+      customerName: str(r.customerName),
+      org: str(r.org),
+      lineCount: num(r.lineCount) ?? 0,
+      value: num(r.value),
+      valueBasis: str(r.valueBasis) ?? "",
+      unresolved: num(r.unresolved) ?? 0,
+      waitingOn,
+      daysInStage: num(r.daysInStage),
+      phase,
+      stateLabel: str(r.stateLabel) ?? phase,
+      orderNo: str(r.orderNo),
+    }];
+  });
+}
+
+/** What the value column shows, and what kind of number it is. */
+export interface RowPrice {
+  text: string;
+  /** `est.` / `issued` / `contract`. Null when there is no figure to qualify. */
+  basis: string | null;
+  priced: boolean;
+}
+
+/**
+ * The figure, or the honest absence of one.
+ *
+ * NOT PRICED IS A STATE, NOT A ZERO. The server COALESCEs the line sum to 0, so
+ * a job whose lines carry no totals arrives looking like a free job. "$0" would
+ * be a priced-at-nothing claim about work nobody has costed — and unpriced work
+ * is precisely what this queue exists to hunt for, so turning it into a
+ * plausible-looking number is the worst available failure.
+ *
+ * The BASIS travels with the number because three different meanings occupy
+ * this column, and worker/routes/ops.ts already states the reason: "a number
+ * read down a phone with the wrong basis is worse than no number."
+ *
+ * en-AU, whole dollars. Cents on a queue row are noise at a glance, and every
+ * ops surface in this product already rounds them away.
+ */
+export function priceOf(row: ProjectQueueRow): RowPrice {
+  const value = row.value;
+  if (value == null || !Number.isFinite(value) || value <= 0) {
+    return { text: "Not priced", basis: null, priced: false };
+  }
+  return {
+    text: `$${Math.round(value).toLocaleString("en-AU")}`,
+    basis: row.valueBasis || null,
+    priced: true,
+  };
+}
+
+/** The three things a reviewer has in hand when a phone rings — and exactly the
+ *  three the search field's own placeholder promises. */
+function matches(row: ProjectQueueRow, term: string): boolean {
+  return `${row.ref} ${row.title} ${row.customerName ?? ""} ${row.org ?? ""}`
+    .toLowerCase().includes(term);
+}
+
+/** THE selector. Every list and every count on screen comes from here. */
+export function selectProjects(
+  rows: readonly ProjectQueueRow[],
+  query: QueueQuery,
+): ProjectQueueRow[] {
+  const term = query.search.trim().toLowerCase();
+  // SEARCH OVERRIDES THE CHIP, and that is a decision rather than a shortcut.
+  // Someone rings about a job; which chip happens to be selected is not
+  // something the caller knows, and "I can see it, it just isn't in this
+  // filter" is the shape of a wasted minute on the phone. The refinements are
+  // left in force — they were ticked deliberately, and the funnel's badge says
+  // they are on.
+  const waiting = term ? null : CHIP_BY_KEY.get(query.chip)?.waitingOn ?? null;
+  const refinements = query.refinements
+    .map((key) => REFINEMENT_BY_KEY.get(key))
+    .filter((r): r is (typeof REFINEMENTS)[number] => r !== undefined);
+
+  return rows
+    .filter((r) => waiting === null || r.waitingOn === waiting)
+    .filter((r) => !term || matches(r, term))
+    .filter((r) => refinements.every((f) => f.test(r)))
+    .sort(byUrgency);
+}
