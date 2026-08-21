@@ -12,7 +12,7 @@ import {
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
-import { drainLearningOutbox, issueQuote, ISSUABLE_FROM } from "../lib/issue";
+import { drainLearningOutbox, issuableNow, issueQuote, ISSUABLE_FROM } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
   type DeliveryZone,
@@ -406,6 +406,20 @@ ops.get("/projects", async (c) => {
       value, valueBasis,
       unresolved: Number(r.unresolved ?? 0),
       orderNo: r.order_no ?? null,
+      // CAN IT ACTUALLY GO OUT? The gate's own answer rather than the list's
+      // guess at it (worker/lib/issue.ts `issuableNow`), because ops2's queue
+      // shows a "Ready to issue" stat and a filter, and a stat that sends a
+      // reviewer to work the button will refuse is worse than no stat. Every
+      // input is already in this row: the delivery column is selected above,
+      // and `unresolved` counts parent lines exactly as the gate does.
+      issuable: issuableNow({
+        statusInternal: r.status_internal,
+        lineCount: Number(r.line_count ?? 0),
+        unresolved: Number(r.unresolved ?? 0),
+        // `!= null`, never truthiness: zero delivery is a trade customer
+        // arranging their own freight, and that is an answer (migrations/0044).
+        deliverySettled: r.delivery_amount != null,
+      }),
       ...lifecycle,
       daysInStage: daysSince(r.updated_at),
       updatedAt: r.updated_at,

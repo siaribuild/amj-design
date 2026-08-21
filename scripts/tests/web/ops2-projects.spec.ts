@@ -229,7 +229,7 @@ const QUEUE_URL = (url: URL) => url.pathname === "/api/ops/projects";
 
 const fixtureRow = (over: Record<string, unknown>) => ({
   id: "p_x", ref: "OF-Q-19999", title: "A project", customerName: "A customer",
-  org: null, lineCount: 4, value: 1000, valueBasis: "est.", unresolved: 0,
+  org: null, lineCount: 4, value: 1000, valueBasis: "est.", unresolved: 0, issuable: false,
   waitingOn: "Us", daysInStage: 1, phase: "Pricing", phaseIndex: 1,
   stateLabel: "Pricing", orderNo: null, updatedAt: "2026-08-20 00:00:00", ...over,
 });

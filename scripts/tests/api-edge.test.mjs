@@ -384,6 +384,35 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.equal(reply.body.status, "under_review");
     });
 
+    await t.test("the projects list reports the ISSUE GATE's answer, not a guess at it", async () => {
+      // ops2's Projects queue carries a "Ready to issue" stat and filter. The
+      // first version derived it client-side from what the DTO happened to hold
+      // — ours, in pricing, nothing unresolved — which agreed with `issueQuote`
+      // on two of its four guards and silently disagreed on the other two: a
+      // project with NO LINES has nothing unresolved because nothing exists, and
+      // a project whose DELIVERY IS UNSETTLED is refused by guard 8 regardless.
+      //
+      // Both would have been counted, filtered to, and opened by a reviewer
+      // hunting for work that could go out — with the refusal arriving only
+      // after the trip. So the server answers, using the gate's own predicate.
+      const list = await requestJson(staff, "/api/ops/projects");
+      assert.ok(list.body.projects.length > 0, "the seed has projects to answer about");
+      for (const project of list.body.projects) {
+        assert.equal(typeof project.issuable, "boolean", `${project.ref} must say whether it can be issued`);
+      }
+
+      // THE AGREEMENT, EXERCISED FOR REAL rather than reasoned about. Only the
+      // refusing direction is driven: a refused issue changes nothing, while
+      // issuing for real would mutate the fixtures every later test reads.
+      const blocked = list.body.projects.filter((p) => !p.issuable);
+      assert.ok(blocked.length > 0, "the seed leaves delivery unsettled, so something must be blocked");
+      for (const project of blocked) {
+        const refused = await requestJson(staff, `/api/ops/projects/${project.id}/issue-quote`, { method: "POST", json: {} }, 409);
+        assert.ok(["not_ready", "delivery_unset"].includes(refused.body.error),
+          `${project.ref}: the list said it could not be issued and the gate agrees (${refused.body.error})`);
+      }
+    });
+
     await t.test("estimator: a run persists the audit trail; there is no ops review surface for it", async () => {
       // Seed one opening_instance (the extraction bridge normally creates these).
       await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,

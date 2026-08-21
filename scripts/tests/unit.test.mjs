@@ -36,6 +36,7 @@ await build({
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
       export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
+      export { ISSUABLE_FROM, issuableNow } from ${p("worker/lib/issue.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
     `,
     resolveDir: projectRoot,
@@ -1308,5 +1309,46 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
     assert.equal(await within("/orders/o_1", 500), "WAITED", "the legacy ops shell still waits for the catalogue");
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+test("`issuableNow` is the issue gate's own answer, so a list cannot promise what the gate refuses", () => {
+  // WHY THIS EXISTS. ops2's Projects queue shows a "Ready to issue" stat and
+  // filter, and the first version derived it client-side from what the list DTO
+  // happened to carry: ours, in pricing, no unresolved lines. That agreed with
+  // `issueQuote` on two of its four conditions.
+  //
+  // It missed a project with NO LINES (nothing unresolved because nothing
+  // exists — refused as `not_ready`) and every project whose DELIVERY IS
+  // UNSETTLED (refused as `delivery_unset`, guard 8). Both would have been
+  // counted, filtered to, and opened by a reviewer looking for work that could
+  // go out — and the refusal only arrives after the trip. On the queue whose
+  // entire job is directing attention, a stat that sends you somewhere you
+  // cannot act is worse than no stat.
+  //
+  // So the predicate lives HERE, beside ISSUABLE_FROM and the guards it mirrors,
+  // and the list reports its answer rather than re-deriving one.
+  const ready = {
+    statusInternal: "estimator_assigned", lineCount: 3, unresolved: 0, deliverySettled: true,
+  };
+  assert.equal(M.issuableNow(ready), true);
+
+  // Each guard, one at a time.
+  assert.equal(M.issuableNow({ ...ready, statusInternal: "issued" }), false, "already issued");
+  assert.equal(M.issuableNow({ ...ready, lineCount: 0 }), false,
+    "an empty quote is refused as not_ready, and has nothing unresolved to give it away");
+  assert.equal(M.issuableNow({ ...ready, unresolved: 1 }), false, "a line without a total, or flagged");
+  assert.equal(M.issuableNow({ ...ready, deliverySettled: false }), false,
+    "guard 8: NULL delivery is the absence of an answer, not a zero");
+
+  // ZERO DELIVERY IS SETTLED. A trade customer arranging their own freight is
+  // priced at 0 and that is an answer — the distinction migrations/0044 and
+  // guard 8 both turn on, and the one a truthiness test would destroy.
+  assert.equal(M.issuableNow({ ...ready, deliverySettled: true }), true);
+
+  // Every state the gate admits, admitted here too — a status added to one and
+  // not the other is a queue that disagrees with the button it points at.
+  for (const status of M.ISSUABLE_FROM) {
+    assert.equal(M.issuableNow({ ...ready, statusInternal: status }), true, status);
   }
 });

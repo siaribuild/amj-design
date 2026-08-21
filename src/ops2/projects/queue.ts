@@ -52,6 +52,19 @@ export interface ProjectQueueRow {
   valueBasis: string;
   /** Lines that are not `ready`, or carry no total. The server's `unresolved`. */
   unresolved: number;
+  /**
+   * Would `issueQuote` accept this project right now?
+   *
+   * THE GATE'S OWN ANSWER (`worker/lib/issue.ts` `issuableNow`), carried on the
+   * row rather than re-derived here. It WAS re-derived — ours, in pricing,
+   * nothing unresolved — and that agreed with the gate on two of its four
+   * guards: it counted projects with no lines at all (nothing unresolved
+   * because nothing exists) and every project whose delivery was still
+   * unsettled. Both would have been counted, filtered to and opened by a
+   * reviewer hunting for work that could go out, with the refusal arriving only
+   * after the trip.
+   */
+  issuable: boolean;
   waitingOn: WaitingOn;
   /** Whole days since the job last moved. `null` when the server could not say. */
   daysInStage: number | null;
@@ -107,20 +120,16 @@ export const WAIT_CHIPS: readonly { key: ChipKey; label: string; waitingOn: Wait
  *
  * `ready` is the desktop strip's "Ready to issue" stat, expressed as a
  * refinement so the mobile layout, which has no room for a fourth chip, still
- * reaches it. Its rule mirrors the dashboard summary's SQL
- * (`worker/routes/ops.ts` — `status_internal IN ('estimator_assigned',
- * 'technical_review_required') AND no unresolved lines`) through the lifecycle's
- * derived vocabulary instead of the raw column, so the two cannot drift on a
- * status rename. ASSUMED: it therefore also admits the two legacy approval
- * states, which `lifecycleOf` maps to the same phase and which the SQL excludes.
+ * reaches it. It reads the SERVER'S `issuable` — the issue gate's own predicate
+ * — rather than a rule of its own; see `ProjectQueueRow.issuable` for what
+ * re-deriving it cost.
  */
 export const REFINEMENTS: readonly {
   key: RefinementKey; label: string; test: (row: ProjectQueueRow) => boolean;
 }[] = [
-  {
-    key: "ready", label: "Ready to issue",
-    test: (r) => r.waitingOn === "Us" && r.phase === "Pricing" && r.unresolved === 0,
-  },
+  // The server's verdict, and nothing else. Adding a client-side condition here
+  // would recreate exactly the drift this replaced.
+  { key: "ready", label: "Ready to issue", test: (r) => r.issuable },
   // UNRESOLVED, NOT "UNPRICED", and the difference is the server's own. The
   // endpoint counts `status <> 'ready' OR line_total IS NULL`, so a line that is
   // fully priced and sitting in technical review is unresolved and is not
@@ -443,6 +452,10 @@ export function parseProjectQueue(body: unknown): ProjectQueueRow[] {
       value: num(r.value),
       valueBasis: str(r.valueBasis) ?? "",
       unresolved: num(r.unresolved) ?? 0,
+      // A ROW THAT DID NOT SAY IT CAN BE ISSUED CANNOT BE. Defaulting the other
+      // way would put projects into a "ready to issue" filter on the strength
+      // of a field the server forgot to send.
+      issuable: r.issuable === true,
       waitingOn,
       daysInStage: num(r.daysInStage),
       phase,

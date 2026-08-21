@@ -97,6 +97,47 @@ export const ISSUABLE_FROM = new Set([
   "submitted", "triage_pending",
 ]);
 
+/**
+ * Would `issueQuote` accept this project right now?
+ *
+ * THE GATE'S OWN ANSWER, in one place, so a LIST cannot promise what the button
+ * refuses. ops2's Projects queue carries a "Ready to issue" stat and filter, and
+ * deriving it from what a list DTO happens to hold got two of the four guards:
+ * it counted a project with NO LINES (nothing unresolved because nothing exists
+ * — refused as `not_ready`) and every project whose DELIVERY IS UNSETTLED
+ * (refused by guard 8). A reviewer would have been sent to work that cannot go
+ * out, and found out only after the trip.
+ *
+ * The four arguments are exactly the four guards below, expressed as the things
+ * a list query already computes:
+ *
+ *   statusInternal   — `ISSUABLE_FROM`, the first guard.
+ *   lineCount        — parent lines, `lines.length === 0`.
+ *   unresolved       — parent lines with a NULL total or a non-`ready` status.
+ *                      STRICTER than the gate, which names `technical_review`
+ *                      and `incomplete`; erring towards refusing is the safe
+ *                      direction for a stat that sends someone somewhere.
+ *   deliverySettled  — `delivery_amount != null`. NOT truthiness: zero delivery
+ *                      is a trade customer arranging their own freight, which is
+ *                      an answer, and NULL is the absence of one (guard 8,
+ *                      migrations/0044).
+ *
+ * Both sides read PARENT lines only, which is the same rule the gate itself
+ * states and relies on: recomputeComposite rolls an unpriced or flagged unit up
+ * into its parent, so a bad unit still blocks through its opening.
+ */
+export function issuableNow(project: {
+  statusInternal: string;
+  lineCount: number;
+  unresolved: number;
+  deliverySettled: boolean;
+}): boolean {
+  return ISSUABLE_FROM.has(project.statusInternal)
+    && project.lineCount > 0
+    && project.unresolved === 0
+    && project.deliverySettled;
+}
+
 export async function issueQuote(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
     "SELECT id, owner_user_id, status_internal, quote_edit_version, delivery_amount, delivery_postcode, delivery_settle_json FROM project WHERE id = ?",

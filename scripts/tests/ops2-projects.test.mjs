@@ -40,7 +40,7 @@ test.after(async () => { await removeRunDir(runDir); });
 const row = (over = {}) => ({
   id: "p_" + (over.ref ?? "x"), ref: "OF-Q-10000", title: "A project",
   customerName: "A customer", org: null, lineCount: 1, value: 1000,
-  valueBasis: "est.", unresolved: 0, waitingOn: "Us", daysInStage: 1,
+  valueBasis: "est.", unresolved: 0, issuable: false, waitingOn: "Us", daysInStage: 1,
   phase: "Pricing", phaseIndex: 1, stateLabel: "Pricing", orderNo: null,
   updatedAt: "2026-08-20 00:00:00", ...over,
 });
@@ -75,7 +75,7 @@ test("every number on screen IS the length of the list its own control produces"
   // physically cannot render one number and apply a different filter — there is
   // no second path to disagree down. `Needs us` cannot read 2 and show none.
   const rows = [
-    row({ ref: "a", waitingOn: "Us", phase: "Pricing", unresolved: 0 }),
+    row({ ref: "a", waitingOn: "Us", phase: "Pricing", unresolved: 0, issuable: true }),
     row({ ref: "b", waitingOn: "Us", phase: "Pricing", unresolved: 2 }),
     row({ ref: "c", waitingOn: "Customer", phase: "Issued", unresolved: 0 }),
     row({ ref: "d", waitingOn: "Customer", phase: "Issued", unresolved: 1 }),
@@ -118,7 +118,7 @@ test("the headline stats are the four the owner drew, in his order", () => {
   // The attention strip: a bold "N need us" with its reason beneath, and three
   // stat columns to its right — Waiting on customer, Ready to issue, All active.
   const rows = [
-    row({ ref: "a", waitingOn: "Us", phase: "Pricing", unresolved: 0 }),
+    row({ ref: "a", waitingOn: "Us", phase: "Pricing", unresolved: 0, issuable: true }),
     row({ ref: "b", waitingOn: "Us", phase: "Pricing", unresolved: 3 }),
     row({ ref: "c", waitingOn: "Customer" }),
     row({ ref: "d", waitingOn: "Nobody", phase: "Production" }),
@@ -130,9 +130,19 @@ test("the headline stats are the four the owner drew, in his order", () => {
     ["readyToIssue", "Ready to issue", 1],
     ["allActive", "All", 4],
   ]);
-  // "Ready to issue" is a claim that the work is finished, so a job of ours in
-  // pricing whose lines are NOT priced is not it — b is ours and in pricing.
+  // "Ready to issue" is THE GATE'S ANSWER, carried on the row as `issuable`
+  // (worker/lib/issue.ts `issuableNow`) rather than re-derived here. It was
+  // re-derived at first — ours, in pricing, nothing unresolved — and that
+  // agreed with `issueQuote` on two of its four guards: it counted projects
+  // with no lines at all, and every project whose delivery was still unsettled,
+  // both of which the gate refuses. A stat that sends a reviewer to work the
+  // button will not accept is worse than no stat.
   assert.deepEqual(M.selectProjects(rows, stats[2].query).map((r) => r.ref), ["a"]);
+  assert.equal(
+    M.REFINEMENTS.find((r) => r.key === "ready").test(row({ issuable: false, unresolved: 0, phase: "Pricing" })),
+    false,
+    "nothing but the server's verdict decides this",
+  );
 });
 
 test("a label says what it actually counts, or it is the wrong label", () => {
@@ -251,6 +261,7 @@ test("the parser lets a bad row through as an honest row, never as a lie", () =>
   const bare = parsed[1];
   assert.equal(bare.daysInStage, null, "an age nobody supplied is absent, not 0");
   assert.equal(bare.value, null, "a value nobody supplied is absent, not $0");
+  assert.equal(bare.issuable, false, "a project that did not say it can be issued cannot");
   assert.equal(bare.waitingOn, "Nobody",
     "an unknown wait does NOT claim to be ours — inventing work is worse than missing it");
   assert.equal(bare.title, "Untitled project");
