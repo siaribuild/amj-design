@@ -12,10 +12,32 @@ import { HoldingScreen } from "./HoldingScreen";
 // is the guard; `docs/design/ops2-ionic-boundary.md` §2 (on the
 // `design/ops2-planning` branch) is the design.
 
-// Ionic decides its platform mode here — iOS idiom on an iPhone, Material
-// elsewhere. Left at the default on purpose: that dual idiom is what the owner
-// judged on his own phone when he ruled for adoption.
-setupIonicReact();
+// TWO decisions live in this one argument list, and they pull in opposite
+// directions. The first version of this file stated the case for the default
+// and then passed nothing at all — which silently took the default for the
+// other one too, and that one is a requirement.
+//
+//   focusManagerPriority — EXPLICIT, and must stay so. R-164 requires focus to
+//   move on navigation; Ionic leaves this UNSET by default, which means focus
+//   does not move at all. The rule is satisfied by configuration rather than by
+//   anything the shell implements, so a bare call turns an accessibility
+//   guarantee off with nothing to show for it — no error, no visual difference,
+//   nothing a screenshot could catch. The order is the behaviour: the incoming
+//   view's heading first, its content as the fallback. Specified at
+//   `docs/design/ops2-ionic-boundary.md` line 92 (on `design/ops2-planning`),
+//   and among the behavioural rules ADR 0005 says Ionic hosts rather than
+//   replaces. Pinned by scripts/tests/ops2-frame.test.mjs.
+//
+//   mode — DEFAULT, and must stay so. Ionic picks the iOS idiom on an iPhone
+//   and Material elsewhere, and that dual idiom is what the owner judged on his
+//   own phone when he ruled for adoption (ADR 0005 keeps it as an explicit
+//   ASSUMED). Pinning a mode here would overturn a decision he made on a
+//   device, from a config file.
+//
+// With one catch-all route the focus manager has nothing to do yet. It is set
+// now so the foundation is right before navigation arrives, not because it
+// changes anything visible today.
+setupIonicReact({ focusManagerPriority: ["heading", "content"] });
 
 // The router's base, detected ONCE at boot from the URL the browser actually
 // loaded (`docs/adr/0002-ops2-path-routing-not-hash.md`, on the
