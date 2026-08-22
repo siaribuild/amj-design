@@ -80,101 +80,24 @@
 }
 .ops2-page__back:hover { color: var(--ds-text-link-hover); }
 
-/* ── The attention strip ────────────────────────────────────────────────────
- * A warm wash, because this is the one band on the page that is allowed to
- * claim a glance. `warning`, never `danger`: in this product warning means
- * "ours to resolve, the human proceeds" and danger means "nothing proceeds"
- * (../theme/ionic.css). A queue with work in it is the former. */
-.pq-attention {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: var(--theme-spacing-md);
-  margin: var(--theme-spacing-lg) 0 var(--theme-spacing-md);
-  padding: var(--theme-spacing-md);
-  background: var(--ds-color-warning-subtle);
-  border: 1px solid var(--theme-warning-200);
-  border-radius: var(--ds-radius-surface);
-}
-.pq-attention__lead {
-  display: flex;
-  flex: 1 1 16rem;
-  align-items: center;
-  gap: var(--theme-spacing-sm);
-  padding: 0;
-  background: none;
-  border: 0;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-.pq-attention__lead > span:last-child { display: block; min-width: 0; }
-.pq-attention__glyph {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 1.75rem; height: 1.75rem;
-  border-radius: var(--ds-radius-control);
-  background: var(--ds-color-warning);
-  color: var(--ds-text-inverse);
-  font-weight: var(--theme-font-weight-bold);
-}
-.pq-attention__lead strong {
-  display: block;
-  font-size: var(--theme-font-size-lg);
-  color: var(--ds-color-warning-text);
-}
-.pq-attention__why {
-  display: block;
-  font-size: var(--theme-font-size-xs);
-  color: var(--ds-text-secondary);
-}
-.pq-attention__stats {
-  display: flex;
-  flex: 1 1 18rem;
-  align-items: stretch;
-}
-/* Hairlines BETWEEN the columns, never around them: a rule that belongs to
-   neither of the two things it separates cannot claim either. */
-.pq-stat {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--theme-spacing-2xs);
-  padding: 0 var(--theme-spacing-sm);
-  background: none;
-  border: 0;
-  border-left: 1px solid var(--theme-warning-200);
-  text-align: left;
-  cursor: pointer;
-}
-.pq-stat:first-child { border-left: 0; padding-left: 0; }
-.pq-stat__label { color: var(--ds-text-secondary); }
-.pq-stat__value {
-  font-family: var(--theme-font-display);
-  font-size: var(--theme-font-size-2xl);
-  font-weight: var(--theme-font-weight-semibold);
-  line-height: var(--theme-line-height-none);
-  color: var(--ds-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-.pq-attention__lead[aria-pressed="true"],
-.pq-stat[aria-pressed="true"] .pq-stat__value { color: var(--ds-color-brand-active); }
-
 /* ── Search + filters ───────────────────────────────────────────────────────
  * At the desk they share one card, the owner's own arrangement. On the phone
  * the search is in the title row and only the filter row is here. */
+/* One height for every control on this row — the pill group, the funnel and,
+   at the desk, the search field. Named once here so they cannot drift apart. */
+.pq-controls { --pq-control-height: 2.5rem; }
 .pq-controls {
   display: flex;
   flex-direction: column;
   gap: var(--theme-spacing-sm);
   margin-bottom: var(--theme-spacing-sm);
 }
-/* On the phone this is the first thing under the title, so it carries the gap
-   the attention strip used to open. The skeleton reserves the same space, which
-   is the difference between a skeleton and a promise it does not keep. */
-.pq-controls[data-wide="false"] { margin-top: var(--theme-spacing-lg); }
+/* THE FIRST THING UNDER THE TITLE at both widths now, so it carries the gap the
+   status panel used to open — and it carries it at both, which is what the
+   skeleton's own top margin already assumed. Scoping this to the phone left the
+   desk's controls flush against the lede and the loading state 16px below where
+   the settled one landed. */
+.pq-controls { margin-top: var(--theme-spacing-lg); }
 .pq-controls[data-wide="true"] {
   flex-direction: row;
   align-items: center;
@@ -187,37 +110,49 @@
 }
 .pq-controls[data-wide="true"] .pq-search { flex: 1 1 22rem; max-width: 30rem; }
 
+/* WHITE, not the sunken step. This page's ground is already a warm off-white,
+   so a field one step darker than it reads as part of the page rather than as
+   somewhere to type. A card-white field with a border is the only version that
+   separates at a glance. */
 ion-searchbar.pq-search {
-  --background: var(--ds-surface-sunken);
+  --background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-input);
+  border-radius: var(--ds-radius-control);
   --color: var(--ds-text-primary);
   --placeholder-color: var(--ds-text-muted);
   --icon-color: var(--ds-text-muted);
   --box-shadow: none;
   --border-radius: var(--ds-radius-control);
   padding: 0;
-  min-height: 2.5rem;
+  min-height: var(--pq-control-height, 2.5rem);
 }
-ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--theme-font-size-sm); }
+ion-searchbar.pq-search .searchbar-input {
+  height: var(--pq-control-height, 2.5rem);
+  font-size: var(--theme-font-size-sm);
+}
 
 .pq-filters {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--theme-spacing-xs);
 }
+/* ONE COMPONENT, selectable within itself — the owner's drawing. The group owns
+   the border, the background and the corners; the members own nothing but their
+   own fill, and are divided by a hairline rather than by a gap. Three, never
+   scrollable: a fixed set that must all be reachable cannot hide members off
+   the edge (the destinations rule, one level down). */
 .pq-chips {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  gap: var(--theme-spacing-2xs);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-radius-control);
+  overflow: hidden;
 }
-/* Three, and never scrollable. A fixed set that must all be reachable cannot
-   hide members off the edge — the destinations rule, one level down.
-   THEY HUG THEIR OWN WORDS — `0 1 auto`, not `1 1 auto`. Stretched to fill the
-   row they read as a segmented control, which is a claim that the three are one
-   exhaustive axis you are always somewhere on; the owner drew three separate
-   chips sitting left with the funnel pushed away from them, and a chip that is
-   as wide as its label is also a chip whose label you can find again in the
-   same place after the counts change. */
+/* Members hug their own words. The divider is a LEFT border on all but the
+   first, so it belongs to the pair rather than to either chip — and it is drawn
+   under the selected fill, never over it. */
 .pq-chip {
   flex: 0 1 auto;
   min-width: 0;
@@ -225,22 +160,21 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   align-items: center;
   justify-content: center;
   gap: var(--theme-spacing-2xs);
-  min-height: 2.5rem;
-  padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-default);
-  border-radius: var(--ds-radius-control);
+  min-height: var(--pq-control-height);
+  padding: 0 var(--theme-spacing-md);
+  background: transparent;
+  border: 0;
   color: var(--ds-text-secondary);
   font-size: var(--theme-font-size-sm);
   font-weight: var(--theme-font-weight-medium);
   white-space: nowrap;
   cursor: pointer;
 }
-.pq-chip:hover { border-color: var(--ds-border-brand); }
+.pq-chip + .pq-chip { border-left: 1px solid var(--ds-border-default); }
+.pq-chip:hover { background: var(--ds-color-brand-wash); }
 /* Sage is the brand and the selected state. */
 .pq-chip[aria-pressed="true"] {
   background: var(--ds-surface-brand);
-  border-color: var(--ds-surface-brand);
   color: var(--ds-text-inverse);
 }
 .pq-count {
@@ -252,21 +186,34 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
    same reason the funnel sheet's counts carry a margin. Scoped to the chip: the
    sheet sets its own spacing and would print the dot twice. */
 .pq-chip .pq-count::before { content: "·"; margin-right: 0.3em; }
+/* SAME HEIGHT AS THE PILL GROUP, and stated once as a variable so the two
+   cannot drift: `ion-button` sizes itself from its content and its own padding,
+   so left to itself it lands a few pixels short of a bordered group beside it —
+   close enough to look like a mistake rather than a difference. */
 .pq-funnel {
   flex: none;
   position: relative;
   margin: 0;
-  --padding-start: var(--theme-spacing-xs);
-  --padding-end: var(--theme-spacing-xs);
+  height: var(--pq-control-height);
+  --border-radius: var(--ds-radius-control);
+  --padding-start: var(--theme-spacing-sm);
+  --padding-end: var(--theme-spacing-sm);
+  overflow: visible;
 }
+/* THE BUBBLE SITS OUTSIDE THE BUTTON. Tucked into the corner it covered the
+   funnel it was counting — and an icon you cannot read is not a filter control,
+   it is a badge on a grey square. `overflow: visible` on the host as well,
+   because `ion-button` clips its own shadow parts by default and the badge
+   would be cropped in half at the corner it is meant to overhang. */
 .pq-funnel__count {
   position: absolute;
-  top: -0.3rem;
-  right: -0.3rem;
-  min-width: 1rem;
+  top: -0.5rem;
+  right: -0.5rem;
+  min-width: 1.125rem;
   padding: 0 0.25rem;
+  border-radius: var(--theme-radius-full);
   font-size: var(--theme-font-size-xs);
-  line-height: 1rem;
+  line-height: 1.125rem;
 }
 
 .pq-active {
@@ -293,27 +240,35 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   padding: var(--theme-spacing-sm) var(--theme-spacing-md);
 }
 
-/* ── Rows: the phone card ───────────────────────────────────────────────────*/
-.pq-cards { padding: 0; background: transparent; }
-/* SEPARATE CARDS, not a ruled list — the owner drew them apart, and the reason
-   holds up: the leading edge is a property of ONE row, and an edge running down
-   the side of a continuous list reads as a bracket around several. `lines="none"`
-   because the gap is the separator; a divider as well would say it twice. */
-.pq-cards ion-item {
-  --background: var(--ds-surface-card);
-  /* The table's sage wash, said in Ionic's vocabulary. `--background-hover`
-     alone does nothing visible: the host multiplies it by
-     `--background-hover-opacity`, which defaults to Ionic's own low value, so
-     a fully-specified colour arrives at roughly 4% and reads as nothing. */
-  --background-hover: var(--ds-color-brand-subtle);
-  --background-hover-opacity: 1;
-  --padding-start: var(--theme-spacing-md);
-  --border-radius: var(--ds-radius-surface);
-  margin-bottom: var(--theme-spacing-sm);
+/* ── Rows: the phone list ───────────────────────────────────────────────────
+ * ONE BLOCK, NOT A STACK OF CARDS. The owner's correction, and it is the same
+ * surface the desk's table already is: rows with no space between them, the
+ * group carrying the border, the corners and the elevation. So a row's leading
+ * edge now runs against its neighbours rather than floating, which is what
+ * makes a column of them read as one queue instead of five notices. */
+.pq-cards {
+  padding: 0;
+  background: var(--ds-surface-card);
   border: 1px solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
   overflow: hidden;
 }
+.pq-cards ion-item {
+  --background: transparent;
+  /* The sage wash, said in Ionic's vocabulary. `--background-hover` alone does
+     nothing visible: the host multiplies it by `--background-hover-opacity`,
+     which defaults to Ionic's own low value, so a fully-specified colour
+     arrives at roughly 4% and reads as nothing. */
+  --background-hover: var(--ds-color-brand-wash);
+  --background-hover-opacity: 1;
+  --padding-start: var(--theme-spacing-md);
+  --border-radius: 0;
+}
+/* The hairline belongs to the PAIR, not to either row — a rule drawn under one
+   row's bottom edge is a rule that row appears to own, and a leading accent
+   edge two pixels away from it then reads as a corner. */
+.pq-cards ion-item + ion-item { border-top: 1px solid var(--ds-border-subtle); }
 /* The edge marks WAITING ON US — the row's headline status — and not `flagged`:
    the chips already say what is wrong, and an edge that repeats a chip earns
    nothing. Leading edge, never the bottom divider: a divider belongs to neither
@@ -407,6 +362,7 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   background: var(--ds-surface-card);
   border: 1px solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
   overflow-x: auto;
 }
 .pq-table { width: 100%; border-collapse: collapse; font-size: var(--theme-font-size-sm); }
@@ -426,9 +382,11 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
 .pq-table tbody tr { cursor: pointer; }
 .pq-table tbody tr:last-child td { border-bottom: 0; }
 /* THE HOVER IS SAGE, not the neutral sunken step — the owner's reference, and
-   it is the one place a pointer says "this whole row is the target". A neutral
-   wash at this weight is indistinguishable from the zebra of a dense table. */
-.pq-table tbody tr:hover { background: var(--ds-color-brand-subtle); }
+   it is the one place a pointer says "this whole row is the target". The
+   LIGHTER of the two washes (sage-50): a pointer hint is transient and follows
+   the mouse, so it only has to be noticed, and at sage-100 it competed with the
+   selected pill for being the strongest green on the page. */
+.pq-table tbody tr:hover { background: var(--ds-color-brand-wash); }
 .pq-table tbody tr[data-waiting="Us"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
 .pq-table tbody tr[data-waiting="Customer"] td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-info); }
 .pq-table .pq-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -485,20 +443,18 @@ ion-searchbar.pq-search .searchbar-input { height: 2.5rem; font-size: var(--them
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid var(--ds-border-default);
+  border: 0;
   border-radius: var(--ds-radius-control);
-  background: var(--ds-surface-card);
+  /* NO BOX AND NO FILL OF ITS OWN — it shares the page's ground. A tinted
+     square beside the title reads as a second surface sitting on the header,
+     which is a thing to look at rather than a thing to press. The 44px target
+     is still there; it is just not painted. */
+  background: transparent;
   color: var(--ds-text-secondary);
   font-size: 20px;
   cursor: pointer;
 }
-/* A BORDERED BOX, as drawn, and it earns the border rather than borrowing it:
-   this control sits alone at the end of the title row with no neighbour to
-   group with, and a bare glyph up there reads as decoration on the heading. It
-   matches the funnel below it, which is the other icon-only control on the
-   surface. */
 .pq-icon-btn:hover {
   color: var(--ds-text-primary);
-  background: var(--ds-surface-brand-subtle);
-  border-color: var(--ds-border-brand);
+  background: var(--ds-color-brand-wash);
 }

@@ -96,9 +96,8 @@ test("every number on screen IS the length of the list its own control produces"
     const controls = [
       ...M.chipStates(rows, query),
       ...M.refinementStates(rows, query),
-      ...M.headlineStats(rows, query),
     ];
-    assert.ok(controls.length >= 3 + 3 + 4, "every control on screen must report itself");
+    assert.ok(controls.length >= 3 + 3, "every control on screen must report itself");
     for (const control of controls) {
       assert.equal(
         control.count,
@@ -109,42 +108,12 @@ test("every number on screen IS the length of the list its own control produces"
   }
 });
 
-// GUARD OVER CODE THAT WAS ALREADY RIGHT, and worth saying rather than
-// implying: the property test above forced the shape, so this one passed the
-// moment it was written. What it adds is the owner's own words and his order —
-// which the property test cannot see, and which a rename would otherwise carry
-// away silently.
-test("the headline stats are the four the owner drew, in his order", () => {
-  // The attention strip: a bold "N need us" with its reason beneath, and three
-  // stat columns to its right — Waiting on customer, Ready to issue, All active.
-  const rows = [
-    row({ ref: "a", waitingOn: "Us", phase: "Pricing", unresolved: 0, issuable: true }),
-    row({ ref: "b", waitingOn: "Us", phase: "Pricing", unresolved: 3 }),
-    row({ ref: "c", waitingOn: "Customer" }),
-    row({ ref: "d", waitingOn: "Nobody", phase: "Production" }),
-  ];
-  const stats = M.headlineStats(rows, M.EMPTY_QUERY);
-  assert.deepEqual(stats.map((s) => [s.key, s.label, s.count]), [
-    ["needUs", "Need us", 2],
-    ["waitingCustomer", "Waiting on customer", 1],
-    ["readyToIssue", "Ready to issue", 1],
-    ["allActive", "All", 4],
-  ]);
-  // "Ready to issue" is THE GATE'S ANSWER, carried on the row as `issuable`
-  // (worker/lib/issue.ts `issuableNow`) rather than re-derived here. It was
-  // re-derived at first — ours, in pricing, nothing unresolved — and that
-  // agreed with `issueQuote` on two of its four guards: it counted projects
-  // with no lines at all, and every project whose delivery was still unsettled,
-  // both of which the gate refuses. A stat that sends a reviewer to work the
-  // button will not accept is worse than no stat.
-  assert.deepEqual(M.selectProjects(rows, stats[2].query).map((r) => r.ref), ["a"]);
-  assert.equal(
-    M.REFINEMENTS.find((r) => r.key === "ready").test(row({ issuable: false, unresolved: 0, phase: "Pricing" })),
-    false,
-    "nothing but the server's verdict decides this",
-  );
-});
-
+// THE STATUS PANEL IS GONE, at both widths, and its `headlineStats` selector
+// with it — so the test that pinned "the four the owner drew, in his order" is
+// deleted rather than left asserting against a function nothing renders. Two of
+// its facts survive where they still apply: `Ready to issue` reads the gate's
+// own `issuable` (below, on the refinement that now carries it), and the
+// "All active" labelling problem moved to the All chip.
 test("a label says what it actually counts, or it is the wrong label", () => {
   // TWO LABELS THAT OVERSTATED THEIR OWN DATA, both caught in review.
   //
@@ -187,9 +156,22 @@ test("a label says what it actually counts, or it is the wrong label", () => {
   //    excludes after_sales and cancelled, the list excludes neither — so the
   //    honest fix is the label, not an invented cut-off. It is `All`, it equals
   //    the All chip, and what "active" should mean is a question for the owner.
-  const stats = M.headlineStats([row({})], M.EMPTY_QUERY);
-  assert.equal(stats[3].label, "All");
-  assert.deepEqual(stats[3].query, { chip: "all", refinements: [], search: "" });
+  const all = M.chipStates([row({})], M.EMPTY_QUERY)[0];
+  assert.equal(all.label, "All");
+  assert.deepEqual(all.query, { chip: "all", refinements: [], search: "" });
+
+  // 3. And the gate's own verdict is what `Ready to issue` reads, now that the
+  //    refinement is the only place it appears. It WAS re-derived — ours, in
+  //    pricing, nothing unresolved — which agreed with `issueQuote` on two of
+  //    its four guards: it counted projects with no lines at all, and every
+  //    project whose delivery was still unsettled. A control that sends a
+  //    reviewer to work the button will not accept is worse than no control.
+  assert.equal(
+    M.REFINEMENTS.find((r) => r.key === "ready").test(row({ issuable: false, unresolved: 0, phase: "Pricing" })),
+    false,
+    "nothing but the server's verdict decides this",
+  );
+  assert.equal(M.REFINEMENTS.find((r) => r.key === "ready").test(row({ issuable: true })), true);
 });
 
 test("a row says who it waits on in WORDS, and the age only qualifies it", () => {

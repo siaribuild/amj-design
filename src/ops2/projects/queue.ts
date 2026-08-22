@@ -244,46 +244,6 @@ export function refinementStates(
   });
 }
 
-/**
- * The attention strip's four numbers: the bold "N need us" and the three stat
- * columns beside it.
- *
- * Each REPLACES the filter state rather than adding to it — that is what a stat
- * column means when you tap it — so each carries a whole query with the
- * refinements cleared. The typed text is kept: a stat is an orientation within
- * whatever you are looking for, and silently dropping the search would move the
- * ground under a reviewer mid-hunt.
- */
-export function headlineStats(
-  rows: readonly ProjectQueueRow[], query: QueueQuery,
-): QueueControl[] {
-  const base = { search: query.search };
-  const stats: { key: string; label: string; query: QueueQuery }[] = [
-    { key: "needUs", label: "Need us", query: { ...base, chip: "us", refinements: [] } },
-    { key: "waitingCustomer", label: "Waiting on customer", query: { ...base, chip: "customer", refinements: [] } },
-    { key: "readyToIssue", label: "Ready to issue", query: { ...base, chip: "all", refinements: ["ready"] } },
-    // "ALL", NOT the owner's drawn "All active", and the label is what changed
-    // rather than the query. The endpoint returns every non-draft job including
-    // completed ones (`after_sales`), and nothing in this codebase says which
-    // stage ends a job: the dashboard's `active_orders` excludes after_sales and
-    // cancelled, this list excludes neither. Inventing a cut-off here would be
-    // inventing a business rule; overstating the work in hand would be worse.
-    // So it says what it counts, it equals the All chip exactly, and what
-    // "active" should mean goes to the owner as a question.
-    { key: "allActive", label: "All", query: { ...base, chip: "all", refinements: [] } },
-  ];
-  return stats.map((stat) => controlFor(
-    rows, stat.key, stat.label, stat.query, sameQuery(stat.query, query),
-  ));
-}
-
-function sameQuery(a: QueueQuery, b: QueueQuery): boolean {
-  return a.chip === b.chip
-    && a.search === b.search
-    && a.refinements.length === b.refinements.length
-    && a.refinements.every((k) => b.refinements.includes(k));
-}
-
 // ── What a row says about itself ─────────────────────────────────────────────
 // Sentences, not markup. Each one is the SERVER'S vocabulary passed through —
 // `stateLabel` comes from worker/lib/lifecycle.ts, which exists so that "the

@@ -175,34 +175,32 @@ test("search replaces the title row in place, and the header does not grow", asy
   expect((await head.boundingBox())!.height).toBe(before!.height);
 });
 
-test("the attention strip is the desk's, and the phone goes straight to the work", async ({ page }) => {
-  // THE OWNER'S DRAWING, and its absence on the phone is the specification
-  // rather than an omission: his phone drawing goes title → chips → cards with
-  // nothing between them, and the strip had been carried over from the DESKTOP
-  // drawing by assumption. At 390 it is the first two hundred pixels of a
-  // screen whose entire value is how much of the LIST you can see before
-  // scrolling.
+test("no status panel at either width, and nothing it counted is unreachable", async ({ page }) => {
+  // THE OWNER REMOVED IT, from the phone drawing first and then from the desk.
+  // Both widths are asserted rather than one: the previous version of this test
+  // checked the phone only, which would have passed just as happily with the
+  // panel still sitting at 1440 — and it was, which is how it survived a round.
   //
-  // Both halves are asserted. A `wide &&` written without its else is how both
-  // the status row and the totals panel came to render nowhere at desktop
-  // width (`OPEN-DEFECTS.md` D5), and a test that only checks the phone would
-  // pass just as happily if the strip had been deleted outright.
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(PROJECTS);
-  await expect(page.getByTestId("queue-row").first()).toBeVisible();
-  await expect(page.getByTestId("queue-attention")).toBeVisible();
+  // The second half is the point of removing it. Every number the panel carried
+  // is still a control on this screen, so what went is a band of page above the
+  // work rather than a way of reaching the work.
+  for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto(PROJECTS);
+    await expect(page.getByTestId("queue-row").first()).toBeVisible();
+    await expect(page.getByTestId("queue-attention")).toHaveCount(0);
+    await expect(page.getByTestId("queue-stat")).toHaveCount(0);
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId("queue-attention")).toHaveCount(0);
-
-  // And nothing of the strip's is lost with it — every number it carried is
-  // still reachable, three through the chips and `Ready to issue` through the
-  // funnel. The chips are what sits under the title now.
-  await expect(page.getByTestId("queue-chip")).toHaveCount(3);
-  const title = await page.locator(".ops2-page__head").boundingBox();
-  const chips = await page.locator(".pq-chips").boundingBox();
-  expect(chips!.y - (title!.y + title!.height), "the gap the strip used to fill")
-    .toBeLessThan(40);
+    // Three of the four are the chips. `Needs us` is the panel's headline.
+    const chips = page.getByTestId("queue-chip");
+    await expect(chips).toHaveCount(3);
+    await expect(chips.nth(1)).toHaveText(/Needs us/);
+    // And the fourth is in the funnel, which is where the phone always reached
+    // it — the desk now reaches it the same way rather than by its own path.
+    await page.getByTestId("queue-funnel").click();
+    await expect(page.getByTestId("queue-filter-sheet").getByText("Ready to issue")).toBeVisible();
+    await page.keyboard.press("Escape");
+  }
 });
 
 test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {
@@ -250,8 +248,7 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     // 1. THE HEAD OF THE LIST. Whatever renders first under the head row — the
     //    strip at the desk, the filter row on the phone — starts where the
     //    skeleton started, or the whole page moves.
-    const head = (await page.locator(width >= 1024 ? ".pq-attention" : ".pq-controls")
-      .boundingBox())!;
+    const head = (await page.locator(".pq-controls").boundingBox())!;
     expect(Math.abs(head.y - promised[0].y), `the head of the list jumps at ${width}px`)
       .toBeLessThanOrEqual(2);
 
@@ -261,25 +258,22 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
       //     the top alone is set by the two blocks above it and says nothing
       //     about whether this one is the right size.
       const table = (await page.locator(".pq-table-wrap").boundingBox())!;
-      const block = promised[2];
+      const block = promised[1];
       expect(Math.abs(table.y - block.y), "the table starts where it was promised")
         .toBeLessThanOrEqual(2);
       expect(Math.abs(table.height - block.height), "the table is the promised height")
         .toBeLessThanOrEqual(4);
     } else {
-      // 2b. THE PHONE'S IS A STACK OF SEPARATE CARDS, so EVERY card is checked
-      //     against the block that stood in for it. A placeholder 45px short
-      //     leaves the first edge exactly where it was and shoves the three
-      //     below it, which is most of the screen.
-      const cards = await page.getByTestId("queue-row").all();
-      for (const [i, card] of cards.entries()) {
-        const box = (await card.boundingBox())!;
-        const block = promised[i + 1];
-        expect(Math.abs(box.y - block.y), `card ${i} lands where it was promised`)
-          .toBeLessThanOrEqual(2);
-        expect(Math.abs(box.height - block.height), `card ${i} is the promised height`)
-          .toBeLessThanOrEqual(4);
-      }
+      // 2b. THE PHONE'S LIST IS NOW ONE BLOCK TOO — the owner's correction, and
+      //     it makes the placeholder a single measurement instead of four. Both
+      //     edges again: the top alone is set by the controls above it and says
+      //     nothing about whether this block is the right size.
+      const list = (await page.locator(".pq-cards").boundingBox())!;
+      const block = promised[1];
+      expect(Math.abs(list.y - block.y), "the list starts where it was promised")
+        .toBeLessThanOrEqual(2);
+      expect(Math.abs(list.height - block.height), "the list is the promised height")
+        .toBeLessThanOrEqual(4);
     }
     await page.unroute(QUEUE_URL);
   }

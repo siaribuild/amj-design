@@ -10,7 +10,7 @@ import { FilterSheet } from "./FilterSheet";
 import { ProjectCards, ProjectTable } from "./rows";
 import { useProjectQueue } from "./useProjectQueue";
 import {
-  EMPTY_QUERY, REFINEMENTS, chipStates, emptyStateFor, headlineStats,
+  EMPTY_QUERY, REFINEMENTS, chipStates, emptyStateFor,
   refinementStates, selectProjects, type QueueQuery,
 } from "./queue";
 
@@ -75,7 +75,6 @@ export function ProjectsPage() {
       visible: selectProjects(rows, query),
       chips: chipStates(rows, query),
       refinements: refinementStates(rows, query),
-      stats: headlineStats(rows, query),
     };
   }, [load, query]);
 
@@ -206,61 +205,14 @@ export function ProjectsPage() {
 
       {load.status === "ready" && (
         <>
-          {/* The attention strip — THE DESK ONLY, and its absence on the phone
-              is the owner's drawing rather than an omission.
-              
-              His phone drawing goes title → chips → cards with nothing between
-              them, and the reason holds up once you look at the two widths side
-              by side: at 1440 the strip costs a band of otherwise empty page
-              beside the search card, while at 390 it is the first two hundred
-              pixels of a screen whose entire value is how much of the LIST you
-              can see before scrolling. Every number in it is reachable on the
-              phone anyway — three through the chips, `Ready to issue` through
-              the funnel — so what is lost is the glance, not the information.
-              
-              This is a real either/or (`wide ? … : …` never `!wide && …`): the
-              habit of writing only the negative half is what made both the
-              status row and the totals panel render nowhere at desktop width
-              (`OPEN-DEFECTS.md` D5). The bold number is the queue's whole reason
-              for existing; the three columns beside it are the other states a
-              reviewer orients by. Every one of them is a control, and each
-              carries the query it is counted with — so a stat cannot promise a
-              number and then show a different list. */}
-          {wide ? (
-          <div className="pq-attention" data-testid="queue-attention">
-            <button
-              type="button"
-              className="pq-attention__lead"
-              data-testid="queue-stat"
-              data-stat="needUs"
-              aria-pressed={view.stats[0].active}
-              onClick={() => setQuery(view.stats[0].query)}
-            >
-              <span className="pq-attention__glyph" aria-hidden="true">!</span>
-              <span>
-                <strong>{view.stats[0].count} need us</strong>
-                <span className="pq-attention__why">Technical, pricing or missing-detail decisions</span>
-              </span>
-            </button>
-            <div className="pq-attention__stats">
-              {view.stats.slice(1).map((stat) => (
-                <button
-                  type="button"
-                  key={stat.key}
-                  className="pq-stat"
-                  data-testid="queue-stat"
-                  data-stat={stat.key}
-                  aria-pressed={stat.active}
-                  onClick={() => setQuery(stat.query)}
-                >
-                  <span className="pq-stat__label ds-type-label-md">{stat.label}</span>
-                  <span className="pq-stat__value">{stat.count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          ) : null}
-
+          {/* NO STATUS PANEL, AT EITHER WIDTH. It was the desktop drawing's
+              and the owner has now removed it from that drawing too. Every
+              number it carried is still a control on this screen: three are the
+              chips, and `Ready to issue` is in the funnel — so what it cost was
+              a band of page above the work, and what it bought was a second
+              path to the same four queries. `headlineStats` is deleted rather
+              than left unrendered: a selector nothing calls is the kind of dead
+              code that reads as live. */}
           <div className="pq-controls" data-wide={wide}>
             {/* At the desk the field is permanent — there is room, and a
                 reviewer who has to reveal a search first pays a tap for every
@@ -375,39 +327,30 @@ function EmptyPanel({
  * A skeleton OF THE COMING SHAPE, never a spinner — R-161, and the boundary
  * document's own ruling on `IonLoading`.
  *
+ * TWO BLOCKS AT BOTH WIDTHS, because the list is now one surface at both: the
+ * phone's cards are a single elevated block with hairlines between the rows,
+ * exactly as the desk's table already was. So the promise is the controls, then
+ * the list — and there is no third block, because there is no status panel.
+ *
  * THE HEIGHTS ARE MEASURED, not chosen. A skeleton is a promise about the
  * layout that is arriving, which is a way of being wrong a spinner cannot be:
  * every pixel of difference is a jump at the moment the data lands, on the
- * surface whose whole argument for a skeleton is that nothing moves.
- *
- * Measured against the arrival view (`Needs us`, so a pre-issue card on our own
- * desk — which carries the `Needs review` chip, and is therefore the tall
- * variant) at 390px: controls 40, card 141, gap 8. A card with no chip row is
- * 112, so the placeholder overstates that one by 29 — deliberately, because
- * overstating settles the list UPWARD into space it already occupied, and
+ * surface whose whole argument for a skeleton is that nothing moves. The
+ * numbers below are read off the arrival view — `Needs us`, so pre-issue cards
+ * on our own desk, which carry the `Needs review` chip and are the TALL
+ * variant. A row with no chip is shorter, and the placeholder overstates it on
+ * purpose: overstating settles the list upward into space it already held,
  * understating drops it downward past whatever the reader was about to touch.
  *
- * The desk is a TABLE — one bordered surface with a header row, not gapped
- * cards — so its list is one block rather than four (a header and four rows,
- * which is what the phone draws as four cards), and the strip and controls
- * are their own measured heights. The strip's block is 70 rather than its own
- * 66: it carries a 12px bottom margin against this column's 8px gap, and the
- * placeholder has to absorb the difference or everything under it sits 4px
- * high.
+ * `scripts/tests/web/ops2-projects.spec.ts` checks every edge against four
+ * served rows, so changing the card's anatomy fails there rather than shipping
+ * a jump.
  */
 function QueueSkeleton({ wide }: { wide: boolean }) {
   return (
     <div className="pq-skeleton" data-testid="queue-skeleton" aria-busy="true">
-      {/* The strip's block, and ONLY where the strip lands. Reserving it on the
-          phone, where the strip is no longer rendered, moved the controls and
-          the entire list on load. */}
-      {wide && <IonSkeletonText animated style={{ height: "70px" }} />}
       <IonSkeletonText animated style={{ height: wide ? "58px" : "40px" }} />
-      {wide
-        ? <IonSkeletonText animated style={{ height: "305px" }} />
-        : [0, 1, 2, 3].map((i) => (
-          <IonSkeletonText key={i} animated style={{ height: "141px" }} />
-        ))}
+      <IonSkeletonText animated style={{ height: wide ? "305px" : "560px" }} />
     </div>
   );
 }
