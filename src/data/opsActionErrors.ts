@@ -33,17 +33,26 @@ const ACTION_ERRORS: Record<string, string> = {
   // every code, which on a concurrency conflict sent people hunting a pricing
   // problem that did not exist."
   //
-  // It points at the authority instead. `actionsFor` recomputes the blocked
-  // reason from `issuableNow` on every read, so a fresh record either shows the
-  // specific cause beside the button or no longer offers the action at all.
+  // IT PROMISES NOTHING, and getting there took four attempts. Each earlier
+  // version claimed something that held for some of the five paths:
   //
-  // IT ASKS RATHER THAN ASSERTS, and that is a property of being SHARED. The
-  // wording said "the record has been re-read", which is true of ops2 — it
-  // reloads on a 409, and `not_ready` is a 409 — and false of the legacy
-  // console reading the same string, which does not. A sentence in the shared
-  // core may not describe what its caller did; only what is true of the job and
-  // what the reader can do about it.
-  not_ready: "This quote could not be issued as it stands. Reload the record to see what is standing in the way.",
+  //   "check that every line has a rate…"  — names two causes; misdirects on
+  //                                          state, rollback and a lost race.
+  //   "the record has been re-read"        — true of ops2, which reloads on a
+  //                                          409; false of the legacy console
+  //                                          reading the same string.
+  //   "reload to see what is standing in
+  //    the way"                            — for a wrong STATE the action
+  //                                          simply stops being offered, and
+  //                                          for a rolled-back batch the
+  //                                          reloaded record looks fine. Reload
+  //                                          shows nothing in either.
+  //
+  // What is true of all five: it was refused, and the record in front of you may
+  // be out of date. So it says that, and stops. The specific cause, WHERE THERE
+  // IS ONE TO SHOW, arrives on its own — `actionsFor` recomputes the blocked
+  // reason from `issuableNow` on every read and puts it beside the button.
+  not_ready: "This quote could not be issued as it stands. Reload the record before trying again.",
   //
   // `not_found` IS DELIBERATELY ABSENT. It is returned by 31 places in the ops
   // routes alone — a project, a line, a composite parent, a staff row, a file,

@@ -1447,6 +1447,13 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   // the same string. A shared sentence describes the job and what the reader
   // can do — never the behaviour of one of its callers.
   assert.doesNotMatch(notReady, /has been|re-read|reloaded/i);
+  // NOR MAY IT PROMISE AN OUTCOME. "Reload to see what is standing in the way"
+  // holds for the three line-and-delivery causes and fails for the other two: a
+  // status outside ISSUABLE_FROM stops the action being offered at all, and a
+  // rolled-back batch leaves a record that looks fine. What is true of all five
+  // is that it was refused and the record may be stale — so it says that and
+  // stops.
+  assert.doesNotMatch(notReady, /to see|will show|shown|standing in the way|reveal/i);
 
   // AN UNKNOWN CODE IS STILL READABLE. New codes appear before their wording
   // does, and "quote_changed_retry" as raw snake case is worse than a plain
