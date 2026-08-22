@@ -171,17 +171,25 @@ export function ProjectsPage() {
       // card sitting on the page below the header; the owner's mock makes the
       // two one block, which is also what gives the tab indicator a rail to sit
       // on — a strip floating inside a card is a decorated pill, not a tab.
-      controls={load.status !== "ready" ? (
-        // THE ROW EXISTS BEFORE THE DATA DOES. It lives in the band now, so
-        // rendering it only once the queue arrived meant the band grew by a row
-        // at that moment and shoved the whole list down — the exact jump the
-        // skeleton exists to prevent, reintroduced one level up. A placeholder
-        // of the row's own height holds the space; the tabs cannot be drawn for
-        // real because their counts would have to be invented.
+      // ── THREE STATES, AND ONLY ONE OF THEM IS A PLACEHOLDER ────────────────
+      // LOADING holds the row's space: the row lives in the band, so rendering
+      // it only once the queue arrived grew the band by a row at that moment
+      // and shoved the whole list down — the exact jump the skeleton exists to
+      // prevent, one level above the skeleton. The tabs cannot be drawn for
+      // real there because their counts would have to be invented.
+      //
+      // FAILED gets NOTHING, and the distinction is the point. A skeleton is a
+      // promise that something is on its way; beside a message saying it is not
+      // coming it is the screen contradicting itself, and the shimmer is the
+      // half that catches the eye. There is also nothing to filter — offering
+      // three tabs over a list that failed to arrive is a control that cannot
+      // do anything. `load.status !== "ready"` collapsed these two states into
+      // one and shipped the first one's placeholder into the second.
+      controls={load.status === "loading" ? (
         <div className="pq-controls" data-wide={wide}>
           <IonSkeletonText animated className="pq-controls__ghost" />
         </div>
-      ) : (
+      ) : load.status === "error" ? undefined : (
         <div className="pq-controls" data-wide={wide}>
           <div className="pq-chips" role="group" aria-label="Filter by who is waiting">
               {view.chips.map((chip) => (

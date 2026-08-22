@@ -568,6 +568,16 @@ test("empty, loading and error are three different screens", async ({ page }) =>
   await page.reload();
   await expect(page.getByTestId("queue-error")).toContainText("This account cannot see the queue.");
   await expect(page.getByTestId("queue-error")).not.toContainText("sign in");
+  // AND NOTHING ON THE PAGE IS STILL SHIMMERING. A skeleton is a promise that
+  // something is on its way; beside a message saying it is not coming, it is
+  // the screen contradicting itself — and the animation is the half that
+  // catches the eye. The band's control row placeholder was rendered for every
+  // state that was not `ready`, which included this one.
+  await expect(page.locator("ion-skeleton-text")).toHaveCount(0);
+  await expect(page.getByTestId("queue-skeleton")).toHaveCount(0);
+  // There is also nothing to filter, so the row itself is gone rather than
+  // sitting there offering counts of a list that failed to arrive.
+  await expect(page.getByTestId("queue-chip")).toHaveCount(0);
 
   // 5. AND A FAILURE OFFERS THE RETRY, which really refetches.
   await page.unroute(QUEUE_URL);
