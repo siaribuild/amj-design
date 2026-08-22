@@ -11,7 +11,7 @@ import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  GST_BASIS, ageLabel, money, otherActions, pendingPrimary, primaryAction,
+  ageLabel, money, otherActions, pendingPrimary, primaryAction,
   totalsFor, waitingSentence, type ProjectRecord, type RecordAction,
 } from "./record";
 
@@ -345,7 +345,11 @@ function RecordIdentity({ record }: { record: ProjectRecord }) {
         <strong data-priced={totals.total != null}>
           {totals.total != null ? money(totals.total) : money(totals.lines)}
         </strong>
-        <span>{totals.total != null ? GST_BASIS : `so far · ${GST_BASIS}`}</span>
+        {/* No tax basis, on the owner's ruling: this console shows the stored
+            figure and says nothing about GST. See `./record.ts`. So the only
+            caption left is the one that qualifies the NUMBER — a sum that is
+            still missing rates is a floor, and has to say so. */}
+        {totals.total == null && <span>so far</span>}
       </div>
     </div>
   );
@@ -384,7 +388,7 @@ function RecordTotals({ record }: { record: ProjectRecord }) {
         </span>
       </div>
       <div className="rec-totals__row rec-totals__row--sum">
-        <span>{t.total != null ? `Total ${GST_BASIS}` : `So far, ${GST_BASIS}`}</span>
+        <span>{t.total != null ? "Total" : "So far"}</span>
         <span className="rec-totals__figure">
           {t.total != null ? money(t.total) : money(t.lines)}
         </span>

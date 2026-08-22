@@ -275,13 +275,16 @@ test("a primary action this build cannot run is not offered as a control", () =>
   assert.equal(M.pendingPrimary(pricing), null);
 });
 
-test("the figures are GST-INCLUSIVE, because that is what is stored", () => {
-  // `src/data/gst.ts`: "Catalogue prices are stored GST-INCLUSIVE (AU 10%)". So
-  // `line_total`, `order.total` and the delivery figure all arrive inclusive,
-  // and this surface labelled them "ex GST" — overstating the ex-GST value of
-  // every price on the screen by 10%. It states the basis it actually has;
-  // converting is a display preference and this is not a customer surface.
-  assert.equal(M.GST_BASIS, "inc GST");
+test("the model says nothing about GST, because this console does not", () => {
+  // The owner's ruling: "no references to GST, anywhere!! It's not a customer
+  // preference-driven site, an ops system default approach that matters."
+  //
+  // Asserted rather than left as an absence: an absence looks like an oversight
+  // and invites a future session to add a label back. It replaced "ex GST",
+  // which was worse than either option — the stored figures are inclusive, so
+  // that caption overstated the ex-GST value of every price by 10%.
+  assert.equal(M.GST_BASIS, undefined);
+  assert.deepEqual(Object.keys(M).filter((k) => /gst/i.test(k)), []);
 });
 
 test("an accepted order's delivery is the FROZEN one, not the project's", () => {

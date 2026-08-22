@@ -428,25 +428,25 @@ export function waitingSentence(record: ProjectRecord): string {
 }
 
 /**
- * WHAT BASIS THE FIGURES ON THIS SCREEN ARE ON.
+ * NO GST ON THIS CONSOLE — THE OWNER'S RULING, 2026-08-23: "no references to
+ * GST, anywhere!! It's not a customer preference-driven site, an ops system
+ * default approach that matters."
  *
- * `src/data/gst.ts`, first line: "Catalogue prices are stored GST-INCLUSIVE (AU
- * 10%)." So `quote_line.line_total`, `order.total` and the delivery figure all
- * arrive inclusive, and this surface labelled them "ex GST" — overstating the
- * ex-GST value of every price on it by 10%, on the console where prices are
- * reviewed before they go to a customer.
+ * Recorded here rather than left as an absence, because the absence looks like
+ * an oversight and invites a future session to "fix" it. ops2 shows the stored
+ * figure and says nothing about tax. ex/inc is a CUSTOMER ACCOUNT'S display
+ * preference — `gstAdjust` and `gstSuffix` in `src/data/gst.ts` exist for the
+ * surfaces that have an account to read it from, and this is not one of them.
  *
- * Stated once, here, rather than typed beside each figure: the two places it
- * appeared could otherwise be corrected separately and drift.
+ * (For anyone reading a figure here and wondering: `src/data/gst.ts` line 1 —
+ * "Catalogue prices are stored GST-INCLUSIVE (AU 10%)". That is a fact about
+ * the store, not a caption for the screen.)
  *
- * NOT CONVERTED. `gstAdjust` exists and the customer's surfaces use it, because
- * ex/inc is that ACCOUNT'S display preference (CLAUDE.md: "GST display must
- * respect the account's ex/inc preference on every customer surface"). This is
- * not a customer surface — a reviewer here is looking at the stored figure, and
- * the honest fix is the true label rather than a second representation of the
- * same money.
+ * This replaced an "ex GST" label, which was worse than either option: the
+ * stored figures are inclusive, so it overstated the ex-GST value of every
+ * price by 10% on the console where prices are reviewed before a customer sees
+ * them.
  */
-export const GST_BASIS = "inc GST";
 
 /** en-AU, whole dollars. Cents are noise at a glance and every ops surface in
  *  this product already rounds them away. */

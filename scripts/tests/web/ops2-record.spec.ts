@@ -172,11 +172,10 @@ test("the foot refuses to call a partial sum a total", async ({ page }) => {
   await expect(totals).toContainText("Not set");
   await expect(totals).toContainText("about $640");
   // The word that makes the figure honest.
-  // INC GST, because that is what is stored — `src/data/gst.ts` line 1. It said
-  // "ex GST", overstating the ex-GST value of every price on this console by
-  // 10%, on the screen where prices are reviewed before a customer sees them.
-  await expect(totals).toContainText("So far, inc GST");
-  await expect(totals).not.toContainText("ex GST");
+  // NO GST ANYWHERE ON THIS CONSOLE — the owner's ruling. The only caption left
+  // is the one qualifying the NUMBER: a sum still missing rates is a floor.
+  await expect(totals).toContainText("So far");
+  await expect(page.locator("body")).not.toContainText("GST");
 });
 
 test("a blocked action is shown, refused, and says why beside itself", async ({ page }) => {
