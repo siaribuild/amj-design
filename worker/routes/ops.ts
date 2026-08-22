@@ -658,11 +658,22 @@ ops.get("/projects/:id", async (c) => {
       room: l.location,
       productName: getProductBySlug(l.productSlug)?.name ?? l.productSlug ?? "—",
       width: l.width, height: l.height,
+      // THE SPEC THE CUSTOMER ACCEPTED. `orderLines()` already reconstructs it —
+      // merging product_snapshot_json under the columns, so a pre-0047 order
+      // still resolves — and this mapping dropped it on the way out. Without it
+      // every accepted row is a product name and a price, so a reviewer cannot
+      // see the colour, the glazing or the hardware that was agreed, on the one
+      // record where those are no longer editable and therefore most worth
+      // reading.
+      options: l.options,
       segments: l.segments.map((s) => ({
         id: s.id,
         productName: getProductBySlug(s.productSlug)?.name ?? s.productSlug ?? "—",
         width: s.width, height: s.height,
         qtyPerParent: s.qtyPerParent, qty: s.qty, lineTotal: s.lineTotal,
+        // Per UNIT, and the units of one opening differ — which is the whole
+        // reason a composite is reviewed line by line.
+        options: s.options, note: s.note,
       })),
     })),
     order: order ? {

@@ -51,9 +51,11 @@ function LineFlags({ line }: { line: RecordLine }) {
   );
 }
 
-/** A unit of a composite opening, inside its parent. */
+/** A unit of a composite opening, inside its parent — with its own spec, because
+ *  units of one opening differ and which ones is what a reviewer checks. */
 function SegmentRow({ segment }: { segment: RecordSegment }) {
   const size = sizeLabel(segment);
+  const options = Object.entries(segment.options).filter(([, v]) => v);
   return (
     <li className="rl-unit">
       <span className="rl-unit__name">
@@ -73,6 +75,15 @@ function SegmentRow({ segment }: { segment: RecordSegment }) {
       <span className="rl-money" data-priced={segment.lineTotal != null}>
         {segment.lineTotal == null ? "No rate" : money(segment.lineTotal)}
       </span>
+      {options.length > 0 && (
+        <span className="rl-unit__spec">
+          {options.map(([label, value]) => (
+            <span key={label} className="rl-unit__opt">
+              <span className="rl-unit__opt-label">{label}</span> {value}
+            </span>
+          ))}
+        </span>
+      )}
     </li>
   );
 }

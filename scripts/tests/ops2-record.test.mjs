@@ -225,6 +225,16 @@ test("an accepted project shows the CONTRACT lines, not the draft ones", () => {
   // A contract line's units still nest inside their parent.
   assert.deepEqual(r.lines[1].segments.map((s) => s.productName), ["Awning 1200", "Fixed 2400"]);
   assert.equal(r.lines[1].lineKind, "composite_parent");
+  // AND THE SPEC THE CUSTOMER ACCEPTED, which the endpoint reconstructs from
+  // the snapshot. Without it an accepted row is a name and a price, and cannot
+  // be opened at all — on the one record where the spec is frozen and therefore
+  // most worth reading.
+  const accepted = M.parseProjectRecord(body({
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    orderLines: [{ id: "o1", code: "W01", productName: "Awning 600", width: "1200", height: "900",
+      qty: 1, lineTotal: 3480, options: { Colour: "Monument" }, segments: [] }],
+  }));
+  assert.deepEqual(accepted.lines[0].options, { Colour: "Monument" });
 
   // No order ⇒ the draft lines ARE the record, unchanged.
   const quote = M.parseProjectRecord(body({ lines: [line({ code: "W09" })] }));
@@ -336,4 +346,58 @@ test("a composite unit reports its count PER OPENING, not the aggregate", () => 
     lines: [line({ segments: [{ id: "s1", productName: "X", width: "1", height: "1", qty: 2, lineTotal: 1, status: "ready" }] })],
   }));
   assert.equal(flat.lines[0].segments[0].qty, 2);
+});
+
+test("a unit carries its own spec — units of one opening differ", () => {
+  // The endpoint supplies each segment's `options` deliberately
+  // (worker/routes/ops.ts): a composite whose units differ in colour, glazing
+  // or hardware is exactly the case a reviewer has to check before issuing, and
+  // the customer's own list shows them. Dropping them left the unit rows able
+  // to say only product, size and price.
+  const r = M.parseProjectRecord(body({
+    lines: [line({
+      lineKind: "composite_parent",
+      segments: [
+        { id: "s1", productName: "Awning", width: "600", height: "900", qty: 1, lineTotal: 500,
+          status: "ready", options: { Colour: "Monument", Glazing: "Double clear" } },
+        { id: "s2", productName: "Fixed", width: "600", height: "900", qty: 1, lineTotal: 400,
+          status: "ready", options: { Colour: "Surfmist" } },
+      ],
+    })],
+  }));
+  assert.deepEqual(r.lines[0].segments[0].options, { Colour: "Monument", Glazing: "Double clear" });
+  assert.deepEqual(r.lines[0].segments[1].options, { Colour: "Surfmist" });
+  // A segment with none says none, rather than inheriting its neighbour's.
+  const bare = M.parseProjectRecord(body({
+    lines: [line({ segments: [{ id: "s1", productName: "X", width: "1", height: "1", qty: 1, lineTotal: 1, status: "ready" }] })],
+  }));
+  assert.deepEqual(bare.lines[0].segments[0].options, {});
+});
+
+test("the partial figure counts the delivery it already knows", () => {
+  // A settled delivery is a known figure. Leaving it out of the "so far" sum
+  // produced rows that visibly contradicted each other: `Lines $1,000`,
+  // `Delivery $250`, `So far $1,000`.
+  const r = M.parseProjectRecord(body({
+    lines: [line({ lineTotal: 1000 }), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" })],
+    delivery: { amount: 250, settled: true, estimate: 250 },
+  }));
+  const t = M.totalsFor(r);
+  assert.equal(t.total, null, "still not a total — a line has no rate");
+  assert.equal(t.subtotal, 1250, "but everything known so far adds up");
+
+  // Nothing known about delivery ⇒ the subtotal is the lines alone.
+  const unset = M.totalsFor(M.parseProjectRecord(body({
+    lines: [line({ lineTotal: 1000 }), line({ id: "l2", lineTotal: null, status: "draft" })],
+    delivery: { amount: null, settled: false, estimate: 250 },
+  })));
+  assert.equal(unset.subtotal, 1000);
+
+  // And when everything IS known, the two agree.
+  const whole = M.totalsFor(M.parseProjectRecord(body({
+    lines: [line({ lineTotal: 1000 })],
+    delivery: { amount: 250, settled: true, estimate: 250 },
+  })));
+  assert.equal(whole.total, 1250);
+  assert.equal(whole.subtotal, 1250);
 });

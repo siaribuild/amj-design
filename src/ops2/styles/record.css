@@ -262,13 +262,26 @@
   border-top: 1px solid var(--ds-border-subtle);
 }
 .rl-units { margin: 0; padding: var(--theme-spacing-sm) 0 0; list-style: none; }
+/* A grid, so a unit's spec can sit UNDER its own name rather than beside the
+   price. Three columns: what it is, its size, its money — and the spec spans
+   the first two on a second line when there is one. */
 .rl-unit {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: baseline;
-  gap: var(--theme-spacing-sm);
+  gap: 2px var(--theme-spacing-sm);
   padding: var(--theme-spacing-2xs) 0;
   font-size: var(--theme-font-size-xs);
 }
+.rl-unit + .rl-unit { border-top: 1px solid var(--ds-border-subtle); }
+.rl-unit__spec {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  color: var(--ds-text-secondary);
+}
+.rl-unit__opt-label { color: var(--ds-text-muted); }
 .rl-unit__name { flex: 1 1 auto; min-width: 0; color: var(--ds-text-primary); }
 .rl-unit__note { color: var(--ds-text-muted); }
 .rl-unit__total { color: var(--ds-text-muted); }

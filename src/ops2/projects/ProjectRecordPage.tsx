@@ -104,6 +104,12 @@ export function ProjectRecordPage() {
       reload();
     } catch {
       setFailure("The console could not reach the server.");
+      // SAME REASON AS THE REFUSAL BRANCH. A dropped connection left the confirm
+      // panel open over the banner explaining it, which is the state that
+      // produces a blind retry — and it is the branch most likely to happen
+      // twice in a row.
+      setConfirming(null);
+      setPanelOpen(false);
     } finally {
       setRunning(null);
     }
@@ -343,7 +349,7 @@ function RecordIdentity({ record }: { record: ProjectRecord }) {
             printed as one. The figure is still shown — a reviewer wants to know
             roughly where the job sits — with the word that makes it honest. */}
         <strong data-priced={totals.total != null}>
-          {totals.total != null ? money(totals.total) : money(totals.lines)}
+          {money(totals.total ?? totals.subtotal)}
         </strong>
         {/* No tax basis, on the owner's ruling: this console shows the stored
             figure and says nothing about GST. See `./record.ts`. So the only
@@ -389,9 +395,7 @@ function RecordTotals({ record }: { record: ProjectRecord }) {
       </div>
       <div className="rec-totals__row rec-totals__row--sum">
         <span>{t.total != null ? "Total" : "So far"}</span>
-        <span className="rec-totals__figure">
-          {t.total != null ? money(t.total) : money(t.lines)}
-        </span>
+        <span className="rec-totals__figure">{money(t.total ?? t.subtotal)}</span>
       </div>
       {t.total == null && (
         <IonNote className="ds-type-caption rec-totals__note">

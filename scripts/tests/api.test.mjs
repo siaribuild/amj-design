@@ -233,6 +233,24 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         quote.body.lines.map((l) => l.code),
         "the ops contract view keeps the quote's line order too",
       );
+      // AND IT CARRIES THE SPEC THE CUSTOMER ACCEPTED. `orderLines()` already
+      // reconstructs the frozen options — merging product_snapshot_json under
+      // the columns, so a pre-0047 order still resolves them — and the ops DTO
+      // dropped the field on its way out. Without it every accepted row is a
+      // product name and a price: a reviewer cannot see the colour, the glazing
+      // or the hardware that was agreed to, on the one record where those are
+      // no longer editable and therefore most worth reading.
+      const acceptedLine = (opsContract.body.orderLines ?? [])[0];
+      assert.ok(acceptedLine, "expected at least one contract line");
+      assert.equal(
+        typeof acceptedLine.options, "object",
+        "the ops contract line carries the accepted options",
+      );
+      assert.ok(
+        Object.keys(acceptedLine.options ?? {}).length > 0,
+        "and they are the configured ones, not an empty object",
+      );
+
       // A stale client cannot request changes on an already-accepted quote.
       await requestJson(sarah, "/api/projects/p_submitted/request-changes", { method: "POST", json: { message: "too late" } }, 409);
     });

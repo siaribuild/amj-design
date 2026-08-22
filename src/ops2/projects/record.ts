@@ -62,6 +62,10 @@ export interface RecordSegment {
   lineTotal: number | null;
   note: string;
   status: string;
+  /** THIS UNIT'S OWN SPEC. Units of one opening differ — colour, glazing,
+   *  hardware — and which ones is exactly what a reviewer checks before
+   *  issuing. The endpoint supplies it per segment for that reason. */
+  options: Record<string, string>;
 }
 
 /**
@@ -171,6 +175,7 @@ function parseSegment(raw: unknown): RecordSegment[] {
     lineTotal: num(r.lineTotal),
     note: str(r.note) ?? "",
     status: str(r.status) ?? "ready",
+    options: obj(r.options),
   }];
 }
 
@@ -222,7 +227,11 @@ function parseOrderLine(raw: unknown): RecordLine[] {
     qty: num(r.qty) ?? 1,
     lineTotal: num(r.lineTotal),
     status: "ready",
-    options: {},
+    // The endpoint now forwards the accepted spec, reconstructed from the
+    // snapshot. It used to drop it, which made every accepted row a product
+    // name and a price — and non-expandable, on the one record where the spec
+    // can no longer be edited and is therefore most worth reading.
+    options: obj(r.options),
     review: null,
     lineKind: segments.length > 0 ? "composite_parent" : "simple",
     segments,
@@ -368,6 +377,11 @@ export interface RecordTotals {
   deliverySettled: boolean;
   /** Lines + delivery, or null while either is unknowable. */
   total: number | null;
+  /** EVERYTHING KNOWN SO FAR — the lines plus a delivery figure if there is
+   *  one. It is what the screen shows while `total` is null, and leaving the
+   *  settled delivery out of it produced rows that contradicted each other on
+   *  the same panel: `Lines $1,000`, `Delivery $250`, `So far $1,000`. */
+  subtotal: number;
   /** True while any line is unpriced: the figure is a floor, not a total. */
   partial: boolean;
 }
@@ -406,6 +420,7 @@ export function totalsFor(record: ProjectRecord): RecordTotals {
     // understates every contract by the delivery, which is a defect this
     // endpoint's own comments record having shipped once.
     total: record.orderTotal ?? (unpriced > 0 || delivery == null ? null : lines + delivery),
+    subtotal: record.orderTotal ?? lines + (delivery ?? 0),
     partial: unpriced > 0,
   };
 }
