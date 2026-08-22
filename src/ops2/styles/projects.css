@@ -305,12 +305,13 @@ ion-searchbar.pq-search .searchbar-input {
 }
 .pq-cards ion-item {
   --background: transparent;
-  /* The sage wash, said in Ionic's vocabulary. `--background-hover` alone does
-     nothing visible: the host multiplies it by `--background-hover-opacity`,
-     which defaults to Ionic's own low value, so a fully-specified colour
-     arrives at roughly 4% and reads as nothing. */
-  --background-hover: var(--ds-color-brand-wash);
-  --background-hover-opacity: 1;
+  /* IONIC'S HOVER OVERLAY IS OFF. It paints `.item-native::after` across the
+     whole native element — including the leading edge, which is an INSET shadow
+     on that same element — so hovering a row erased the one mark saying who it
+     is waiting on. The wash is painted as the native's own background instead
+     (below), and an inset shadow draws above its element's background, so the
+     edge survives. */
+  --background-hover-opacity: 0;
   --padding-start: var(--theme-spacing-md);
   --border-radius: 0;
 }
@@ -318,6 +319,8 @@ ion-searchbar.pq-search .searchbar-input {
    row's bottom edge is a rule that row appears to own, and a leading accent
    edge two pixels away from it then reads as a corner. */
 .pq-cards ion-item + ion-item { border-top: 1px solid var(--ds-border-subtle); }
+/* The wash, on the element that also draws the status edge. */
+.pq-cards ion-item:hover::part(native) { background: var(--ds-color-brand-wash); }
 /* The edge marks WAITING ON US — the row's headline status — and not `flagged`:
    the chips already say what is wrong, and an edge that repeats a chip earns
    nothing. Leading edge, never the bottom divider: a divider belongs to neither
@@ -373,9 +376,28 @@ ion-searchbar.pq-search .searchbar-input {
 }
 .pq-age { color: var(--ds-text-muted); font-size: var(--theme-font-size-xs); }
 .pq-card__bottom { font-size: var(--theme-font-size-xs); color: var(--ds-text-secondary); }
-.pq-money { flex: none; color: var(--ds-text-primary); font-variant-numeric: tabular-nums; }
-.pq-money[data-priced="false"] { color: var(--ds-text-muted); font-style: italic; }
-.pq-basis { color: var(--ds-text-muted); font-style: normal; }
+/* SECOND ONLY TO THE PROJECT NAME. Every drawing the owner gave sets the money
+   well above the customer line, and it had been rendering at the same weight and
+   the same size as "12 lines · Estimating" beside it — a figure with no more
+   claim on the eye than the row it shares. The name still wins; nothing else on
+   the card competes with these two. */
+.pq-money {
+  flex: none;
+  font-size: var(--theme-font-size-base);
+  font-weight: var(--theme-font-weight-bold);
+  line-height: var(--theme-line-height-tight);
+  color: var(--ds-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+/* The absence stays QUIET — it is the one value that must not read as a figure,
+   so it drops back to the row's own size and colour. Loud absence is how "$0"
+   got shown for work nobody had costed. */
+.pq-money[data-priced="false"] {
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-text-muted);
+  font-style: italic;
+}
 .pq-flags { display: flex; flex-wrap: wrap; gap: var(--theme-spacing-2xs); margin-top: var(--theme-spacing-xs); }
 /* Tinted wash, own text colour, leading glyph, radius under the owner's 5px cap
    — four things `ion-badge` does not do, which is why these are plain spans. */
@@ -441,7 +463,6 @@ ion-searchbar.pq-search .searchbar-input {
 .pq-table .pq-num { text-align: right; font-variant-numeric: tabular-nums; }
 .pq-table .pq-stage { color: var(--ds-text-secondary); }
 .pq-table .pq-chevron { width: 1.5rem; color: var(--ds-text-muted); text-align: right; }
-.pq-table .pq-basis { display: block; font-size: var(--theme-font-size-xs); }
 .pq-table .pq-age { display: block; }
 .pq-open { display: block; color: inherit; text-decoration: none; }
 .pq-open:hover .pq-title { text-decoration: underline; }

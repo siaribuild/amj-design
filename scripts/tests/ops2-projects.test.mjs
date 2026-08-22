@@ -206,15 +206,16 @@ test("a row says who it waits on in WORDS, and the age only qualifies it", () =>
 
 test("a figure that is not a price says so, and a price says what kind it is", () => {
   // THREE different meanings occupy the value column — an estimate, an issued
-  // quote, a contract — and worker/routes/ops.ts already says why the basis
-  // travels with the number: "a number read down a phone with the wrong basis
-  // is worse than no number." So the basis comes through rather than being
+  // quote, a contract. THE SUFFIX IS GONE — `est.` / `issued` / `contract` were
+  // appended to the figure and the owner removed them: no drawing he gave ever
+  // showed one, and the row's own stage says which kind of number this is, in
+  // words, one line to the left. What is asserted here is the figure and
   // flattened into a bare dollar sign.
   assert.deepEqual(M.priceOf(row({ value: 18793, valueBasis: "contract" })), {
-    text: "$18,793", basis: "contract", priced: true,
+    text: "$18,793", priced: true,
   });
   assert.deepEqual(M.priceOf(row({ value: 73488.4, valueBasis: "est." })), {
-    text: "$73,488", basis: "est.", priced: true,
+    text: "$73,488", priced: true,
   });
 
   // NOT PRICED IS A STATE, NOT A ZERO. The server COALESCEs the sum to 0, so a
@@ -222,7 +223,7 @@ test("a figure that is not a price says so, and a price says what kind it is", (
   // "$0" would be a priced-at-nothing claim about work nobody has costed —
   // which is the absence this surface is supposed to be hunting for.
   assert.deepEqual(M.priceOf(row({ value: 0, valueBasis: "est.", unresolved: 4 })), {
-    text: "Not priced", basis: null, priced: false,
+    text: "Not priced", priced: false,
   });
   assert.equal(M.priceOf(row({ value: null })).text, "Not priced");
   assert.equal(M.priceOf(row({ value: 0, lineCount: 0 })).text, "Not priced",
@@ -234,7 +235,7 @@ test("a figure that is not a price says so, and a price says what kind it is", (
   // and reading `value <= 0` as absence made the same row say both "ready to
   // issue" and "not priced". Resolved lines and a zero sum is a figure.
   assert.deepEqual(M.priceOf(row({ value: 0, valueBasis: "issued", unresolved: 0, lineCount: 3 })), {
-    text: "$0", basis: "issued", priced: true,
+    text: "$0", priced: true,
   });
 });
 

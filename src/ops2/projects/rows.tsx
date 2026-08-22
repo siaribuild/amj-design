@@ -143,10 +143,7 @@ export function ProjectCards({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 <span className="pq-customer">{row.customerName ?? row.org ?? "No customer on file"}</span>
                 <span className="pq-card__bottom">
                   <span>{row.lineCount} lines · {row.stateLabel}</span>
-                  <span className="pq-money" data-priced={price.priced}>
-                    {price.text}
-                    {price.basis && <span className="pq-basis"> {price.basis}</span>}
-                  </span>
+                  <span className="pq-money" data-priced={price.priced}>{price.text}</span>
                 </span>
                 <Flags row={row} />
               </span>
@@ -229,7 +226,6 @@ export function ProjectTable({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 <td className="pq-num">{row.lineCount}</td>
                 <td className="pq-num">
                   <span className="pq-money" data-priced={price.priced}>{price.text}</span>
-                  {price.basis && <span className="pq-basis">{price.basis}</span>}
                 </td>
                 <td className="pq-chevron" aria-hidden="true">›</td>
               </tr>

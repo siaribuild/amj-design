@@ -447,8 +447,6 @@ export function parseProjectQueue(body: unknown): ProjectQueueRow[] {
 /** What the value column shows, and what kind of number it is. */
 export interface RowPrice {
   text: string;
-  /** `est.` / `issued` / `contract`. Null when there is no figure to qualify. */
-  basis: string | null;
   priced: boolean;
 }
 
@@ -461,9 +459,11 @@ export interface RowPrice {
  * is precisely what this queue exists to hunt for, so turning it into a
  * plausible-looking number is the worst available failure.
  *
- * The BASIS travels with the number because three different meanings occupy
- * this column, and worker/routes/ops.ts already states the reason: "a number
- * read down a phone with the wrong basis is worse than no number."
+ * NO BASIS SUFFIX. `est.` / `issued` / `contract` were appended to the figure
+ * and the owner removed them: no drawing he gave ever showed one. The value is
+ * still qualified where a qualification is a fact rather than a footnote — the
+ * row's own stage says which kind of number this is, in words, one line to the
+ * left.
  *
  * en-AU, whole dollars. Cents on a queue row are noise at a glance, and every
  * ops surface in this product already rounds them away.
@@ -487,13 +487,9 @@ export function priceOf(row: ProjectQueueRow): RowPrice {
     || !Number.isFinite(value)
     || (value === 0 && (row.unresolved > 0 || row.lineCount === 0));
   if (missing) {
-    return { text: "Not priced", basis: null, priced: false };
+    return { text: "Not priced", priced: false };
   }
-  return {
-    text: `$${Math.round(value).toLocaleString("en-AU")}`,
-    basis: row.valueBasis || null,
-    priced: true,
-  };
+  return { text: `$${Math.round(value).toLocaleString("en-AU")}`, priced: true };
 }
 
 /**
