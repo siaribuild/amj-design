@@ -21,11 +21,23 @@
 
 const ACTION_ERRORS: Record<string, string> = {
   // ── The issue gate's own refusals (worker/lib/issue.ts) ────────────────────
-  // `not_ready` covers four guards — wrong state, no lines, a line with no
-  // total, a line in technical review — and the endpoint does not say which.
-  // The sentence therefore names the SET rather than guessing at one of them;
-  // the record's blocked reason, which does know, says the specific thing.
-  not_ready: "This quote is not ready to issue — check that every line has a rate and none is still in technical review.",
+  // `not_ready` COVERS FIVE DIFFERENT CAUSES and names none of them: a status
+  // outside `ISSUABLE_FROM`, an empty quote, a line with no total, a line in a
+  // blocking status, and a batch that rolled back or lost a concurrency race.
+  //
+  // So the sentence MUST NOT GUESS. It said "check that every line has a rate
+  // and none is still in technical review" — true for two of the five, and for
+  // the other three it sends someone hunting a pricing problem that does not
+  // exist. Which is precisely the failure the wording below it was written to
+  // end: "One blanket 'resolve and exactly price every line' used to cover
+  // every code, which on a concurrency conflict sent people hunting a pricing
+  // problem that did not exist."
+  //
+  // It points at the authority instead. `actionsFor` recomputes the blocked
+  // reason from `issuableNow` on every read, and the record reloads on a
+  // conflict — so after the reload the specific cause is either beside the
+  // button or the action is gone because the job moved on.
+  not_ready: "This quote could not be issued as it stands. The record has been re-read — the reason is shown with the button, or the job has moved on.",
   //
   // `not_found` IS DELIBERATELY ABSENT. It is returned by 31 places in the ops
   // routes alone — a project, a line, a composite parent, a staff row, a file,

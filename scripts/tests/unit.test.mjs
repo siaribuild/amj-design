@@ -1432,7 +1432,16 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   // one-place-per-fact, applied to wording that a reviewer relies on.
   assert.match(M.actionErrorText("delivery_unset"), /Delivery has not been set/);
   assert.match(M.actionErrorText("workflow_changed_retry"), /moved to another state/);
-  assert.match(M.actionErrorText("not_ready"), /line/i);
+  // `not_ready` MUST NOT NAME A CAUSE. It covers five — a status outside
+  // ISSUABLE_FROM, an empty quote, a line with no total, a line in a blocking
+  // status, and a batch that rolled back or lost a race — and naming the line
+  // ones sends someone hunting a pricing problem that does not exist on the
+  // other three. That is the exact failure the map's own comment records.
+  const notReady = M.actionErrorText("not_ready");
+  assert.doesNotMatch(notReady, /line/i, "it must not blame the lines");
+  assert.doesNotMatch(notReady, /delivery/i, "nor the delivery");
+  assert.doesNotMatch(notReady, /technical review/i);
+  assert.match(notReady, /could not be issued/i);
 
   // AN UNKNOWN CODE IS STILL READABLE. New codes appear before their wording
   // does, and "quote_changed_retry" as raw snake case is worse than a plain
