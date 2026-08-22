@@ -219,9 +219,13 @@ test("the pill group never clips a label, and the bubble is part of the button",
   //    silently cuts them off: no wrap, no scroll, no ellipsis, just a number
   //    that is missing a digit on the one control whose whole job is counting.
   //
-  // 120 projects, so every count is three digits — the state this appears in.
+  // 400 projects split evenly, so ALL THREE counts are three digits —
+  // 400 / 200 / 200. The first version of this test served 120 and got
+  // 120 / 60 / 60, which is two digits on the two widest labels and therefore
+  // 16px narrower than the state it was meant to describe. The queue is
+  // unpaginated, so this is a size it will reach.
   await page.route(QUEUE_URL, (route) => route.fulfill({
-    json: { projects: Array.from({ length: 120 }, (_, i) => fixtureRow({
+    json: { projects: Array.from({ length: 400 }, (_, i) => fixtureRow({
       id: `p_${i}`, ref: `OF-Q-${i}`, title: `Project ${i}`,
       waitingOn: i % 2 ? "Us" : "Customer", phase: "Pricing",
     })) },
@@ -239,15 +243,29 @@ test("the pill group never clips a label, and the bubble is part of the button",
   //    stays as the thing that would notice a longer label.
   const chips = page.getByTestId("queue-chip");
   await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toContainText("400");
   for (const chip of await chips.all()) {
     const clipped = await chip.evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(clipped, `"${await chip.textContent()}" is cut off`).toBeLessThanOrEqual(1);
   }
-  // Nor does the group solve it by pushing the page sideways: a destination
-  // must never require horizontal scrolling.
-  expect(await page.evaluate(() => document.scrollingElement!.scrollWidth
-    - document.scrollingElement!.clientWidth), "the page scrolls sideways")
-    .toBeLessThanOrEqual(1);
+  // Nor does it solve the problem by pushing the funnel off the edge: a
+  // destination must never require horizontal scrolling.
+  //
+  // MEASURED ON THE ROW, NOT ON THE DOCUMENT. `document.scrollingElement` never
+  // moves in an Ionic app — `ion-content` scrolls inside its own shadow root
+  // and clips the rest — so the first version of this assertion read 320/320
+  // and passed while the filter row was overflowing by 70px with the funnel
+  // hanging off the screen. The container that actually overflows is the one to
+  // ask.
+  for (const selector of [".pq-filters", ".pq-controls", ".ops2-page__body"]) {
+    const over = await page.locator(selector)
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(over, `${selector} overflows sideways`).toBeLessThanOrEqual(1);
+  }
+  // And the funnel is still on screen and pressable, which is the consequence.
+  const funnel = (await page.getByTestId("queue-funnel").boundingBox())!;
+  expect(funnel.x + funnel.width, "the funnel is off the right edge")
+    .toBeLessThanOrEqual(320);
 
   // 2. The bubble protrudes past the button's corner, and it is decorative —
   //    so without care the part sticking out is dead area on a touch screen,
@@ -595,6 +613,15 @@ test("no rendered corner on this surface exceeds the owner's 5px cap, in either 
     await expect(page.getByTestId("queue-row").first()).toBeVisible();
     await page.getByTestId("queue-funnel").click();
     await expect(page.getByTestId("queue-filter-sheet").getByText("Filters", { exact: true })).toBeVisible();
+    // WITH A REFINEMENT ON, so the funnel's count bubble is one of the corners
+    // measured. It was not, and the gap was invisible: the bubble only exists
+    // while a filter is active, so a sweep that ran before activating one was
+    // reporting on a page the badge had never been part of. `../../theme/
+    // ionic.css` records the decision it broke — the bubble is deliberately NOT
+    // exempted as a pill, because the exemption is for a shape that is
+    // genuinely a dot and this one reads perfectly well as a rounded square.
+    await page.getByTestId("queue-refinement").nth(2).click();
+    await expect(page.getByTestId("queue-funnel-count")).toBeVisible();
 
     const worst = await page.evaluate(() =>
       [...document.querySelectorAll("*")]

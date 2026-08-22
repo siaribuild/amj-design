@@ -134,6 +134,7 @@ ion-searchbar.pq-search .searchbar-input {
 .pq-filters {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: var(--theme-spacing-xs);
 }
 /* ONE COMPONENT, selectable within itself — the owner's drawing. The group owns
@@ -154,14 +155,27 @@ ion-searchbar.pq-search .searchbar-input {
      because the three labels are fixed strings), but the mechanism is real and
      one declaration removes the whole class. */
   min-width: min-content;
-  background: var(--ds-surface-card);
+  /* IT WRAPS RATHER THAN CLIPS. Every count is unbounded — the queue is not
+     paginated — and at 320px with three three-digit counts the group measures
+     316 inside 288, which overflowed the row and carried the funnel off the
+     right edge. Nothing said so: `ion-content` scrolls inside its own shadow
+     root and clips the rest, so the page never gained a scrollbar to notice.
+     Wrapping keeps every member reachable, which is the rule this group is
+     under; going off the edge does not. It only happens at the narrowest width
+     with the largest counts — at 430 the same group is 316 inside 398. */
+  flex-wrap: wrap;
+  /* THE DIVIDERS ARE THE GAPS. A 1px gap over the group's own background shows
+     as a hairline, and it does so BETWEEN ROWS as well — which a left border on
+     each member cannot, and which would otherwise leave a rule floating at the
+     start of a wrapped second line. */
+  gap: 1px;
+  background: var(--ds-border-default);
   border: 1px solid var(--ds-border-default);
   border-radius: var(--ds-radius-control);
   overflow: hidden;
 }
-/* Members hug their own words. The divider is a LEFT border on all but the
-   first, so it belongs to the pair rather than to either chip — and it is drawn
-   under the selected fill, never over it. */
+/* Members hug their own words, and each paints its own fill over the group's
+   divider colour. */
 .pq-chip {
   flex: 0 1 auto;
   min-width: 0;
@@ -171,7 +185,7 @@ ion-searchbar.pq-search .searchbar-input {
   gap: var(--theme-spacing-2xs);
   min-height: var(--pq-control-height);
   padding: 0 var(--theme-spacing-md);
-  background: transparent;
+  background: var(--ds-surface-card);
   border: 0;
   color: var(--ds-text-secondary);
   font-size: var(--theme-font-size-sm);
@@ -179,7 +193,6 @@ ion-searchbar.pq-search .searchbar-input {
   white-space: nowrap;
   cursor: pointer;
 }
-.pq-chip + .pq-chip { border-left: 1px solid var(--ds-border-default); }
 .pq-chip:hover { background: var(--ds-color-brand-wash); }
 /* Sage is the brand and the selected state. */
 .pq-chip[aria-pressed="true"] {
@@ -225,7 +238,14 @@ ion-searchbar.pq-search .searchbar-input {
   right: -0.5rem;
   min-width: 1.125rem;
   padding: 0 0.25rem;
-  border-radius: var(--theme-radius-full);
+  /* NO RADIUS OF ITS OWN — it takes `ion-badge`'s, which is the owner's 5px
+     cap. `--theme-radius-full` was written here and it broke a decision this
+     repo had already recorded and reasoned: ../theme/ionic.css states that the
+     count bubble is deliberately NOT exempted as a pill, because the exemption
+     exists for a shape that is genuinely a dot and this one reads perfectly
+     well as a small rounded square. The radius sweep did not catch it because
+     it measured before switching a refinement on, so the badge was not on the
+     page it swept. */
   box-shadow: 0 0 0 2px var(--ds-surface-page);
   font-size: var(--theme-font-size-xs);
   line-height: 1.125rem;
