@@ -62,7 +62,13 @@ function SegmentRow({ segment }: { segment: RecordSegment }) {
       </span>
       <span className="rl-unit__meta">
         {size}
+        {/* PER OPENING. The aggregate is shown beside it only when the two
+            differ — a parent of one makes them the same number, and printing it
+            twice would read as two facts. */}
         {segment.qty > 1 && <> · ×{segment.qty}</>}
+        {segment.qtyTotal !== segment.qty && (
+          <span className="rl-unit__total"> · {segment.qtyTotal} in all</span>
+        )}
       </span>
       <span className="rl-money" data-priced={segment.lineTotal != null}>
         {segment.lineTotal == null ? "No rate" : money(segment.lineTotal)}

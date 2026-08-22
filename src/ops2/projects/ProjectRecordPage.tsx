@@ -11,8 +11,8 @@ import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  ageLabel, money, otherActions, pendingPrimary, primaryAction, totalsFor,
-  waitingSentence, type ProjectRecord, type RecordAction,
+  GST_BASIS, ageLabel, money, otherActions, pendingPrimary, primaryAction,
+  totalsFor, waitingSentence, type ProjectRecord, type RecordAction,
 } from "./record";
 
 const PROJECTS = destination("projects");
@@ -90,6 +90,13 @@ export function ProjectRecordPage() {
         // console ends up explaining a rule it no longer implements.
         const body = await res.json().catch(() => null) as { error?: string } | null;
         setFailure(body?.error ?? `The server answered ${res.status}.`);
+        // AND THE READER HAS TO BE ABLE TO SEE IT. The banner renders on the
+        // page; a confirm panel is over that page and holds the focus, so a
+        // refused `issue-quote` explained itself to a screen nobody could look
+        // at and left the reader retrying blind. Both panels close, which puts
+        // the sentence in front of them.
+        setConfirming(null);
+        setPanelOpen(false);
         return;
       }
       setPanelOpen(false);
@@ -338,7 +345,7 @@ function RecordIdentity({ record }: { record: ProjectRecord }) {
         <strong data-priced={totals.total != null}>
           {totals.total != null ? money(totals.total) : money(totals.lines)}
         </strong>
-        <span>{totals.total != null ? "ex GST" : "so far · ex GST"}</span>
+        <span>{totals.total != null ? GST_BASIS : `so far · ${GST_BASIS}`}</span>
       </div>
     </div>
   );
@@ -377,7 +384,7 @@ function RecordTotals({ record }: { record: ProjectRecord }) {
         </span>
       </div>
       <div className="rec-totals__row rec-totals__row--sum">
-        <span>{t.total != null ? "Total ex GST" : "So far, ex GST"}</span>
+        <span>{t.total != null ? `Total ${GST_BASIS}` : `So far, ${GST_BASIS}`}</span>
         <span className="rec-totals__figure">
           {t.total != null ? money(t.total) : money(t.lines)}
         </span>

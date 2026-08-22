@@ -274,3 +274,63 @@ test("a primary action this build cannot run is not offered as a control", () =>
   assert.equal(M.primaryAction(pricing).id, "issue-quote");
   assert.equal(M.pendingPrimary(pricing), null);
 });
+
+test("the figures are GST-INCLUSIVE, because that is what is stored", () => {
+  // `src/data/gst.ts`: "Catalogue prices are stored GST-INCLUSIVE (AU 10%)". So
+  // `line_total`, `order.total` and the delivery figure all arrive inclusive,
+  // and this surface labelled them "ex GST" — overstating the ex-GST value of
+  // every price on the screen by 10%. It states the basis it actually has;
+  // converting is a display preference and this is not a customer surface.
+  assert.equal(M.GST_BASIS, "inc GST");
+});
+
+test("an accepted order's delivery is the FROZEN one, not the project's", () => {
+  // The endpoint supplies `order.deliveryTotal` — what the customer accepted —
+  // beside the project's live delivery leg. Historical pre-0044 orders
+  // legitimately have `project.delivery_amount` unset while their contract
+  // delivery is a settled zero, so reading the project's figure made a real
+  // accepted order say "Delivery: Not set".
+  const r = M.parseProjectRecord(body({
+    order: { orderNo: "OF-O-2201", total: 7000, deliveryTotal: 250 },
+    orderLines: [{ id: "o1", code: "W01", productName: "Awning", width: "1", height: "1", qty: 1, lineTotal: 6750, segments: [] }],
+    delivery: { amount: null, settled: false, estimate: 999 },
+  }));
+  const t = M.totalsFor(r);
+  assert.equal(t.delivery, 250);
+  assert.equal(t.deliverySettled, true, "an accepted contract's delivery is settled by definition");
+  assert.equal(t.total, 7000, "the order's own total still wins");
+
+  // A frozen ZERO is settled too — the same trap the project-level figure has.
+  const waived = M.parseProjectRecord(body({
+    order: { orderNo: "OF-O-2202", total: 6750, deliveryTotal: 0 },
+    orderLines: [{ id: "o1", code: "W01", productName: "Awning", width: "1", height: "1", qty: 1, lineTotal: 6750, segments: [] }],
+    delivery: { amount: null, settled: false, estimate: 999 },
+  }));
+  assert.equal(M.totalsFor(waived).deliverySettled, true);
+  assert.equal(M.totalsFor(waived).delivery, 0);
+});
+
+test("a composite unit reports its count PER OPENING, not the aggregate", () => {
+  // `worker/lib/composite.ts` defines a segment's `qty` as
+  // `parent.qty × qty_per_parent`, and the endpoint sends `qtyPerParent`
+  // separately. Reading the aggregate made the contents of ONE opening claim
+  // every unit across all of them: a parent of 3 with 2 units each read "×6"
+  // inside a single opening.
+  const r = M.parseProjectRecord(body({
+    lines: [line({
+      qty: 3,
+      lineKind: "composite_parent",
+      segments: [
+        { id: "s1", productName: "Awning", width: "600", height: "900", qtyPerParent: 2, qty: 6, lineTotal: 500, status: "ready" },
+      ],
+    })],
+  }));
+  assert.equal(r.lines[0].segments[0].qty, 2, "what is in ONE opening");
+  assert.equal(r.lines[0].segments[0].qtyTotal, 6, "and what that comes to across them all");
+
+  // A simple line's segment has no parent multiplier; the two agree.
+  const flat = M.parseProjectRecord(body({
+    lines: [line({ segments: [{ id: "s1", productName: "X", width: "1", height: "1", qty: 2, lineTotal: 1, status: "ready" }] })],
+  }));
+  assert.equal(flat.lines[0].segments[0].qty, 2);
+});

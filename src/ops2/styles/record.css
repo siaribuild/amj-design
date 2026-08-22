@@ -271,6 +271,7 @@
 }
 .rl-unit__name { flex: 1 1 auto; min-width: 0; color: var(--ds-text-primary); }
 .rl-unit__note { color: var(--ds-text-muted); }
+.rl-unit__total { color: var(--ds-text-muted); }
 .rl-unit__meta { flex: none; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
 
 .rl-spec {

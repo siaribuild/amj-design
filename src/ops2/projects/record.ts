@@ -52,7 +52,13 @@ export interface RecordSegment {
   productName: string;
   width: string;
   height: string;
+  /** HOW MANY OF THIS UNIT ARE IN ONE OPENING. `worker/lib/composite.ts`
+   *  defines the stored `qty` as `parent.qty × qty_per_parent`, so reading that
+   *  made the contents of a single opening claim every unit across all of them
+   *  — a parent of 3 with 2 units each read "×6" inside one opening. */
   qty: number;
+  /** And what that comes to across every opening on the line. */
+  qtyTotal: number;
   lineTotal: number | null;
   note: string;
   status: string;
@@ -91,6 +97,10 @@ export interface RecordDelivery {
   /** Settled figure. `null` is NOT SETTLED; `0` is settled (a trade waiver). */
   amount: number | null;
   settled: boolean;
+  /** The FROZEN figure once a quote is accepted — what the customer agreed to.
+   *  Wins over the project's live leg, which by then is only an estimate of a
+   *  question already answered. */
+  frozen: number | null;
   /** What the live rate table says it should be, whether or not it is settled. */
   estimate: number | null;
   suburb: string | null;
@@ -154,7 +164,10 @@ function parseSegment(raw: unknown): RecordSegment[] {
     productName: str(r.productName) ?? "—",
     width: str(r.width) ?? "",
     height: str(r.height) ?? "",
-    qty: num(r.qty) ?? 1,
+    // `qtyPerParent` when the endpoint sends it; otherwise the stored figure,
+    // which for a non-composite parent is the same number.
+    qty: num(r.qtyPerParent) ?? num(r.qty) ?? 1,
+    qtyTotal: num(r.qty) ?? num(r.qtyPerParent) ?? 1,
     lineTotal: num(r.lineTotal),
     note: str(r.note) ?? "",
     status: str(r.status) ?? "ready",
@@ -276,6 +289,11 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
       : (Array.isArray(b.lines) ? b.lines.flatMap(parseLine) : []),
     delivery: {
       amount: num(delivery.amount),
+      // The order's own delivery, captured at acceptance. Historical pre-0044
+      // orders legitimately have `project.delivery_amount` unset while their
+      // contract delivery is a settled zero, so reading the project's figure
+      // made a real accepted order say "Delivery: Not set".
+      frozen: order ? num(order.deliveryTotal) : null,
       // NOT a truthiness check, ever: 0 is settled — a trade waiver — and only
       // NULL is unset. The issue gate turns on exactly this distinction.
       settled: delivery.settled === true,
@@ -371,12 +389,18 @@ export function totalsFor(record: ProjectRecord): RecordTotals {
   const priced = record.lines.filter((l) => l.lineTotal != null);
   const lines = priced.reduce((sum, l) => sum + (l.lineTotal ?? 0), 0);
   const unpriced = record.lines.length - priced.length;
-  const delivery = record.delivery.settled ? record.delivery.amount : null;
+  // AN ACCEPTED CONTRACT'S DELIVERY IS SETTLED BY DEFINITION — the customer
+  // agreed to it. `0` counts, here as everywhere: only NULL is unset.
+  const frozen = record.delivery.frozen;
+  const delivery = frozen != null
+    ? frozen
+    : record.delivery.settled ? record.delivery.amount : null;
+  const settled = frozen != null || record.delivery.settled;
   return {
     lines,
     unpriced,
     delivery,
-    deliverySettled: record.delivery.settled,
+    deliverySettled: settled,
     // ONCE AN ORDER EXISTS ITS TOTAL IS THE AUTHORITY. It carries the freight
     // and any adjustment made at acceptance; re-summing the draft lines
     // understates every contract by the delivery, which is a defect this
@@ -402,6 +426,27 @@ export function waitingSentence(record: ProjectRecord): string {
     : record.waitingOn === "Nobody" ? "Waiting on nobody"
     : "Waiting on us";
 }
+
+/**
+ * WHAT BASIS THE FIGURES ON THIS SCREEN ARE ON.
+ *
+ * `src/data/gst.ts`, first line: "Catalogue prices are stored GST-INCLUSIVE (AU
+ * 10%)." So `quote_line.line_total`, `order.total` and the delivery figure all
+ * arrive inclusive, and this surface labelled them "ex GST" — overstating the
+ * ex-GST value of every price on it by 10%, on the console where prices are
+ * reviewed before they go to a customer.
+ *
+ * Stated once, here, rather than typed beside each figure: the two places it
+ * appeared could otherwise be corrected separately and drift.
+ *
+ * NOT CONVERTED. `gstAdjust` exists and the customer's surfaces use it, because
+ * ex/inc is that ACCOUNT'S display preference (CLAUDE.md: "GST display must
+ * respect the account's ex/inc preference on every customer surface"). This is
+ * not a customer surface — a reviewer here is looking at the stored figure, and
+ * the honest fix is the true label rather than a second representation of the
+ * same money.
+ */
+export const GST_BASIS = "inc GST";
 
 /** en-AU, whole dollars. Cents are noise at a glance and every ops surface in
  *  this product already rounds them away. */

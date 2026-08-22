@@ -172,8 +172,11 @@ test("the foot refuses to call a partial sum a total", async ({ page }) => {
   await expect(totals).toContainText("Not set");
   await expect(totals).toContainText("about $640");
   // The word that makes the figure honest.
-  await expect(totals).toContainText("So far, ex GST");
-  await expect(totals).not.toContainText("Total ex GST");
+  // INC GST, because that is what is stored — `src/data/gst.ts` line 1. It said
+  // "ex GST", overstating the ex-GST value of every price on this console by
+  // 10%, on the screen where prices are reviewed before a customer sees them.
+  await expect(totals).toContainText("So far, inc GST");
+  await expect(totals).not.toContainText("ex GST");
 });
 
 test("a blocked action is shown, refused, and says why beside itself", async ({ page }) => {
@@ -371,4 +374,28 @@ test("an order with no contract lines says so, rather than showing the quote", a
   await expect(page.getByTestId("record-lines-empty")).not.toContainText("Superseded draft");
   // And the tab's own count agrees with the list beside it.
   await expect(page.getByTestId("record-tab").nth(0)).toHaveText(/Lines.*0/);
+});
+
+test("a refused action explains itself where the reader is looking", async ({ page }) => {
+  // The failure banner renders on the PAGE. A confirm panel is over that page
+  // and holds the focus, so a refused `issue-quote` explained itself to a
+  // screen nobody could see and left the reader retrying blind.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    actions: [
+      { id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
+        confirm: "Freezes this quote and emails it." },
+    ],
+  }) }));
+  await page.route("**/api/ops/projects/p_rec/issue-quote", (route) =>
+    route.fulfill({ status: 409, json: { error: "delivery is not set" } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await page.getByTestId("record-primary").click();
+  await expect(page.getByTestId("record-confirm")).toBeVisible();
+  await page.getByTestId("record-confirm-go").click();
+
+  // The panel gets out of the way, and the server's own words are on screen.
+  await expect(page.getByTestId("record-confirm")).toBeHidden();
+  await expect(page.getByTestId("record-failure")).toContainText("delivery is not set");
 });
