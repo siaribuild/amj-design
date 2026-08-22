@@ -177,8 +177,15 @@ ion-searchbar.pq-search .searchbar-input {
 /* Members hug their own words, and each paints its own fill over the group's
    divider colour. */
 .pq-chip {
-  flex: 0 1 auto;
-  min-width: 0;
+  /* GROW, NEVER SHRINK. The group's background IS the divider colour — that is
+     how a 1px gap draws as a hairline — so any part of a wrapped line the
+     members do not cover is a slab of raw grey inside the control, and the
+     first wrap left 93px of it. Growing fills each line to the group's edge.
+     It changes nothing where the group does not wrap: there the group is
+     exactly as wide as its members, so there is no free space to distribute.
+     `flex-shrink: 0` is the other half — a member squeezed below its own label
+     is the clipping this group already refuses. */
+  flex: 1 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;

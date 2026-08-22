@@ -267,6 +267,25 @@ test("the pill group never clips a label, and the bubble is part of the button",
   expect(funnel.x + funnel.width, "the funnel is off the right edge")
     .toBeLessThanOrEqual(320);
 
+  // 3. AND A WRAPPED LINE IS FULL. The group's own background is the divider
+  //    colour — that is how a 1px gap draws as a hairline — so any part of a
+  //    line the members do not cover is a slab of raw grey inside the control.
+  //    Every line has to be filled to the group's inner edge.
+  const lines = await page.getByTestId("queue-chip").evaluateAll((els) => {
+    const group = els[0].parentElement!.getBoundingClientRect();
+    const rows = new Map<number, number>();
+    for (const el of els) {
+      const b = el.getBoundingClientRect();
+      rows.set(Math.round(b.y), Math.max(rows.get(Math.round(b.y)) ?? 0, b.right));
+    }
+    return [...rows.values()].map((right) => group.right - right);
+  });
+  expect(lines.length, "the group is expected to have wrapped at this size")
+    .toBeGreaterThan(1);
+  for (const [i, gap] of lines.entries()) {
+    expect(gap, `line ${i} leaves bare group background`).toBeLessThanOrEqual(2);
+  }
+
   // 2. The bubble protrudes past the button's corner, and it is decorative —
   //    so without care the part sticking out is dead area on a touch screen,
   //    sitting exactly where a thumb aims for the corner of a control.
