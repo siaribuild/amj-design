@@ -90,6 +90,13 @@ export function ProjectRecordPage() {
         // console ends up explaining a rule it no longer implements.
         const body = await res.json().catch(() => null) as { error?: string } | null;
         setFailure(body?.error ?? `The server answered ${res.status}.`);
+        // A CONFLICT MEANS THIS RECORD IS OUT OF DATE, so re-read it. Someone
+        // else moved the job between this page loading and the press, and the
+        // actions on screen are the ones that WERE available — leaving them
+        // there lets the same invalid request be retried for as long as the tab
+        // stays open. The failure message survives the reload; the stale
+        // controls do not.
+        if (res.status === 409) reload();
         // AND THE READER HAS TO BE ABLE TO SEE IT. The banner renders on the
         // page; a confirm panel is over that page and holds the focus, so a
         // refused `issue-quote` explained itself to a screen nobody could look

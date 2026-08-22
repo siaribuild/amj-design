@@ -13,6 +13,7 @@
 //     visible when three lines are unpriced, saying so — hiding it makes the
 //     console look broken to someone who expects it.
 import { availableActions, type OrderRow } from "./orders";
+import { issuableNow } from "./issue";
 
 export type ActionTier = "primary" | "secondary" | "overflow";
 
@@ -32,12 +33,22 @@ export interface OpsAction {
 export function actionsFor(args: {
   statusInternal: string;
   order: OrderRow | null;
-  unresolvedLines: number;
   customerEmail: string | null;
   /** project.delivery_amount == null — the issue gate's other half (C7,
    *  design doc §6.4/§7.2). Never a truthiness check upstream of this: 0 is
    *  settled (a trade waiver), only NULL is unset. */
   deliveryUnset: boolean;
+  /** Parent lines. `issueQuote` rejects an empty quote, and nothing here used
+   *  to know that — so the console offered the button and the refusal arrived
+   *  only after the trip. */
+  lineCount: number;
+  /** Parent lines with a NULL total or a status in
+   *  `ISSUE_BLOCKING_LINE_STATUSES`. NOT the broader "unresolved" count, which
+   *  is every status that is not `ready`. `worker/lib/issue.ts` documents what
+   *  feeding it that costs: a priced `policy_exception` line reported as
+   *  unissuable while the button would have issued it. Erring towards refusing
+   *  sounds safe and is not — it hides work that could go out today. */
+  blocking: number;
 }): OpsAction[] {
   const out: OpsAction[] = [];
 
@@ -68,15 +79,29 @@ export function actionsFor(args: {
   } else if (args.statusInternal === "estimator_assigned" || args.statusInternal === "technical_review_required") {
     out.push({
       id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
-      // Lines report first when both are wrong — lines are the reviewer's
-      // actual work, delivery is one field, and surfacing the trivial
-      // blocker while hiding the substantial one trains people to distrust
-      // the gate.
-      blockedReason: args.unresolvedLines > 0
-        ? `${args.unresolvedLines} line${args.unresolvedLines === 1 ? " is" : "s are"} unpriced or unresolved`
-        : args.deliveryUnset
-          ? "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel."
-          : undefined,
+      // THE GATE'S OWN ANSWER decides whether it is blocked; the sentence only
+      // says which of its guards is the one standing in the way. Asking
+      // `issuableNow` rather than re-testing its inputs is what stops this
+      // disagreeing with the button it points at — the single-source rule
+      // CLAUDE.md states for quote state.
+      //
+      // Lines report first when several are wrong: lines are the reviewer's
+      // actual work, delivery is one field, and surfacing the trivial blocker
+      // while hiding the substantial one trains people to distrust the gate.
+      blockedReason: issuableNow({
+        statusInternal: args.statusInternal,
+        lineCount: args.lineCount,
+        blocking: args.blocking,
+        deliverySettled: !args.deliveryUnset,
+      })
+        ? undefined
+        : args.lineCount === 0
+          ? "This quote has no lines yet — there is nothing to issue."
+          : args.blocking > 0
+            ? `${args.blocking} line${args.blocking === 1 ? " is" : "s are"} unpriced or in technical review`
+            : args.deliveryUnset
+              ? "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel."
+              : "This quote cannot be issued from its current state.",
       confirm: `Freezes this quote as a new revision and emails it to ${args.customerEmail ?? "the customer"}.`,
     });
     if (args.statusInternal === "estimator_assigned") {

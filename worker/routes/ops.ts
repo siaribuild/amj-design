@@ -638,15 +638,28 @@ ops.get("/projects/:id", async (c) => {
       statusInternal: p.status_internal, statusCustomer: p.status_customer,
       orderStage: order?.stage ?? null,
     }),
-    daysInStage: daysSince(p.updated_at),
+    // ONCE AN ORDER EXISTS, ITS CLOCK IS THE ONE THAT MATTERS. The stage
+    // transitions write `order.updated_at` and leave `project.updated_at`
+    // alone, so a project timestamp paired with an order-derived stage says
+    // things like "Manufacturing · 20 days" the moment a job enters
+    // manufacturing. The stage and the age have to come from the same row.
+    daysInStage: daysSince(order?.updated_at ?? p.updated_at),
     // What can be done to this job right now, derived server-side so the console
     // cannot offer what the Worker would refuse.
     actions: actionsFor({
       statusInternal: p.status_internal,
       order: (order as any) ?? null,
-      unresolvedLines: lines.filter((line) => line.status !== "ready" || line.line_total == null).length,
       customerEmail: p.customer_email ?? p.contact_email ?? null,
       deliveryUnset: p.delivery_amount == null,
+      // THE GATE'S OWN INPUTS, not the list's broader "unresolved" count —
+      // `worker/lib/issue.ts` documents what feeding it that costs in both
+      // directions. Blocking is a NULL total or one of the two statuses the
+      // gate actually refuses.
+      lineCount: lines.length,
+      blocking: lines.filter((line) =>
+        line.line_total == null
+        || (ISSUE_BLOCKING_LINE_STATUSES as readonly string[]).includes(line.status),
+      ).length,
     }),
     // The CONTRACT lines. Once the quote is accepted the draft lines are no
     // longer what anyone is building — order_line is. Without these an accepted

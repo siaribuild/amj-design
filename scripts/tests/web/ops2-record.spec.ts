@@ -398,3 +398,31 @@ test("a refused action explains itself where the reader is looking", async ({ pa
   await expect(page.getByTestId("record-confirm")).toBeHidden();
   await expect(page.getByTestId("record-failure")).toContainText("delivery is not set");
 });
+
+test("a conflict re-reads the record, so the stale action goes away", async ({ page }) => {
+  // Someone else moved the job between this page loading and the press. The
+  // actions on screen are the ones that WERE available, so reporting the 409
+  // and leaving them there lets the same invalid request be retried for as long
+  // as the tab stays open.
+  let reads = 0;
+  await page.route(RECORD_URL, (route) => {
+    reads += 1;
+    return route.fulfill({ json: record({
+      actions: reads === 1
+        ? [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary" }]
+        : [{ id: "status:estimator_assigned", label: "Back to pricing", tier: "secondary" }],
+    }) });
+  });
+  await page.route("**/api/ops/projects/p_rec/issue-quote", (route) =>
+    route.fulfill({ status: 409, json: { error: "the quote moved on" } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await expect(page.getByTestId("record-primary")).toBeVisible();
+  await page.getByTestId("record-primary").click();
+
+  // The reason survives the reload; the control that could no longer work does not.
+  await expect(page.getByTestId("record-failure")).toContainText("the quote moved on");
+  await expect(page.getByTestId("record-primary")).toHaveCount(0);
+  expect(reads).toBeGreaterThan(1);
+});

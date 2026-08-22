@@ -37,6 +37,7 @@ await build({
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
       export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
       export { ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES, issuableNow } from ${p("worker/lib/issue.ts")};
+      export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
     `,
     resolveDir: projectRoot,
@@ -1310,6 +1311,42 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test("the record's primary action asks the gate, rather than counting again", () => {
+  // THE SAME DRIFT, ONE LEVEL UP. `worker/lib/issue.ts` already documents this
+  // trap in its own comments — "NOT the list's broader `unresolved` count,
+  // which is every status that is not `ready`: fed that, this reported a priced
+  // `policy_exception` line as unissuable while the button would have issued
+  // it" — and `actionsFor` was fed exactly that count.
+  //
+  // Both directions are wrong, and only one of them is safe-looking:
+  const base = {
+    statusInternal: "technical_review_required",
+    order: null,
+    customerEmail: "a@b.c",
+    deliveryUnset: false,
+    lineCount: 3,
+    blocking: 0,
+  };
+  const issue = (over = {}) =>
+    M.actionsFor({ ...base, ...over }).find((a) => a.id === "issue-quote");
+
+  assert.equal(issue().blockedReason, undefined, "nothing in the way, nothing said");
+
+  // OVER-BLOCKING: a priced `policy_exception` line is not `ready` and does not
+  // block the gate. Refusing it hides work that could go out today.
+  assert.equal(issue({ blocking: 0, lineCount: 3 }).blockedReason, undefined);
+
+  // UNDER-BLOCKING: an empty quote. `issueQuote` rejects it and the console
+  // offered the button — the failure only shows up after the trip.
+  assert.ok(issue({ lineCount: 0 }).blockedReason, "an empty quote cannot be issued");
+
+  // And the two the gate does block on, in the order the reviewer can act on:
+  // lines are the work, delivery is one field.
+  assert.match(issue({ blocking: 2 }).blockedReason, /2 lines/);
+  assert.match(issue({ deliveryUnset: true }).blockedReason, /[Dd]elivery/);
+  assert.match(issue({ blocking: 2, deliveryUnset: true }).blockedReason, /2 lines/);
 });
 
 test("`issuableNow` is the issue gate's own answer, so a list cannot promise what the gate refuses", () => {
