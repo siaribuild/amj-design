@@ -40,15 +40,24 @@ import { useRailWidth } from "../nav/useRailWidth";
 const EASE_OUT = "cubic-bezier(0, 0, 0.2, 1)";
 const EASE_IN = "cubic-bezier(0.4, 0, 1, 1)";
 
-/** The panel's own motion, built over Ionic's two shadow parts. */
-function sideAnimation(baseEl: HTMLElement) {
+/**
+ * The panel's own motion, built over Ionic's two shadow parts.
+ *
+ * BOTH DIRECTIONS ARE WRITTEN OUT; the exit is not the entrance reversed.
+ * `direction: "reverse"` reverses the EASING as well as the keyframes, so an
+ * ease-in played backwards leaves as an ease-out — the panel drifting away
+ * instead of accelerating off. The two curves are the point of having two.
+ */
+function sideAnimation(baseEl: HTMLElement, out: boolean) {
   const root = baseEl.shadowRoot;
+  const [dim, lit] = ["0.01", "var(--backdrop-opacity)"];
+  const [here, away] = ["translateX(0)", "translateX(100%)"];
   const backdrop = createAnimation()
     .addElement(root!.querySelector("ion-backdrop")!)
-    .fromTo("opacity", "0.01", "var(--backdrop-opacity)");
+    .fromTo("opacity", out ? lit : dim, out ? dim : lit);
   const wrapper = createAnimation()
     .addElement(root!.querySelector(".modal-wrapper")!)
-    .fromTo("transform", "translateX(100%)", "translateX(0)")
+    .fromTo("transform", out ? here : away, out ? away : here)
     // OPACITY IS NOT DECORATION HERE. Ionic's stylesheet parks `.modal-wrapper`
     // at `opacity: 0.01` and relies on its OWN enter animation to raise it — so
     // replacing that animation without carrying this over left the panel
@@ -70,9 +79,9 @@ const reduced = () =>
   && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 const slideIn = (baseEl: HTMLElement) =>
-  sideAnimation(baseEl).easing(EASE_OUT).duration(reduced() ? 0 : 300);
+  sideAnimation(baseEl, false).easing(EASE_OUT).duration(reduced() ? 0 : 300);
 const slideOut = (baseEl: HTMLElement) =>
-  sideAnimation(baseEl).direction("reverse").easing(EASE_IN).duration(reduced() ? 0 : 200);
+  sideAnimation(baseEl, true).easing(EASE_IN).duration(reduced() ? 0 : 200);
 
 /**
  * TWO FORMS, ONE PANEL. On the phone it is the mock's bottom sheet, at the
