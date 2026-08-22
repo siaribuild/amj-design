@@ -578,6 +578,24 @@ test("empty, loading and error are three different screens", async ({ page }) =>
   // There is also nothing to filter, so the row itself is gone rather than
   // sitting there offering counts of a list that failed to arrive.
   await expect(page.getByTestId("queue-chip")).toHaveCount(0);
+  // NOR ANYTHING TO SEARCH. Every control on this surface narrows a list, so
+  // when the list did not arrive none of them can do anything — and a control
+  // that cannot do anything is the defect this effort has recorded three times.
+  // The phone's magnifier outlived the tabs because it lives in the title row
+  // rather than in the band.
+  await page.setViewportSize({ width: 390, height: 844 });
+  // WAIT FOR THE WIDTH TO HAVE LANDED. `useRailWidth` re-renders on a resize
+  // event, and `toHaveCount(0)` is satisfied instantly by a page that is still
+  // rendering the desk — so this assertion passed against the broken version
+  // until the tab bar was made to prove the narrow layout is on screen.
+  await expect(page.locator("ion-tab-bar")).toBeVisible();
+  await expect(page.getByTestId("queue-error")).toBeVisible();
+  await expect(page.getByTestId("queue-search-toggle")).toHaveCount(0);
+  await expect(page.getByTestId("queue-search")).toHaveCount(0);
+  // The one control that IS still live is the way out.
+  await expect(page.getByTestId("queue-error").getByRole("button", { name: "Try again" }))
+    .toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   // 5. AND A FAILURE OFFERS THE RETRY, which really refetches.
   await page.unroute(QUEUE_URL);

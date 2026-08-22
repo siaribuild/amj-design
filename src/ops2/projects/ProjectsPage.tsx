@@ -155,7 +155,12 @@ export function ProjectsPage() {
       // root. Measured: `.focus()` on the host did nothing at all. The bell in
       // OpsPage is a plain button beside it for its own stated reason, so this
       // is the established shape rather than a new one.
-      headActions={!wide && !searchOpen ? (
+      // READY ONLY, like every other control on this surface. They all narrow a
+      // list, so when the list did not arrive none of them can do anything —
+      // and the phone's magnifier outlived the tabs because it lives in the
+      // title row rather than in the band. A control that cannot do anything is
+      // the defect this effort has now recorded three times.
+      headActions={load.status === "ready" && !wide && !searchOpen ? (
         <button
           type="button"
           ref={searchToggle}
@@ -275,7 +280,7 @@ export function ProjectsPage() {
           </div>
         </div>
       )}
-      headOverlay={!wide && searchOpen ? (
+      headOverlay={load.status === "ready" && !wide && searchOpen ? (
         <>
           {searchField}
           <IonButton
