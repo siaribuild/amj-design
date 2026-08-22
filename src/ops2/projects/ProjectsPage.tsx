@@ -167,6 +167,106 @@ export function ProjectsPage() {
           <span className="ops2-sr-only">Search projects</span>
         </button>
       ) : undefined}
+      // THE CONTROL ROW SHARES THE WHITE BAND WITH THE TITLE. It used to be a
+      // card sitting on the page below the header; the owner's mock makes the
+      // two one block, which is also what gives the tab indicator a rail to sit
+      // on — a strip floating inside a card is a decorated pill, not a tab.
+      controls={load.status !== "ready" ? (
+        // THE ROW EXISTS BEFORE THE DATA DOES. It lives in the band now, so
+        // rendering it only once the queue arrived meant the band grew by a row
+        // at that moment and shoved the whole list down — the exact jump the
+        // skeleton exists to prevent, reintroduced one level up. A placeholder
+        // of the row's own height holds the space; the tabs cannot be drawn for
+        // real because their counts would have to be invented.
+        <div className="pq-controls" data-wide={wide}>
+          <IonSkeletonText animated className="pq-controls__ghost" />
+        </div>
+      ) : (
+        <div className="pq-controls" data-wide={wide}>
+          <div className="pq-chips" role="group" aria-label="Filter by who is waiting">
+              {view.chips.map((chip) => (
+                <button
+                  type="button"
+                  key={chip.key}
+                  className="pq-chip"
+                  data-testid="queue-chip"
+                  data-chip={chip.key}
+                  aria-pressed={chip.active}
+                  onClick={() => setQuery(chip.query)}
+                >
+                  {chip.label}
+                  <span className="pq-count">{chip.count}</span>
+                </button>
+              ))}
+          </div>
+          {/* THE RIGHT-HAND GROUP IS "NARROW WHAT IS IN THIS VIEW"; the tabs on
+              the left choose WHICH view. Two jobs, two ends of the row, and the
+              gap between them is what says they are different kinds of control.
+              The funnel keeps its box for the same reason: tabs are unboxed
+              labels wearing an indicator, so an unboxed icon beside them reads
+              as a fourth tab however much space it is given. */}
+          <div className="pq-tools">
+            {/* At the desk the field is permanent — there is room, and a
+                reviewer who has to reveal a search first pays a tap for every
+                phone call. On the phone it lives in the title row and is
+                revealed, because the row it would otherwise add is a row of
+                the list. */}
+            {wide && searchField}
+            {/* The funnel carries a count of what is on. Without it a filtered
+                empty list is indistinguishable from an empty queue — the
+                difference between "nothing to do" and "you cannot see the
+                work". */}
+            {/* THE BUBBLE IS A SIBLING OF THE BUTTON, not a child of it, and
+                that is geometry rather than tidiness. Slotted into
+                `ion-button` it lands inside `.button-native` — so a negative
+                offset resolves against Ionic's inner element, and the badge
+                came to rest INSIDE the button's own footprint however far it
+                was pushed (measured: `right: -0.5rem` put its right edge 2px
+                short of the host's). Outside the button, in a wrapper that is
+                the positioning context, it straddles the corner the way it is
+                drawn — clear of the funnel it is counting. */}
+            {/* THE WRAPPER TAKES THE CLICK TOO, and that is the price of a
+                bubble that overhangs: the part sticking past the corner is
+                not the button, and the wrapper is sized to the button — so a
+                press on the overhang reached NOTHING, sitting exactly where a
+                thumb aims for the corner of a control. The badge accepts the
+                press and it bubbles to here, which makes the whole visible
+                shape one target. The button underneath is still the real control and
+                the only thing a keyboard or a screen reader ever sees, so
+                this adds hit area and no second affordance; a press on the
+                button bubbles here as well and opens a sheet that is already
+                opening, which is the same state. */}
+            <span
+              className="pq-funnel-wrap"
+              onClick={() => setSheetOpen(true)}
+            >
+              <IonButton
+                fill="outline"
+                size="small"
+                className="pq-funnel"
+                data-testid="queue-funnel"
+                onClick={() => setSheetOpen(true)}
+              >
+                <IonIcon icon={funnelOutline} aria-hidden="true" />
+                <span className="ops2-sr-only">
+                  {activeRefinements.length
+                    ? `Filters, ${activeRefinements.length} active`
+                    : "Filters"}
+                </span>
+              </IonButton>
+              {activeRefinements.length > 0 && (
+                <IonBadge
+                  className="pq-funnel__count"
+                  data-testid="queue-funnel-count"
+                  aria-hidden="true"
+                >
+                  {activeRefinements.length}
+                </IonBadge>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
       headOverlay={!wide && searchOpen ? (
         <>
           {searchField}
@@ -205,85 +305,6 @@ export function ProjectsPage() {
               path to the same four queries. `headlineStats` is deleted rather
               than left unrendered: a selector nothing calls is the kind of dead
               code that reads as live. */}
-          <div className="pq-controls" data-wide={wide}>
-            {/* At the desk the field is permanent — there is room, and a
-                reviewer who has to reveal a search first pays a tap for every
-                phone call. On the phone it lives in the title row and is
-                revealed, because the row it would otherwise add is a row of
-                the list. */}
-            {wide && searchField}
-            <div className="pq-filters">
-              <div className="pq-chips" role="group" aria-label="Filter by who is waiting">
-                {view.chips.map((chip) => (
-                  <button
-                    type="button"
-                    key={chip.key}
-                    className="pq-chip"
-                    data-testid="queue-chip"
-                    data-chip={chip.key}
-                    aria-pressed={chip.active}
-                    onClick={() => setQuery(chip.query)}
-                  >
-                    {chip.label}
-                    <span className="pq-count">{chip.count}</span>
-                  </button>
-                ))}
-              </div>
-              {/* The funnel carries a count of what is on. Without it a filtered
-                  empty list is indistinguishable from an empty queue — the
-                  difference between "nothing to do" and "you cannot see the
-                  work". */}
-              {/* THE BUBBLE IS A SIBLING OF THE BUTTON, not a child of it, and
-                  that is geometry rather than tidiness. Slotted into
-                  `ion-button` it lands inside `.button-native` — so a negative
-                  offset resolves against Ionic's inner element, and the badge
-                  came to rest INSIDE the button's own footprint however far it
-                  was pushed (measured: `right: -0.5rem` put its right edge 2px
-                  short of the host's). Outside the button, in a wrapper that is
-                  the positioning context, it straddles the corner the way it is
-                  drawn — clear of the funnel it is counting. */}
-              {/* THE WRAPPER TAKES THE CLICK TOO, and that is the price of a
-                  bubble that overhangs: the part sticking past the corner is
-                  not the button, and the wrapper is sized to the button — so a
-                  press on the overhang reached NOTHING, sitting exactly where a
-                  thumb aims for the corner of a control. The badge accepts the
-                  press and it bubbles to here, which makes the whole visible
-                  shape one target. The button underneath is still the real control and
-                  the only thing a keyboard or a screen reader ever sees, so
-                  this adds hit area and no second affordance; a press on the
-                  button bubbles here as well and opens a sheet that is already
-                  opening, which is the same state. */}
-              <span
-                className="pq-funnel-wrap"
-                onClick={() => setSheetOpen(true)}
-              >
-                <IonButton
-                  fill="outline"
-                  size="small"
-                  className="pq-funnel"
-                  data-testid="queue-funnel"
-                  onClick={() => setSheetOpen(true)}
-                >
-                  <IonIcon icon={funnelOutline} aria-hidden="true" />
-                  <span className="ops2-sr-only">
-                    {activeRefinements.length
-                      ? `Filters, ${activeRefinements.length} active`
-                      : "Filters"}
-                  </span>
-                </IonButton>
-                {activeRefinements.length > 0 && (
-                  <IonBadge
-                    className="pq-funnel__count"
-                    data-testid="queue-funnel-count"
-                    aria-hidden="true"
-                  >
-                    {activeRefinements.length}
-                  </IonBadge>
-                )}
-              </span>
-            </div>
-          </div>
-
           {/* WHICH refinements are on, not just how many. A count tells you the
               number of filters and still leaves you guessing which row went
               missing and why. */}
@@ -348,10 +369,11 @@ function EmptyPanel({
  * A skeleton OF THE COMING SHAPE, never a spinner — R-161, and the boundary
  * document's own ruling on `IonLoading`.
  *
- * TWO BLOCKS AT BOTH WIDTHS, because the list is now one surface at both: the
- * phone's cards are a single elevated block with hairlines between the rows,
- * exactly as the desk's table already was. So the promise is the controls, then
- * the list — and there is no third block, because there is no status panel.
+ * ONE BLOCK, because the list is one surface at both widths — the phone's cards
+ * are a single elevated block with hairlines between the rows, exactly as the
+ * desk's table already was. The control row is NOT part of this promise any
+ * more: it lives in the white band, and the band holds its own space while the
+ * queue loads.
  *
  * THE HEIGHTS ARE MEASURED, not chosen. A skeleton is a promise about the
  * layout that is arriving, which is a way of being wrong a spinner cannot be:
@@ -370,7 +392,6 @@ function EmptyPanel({
 function QueueSkeleton({ wide }: { wide: boolean }) {
   return (
     <div className="pq-skeleton" data-testid="queue-skeleton" aria-busy="true">
-      <IonSkeletonText animated style={{ height: wide ? "58px" : "40px" }} />
       <IonSkeletonText animated style={{ height: wide ? "305px" : "560px" }} />
     </div>
   );

@@ -50,7 +50,7 @@ import { useRailWidth } from "../nav/useRailWidth";
  * guarantee is only true in one direction.
  */
 export function OpsPage({
-  destination, title, backTo, headActions, headOverlay,
+  destination, title, backTo, headActions, headOverlay, controls,
   width = "measure", children,
 }: {
   destination: Destination;
@@ -63,6 +63,9 @@ export function OpsPage({
   headActions?: ReactNode;
   /** Replaces the heading IN PLACE, at the same height. See the note above. */
   headOverlay?: ReactNode;
+  /** The surface's own control row — tabs, search, filters. It shares the white
+   *  band with the title rather than sitting on the page below it. */
+  controls?: ReactNode;
   /** `measure` caps the body at a reading measure; `full` releases it for a
    *  surface whose value is columns across the available width. */
   width?: "measure" | "full";
@@ -124,6 +127,17 @@ export function OpsPage({
               <AccountButton account={account} variant="topbar" id="ops2-account-topbar" />
             </IonButtons>
           </IonToolbar>
+          {/* THE CONTROL ROW IS THE BAND'S SECOND LINE, not a card on the page
+              below it. Two toolbars in one `IonHeader` so the tabs stay put
+              when the list scrolls under them — a tab strip that scrolls away
+              is a tab strip you have to hunt back up for to change what you are
+              looking at. The white runs through both; only the last one carries
+              the edge. */}
+          {controls && (
+            <IonToolbar className="ops2-topbar ops2-topbar--controls">
+              {controls}
+            </IonToolbar>
+          )}
         </IonHeader>
       )}
       <IonContent className="ops2-page">
@@ -171,13 +185,16 @@ export function OpsPage({
               search field replaces in place, which is why the swap mechanism
               lives on this row and not in the bar. */}
           {!wide && (
-            <div className="ops2-page__head">
-              <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
-                <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
+            <div className="ops2-page__band">
+              <div className="ops2-page__head">
+                <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
+                  <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
+                </div>
+                {headOverlay
+                  ? <div className="ops2-page__head-overlay">{headOverlay}</div>
+                  : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
               </div>
-              {headOverlay
-                ? <div className="ops2-page__head-overlay">{headOverlay}</div>
-                : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
+              {controls}
             </div>
           )}
           {children}

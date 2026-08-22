@@ -3,6 +3,7 @@ import {
   IonModal, IonNote, IonTitle, IonToolbar,
 } from "@ionic/react";
 import type { QueueControl, QueueQuery } from "./queue";
+import { useRailWidth } from "../nav/useRailWidth";
 
 /**
  * The funnel's panel — taken from the mock, not reinvented.
@@ -20,9 +21,16 @@ import type { QueueControl, QueueQuery } from "./queue";
  *    computed down two different paths and disagree.
  *  - ONE way to clear the lot.
  *
- * `initialBreakpoint` / `breakpoints` are the mock's. A sheet rather than a
- * full-screen modal because the list behind it is the thing being refined, and
- * a reviewer who cannot see what is changing is guessing.
+ * TWO FORMS, ONE PANEL. On the phone it is the mock's bottom sheet, at the
+ * mock's breakpoint. At the desk it is a RIGHT-HAND SLIDE-OUT — the owner's
+ * instruction, and the reason is that a sheet rising from the bottom edge of a
+ * 1440px window is a phone gesture performed on a desk: it starts a long way
+ * from the funnel that opened it and covers the bottom of the list rather than
+ * its side. The contents are identical; only the edge it comes from changes.
+ *
+ * Either way it is a panel and not a full-screen modal, because the list behind
+ * it is the thing being refined and a reviewer who cannot see what is changing
+ * is guessing.
  */
 export function FilterSheet({
   open, onClose, controls, onApply, onClear, activeCount,
@@ -34,13 +42,16 @@ export function FilterSheet({
   onClear: () => void;
   activeCount: number;
 }) {
+  const wide = useRailWidth();
   return (
     <IonModal
       isOpen={open}
       onDidDismiss={onClose}
-      initialBreakpoint={0.5}
-      breakpoints={[0, 0.5]}
-      className="pq-sheet"
+      // The breakpoints ARE the bottom sheet — passing them at the desk is what
+      // would make a side panel try to drag itself up from the bottom edge.
+      initialBreakpoint={wide ? undefined : 0.5}
+      breakpoints={wide ? undefined : [0, 0.5]}
+      className={wide ? "pq-sheet pq-sheet--side" : "pq-sheet"}
       data-testid="queue-filter-sheet"
     >
       <IonHeader className="ion-no-border">

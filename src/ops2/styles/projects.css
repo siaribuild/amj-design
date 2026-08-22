@@ -54,6 +54,31 @@
 .ops2-page__head-actions { flex: none; }
 
 .ops2-page__body--full { max-width: none; }
+
+/* ── The white band ─────────────────────────────────────────────────────────
+ * The title and the control row are ONE surface, edge to edge, with the page's
+ * own ground beginning underneath it. The owner's mock, and it is not only a
+ * colour: the band's bottom edge is what the active tab's indicator sits on,
+ * and a tab strip floating inside a card is a decorated pill rather than a tab.
+ *
+ * Full bleed by pulling back the body's own padding — and pulling back the
+ * safe-area inset with it, so the white runs under the status bar rather than
+ * leaving a strip of ground above itself on a notched phone. The desk has no
+ * band here: there the two rows are two toolbars in `ion-header`, so they stay
+ * put when the list scrolls under them. */
+.ops2-page__band {
+  --ops2-band-top: calc(
+    var(--theme-spacing-lg) + var(--ops2-safe-top, env(safe-area-inset-top, 0px))
+  );
+  /* The gap below is the body's own `lg`, so the list sits the same distance
+     under the band as the skeleton that stood in for it. `md` here left the
+     loaded list 4px above where the placeholder had been. */
+  margin: calc(-1 * var(--ops2-band-top)) calc(-1 * var(--theme-spacing-lg))
+          var(--theme-spacing-lg);
+  padding: var(--ops2-band-top) var(--theme-spacing-lg) 0;
+  background: var(--ds-surface-card);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
 /* The inset the header is no longer here to take. Named through a variable so
    it can be forced in a test — `env()` cannot be, and a page asserting
    `padding-top: 0` in a browser whose inset is 0 would pass just as happily
@@ -80,30 +105,55 @@
  * the search is in the title row and only the filter row is here. */
 /* One height for every control on this row — the pill group, the funnel and,
    at the desk, the search field. Named once here so they cannot drift apart. */
-.pq-controls { --pq-control-height: 2.5rem; }
+/* ── The control row ────────────────────────────────────────────────────────
+ * TABS ON THE LEFT, TOOLS ON THE RIGHT, at both widths. The left half chooses
+ * which view of the queue; the right half narrows what is in it. One height for
+ * everything on the row, named once so the tabs, the field and the funnel
+ * cannot drift apart — `ion-button` sizes itself from its content and lands a
+ * few pixels short otherwise.
+ *
+ * No card, no border, no background: the row is INSIDE the white band now (a
+ * toolbar at the desk, the band's second line on the phone), so a card here
+ * would be a surface on a surface. */
 .pq-controls {
+  --pq-control-height: 2.75rem;
+  /* THE ROW'S HEIGHT IS THE ROW'S, not its contents'. The tabs set it while
+     they are there, and while the queue is loading they are not — the
+     placeholder that holds the band open is a single bar, so without a floor
+     here the band was 26px shorter during the load and grew when the data
+     landed. Two pixels over the control height: the indicator's own thickness,
+     which the tabs sit above. */
+  min-height: calc(var(--pq-control-height) + 2px);
   display: flex;
-  flex-direction: column;
-  gap: var(--theme-spacing-sm);
-  margin-bottom: var(--theme-spacing-sm);
-}
-/* THE FIRST THING UNDER THE TITLE at both widths now, so it carries the gap the
-   status panel used to open — and it carries it at both, which is what the
-   skeleton's own top margin already assumed. Scoping this to the phone left the
-   desk's controls flush against the lede and the loading state 16px below where
-   the settled one landed. */
-.pq-controls { margin-top: var(--theme-spacing-lg); }
-.pq-controls[data-wide="true"] {
-  flex-direction: row;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  gap: var(--theme-spacing-lg);
-  padding: var(--theme-spacing-sm);
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
+  flex-wrap: wrap;
+  gap: var(--theme-spacing-sm) var(--theme-spacing-lg);
 }
-.pq-controls[data-wide="true"] .pq-search { flex: 1 1 22rem; max-width: 30rem; }
+/* The row's placeholder while the queue loads — the band's second line has to
+   occupy its space before there is anything true to put in it. */
+.pq-controls__ghost {
+  width: 14rem;
+  height: 1.25rem;
+  margin: 0;
+  align-self: center;
+  border-radius: var(--ds-radius-control);
+}
+.pq-tools {
+  /* It GROWS so the field can use the room between it and the tabs — capped
+     below, because a search field running the width of a 27" monitor is a
+     target you have to aim at rather than a field you land in. Without the
+     grow the placeholder truncated mid-word at 1440 with half the row empty. */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--theme-spacing-sm);
+  /* It sits ON the band's edge with the tabs, so it needs the same clearance
+     the indicator takes — otherwise the field and the funnel look 2px low. */
+  padding-bottom: 2px;
+}
+.pq-controls[data-wide="true"] .pq-search { flex: 1 1 20rem; max-width: 32rem; }
 
 /* WHITE, not the sunken step. This page's ground is already a warm off-white,
    so a field one step darker than it reads as part of the page rather than as
@@ -126,80 +176,60 @@ ion-searchbar.pq-search .searchbar-input {
   font-size: var(--theme-font-size-sm);
 }
 
-.pq-filters {
-  display: flex;
-  align-items: stretch;
-  flex-wrap: wrap;
-  gap: var(--theme-spacing-xs);
-}
-/* ONE COMPONENT, selectable within itself — the owner's drawing. The group owns
-   the border, the background and the corners; the members own nothing but their
-   own fill, and are divided by a hairline rather than by a gap. Three, never
-   scrollable: a fixed set that must all be reachable cannot hide members off
-   the edge (the destinations rule, one level down). */
+/* ── The quick filters, as TABS ─────────────────────────────────────────────
+ * The owner's Figma, and the reason is better than the family resemblance to
+ * the record view's LINES / PROJECT pair: it separates two controls that used
+ * to look identical and behave differently. These three are MUTUALLY EXCLUSIVE
+ * views of one queue; the funnel beside them is ADDITIVE. As a pill group and a
+ * button they read as one class of control. As a tab strip and a button they
+ * read as what they are.
+ *
+ * THEY LOOK LIKE TABS AND ARE NOT TABS. No `role="tablist"`, no `aria-selected`
+ * — those announce "tab 1 of 3" and promise a panel switch, and what actually
+ * happens is a list filtering in place. They stay buttons with `aria-pressed`,
+ * wearing an indicator.
+ *
+ * Never scrollable, still: a fixed set that must all be reachable cannot hide
+ * members off the edge (the destinations rule, one level down). Wrapping is
+ * what happens instead at the narrowest width with the largest counts — at
+ * 320px with three three-digit counts the strip needs more room than there is.
+ */
 .pq-chips {
   display: flex;
   flex: 0 1 auto;
-  /* IT NAMES ITS OWN MINIMUM. `overflow: hidden` below is what lets a selected
-     member be filled to the group's rounded corners — and it also sets this
-     flex item's automatic minimum size to ZERO, whatever it contains, so the
-     group would shrink under its own labels and cut them off silently: no
-     wrap, no scroll, no ellipsis, just a count missing a digit on the one
-     control whose job is counting. Reported in review; it does not bite at any
-     size this console serves (at 320px the group measures 246 inside 288,
-     because the three labels are fixed strings), but the mechanism is real and
-     one declaration removes the whole class. */
   min-width: min-content;
-  /* IT WRAPS RATHER THAN CLIPS. Every count is unbounded — the queue is not
-     paginated — and at 320px with three three-digit counts the group measures
-     316 inside 288, which overflowed the row and carried the funnel off the
-     right edge. Nothing said so: `ion-content` scrolls inside its own shadow
-     root and clips the rest, so the page never gained a scrollbar to notice.
-     Wrapping keeps every member reachable, which is the rule this group is
-     under; going off the edge does not. It only happens at the narrowest width
-     with the largest counts — at 430 the same group is 316 inside 398. */
   flex-wrap: wrap;
-  /* THE DIVIDERS ARE THE GAPS. A 1px gap over the group's own background shows
-     as a hairline, and it does so BETWEEN ROWS as well — which a left border on
-     each member cannot, and which would otherwise leave a rule floating at the
-     start of a wrapped second line. */
-  gap: 1px;
-  background: var(--ds-border-default);
-  border: 1px solid var(--ds-border-default);
-  border-radius: var(--ds-radius-control);
-  overflow: hidden;
+  align-items: stretch;
+  gap: var(--theme-spacing-md);
 }
-/* Members hug their own words, and each paints its own fill over the group's
-   divider colour. */
+/* A member: a label, its count, and an indicator when it is the one on. The
+   indicator is the button's own bottom border and the button fills the row's
+   height, so the line lands ON the band's bottom edge — which is what makes the
+   active tab appear to own the list below it. */
 .pq-chip {
-  /* GROW, NEVER SHRINK. The group's background IS the divider colour — that is
-     how a 1px gap draws as a hairline — so any part of a wrapped line the
-     members do not cover is a slab of raw grey inside the control, and the
-     first wrap left 93px of it. Growing fills each line to the group's edge.
-     It changes nothing where the group does not wrap: there the group is
-     exactly as wide as its members, so there is no free space to distribute.
-     `flex-shrink: 0` is the other half — a member squeezed below its own label
-     is the clipping this group already refuses. */
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: var(--theme-spacing-2xs);
   min-height: var(--pq-control-height);
-  padding: 0 var(--theme-spacing-md);
-  background: var(--ds-surface-card);
+  padding: 0 var(--theme-spacing-2xs);
+  background: none;
   border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--ds-text-secondary);
   font-size: var(--theme-font-size-sm);
   font-weight: var(--theme-font-weight-medium);
   white-space: nowrap;
   cursor: pointer;
 }
-.pq-chip:hover { background: var(--ds-color-brand-wash); }
-/* Sage is the brand and the selected state. */
+.pq-chip:hover { color: var(--ds-text-primary); }
+/* THE WORD DARKENS AS WELL AS THE LINE APPEARING. Two pixels is a thin thing to
+   hang a state on, and it is the same reason the rail's active destination
+   darkens its label rather than leaning on its indicator alone. */
 .pq-chip[aria-pressed="true"] {
-  background: var(--ds-surface-brand);
-  color: var(--ds-text-inverse);
+  color: var(--ds-text-primary);
+  border-bottom-color: var(--ds-color-brand);
+  font-weight: var(--theme-font-weight-semibold);
 }
 .pq-count {
   font-variant-numeric: tabular-nums;
@@ -269,6 +299,24 @@ ion-searchbar.pq-search .searchbar-input {
   padding-left: var(--theme-spacing-2xs);
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-secondary);
+}
+
+/* ── The filter panel, at the desk ──────────────────────────────────────────
+ * A RIGHT-HAND SLIDE-OUT. `ion-modal` centres its wrapper in the viewport, so
+ * the panel is pushed to the trailing edge by the host's own alignment and
+ * given the full height — there is no side-sheet variant to ask for. The
+ * corners go flat on the edge it is attached to: a panel with four rounded
+ * corners is a dialog that happens to be near the edge, not a drawer.
+ */
+ion-modal.pq-sheet--side {
+  --width: 22rem;
+  --height: 100%;
+  --border-radius: 0;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+ion-modal.pq-sheet--side::part(content) {
+  border-inline-start: 1px solid var(--ds-border-subtle);
 }
 
 /* The predicted count sits away from the label it qualifies. Without this it
@@ -488,7 +536,11 @@ ion-searchbar.pq-search .searchbar-input {
   display: flex;
   flex-direction: column;
   gap: var(--theme-spacing-sm);
-  margin-top: var(--theme-spacing-lg);
+  /* NO MARGIN OF ITS OWN. The gap above the list belongs to the band (phone) or
+     to the body's padding (desk); adding a third one here put the placeholder
+     lower than the list it stood in for — 14px at the desk, which is a visible
+     settle on the surface whose skeleton exists so that nothing settles. */
+  margin-top: 0;
 }
 /* ZERO MARGIN, and it is not tidiness: `ion-skeleton-text` ships `margin: 4px 0`,
    so every block sat 4px low and every gap was 8 + 4 + 4 = 16 against the 8 the

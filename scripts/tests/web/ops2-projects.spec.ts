@@ -102,12 +102,6 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
   // THE OWNER'S CAP, VERBATIM: "3 quick filters max + filter icon with bubble."
   // Asserted as a maximum on what is RENDERED, not on the model's array — a
   // fourth chip added to the markup would slip past a model-only check.
-  // NOTE: this half did not reproduce when it was reported — at 320px the
-  //    group measures 246 inside 288, because the three labels are fixed
-  //    strings and the counts are short. The MECHANISM is real all the same
-  //    (`overflow: hidden` sets a flex item's automatic minimum size to zero,
-  //    whatever it contains), so the group names its own minimum and the test
-  //    stays as the thing that would notice a longer label.
   const chips = page.getByTestId("queue-chip");
   await expect(chips).toHaveCount(3);
   await expect(chips.nth(0)).toHaveText(/All/);
@@ -209,15 +203,16 @@ test("no status panel at either width, and nothing it counted is unreachable", a
   }
 });
 
-test("the pill group never clips a label, and the bubble is part of the button", async ({ page }) => {
+test("the tab strip never clips a label, and the bubble is part of the button", async ({ page }) => {
   // TWO WAYS A GROUPED CONTROL GOES WRONG, both found in review.
   //
-  // 1. The group hides its overflow so its members can be filled to its own
-  //    rounded corners — and `overflow: hidden` also makes a flex item's
-  //    automatic minimum size ZERO, whatever its contents. So on a small phone
-  //    with three-digit counts the group shrinks under its own labels and
-  //    silently cuts them off: no wrap, no scroll, no ellipsis, just a number
-  //    that is missing a digit on the one control whose whole job is counting.
+  // 1. Counts are unbounded — the queue is not paginated — so the strip has to
+  //    survive three-digit counts on a small phone without cutting a label off
+  //    or carrying the funnel past the right edge. It clipped silently when the
+  //    filters were a bordered group: `overflow: hidden` makes a flex item's
+  //    automatic minimum size ZERO whatever its contents. As tabs there is no
+  //    group box to clip against, and the strip is narrower — but the counts
+  //    are the same, so the assertion is still the one that matters.
   //
   // 400 projects split evenly, so ALL THREE counts are three digits —
   // 400 / 200 / 200. The first version of this test served 120 and got
@@ -235,12 +230,6 @@ test("the pill group never clips a label, and the bubble is part of the button",
   await page.goto(PROJECTS);
   await expect(page.getByTestId("queue-row").first()).toBeVisible();
 
-  // NOTE: this half did not reproduce when it was reported — at 320px the
-  //    group measures 246 inside 288, because the three labels are fixed
-  //    strings and the counts are short. The MECHANISM is real all the same
-  //    (`overflow: hidden` sets a flex item's automatic minimum size to zero,
-  //    whatever it contains), so the group names its own minimum and the test
-  //    stays as the thing that would notice a longer label.
   const chips = page.getByTestId("queue-chip");
   await expect(chips).toHaveCount(3);
   await expect(chips.nth(0)).toContainText("400");
@@ -257,7 +246,7 @@ test("the pill group never clips a label, and the bubble is part of the button",
   // and passed while the filter row was overflowing by 70px with the funnel
   // hanging off the screen. The container that actually overflows is the one to
   // ask.
-  for (const selector of [".pq-filters", ".pq-controls", ".ops2-page__body"]) {
+  for (const selector of [".pq-chips", ".pq-controls", ".ops2-page__body"]) {
     const over = await page.locator(selector)
       .evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(over, `${selector} overflows sideways`).toBeLessThanOrEqual(1);
@@ -266,25 +255,6 @@ test("the pill group never clips a label, and the bubble is part of the button",
   const funnel = (await page.getByTestId("queue-funnel").boundingBox())!;
   expect(funnel.x + funnel.width, "the funnel is off the right edge")
     .toBeLessThanOrEqual(320);
-
-  // 3. AND A WRAPPED LINE IS FULL. The group's own background is the divider
-  //    colour — that is how a 1px gap draws as a hairline — so any part of a
-  //    line the members do not cover is a slab of raw grey inside the control.
-  //    Every line has to be filled to the group's inner edge.
-  const lines = await page.getByTestId("queue-chip").evaluateAll((els) => {
-    const group = els[0].parentElement!.getBoundingClientRect();
-    const rows = new Map<number, number>();
-    for (const el of els) {
-      const b = el.getBoundingClientRect();
-      rows.set(Math.round(b.y), Math.max(rows.get(Math.round(b.y)) ?? 0, b.right));
-    }
-    return [...rows.values()].map((right) => group.right - right);
-  });
-  expect(lines.length, "the group is expected to have wrapped at this size")
-    .toBeGreaterThan(1);
-  for (const [i, gap] of lines.entries()) {
-    expect(gap, `line ${i} leaves bare group background`).toBeLessThanOrEqual(2);
-  }
 
   // 2. The bubble protrudes past the button's corner, and it is decorative —
   //    so without care the part sticking out is dead area on a touch screen,
@@ -371,45 +341,36 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     const skeleton = page.getByTestId("queue-skeleton");
     await expect(skeleton).toBeVisible();
     await expect(page.locator("ion-spinner")).toHaveCount(0);
-    const promised = await Promise.all(
-      (await skeleton.locator("ion-skeleton-text").all())
-        .map(async (b) => (await b.boundingBox())!),
-    );
+    // TWO PROMISES, IN TWO PLACES. The control row is not part of the skeleton
+    // any more — it lives in the white band, which holds its own space with a
+    // placeholder — so the band is measured directly and the skeleton stands in
+    // for the list alone.
+    const rowDuring = (await page.locator(".pq-controls").boundingBox())!;
+    const listDuring = (await skeleton.locator("ion-skeleton-text").first().boundingBox())!;
 
     release();
     await loading;
     await expect(page.getByTestId("queue-row")).toHaveCount(4);
 
-    // 1. THE HEAD OF THE LIST. Whatever renders first under the head row — the
-    //    strip at the desk, the filter row on the phone — starts where the
-    //    skeleton started, or the whole page moves.
-    const head = (await page.locator(".pq-controls").boundingBox())!;
-    expect(Math.abs(head.y - promised[0].y), `the head of the list jumps at ${width}px`)
+    // 1. THE BAND DOES NOT CHANGE SHAPE when the data lands. Rendering the real
+    //    row only once the queue arrived grew the band by a row at that moment
+    //    and shoved the whole list down — the jump the skeleton exists to
+    //    prevent, reintroduced one level above it.
+    const rowSettled = (await page.locator(".pq-controls").boundingBox())!;
+    expect(Math.abs(rowSettled.y - rowDuring.y), `the control row moves at ${width}px`)
+      .toBeLessThanOrEqual(2);
+    expect(Math.abs(rowSettled.height - rowDuring.height), `the band changes height at ${width}px`)
       .toBeLessThanOrEqual(2);
 
-    if (width >= 1024) {
-      // 2a. THE DESK'S LIST IS ONE BORDERED SURFACE with its own header row, so
-      //     its placeholder is one block — and both EDGES are checked, because
-      //     the top alone is set by the two blocks above it and says nothing
-      //     about whether this one is the right size.
-      const table = (await page.locator(".pq-table-wrap").boundingBox())!;
-      const block = promised[1];
-      expect(Math.abs(table.y - block.y), "the table starts where it was promised")
-        .toBeLessThanOrEqual(2);
-      expect(Math.abs(table.height - block.height), "the table is the promised height")
-        .toBeLessThanOrEqual(4);
-    } else {
-      // 2b. THE PHONE'S LIST IS NOW ONE BLOCK TOO — the owner's correction, and
-      //     it makes the placeholder a single measurement instead of four. Both
-      //     edges again: the top alone is set by the controls above it and says
-      //     nothing about whether this block is the right size.
-      const list = (await page.locator(".pq-cards").boundingBox())!;
-      const block = promised[1];
-      expect(Math.abs(list.y - block.y), "the list starts where it was promised")
-        .toBeLessThanOrEqual(2);
-      expect(Math.abs(list.height - block.height), "the list is the promised height")
-        .toBeLessThanOrEqual(4);
-    }
+    // 2. AND THE LIST LANDS WHERE IT WAS PROMISED, both edges. The top alone is
+    //    set by the band above it and says nothing about whether the block is
+    //    the right size.
+    const list = (await page.locator(width >= 1024 ? ".pq-table-wrap" : ".pq-cards")
+      .boundingBox())!;
+    expect(Math.abs(list.y - listDuring.y), `the list starts elsewhere at ${width}px`)
+      .toBeLessThanOrEqual(2);
+    expect(Math.abs(list.height - listDuring.height), `the list is not the promised height at ${width}px`)
+      .toBeLessThanOrEqual(4);
     await page.unroute(QUEUE_URL);
   }
 });

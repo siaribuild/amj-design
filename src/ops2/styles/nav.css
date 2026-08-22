@@ -275,6 +275,18 @@ ion-toolbar.ops2-topbar {
    rather than an `ion-title` so R-164's focus manager can find it — see
    ../chrome/OpsPage.tsx — which means the toolbar's own title centring does not
    apply and the margins are set here. */
+/* The band's SECOND LINE — the surface's own controls, sharing the white with
+   the title above them. No bottom border on the first toolbar and none on this
+   one either: `ion-header` draws the edge under the whole block, so the two
+   read as one band rather than as two stacked bars. */
+ion-toolbar.ops2-topbar--controls {
+  --border-width: 0 0 1px 0;
+  --min-height: 0;
+  --padding-top: 0;
+  --padding-bottom: 0;
+}
+ion-toolbar.ops2-topbar:not(.ops2-topbar--controls) { --border-width: 0; }
+
 .ops2-topbar__title {
   margin: 0;
   min-width: 0;
