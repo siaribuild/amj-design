@@ -674,6 +674,40 @@ test("no rendered corner on this surface exceeds the owner's 5px cap, in either 
   }
 });
 
+test("the record's back control is not under the band that follows it", async ({ page }) => {
+  // THE BAND IS PULLED UP BY ITS OWN TOP INSET so the white runs under the
+  // status bar — and on a record page the back control is rendered BEFORE it,
+  // so the later-painted band was dragged over the top of it. Not merely
+  // hidden: it intercepts the press as well, on the one control a person on a
+  // phone reaches for without looking.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(PROJECTS);
+  await expect(page.locator("ion-tab-bar")).toBeVisible();
+  await page.getByTestId("queue-row").first().click();
+  await expect(page).toHaveURL(/\/ops2\/projects\/.+/);
+
+  // The tab bar also has a "Projects" button; this one is the page's.
+  // Wait for the page transition to SETTLE. Ionic animates the record in, and a
+  // box measured mid-slide is a box the page is not at yet — which reads as the
+  // control being covered when it is only still moving.
+  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  const back = page.locator(".ops2-page__back");
+  await expect(back).toBeVisible();
+  await page.waitForTimeout(600);
+  // WHAT IS ACTUALLY ON TOP AT ITS CENTRE. `toBeVisible` is satisfied by an
+  // element another element is painted over, which is the whole failure.
+  const box = (await back.boundingBox())!;
+  const covering = await page.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y);
+    return el ? `${el.tagName.toLowerCase()}.${el.className}` : "nothing";
+  }, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(covering, "something is painted over the back control").toContain("ops2-page__back");
+
+  // And it works: the press reaches it and returns to the queue.
+  await back.click();
+  await expect(page).toHaveURL(/\/ops2\/projects$/);
+});
+
 test("a modified click on a project opens it beside, not instead", async ({ page, context }) => {
   // The wide row carries a REAL anchor precisely so two projects can be open at
   // once at a desk. The first build then called `preventDefault()` on every

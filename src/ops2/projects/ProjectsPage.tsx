@@ -215,9 +215,15 @@ export function ProjectsPage() {
           {/* THE RIGHT-HAND GROUP IS "NARROW WHAT IS IN THIS VIEW"; the tabs on
               the left choose WHICH view. Two jobs, two ends of the row, and the
               gap between them is what says they are different kinds of control.
-              The funnel keeps its box for the same reason: tabs are unboxed
-              labels wearing an indicator, so an unboxed icon beside them reads
-              as a fourth tab however much space it is given. */}
+              NO BOX ON THE FUNNEL. I argued for one — tabs are unboxed labels,
+              so an unboxed icon beside them could read as a fourth tab — and
+              the owner overruled it: "surely it does not need to stand out and
+              drag all the attention to it". He is right about the weight. It is
+              a way in to a rarely-used refinement, not a peer of the three
+              things you actually switch between, and a bordered square beside
+              three quiet labels was the loudest thing on the row. What keeps it
+              out of the tab set is that it is a GLYPH among words, plus the gap
+              and — at the desk — the search field between them. */}
           <div className="pq-tools">
             {/* At the desk the field is permanent — there is room, and a
                 reviewer who has to reveal a search first pays a tap for every
@@ -254,7 +260,7 @@ export function ProjectsPage() {
               onClick={() => setSheetOpen(true)}
             >
               <IonButton
-                fill="outline"
+                fill="clear"
                 size="small"
                 className="pq-funnel"
                 data-testid="queue-funnel"

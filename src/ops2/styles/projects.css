@@ -87,6 +87,9 @@
   padding-top: var(--ops2-safe-top, env(safe-area-inset-top, 0px));
 }
 
+/* Inside the band it sits above the title with the band's own top padding
+   already applied, so it keeps only the gap to the heading under it. */
+.ops2-page__band .ops2-page__back { margin-bottom: var(--theme-spacing-2xs); }
 .ops2-page__back {
   display: inline-flex;
   align-items: center;
@@ -255,6 +258,12 @@ ion-searchbar.pq-search .searchbar-input {
   --border-radius: var(--ds-radius-control);
   --padding-start: var(--theme-spacing-sm);
   --padding-end: var(--theme-spacing-sm);
+  /* Quiet: the same weight as an unselected tab, which is what it is next to.
+     It had a border and a brand-coloured glyph, and between three grey labels
+     that made the least-used control on the row the loudest thing on it. */
+  --color: var(--ds-text-secondary);
+  --color-hover: var(--ds-text-primary);
+  --background-hover: var(--ds-color-brand-wash);
 }
 /* THE BUBBLE STRADDLES THE CORNER, more than half of it outside the button.
    Tucked inside, it covered the funnel it was counting — and an icon you cannot
@@ -309,14 +318,31 @@ ion-searchbar.pq-search .searchbar-input {
  * corners is a dialog that happens to be near the edge, not a drawer.
  */
 ion-modal.pq-sheet--side {
-  --width: 22rem;
+  /* THE SITE'S OWN WIDTH — `min(88vw, 520px)`, the idiom the main menu and the
+     quote drawer already share, so a panel arriving over the page is the same
+     object wherever it arrives. */
+  --width: min(88vw, 520px);
   --height: 100%;
-  --border-radius: 0;
+  /* And its scrim: the ink at 80% behind a 3px blur, which is what
+     `src/styles/theme.css` settled for the customer drawer. */
+  --backdrop-opacity: 0.8;
+  --ion-backdrop-color: var(--theme-ink-900);
   justify-content: flex-end;
   align-items: stretch;
 }
+ion-modal.pq-sheet--side::part(backdrop) { backdrop-filter: blur(3px); }
+/* THE FINISH IS THIS CONSOLE'S, not the drawer's. That panel predates
+   FrameFlow — square corners, no elevation — so only its numbers were reused.
+   The corners are rounded on the LEADING edge alone: the trailing edge is flush
+   with the window and a radius there would round a corner that has nothing to
+   be round against. The shadow is cast leftward, over the list it is dimming,
+   which is the only direction it can be seen from. */
 ion-modal.pq-sheet--side::part(content) {
-  border-inline-start: 1px solid var(--ds-border-subtle);
+  border-start-start-radius: var(--ds-radius-surface);
+  border-end-start-radius: var(--ds-radius-surface);
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  box-shadow: var(--ds-layer-overlay);
 }
 
 /* The predicted count sits away from the label it qualifies. Without this it

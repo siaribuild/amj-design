@@ -76,6 +76,32 @@ export function OpsPage({
   const history = useHistory();
   const router = useIonRouter();
 
+  /* A plain <button>, not IonBackButton: `ion-back-button` ignores `text=""`
+     and ignores `text` changing after hydration (the handover's table), and
+     this one names its destination — which is the settled rule and the thing
+     that component makes hardest.
+
+     IT POPS WHEN THERE IS SOMETHING TO POP. Pushing the destination instead
+     read as queue -> record -> queue in the history, so browser Back from the
+     queue re-opened the record just left, and every trip through a record grew
+     the stack by two. On a phone that is the hardware Back button — the one
+     control a person presses without looking. The push survives as the
+     COLD-LINK fallback, which is the case the label exists for: arrive at a
+     record from an email and there is no queue behind you to return to. */
+  const backControl = backTo && (
+    <button
+      type="button"
+      className="ops2-page__back ds-type-caption"
+      onClick={() => {
+        if (router.canGoBack()) router.goBack();
+        else router.push(backTo.href, "back");
+      }}
+    >
+      <IonIcon icon={chevronBack} aria-hidden="true" />
+      {backTo.label}
+    </button>
+  );
+
   return (
     <IonPage>
       {/* ── THE BAR IS THE DESK'S, AND IT CARRIES THE VIEW'S NAME ──────────
@@ -154,38 +180,25 @@ export function OpsPage({
           className={`ops2-page__body ops2-page__body--${width}`}
           data-bare={wide ? undefined : "true"}
         >
-          {/* A plain <button>, not IonBackButton: `ion-back-button` ignores
-              `text=""` and ignores `text` changing after hydration (the
-              handover's table), and this one names its destination — which is
-              the settled rule and the thing that component makes hardest.
-
-              IT POPS WHEN THERE IS SOMETHING TO POP. Pushing the destination
-              instead read as queue → record → queue in the history, so browser
-              Back from the queue re-opened the record just left, and every trip
-              through a record grew the stack by two. On a phone that is the
-              hardware Back button — the one control a person presses without
-              looking. The push survives as the COLD-LINK fallback, which is the
-              case the label exists for: arrive at a record from an email and
-              there is no queue behind you to return to. */}
-          {backTo && (
-            <button
-              type="button"
-              className="ops2-page__back ds-type-caption"
-              onClick={() => {
-                if (router.canGoBack()) router.goBack();
-                else router.push(backTo.href, "back");
-              }}
-            >
-              <IonIcon icon={chevronBack} aria-hidden="true" />
-              {backTo.label}
-            </button>
-          )}
           {/* THE PHONE'S HEAD ROW, and the only place the name appears at this
               width — the bar above it does not exist here. It is also what the
               search field replaces in place, which is why the swap mechanism
               lives on this row and not in the bar. */}
+          {wide && backControl}
+          {/* THE PHONE'S HEAD ROW, and the only place the name appears at this
+              width — the bar above it does not exist here. It is also what the
+              search field replaces in place, which is why the swap mechanism
+              lives on this row and not in the bar.
+
+              THE BACK CONTROL IS INSIDE THE BAND, not above it. The band is
+              pulled up by its own top inset so the white runs under the status
+              bar, and anything rendered before it is therefore dragged
+              underneath — the back button was not merely hidden, it stopped
+              receiving the press, on the one control a person on a phone
+              reaches for without looking. It belongs with the title anyway. */}
           {!wide && (
             <div className="ops2-page__band">
+              {backControl}
               <div className="ops2-page__head">
                 <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
                   <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
