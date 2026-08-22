@@ -117,6 +117,21 @@
 }
 .rec-blocked ion-icon { flex: none; font-size: 1rem; }
 
+/* The next move, when this build cannot make it. QUIETER THAN A REFUSAL and in
+   a neutral tone: nothing is wrong here, there is simply a door this console
+   has not built yet. A warning colour would say the job is in trouble. */
+.rec-pending {
+  display: block;
+  margin: 0 0 var(--theme-spacing-md);
+  padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
+  background: var(--ds-surface-sunken);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+}
+.rec-pending b { color: var(--ds-text-primary); }
+
 /* ── The lines ──────────────────────────────────────────────────────────────
  * ONE BLOCK, the same object the queue's list is: rows with no gap between
  * them, a hairline between each pair, and the border, corners and elevation on

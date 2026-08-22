@@ -307,3 +307,47 @@ test("the CTA is on the screen at the desk as well as on the phone", async ({ pa
     await expect(page.getByTestId("record-more"), `no overflow at ${width}px`).toBeVisible();
   }
 });
+
+test("an accepted order shows the contract lines and no dead primary", async ({ page }) => {
+  // TWO FINDINGS, ONE STATE — the record of a job that has been accepted, which
+  // nothing had opened until Codex went looking.
+  //
+  // The endpoint returns both line lists and says why: "Once the quote is
+  // accepted the draft lines are no longer what anyone is building —
+  // order_line is." And `actionsFor` hands over the ORDER stage machine's
+  // moves, none of which has a route in this build, so the primary CTA was a
+  // button that did nothing when pressed.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "draft", code: "OLD", productName: "Superseded draft", lineTotal: 999 })],
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    orderLines: [
+      { id: "o1", code: "W01", room: "Kitchen", productName: "Awning 600",
+        width: "1200", height: "900", qty: 2, lineTotal: 3480, segments: [] },
+      { id: "o2", code: "W02", room: "Bed 1", productName: "Composite opening",
+        width: "3600", height: "1500", qty: 1, lineTotal: 3520, segments: [
+          { id: "os1", productName: "Awning 1200", width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 1200 },
+        ] },
+    ],
+    actions: [
+      { id: "advance:deposit_paid", label: "Record the deposit", tier: "primary" },
+      { id: "note", label: "Add a note", tier: "secondary" },
+    ],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  // What is being built, not what was quoted.
+  const rows = page.getByTestId("record-line");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("W01");
+  await expect(page.getByTestId("record-lines")).not.toContainText("Superseded draft");
+  // The order's own total, freight included — never a re-sum of the draft lines.
+  await expect(page.getByTestId("record-totals")).toContainText("$7,000");
+  await expect(page.getByTestId("record-identity")).toContainText("OF-O-2201");
+
+  // NO CONTROL THAT CANNOT ACT. The next move is still stated, as a sentence.
+  await expect(page.getByTestId("record-primary")).toHaveCount(0);
+  await expect(page.getByTestId("record-more")).toHaveCount(0);
+  await expect(page.getByTestId("record-pending")).toContainText("Record the deposit");
+  await expect(page.getByTestId("record-pending")).toContainText("legacy console");
+});

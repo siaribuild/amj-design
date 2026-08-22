@@ -184,6 +184,38 @@ function parseLine(raw: unknown): RecordLine[] {
   }];
 }
 
+/**
+ * A CONTRACT line, mapped onto the same row the draft lines use.
+ *
+ * `order_line` carries less than `quote_line` — no configured options, no
+ * status, no review flags — because by then those questions are settled. The
+ * absent fields are absent rather than invented: an empty option map renders no
+ * spec panel, which is correct, and `ready` is the only status a line that is
+ * being manufactured to can be in.
+ */
+function parseOrderLine(raw: unknown): RecordLine[] {
+  if (!raw || typeof raw !== "object") return [];
+  const r = raw as Record<string, unknown>;
+  const id = str(r.id);
+  if (!id) return [];
+  const segments = Array.isArray(r.segments) ? r.segments.flatMap(parseSegment) : [];
+  return [{
+    id,
+    code: str(r.code) ?? "",
+    room: str(r.room) ?? "",
+    productName: str(r.productName) ?? "—",
+    width: str(r.width) ?? "",
+    height: str(r.height) ?? "",
+    qty: num(r.qty) ?? 1,
+    lineTotal: num(r.lineTotal),
+    status: "ready",
+    options: {},
+    review: null,
+    lineKind: segments.length > 0 ? "composite_parent" : "simple",
+    segments,
+  }];
+}
+
 function parseAction(raw: unknown): RecordAction[] {
   if (!raw || typeof raw !== "object") return [];
   const r = raw as Record<string, unknown>;
@@ -226,7 +258,19 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
     waitingOn: WAITING.find((w) => w === lifecycle.waitingOn) ?? "Nobody",
     daysInStage: num(b.daysInStage),
     unresolved: num(p.unresolvedLineCount) ?? 0,
-    lines: Array.isArray(b.lines) ? b.lines.flatMap(parseLine) : [],
+    // ── WHICH LINES ARE THE RECORD ──────────────────────────────────────────
+    // Once an order exists, THE CONTRACT LINES ARE. The endpoint returns both
+    // and says why: "Once the quote is accepted the draft lines are no longer
+    // what anyone is building — order_line is. Without these an accepted
+    // project renders an empty table, which is how a staffer concludes the
+    // record is broken." Reading the draft list on an accepted job shows prices
+    // and quantities nobody is manufacturing to.
+    //
+    // The order's own list is preferred only when it HAS one: an order row with
+    // no lines yet is a worse answer than the draft list it superseded.
+    lines: order && Array.isArray(b.orderLines) && b.orderLines.length > 0
+      ? b.orderLines.flatMap(parseOrderLine)
+      : Array.isArray(b.lines) ? b.lines.flatMap(parseLine) : [],
     delivery: {
       amount: num(delivery.amount),
       // NOT a truthiness check, ever: 0 is settled — a trade waiver — and only
@@ -245,14 +289,48 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
 
 // ── What the record says about itself ─────────────────────────────────────────
 
-/** The one action this screen leads with, or nothing. */
-export function primaryAction(record: ProjectRecord): RecordAction | null {
-  return record.actions.find((a) => a.tier === "primary") ?? null;
+/**
+ * Can THIS BUILD carry the action out?
+ *
+ * The server offers more than ops2 can yet perform — the order stage machine's
+ * `advance:*` and `pay:*` moves, and anything needing something typed. Every
+ * one of those is a real action with a real endpoint; none has a screen here.
+ *
+ * Stated as a predicate on the id rather than discovered when a button does
+ * nothing. It mirrors `requestFor` in `./useProjectRecord.ts`, which is where
+ * the routes live: if that map grows, this grows with it.
+ */
+export function runnableAction(action: RecordAction): boolean {
+  return action.id === "start-pricing"
+    || action.id === "issue-quote"
+    || action.id.startsWith("status:");
 }
 
-/** Everything else, for the overflow panel — in the server's own order. */
+/** The one action this screen leads with — and only if pressing it does something. */
+export function primaryAction(record: ProjectRecord): RecordAction | null {
+  const primary = record.actions.find((a) => a.tier === "primary");
+  return primary && runnableAction(primary) ? primary : null;
+}
+
+/**
+ * The next move, when this build cannot make it.
+ *
+ * NOT DROPPED, AND NOT A BUTTON. What happens next to a job is the single most
+ * useful thing on this screen, and an accepted order's next move — record the
+ * deposit, share the drawings — is exactly the kind of thing a reviewer opens a
+ * record to find out. But rendering it as the primary CTA gave a button that
+ * did nothing when pressed. So the caller states it as a sentence and says
+ * where it can be done, which is the honest shape of a console mid-migration.
+ */
+export function pendingPrimary(record: ProjectRecord): RecordAction | null {
+  const primary = record.actions.find((a) => a.tier === "primary");
+  return primary && !runnableAction(primary) ? primary : null;
+}
+
+/** Everything else, for the overflow panel — in the server's own order, and
+ *  only what this build can actually run. */
 export function otherActions(record: ProjectRecord): RecordAction[] {
-  return record.actions.filter((a) => a.tier !== "primary");
+  return record.actions.filter((a) => a.tier !== "primary" && runnableAction(a));
 }
 
 /** Is this line one the reviewer still has to finish? The server's own test. */

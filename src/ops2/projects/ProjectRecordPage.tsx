@@ -11,8 +11,8 @@ import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  ageLabel, money, otherActions, primaryAction, totalsFor, waitingSentence,
-  type ProjectRecord, type RecordAction,
+  ageLabel, money, otherActions, pendingPrimary, primaryAction, totalsFor,
+  waitingSentence, type ProjectRecord, type RecordAction,
 } from "./record";
 
 const PROJECTS = destination("projects");
@@ -61,11 +61,15 @@ export function ProjectRecordPage() {
   const [failure, setFailure] = useState<string | null>(null);
 
   const record = load.status === "ready" ? load.record : null;
+  // BOTH HALVES OF "WHAT HAPPENS NEXT". `primaryAction` is the move this build
+  // can make; `pendingPrimary` is the one it cannot — the order stage machine's
+  // `advance:*` and `pay:*` have real endpoints and no screen here. The second
+  // is stated rather than dropped, because the next move is the most useful
+  // thing on this screen, and rendered as a SENTENCE rather than as a button
+  // that does nothing when pressed.
   const primary = record ? primaryAction(record) : null;
-  // Only what this build can actually carry out. See the note above.
-  const others = record
-    ? otherActions(record).filter((a) => requestFor(record.id, a.id) !== null)
-    : [];
+  const pending = record ? pendingPrimary(record) : null;
+  const others = record ? otherActions(record) : [];
 
   const run = async (action: RecordAction) => {
     if (!record) return;
@@ -218,6 +222,14 @@ export function ProjectRecordPage() {
             <p className="rec-blocked" data-testid="record-blocked">
               <IonIcon icon={warningOutline} aria-hidden="true" />
               {primary.blockedReason}
+            </p>
+          )}
+          {pending && (
+            <p className="rec-pending" data-testid="record-pending">
+              <b>Next: {pending.label}</b>
+              <span>
+                {" "}— not in ops2 yet. This job's next move lives in the legacy console.
+              </span>
             </p>
           )}
           {failure && (

@@ -145,7 +145,11 @@ test("actions are the server's, and a blocked one is shown rather than hidden", 
   assert.equal(primary.id, "issue-quote");
   assert.equal(primary.blockedReason, "2 lines are unpriced or unresolved");
   assert.equal(primary.confirm, "Freezes this quote and emails it.");
-  assert.deepEqual(M.otherActions(r).map((a) => a.id), ["status:estimator_assigned", "note"]);
+  // ONLY WHAT THIS BUILD CAN RUN. `note` needs something typed and has no
+  // screen yet, so it is not offered — while staying in the parsed model, so
+  // nothing is lost when its screen arrives.
+  assert.deepEqual(M.otherActions(r).map((a) => a.id), ["status:estimator_assigned"]);
+  assert.deepEqual(r.actions.map((a) => a.id).includes("note"), true);
 
   // An action of unknown tier is OVERFLOW. Erring towards primary would promote
   // something the server never meant to lead with onto the one prominent control.
@@ -193,4 +197,65 @@ test("a composite opening keeps its units inside it, never loose beside it", () 
   assert.equal(r.lines.length, 1);
   assert.deepEqual(r.lines[0].segments.map((s) => s.id), ["s1", "s2"]);
   assert.equal(r.lines[0].segments[1].lineTotal, null);
+});
+
+test("an accepted project shows the CONTRACT lines, not the draft ones", () => {
+  // The endpoint's own comment says why it returns both: "Once the quote is
+  // accepted the draft lines are no longer what anyone is building — order_line
+  // is. Without these an accepted project renders an empty table, which is how
+  // a staffer concludes the record is broken."
+  //
+  // So the draft list is deliberately stale here, and reading it would show a
+  // reviewer prices and quantities nobody is manufacturing to.
+  const r = M.parseProjectRecord(body({
+    lines: [line({ id: "draft", code: "OLD", productName: "Superseded", lineTotal: 999 })],
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    orderLines: [
+      { id: "o1", code: "W01", room: "Kitchen", productName: "Awning 600",
+        width: "1200", height: "900", qty: 2, lineTotal: 3480, segments: [] },
+      { id: "o2", code: "W02", room: "Bed 1", productName: "Composite opening",
+        width: "3600", height: "1500", qty: 1, lineTotal: 3520, segments: [
+          { id: "os1", productName: "Awning 1200", width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 1200 },
+          { id: "os2", productName: "Fixed 2400", width: "2400", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 2320 },
+        ] },
+    ],
+  }));
+  assert.deepEqual(r.lines.map((l) => l.code), ["W01", "W02"]);
+  assert.equal(r.lines.find((l) => l.code === "OLD"), undefined, "the draft list is not what is built");
+  // A contract line's units still nest inside their parent.
+  assert.deepEqual(r.lines[1].segments.map((s) => s.productName), ["Awning 1200", "Fixed 2400"]);
+  assert.equal(r.lines[1].lineKind, "composite_parent");
+
+  // No order ⇒ the draft lines ARE the record, unchanged.
+  const quote = M.parseProjectRecord(body({ lines: [line({ code: "W09" })] }));
+  assert.deepEqual(quote.lines.map((l) => l.code), ["W09"]);
+});
+
+test("a primary action this build cannot run is not offered as a control", () => {
+  // `actionsFor` returns the order stage machine's own moves once a quote is
+  // accepted — `advance:*` and `pay:*` — and none of them has a route in this
+  // build. Rendered as the primary CTA they were a button that did nothing when
+  // pressed: the defect this effort has recorded four times, arrived by a path
+  // nobody looked down.
+  //
+  // The NEXT MOVE is still real information, so it is not simply dropped — the
+  // screen says what it is and that it is not here yet. That is a sentence, not
+  // a control.
+  const accepted = M.parseProjectRecord(body({
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    actions: [
+      { id: "advance:deposit_paid", label: "Record the deposit", tier: "primary" },
+      { id: "note", label: "Add a note", tier: "secondary" },
+    ],
+  }));
+  assert.equal(M.runnableAction(accepted.actions[0]), false);
+  assert.equal(M.primaryAction(accepted), null, "nothing pressable leads this screen");
+  assert.equal(M.pendingPrimary(accepted).label, "Record the deposit");
+
+  // And where the primary IS runnable it leads exactly as before.
+  const pricing = M.parseProjectRecord(body({
+    actions: [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary" }],
+  }));
+  assert.equal(M.primaryAction(pricing).id, "issue-quote");
+  assert.equal(M.pendingPrimary(pricing), null);
 });
