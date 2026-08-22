@@ -6,36 +6,38 @@ import { chevronBack, notificationsOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
 import type { Destination } from "../nav/destinations";
 import { HOME_PATH } from "../nav/destinations";
-import { Wordmark } from "../nav/Wordmark";
 import { AccountButton } from "../nav/AccountButton";
 import { useOps2Account } from "../nav/account";
 import { useRailWidth } from "../nav/useRailWidth";
 
 /**
- * Every destination's page frame: the content area's own top bar, and the
+ * Every destination's page frame: one place that says where you are, and the
  * heading the focus manager lands on.
  *
- * WHAT IS AND IS NOT IN THIS BAR. It carries no destinations — the rail and the
- * tab bar carry all of them, and a top bar that also offered places would be
- * C6's forbidden second navigation band. What it carries is the console's
- * identity where the rail is not there to carry it, and the two controls the
- * owner's screenshots put at the trailing edge.
+ * ── THE NAME IS SAID ONCE, AND WHERE IT IS SAID DEPENDS ON THE WIDTH ─────────
+ * At the DESK it is the toolbar's `<h1>`. On the PHONE there is no toolbar and
+ * it is the first line of the page. It used to be both: a white band carrying a
+ * wordmark and a bell, above a page that then announced its own name again
+ * underneath. The owner called that band redundant, and on a phone it was the
+ * top of a screen whose entire value is how much of the list you can see.
  *
- * The DESTINATION NAME is not in the toolbar. It is the `<h1>` at the top of
- * the content, which is where R-164's focus manager (`focusManagerPriority:
- * ["heading", "content"]`, set in Ops2App) puts focus on every navigation — so
- * the first thing a screen reader says after a tab change is the name of the
- * place you arrived at. Putting it in the toolbar instead would give the
- * manager an ion-title in shadow DOM to find and would print the name twice on
- * a desktop that already has the rail lit.
+ * IT IS ALWAYS AN `<h1>`, NEVER AN `ion-title`, wherever it sits. R-164's focus
+ * manager (`focusManagerPriority: ["heading", "content"]`, set in Ops2App) lands
+ * on it after every navigation, so the first thing a screen reader says on
+ * arrival is the name of the place — and `ion-title` renders into shadow DOM,
+ * where the manager cannot find it and where it is not a heading at all.
+ *
+ * The bar carries no destinations — the rail and the tab bar carry all of them,
+ * and a top bar that also offered places would be C6's forbidden second
+ * navigation band.
  *
  * IonPage is not dressing: IonRouterOutlet's page stack expects each route to
  * render exactly one, and this is the only place ops2 renders it.
  *
  * ── THE HEAD ROW, AND WHY IT HAS A FLOOR ─────────────────────────────────────
- * `eyebrow`, `lede`, `headActions` and `headOverlay` exist for the Projects
- * queue and are optional everywhere else. `headOverlay` is the owner's rule
- * about search, stated by him and built structurally rather than tuned:
+ * `headActions` and `headOverlay` are the PHONE's head row, where the Projects
+ * queue puts its search. `headOverlay` is the owner's rule about search, stated
+ * by him and built structurally rather than tuned:
  *
  *   "Keep within one line, search entry field shall not add another line."
  *
@@ -48,7 +50,7 @@ import { useRailWidth } from "../nav/useRailWidth";
  * guarantee is only true in one direction.
  */
 export function OpsPage({
-  destination, title, backTo, eyebrow, lede, headActions, headOverlay,
+  destination, title, backTo, headActions, headOverlay,
   width = "measure", children,
 }: {
   destination: Destination;
@@ -57,8 +59,6 @@ export function OpsPage({
   title?: string;
   /** Back names its DESTINATION, never where you are — the settled rule. */
   backTo?: { label: string; href: string };
-  eyebrow?: { text: string; icon?: string };
-  lede?: string;
   /** The trailing edge of the head row: the surface's own controls. */
   headActions?: ReactNode;
   /** Replaces the heading IN PLACE, at the same height. See the note above. */
@@ -75,38 +75,57 @@ export function OpsPage({
 
   return (
     <IonPage>
-      <IonHeader className="ion-no-border">
-        <IonToolbar className="ops2-topbar">
-          {/* Below the rail's change point the console has no other place to
-              say what it is. Above it, the rail's own wordmark is on screen and
-              a second one would be repetition, not reassurance. */}
-          {!wide && (
-            <IonButtons slot="start">
-              <Wordmark className="ops2-wordmark--bar" />
+      {/* ── THE BAR IS THE DESK'S, AND IT CARRIES THE VIEW'S NAME ──────────
+          It used to run at both widths carrying nothing but a wordmark and a
+          bell, above a page that then said its own name again underneath — a
+          white band whose whole content was a repetition. On the phone that
+          band is the top of a screen whose value is how much of the LIST you
+          can see, so it is gone entirely; the owner's drawing starts at
+          "Projects".
+
+          The <h1> IS IN THE BAR at this width, not an `ion-title`. Two reasons,
+          both structural: `ion-title` renders into shadow DOM, where R-164's
+          focus manager (`focusManagerPriority: ["heading", "content"]`, set in
+          Ops2App) cannot find it, so every navigation would drop a screen
+          reader at the top of the document instead of on the name of the place
+          it arrived at. And it would not be a heading at all — the console
+          would have no <h1> on any desk-width page. Slotted content stays in
+          the light DOM, so an <h1> here is the same element it was below,
+          moved. */}
+      {wide && (
+        <IonHeader className="ion-no-border">
+          <IonToolbar className="ops2-topbar">
+            <h1 className="ops2-topbar__title ds-type-heading-md">
+              {title ?? destination.label}
+            </h1>
+            <IonButtons slot="end">
+              {/* The bell is a shortcut to Attention, which IS this console's
+                  notification surface — a link to a real place rather than a
+                  control that opens a list nothing populates.
+
+                  DESK ONLY, now. On the phone Attention is a TAB, permanently
+                  on screen one tap away, so a bell in a band above the work was
+                  a second door to a room already visible from where you stand.
+                  Its unread count belongs on that tab — and cannot be drawn
+                  yet, because what counts as unread is the Attention
+                  destination's own definition and that destination is not
+                  built. A dot invented here would eventually contradict the
+                  page it points at, and a dot that is always on teaches the eye
+                  to stop looking. It goes on the day Attention has a count to
+                  lend it. */}
+              <button
+                type="button"
+                className="ops2-bell"
+                aria-label="Attention"
+                onClick={() => history.push(HOME_PATH)}
+              >
+                <IonIcon icon={notificationsOutline} aria-hidden="true" />
+              </button>
+              <AccountButton account={account} variant="topbar" id="ops2-account-topbar" />
             </IonButtons>
-          )}
-          <IonButtons slot="end">
-            {/* The bell is a shortcut to Attention, which IS this console's
-                notification surface — so it is a link to a real place rather
-                than a control that opens a list nothing populates.
-                NO UNREAD DOT, deliberately. What counts as unread is the
-                Attention destination's own definition and that destination is
-                not built yet; a dot invented here would eventually contradict
-                the page it points at, and a dot that is always on teaches the
-                eye to stop looking at it. It goes on the day Attention has a
-                count to lend it. */}
-            <button
-              type="button"
-              className="ops2-bell"
-              aria-label="Attention"
-              onClick={() => history.push(HOME_PATH)}
-            >
-              <IonIcon icon={notificationsOutline} aria-hidden="true" />
-            </button>
-            {wide && <AccountButton account={account} variant="topbar" id="ops2-account-topbar" />}
-          </IonButtons>
-        </IonToolbar>
-      </IonHeader>
+          </IonToolbar>
+        </IonHeader>
+      )}
       <IonContent className="ops2-page">
         <div className={`ops2-page__body ops2-page__body--${width}`}>
           {/* A plain <button>, not IonBackButton: `ion-back-button` ignores
@@ -135,21 +154,20 @@ export function OpsPage({
               {backTo.label}
             </button>
           )}
-          <div className="ops2-page__head">
-            <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
-              {eyebrow && (
-                <p className="ops2-page__eyebrow ds-type-label-md">
-                  {eyebrow.icon && <IonIcon icon={eyebrow.icon} aria-hidden="true" />}
-                  {eyebrow.text}
-                </p>
-              )}
-              <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
-              {lede && <p className="ops2-page__lede ds-type-body-md">{lede}</p>}
+          {/* THE PHONE'S HEAD ROW, and the only place the name appears at this
+              width — the bar above it does not exist here. It is also what the
+              search field replaces in place, which is why the swap mechanism
+              lives on this row and not in the bar. */}
+          {!wide && (
+            <div className="ops2-page__head">
+              <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
+                <h1 className="ops2-page__title ds-type-heading-lg">{title ?? destination.label}</h1>
+              </div>
+              {headOverlay
+                ? <div className="ops2-page__head-overlay">{headOverlay}</div>
+                : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
             </div>
-            {headOverlay
-              ? <div className="ops2-page__head-overlay">{headOverlay}</div>
-              : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
-          </div>
+          )}
           {children}
         </div>
       </IonContent>

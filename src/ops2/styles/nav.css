@@ -260,14 +260,28 @@ ion-popover.ops2-account-menu {
   --width: 232px;
 }
 
-/* ── The content top bar ──────────────────────────────────────────────────── */
+/* ── The content top bar — THE DESK'S ONLY ────────────────────────────────── */
 
 ion-toolbar.ops2-topbar {
   --background: var(--ds-surface-card);
   --color: var(--ds-text-primary);
   --border-width: 0 0 1px 0;
   --border-color: var(--ds-border-subtle);
-  --min-height: 52px;
+  --min-height: 56px;
+  --padding-start: var(--theme-spacing-lg);
+  --padding-end: var(--theme-spacing-md);
+}
+/* The view's name, and the bar's whole reason for still existing. An `<h1>`
+   rather than an `ion-title` so R-164's focus manager can find it — see
+   ../chrome/OpsPage.tsx — which means the toolbar's own title centring does not
+   apply and the margins are set here. */
+.ops2-topbar__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ds-text-primary);
 }
 
 .ops2-bell {

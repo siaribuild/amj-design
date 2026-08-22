@@ -53,18 +53,6 @@
 .ops2-page__head-overlay > .pq-search-cancel { flex: none; margin: 0; }
 .ops2-page__head-actions { flex: none; }
 
-.ops2-page__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: var(--theme-spacing-2xs);
-  margin: 0 0 var(--theme-spacing-2xs);
-  color: var(--ds-text-brand);
-}
-.ops2-page__lede {
-  margin: var(--theme-spacing-2xs) 0 0;
-  max-width: 62ch;
-  color: var(--ds-text-secondary);
-}
 .ops2-page__body--full { max-width: none; }
 
 .ops2-page__back {

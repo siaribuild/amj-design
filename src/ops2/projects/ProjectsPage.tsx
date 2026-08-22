@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
 } from "@ionic/react";
-import { briefcaseOutline, funnelOutline, searchOutline, warningOutline } from "ionicons/icons";
+import { funnelOutline, searchOutline, warningOutline } from "ionicons/icons";
 import { destination } from "../nav/destinations";
 import { useRailWidth } from "../nav/useRailWidth";
 import { OpsPage } from "../chrome/OpsPage";
@@ -146,14 +146,6 @@ export function ProjectsPage() {
     <OpsPage
       destination={PROJECTS}
       width="full"
-      // The eyebrow and the lede are the DESKTOP drawing's. The owner's later
-      // phone drawing replaced that block with a bare `Projects` and a search
-      // icon, and a queue read one-handed between other tasks cannot spend two
-      // rows explaining itself before showing the work.
-      eyebrow={wide ? { text: "Operations queue", icon: briefcaseOutline } : undefined}
-      lede={wide
-        ? "Find the work that needs a decision, then stay in project context through line review and editing."
-        : undefined}
       // A PLAIN <button>, and the reason is disqualifier 2 of the Ionic boundary
       // — behaviour, not looks. This control needs two things `IonButton` takes
       // away: a name a screen reader can read (the host strips `aria-label` and
