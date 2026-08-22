@@ -4,6 +4,7 @@ import {
 } from "@ionic/react";
 import { ellipsisHorizontal, warningOutline } from "ionicons/icons";
 import { useParams } from "react-router-dom";
+import { actionErrorText } from "../../data/opsActionErrors";
 import { destination } from "../nav/destinations";
 import { useRailWidth } from "../nav/useRailWidth";
 import { OpsPage } from "../chrome/OpsPage";
@@ -85,11 +86,17 @@ export function ProjectRecordPage() {
         body: request.body ? JSON.stringify(request.body) : undefined,
       });
       if (!res.ok) {
-        // THE SERVER'S OWN REFUSAL, not a sentence composed here. It is the
-        // authority on why an action will not run, and paraphrasing it is how a
-        // console ends up explaining a rule it no longer implements.
+        // THE SERVER SAYS WHICH RULE REFUSED; THE CONSOLE SAYS IT IN WORDS. The
+        // endpoints answer with codes — `delivery_unset`, `not_ready`,
+        // `workflow_changed_retry` — and this printed them straight onto the
+        // banner, handing a reviewer an identifier at the one moment they need
+        // to know what to do next. The mapping is the shared one both consoles
+        // read (`src/data/opsActionErrors.ts`), so the two cannot describe the
+        // same refusal differently.
         const body = await res.json().catch(() => null) as { error?: string } | null;
-        setFailure(body?.error ?? `The server answered ${res.status}.`);
+        setFailure(body?.error
+          ? actionErrorText(body.error)
+          : `The server answered ${res.status}.`);
         // A CONFLICT MEANS THIS RECORD IS OUT OF DATE, so re-read it. Someone
         // else moved the job between this page loading and the press, and the
         // actions on screen are the ones that WERE available — leaving them

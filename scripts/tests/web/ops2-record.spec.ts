@@ -385,8 +385,11 @@ test("a refused action explains itself where the reader is looking", async ({ pa
         confirm: "Freezes this quote and emails it." },
     ],
   }) }));
+  // A REAL CODE, not prose. The endpoints answer with identifiers, and this
+  // test used to mock a sentence — which is how it passed while the banner was
+  // printing `delivery_unset` at a reviewer.
   await page.route("**/api/ops/projects/p_rec/issue-quote", (route) =>
-    route.fulfill({ status: 409, json: { error: "delivery is not set" } }));
+    route.fulfill({ status: 409, json: { error: "delivery_unset" } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);
 
@@ -396,7 +399,8 @@ test("a refused action explains itself where the reader is looking", async ({ pa
 
   // The panel gets out of the way, and the server's own words are on screen.
   await expect(page.getByTestId("record-confirm")).toBeHidden();
-  await expect(page.getByTestId("record-failure")).toContainText("delivery is not set");
+  await expect(page.getByTestId("record-failure")).toContainText("Delivery has not been set");
+  await expect(page.getByTestId("record-failure")).not.toContainText("delivery_unset");
 });
 
 test("a conflict re-reads the record, so the stale action goes away", async ({ page }) => {
@@ -414,7 +418,7 @@ test("a conflict re-reads the record, so the stale action goes away", async ({ p
     }) });
   });
   await page.route("**/api/ops/projects/p_rec/issue-quote", (route) =>
-    route.fulfill({ status: 409, json: { error: "the quote moved on" } }));
+    route.fulfill({ status: 409, json: { error: "workflow_changed_retry" } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);
 
@@ -422,7 +426,7 @@ test("a conflict re-reads the record, so the stale action goes away", async ({ p
   await page.getByTestId("record-primary").click();
 
   // The reason survives the reload; the control that could no longer work does not.
-  await expect(page.getByTestId("record-failure")).toContainText("the quote moved on");
+  await expect(page.getByTestId("record-failure")).toContainText("moved to another state");
   await expect(page.getByTestId("record-primary")).toHaveCount(0);
   expect(reads).toBeGreaterThan(1);
 });

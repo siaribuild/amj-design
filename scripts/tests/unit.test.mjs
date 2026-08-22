@@ -39,6 +39,7 @@ await build({
       export { ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES, issuableNow } from ${p("worker/lib/issue.ts")};
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
+      export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1417,4 +1418,35 @@ test("the issue gate's blocking statuses are written once, and both readers buil
   assert.ok(subselect, "the projects list must count blocking lines");
   assert.match(ops, /ISSUE_BLOCKING_LINE_STATUSES/,
     "…and must build that count from the shared list rather than repeating the statuses in SQL");
+});
+
+test("an action's refusal is a sentence, not the code the endpoint returned", () => {
+  // The endpoints answer with MACHINE CODES — `not_ready`, `delivery_unset`,
+  // `workflow_changed_retry` — and ops2 printed them straight onto the banner.
+  // A reviewer told "delivery_unset" is being handed an identifier, not a
+  // reason, at the one moment they need to know what to do next.
+  //
+  // ONE MAP, read by both consoles. The legacy record has carried these strings
+  // since before ops2 existed and ops2 may not import the skin it replaces, so
+  // the strings move to the shared core rather than being copied — CLAUDE.md's
+  // one-place-per-fact, applied to wording that a reviewer relies on.
+  assert.match(M.actionErrorText("delivery_unset"), /Delivery has not been set/);
+  assert.match(M.actionErrorText("workflow_changed_retry"), /moved to another state/);
+  assert.match(M.actionErrorText("not_ready"), /line/i);
+
+  // AN UNKNOWN CODE IS STILL READABLE. New codes appear before their wording
+  // does, and "quote_changed_retry" as raw snake case is worse than a plain
+  // sentence — but it must not pretend to explain something it does not know.
+  assert.equal(M.actionErrorText("some_new_code"), "That action could not be completed.");
+
+  // `not_found` IS DELIBERATELY UNMAPPED, and asserting it stops the entry
+  // being added back by someone reading its absence as an oversight. 31 places
+  // in the ops routes return it — a project, a line, a composite parent, a
+  // staff row, a file, an OTP route — so it says "the thing you named is not
+  // there" and nothing about WHICH thing. It was briefly mapped to "this
+  // project no longer exists", which is wrong in most of those cases and
+  // alarming in all of them; a caller that knows what it asked for can say so.
+  assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
+  assert.equal(M.actionErrorText(""), "That action could not be completed.");
+  assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
 });

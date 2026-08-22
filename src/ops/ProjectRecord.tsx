@@ -24,6 +24,7 @@
 import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 
 import { Fragment, useEffect, useState } from "react";
+import { actionErrorText, KNOWN_ACTION_ERRORS } from "../data/opsActionErrors";
 import { Check, ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
   OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueQuote,
@@ -53,25 +54,10 @@ const when = (ts: string | null | undefined) => {
   return isNaN(+d) ? "—" : d.toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
-// Failures name the cause. One blanket "resolve and exactly price every line"
-// used to cover every code, which on a concurrency conflict sent people hunting a
-// pricing problem that did not exist.
-const ACTION_ERRORS: Record<string, string> = {
-  unresolved_lines: "Resolve and exactly price every line, then try again.",
-  delivery_unset: "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel.",
-  line_changed_reload_required: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
-  quote_changed_retry: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
-  workflow_changed_retry: "This job moved to another state while you had it open. Reload to see where it is now.",
-  stage_conflict: "That step has already been taken. Reload to see the current state.",
-  forbidden_role: "You don't have permission for that action.",
-  valid_thermal_target_required: "Enter a valid Uw and SHGC range before using this lesson.",
-  thermal_review_role_required: "Your account cannot approve a thermal learning target.",
-  not_found_or_final: "This learning decision was already finalized. Reload to see its current state.",
-  configuration_not_eligible: "That frame and glazing configuration is no longer eligible. Reload the configurations and choose again.",
-  selected_variant_required: "Choose an exact frame and glazing configuration before saving.",
-  exact_pricing_unavailable: "That configuration does not currently have a complete exact price.",
-};
-
+// The action-failure wording moved to `src/data/opsActionErrors.ts` when ops2's
+// record needed the same sentences and could not import this console — the one
+// it replaces. Same strings, one copy; see that file for the reasoning it
+// carried with it.
 const humanLabel = (value: string) => value
   .replace(/([a-z])([A-Z])/g, "$1 $2")
   .replaceAll("_", " ")
@@ -140,7 +126,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
     try { await fn(); await load(); setConfirming(null); setConfirmText(""); }
     catch (e) {
       const code = e instanceof OpsApiError ? e.code : "";
-      setError(ACTION_ERRORS[code] ?? "That action could not be completed.");
+      setError(actionErrorText(code));
     } finally { setBusy(false); }
   };
 
@@ -1153,7 +1139,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   const selfIndex = siblings.findIndex((s) => s.id === line.id);
 
   const fail = (e: unknown, fallback: string) =>
-    onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? fallback) : fallback);
+    onError(e instanceof OpsApiError && KNOWN_ACTION_ERRORS.includes(e.code) ? actionErrorText(e.code) : fallback);
 
   useEffect(() => {
     if (!editing || !aiManaged) {
@@ -1645,7 +1631,7 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
       onError(e instanceof OpsApiError
         ? (e.code === "invalid_split" ? "That split isn't buildable — check the unit sizes."
           : e.code === "already_composite" ? "This opening is already planned as units — edit them directly."
-          : ACTION_ERRORS[e.code] ?? "The split could not be applied.")
+          : KNOWN_ACTION_ERRORS.includes(e.code) ? actionErrorText(e.code) : "The split could not be applied.")
         : "The split could not be applied.");
     } finally { setSaving(false); }
   };
