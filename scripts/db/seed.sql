@@ -29,7 +29,13 @@ INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_demo2',  'doni@siaribuild.com.au',  'Siari Build', '(03) 0000 1234', 'customer', NULL,    datetime('now')),
   ('u_staff1', 'ged@openframe.com.au', 'Gediminas Bereznevicius',    NULL,             'internal', 'admin', datetime('now')),
   ('u_staff2', 'doni@openframe.com.au', 'Doni Haziraj',    NULL,             'internal', 'admin', datetime('now')),
-  ('u_staff3', 'rea@openframe.com.au', 'Rea Alaraj',    NULL,             'internal', 'admin', datetime('now'));
+  -- ESTIMATOR, NOT ADMIN, and that is load-bearing. `resolveStaff` admits any
+  -- internal role but `manufacturer`, so a browser suite needs no more than
+  -- this — while api-edge's "the last admin cannot be demoted" reads the seed
+  -- for its starting state and asserts on there being exactly two to demote
+  -- through. A third admin made the guard unreachable and the test failed on a
+  -- rule that had not changed.
+  ('u_staff3', 'rea@openframe.com.au', 'Rea Alaraj',    NULL,             'internal', 'estimator', datetime('now'));
 
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES
