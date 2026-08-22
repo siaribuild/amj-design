@@ -127,7 +127,19 @@ export function OpsPage({
         </IonHeader>
       )}
       <IonContent className="ops2-page">
-        <div className={`ops2-page__body ops2-page__body--${width}`}>
+        {/* `data-bare` = THIS PAGE HAS NO HEADER, so it owes the status bar the
+            room the header used to take. Ionic's top safe-area inset is applied
+            by `ion-header`/`ion-toolbar`; with the bar gone on the phone,
+            nothing consumed it and the heading would sit under the notch on a
+            device — or on the console installed to a home screen, which is how
+            a phone actually uses it. Carried as an attribute rather than
+            re-tested in a media query: `useRailWidth` is the console's one
+            change point and two of them a pixel apart is how a width ends up
+            with both treatments or neither. */}
+        <div
+          className={`ops2-page__body ops2-page__body--${width}`}
+          data-bare={wide ? undefined : "true"}
+        >
           {/* A plain <button>, not IonBackButton: `ion-back-button` ignores
               `text=""` and ignores `text` changing after hydration (the
               handover's table), and this one names its destination — which is

@@ -310,6 +310,34 @@ test("the pill group never clips a label, and the bubble is part of the button",
   await page.unroute(QUEUE_URL);
 });
 
+test("the phone keeps the top safe-area inset it used to get from the header", async ({ page }) => {
+  // IONIC'S TOP INSET COMES FROM `ion-header`. Removing the bar on the phone
+  // removed the thing that was consuming `safe-area-inset-top`, so on a notched
+  // device — or the console installed to a home screen, which is how a phone
+  // actually uses it — "Projects" would sit under the status bar. Invisible in
+  // this browser, where the inset is 0.
+  //
+  // So the wiring is tested rather than the pixels: the body reads the inset
+  // through a named variable, and setting that variable has to move the page.
+  // `env()` cannot be forced from a test, and asserting `padding-top: 0` here
+  // would pass just as happily with the declaration deleted.
+  for (const [width, height, shouldInset] of [[390, 844, true], [1440, 900, false]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto(PROJECTS);
+    await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+    const body = page.locator(".ops2-page__body");
+    const applied = await body.evaluate((el) => {
+      el.style.setProperty("--ops2-safe-top", "44px");
+      const px = parseFloat(getComputedStyle(el).paddingTop);
+      el.style.removeProperty("--ops2-safe-top");
+      return px - parseFloat(getComputedStyle(el).paddingTop);
+    });
+    expect(applied, `${width}px: the inset ${shouldInset ? "is not" : "is"} honoured`)
+      .toBe(shouldInset ? 44 : 0);
+  }
+});
+
 test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {
   // A SKELETON IS A PROMISE ABOUT THE COMING LAYOUT, so it is wrong in a way a
   // spinner cannot be: it can promise a block that never lands, or a block the

@@ -54,6 +54,13 @@
 .ops2-page__head-actions { flex: none; }
 
 .ops2-page__body--full { max-width: none; }
+/* The inset the header is no longer here to take. Named through a variable so
+   it can be forced in a test — `env()` cannot be, and a page asserting
+   `padding-top: 0` in a browser whose inset is 0 would pass just as happily
+   with this rule deleted. */
+.ops2-page__body[data-bare="true"] {
+  padding-top: var(--ops2-safe-top, env(safe-area-inset-top, 0px));
+}
 
 .ops2-page__back {
   display: inline-flex;
