@@ -118,7 +118,9 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
   // three rows. Anything that needs a controlled row SET intercepts the
   // endpoint instead; anything reading the real one names what it expects.
   await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
   await expect(page.getByText("Northcote extension")).toBeVisible();
 });
 
@@ -171,7 +173,9 @@ test("search replaces the title row in place, and the header does not grow", asy
   // Cancel puts the title back, still in one row.
   await page.getByTestId("queue-search-cancel").click();
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
   expect((await head.boundingBox())!.height).toBe(before!.height);
 });
 
@@ -605,7 +609,9 @@ test("empty, loading and error are three different screens", async ({ page }) =>
   await page.unroute(QUEUE_URL);
   await page.getByTestId("queue-error").getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("queue-error")).toHaveCount(0);
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
 });
 
 test("a row opens its project, and the destination stays lit", async ({ page }) => {
@@ -618,20 +624,22 @@ test("a row opens its project, and the destination stays lit", async ({ page }) 
   await expect(rail).toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).click();
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/ops2/projects/p_submitted");
   await expect(rail).toHaveAttribute("aria-current", "page");
 
   // Back NAMES ITS DESTINATION — the settled rule — and the destination from a
   // record is the list. Identified, not counted: the battery shares one D1.
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
 
   // And the address survives a cold load, which is the property path routing
   // buys and hash routing does not.
   const deep = await page.goto(`${OPS2}/projects/p_submitted`);
   expect(deep?.status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
 });
 
 test("no rendered corner on this surface exceeds the owner's 5px cap, in either mode", async ({ page }) => {
@@ -690,7 +698,7 @@ test("the record's back control is not under the band that follows it", async ({
   // Wait for the page transition to SETTLE. Ionic animates the record in, and a
   // box measured mid-slide is a box the page is not at yet — which reads as the
   // control being covered when it is only still moving.
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
   const back = page.locator(".ops2-page__back");
   await expect(back).toBeVisible();
   await page.waitForTimeout(600);
@@ -723,12 +731,14 @@ test("a modified click on a project opens it beside, not instead", async ({ page
   const second = await opened;
   await second.waitForLoadState();
   expect(new URL(second.url()).pathname).toBe("/ops2/projects/p_submitted");
-  await expect(second.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(second.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
   await second.close();
 
   // And the tab it was opened FROM did not move.
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
 
   // ANYWHERE THE ROW SAYS IT IS CLICKABLE. The whole row carries a pointer
   // cursor and an ordinary click on any cell opens the record, so a modified
@@ -783,7 +793,7 @@ test("coming back to the queue re-reads it, rather than showing what was there",
   await expect(page.getByText("Before")).toBeVisible();
 
   await page.getByTestId("queue-row").first().click();
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "Projects" }).click();
   await expect(page.getByText("After")).toBeVisible();
@@ -800,14 +810,16 @@ test("back from a record pops the queue rather than stacking another copy of it"
   await expect(page.getByTestId("queue-row").first()).toBeVisible();
 
   await page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).click();
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
 
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Project record", level: 1 })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toHaveCount(0);
   expect(new URL(page.url()).pathname, "back re-entered the record it had just left").not.toBe("/ops2/projects/p_submitted");
 
   // AND A COLD DEEP LINK STILL HAS A WAY OUT. There is nothing to pop into when
@@ -815,7 +827,9 @@ test("back from a record pops the queue rather than stacking another copy of it"
   // naming its destination — which is the whole reason it says "Projects".
   await page.goto(`${OPS2}/projects/p_submitted`);
   await page.getByRole("button", { name: "Projects" }).click();
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
+  // the record shows the project's title too, so a bare text match finds both.
+  await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
 });
 
 test("revealing search takes the focus with it, and cancelling gives it back", async ({ page }) => {

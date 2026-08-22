@@ -1,0 +1,336 @@
+/* ops2 — the project record.
+ *
+ * FrameFlow tokens throughout; no hex, and no `--ion-color-step-*`. The same
+ * rule projects.css states and for the same measured reason: those steps are
+ * not defined in this stylesheet set, so a quiet role written against them
+ * renders full-strength black — contrast passes and the hierarchy dies.
+ *
+ * The list here is the CUSTOMER'S ANATOMY in this console's materials: code
+ * first and in the display face, product name beside it, money last and
+ * right-aligned, the room and the size quiet underneath. What is not shared is
+ * the markup — see ../projects/record.ts for why.
+ */
+
+/* ── The head row's controls ────────────────────────────────────────────────*/
+.rec-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-2xs);
+}
+.rec-cta__primary {
+  margin: 0;
+  --border-radius: var(--ds-radius-control);
+  /* IT STILL LOOKS LIKE A BUTTON WHEN IT IS REFUSED. Ionic drops a disabled
+     solid button to a flat wash, so a blocked `Issue reviewed quote` read as a
+     line of grey text in the toolbar — at the exact moment the reader needs to
+     see that the action exists and something is standing in its way. The
+     outline keeps the shape; the reason sits below it. */
+  --background: var(--ds-surface-brand);
+  --background-hover: var(--ds-color-brand-hover);
+  --color: var(--ds-text-inverse);
+}
+.rec-cta__primary.button-disabled {
+  --background: var(--ds-surface-card);
+  --color: var(--ds-text-secondary);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-radius-control);
+}
+/* Ionic's default disabled opacity takes it to the edge of legibility, and this
+   control is disabled precisely when the reader most needs to read it. */
+.rec-cta__primary.button-disabled { opacity: 0.9; }
+.rec-cta__more {
+  margin: 0;
+  --color: var(--ds-text-secondary);
+  --color-hover: var(--ds-text-primary);
+  --background-hover: var(--ds-color-brand-wash);
+  --padding-start: var(--theme-spacing-xs);
+  --padding-end: var(--theme-spacing-xs);
+}
+
+/* ── Identity ───────────────────────────────────────────────────────────────*/
+.rec-ident {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--theme-spacing-lg);
+  margin-bottom: var(--theme-spacing-md);
+}
+.rec-ident__who { min-width: 0; }
+.rec-ident__title {
+  margin: 0;
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-xl);
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: var(--theme-line-height-tight);
+  color: var(--ds-text-primary);
+}
+.rec-ident__sub {
+  margin: var(--theme-spacing-2xs) 0 0;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+}
+.rec-ident__order { font-variant-numeric: tabular-nums; }
+.rec-ident__state {
+  margin: var(--theme-spacing-2xs) 0 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+/* WORD FIRST, COLOUR SECOND — it reads identically in greyscale, which is what
+   makes it survive a phone in sunlight and a reader who cannot separate amber
+   from blue-grey. The same three roles the queue's rows use, so a status means
+   one thing across the console. */
+.rec-ident__state b { font-weight: var(--theme-font-weight-semibold); }
+.rec-ident__state[data-waiting="Us"] b { color: var(--ds-color-warning-text); }
+.rec-ident__state[data-waiting="Customer"] b { color: var(--ds-color-info-text); }
+.rec-ident__state[data-waiting="Nobody"] b { color: var(--ds-text-muted); }
+
+.rec-ident__money { flex: none; text-align: right; }
+.rec-ident__money strong {
+  display: block;
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-xl);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+/* A floor rather than a total: quieter, and the word beside it says so. */
+.rec-ident__money strong[data-priced="false"] { color: var(--ds-text-secondary); }
+.rec-ident__money span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+
+/* ── The refusal, beside what it refuses ────────────────────────────────────*/
+.rec-blocked {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-2xs);
+  margin: 0 0 var(--theme-spacing-md);
+  padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
+  background: var(--ds-color-warning-subtle);
+  border: 1px solid var(--theme-warning-200);
+  border-radius: var(--ds-radius-control);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-color-warning-text);
+}
+.rec-blocked ion-icon { flex: none; font-size: 1rem; }
+
+/* ── The lines ──────────────────────────────────────────────────────────────
+ * ONE BLOCK, the same object the queue's list is: rows with no gap between
+ * them, a hairline between each pair, and the border, corners and elevation on
+ * the group. */
+.rl-list {
+  margin: 0 0 var(--theme-spacing-md);
+  padding: 0;
+  list-style: none;
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+  overflow: hidden;
+}
+.rl-row + .rl-row { border-top: 1px solid var(--ds-border-subtle); }
+/* The leading edge marks a line the reviewer still has to finish — the same
+   grammar the queue's cards use for "waiting on us", one level down. */
+.rl-row[data-unresolved="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
+
+.rl-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--theme-spacing-sm);
+  width: 100%;
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: none;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.rl-head--static { cursor: default; }
+@media (hover: hover) {
+  button.rl-head:hover { background: var(--ds-color-brand-wash); }
+}
+.rl-twisty {
+  flex: none;
+  margin-top: 2px;
+  font-size: 1rem;
+  color: var(--ds-text-muted);
+  transition: transform var(--theme-duration-fast, 150ms) ease;
+}
+.rl-head[aria-expanded="true"] .rl-twisty { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .rl-twisty { transition: none; }
+}
+
+.rl-main { flex: 1 1 auto; min-width: 0; display: block; }
+.rl-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-sm);
+  min-width: 0;
+}
+/* THE CODE LEADS, and it is the display face and tabular — it is what anchors a
+   line in the schedule, the drawing and the factory ticket, so a column of them
+   has to read as a column. */
+.rl-code {
+  flex: none;
+  min-width: 3.25rem;
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+.rl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rl-money {
+  flex: none;
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+/* NOT PRICED IS A STATE, NOT A ZERO — italic and quiet, so it never reads as a
+   figure. Unpriced work is precisely what this console exists to hunt for, and
+   turning it into a plausible-looking number is the worst available failure. */
+.rl-money[data-priced="false"] {
+  font-weight: var(--theme-font-weight-medium);
+  font-style: italic;
+  color: var(--ds-text-muted);
+}
+
+.rl-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  margin-top: 2px;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-secondary);
+}
+.rl-size, .rl-qty, .rl-units-count { font-variant-numeric: tabular-nums; }
+
+.rl-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--theme-spacing-2xs);
+  margin-top: var(--theme-spacing-xs);
+}
+.rl-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.15rem var(--theme-spacing-xs);
+  border-radius: var(--theme-radius-xs);
+  background: var(--ds-color-warning-subtle);
+  color: var(--ds-color-warning-text);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  text-transform: lowercase;
+}
+.rl-flag::first-letter { text-transform: uppercase; }
+.rl-flag ion-icon { font-size: 0.95em; }
+
+/* ── Inside a line: the units, then the spec ────────────────────────────────*/
+.rl-body {
+  padding: 0 var(--theme-spacing-md) var(--theme-spacing-sm)
+           calc(var(--theme-spacing-md) + 3.25rem + var(--theme-spacing-sm));
+  background: var(--ds-surface-sunken);
+  border-top: 1px solid var(--ds-border-subtle);
+}
+.rl-units { margin: 0; padding: var(--theme-spacing-sm) 0 0; list-style: none; }
+.rl-unit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-sm);
+  padding: var(--theme-spacing-2xs) 0;
+  font-size: var(--theme-font-size-xs);
+}
+.rl-unit__name { flex: 1 1 auto; min-width: 0; color: var(--ds-text-primary); }
+.rl-unit__note { color: var(--ds-text-muted); }
+.rl-unit__meta { flex: none; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
+
+.rl-spec {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  gap: var(--theme-spacing-2xs) var(--theme-spacing-md);
+  margin: var(--theme-spacing-sm) 0 0;
+  font-size: var(--theme-font-size-xs);
+}
+.rl-spec__pair { display: contents; }
+.rl-spec dt { color: var(--ds-text-muted); }
+.rl-spec dd { margin: 0; color: var(--ds-text-primary); }
+
+.rl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--theme-spacing-xs);
+  padding: var(--theme-spacing-2xl) var(--theme-spacing-lg);
+  text-align: center;
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+}
+
+/* ── The foot of the list ───────────────────────────────────────────────────*/
+.rec-totals {
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+  font-size: var(--theme-font-size-sm);
+}
+.rec-totals__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--theme-spacing-md);
+  padding: var(--theme-spacing-2xs) 0;
+  color: var(--ds-text-secondary);
+}
+.rec-totals__row--sum {
+  margin-top: var(--theme-spacing-2xs);
+  padding-top: var(--theme-spacing-sm);
+  border-top: 1px solid var(--ds-border-subtle);
+  color: var(--ds-text-primary);
+  font-weight: var(--theme-font-weight-semibold);
+}
+.rec-totals__figure { flex: none; font-variant-numeric: tabular-nums; }
+/* Unset delivery is the state that blocks the quote, so it is the one row here
+   allowed to carry a colour. */
+.rec-totals__row[data-settled="false"] .rec-totals__figure { color: var(--ds-color-warning-text); }
+.rec-totals__caveat { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
+.rec-totals__note { display: block; margin-top: var(--theme-spacing-2xs); }
+
+/* ── The actions panel ──────────────────────────────────────────────────────*/
+.rec-actions { padding: var(--theme-spacing-xs) var(--theme-spacing-sm); }
+.rec-actions__item {
+  --color: var(--ds-text-primary);
+  --background-hover: var(--ds-color-brand-wash);
+  --border-radius: var(--ds-radius-control);
+  margin: 0;
+  text-align: left;
+}
+.rec-confirm {
+  margin: 0;
+  padding: var(--theme-spacing-md);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+}
+
+.rec-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-sm);
+}
+.rec-skeleton ion-skeleton-text { margin: 0; border-radius: var(--ds-radius-surface); }

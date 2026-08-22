@@ -59,7 +59,7 @@ export function OpsPage({
   title?: string;
   /** Back names its DESTINATION, never where you are — the settled rule. */
   backTo?: { label: string; href: string };
-  /** The trailing edge of the head row: the surface's own controls. */
+  /** The surface's own controls: the phone's head row, the desk's top bar. */
   headActions?: ReactNode;
   /** Replaces the heading IN PLACE, at the same height. See the note above. */
   headOverlay?: ReactNode;
@@ -128,6 +128,13 @@ export function OpsPage({
               {title ?? destination.label}
             </h1>
             <IonButtons slot="end">
+              {/* THE SURFACE'S OWN CONTROLS COME FIRST, then the console's. A
+                  record's `Issue reviewed quote` and the bell are different
+                  kinds of thing — one acts on what you are looking at, the
+                  other leaves for somewhere else — and the reading order says
+                  so. This slot was the phone's only until a record wanted a CTA
+                  at the desk, and `headActions` rendered nowhere at 1440. */}
+              {headActions}
               {/* The bell is a shortcut to Attention, which IS this console's
                   notification surface — a link to a real place rather than a
                   control that opens a list nothing populates.

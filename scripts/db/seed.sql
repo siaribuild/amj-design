@@ -13,11 +13,23 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Users (u_staff is an admin — can clear any approval step)
+--
+-- ONE STAFF IDENTITY PER BROWSER SUITE, and that is a resource rather than a
+-- coincidence. Code issuance refuses a second challenge to the same address
+-- inside RESEND_COOLDOWN_MS (60s, worker/lib/auth.ts), and the Playwright
+-- battery runs several files at once — so two suites sharing a mailbox makes
+-- whichever signs in second fail at its OTP, reported as "staff sign-in", which
+-- reads like broken auth rather than like a rate limit doing its job.
+--   u_staff1 → scripts/tests/web/ops.spec.ts        (the legacy console)
+--   u_staff2 → scripts/tests/web/ops2-projects.spec.ts
+--   u_staff3 → scripts/tests/web/ops2-record.spec.ts
+-- A new browser suite that signs in needs a new row here.
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_demo',  'gediminas.bereznevicius@gmail.com',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
   ('u_demo2',  'doni@siaribuild.com.au',  'Siari Build', '(03) 0000 1234', 'customer', NULL,    datetime('now')),
   ('u_staff1', 'ged@openframe.com.au', 'Gediminas Bereznevicius',    NULL,             'internal', 'admin', datetime('now')),
-  ('u_staff2', 'doni@openframe.com.au', 'Doni Haziraj',    NULL,             'internal', 'admin', datetime('now'));
+  ('u_staff2', 'doni@openframe.com.au', 'Doni Haziraj',    NULL,             'internal', 'admin', datetime('now')),
+  ('u_staff3', 'rea@openframe.com.au', 'Rea Alaraj',    NULL,             'internal', 'admin', datetime('now'));
 
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES

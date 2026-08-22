@@ -143,6 +143,14 @@ ion-popover {
 }
 ion-button {
   --border-radius: var(--ds-radius-control);
+  /* SENTENCE CASE, against Ionic's Material default of uppercase.
+     FrameFlow reserves uppercase for LABELS — `ds-type-label-*`, small and
+     wide-tracked, for eyebrows and column heads (docs/design/frameflow.md). A
+     button set in the same treatment reads as one of those rather than as
+     something to press, and beside this console's sentence-case tabs and
+     headings it was the only shouting text on the page. */
+  text-transform: none;
+  letter-spacing: normal;
 }
 ion-item {
   --border-radius: var(--ds-radius-control);

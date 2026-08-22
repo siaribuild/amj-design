@@ -34,6 +34,7 @@
 @import './recipes/type.css';
 @import './nav.css';
 @import './projects.css';
+@import './record.css';
 
 /* Base — deliberately tiny. Ionic's normalize already owns the body's
  * background, colour and font, and it takes all three from the --ion-*
