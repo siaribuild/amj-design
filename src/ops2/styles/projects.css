@@ -144,7 +144,16 @@ ion-searchbar.pq-search .searchbar-input {
 .pq-chips {
   display: flex;
   flex: 0 1 auto;
-  min-width: 0;
+  /* IT NAMES ITS OWN MINIMUM. `overflow: hidden` below is what lets a selected
+     member be filled to the group's rounded corners — and it also sets this
+     flex item's automatic minimum size to ZERO, whatever it contains, so the
+     group would shrink under its own labels and cut them off silently: no
+     wrap, no scroll, no ellipsis, just a count missing a digit on the one
+     control whose job is counting. Reported in review; it does not bite at any
+     size this console serves (at 320px the group measures 246 inside 288,
+     because the three labels are fixed strings), but the mechanism is real and
+     one declaration removes the whole class. */
+  min-width: min-content;
   background: var(--ds-surface-card);
   border: 1px solid var(--ds-border-default);
   border-radius: var(--ds-radius-control);
@@ -220,7 +229,13 @@ ion-searchbar.pq-search .searchbar-input {
   box-shadow: 0 0 0 2px var(--ds-surface-page);
   font-size: var(--theme-font-size-xs);
   line-height: 1.125rem;
-  pointer-events: none;
+  /* IT TAKES THE PRESS — it does not decline it. `pointer-events: none` was
+     the first attempt at keeping it decorative, and it made the overhang DEAD:
+     the wrapper is sized to the button, so a click passing through the badge
+     lands outside the wrapper as well and reaches nothing at all. Letting the
+     badge accept the press and bubble to the wrapper makes the whole visible
+     shape one target, which is what it looks like. */
+  cursor: pointer;
 }
 
 .pq-active {

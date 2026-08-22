@@ -102,6 +102,12 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
   // THE OWNER'S CAP, VERBATIM: "3 quick filters max + filter icon with bubble."
   // Asserted as a maximum on what is RENDERED, not on the model's array — a
   // fourth chip added to the markup would slip past a model-only check.
+  // NOTE: this half did not reproduce when it was reported — at 320px the
+  //    group measures 246 inside 288, because the three labels are fixed
+  //    strings and the counts are short. The MECHANISM is real all the same
+  //    (`overflow: hidden` sets a flex item's automatic minimum size to zero,
+  //    whatever it contains), so the group names its own minimum and the test
+  //    stays as the thing that would notice a longer label.
   const chips = page.getByTestId("queue-chip");
   await expect(chips).toHaveCount(3);
   await expect(chips.nth(0)).toHaveText(/All/);
@@ -201,6 +207,70 @@ test("no status panel at either width, and nothing it counted is unreachable", a
     await expect(page.getByTestId("queue-filter-sheet").getByText("Ready to issue")).toBeVisible();
     await page.keyboard.press("Escape");
   }
+});
+
+test("the pill group never clips a label, and the bubble is part of the button", async ({ page }) => {
+  // TWO WAYS A GROUPED CONTROL GOES WRONG, both found in review.
+  //
+  // 1. The group hides its overflow so its members can be filled to its own
+  //    rounded corners — and `overflow: hidden` also makes a flex item's
+  //    automatic minimum size ZERO, whatever its contents. So on a small phone
+  //    with three-digit counts the group shrinks under its own labels and
+  //    silently cuts them off: no wrap, no scroll, no ellipsis, just a number
+  //    that is missing a digit on the one control whose whole job is counting.
+  //
+  // 120 projects, so every count is three digits — the state this appears in.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: Array.from({ length: 120 }, (_, i) => fixtureRow({
+      id: `p_${i}`, ref: `OF-Q-${i}`, title: `Project ${i}`,
+      waitingOn: i % 2 ? "Us" : "Customer", phase: "Pricing",
+    })) },
+  }));
+  // 320px is the narrowest this console claims to serve.
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto(PROJECTS);
+  await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+  // NOTE: this half did not reproduce when it was reported — at 320px the
+  //    group measures 246 inside 288, because the three labels are fixed
+  //    strings and the counts are short. The MECHANISM is real all the same
+  //    (`overflow: hidden` sets a flex item's automatic minimum size to zero,
+  //    whatever it contains), so the group names its own minimum and the test
+  //    stays as the thing that would notice a longer label.
+  const chips = page.getByTestId("queue-chip");
+  await expect(chips).toHaveCount(3);
+  for (const chip of await chips.all()) {
+    const clipped = await chip.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(clipped, `"${await chip.textContent()}" is cut off`).toBeLessThanOrEqual(1);
+  }
+  // Nor does the group solve it by pushing the page sideways: a destination
+  // must never require horizontal scrolling.
+  expect(await page.evaluate(() => document.scrollingElement!.scrollWidth
+    - document.scrollingElement!.clientWidth), "the page scrolls sideways")
+    .toBeLessThanOrEqual(1);
+
+  // 2. The bubble protrudes past the button's corner, and it is decorative —
+  //    so without care the part sticking out is dead area on a touch screen,
+  //    sitting exactly where a thumb aims for the corner of a control.
+  const sheet = page.getByTestId("queue-filter-sheet");
+  await page.getByTestId("queue-funnel").click();
+  await expect(sheet).toBeVisible();
+  await page.getByTestId("queue-refinement").nth(2).click();
+  await page.keyboard.press("Escape");
+  // WAIT FOR IT TO ACTUALLY BE GONE. The first version of this test asserted
+  // the sheet was open again straight after the tap, and passed — because
+  // `IonModal`'s dismiss is animated and the old sheet was still on screen. It
+  // proved the animation's duration, not the hit target.
+  await expect(sheet).toBeHidden();
+
+  const bubble = page.getByTestId("queue-funnel-count");
+  await expect(bubble).toBeVisible();
+  const box = (await bubble.boundingBox())!;
+  // Tapped where it OVERHANGS — outside the button's own box, top-right — the
+  // sheet opens. That corner is exactly where a thumb aims for a control.
+  await page.mouse.click(box.x + box.width - 3, box.y + 3);
+  await expect(sheet).toBeVisible();
+  await page.unroute(QUEUE_URL);
 });
 
 test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {

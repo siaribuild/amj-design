@@ -250,7 +250,21 @@ export function ProjectsPage() {
                   short of the host's). Outside the button, in a wrapper that is
                   the positioning context, it straddles the corner the way it is
                   drawn — clear of the funnel it is counting. */}
-              <span className="pq-funnel-wrap">
+              {/* THE WRAPPER TAKES THE CLICK TOO, and that is the price of a
+                  bubble that overhangs: the part sticking past the corner is
+                  not the button, and the wrapper is sized to the button — so a
+                  press on the overhang reached NOTHING, sitting exactly where a
+                  thumb aims for the corner of a control. The badge accepts the
+                  press and it bubbles to here, which makes the whole visible
+                  shape one target. The button underneath is still the real control and
+                  the only thing a keyboard or a screen reader ever sees, so
+                  this adds hit area and no second affordance; a press on the
+                  button bubbles here as well and opens a sheet that is already
+                  opening, which is the same state. */}
+              <span
+                className="pq-funnel-wrap"
+                onClick={() => setSheetOpen(true)}
+              >
                 <IonButton
                   fill="outline"
                   size="small"
