@@ -241,25 +241,40 @@ export function ProjectsPage() {
                   empty list is indistinguishable from an empty queue — the
                   difference between "nothing to do" and "you cannot see the
                   work". */}
-              <IonButton
-                fill="outline"
-                size="small"
-                className="pq-funnel"
-                data-testid="queue-funnel"
-                onClick={() => setSheetOpen(true)}
-              >
-                <IonIcon icon={funnelOutline} aria-hidden="true" />
-                <span className="ops2-sr-only">
-                  {activeRefinements.length
-                    ? `Filters, ${activeRefinements.length} active`
-                    : "Filters"}
-                </span>
+              {/* THE BUBBLE IS A SIBLING OF THE BUTTON, not a child of it, and
+                  that is geometry rather than tidiness. Slotted into
+                  `ion-button` it lands inside `.button-native` — so a negative
+                  offset resolves against Ionic's inner element, and the badge
+                  came to rest INSIDE the button's own footprint however far it
+                  was pushed (measured: `right: -0.5rem` put its right edge 2px
+                  short of the host's). Outside the button, in a wrapper that is
+                  the positioning context, it straddles the corner the way it is
+                  drawn — clear of the funnel it is counting. */}
+              <span className="pq-funnel-wrap">
+                <IonButton
+                  fill="outline"
+                  size="small"
+                  className="pq-funnel"
+                  data-testid="queue-funnel"
+                  onClick={() => setSheetOpen(true)}
+                >
+                  <IonIcon icon={funnelOutline} aria-hidden="true" />
+                  <span className="ops2-sr-only">
+                    {activeRefinements.length
+                      ? `Filters, ${activeRefinements.length} active`
+                      : "Filters"}
+                  </span>
+                </IonButton>
                 {activeRefinements.length > 0 && (
-                  <IonBadge className="pq-funnel__count" data-testid="queue-funnel-count">
+                  <IonBadge
+                    className="pq-funnel__count"
+                    data-testid="queue-funnel-count"
+                    aria-hidden="true"
+                  >
                     {activeRefinements.length}
                   </IonBadge>
                 )}
-              </IonButton>
+              </span>
             </div>
           </div>
 

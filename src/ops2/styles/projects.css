@@ -190,21 +190,26 @@ ion-searchbar.pq-search .searchbar-input {
    cannot drift: `ion-button` sizes itself from its content and its own padding,
    so left to itself it lands a few pixels short of a bordered group beside it —
    close enough to look like a mistake rather than a difference. */
-.pq-funnel {
+.pq-funnel-wrap {
   flex: none;
   position: relative;
+  display: inline-flex;
+}
+.pq-funnel {
   margin: 0;
   height: var(--pq-control-height);
   --border-radius: var(--ds-radius-control);
   --padding-start: var(--theme-spacing-sm);
   --padding-end: var(--theme-spacing-sm);
-  overflow: visible;
 }
-/* THE BUBBLE SITS OUTSIDE THE BUTTON. Tucked into the corner it covered the
-   funnel it was counting — and an icon you cannot read is not a filter control,
-   it is a badge on a grey square. `overflow: visible` on the host as well,
-   because `ion-button` clips its own shadow parts by default and the badge
-   would be cropped in half at the corner it is meant to overhang. */
+/* THE BUBBLE STRADDLES THE CORNER, more than half of it outside the button.
+   Tucked inside, it covered the funnel it was counting — and an icon you cannot
+   read is not a filter control, it is a badge on a grey square. A ring in the
+   page's own colour separates the two shapes where they overlap, so the bubble
+   reads as sitting ON the button rather than as part of its outline. It is
+   `aria-hidden`: the button's own accessible name already says how many filters
+   are on, and a screen reader that also read a bare "1" would be reading the
+   count twice, once without its noun. */
 .pq-funnel__count {
   position: absolute;
   top: -0.5rem;
@@ -212,8 +217,10 @@ ion-searchbar.pq-search .searchbar-input {
   min-width: 1.125rem;
   padding: 0 0.25rem;
   border-radius: var(--theme-radius-full);
+  box-shadow: 0 0 0 2px var(--ds-surface-page);
   font-size: var(--theme-font-size-xs);
   line-height: 1.125rem;
+  pointer-events: none;
 }
 
 .pq-active {
