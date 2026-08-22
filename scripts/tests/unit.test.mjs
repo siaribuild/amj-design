@@ -1442,6 +1442,11 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.doesNotMatch(notReady, /delivery/i, "nor the delivery");
   assert.doesNotMatch(notReady, /technical review/i);
   assert.match(notReady, /could not be issued/i);
+  // NOR MAY IT CLAIM WHAT THE CALLER DID. "The record has been re-read" is true
+  // of ops2, which reloads on a 409, and false of the legacy console reading
+  // the same string. A shared sentence describes the job and what the reader
+  // can do — never the behaviour of one of its callers.
+  assert.doesNotMatch(notReady, /has been|re-read|reloaded/i);
 
   // AN UNKNOWN CODE IS STILL READABLE. New codes appear before their wording
   // does, and "quote_changed_retry" as raw snake case is worse than a plain

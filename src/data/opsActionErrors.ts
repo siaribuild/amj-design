@@ -34,10 +34,16 @@ const ACTION_ERRORS: Record<string, string> = {
   // problem that did not exist."
   //
   // It points at the authority instead. `actionsFor` recomputes the blocked
-  // reason from `issuableNow` on every read, and the record reloads on a
-  // conflict — so after the reload the specific cause is either beside the
-  // button or the action is gone because the job moved on.
-  not_ready: "This quote could not be issued as it stands. The record has been re-read — the reason is shown with the button, or the job has moved on.",
+  // reason from `issuableNow` on every read, so a fresh record either shows the
+  // specific cause beside the button or no longer offers the action at all.
+  //
+  // IT ASKS RATHER THAN ASSERTS, and that is a property of being SHARED. The
+  // wording said "the record has been re-read", which is true of ops2 — it
+  // reloads on a 409, and `not_ready` is a 409 — and false of the legacy
+  // console reading the same string, which does not. A sentence in the shared
+  // core may not describe what its caller did; only what is true of the job and
+  // what the reader can do about it.
+  not_ready: "This quote could not be issued as it stands. Reload the record to see what is standing in the way.",
   //
   // `not_found` IS DELIBERATELY ABSENT. It is returned by 31 places in the ops
   // routes alone — a project, a line, a composite parent, a staff row, a file,
