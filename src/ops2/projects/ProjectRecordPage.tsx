@@ -241,7 +241,7 @@ export function ProjectRecordPage() {
 
           {tab === "lines" ? (
             <>
-              <RecordLines lines={record.lines} />
+              <RecordLines lines={record.lines} orderNo={record.orderNo} />
               <RecordTotals record={record} />
             </>
           ) : (

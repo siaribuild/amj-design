@@ -161,14 +161,34 @@ function LineHead({ line, size }: { line: RecordLine; size: string | null }) {
   );
 }
 
-export function RecordLines({ lines }: { lines: readonly RecordLine[] }) {
+export function RecordLines({ lines, orderNo }: {
+  lines: readonly RecordLine[];
+  /** Present ⇒ these are CONTRACT lines, and an empty list means something else. */
+  orderNo?: string | null;
+}) {
   if (lines.length === 0) {
+    // TWO EMPTIES, TWO SENTENCES. A quote with no lines yet is waiting on the
+    // customer or the estimator; an ORDER with no lines is a conversion that
+    // has not finished, or has gone wrong — the same shape of screen meaning
+    // opposite things, which is the distinction this console keeps making.
     return (
       <div className="rl-empty" data-testid="record-lines-empty">
-        <strong>No lines on this project yet.</strong>
-        <IonNote className="ds-type-caption">
-          Lines arrive when the customer submits a schedule, or when the estimator runs.
-        </IonNote>
+        {orderNo ? (
+          <>
+            <strong>{orderNo} has no contract lines.</strong>
+            <IonNote className="ds-type-caption">
+              The order exists but nothing has been written against it. The quote it
+              came from is in the legacy console.
+            </IonNote>
+          </>
+        ) : (
+          <>
+            <strong>No lines on this project yet.</strong>
+            <IonNote className="ds-type-caption">
+              Lines arrive when the customer submits a schedule, or when the estimator runs.
+            </IonNote>
+          </>
+        )}
       </div>
     );
   }

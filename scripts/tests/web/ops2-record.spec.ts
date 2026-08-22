@@ -351,3 +351,24 @@ test("an accepted order shows the contract lines and no dead primary", async ({ 
   await expect(page.getByTestId("record-pending")).toContainText("Record the deposit");
   await expect(page.getByTestId("record-pending")).toContainText("legacy console");
 });
+
+test("an order with no contract lines says so, rather than showing the quote", async ({ page }) => {
+  // The first fix fell back to the draft list when `orderLines` came back
+  // empty — reasoning that an empty table is a worse answer than a stale one.
+  // It is not. An empty list is a fact this screen can state; a superseded
+  // quote rendered as the record is a lie, and it sits directly beside the
+  // order's own total, which is the number it contradicts.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ code: "OLD", productName: "Superseded draft", lineTotal: 999 })],
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    orderLines: [],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await expect(page.getByTestId("record-lines")).toHaveCount(0);
+  await expect(page.getByTestId("record-lines-empty")).toContainText("OF-O-2201 has no contract lines");
+  await expect(page.getByTestId("record-lines-empty")).not.toContainText("Superseded draft");
+  // And the tab's own count agrees with the list beside it.
+  await expect(page.getByTestId("record-tab").nth(0)).toHaveText(/Lines.*0/);
+});

@@ -259,18 +259,21 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
     daysInStage: num(b.daysInStage),
     unresolved: num(p.unresolvedLineCount) ?? 0,
     // ── WHICH LINES ARE THE RECORD ──────────────────────────────────────────
-    // Once an order exists, THE CONTRACT LINES ARE. The endpoint returns both
-    // and says why: "Once the quote is accepted the draft lines are no longer
-    // what anyone is building — order_line is. Without these an accepted
-    // project renders an empty table, which is how a staffer concludes the
-    // record is broken." Reading the draft list on an accepted job shows prices
+    // ONCE AN ORDER EXISTS, THE CONTRACT LINES ARE — including when there are
+    // none of them. The endpoint returns both lists and says why: "Once the
+    // quote is accepted the draft lines are no longer what anyone is building —
+    // order_line is." Reading the draft list on an accepted job shows prices
     // and quantities nobody is manufacturing to.
     //
-    // The order's own list is preferred only when it HAS one: an order row with
-    // no lines yet is a worse answer than the draft list it superseded.
-    lines: order && Array.isArray(b.orderLines) && b.orderLines.length > 0
-      ? b.orderLines.flatMap(parseOrderLine)
-      : Array.isArray(b.lines) ? b.lines.flatMap(parseLine) : [],
+    // The first version of this fell back to the draft list when `orderLines`
+    // came back empty, reasoning that an empty table is a worse answer than a
+    // stale one. That was wrong, and the disagreement it left on screen is the
+    // proof: an empty list is a FACT the surface can state, while a superseded
+    // quote rendered as the record is a lie — sitting directly beside the
+    // order's own total, which is the number it contradicts.
+    lines: order
+      ? (Array.isArray(b.orderLines) ? b.orderLines.flatMap(parseOrderLine) : [])
+      : (Array.isArray(b.lines) ? b.lines.flatMap(parseLine) : []),
     delivery: {
       amount: num(delivery.amount),
       // NOT a truthiness check, ever: 0 is settled — a trade waiver — and only

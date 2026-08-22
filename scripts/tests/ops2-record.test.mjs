@@ -229,6 +229,21 @@ test("an accepted project shows the CONTRACT lines, not the draft ones", () => {
   // No order ⇒ the draft lines ARE the record, unchanged.
   const quote = M.parseProjectRecord(body({ lines: [line({ code: "W09" })] }));
   assert.deepEqual(quote.lines.map((l) => l.code), ["W09"]);
+
+  // AND AN EMPTY CONTRACT IS STILL THE CONTRACT. The first fix fell back to the
+  // draft list when `orderLines` was absent or empty, reasoning that an empty
+  // table is a worse answer. It is not: an empty list is a FACT, and a stale
+  // quote presented as the record is a lie — with the order's own total sitting
+  // beside it, which is where the two visibly disagree.
+  for (const over of [{ orderLines: [] }, {}]) {
+    const bare = M.parseProjectRecord(body({
+      lines: [line({ code: "OLD" })],
+      order: { orderNo: "OF-O-2201", total: 7000 },
+      ...over,
+    }));
+    assert.deepEqual(bare.lines, [], "an accepted job never shows its quote lines");
+    assert.equal(bare.orderNo, "OF-O-2201");
+  }
 });
 
 test("a primary action this build cannot run is not offered as a control", () => {
