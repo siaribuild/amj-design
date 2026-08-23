@@ -98,7 +98,14 @@ export function actionsFor(args: {
         : args.lineCount === 0
           ? "This quote has no lines yet — there is nothing to issue."
           : args.blocking > 0
+            // A COUNT IS A STATUS; A REFUSAL IS A SENTENCE. "2 lines are
+            // unpriced or in technical review" leaves the reader to already
+            // know that it stops the quote going out — and the console draws
+            // this beside a disabled primary as a critical fault, so it has to
+            // say what is being refused. One place per fact: both consoles read
+            // this file, so both say it.
             ? `${args.blocking} line${args.blocking === 1 ? " is" : "s are"} unpriced or in technical review`
+              + ` — this quote cannot be issued until ${args.blocking === 1 ? "it is" : "they are"} resolved.`
             : args.deliveryUnset
               ? "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel."
               : "This quote cannot be issued from its current state.",

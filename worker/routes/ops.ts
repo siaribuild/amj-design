@@ -669,6 +669,15 @@ ops.get("/projects/:id", async (c) => {
     orderLines: orderParentLines.map((l) => ({
       id: l.id, code: l.code, qty: l.qty, lineTotal: l.lineTotal,
       room: l.location,
+      // THE DRAWING'S OWN INPUTS. ops2 renders every row's elevation from the
+      // line's `productSlug`, and a composite's from its units plus the axis
+      // they are joined along. Both were already on `orderLines()` and dropped
+      // here, so the drawings would have disappeared the moment a quote was
+      // accepted — a state reading as a bug. Public catalogue geometry only:
+      // no cost, margin or supplier rides along, and the DTO's key set is
+      // asserted exactly in scripts/tests/api.test.mjs so it cannot.
+      productSlug: l.productSlug,
+      compositeAxis: l.compositeAxis,
       productName: getProductBySlug(l.productSlug)?.name ?? l.productSlug ?? "—",
       width: l.width, height: l.height,
       // THE SPEC THE CUSTOMER ACCEPTED. `orderLines()` already reconstructs it —
@@ -681,6 +690,9 @@ ops.get("/projects/:id", async (c) => {
       options: l.options,
       segments: l.segments.map((s) => ({
         id: s.id,
+        // Same reason as the parent's: a composite's drawing is built from its
+        // units' own families, one panel per unit.
+        productSlug: s.productSlug,
         productName: getProductBySlug(s.productSlug)?.name ?? s.productSlug ?? "—",
         width: s.width, height: s.height,
         qtyPerParent: s.qtyPerParent, qty: s.qty, lineTotal: s.lineTotal,

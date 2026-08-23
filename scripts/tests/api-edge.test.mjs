@@ -930,6 +930,13 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       // Unpriced lines block issuing — the action is offered but carries a reason.
       const issue = workspace.body.actions.find((a) => a.id === "issue-quote");
       assert.ok(issue.blockedReason, "the blocked action says WHY, rather than vanishing");
+      // P1-AC-39 — AND IT NAMES THE CONSEQUENCE, not only the count. "1 line is
+      // unpriced or in technical review" is a status; the reader has to already
+      // know that it stops the quote going out. The console draws this sentence
+      // as a critical refusal, so the sentence has to be one.
+      assert.match(issue.blockedReason, /^1 line is unpriced or in technical review\b/);
+      assert.match(issue.blockedReason, /cannot be issued/,
+        "the refusal states what it refuses, in the one place both consoles read");
       await requestJson(staff, `/api/ops/projects/${pid}/issue-quote`, { method: "POST", json: {} }, 409);
     });
 

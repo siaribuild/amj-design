@@ -833,6 +833,34 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(opening.lineTotal, opsTotal, "the opening carries the contracted price");
       assert.ok(opening.segments.every((u) => u.productSlug), "each unit names the product it is built from");
       assert.ok(opening.segments.every((u) => u.width && u.height), "each unit carries its own size");
+
+      // ── THE OPS RECORD'S CONTRACT LINES CARRY THE DRAWING'S INPUTS ─────────
+      // P1-AC-8. ops2 draws every row's elevation from the line's own
+      // `productSlug`, and a composite's from its units plus the axis they are
+      // joined along (`src/components/quote-project/Elevation.tsx`).
+      // `orderLines()` already returns all three and the ops DTO mapping
+      // dropped them on the way out — so every drawing would have vanished the
+      // moment a quote was accepted, which reads as a bug rather than a state.
+      //
+      // AND NOTHING ELSE RIDES ALONG (AC-X6). The key sets are asserted
+      // exactly, so a later "while we're here" cannot widen a staff DTO with a
+      // cost, a margin or a supplier by accident.
+      const opsAccepted = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      const contractLine = (opsAccepted.body.orderLines ?? [])[0];
+      assert.ok(contractLine, "expected a contract line on the ops record");
+      assert.equal(contractLine.compositeAxis, "vertical",
+        "the contract row names the axis its units are joined along");
+      assert.deepEqual(Object.keys(contractLine).sort(), [
+        "code", "compositeAxis", "height", "id", "lineTotal", "options",
+        "productName", "productSlug", "qty", "room", "segments", "width",
+      ], "the ops contract line gained productSlug and compositeAxis, and nothing else");
+      const contractUnit = contractLine.segments[0];
+      assert.equal(contractUnit.productSlug, "amj80-series-sliding-window",
+        "each unit names the product its own drawing is derived from");
+      assert.deepEqual(Object.keys(contractUnit).sort(), [
+        "height", "id", "lineTotal", "note", "options", "productName",
+        "productSlug", "qty", "qtyPerParent", "width",
+      ], "the ops contract unit gained productSlug, and nothing else");
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's
@@ -1055,6 +1083,26 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     await t.test("unauthenticated legacy staff seam is forbidden", async () => {
       const response = await fetch(`${baseUrl}/api/projects/p_draft/issue-quote`, { method: "POST" });
       assert.equal(response.status, 403);
+    });
+
+    await t.test("the project record is staff-only, and refuses without leaking the record", async () => {
+      // AC-X1 / AC-X2. The record carries customer pricing and customer
+      // identity, and ops2 is being rebuilt around this one endpoint — so the
+      // gate is re-verified rather than assumed to have survived the rebuild.
+      //
+      // ASSERTED ON THE RAW BODY, not on parsed fields: a refusal that answered
+      // 403 while still serialising the project would pass every status check
+      // written against it.
+      for (const [who, session] of [["anonymous", anonymous], ["a signed-in customer", sarah]]) {
+        const res = await session.request("/api/ops/projects/p_submitted");
+        assert.ok(res.status === 401 || res.status === 403,
+          `${who} must be refused the record, got ${res.status}`);
+        const body = await res.text();
+        for (const leak of ["OF-Q-", "Fitzroy townhouses", "lineTotal", "publicRef", "orderLines"]) {
+          assert.ok(!body.includes(leak),
+            `${who}: the refusal body carries "${leak}"`);
+        }
+      }
     });
 
     await t.test("thermal audit: every stored line appears, with or without a target", async () => {
