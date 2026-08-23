@@ -50,6 +50,10 @@ export interface RecordAction {
 export interface RecordSegment {
   id: string;
   productName: string;
+  /** THE UNIT'S OWN FAMILY, so a composite's drawing is built from what it is
+   *  actually made of rather than from one family guessed for the whole
+   *  opening. `null` draws the fallback frame; it never drops the unit. */
+  productSlug: string | null;
   width: string;
   height: string;
   /** HOW MANY OF THIS UNIT ARE IN ONE OPENING. `worker/lib/composite.ts`
@@ -82,10 +86,27 @@ export interface RecordLine {
   code: string;
   room: string;
   productName: string;
+  /** THE DRAWING'S ONE INPUT. `Elevation` resolves an opening's family through
+   *  `getProductBySlug(productSlug)`; without it every row draws the fallback.
+   *  `null` is a real state — an opening nobody has chosen a product for — and
+   *  it draws a plain frame rather than removing the row. */
+  productSlug: string | null;
+  /** Which way a composite's units are stacked. Vertical splits the WIDTH (side
+   *  by side), horizontal splits the HEIGHT. `quote_line.composite_axis`. */
+  compositeAxis: "vertical" | "horizontal" | null;
   width: string;
   height: string;
   qty: number;
   lineTotal: number | null;
+  /** Where the size came from — `schedule` (read off a plan) or `manual` (typed
+   *  by a human). A number off a drawing and one given on the phone warrant
+   *  different confidence, and the line's page says which. Absent on contract
+   *  lines, where the question is settled. */
+  origin: string | null;
+  /** What the rate card said, when a human overrode it. `priceOverrideAt` being
+   *  non-null is the whole test for "a human set this figure". */
+  priceCalculated: number | null;
+  priceOverrideAt: string | null;
   /** The server's own word: `ready` | `draft` | `needs_review` | … */
   status: string;
   /** Configured options, label → value. The spec, as the customer sees it. */
@@ -145,6 +166,12 @@ export interface ProjectRecord {
 // absence stays absent, and the one guess made errs towards under-claiming.
 
 const WAITING: readonly WaitingOn[] = ["Us", "Customer", "Nobody"];
+const AXES = ["vertical", "horizontal"] as const;
+/** An axis the endpoint did not send is ABSENT, never guessed: `Elevation`
+ *  divides a composite along it, and the wrong guess draws a real opening the
+ *  wrong way round. */
+const axis = (v: unknown): "vertical" | "horizontal" | null =>
+  AXES.find((a) => a === v) ?? null;
 const TIERS: readonly RecordAction["tier"][] = ["primary", "secondary", "overflow"];
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
@@ -166,6 +193,7 @@ function parseSegment(raw: unknown): RecordSegment[] {
   return [{
     id,
     productName: str(r.productName) ?? "—",
+    productSlug: str(r.productSlug),
     width: str(r.width) ?? "",
     height: str(r.height) ?? "",
     // `qtyPerParent` when the endpoint sends it; otherwise the stored figure,
@@ -190,10 +218,15 @@ function parseLine(raw: unknown): RecordLine[] {
     code: str(r.code) ?? "",
     room: str(r.room) ?? "",
     productName: str(r.productName) ?? "—",
+    productSlug: str(r.productSlug),
+    compositeAxis: axis(r.compositeAxis),
     width: str(r.width) ?? "",
     height: str(r.height) ?? "",
     qty: num(r.qty) ?? 1,
     lineTotal: num(r.lineTotal),
+    origin: str(r.origin),
+    priceCalculated: num(r.priceCalculated),
+    priceOverrideAt: str(r.priceOverrideAt),
     status: str(r.status) ?? "ready",
     options: obj(r.options),
     review: r.review && typeof r.review === "object" ? obj(r.review) : null,
@@ -222,10 +255,18 @@ function parseOrderLine(raw: unknown): RecordLine[] {
     code: str(r.code) ?? "",
     room: str(r.room) ?? "",
     productName: str(r.productName) ?? "—",
+    productSlug: str(r.productSlug),
+    compositeAxis: axis(r.compositeAxis),
     width: str(r.width) ?? "",
     height: str(r.height) ?? "",
     qty: num(r.qty) ?? 1,
     lineTotal: num(r.lineTotal),
+    // ABSENCE STAYS ABSENT. A contract line carries no parse provenance and no
+    // pre-override figure, because by then both questions are settled — so the
+    // line page says nothing about them rather than inventing a default.
+    origin: null,
+    priceCalculated: null,
+    priceOverrideAt: null,
     status: "ready",
     // The endpoint now forwards the accepted spec, reconstructed from the
     // snapshot. It used to drop it, which made every accepted row a product
@@ -363,6 +404,159 @@ export function otherActions(record: ProjectRecord): RecordAction[] {
   return record.actions.filter((a) => a.tier !== "primary" && runnableAction(a));
 }
 
+// ── What needs the reviewer ──────────────────────────────────────────────────
+//
+// TWO DIFFERENT FACTS, TWO OWNERS. Whether the quote CAN ISSUE stays the
+// server's — `worker/lib/issue.ts`, spoken through `ops-actions.ts`'s
+// `blockedReason` — and this console renders that sentence beside the disabled
+// primary without ever re-deriving the gate. WHICH LINES need the reviewer is a
+// property of the list the client already holds, and it is a queue with a count
+// rather than one sentence. They read the same facts and cannot disagree; the
+// suite pins that.
+
+/** One thing standing between this record and being issued. `action` is `null`
+ *  when this build has nowhere to send anyone — a control drawn for an action
+ *  that cannot run is the defect this effort has recorded four times. */
+export type Blocker =
+  | { key: "unpriced"; count: number; text: string; action: "show only these" }
+  | { key: "delivery"; count: 0; text: string; action: null };
+
+export type Attention =
+  | { kind: "no-lines"; text: string }
+  | { kind: "clear"; text: string }
+  | { kind: "blockers"; lead: Blocker; more: number };
+
+/** Is delivery a settled figure? `0` is settled — a trade arranging its own
+ *  freight — and only NULL is unset. Never a truthiness check. */
+const deliveryKnown = (record: ProjectRecord): boolean =>
+  record.delivery.frozen != null || record.delivery.settled;
+
+/**
+ * The one row above the list that says what needs doing.
+ *
+ * Blockers are a QUEUE, not a list: the leading one is stated with the control
+ * that clears it and the rest are counted, so the row stays one line and the
+ * next surfaces as each clears. Lines lead over delivery for the reason
+ * `worker/lib/ops-actions.ts` already gives about the gate — surfacing the
+ * trivial blocker while hiding the substantial one trains people to distrust it.
+ */
+export function attentionFor(record: ProjectRecord): Attention {
+  // NEVER "nothing is blocking this quote" ON AN EMPTY RECORD: it would be
+  // false, since a quote with no lines cannot be issued at all.
+  if (record.lines.length === 0) return { kind: "no-lines", text: "No lines on this project yet" };
+
+  const unpriced = record.lines.filter((l) => l.lineTotal == null).length;
+  const blockers: Blocker[] = [];
+  if (unpriced > 0) {
+    blockers.push({
+      key: "unpriced", count: unpriced, action: "show only these",
+      text: `${unpriced} line${unpriced === 1 ? " has" : "s have"} no rate`,
+    });
+  }
+  if (!deliveryKnown(record)) {
+    blockers.push({ key: "delivery", count: 0, text: "Delivery has not been set", action: null });
+  }
+  if (blockers.length === 0) return { kind: "clear", text: "Nothing is blocking this quote" };
+  return { kind: "blockers", lead: blockers[0], more: blockers.length - 1 };
+}
+
+/** The lines the list shows. The filter is the attention row's own control, and
+ *  the only one there is: it narrows to the lines carrying no rate. */
+export function visibleLines(record: ProjectRecord, filterOn: boolean): RecordLine[] {
+  return filterOn ? record.lines.filter((l) => l.lineTotal == null) : [...record.lines];
+}
+
+// ── What the drawing needs ───────────────────────────────────────────────────
+//
+// The mapping between a composite's units and `Elevation`'s `parts`, lifted out
+// of the customer's own row (`src/components/quote-project/OpeningRow.tsx`) so
+// the two consoles cannot draw the same opening differently. It is data, not
+// markup: a pure function over the parsed line, testable from node.
+
+/** The units of a composite as `Elevation` wants them, or `undefined` when
+ *  there is nothing to divide.
+ *
+ *  `alongMm` is the size ALONG THE SPLIT: a vertical split puts the units side
+ *  by side and so divides the WIDTH; a horizontal split stacks them and divides
+ *  the HEIGHT. Fewer than two units is not a composite — one unit is a single
+ *  frame, and handing the generator a one-element `parts` draws a join that
+ *  does not exist. */
+export function elevationPartsFor(line: RecordLine):
+  { productSlug: string; alongMm: string; qty: number }[] | undefined {
+  if (line.segments.length < 2) return undefined;
+  return line.segments.map((s) => ({
+    productSlug: s.productSlug ?? "",
+    alongMm: line.compositeAxis === "horizontal" ? s.height : s.width,
+    qty: s.qty,
+  }));
+}
+
+/** How many frames this opening is actually made of. Σ `qtyPerParent`, which is
+ *  a DIFFERENT FACT from the retired line quantity — which is why the row may
+ *  print this while `×N` is gone. */
+export function joinedUnitCount(line: RecordLine): number {
+  return line.segments.reduce((n, s) => n + Math.max(1, s.qty), 0);
+}
+
+/** The units, flattened: a `qtyPerParent` of 2 is two units to review, not one
+ *  row saying "2". */
+export function unitsOf(line: RecordLine): RecordSegment[] {
+  return line.segments.flatMap((s) =>
+    Array.from({ length: Math.max(1, Math.floor(s.qty)) }, () => s));
+}
+
+/** `W04A`, `W04B`, … — the labels the schedule, the drawing and the factory
+ *  ticket all use for the frames inside one opening. */
+export function unitLabel(code: string, index: number): string {
+  return `${code}${String.fromCharCode(65 + index)}`;
+}
+
+// ── What one row says about itself ───────────────────────────────────────────
+
+/** The statuses the server flags for a human, whatever the parser said. */
+const REVIEW_STATUSES = new Set(["needs_review", "technical_review"]);
+
+/**
+ * Does this line need a reviewer's eye? ONE BOOLEAN, whatever the reason count.
+ *
+ * The parser can raise three separate reasons on one opening, and the rejected
+ * surface printed each as its own chip. "It pollutes the screen. Highlight is
+ * enough": the row carries one badge, and every reason is READ on the line's
+ * own page, where the fix is.
+ */
+export function needsReview(line: RecordLine): boolean {
+  return Object.keys(line.review ?? {}).length > 0 || REVIEW_STATUSES.has(line.status);
+}
+
+/** What KIND of figure this line's price is. `no_rate` is the absence this
+ *  console exists to hunt and is never a zero; `override` is a figure a human
+ *  set over the rate card's, which `priceOverrideAt` alone decides. */
+export function priceState(line: RecordLine): "no_rate" | "override" | "list" {
+  if (line.lineTotal == null) return "no_rate";
+  return line.priceOverrideAt != null ? "override" : "list";
+}
+
+/** One word for where the size came from, or nothing when there is nothing to
+ *  say. A number read off a plan and one given on the phone warrant different
+ *  confidence, and that word is the glanceable half. */
+export function provenanceWord(line: RecordLine): string | null {
+  if (line.origin === "schedule") return "from the schedule";
+  if (line.origin === "manual") return "entered by hand";
+  return null;
+}
+
+/**
+ * The opening's size as one phrase — HEIGHT × WIDTH, the way every drawing,
+ * schedule and factory ticket in this business is dimensioned.
+ *
+ * Half a size is named as the absence it is. `1200 ×` reads as a complete fact
+ * with a rendering bug, and this is exactly the line a reviewer must not skim
+ * past: the drawing beside it is a square stand-in for the same reason.
+ */
+export function sizeText(line: { width: string; height: string }): string {
+  return line.width && line.height ? `${line.height} × ${line.width} mm` : "size not read";
+}
+
 /** Is this line one the reviewer still has to finish? The server's own test. */
 export function lineUnresolved(line: RecordLine): boolean {
   return line.status !== "ready" || line.lineTotal == null;
@@ -377,10 +571,12 @@ export interface RecordTotals {
   deliverySettled: boolean;
   /** Lines + delivery, or null while either is unknowable. */
   total: number | null;
-  /** EVERYTHING KNOWN SO FAR — the lines plus a delivery figure if there is
-   *  one. It is what the screen shows while `total` is null, and leaving the
-   *  settled delivery out of it produced rows that contradicted each other on
-   *  the same panel: `Lines $1,000`, `Delivery $250`, `So far $1,000`. */
+  /** Everything the record already knows — the lines plus a delivery figure if
+   *  there is one. ONE READER: the header's corner (`cornerFigure`), which
+   *  shows it beside the count of what is still missing rather than under a
+   *  caption claiming the sum is provisional. Leaving the settled delivery out
+   *  of it produced rows that contradicted each other on the same panel:
+   *  `Lines $1,000`, `Delivery $250`, and a corner reading `$1,000`. */
   subtotal: number;
   /** True while any line is unpriced: the figure is a floor, not a total. */
   partial: boolean;
@@ -422,6 +618,28 @@ export function totalsFor(record: ProjectRecord): RecordTotals {
     total: record.orderTotal ?? (unpriced > 0 || delivery == null ? null : lines + delivery),
     subtotal: record.orderTotal ?? lines + (delivery ?? 0),
     partial: unpriced > 0,
+  };
+}
+
+/**
+ * The figure in the header's trailing corner, and what qualifies it.
+ *
+ * THE CORNER NEVER GOES BLANK — it exists because the owner said the total was
+ * the thing he missed from this view, and it is on screen at every scroll
+ * position. But it may not print a bare number that implies completeness while
+ * something is still unknown, so the absence is NAMED beside the figure:
+ * `$48,802 · 2 no rate`.
+ *
+ * "so far" is not one of the answers. It was invented as a caption for exactly
+ * this sum and the owner deleted it (R9); an absence with a count says more,
+ * in the record's own vocabulary.
+ */
+export function cornerFigure(totals: RecordTotals): { amount: number; caveat: string | null } {
+  if (totals.total != null) return { amount: totals.total, caveat: null };
+  return {
+    amount: totals.subtotal,
+    // Lines lead here for the same reason they lead the attention row.
+    caveat: totals.unpriced > 0 ? `${totals.unpriced} no rate` : "delivery not set",
   };
 }
 

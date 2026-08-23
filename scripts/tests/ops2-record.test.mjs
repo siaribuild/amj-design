@@ -73,6 +73,286 @@ test("the record reads the endpoint's own vocabulary, and absence stays absent",
   assert.equal(M.parseProjectRecord({ project: { title: "x" } }), null);
 });
 
+test("the parser carries what the drawing needs, and a line with no slug is still a line", () => {
+  // P1-AC-7. The endpoint has always sent all of these — `productSlug` and
+  // `compositeAxis` on the line (worker/routes/ops.ts), `productSlug` and
+  // `qtyPerParent` on each segment — and this parser dropped them, which is why
+  // the record shipped with no drawings at all. `origin`, `priceCalculated` and
+  // `priceOverrideAt` come with them because the line's own page states where a
+  // size came from and what kind of figure a price is.
+  const r = M.parseProjectRecord(body({
+    lines: [line({
+      productSlug: "amj80-series-sliding-door", compositeAxis: "vertical",
+      origin: "schedule", priceCalculated: 900, priceOverrideAt: "2026-08-20T01:00:00Z",
+      lineKind: "composite_parent",
+      segments: [
+        { id: "s1", productSlug: "amj80-series-sliding-window", productName: "Sliding 2400",
+          width: "2400", height: "1500", qtyPerParent: 2, qty: 2, lineTotal: 500, status: "ready" },
+      ],
+    })],
+  }));
+  const l = r.lines[0];
+  assert.equal(l.productSlug, "amj80-series-sliding-door");
+  assert.equal(l.compositeAxis, "vertical");
+  assert.equal(l.origin, "schedule");
+  assert.equal(l.priceCalculated, 900);
+  assert.equal(l.priceOverrideAt, "2026-08-20T01:00:00Z");
+  assert.equal(l.segments[0].productSlug, "amj80-series-sliding-window");
+  assert.equal(l.segments[0].qty, 2, "qtyPerParent is what is in ONE opening");
+
+  // A LINE WITH NO SLUG IS KEPT. The drawing falls back to a fixed frame, which
+  // is an honest picture of an opening nobody has chosen a product for; dropping
+  // the row would hide the line that most needs a reviewer.
+  const bare = M.parseProjectRecord(body({ lines: [line()] })).lines[0];
+  assert.equal(bare.productSlug, null);
+  assert.equal(bare.compositeAxis, null);
+  assert.equal(bare.origin, null);
+  assert.equal(bare.priceOverrideAt, null);
+  assert.equal(M.parseProjectRecord(body({ lines: [line()] })).lines.length, 1);
+
+  // An axis the endpoint never sends is absent, not guessed into "vertical".
+  assert.equal(M.parseProjectRecord(body({ lines: [line({ compositeAxis: "sideways" })] })).lines[0].compositeAxis, null);
+
+  // P1-AC-8, the model half: a CONTRACT line reads the same keys, and the
+  // fields order lines do not carry stay absent rather than being invented.
+  const order = M.parseProjectRecord(body({
+    order: { orderNo: "OF-O-2201", total: 7000 },
+    orderLines: [{ id: "o1", code: "W01", productName: "Composite opening",
+      productSlug: "amj80-series-sliding-door", compositeAxis: "horizontal",
+      width: "3600", height: "1500", qty: 1, lineTotal: 7000,
+      segments: [{ id: "os1", productSlug: "amj100t-fixed-window", productName: "Fixed",
+        width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 3000 }] }],
+  }));
+  assert.equal(order.lines[0].productSlug, "amj80-series-sliding-door");
+  assert.equal(order.lines[0].compositeAxis, "horizontal");
+  assert.equal(order.lines[0].segments[0].productSlug, "amj100t-fixed-window");
+  assert.equal(order.lines[0].origin, null, "an order line has no parse provenance");
+  assert.equal(order.lines[0].priceCalculated, null);
+});
+
+test("a composite is drawn from its units, along its own axis", () => {
+  // P1-AC-3 / P1-AC-33, the data half. `Elevation` takes `parts` as
+  // `{ productSlug, alongMm, qty }` and divides the frame along `axis`, so
+  // `alongMm` is the size ALONG the split: a vertical split (units side by
+  // side) divides the width, a horizontal one divides the height. Getting this
+  // backwards draws a real opening the wrong way round — the mapping is lifted
+  // out of src/components/quote-project/OpeningRow.tsx:103-110 so the two
+  // consoles cannot disagree about the same opening.
+  const composite = (over = {}) => M.parseProjectRecord(body({
+    lines: [line({
+      lineKind: "composite_parent", width: "3000", height: "1500",
+      segments: [
+        { id: "s1", productSlug: "amj80-series-sliding-window", productName: "Sliding",
+          width: "2400", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 500, status: "ready" },
+        { id: "s2", productSlug: "amj100t-fixed-window", productName: "Fixed",
+          width: "600", height: "1500", qtyPerParent: 2, qty: 2, lineTotal: 400, status: "ready" },
+      ],
+      ...over,
+    })],
+  })).lines[0];
+
+  assert.deepEqual(M.elevationPartsFor(composite({ compositeAxis: "vertical" })), [
+    { productSlug: "amj80-series-sliding-window", alongMm: "2400", qty: 1 },
+    { productSlug: "amj100t-fixed-window", alongMm: "600", qty: 2 },
+  ], "a vertical split divides the WIDTH — 2400 + 600 must not look like two halves");
+  assert.deepEqual(
+    M.elevationPartsFor(composite({ compositeAxis: "horizontal" })).map((p) => p.alongMm),
+    ["1500", "1500"], "a horizontal split divides the HEIGHT");
+
+  // FEWER THAN TWO UNITS IS NOT A COMPOSITE. One unit is a single frame and the
+  // ordinary path draws it correctly; passing a one-element `parts` would make
+  // the generator draw a join that does not exist.
+  const simple = M.parseProjectRecord(body({ lines: [line()] })).lines[0];
+  assert.equal(M.elevationPartsFor(simple), undefined);
+  const one = M.parseProjectRecord(body({
+    lines: [line({ lineKind: "composite_parent", segments: [
+      { id: "s1", productSlug: "amj100t-fixed-window", productName: "Fixed",
+        width: "600", height: "900", qtyPerParent: 1, qty: 1, lineTotal: 1, status: "ready" }] })],
+  })).lines[0];
+  assert.equal(M.elevationPartsFor(one), undefined);
+  assert.equal(M.joinedUnitCount(one), 1);
+
+  // The joined-unit COUNT is qtyPerParent summed — a different fact from the
+  // retired quantity, which is why the row may print it while `qty` is gone.
+  assert.equal(M.joinedUnitCount(composite({})), 3);
+  assert.equal(M.joinedUnitCount(simple), 0, "a simple opening is not made of joined units");
+
+  // The units, flattened, and labelled the way every other artefact labels them.
+  assert.deepEqual(M.unitsOf(composite({})).map((u) => u.productName),
+    ["Sliding", "Fixed", "Fixed"], "a qtyPerParent of 2 is two units, not one row saying 2");
+  assert.equal(M.unitLabel("W04", 0), "W04A");
+  assert.equal(M.unitLabel("W04", 2), "W04C");
+});
+
+test("the attention row is a queue, and every empty case says a different thing", () => {
+  // P1-AC-15 … P1-AC-21. A list of eighteen openings with two unpriced is a
+  // SCANNING problem, and the answer is a filter rather than a flag on every
+  // row. Blockers are a QUEUE: the row states the leading one with the control
+  // that clears it and counts the rest, so it stays one line and the next
+  // surfaces as each clears.
+  const unpriced = M.parseProjectRecord(body({
+    lines: [line(), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" }),
+      line({ id: "l3", code: "W03", lineTotal: null, status: "draft" })],
+    delivery: { amount: 420, settled: true, estimate: 400 },
+  }));
+  const lead = M.attentionFor(unpriced);
+  assert.equal(lead.kind, "blockers");
+  assert.equal(lead.lead.key, "unpriced");
+  assert.equal(lead.lead.count, 2);
+  assert.equal(lead.lead.text, "2 lines have no rate");
+  assert.equal(lead.lead.action, "show only these");
+  assert.equal(lead.more, 0);
+
+  // LINES LEAD OVER DELIVERY, for the reason worker/lib/ops-actions.ts already
+  // gives about the gate: surfacing the trivial blocker while hiding the
+  // substantial one trains people to distrust it.
+  const both = M.parseProjectRecord(body({
+    lines: [line(), line({ id: "l2", lineTotal: null, status: "draft" })],
+    delivery: { amount: null, settled: false, estimate: 400 },
+  }));
+  const queue = M.attentionFor(both);
+  assert.equal(queue.lead.key, "unpriced");
+  assert.equal(queue.lead.text, "1 line has no rate");
+  assert.equal(queue.more, 1, "the rest are counted, not listed");
+
+  // A BLOCKER THIS BUILD CANNOT ACT ON CARRIES NO CONTROL. There is no delivery
+  // screen in ops2 to send anyone to, and a control wired to nothing is the
+  // defect this effort has recorded four times.
+  const deliveryOnly = M.attentionFor(M.parseProjectRecord(body({
+    lines: [line()], delivery: { amount: null, settled: false, estimate: 400 },
+  })));
+  assert.equal(deliveryOnly.lead.key, "delivery");
+  assert.equal(deliveryOnly.lead.text, "Delivery has not been set");
+  assert.equal(deliveryOnly.lead.action, null);
+  assert.equal(deliveryOnly.more, 0);
+
+  // Nothing blocking says so…
+  assert.deepEqual(M.attentionFor(M.parseProjectRecord(body({ lines: [line()] }))),
+    { kind: "clear", text: "Nothing is blocking this quote" });
+
+  // …and a record with NO LINES does not claim nothing blocks it, which would
+  // be false: a quote with no lines cannot be issued (worker/lib/issue.ts).
+  assert.deepEqual(M.attentionFor(M.parseProjectRecord(body({ lines: [] }))),
+    { kind: "no-lines", text: "No lines on this project yet" });
+
+  // The filter itself, and the empty it can produce — which is a sentence with
+  // the way back, never a blank list.
+  assert.deepEqual(M.visibleLines(unpriced, true).map((l) => l.code), ["W02", "W03"]);
+  assert.equal(M.visibleLines(unpriced, false).length, 3);
+  assert.deepEqual(M.visibleLines(M.parseProjectRecord(body({ lines: [line()] })), true), []);
+});
+
+test("one badge whatever the reason count, and every figure states its kind", () => {
+  // P1-AC-22 — THREE REASONS ARE STILL ONE BOOLEAN. The parser's individual
+  // reasons pollute a scannable list ("Highlight is enough"); they are read on
+  // the line's own page, where the fix is.
+  const flagged = M.parseProjectRecord(body({
+    lines: [line({ status: "technical_review", review: {
+      glazing: "glazing option out of range",
+      material: "material substituted",
+      size: "size outside the product range",
+    } })],
+  })).lines[0];
+  assert.equal(M.needsReview(flagged), true);
+  assert.equal(Object.keys(flagged.review).length, 3, "the reasons are kept, for the line's page");
+  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line()] })).lines[0]), false);
+  // An empty review map is not a flag, and a status the server flags is one
+  // even when the parser raised nothing.
+  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ review: {} })] })).lines[0]), false);
+  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ status: "needs_review" })] })).lines[0]), true);
+
+  // P1-AC-31 — WHAT KIND OF FIGURE IT IS. An unpriced line is `no_rate` and
+  // never a zero; a figure a human set is not the rate card's.
+  const state = (over) => M.priceState(M.parseProjectRecord(body({ lines: [line(over)] })).lines[0]);
+  assert.equal(state({ lineTotal: null }), "no_rate");
+  assert.equal(state({ lineTotal: 0 }), "list", "a genuine zero is a price, not an absence");
+  assert.equal(state({ lineTotal: 900, priceOverrideAt: "2026-08-20T01:00:00Z" }), "override");
+  assert.equal(state({ lineTotal: 900 }), "list");
+
+  // P1-AC-28 — one word of provenance, and nothing when there is none to give.
+  const word = (over) => M.provenanceWord(M.parseProjectRecord(body({ lines: [line(over)] })).lines[0]);
+  assert.equal(word({ origin: "schedule" }), "from the schedule");
+  assert.equal(word({ origin: "manual" }), "entered by hand");
+  assert.equal(word({}), null);
+
+  // P1-AC-4 / P1-AC-32 — the row's size is HEIGHT × WIDTH, the way every
+  // drawing in this business is dimensioned, and half a size is named as the
+  // absence it is rather than printed as a complete-looking fact.
+  const size = (over) => M.sizeText(M.parseProjectRecord(body({ lines: [line(over)] })).lines[0]);
+  assert.equal(size({ width: "1200", height: "900" }), "900 × 1200 mm");
+  assert.equal(size({ width: "1200", height: "" }), "size not read");
+  assert.equal(size({ width: "", height: "" }), "size not read");
+});
+
+test("the header's corner keeps a figure and names what is missing", () => {
+  // P1-AC-37, the owner's own shape: `$48,802 · 2 no rate`. The corner exists
+  // because he missed the money there, so it never goes blank — and a bare
+  // number implying completeness is exactly what it may not print. "so far" was
+  // invented for this job and is deleted (R9).
+  const corner = (over) => M.cornerFigure(M.totalsFor(M.parseProjectRecord(body(over))));
+
+  assert.deepEqual(corner({ lines: [line({ lineTotal: 1000 })] }),
+    { amount: 1420, caveat: null }, "everything known ⇒ the figure, unqualified");
+
+  assert.deepEqual(corner({
+    lines: [line({ lineTotal: 1000 }), line({ id: "l2", lineTotal: null, status: "draft" }),
+      line({ id: "l3", lineTotal: null, status: "draft" })],
+  }), { amount: 1420, caveat: "2 no rate" });
+
+  assert.deepEqual(corner({
+    lines: [line({ lineTotal: 1000 })],
+    delivery: { amount: null, settled: false, estimate: 400 },
+  }), { amount: 1000, caveat: "delivery not set" },
+  "the second way a total can be unknowable, in the same shape");
+
+  // An accepted contract's total is knowable by definition — the customer
+  // agreed to it, freight included.
+  assert.deepEqual(corner({
+    order: { orderNo: "OF-O-2201", total: 7000, deliveryTotal: 250 },
+    orderLines: [{ id: "o1", code: "W01", productName: "Awning", width: "1", height: "1",
+      qty: 1, lineTotal: 6750, segments: [] }],
+    delivery: { amount: null, settled: false, estimate: 999 },
+  }), { amount: 7000, caveat: null });
+});
+
+test("the attention queue and the server's gate cannot disagree", () => {
+  // A GUARD OVER CODE THAT IS CURRENTLY CORRECT, said plainly rather than
+  // implied: there was no red phase for it.
+  //
+  // Two vocabularies read the same facts. `worker/lib/issue.ts` decides whether
+  // the quote CAN ISSUE and `ops-actions.ts` speaks one sentence about it; this
+  // file decides WHICH LINES need the reviewer and speaks a queue with a count.
+  // They are different shapes, and the danger is that they drift into
+  // disagreeing on screen — a record saying "Nothing is blocking this quote"
+  // above a disabled primary refusing it for a line with no rate.
+  //
+  // So: a record the queue calls CLEAR must carry no lines-or-delivery refusal,
+  // and one the queue calls blocked must carry the matching refusal.
+  const gated = (over, blockedReason) => M.parseProjectRecord(body({
+    ...over,
+    actions: [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary", blockedReason }],
+  }));
+  const mentionsLinesOrDelivery = (reason) => /line|deliver/i.test(reason ?? "");
+
+  const clear = gated({ lines: [line()] }, undefined);
+  assert.equal(M.attentionFor(clear).kind, "clear");
+  assert.equal(mentionsLinesOrDelivery(M.primaryAction(clear).blockedReason), false);
+
+  const unpriced = gated(
+    { lines: [line({ lineTotal: null, status: "draft" })] },
+    "1 line is unpriced or in technical review — this quote cannot be issued until it is resolved.",
+  );
+  assert.equal(M.attentionFor(unpriced).lead.key, "unpriced");
+  assert.match(M.primaryAction(unpriced).blockedReason, /line/i);
+
+  const unset = gated(
+    { lines: [line()], delivery: { amount: null, settled: false, estimate: 400 } },
+    "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel.",
+  );
+  assert.equal(M.attentionFor(unset).lead.key, "delivery");
+  assert.match(M.primaryAction(unset).blockedReason, /deliver/i);
+});
+
 test("an unpriced line makes the sum a floor, and it says so", () => {
   // A SUM OVER UNPRICED LINES IS NOT A TOTAL. Adding up the lines that happen
   // to carry figures and labelling it the total is how a reviewer reads $1,000
