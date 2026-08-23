@@ -65,6 +65,15 @@ const SIZES = {
         font: 11, dims: true, inset: 4,
         t: { min: 3, max: 6, ratio: 0.03 },
         sw: { frame: 2, glass: 1.25, sym: 1.25, mull: 2.5, dim: 0.75 }, blades: 6, folds: 3 },
+  // R-49 the other way round: ops2's line page draws a ~320×248 hero on a
+  // phone, and neither `md` (200×150 box) nor `lg` (372×268) lands there
+  // without scaling — which would take the leader text out of its designed
+  // 9–13px in one direction or the other. 44+262+12 = 318 wide,
+  // 12+196+38 = 246 tall. Nothing on the customer site asks for it.
+  hero: { box: { w: 262, h: 196 }, pad: { l: 44, r: 12, t: 12, b: 38 },
+        font: 12, dims: true, inset: 5,
+        t: { min: 5, max: 10, ratio: 0.03 },
+        sw: { frame: 2, glass: 1.25, sym: 1.4, mull: 3, dim: 0.75 }, blades: 6, folds: 3 },
   lg: { box: { w: 372, h: 268 }, pad: { l: 52, r: 14, t: 14, b: 44 },
         font: 13, dims: true, inset: 6,
         t: { min: 6, max: 12, ratio: 0.03 },
@@ -474,5 +483,29 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
       {symbols}
       {showDims && <DimGroups F={F} S={S} wMm={wMm} hMm={hMm} />}
     </svg>
+  );
+}
+
+/**
+ * The symbol language, written out — the legend from the header of this file,
+ * as markup.
+ *
+ * It lives with the generator rather than beside any one consumer, because it
+ * describes what THIS code draws: a symbol added here without a row added there
+ * is a drawing nobody can read. Each console styles `.elev-legend` itself.
+ *
+ * Shown only where the drawing is the SUBJECT — the expanded plate. A row's
+ * 46×34 glyph and a phone hero have no room to teach, and a legend printed
+ * beside every drawing is the per-row noise the list is trying to avoid.
+ */
+export function ElevationLegend() {
+  return (
+    <dl className="elev-legend">
+      <div><dt>solid V</dt><dd>opens towards you</dd></div>
+      <div><dt>dashed V</dt><dd>opens away from you</dd></div>
+      <div><dt>apex</dt><dd>points at the hinge edge</dd></div>
+      <div><dt>arrow</dt><dd>direction of travel</dd></div>
+      <div><dt>unmarked</dt><dd>fixed</dd></div>
+    </dl>
   );
 }

@@ -40,6 +40,34 @@ test("setupIonicReact carries R-164's focus priority, and nothing else", () => {
   assert.doesNotMatch(args, /\bmode\s*:/, "the platform mode stays Ionic's, per ADR 0005's ASSUMED");
 });
 
+test("the console hydrates the catalogue before it mounts, and fetches nothing else", () => {
+  // R2 / P1-AC-5. `Elevation` resolves an opening's family through
+  // `getProductBySlug(productSlug)`, so the catalogue stopped being incidental
+  // to ops2 the moment the record grew drawings: without it every row draws the
+  // fallback frame. The boot adopts src/ops/main.tsx's pattern exactly —
+  // `hydrateFromSanity()` never throws and races a 2500ms timeout, so the worst
+  // case with Sanity unreachable is a delayed mount on the built-in catalogue
+  // (P1-AC-6), not a hang and not a blank console.
+  //
+  // A STATIC PIN because the alternative is invisible: mounting first and
+  // hydrating after type-checks, runs, and quietly draws every row twice — the
+  // fallback, then the real family — which a screenshot cannot catch either.
+  // Comments stripped: this file's prose names the call, and so does the
+  // boot's own — a scan that reads them proves nothing about the code.
+  const boot = read("src/ops2/main.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(boot, /hydrateFromSanity\(\)/, "the boot must hydrate the catalogue");
+  assert.match(boot, /hydrateFromSanity\(\)\s*\.finally\(/,
+    "…and render inside .finally — a rejected hydration must still mount the console");
+
+  // AC-X5 — EXACTLY ONE REQUEST, and it is the public catalogue query the
+  // customer site already sends. Site settings are the customer's branding and
+  // the offerability check is the customer picker's filter; fetching either
+  // would widen this console's outbound surface for something it never reads.
+  assert.doesNotMatch(boot, /hydrateSiteSettings|hydrateOfferabilityFromApi/,
+    "ops2 boots on the catalogue alone");
+});
+
 test("the tab bar belongs to the shell, and no region can render or delete one", () => {
   // THE TWICE-RECORDED REGRESSION, AND WHY THIS IS A TEST RATHER THAN A HABIT.
   // `docs/ops-redesign/LEARNINGS.md` §3.10 records the drawer losing its only
