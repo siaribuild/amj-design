@@ -1,0 +1,256 @@
+/* ops2 — one opening's own page.
+ *
+ * The surface a reviewer lands on from a row, and where "Why this product?"
+ * will attach. FrameFlow tokens only: no hex, and no `--ion-color-step-*`,
+ * which are undefined in this stylesheet set and render full-strength black —
+ * the rule `record.css` states at its head, for the same measured reason.
+ *
+ * `--paper` is NOT set here. `Elevation` haloes its dimension leaders against
+ * it and it is defined only in the customer theme, so undefined it computes to
+ * a BLACK fill; `record.css:24-25` scopes it to every drawing container on both
+ * surfaces, which is the one place it belongs.
+ *
+ * The blocks here are the console's own object — the same elevated card the
+ * queue's list and the record's line list are, so a panel on this page and a
+ * list on the last one read as the same kind of thing.
+ */
+
+.lp-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-md);
+}
+
+/* ── The plate: the drawing as the subject ──────────────────────────────────
+ * The row's glyph says WHICH opening this is; here the opening is what the page
+ * is about, so it gets the surface rather than a slot. Tapping it enlarges —
+ * which is why the face is a real button and not a figure with a handler. */
+.lp-plate {
+  margin: 0;
+  padding: var(--theme-spacing-lg) var(--theme-spacing-md) var(--theme-spacing-sm);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+  text-align: center;
+}
+.lp-plate__face {
+  display: block;
+  width: 100%;
+  padding: var(--theme-spacing-sm);
+  background: none;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  cursor: pointer;
+}
+/* The enlargement is already open behind the panel's own scrim, so the copy
+   inside it is a picture rather than a control. */
+.lp-plate__face--static { cursor: default; }
+@media (hover: hover) {
+  button.lp-plate__face:hover { background: var(--ds-color-brand-wash); }
+}
+.lp-plate__svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.lp-plate figcaption {
+  margin-top: var(--theme-spacing-xs);
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+
+/* The enlargement, inside the panel: drawing, the units it was built from, and
+   the symbol legend — which lives with the generator, because a symbol added
+   there without a row added here is a drawing nobody can read. */
+.lp-plate-big {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-md);
+  padding: var(--theme-spacing-md);
+}
+.lp-plate-big .lp-plate {
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+}
+.lp-plate-parts h2 {
+  margin: 0 0 var(--theme-spacing-xs);
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+.lp-plate-parts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-primary);
+}
+.lp-plate-parts li {
+  display: flex;
+  gap: var(--theme-spacing-sm);
+  padding: var(--theme-spacing-2xs) 0;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+.lp-plate-parts li:first-child { border-top: 0; }
+
+/* ── The size, and where it came from ───────────────────────────────────────
+ * The figure leads; its provenance follows quietly. A size read off a drawing
+ * and a size a customer typed are different facts, and the row cannot say so. */
+.lp-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--theme-spacing-sm);
+  margin: 0;
+}
+.lp-size__v {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-lg);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+.lp-size__src {
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+
+/* ── A panel: one fact-block ────────────────────────────────────────────────
+ * Same object as the queue's list and the record's — card, hairline border,
+ * 5px corners, the raised shadow. */
+.lp-panel {
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+}
+/* UPPERCASE IS RESERVED FOR LABELS in FrameFlow — small and wide-tracked — and
+   a panel's title is exactly that: a name for the block, not a heading someone
+   reads as a sentence. */
+.lp-panel__title {
+  margin: 0 0 var(--theme-spacing-xs);
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+.lp-panel__lines {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  gap: var(--theme-spacing-2xs) var(--theme-spacing-md);
+  margin: 0;
+  font-size: var(--theme-font-size-sm);
+}
+.lp-panel__lines dt { color: var(--ds-text-muted); }
+.lp-panel__lines dd { margin: 0; color: var(--ds-text-primary); }
+/* WHAT WAS NOT SHOWN, said rather than silently dropped. A panel with a budget
+   that quietly truncates is a panel that lies about being complete. */
+.lp-panel__more {
+  margin: var(--theme-spacing-xs) 0 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+
+/* ── The units of a composite ───────────────────────────────────────────────
+ * Each carries its OWN drawing and its own spec: units of one opening differ,
+ * and which ones differ is exactly what a reviewer is here to check. */
+.lp-units__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lp-unit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--theme-spacing-sm);
+  padding: var(--theme-spacing-sm) 0;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+.lp-unit:first-child { border-top: 0; padding-top: var(--theme-spacing-2xs); }
+.lp-unit__elev { display: block; flex: none; }
+.lp-unit__svg { display: block; }
+.lp-unit__body { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--theme-spacing-sm); }
+/* The unit's own label — `W03a`, `W03b` — in the display face and tabular, the
+   same treatment the row's code gets, because it is the same kind of fact. */
+.lp-unit__code {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-sm);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+.lp-unit__name {
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-primary);
+}
+.lp-unit__meta {
+  font-size: var(--theme-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-secondary);
+}
+.lp-unit__spec {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-secondary);
+}
+.lp-unit__opt-k { color: var(--ds-text-muted); }
+
+/* ── Needs review: the parser's own reasons ─────────────────────────────────
+ * They live HERE and never in the list — the list carries one badge, so it
+ * stays scannable. `warning`, not `danger`: in this product warning means
+ * "ours to resolve, the human proceeds" (../theme/ionic.css). */
+.lp-review {
+  background: var(--ds-color-warning-subtle);
+  border-color: var(--theme-warning-200);
+}
+.lp-review .lp-panel__title { color: var(--ds-color-warning-text); }
+.lp-review__list {
+  margin: 0;
+  padding-left: var(--theme-spacing-md);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-color-warning-text);
+}
+.lp-review__list li + li { margin-top: var(--theme-spacing-2xs); }
+/* The server's own status word when there is no reason text to show — the fall
+   back to a fact rather than to silence. */
+.lp-review__status {
+  margin: var(--theme-spacing-2xs) 0 0;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-color-warning-text);
+  text-transform: lowercase;
+}
+.lp-review__status::first-letter { text-transform: uppercase; }
+
+/* ── The customer's own words ───────────────────────────────────────────────
+ * `quote_line.room_label` is free text bounded at 500 characters and labelled
+ * "Note (optional)" to the customer — which is why it is not in the row, and
+ * why it wraps rather than truncates here. Read-only: this is their sentence. */
+.lp-note__body {
+  margin: 0;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Quiet closing notes — what a drawing does and does not promise, and what a
+   panel could not show. Never a warning colour: nothing here is wrong. */
+.lp-coverage,
+.lp-basis {
+  margin: var(--theme-spacing-2xs) 0 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}

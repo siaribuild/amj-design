@@ -168,6 +168,19 @@ An outcome records its full context; the learned layer retrieves by a deliberate
 **Corpus provenance**:
 Whether a learning outcome came from the platform's own review flow (`in_platform`) or was backfilled from pre-platform history (`backfilled`). A reviewer told "3 of 4 similar openings went this way" can see which of the four were real in-platform reviews.
 
+### Ops console
+
+**Elevation**:
+The opening drawn to true proportion — panel arrangement, mullions, opening symbols — generated from a line's product family and dimensions by the one shared generator (`src/components/quote-project/Elevation.tsx`, ADR 0010). Every surface that shows an opening reuses it; a composite is drawn from its units along the composite axis. A category glyph or family pictogram is never a substitute, and an unsized opening draws a square stand-in with no dimension leaders.
+_Avoid_: icon, thumbnail, pictogram
+
+**Line page**:
+The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** and **"Why this product?"** attach here when built. Its line is always resolved from its project's own record — never fetched by bare line id.
+
+**Attention filter**:
+The record's blocker row. It names the leading blocker with the control that clears it and counts the rest (`+N more`) — a queue, not a list. Its "show only these" filters the line list to the lines with no rate. It is a scanning aid over the list the console already holds; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`).
+_Avoid_: warning banner, error list
+
 ### Referrals
 
 **Referral**:

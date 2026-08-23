@@ -18,6 +18,7 @@ import { useBasenameCorrectedTabHrefs } from "./nav/tabHrefs";
 import { DestinationRoot } from "./pages/DestinationRoot";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { ProjectRecordPage } from "./projects/ProjectRecordPage";
+import { LinePage } from "./projects/LinePage";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
 // on React Router 5 while the customer site stays on 7. Never import the bare
@@ -205,6 +206,14 @@ export function Ops2App() {
                     above anticipated — which is what keeps Projects lit while
                     one is open. */}
                 <Route exact path="/projects/:id" render={() => <ProjectRecordPage />} />
+                {/* One opening's own page. `exact` for the same reason its
+                    parent is: a non-exact view item already on Ionic's stack
+                    matches its own children first, and the child then never
+                    renders — silently, with the URL and both navigation
+                    surfaces all correct. It nests under /projects, so
+                    `isDestinationActive`'s segment-prefix match keeps Projects
+                    lit at every width without a destination being added. */}
+                <Route exact path="/projects/:id/line/:lineId" render={() => <LinePage />} />
                 <Route exact path="/"><Redirect to={HOME_PATH} /></Route>
                 {/* The not-found route, replacing the scaffold's catch-all
                     rather than dropping it. Its reason is carried forward

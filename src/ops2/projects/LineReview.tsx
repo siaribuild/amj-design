@@ -1,0 +1,222 @@
+import type { ReactNode } from "react";
+import { Elevation } from "../../components/quote-project/Elevation";
+import { Plate } from "./Plate";
+import {
+  joinedUnitCount, money, needsReview, priceState, provenanceWord, sizeText,
+  unitLabel, unitsOf, type RecordLine,
+} from "./record";
+
+/**
+ * ONE OPENING, READ.
+ *
+ * ── THE RULE THAT KEEPS THIS FROM BECOMING A PILE ───────────────────────────
+ * A stack of titled panels is what was rejected once already, so the difference
+ * has to be structural rather than a promise:
+ *
+ *     A PANEL IS A SUMMARY. IT NEVER GROWS TO FIT ITS CONTENT.
+ *
+ * Every panel below declares a LINE BUDGET and the budget is enforced in code —
+ * `Panel` slices to it and states the remainder when it cuts. A panel cannot
+ * quietly absorb one more fact, because the fact would not render.
+ *
+ * ── THE ORDER IS THE EDITOR'S ───────────────────────────────────────────────
+ * The drawing, then the size, then the specification, then the price, then the
+ * customer's words — the same concerns in the same order as the form that
+ * creates a line, so the two are recognisably the same thing.
+ *
+ * ── WHAT THE SPLIT FORCES ───────────────────────────────────────────────────
+ * A composite parent is a schedule line, not a product: there is no single
+ * product, glazing or option set to summarise. So THE UNITS REPLACE THE
+ * SPECIFICATION, never join it — its units ARE its specification — and a
+ * coverage line reports the difference when they do not add up to the opening.
+ * It reports; it never vetoes.
+ *
+ * ── ROUTER-FREE ON PURPOSE ──────────────────────────────────────────────────
+ * The record and the line arrive as props, so phase 2's desk canvas renders
+ * this same body beside the rail without changing a word of it.
+ *
+ * ── AND READ-ONLY ───────────────────────────────────────────────────────────
+ * No Edit, no re-pricing, no "Why this product?" — each is its own feature with
+ * its own decisions, and a control drawn for an action this build cannot
+ * perform is the defect this effort has recorded four times. "Why this product"
+ * attaches between the specification and the price, and is absent entirely on a
+ * composite: the estimator recommends a product per OPENING, and a composite is
+ * one opening that ops divided, so there is no machine recommendation to
+ * justify and inventing a rationale would be worse than the absence.
+ */
+
+type PanelLine = { k?: string; v: ReactNode; quiet?: boolean };
+
+/** THE BUDGET IS STRUCTURAL. The panel slices to it and says what it cut. */
+function Panel({ title, lines, budget, more, testId }: {
+  title: string;
+  lines: PanelLine[];
+  budget: number;
+  /** What the remainder is called when the budget bit. */
+  more?: (cut: number) => string;
+  testId?: string;
+}) {
+  const shown = lines.slice(0, budget);
+  const cut = lines.length - shown.length;
+  return (
+    <section className="lp-panel" data-testid={testId} aria-label={title}>
+      <h2 className="lp-panel__title">{title}</h2>
+      <dl className="lp-panel__lines">
+        {shown.map((l, i) => (
+          <div key={i} className={l.quiet ? "lp-panel__line lp-panel__line--quiet" : "lp-panel__line"}>
+            {l.k && <dt>{l.k}</dt>}
+            <dd>{l.v}</dd>
+          </div>
+        ))}
+      </dl>
+      {cut > 0 && more && <p className="lp-panel__more">{more(cut)}</p>}
+    </section>
+  );
+}
+
+/** The units a composite is actually made of. No price and no edit control: the
+ *  parent owns the total, and a unit is reached through the parent. */
+function Units({ line }: { line: RecordLine }) {
+  const units = unitsOf(line);
+  const stacked = line.compositeAxis === "horizontal";
+  const openingAlong = Number(stacked ? line.height : line.width);
+  const unitsAlong = units.reduce((n, u) => n + Number(stacked ? u.height : u.width), 0);
+  const diff = Number.isFinite(openingAlong) && openingAlong > 0 && Number.isFinite(unitsAlong)
+    ? unitsAlong - openingAlong
+    : 0;
+  return (
+    <section className="lp-panel lp-units" data-testid="line-units"
+      aria-label={`The ${units.length} units of ${line.code}`}>
+      <h2 className="lp-panel__title">Made as {units.length} units</h2>
+      <ul className="lp-units__list">
+        {units.map((u, i) => (
+          <li key={`${u.id}-${i}`} className="lp-unit">
+            <span className="lp-unit__elev">
+              <Elevation
+                productSlug={u.productSlug ?? ""}
+                widthMm={u.width}
+                heightMm={u.height}
+                size="xs"
+                square
+                className="lp-unit__svg"
+              />
+            </span>
+            <span className="lp-unit__body">
+              <span className="lp-unit__code">{unitLabel(line.code, i)}</span>
+              <span className="lp-unit__name">{u.productName}</span>
+              <span className="lp-unit__meta">{sizeText(u)}</span>
+              {Object.entries(u.options).filter(([, v]) => v).length > 0 && (
+                <span className="lp-unit__spec">
+                  {Object.entries(u.options).filter(([, v]) => v).map(([k, v]) => (
+                    <span key={k} className="lp-unit__opt">
+                      <span className="lp-unit__opt-k">{k}</span> {v}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {/* IT REPORTS AND NEVER VETOES. A composite whose units overshoot its
+          opening is a real thing a reviewer decides about; a refusal here would
+          decide it for them. */}
+      {diff !== 0 && (
+        <p className="lp-coverage" data-testid="line-coverage">
+          The units add up to {Math.abs(diff).toLocaleString("en-AU")} mm
+          {diff > 0 ? " more" : " less"} than this opening.
+        </p>
+      )}
+    </section>
+  );
+}
+
+const PRICE_STATE: Record<ReturnType<typeof priceState>, string> = {
+  no_rate: "no rate on this line yet",
+  override: "price set by hand",
+  list: "list price",
+};
+
+export function LineReview({ line }: { line: RecordLine }) {
+  const composite = line.segments.length >= 2;
+  const provenance = provenanceWord(line);
+  const options = Object.entries(line.options).filter(([, v]) => v);
+  const reasons = Object.values(line.review ?? {});
+
+  return (
+    <div className="lp-body" data-testid="line-review">
+      <Plate line={line} />
+
+      {/* The size sits with the drawing it dimensions, carrying one word of
+          provenance — a number off a plan and one a customer gave on the phone
+          warrant different confidence, and that word is the glanceable half.
+          ONE LINE, always. */}
+      <p className="lp-size" data-testid="line-size">
+        <span className="lp-size__v">{sizeText(line)}</span>
+        {provenance && <span className="lp-size__src">{provenance}</span>}
+      </p>
+
+      {/* THE REASONS, IN THE SERVER'S OWN WORDS — the half of the badge that
+          the list deliberately does not carry. Read before the specification it
+          questions. */}
+      {needsReview(line) && (
+        <section className="lp-panel lp-review" data-testid="line-review-reasons"
+          aria-label={`Why ${line.code || "this line"} needs review`}>
+          <h2 className="lp-panel__title">Needs review</h2>
+          {reasons.length > 0 ? (
+            <ul className="lp-review__list">
+              {reasons.map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+          ) : (
+            <p className="lp-review__status">{line.status.replace(/_/g, " ")}</p>
+          )}
+        </section>
+      )}
+
+      {composite ? (
+        <Units line={line} />
+      ) : (
+        <Panel
+          title="Specification"
+          testId="line-spec"
+          budget={4}
+          more={(cut) => `+${cut} more option${cut === 1 ? "" : "s"}`}
+          lines={[
+            { k: "Product", v: line.productName },
+            ...options.map(([k, v]) => ({ k, v })),
+          ]}
+        />
+      )}
+
+      <Panel
+        title="Price"
+        testId="line-price"
+        budget={2}
+        lines={[
+          // NEVER $0. An opening nobody has priced is the thing this console
+          // exists to find, and a zero is a priced-at-nothing claim about work
+          // nobody has costed.
+          { v: line.lineTotal == null ? "No rate" : money(line.lineTotal) },
+          { v: PRICE_STATE[priceState(line)], quiet: true },
+        ]}
+      />
+
+      {/* THEIR WORDS, READ-ONLY. `quote_line.room_label` is free text the
+          customer types, and it is not a thread: there is no line-level comment
+          list, and threads are project-level only. */}
+      {line.room && (
+        <section className="lp-panel lp-note" data-testid="line-note"
+          aria-label={`The customer's note on ${line.code || "this line"}`}>
+          <h2 className="lp-panel__title">The customer wrote</h2>
+          <p className="lp-note__body">{line.room}</p>
+        </section>
+      )}
+
+      {composite && joinedUnitCount(line) > 0 && (
+        <p className="lp-basis">
+          The parent owns the total; the units are priced through it.
+        </p>
+      )}
+    </div>
+  );
+}

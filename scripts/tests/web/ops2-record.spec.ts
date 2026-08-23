@@ -78,25 +78,32 @@ const record = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-test("the record opens on its lines, under the same band the queue uses", async ({ page }) => {
+test("the header carries the project's NAME, then its ids, then the customer", async ({ page }) => {
+  // THE OWNER'S CORRECTION. The surface shipped with the reference as the page's
+  // name and the project's own title, customer and state pushed into the content
+  // below the band — "all that within white header, not part in the header and
+  // part in the list area!" (grill R3).
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [line(), line({ id: "l2", code: "W02", productName: "Sliding door", lineTotal: 2000 })],
   }) }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);
 
-  // The reference is the page's name; the project's own title leads the content.
-  await expect(page.getByRole("heading", { name: "OF-Q-10482", level: 1 })).toBeVisible();
-  await expect(page.getByTestId("record-identity")).toContainText("Wattle Grove - Lot 14");
-  await expect(page.getByTestId("record-identity")).toContainText("Marchetti Constructions");
-  await expect(page.getByTestId("record-identity")).toContainText("Waiting on us");
+  // The NAME is the page's name. Not the id.
+  await expect(page.getByRole("heading", { name: "Wattle Grove - Lot 14", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OF-Q-10482", level: 1 })).toHaveCount(0);
 
-  // Two tabs, the queue's own component, and the count is on the one that has one.
+  // Then the reference, then the customer — one block, inside the band.
+  const ident = page.getByTestId("record-identity");
+  await expect(ident).toContainText("OF-Q-10482");
+  await expect(ident).toContainText("Marchetti Constructions");
+  const band = page.locator(".ops2-page__band");
+  await expect(band.getByTestId("record-identity")).toHaveCount(1);
+
   const tabs = page.getByTestId("record-tab");
   await expect(tabs).toHaveCount(2);
   await expect(tabs.nth(0)).toHaveText(/Lines/);
   await expect(tabs.nth(0)).toHaveAttribute("aria-pressed", "true");
-  await expect(tabs.nth(1)).toHaveText("Project");
   await expect(page.getByTestId("record-line")).toHaveCount(2);
 
   // BACK NAMES ITS DESTINATION — the settled rule — and it goes there.
@@ -104,10 +111,40 @@ test("the record opens on its lines, under the same band the queue uses", async 
   await expect(page).toHaveURL(/\/ops2\/projects$/);
 });
 
-test("a line states its own money, and an absent rate is never a zero", async ({ page }) => {
+test("every row carries the opening DRAWN, and it adds nothing a screen reader loses", async ({ page }) => {
+  // The single largest gap in the rejected build: the mock puts `<Elevation>` in
+  // the row's leading slot (pieces.tsx:270-273) and it was simply absent. It is
+  // the opening drawn to true proportion, not a category glyph.
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [
-      line({ lineTotal: 3480, qty: 2 }),
+      line({ productSlug: "awning-600" }),
+      line({ id: "l2", code: "W02", productName: "Sliding door", productSlug: "slider-2400", lineTotal: 2000 }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  const rows = page.getByTestId("record-line");
+  await expect(rows).toHaveCount(2);
+  // A DRAWING PER ROW, and a real one — an <svg> with geometry in it, not an
+  // empty slot that happens to occupy the space.
+  for (const i of [0, 1]) {
+    const svg = rows.nth(i).locator("svg");
+    await expect(svg).toHaveCount(1);
+    expect(await svg.locator("path, rect, line, polyline").count(),
+      `row ${i} drew nothing`).toBeGreaterThan(0);
+  }
+  // DECORATIVE TO ASSISTIVE TECHNOLOGY. The row's own text still carries the
+  // code, the product and the size, so the drawing adds and never replaces.
+  await expect(rows.nth(0).locator("svg")).toHaveAttribute("aria-hidden", "true");
+  await expect(rows.nth(0)).toContainText("W01");
+  await expect(rows.nth(0)).toContainText("Awning 600");
+});
+
+test("a line states its money, and an absent rate is never a zero", async ({ page }) => {
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line({ lineTotal: 3480 }),
       line({ id: "l2", code: "W02", productName: "Sliding door", lineTotal: null, status: "draft",
         review: { glazing: "glazing option out of range" } }),
     ],
@@ -121,43 +158,46 @@ test("a line states its own money, and an absent rate is never a zero", async ({
   // it into a plausible-looking number is the worst available failure.
   await expect(rows.nth(1)).toContainText("No rate");
   await expect(rows.nth(1)).not.toContainText("$0");
-  // The parser's own reason, in its words.
-  await expect(rows.nth(1)).toContainText("glazing option out of range");
-  // The leading edge marks the line still to be finished, and only that one.
-  await expect(rows.nth(0)).toHaveAttribute("data-unresolved", "false");
-  await expect(rows.nth(1)).toHaveAttribute("data-unresolved", "true");
+
+  // ONE BADGE, NOT A LIST OF REASONS (grill R5). The parser's own words belong
+  // on the line's own page; a row that recites them stops being scannable.
+  await expect(rows.nth(1)).not.toContainText("glazing option out of range");
+  await expect(rows.nth(0)).toHaveAttribute("data-flagged", "false");
+  await expect(rows.nth(1)).toHaveAttribute("data-flagged", "true");
+
+  // AND NO ACCORDION, AT ANY WIDTH (grill R6). Nothing in a row expands.
+  await expect(page.getByTestId("record-line-toggle")).toHaveCount(0);
+  await expect(page.getByTestId("record-line-body")).toHaveCount(0);
 });
 
-test("a composite keeps its units inside it, and only rows with a body expand", async ({ page }) => {
+test("the attention row names what is blocking, and filters to it", async ({ page }) => {
+  // The mock's BlockerRow (pieces.tsx:200-229), absent from the rejected build:
+  // a list of 18 openings with 2 unpriced is a scanning problem, and the answer
+  // is a filter rather than noise on every row.
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [
-      // Nothing to open: no options, no segments.
-      line({ id: "l1", code: "W01", options: {} }),
-      line({ id: "l2", code: "W02", productName: "Composite opening", lineKind: "composite_parent",
-        segments: [
-          { id: "s1", productName: "Awning 1200", width: "1200", height: "1500", qty: 1, lineTotal: 2100, note: "left", status: "ready" },
-          { id: "s2", productName: "Fixed 2400", width: "2400", height: "1500", qty: 1, lineTotal: 4020, note: "right", status: "ready" },
-        ] }),
+      line({ id: "l1", code: "W01", lineTotal: 1000 }),
+      line({ id: "l2", code: "W02", lineTotal: null, status: "draft" }),
+      line({ id: "l3", code: "W03", lineTotal: null, status: "draft" }),
     ],
   }) }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);
 
-  // A TWISTY ON A ROW THAT OPENS TO NOTHING is a control that cannot do
-  // anything — the defect this effort has recorded four times. One row here has
-  // a body and one does not, so there is exactly one toggle.
-  await expect(page.getByTestId("record-line")).toHaveCount(2);
-  await expect(page.getByTestId("record-line-toggle")).toHaveCount(1);
+  const attention = page.getByTestId("record-attention");
+  await expect(attention).toContainText("2");
+  await expect(page.getByTestId("record-line")).toHaveCount(3);
 
-  // The units are INSIDE the parent, never loose beside it: still two rows.
-  await expect(page.getByTestId("record-line-body")).toHaveCount(0);
-  await page.getByTestId("record-line-toggle").click();
-  await expect(page.getByTestId("record-line-body")).toContainText("Awning 1200");
-  await expect(page.getByTestId("record-line-body")).toContainText("Fixed 2400");
+  await attention.click();
+  // It filters to exactly the lines it counted — the number and the list it
+  // predicts cannot be computed down two different paths.
   await expect(page.getByTestId("record-line")).toHaveCount(2);
+  await expect(attention).toContainText("Showing");
+  await attention.click();
+  await expect(page.getByTestId("record-line")).toHaveCount(3);
 });
 
-test("the foot refuses to call a partial sum a total", async ({ page }) => {
+test("the totals name the absence rather than captioning a number", async ({ page }) => {
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [line({ lineTotal: 1000 }), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" })],
     delivery: { amount: null, settled: false, estimate: 640 },
@@ -167,15 +207,54 @@ test("the foot refuses to call a partial sum a total", async ({ page }) => {
 
   const totals = page.getByTestId("record-totals");
   await expect(totals).toContainText("$1,000");
-  // Delivery is a row even when unset, because unset is the state that blocks
-  // the quote — and its live estimate is shown AS an estimate.
-  await expect(totals).toContainText("Not set");
-  await expect(totals).toContainText("about $640");
-  // The word that makes the figure honest.
-  // NO GST ANYWHERE ON THIS CONSOLE — the owner's ruling. The only caption left
-  // is the one qualifying the NUMBER: a sum still missing rates is a floor.
-  await expect(totals).toContainText("So far");
+  await expect(totals).toContainText("1 with no rate");
+  // The project total is the ABSENCE, named — not a figure under a caption
+  // saying it is not really the figure, which is how a reviewer quotes $18,000
+  // for a $30,000 job.
+  await expect(totals).toContainText("Project total");
+  await expect(totals).toContainText("has no rate");
+  // "so far" was invented by the console and deleted by the owner. No GST
+  // anywhere on this console, ever.
+  await expect(page.locator("body")).not.toContainText("so far");
   await expect(page.locator("body")).not.toContainText("GST");
+});
+
+test("a row opens the line's own page, at every width", async ({ page }) => {
+  // Grill R6, the owner verbatim: "tapping on the line will lead to a new view
+  // details screen with composite details. Edit, 'Why this product?' will then
+  // be accessible from here."
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "l1", code: "W01", productSlug: "awning-600",
+      options: { Colour: "Monument", Glazing: "Double clear" },
+      review: { glazing: "glazing option out of range" }, status: "technical_review" })],
+  }) }));
+
+  for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto(RECORD);
+    await page.getByTestId("record-line").first().click();
+    await expect(page).toHaveURL(/\/ops2\/projects\/p_rec\/line\/l1$/);
+
+    // The drawing is the subject here, not a slot.
+    await expect(page.getByTestId("line-plate")).toBeVisible();
+    await expect(page.getByTestId("line-size")).toContainText("1200");
+    // The parser's reasons live HERE — the row carried only a badge.
+    await expect(page.getByTestId("line-review-reasons")).toContainText("glazing option out of range");
+
+    // Back returns to the record it came from rather than stacking another.
+    // SCOPED TO THE PAGE ON SCREEN: Ionic keeps the record MOUNTED in its view
+    // stack behind the line page, so both back controls exist in the DOM and a
+    // bare selector matches two. `ion-page-hidden` is what Ionic puts on the
+    // one you are not looking at.
+    // BY ITS NAME, not by position or visibility. Ionic keeps the record
+    // MOUNTED and rendered behind the line page, so both back controls are in
+    // the DOM and both report as visible — `:visible` and `ion-page-hidden`
+    // both matched two. The two controls name different destinations, which is
+    // the settled rule for this control and therefore the durable way to say
+    // which one is meant.
+    await page.getByRole("button", { name: "OF-Q-10482" }).click();
+    await expect(page).toHaveURL(/\/ops2\/projects\/p_rec$/);
+  }
 });
 
 test("a blocked action is shown, refused, and says why beside itself", async ({ page }) => {
