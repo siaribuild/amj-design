@@ -50,8 +50,8 @@ import { useRailWidth } from "../nav/useRailWidth";
  * guarantee is only true in one direction.
  */
 export function OpsPage({
-  destination, title, backTo, headActions, headOverlay, controls,
-  width = "measure", children,
+  destination, title, backTo, headActions, headOverlay, controls, identity,
+  bandPinned, width = "measure", children,
 }: {
   destination: Destination;
   /** Overrides the destination's own name in the `<h1>`. For pages BELOW a
@@ -66,6 +66,27 @@ export function OpsPage({
   /** The surface's own control row — tabs, search, filters. It shares the white
    *  band with the title rather than sitting on the page below it. */
   controls?: ReactNode;
+  /**
+   * A LINE OF IDENTITY UNDER THE TITLE, inside the band at both widths.
+   *
+   * The record needs it and the queue does not: a project's reference, its
+   * customer and its total have to be readable together and none of them may be
+   * split into the page body. On the phone it is the band's own second line; at
+   * the desk it is a third `IonToolbar` in the header, which is Ionic's own way
+   * of carrying more than one line and is fixed by construction — so the money
+   * is on screen at every scroll position without anything being pinned.
+   */
+  identity?: ReactNode;
+  /**
+   * Keep the phone's band on screen while the body scrolls.
+   *
+   * OPT-IN, because the queue's band must NOT do this: there the whole value of
+   * the screen is how much of the list is visible. A record's band carries the
+   * total, the tabs and the attention row, and all three have to survive a
+   * scroll down eighteen openings. At the desk it is already true — the header
+   * is a header — so this changes nothing there.
+   */
+  bandPinned?: boolean;
   /** `measure` caps the body at a reading measure; `full` releases it for a
    *  surface whose value is columns across the available width. */
   width?: "measure" | "full";
@@ -166,6 +187,16 @@ export function OpsPage({
               is a tab strip you have to hunt back up for to change what you are
               looking at. The white runs through both; only the last one carries
               the edge. */}
+          {/* THE IDENTITY IS ITS OWN TOOLBAR, not extra content squeezed into
+              the title's. Ionic's convention — iOS HIG's and Material's alike —
+              is that a toolbar is one line; a second one in the same header is
+              the sanctioned way to carry more. It also puts the total in a
+              region that is fixed by construction at this width. */}
+          {identity && (
+            <IonToolbar className="ops2-topbar ops2-topbar--identity">
+              {identity}
+            </IonToolbar>
+          )}
           {controls && (
             <IonToolbar className="ops2-topbar ops2-topbar--controls">
               {controls}
@@ -204,7 +235,9 @@ export function OpsPage({
               receiving the press, on the one control a person on a phone
               reaches for without looking. It belongs with the title anyway. */}
           {!wide && (
-            <div className="ops2-page__band">
+            <div
+              className={`ops2-page__band${bandPinned ? " ops2-page__band--pinned" : ""}`}
+            >
               {backControl}
               <div className="ops2-page__head">
                 <div className="ops2-page__heading" data-quiet={headOverlay ? "true" : undefined}>
@@ -214,6 +247,10 @@ export function OpsPage({
                   ? <div className="ops2-page__head-overlay">{headOverlay}</div>
                   : headActions && <div className="ops2-page__head-actions">{headActions}</div>}
               </div>
+              {/* Under the title, above the controls — the same reading order
+                  the desk's three toolbars give, so the two widths are one
+                  layout at two sizes rather than two designs. */}
+              {identity}
               {controls}
             </div>
           )}

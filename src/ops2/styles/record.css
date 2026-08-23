@@ -5,11 +5,25 @@
  * not defined in this stylesheet set, so a quiet role written against them
  * renders full-strength black — contrast passes and the hierarchy dies.
  *
- * The list here is the CUSTOMER'S ANATOMY in this console's materials: code
- * first and in the display face, product name beside it, money last and
- * right-aligned, the room and the size quiet underneath. What is not shared is
- * the markup — see ../projects/record.ts for why.
+ * The list here is ONE ELEVATED BLOCK of rows, the same object the queue's list
+ * is, and every row leads with the opening DRAWN. What is shared with the
+ * customer's own list is the fact and the drawing arithmetic; what is not is
+ * the markup — see ../projects/record.ts and docs/adr/0010.
  */
+
+/* ── THE DRAWING'S PAPER ────────────────────────────────────────────────────
+ * `Elevation` haloes its dimension leaders with `stroke: var(--paper)` and
+ * fills the wide-opening break-line with it. That token is defined in the
+ * CUSTOMER's theme sheet, which ops2 deliberately does not load — and an
+ * undefined custom property in an SVG paint computes to BLACK, so the break
+ * line would render as a black bar across the leader.
+ *
+ * So ops2 supplies it, scoped to the surfaces a drawing sits on. At `xs` the
+ * leaders are suppressed entirely (font: 0) and this never fires; the line
+ * page draws at `hero` and `lg`, where it always does. */
+.rl-elev, .lp-plate, .lp-plate-big, .lp-unit__elev {
+  --paper: var(--ds-surface-card);
+}
 
 /* ── The head row's controls ────────────────────────────────────────────────*/
 .rec-cta {
@@ -31,8 +45,8 @@
 }
 .rec-cta__primary.button-disabled {
   --background: var(--ds-surface-card);
-  --color: var(--ds-text-secondary);
-  border: 1px solid var(--ds-border-default);
+  --color: var(--ds-color-error-text);
+  border: 1px solid var(--ds-color-error);
   border-radius: var(--ds-radius-control);
 }
 /* Ionic's default disabled opacity takes it to the edge of legibility, and this
@@ -47,75 +61,139 @@
   --padding-end: var(--theme-spacing-xs);
 }
 
-/* ── Identity ───────────────────────────────────────────────────────────────*/
+/* ── Identity, in the band ──────────────────────────────────────────────────
+ * The reference at the leading edge where it structurally cannot truncate, the
+ * customer beside it, the money in the trailing corner. The project's NAME is
+ * the heading above and is the piece allowed to ellipsize. */
 .rec-ident {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--theme-spacing-lg);
-  margin-bottom: var(--theme-spacing-md);
+  gap: var(--theme-spacing-md);
+  min-width: 0;
+  padding: var(--theme-spacing-2xs) 0 var(--theme-spacing-xs);
 }
-.rec-ident__who { min-width: 0; }
-.rec-ident__title {
-  margin: 0;
+ion-toolbar.ops2-topbar--identity {
+  --min-height: 0;
+  --padding-top: 0;
+  --padding-bottom: var(--theme-spacing-2xs);
+}
+.rec-ident__ids {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  min-width: 0;
+}
+/* TEN FIXED-WIDTH CHARACTERS, AND THEY ALL SHOW. It is the identity ops reads
+   out on a call, so it may never be the piece that gets cut. */
+.rec-ident__ref {
+  flex: none;
   font-family: var(--theme-font-display);
-  font-size: var(--theme-font-size-xl);
-  font-weight: var(--theme-font-weight-semibold);
-  line-height: var(--theme-line-height-tight);
-  color: var(--ds-text-primary);
-}
-.rec-ident__sub {
-  margin: var(--theme-spacing-2xs) 0 0;
   font-size: var(--theme-font-size-sm);
-  color: var(--ds-text-secondary);
-}
-.rec-ident__order { font-variant-numeric: tabular-nums; }
-.rec-ident__state {
-  margin: var(--theme-spacing-2xs) 0 0;
-  font-size: var(--theme-font-size-xs);
-  color: var(--ds-text-muted);
-}
-/* WORD FIRST, COLOUR SECOND — it reads identically in greyscale, which is what
-   makes it survive a phone in sunlight and a reader who cannot separate amber
-   from blue-grey. The same three roles the queue's rows use, so a status means
-   one thing across the console. */
-.rec-ident__state b { font-weight: var(--theme-font-weight-semibold); }
-.rec-ident__state[data-waiting="Us"] b { color: var(--ds-color-warning-text); }
-.rec-ident__state[data-waiting="Customer"] b { color: var(--ds-color-info-text); }
-.rec-ident__state[data-waiting="Nobody"] b { color: var(--ds-text-muted); }
-
-.rec-ident__money { flex: none; text-align: right; }
-.rec-ident__money strong {
-  display: block;
-  font-family: var(--theme-font-display);
-  font-size: var(--theme-font-size-xl);
   font-weight: var(--theme-font-weight-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--ds-text-primary);
 }
-/* A floor rather than a total: quieter, and the word beside it says so. */
+.rec-ident__cust {
+  min-width: 0;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rec-ident__money {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-2xs);
+  text-align: right;
+}
+.rec-ident__money strong {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-lg);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+}
+/* Not the whole story yet: quieter, and the words beside it say what is missing. */
 .rec-ident__money strong[data-priced="false"] { color: var(--ds-text-secondary); }
-.rec-ident__money span {
-  display: block;
-  margin-top: 2px;
+.rec-ident__caveat {
   font-size: var(--theme-font-size-xs);
-  color: var(--ds-text-muted);
+  color: var(--ds-color-warning-text);
+  white-space: nowrap;
 }
 
-/* ── The refusal, beside what it refuses ────────────────────────────────────*/
-.rec-blocked {
+/* The band stays on screen while the openings scroll under it — it carries the
+   total, the tabs and the attention row, and a reviewer twelve lines down still
+   needs all three. Desk width already has this: there it is a header. */
+.ops2-page__band--pinned {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* ── The attention row ──────────────────────────────────────────────────────
+ * One line, inside the band, under the tabs. It names the leading blocker and
+ * offers the control that clears it; the rest are counted. */
+.rec-attention {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-xs);
+  width: 100%;
+  margin: 0;
+  padding: var(--theme-spacing-xs) 0;
+  border: 0;
+  border-top: 1px solid var(--ds-border-subtle);
+  background: none;
+  font: inherit;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+  text-align: left;
+}
+.rec-attention--button { cursor: pointer; }
+@media (hover: hover) {
+  .rec-attention--button:hover { color: var(--ds-text-primary); }
+}
+.rec-attention__dot {
+  flex: none;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ds-color-warning);
+}
+.rec-attention[data-kind="clear"] .rec-attention__dot { background: var(--ds-color-success); }
+.rec-attention[data-kind="no-lines"] .rec-attention__dot { background: var(--ds-border-strong); }
+.rec-attention__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ds-text-primary);
+}
+.rec-attention__more { color: var(--ds-text-muted); }
+/* The control word, in the brand — it is the one thing on this row that acts. */
+.rec-attention__act {
+  flex: none;
+  color: var(--ds-text-link);
+  font-weight: var(--theme-font-weight-medium);
+}
+
+/* ── The refusal, beside what it refuses ────────────────────────────────────
+ * A CRITICAL FAULT IN THE QUOTE, drawn as one. An unpriced line stops the
+ * quote going out; the previous warning-toned strip said so at the weight of an
+ * aside, so the reader read it as status rather than as a stop. */
+.rec-refusal {
   display: flex;
   align-items: center;
   gap: var(--theme-spacing-2xs);
   margin: 0 0 var(--theme-spacing-md);
   padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
-  background: var(--ds-color-warning-subtle);
-  border: 1px solid var(--theme-warning-200);
+  background: var(--ds-color-error-subtle);
+  border: 1px solid var(--ds-color-error);
   border-radius: var(--ds-radius-control);
   font-size: var(--theme-font-size-sm);
-  color: var(--ds-color-warning-text);
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-color-error-text);
 }
-.rec-blocked ion-icon { flex: none; font-size: 1rem; }
+.rec-refusal ion-icon { flex: none; font-size: 1rem; }
 
 /* The next move, when this build cannot make it. QUIETER THAN A REFUSAL and in
    a neutral tone: nothing is wrong here, there is simply a door this console
@@ -132,7 +210,34 @@
 }
 .rec-pending b { color: var(--ds-text-primary); }
 
-/* ── The lines ──────────────────────────────────────────────────────────────
+/* ── The lifecycle, ranked ──────────────────────────────────────────────────
+ * Who owes the next move, then which phase and how stale. Two lines, not one
+ * dotted run of four facts at one weight. It is not a control. */
+.rec-state {
+  display: block;
+  margin: 0 0 var(--theme-spacing-md);
+}
+.rec-state__owed {
+  display: block;
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+/* WORD FIRST, COLOUR SECOND — it reads identically in greyscale, which is what
+   makes it survive a phone in sunlight and a reader who cannot separate amber
+   from blue-grey. The same three roles the queue's rows use. */
+.rec-state[data-waiting="Us"] .rec-state__owed { color: var(--ds-color-warning-text); }
+.rec-state[data-waiting="Customer"] .rec-state__owed { color: var(--ds-color-info-text); }
+.rec-state__rest {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-primary);
+}
+
+/* ── The openings ───────────────────────────────────────────────────────────
  * ONE BLOCK, the same object the queue's list is: rows with no gap between
  * them, a hairline between each pair, and the border, corners and elevation on
  * the group. */
@@ -147,13 +252,16 @@
   overflow: hidden;
 }
 .rl-row + .rl-row { border-top: 1px solid var(--ds-border-subtle); }
-/* The leading edge marks a line the reviewer still has to finish — the same
-   grammar the queue's cards use for "waiting on us", one level down. */
-.rl-row[data-unresolved="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
+/* HIGHLIGHT, NOT A SENTENCE. The leading edge marks a line the reviewer still
+   has to look at; the reasons are read on that line's own page, where the fix
+   is. Every reason as its own chip is what "it pollutes the screen" was about. */
+.rl-row[data-flagged="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
 
-.rl-head {
+/* THE WHOLE ROW IS ONE TARGET. One button filling it, opening that line's page
+   — no twisty, nothing that looks pressable and answers differently. */
+.rl-open {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--theme-spacing-sm);
   width: 100%;
   padding: var(--theme-spacing-sm) var(--theme-spacing-md);
@@ -164,23 +272,24 @@
   color: inherit;
   cursor: pointer;
 }
-.rl-head--static { cursor: default; }
 @media (hover: hover) {
-  button.rl-head:hover { background: var(--ds-color-brand-wash); }
-}
-.rl-twisty {
-  flex: none;
-  margin-top: 2px;
-  font-size: 1rem;
-  color: var(--ds-text-muted);
-  transition: transform var(--theme-duration-fast, 150ms) ease;
-}
-.rl-head[aria-expanded="true"] .rl-twisty { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) {
-  .rl-twisty { transition: none; }
+  .rl-open:hover { background: var(--ds-color-brand-wash); }
 }
 
-.rl-main { flex: 1 1 auto; min-width: 0; display: block; }
+/* The drawing leads, so the list is scannable by SHAPE before a word is read.
+   Square and uniform: a per-row proportion gives the column no edge to read
+   against, and shrinks a 3500 × 700 opening to a sliver at this size. */
+.rl-elev {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--ds-text-secondary);
+}
+.rl-elev__svg { width: 100%; height: 100%; }
+
+.rl-main { flex: 1 1 auto; min-width: 0; }
 .rl-top {
   display: flex;
   align-items: baseline;
@@ -207,8 +316,24 @@
   color: var(--ds-text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rl-money {
+.rl-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  margin-top: 2px;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rl-end {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.rl-money {
   font-size: var(--theme-font-size-sm);
   font-weight: var(--theme-font-weight-semibold);
   font-variant-numeric: tabular-nums;
@@ -222,93 +347,45 @@
   font-style: italic;
   color: var(--ds-text-muted);
 }
-
-.rl-sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--theme-spacing-sm);
-  margin-top: 2px;
-  font-size: var(--theme-font-size-xs);
-  color: var(--ds-text-secondary);
-}
-.rl-size, .rl-qty, .rl-units-count { font-variant-numeric: tabular-nums; }
-
-.rl-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--theme-spacing-2xs);
-  margin-top: var(--theme-spacing-xs);
-}
-.rl-flag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  padding: 0.15rem var(--theme-spacing-xs);
+/* ONE BADGE, whatever the reason count. */
+.rl-badge {
+  padding: 0.1rem var(--theme-spacing-2xs);
   border-radius: var(--theme-radius-xs);
   background: var(--ds-color-warning-subtle);
   color: var(--ds-color-warning-text);
   font-size: var(--theme-font-size-xs);
   font-weight: var(--theme-font-weight-medium);
-  text-transform: lowercase;
+  white-space: nowrap;
 }
-.rl-flag::first-letter { text-transform: uppercase; }
-.rl-flag ion-icon { font-size: 0.95em; }
-
-/* ── Inside a line: the units, then the spec ────────────────────────────────*/
-.rl-body {
-  padding: 0 var(--theme-spacing-md) var(--theme-spacing-sm)
-           calc(var(--theme-spacing-md) + 3.25rem + var(--theme-spacing-sm));
-  background: var(--ds-surface-sunken);
-  border-top: 1px solid var(--ds-border-subtle);
-}
-.rl-units { margin: 0; padding: var(--theme-spacing-sm) 0 0; list-style: none; }
-/* A grid, so a unit's spec can sit UNDER its own name rather than beside the
-   price. Three columns: what it is, its size, its money — and the spec spans
-   the first two on a second line when there is one. */
-.rl-unit {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 2px var(--theme-spacing-sm);
-  padding: var(--theme-spacing-2xs) 0;
-  font-size: var(--theme-font-size-xs);
-}
-.rl-unit + .rl-unit { border-top: 1px solid var(--ds-border-subtle); }
-.rl-unit__spec {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--theme-spacing-sm);
-  color: var(--ds-text-secondary);
-}
-.rl-unit__opt-label { color: var(--ds-text-muted); }
-.rl-unit__name { flex: 1 1 auto; min-width: 0; color: var(--ds-text-primary); }
-.rl-unit__note { color: var(--ds-text-muted); }
-.rl-unit__total { color: var(--ds-text-muted); }
-.rl-unit__meta { flex: none; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
-
-.rl-spec {
-  display: grid;
-  grid-template-columns: minmax(6rem, auto) 1fr;
-  gap: var(--theme-spacing-2xs) var(--theme-spacing-md);
-  margin: var(--theme-spacing-sm) 0 0;
-  font-size: var(--theme-font-size-xs);
-}
-.rl-spec__pair { display: contents; }
-.rl-spec dt { color: var(--ds-text-muted); }
-.rl-spec dd { margin: 0; color: var(--ds-text-primary); }
 
 .rl-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--theme-spacing-xs);
+  margin-bottom: var(--theme-spacing-md);
   padding: var(--theme-spacing-2xl) var(--theme-spacing-lg);
   text-align: center;
   background: var(--ds-surface-card);
   border: 1px solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-surface);
 }
+.rl-empty__note {
+  margin: 0;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+}
+/* The way back out of a filter the reader turned on. */
+.rl-empty__back {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-link);
+  cursor: pointer;
+}
+.rl-empty__back:hover { color: var(--ds-text-link-hover); }
 
 /* ── The foot of the list ───────────────────────────────────────────────────*/
 .rec-totals {
@@ -335,11 +412,20 @@
   font-weight: var(--theme-font-weight-semibold);
 }
 .rec-totals__figure { flex: none; font-variant-numeric: tabular-nums; }
-/* Unset delivery is the state that blocks the quote, so it is the one row here
-   allowed to carry a colour. */
-.rec-totals__row[data-settled="false"] .rec-totals__figure { color: var(--ds-color-warning-text); }
 .rec-totals__caveat { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
-.rec-totals__note { display: block; margin-top: var(--theme-spacing-2xs); }
+/* A delivery with no figure at all is an error and is drawn as one — and the
+   interface is not built around it: there is nothing here to press. */
+.rec-totals__missing {
+  flex: none;
+  color: var(--ds-color-error-text);
+  font-weight: var(--theme-font-weight-medium);
+}
+/* THE ABSENCE, NAMED — never a figure captioned as provisional. */
+.rec-totals__absent {
+  flex: none;
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-color-warning-text);
+}
 
 /* ── The actions panel ──────────────────────────────────────────────────────*/
 .rec-actions { padding: var(--theme-spacing-xs) var(--theme-spacing-sm); }

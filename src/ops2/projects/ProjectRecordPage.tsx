@@ -2,8 +2,8 @@ import { useState } from "react";
 import {
   IonButton, IonIcon, IonNote, IonSkeletonText,
 } from "@ionic/react";
-import { ellipsisHorizontal, warningOutline } from "ionicons/icons";
-import { useParams } from "react-router-dom";
+import { ellipsisHorizontal, warningOutline, alertCircle } from "ionicons/icons";
+import { useHistory, useParams } from "react-router-dom";
 import { actionErrorText } from "../../data/opsActionErrors";
 import { destination } from "../nav/destinations";
 import { useRailWidth } from "../nav/useRailWidth";
@@ -12,8 +12,9 @@ import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  ageLabel, money, otherActions, pendingPrimary, primaryAction,
-  totalsFor, waitingSentence, type ProjectRecord, type RecordAction,
+  ageLabel, attentionFor, cornerFigure, money, otherActions, pendingPrimary,
+  primaryAction, totalsFor, visibleLines, waitingSentence,
+  type Attention, type ProjectRecord, type RecordAction, type RecordTotals,
 } from "./record";
 
 const PROJECTS = destination("projects");
@@ -21,41 +22,58 @@ const PROJECTS = destination("projects");
 type Tab = "lines" | "project";
 
 /**
- * The project record — the second real destination in ops2, and the one the
- * whole console is being rebuilt to reach.
+ * The project record — the surface this console is being rebuilt to reach.
  *
- * The owner's framing, 2026-08-23: "the MVP is really to get the ops2 scaffold
- * in place and to be able to get to the point where 'Why this product?' becomes
- * visible and useful — that is an immediate need that simply does not exist in
- * legacy ops." So this surface is built to hold that: the line list is the
- * thing, and everything around it is the least chrome that lets a reviewer work
- * down it.
+ * The owner's framing: "the MVP is really to get the ops2 scaffold in place and
+ * to be able to get to the point where 'Why this product?' becomes visible and
+ * useful". So the line list is the thing, and everything around it is the least
+ * chrome that lets a reviewer work down it and open the one that needs them.
  *
  * ── WHAT IS HERE, AND WHY IN THIS ORDER ─────────────────────────────────────
- *   ‹ Projects                              back, and it NAMES its destination
- *   OF-Q-10482 · Wattle Grove       $48,802 identity, then the money
- *   Marchetti Constructions · Waiting on us the customer, then the state
- *   [ Issue reviewed quote ]  [ ⋯ ]         the one move, and the rest
- *   Lines · 18 | Project                    the same tabs the queue uses
+ *   ‹ Projects                                    back, and it NAMES where
+ *   Wattle Grove — Lot 14                         the project's NAME, not its id
+ *   OF-Q-10482 · Marchetti      $48,802 · 2 no rate   identity, whole, and the money
+ *   [ Lines · 18 ][ Project ]                     the settled tabs
+ *   ● 2 lines have no rate       show only these  the attention row
+ *   ─────────────────────────────────────────────
+ *   WAITING ON US                                 the lifecycle, ranked
+ *   Technical review · 3 days
+ *   … the openings …
+ *
+ * IDENTITY LIVES IN THE BAND, WHOLE. It was split — the reference in the
+ * header, the name, the customer and the state in the page body — and the
+ * complaint was exactly that. The reference cannot truncate because it is what
+ * ops reads out on a call, so it sits at the leading edge of its own line where
+ * it structurally cannot; the NAME truncates, in the heading, which is what
+ * every platform does with a long name. The money takes the trailing corner
+ * because that is the thing the owner said he missed from this view, and the
+ * band is pinned so it is there at every scroll position.
+ *
+ * THE LIFECYCLE IS RANKED, NOT RUN TOGETHER. "Now · Technical review · waiting
+ * on us · 3 days" was four facts at one weight in one dotted run: "need to read
+ * all this to understand what is it trying to say." Who owes the next move
+ * first, then which phase and how stale. It is NOT pressable — it would open
+ * Progress, and Progress is fenced out of this step, and a control wired to
+ * nothing is the defect this effort has recorded four times.
  *
  * ── WHAT IS DELIBERATELY NOT HERE ───────────────────────────────────────────
- * The PROJECT TAB'S CONTENTS — progress, payments, files, activity. The owner
- * fenced them out of this step by name. The tab exists because the two tabs are
- * the structure he asked for and a tab that appears later moves everything
- * beside it; what is behind it says plainly that it is not built rather than
- * showing an empty frame that reads as broken data.
- *
- * And the actions this build cannot perform. `worker/lib/ops-actions.ts`
- * returns more than the panel shows — `Add a note` and `Request clarification`
- * both need something typed, and neither has a screen yet. They are omitted
- * rather than listed and inert: a control drawn and wired to nothing is the
- * defect this effort has recorded four times.
+ * The PROJECT TAB'S CONTENTS — progress, payments, files, activity: fenced out
+ * by name. The actions this build cannot perform: `Add a note` and `Request
+ * clarification` both need something typed and neither has a screen, so they
+ * are omitted rather than listed and inert. Any editing at all: this is a
+ * read-only review surface. And the desk's rail + canvas, which is phase 2 —
+ * at every width this renders one column, and a row opens a page.
  */
 export function ProjectRecordPage() {
   const { id } = useParams<{ id: string }>();
+  const history = useHistory();
   const wide = useRailWidth();
   const { load, reload } = useProjectRecord(id);
   const [tab, setTab] = useState<Tab>("lines");
+  // PAGE-LOCAL, and it survives leaving and coming back because Ionic keeps the
+  // page mounted in its view stack — so opening a line and returning does not
+  // silently drop the filter the reviewer was working under.
+  const [filterOn, setFilterOn] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [confirming, setConfirming] = useState<RecordAction | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -71,6 +89,8 @@ export function ProjectRecordPage() {
   const primary = record ? primaryAction(record) : null;
   const pending = record ? pendingPrimary(record) : null;
   const others = record ? otherActions(record) : [];
+  const attention = record ? attentionFor(record) : null;
+  const shown = record ? visibleLines(record, filterOn) : [];
 
   const run = async (action: RecordAction) => {
     if (!record) return;
@@ -139,12 +159,24 @@ export function ProjectRecordPage() {
     void run(action);
   };
 
+  // A LINE OPENS ITS OWN PAGE, at every width. The owner, verbatim: "tapping on
+  // the line will lead to a new view details screen with composite details.
+  // Edit, 'Why this product?' will then be accessible from here." Phase 2 makes
+  // this a selection at desk width and nothing else about it changes.
+  const openLine = (lineId: string) =>
+    history.push(`/projects/${encodeURIComponent(id)}/line/${encodeURIComponent(lineId)}`);
+
   return (
     <OpsPage
       destination={PROJECTS}
-      title={record ? record.ref : "Project"}
+      // THE PROJECT'S NAME, not its reference. It is the project's name; the
+      // reference is its identifier, and it has its own place below where it
+      // cannot truncate.
+      title={record ? record.title : "Project"}
       backTo={{ label: "Projects", href: PROJECTS.path }}
       width="full"
+      bandPinned={!!record}
+      identity={record ? <RecordIdentity record={record} /> : undefined}
       headActions={record ? (
         <div className="rec-cta">
           {primary && (
@@ -160,6 +192,14 @@ export function ProjectRecordPage() {
               // issuing with a missing product, dimensions or price is
               // allowed." The server already models exactly this distinction.
               disabled={!!primary.blockedReason || running === primary.id}
+              // THE REASON TRAVELS IN THE ACCESSIBLE NAME. Ionic's React
+              // wrapper drops `aria-describedby` — the component manages the
+              // host's aria attributes — so a screen reader would otherwise
+              // hear the verb and never the refusal. `aria-label` survives, and
+              // the row beside it carries the same sentence visually.
+              aria-label={primary.blockedReason
+                ? `${primary.label}. Blocked: ${primary.blockedReason}`
+                : undefined}
               onClick={() => press(primary)}
             >
               {primary.label}
@@ -180,29 +220,43 @@ export function ProjectRecordPage() {
         </div>
       ) : undefined}
       controls={record ? (
-        <div className="pq-controls" data-wide={wide}>
-          <div className="pq-chips" role="group" aria-label="What to show">
-            <button
-              type="button"
-              className="pq-chip"
-              data-testid="record-tab"
-              data-tab="lines"
-              aria-pressed={tab === "lines"}
-              onClick={() => setTab("lines")}
-            >
-              Lines<span className="pq-count">{record.lines.length}</span>
-            </button>
-            <button
-              type="button"
-              className="pq-chip"
-              data-testid="record-tab"
-              data-tab="project"
-              aria-pressed={tab === "project"}
-              onClick={() => setTab("project")}
-            >
-              Project
-            </button>
+        <div className="rec-controls">
+          <div className="pq-controls" data-wide={wide}>
+            <div className="pq-chips" role="group" aria-label="What to show">
+              <button
+                type="button"
+                className="pq-chip"
+                data-testid="record-tab"
+                data-tab="lines"
+                aria-pressed={tab === "lines"}
+                onClick={() => setTab("lines")}
+              >
+                Lines<span className="pq-count">{record.lines.length}</span>
+              </button>
+              <button
+                type="button"
+                className="pq-chip"
+                data-testid="record-tab"
+                data-tab="project"
+                aria-pressed={tab === "project"}
+                onClick={() => setTab("project")}
+              >
+                Project
+              </button>
+            </div>
           </div>
+          {/* THE ATTENTION ROW IS PART OF THE BAND, on both tabs. A list of
+              eighteen openings with two unpriced is a scanning problem, and the
+              answer is one row that names the leading blocker and offers the
+              control that clears it — not a flag on every row. It stays with
+              the disabled primary above it, which it is the reason for. */}
+          {attention && (
+            <AttentionRow
+              attention={attention}
+              filterOn={filterOn}
+              onToggle={() => setFilterOn((on) => !on)}
+            />
+          )}
         </div>
       ) : undefined}
     >
@@ -240,14 +294,13 @@ export function ProjectRecordPage() {
 
       {record && (
         <>
-          <RecordIdentity record={record} />
-
-          {/* The refusal sits with the control it refuses — R-153's adjacency.
-              A blocked primary in the header and its reason at the foot of the
-              page are two facts a reader has to join up themselves. */}
+          {/* A CRITICAL FAULT IN THE QUOTE, drawn as one. An unpriced line
+              stops this quote going out; a note-coloured strip said so at the
+              weight of an aside. The sentence is the server's own — the console
+              never re-derives the gate. */}
           {primary?.blockedReason && (
-            <p className="rec-blocked" data-testid="record-blocked">
-              <IonIcon icon={warningOutline} aria-hidden="true" />
+            <p className="rec-refusal" data-testid="record-blocked">
+              <IonIcon icon={alertCircle} aria-hidden="true" />
               {primary.blockedReason}
             </p>
           )}
@@ -260,15 +313,24 @@ export function ProjectRecordPage() {
             </p>
           )}
           {failure && (
-            <p className="rec-blocked" data-testid="record-failure" role="alert">
-              <IonIcon icon={warningOutline} aria-hidden="true" />
+            <p className="rec-refusal" data-testid="record-failure" role="alert">
+              <IonIcon icon={alertCircle} aria-hidden="true" />
               {failure}
             </p>
           )}
 
+          <StateRow record={record} />
+
           {tab === "lines" ? (
             <>
-              <RecordLines lines={record.lines} orderNo={record.orderNo} />
+              <RecordLines
+                lines={shown}
+                total={record.lines.length}
+                filterOn={filterOn}
+                orderNo={record.orderNo}
+                onOpen={openLine}
+                onClearFilter={() => setFilterOn(false)}
+              />
               <RecordTotals record={record} />
             </>
           ) : (
@@ -340,49 +402,135 @@ export function ProjectRecordPage() {
   );
 }
 
-/** Identity and money — who this job is for, and what it comes to. */
+/**
+ * The band's identity line: the reference, the customer, and the money.
+ *
+ * THE REFERENCE NEVER TRUNCATES, because here it structurally cannot — ten
+ * fixed-width characters at the leading edge of their own line. It is what ops
+ * reads out on a call, so it is the piece that must always be complete; the
+ * project's name is the piece allowed to ellipsize, and it does, in the
+ * heading above.
+ *
+ * The customer sits beside it and NOWHERE IN THE PAGE BODY. One place per fact:
+ * a name in the band and the same name again under it is how a reader learns
+ * the two might be different things.
+ */
 function RecordIdentity({ record }: { record: ProjectRecord }) {
-  const totals = totalsFor(record);
-  const age = ageLabel(record);
+  const corner = cornerFigure(totalsFor(record));
+  const customer = record.org ?? record.customerName;
   return (
     <div className="rec-ident" data-testid="record-identity">
-      <div className="rec-ident__who">
-        <h2 className="rec-ident__title">{record.title}</h2>
-        <p className="rec-ident__sub">
-          {record.org ?? record.customerName ?? "No customer on file"}
-          {record.orderNo && <span className="rec-ident__order"> · {record.orderNo}</span>}
-        </p>
-        <p className="rec-ident__state" data-waiting={record.waitingOn}>
-          <b>{waitingSentence(record)}</b>
-          <span> · {record.stateLabel}</span>
-          {age && <span className="rec-ident__age"> · {age}</span>}
-        </p>
-      </div>
-      <div className="rec-ident__money">
-        {/* A SUM OVER UNPRICED LINES IS A FLOOR, NOT A TOTAL, so it is not
-            printed as one. The figure is still shown — a reviewer wants to know
-            roughly where the job sits — with the word that makes it honest. */}
-        <strong data-priced={totals.total != null}>
-          {money(totals.total ?? totals.subtotal)}
-        </strong>
-        {/* No tax basis, on the owner's ruling: this console shows the stored
-            figure and says nothing about GST. See `./record.ts`. So the only
-            caption left is the one that qualifies the NUMBER — a sum that is
-            still missing rates is a floor, and has to say so. */}
-        {totals.total == null && <span>so far</span>}
-      </div>
+      <span className="rec-ident__ids">
+        <span className="rec-ident__ref">{record.ref}</span>
+        {/* Once a quote is accepted the CONTRACT number is the identity ops
+            quotes on a call, so it joins the reference rather than replacing
+            it — both are printed on documents someone already has. */}
+        {record.orderNo && <span className="rec-ident__ref">{record.orderNo}</span>}
+        {customer && <span className="rec-ident__cust">{customer}</span>}
+      </span>
+      <span className="rec-ident__money">
+        <strong data-priced={corner.caveat == null}>{money(corner.amount)}</strong>
+        {/* NEVER A BARE NUMBER IMPLYING COMPLETENESS. What is missing is named
+            beside the figure, in the record's own vocabulary. */}
+        {corner.caveat && <span className="rec-ident__caveat">{corner.caveat}</span>}
+      </span>
     </div>
   );
 }
 
 /**
- * The foot of the list: lines, delivery, and what they come to.
+ * The lifecycle, ranked instead of run together — and not a control.
  *
- * DELIVERY IS A ROW HERE EVEN WHEN IT IS UNSET, because unset is the state that
- * blocks the quote and the one a reviewer has to notice. Its live estimate is
- * shown beside it as an estimate and never folded into the total — it moves
- * with the rate table, and a total that changes because someone edited a zone
- * is not a total.
+ * It read "Waiting on us · Technical review · 3 days" as one dotted run, which
+ * gives no fact priority: the reader has to parse all of it to find the one
+ * they wanted. Ranked, there is one thing to read at a glance and the rest is
+ * there without being in the way.
+ *
+ * In the mock this row opens Progress. Progress is fenced out of this step, and
+ * a row that opens nothing is the defect recorded four times — so it is a
+ * statement here, and becomes pressable the day Progress exists.
+ */
+function StateRow({ record }: { record: ProjectRecord }) {
+  const age = ageLabel(record);
+  return (
+    <div className="rec-state" data-waiting={record.waitingOn} data-testid="record-state">
+      <span className="rec-state__owed">{waitingSentence(record)}</span>
+      <span className="rec-state__rest">
+        {record.stateLabel}
+        {age && <> · {age}</>}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The one row that says what needs doing, with the control that does it.
+ *
+ * Blockers are a QUEUE, not a list: the leading one is stated and the rest are
+ * counted, so the row stays one line and the next surfaces as each clears. When
+ * the leading blocker is one this build cannot act on it carries NO action word
+ * and no navigation — there is no delivery screen in ops2 to send anyone to.
+ */
+function AttentionRow({ attention, filterOn, onToggle }: {
+  attention: Attention;
+  filterOn: boolean;
+  onToggle: () => void;
+}) {
+  if (attention.kind !== "blockers") {
+    return (
+      <p className="rec-attention" data-kind={attention.kind} data-testid="record-attention">
+        <span className="rec-attention__dot" aria-hidden="true" />
+        <span className="rec-attention__text">{attention.text}</span>
+      </p>
+    );
+  }
+  const { lead, more } = attention;
+  const text = filterOn && lead.key === "unpriced"
+    ? `Showing the ${lead.count} lines with no rate`
+    : lead.text;
+  const body = (
+    <>
+      <span className="rec-attention__dot" aria-hidden="true" />
+      <span className="rec-attention__text">
+        {text}
+        {more > 0 && <span className="rec-attention__more"> · +{more} more</span>}
+      </span>
+    </>
+  );
+  if (lead.action == null) {
+    return (
+      <p className="rec-attention" data-kind="blocked" data-testid="record-attention">
+        {body}
+      </p>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="rec-attention rec-attention--button"
+      data-kind="blocked"
+      data-testid="record-attention"
+      aria-pressed={filterOn}
+      onClick={onToggle}
+    >
+      {body}
+      <span className="rec-attention__act">{filterOn ? "show all" : lead.action}</span>
+    </button>
+  );
+}
+
+/**
+ * The foot of the list: the lines, the delivery, and what they come to.
+ *
+ * A PARTIAL SUM IS NEVER CALLED A TOTAL. The priced lines add up under their
+ * own label with the count of what is missing beside it, and the project total
+ * row states the ABSENCE rather than printing a figure captioned as
+ * provisional. "so far" was invented for this panel and is gone; "estimate" is
+ * on Quote's own _Avoid_ line, so an unconfirmed delivery says "not confirmed".
+ *
+ * DELIVERY IS TEXT HERE. It is a figure and a state, with nothing to press:
+ * there is no delivery screen in this build, and the owner limited this change
+ * to the review surface.
  */
 function RecordTotals({ record }: { record: ProjectRecord }) {
   const t = totalsFor(record);
@@ -391,7 +539,7 @@ function RecordTotals({ record }: { record: ProjectRecord }) {
       <div className="rec-totals__row">
         <span>
           Lines
-          {t.partial && (
+          {t.unpriced > 0 && (
             <span className="rec-totals__caveat"> · {t.unpriced} with no rate</span>
           )}
         </span>
@@ -399,25 +547,42 @@ function RecordTotals({ record }: { record: ProjectRecord }) {
       </div>
       <div className="rec-totals__row" data-settled={t.deliverySettled}>
         <span>Delivery</span>
-        <span className="rec-totals__figure">
-          {t.deliverySettled
-            ? money(t.delivery ?? 0)
-            : record.delivery.estimate != null
-              ? <>Not set <span className="rec-totals__caveat">· about {money(record.delivery.estimate)}</span></>
-              : "Not set"}
-        </span>
+        <DeliveryFigure record={record} totals={t} />
       </div>
       <div className="rec-totals__row rec-totals__row--sum">
-        <span>{t.total != null ? "Total" : "So far"}</span>
-        <span className="rec-totals__figure">{money(t.total ?? t.subtotal)}</span>
+        <span>Project total</span>
+        {t.total != null ? (
+          <span className="rec-totals__figure">{money(t.total)}</span>
+        ) : (
+          // THE ABSENCE, NAMED. Not a number under a caption saying it is not
+          // really the number — a reviewer reads the figure and skims the
+          // caption, which is how $18,000 gets quoted for a $30,000 job.
+          <span className="rec-totals__absent">
+            {t.unpriced > 0
+              ? `${t.unpriced} line${t.unpriced === 1 ? " has" : "s have"} no rate`
+              : "Delivery has not been set"}
+          </span>
+        )}
       </div>
-      {t.total == null && (
-        <IonNote className="ds-type-caption rec-totals__note">
-          {t.partial
-            ? "Not a total: some lines have no rate yet."
-            : "Not a total: delivery has not been set."}
-        </IonNote>
-      )}
     </div>
   );
+}
+
+/** Settled ⇒ the figure, and `0` is a figure — a trade arranging its own
+ *  freight. Unsettled with a live rate ⇒ that rate, said to be unconfirmed.
+ *  Nothing at all ⇒ the absence, drawn as the fault it is, with no imperative:
+ *  there is nothing on this screen to press. */
+function DeliveryFigure({ record, totals }: { record: ProjectRecord; totals: RecordTotals }) {
+  if (totals.deliverySettled) {
+    return <span className="rec-totals__figure">{money(totals.delivery ?? 0)}</span>;
+  }
+  if (record.delivery.estimate != null) {
+    return (
+      <span className="rec-totals__figure">
+        {money(record.delivery.estimate)}
+        <span className="rec-totals__caveat"> not confirmed</span>
+      </span>
+    );
+  }
+  return <span className="rec-totals__missing">no figure</span>;
 }

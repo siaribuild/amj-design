@@ -11,6 +11,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { globSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
@@ -563,6 +564,34 @@ test("a primary action this build cannot run is not offered as a control", () =>
   }));
   assert.equal(M.primaryAction(pricing).id, "issue-quote");
   assert.equal(M.pendingPrimary(pricing), null);
+});
+
+test("no ops2 source can render 'so far' or a word about GST", () => {
+  // P1-AC-36 / AC-N4 / AC-N5, the grep half — a negative that has to be
+  // GREPPABLE as well as walkable, because it is an ABSENCE and a browser test
+  // can only check the states someone remembered to render.
+  //
+  // "so far" was invented by an earlier session as a caption for a sum
+  // containing unpriced lines. It came from neither the mock nor the owner, and
+  // he deleted it (R9). GST is his standing ruling on this console: "not a
+  // customer preference-driven site, an ops system default approach that
+  // matters" — ex/inc is a CUSTOMER ACCOUNT's display preference and this
+  // console has no account to read it from.
+  //
+  // COMMENTS ARE STRIPPED BEFORE SCANNING, deliberately: the reasoning above is
+  // recorded in the source precisely so a future session does not "fix" the
+  // absence back, and a scan that punished the explanation would teach people
+  // to delete it.
+  const dir = join(projectRoot, "src", "ops2");
+  const offenders = [];
+  for (const file of globSync("**/*.{ts,tsx,css}", { cwd: dir })) {
+    const code = readFileSync(join(dir, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    if (/so far/i.test(code)) offenders.push(`${file}: "so far"`);
+    if (/\bgst\b/i.test(code)) offenders.push(`${file}: GST`);
+  }
+  assert.deepEqual(offenders, [], "ops2 says nothing about tax, and never calls a partial sum 'so far'");
 });
 
 test("the model says nothing about GST, because this console does not", () => {

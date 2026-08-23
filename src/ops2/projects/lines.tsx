@@ -1,217 +1,146 @@
-import { useState } from "react";
-import { IonIcon, IonNote } from "@ionic/react";
-import { chevronForward, alertCircleOutline } from "ionicons/icons";
+import { Elevation } from "../../components/quote-project/Elevation";
 import {
-  lineUnresolved, money, sizeLabel, type RecordLine, type RecordSegment,
+  elevationPartsFor, joinedUnitCount, money, needsReview, sizeText,
+  type RecordLine,
 } from "./record";
 
 /**
- * The opening list — the same list the customer sees, rendered in this skin.
+ * The opening list — the thing this console is being built to work down.
  *
- * ── WHAT "THE SAME LIST" MEANS HERE ─────────────────────────────────────────
- * The owner's ruling: share the FACTS, let each skin render. So the anatomy is
- * the customer's row, kept deliberately:
+ * ── THE DRAWING LEADS EVERY ROW ─────────────────────────────────────────────
+ * `src/components/quote-project/Elevation.tsx` draws the opening to its real
+ * arrangement: panel count, mullions and the opening symbol on the real hinge
+ * edge, at `xs` and square so the column has an edge to scan down. It is the
+ * element the owner rates highest in the product, and the first version of this
+ * surface left it out on the reasoning that the customer's components were
+ * unusable here — which was never checked file by file. `Elevation` imports one
+ * module (`src/data/catalogue`), names no router and no theme sheet, and was
+ * importable the whole time. ADR 0010 records it so it is not re-litigated.
  *
- *   CODE  product name              size · qty        amount   ›
- *         room                      [ flags ]
+ * ── WHAT THE ROW SAYS, AND WHAT IT NO LONGER SAYS ───────────────────────────
+ *   elevation · CODE · product · height × width mm · [N joined units]
+ *                                        money at the end · [needs review]
  *
- * The code leads and is set in the display face, because it is what anchors a
- * line in every other artefact this business produces — the schedule, the
- * drawing, the factory ticket. The amount is last and right-aligned, because
- * money is what you compare down a column rather than read across a row. A
- * composite opening is ONE row with its units inside it, never loose beside it
- * — the endpoint's own query enforces that and the customer's list honours it.
+ * Gone, each for a stated reason:
+ *  • THE CUSTOMER'S NOTE (`quote_line.room_label`). Plain TEXT, labelled "Note
+ *    (optional)" to the customer who types it free-form, bounded at 500
+ *    characters. Five hundred characters is a paragraph, not a room name —
+ *    "Ensuite" is the lucky case, not the contract. It cannot be in a scannable
+ *    row at any length. It is read on the line's own page, in their words.
+ *  • THE QUANTITY. Retired: nothing creates a multi-quantity line any more. The
+ *    unit count below is `qtyPerParent`, a different fact that is not retired.
+ *  • EVERY PARSER REASON AS ITS OWN CHIP. "It pollutes the screen. Highlight is
+ *    enough." One badge, and the reasons are read where the fix is.
  *
- * What is NOT carried over is the markup: `src/components/quote-project/*` is
- * built on the customer site's Tailwind and its hundred-odd theme classes, and
- * ops2's stylesheet entry documents its refusal to import that sheet. See
- * `./record.ts` for the full reasoning.
+ * ── THE WHOLE ROW IS ONE TARGET ─────────────────────────────────────────────
+ * One button filling the row, opening that line's own page. No twisty, no
+ * `aria-expanded`, nothing that looks pressable and answers differently — an
+ * accordion was what shipped and was rejected, at every width.
  */
-
-/** A row's own flags — the exception shown, the default suppressed. */
-function LineFlags({ line }: { line: RecordLine }) {
-  const flags: string[] = [];
-  // UNPRICED IS THE ONE THIS CONSOLE EXISTS TO FIND, so it is named as the
-  // absence it is rather than folded into "unresolved".
-  if (line.lineTotal == null) flags.push("No rate");
-  if (line.status !== "ready") flags.push(line.status.replace(/_/g, " "));
-  // The parser's own reasons — material substitution, out-of-range, glazing.
-  // Its words, not a second vocabulary invented on this screen.
-  for (const reason of Object.values(line.review ?? {})) flags.push(reason);
-  if (flags.length === 0) return null;
+function LineRow({ line, onOpen }: { line: RecordLine; onOpen: (id: string) => void }) {
+  const flagged = needsReview(line);
+  const units = joinedUnitCount(line);
   return (
-    <span className="rl-flags">
-      {flags.map((flag) => (
-        <span key={flag} className="rl-flag">
-          <IonIcon icon={alertCircleOutline} aria-hidden="true" />
-          {flag}
+    <li className="rl-row" data-flagged={flagged} data-testid="record-line">
+      <button type="button" className="rl-open" onClick={() => onOpen(line.id)}>
+        {/* DECORATIVE TO ASSISTIVE TECHNOLOGY, and the row's own text still
+            carries the code, the product, the size and the flag — so the
+            drawing adds nothing a non-sighted reviewer loses. `aria-hidden` is
+            on the SVG itself, inside Elevation. */}
+        <span className="rl-elev">
+          <Elevation
+            productSlug={line.productSlug ?? ""}
+            widthMm={line.width}
+            heightMm={line.height}
+            parts={elevationPartsFor(line)}
+            axis={line.compositeAxis}
+            size="xs"
+            square
+            className="rl-elev__svg"
+          />
         </span>
-      ))}
-    </span>
-  );
-}
-
-/** A unit of a composite opening, inside its parent — with its own spec, because
- *  units of one opening differ and which ones is what a reviewer checks. */
-function SegmentRow({ segment }: { segment: RecordSegment }) {
-  const size = sizeLabel(segment);
-  const options = Object.entries(segment.options).filter(([, v]) => v);
-  return (
-    <li className="rl-unit">
-      <span className="rl-unit__name">
-        {segment.productName}
-        {segment.note && <span className="rl-unit__note"> · {segment.note}</span>}
-      </span>
-      <span className="rl-unit__meta">
-        {size}
-        {/* PER OPENING. The aggregate is shown beside it only when the two
-            differ — a parent of one makes them the same number, and printing it
-            twice would read as two facts. */}
-        {segment.qty > 1 && <> · ×{segment.qty}</>}
-        {segment.qtyTotal !== segment.qty && (
-          <span className="rl-unit__total"> · {segment.qtyTotal} in all</span>
-        )}
-      </span>
-      <span className="rl-money" data-priced={segment.lineTotal != null}>
-        {segment.lineTotal == null ? "No rate" : money(segment.lineTotal)}
-      </span>
-      {options.length > 0 && (
-        <span className="rl-unit__spec">
-          {options.map(([label, value]) => (
-            <span key={label} className="rl-unit__opt">
-              <span className="rl-unit__opt-label">{label}</span> {value}
-            </span>
-          ))}
-        </span>
-      )}
-    </li>
-  );
-}
-
-/**
- * One opening.
- *
- * It expands only when it has something to expand INTO — the configured spec,
- * or the units of a composite. A twisty on a row that opens to nothing is a
- * control that cannot do anything, which is the defect this effort has now
- * recorded four times.
- */
-function LineRow({ line }: { line: RecordLine }) {
-  const [open, setOpen] = useState(false);
-  const options = Object.entries(line.options).filter(([, v]) => v);
-  const expandable = options.length > 0 || line.segments.length > 0;
-  const size = sizeLabel(line);
-
-  return (
-    <li className="rl-row" data-unresolved={lineUnresolved(line)} data-testid="record-line">
-      {/* The whole head is the toggle when there is something under it, and a
-          plain block when there is not — rather than a row that looks pressable
-          everywhere and answers in one place. */}
-      {expandable ? (
-        <button
-          type="button"
-          className="rl-head"
-          aria-expanded={open}
-          data-testid="record-line-toggle"
-          onClick={() => setOpen((o) => !o)}
-        >
-          <LineHead line={line} size={size} />
-          <IonIcon className="rl-twisty" icon={chevronForward} aria-hidden="true" />
-        </button>
-      ) : (
-        <div className="rl-head rl-head--static">
-          <LineHead line={line} size={size} />
-        </div>
-      )}
-
-      {open && (
-        <div className="rl-body" data-testid="record-line-body">
-          {line.segments.length > 0 && (
-            <ul className="rl-units">
-              {line.segments.map((segment) => (
-                <SegmentRow key={segment.id} segment={segment} />
-              ))}
-            </ul>
-          )}
-          {options.length > 0 && (
-            <dl className="rl-spec">
-              {options.map(([label, value]) => (
-                <div key={label} className="rl-spec__pair">
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
-function LineHead({ line, size }: { line: RecordLine; size: string | null }) {
-  return (
-    <span className="rl-main">
-      <span className="rl-top">
-        {/* The code, in the display face and tabular, so a column of them reads
-            as a column. A line with no code prints an em dash rather than a
-            gap: the position in the schedule is a fact that is MISSING, not a
-            field that happens to be empty. */}
-        <span className="rl-code">{line.code || "—"}</span>
-        <strong className="rl-name">{line.productName}</strong>
-        <span className="rl-money" data-priced={line.lineTotal != null}>
-          {line.lineTotal == null ? "No rate" : money(line.lineTotal)}
-        </span>
-      </span>
-      <span className="rl-sub">
-        {line.room && <span className="rl-room">{line.room}</span>}
-        {size && <span className="rl-size">{size}</span>}
-        {line.qty > 1 && <span className="rl-qty">×{line.qty}</span>}
-        {line.segments.length > 0 && (
-          <span className="rl-units-count">
-            {line.segments.length} units
+        <span className="rl-main">
+          <span className="rl-top">
+            {/* The code anchors this line in the schedule, the drawing and the
+                factory ticket, so a column of them reads as a column. A line
+                with no code prints an em dash: the position is MISSING, not a
+                field that happens to be empty. */}
+            <span className="rl-code">{line.code || "—"}</span>
+            <span className="rl-name">{line.productName}</span>
           </span>
-        )}
-      </span>
-      <LineFlags line={line} />
-    </span>
+          <span className="rl-sub">
+            <span className="rl-size">{sizeText(line)}</span>
+            {units > 0 && (
+              <span className="rl-units">{units} joined unit{units === 1 ? "" : "s"}</span>
+            )}
+          </span>
+        </span>
+        <span className="rl-end">
+          {/* NOT PRICED IS A STATE, NOT A ZERO. Unpriced work is precisely what
+              this console exists to hunt, and turning it into a
+              plausible-looking number is the worst available failure. */}
+          <span className="rl-money" data-priced={line.lineTotal != null}>
+            {line.lineTotal == null ? "No rate" : money(line.lineTotal)}
+          </span>
+          {flagged && <span className="rl-badge">needs review</span>}
+        </span>
+      </button>
+    </li>
   );
 }
 
-export function RecordLines({ lines, orderNo }: {
+export function RecordLines({ lines, total, filterOn, orderNo, onOpen, onClearFilter }: {
+  /** What to show — already filtered. */
   lines: readonly RecordLine[];
+  /** How many the record has in all, for the filtered-empty sentence. */
+  total: number;
+  filterOn: boolean;
   /** Present ⇒ these are CONTRACT lines, and an empty list means something else. */
   orderNo?: string | null;
+  onOpen: (id: string) => void;
+  onClearFilter: () => void;
 }) {
   if (lines.length === 0) {
+    // THE FILTER'S OWN EMPTY IS NOT THE RECORD'S. A list that went blank
+    // because of a control the reader pressed has to say so and offer the way
+    // back, or it reads as a record that lost its lines.
+    if (filterOn) {
+      return (
+        <div className="rl-empty" data-testid="record-lines-filtered-empty">
+          <strong>No lines without a rate.</strong>
+          <button type="button" className="rl-empty__back" onClick={onClearFilter}>
+            Clear the filter to see all {total}.
+          </button>
+        </div>
+      );
+    }
     // TWO EMPTIES, TWO SENTENCES. A quote with no lines yet is waiting on the
     // customer or the estimator; an ORDER with no lines is a conversion that
-    // has not finished, or has gone wrong — the same shape of screen meaning
-    // opposite things, which is the distinction this console keeps making.
+    // has not finished, or has gone wrong.
     return (
       <div className="rl-empty" data-testid="record-lines-empty">
         {orderNo ? (
           <>
             <strong>{orderNo} has no contract lines.</strong>
-            <IonNote className="ds-type-caption">
+            <p className="rl-empty__note">
               The order exists but nothing has been written against it. The quote it
               came from is in the legacy console.
-            </IonNote>
+            </p>
           </>
         ) : (
-          <>
-            <strong>No lines on this project yet.</strong>
-            <IonNote className="ds-type-caption">
-              Lines arrive when the customer submits a schedule, or when the estimator runs.
-            </IonNote>
-          </>
+          // NO HEADLINE HERE. The attention row above the list already says
+          // "No lines on this project yet", and a screen that says it twice is
+          // a screen that has two owners for one sentence.
+          <p className="rl-empty__note">
+            Lines arrive when the customer submits a schedule, or when the estimator runs.
+          </p>
         )}
       </div>
     );
   }
   return (
     <ul className="rl-list" data-testid="record-lines">
-      {lines.map((line) => <LineRow key={line.id} line={line} />)}
+      {lines.map((line) => <LineRow key={line.id} line={line} onOpen={onOpen} />)}
     </ul>
   );
 }
