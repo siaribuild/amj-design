@@ -221,6 +221,12 @@ export function ProjectRecordPage() {
       ) : undefined}
       controls={record ? (
         <div className="rec-controls">
+          {/* WHO OWES THE NEXT MOVE IS HEADER, not content — the owner's
+              ruling. It is the first thing read on arrival and it belongs with
+              the identity it qualifies, above the tabs that choose what to look
+              at. Below them it scrolled with the list, which made the record's
+              most important sentence the one most easily lost. */}
+          <StateRow record={record} />
           <div className="pq-controls" data-wide={wide}>
             <div className="pq-chips" role="group" aria-label="What to show">
               <button
@@ -298,7 +304,16 @@ export function ProjectRecordPage() {
               stops this quote going out; a note-coloured strip said so at the
               weight of an aside. The sentence is the server's own — the console
               never re-derives the gate. */}
-          {primary?.blockedReason && (
+          {/* ONLY WHAT THE ATTENTION ROW CANNOT SAY. It derives its blockers
+              from the same two facts the gate refuses on — lines with no rate,
+              unsettled delivery — so when the CTA is blocked for one of those,
+              a second strip beneath it repeated the sentence in a louder
+              colour. The mock has ONE row and its own comment says why: it "is
+              the reason the header's CTA is disabled, so it may not disappear
+              while the CTA is still on screen". A refusal the row cannot
+              express — a state the quote cannot be issued from — still gets
+              said, because nothing else on the page would say it. */}
+          {primary?.blockedReason && attention?.kind !== "blockers" && (
             <p className="rec-refusal" data-testid="record-blocked">
               <IonIcon icon={alertCircle} aria-hidden="true" />
               {primary.blockedReason}
@@ -319,7 +334,6 @@ export function ProjectRecordPage() {
             </p>
           )}
 
-          <StateRow record={record} />
 
           {tab === "lines" ? (
             <>
@@ -428,11 +442,13 @@ function RecordIdentity({ record }: { record: ProjectRecord }) {
         {record.orderNo && <span className="rec-ident__ref">{record.orderNo}</span>}
         {customer && <span className="rec-ident__cust">{customer}</span>}
       </span>
+      {/* THE FIGURE, AND NOTHING BESIDE IT. It carried the count of unrated
+          lines — `$12,000 · 1 no rate` — and the attention row two lines below
+          says exactly that, with the control that acts on it. The owner's
+          ruling: the same information twice is not emphasis. What is missing is
+          still named, once, where it can be acted on. */}
       <span className="rec-ident__money">
         <strong data-priced={corner.caveat == null}>{money(corner.amount)}</strong>
-        {/* NEVER A BARE NUMBER IMPLYING COMPLETENESS. What is missing is named
-            beside the figure, in the record's own vocabulary. */}
-        {corner.caveat && <span className="rec-ident__caveat">{corner.caveat}</span>}
       </span>
     </div>
   );

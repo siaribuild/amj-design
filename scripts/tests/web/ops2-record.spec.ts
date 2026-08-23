@@ -97,8 +97,13 @@ test("the header carries the project's NAME, then its ids, then the customer", a
   const ident = page.getByTestId("record-identity");
   await expect(ident).toContainText("OF-Q-10482");
   await expect(ident).toContainText("Marchetti Constructions");
+  // ONE BLOCK, INSIDE THE BAND — identity and the state row both. Who owes the
+  // next move is the first thing read on arrival; below the tabs it scrolled
+  // away with the list.
   const band = page.locator(".ops2-page__band");
   await expect(band.getByTestId("record-identity")).toHaveCount(1);
+  await expect(band.getByTestId("record-state")).toHaveCount(1);
+  await expect(band.getByTestId("record-state")).toContainText("Waiting on us");
 
   const tabs = page.getByTestId("record-tab");
   await expect(tabs).toHaveCount(2);
@@ -208,6 +213,9 @@ test("the totals name the absence rather than captioning a number", async ({ pag
   const totals = page.getByTestId("record-totals");
   await expect(totals).toContainText("$1,000");
   await expect(totals).toContainText("1 with no rate");
+  // AND THE CORNER DOES NOT REPEAT IT. `$1,000 · 1 no rate` beside the total
+  // said what the attention row says two lines below, with the control.
+  await expect(page.getByTestId("record-identity")).not.toContainText("no rate");
   // The project total is the ABSENCE, named — not a figure under a caption
   // saying it is not really the figure, which is how a reviewer quotes $18,000
   // for a $30,000 job.
@@ -284,9 +292,18 @@ test("a blocked action is shown, refused, and says why beside itself", async ({ 
   await expect(cta).toHaveClass(/button-disabled/);
   await cta.click({ force: true });
   await expect(page.getByTestId("record-confirm")).toHaveCount(0);
-  // ADJACENT TO THE CONTROL IT REFUSES. A blocked primary in the header and its
-  // reason at the foot of the page are two facts a reader has to join up.
-  await expect(page.getByTestId("record-blocked")).toContainText("1 line is unpriced or unresolved");
+  // ADJACENT TO THE CONTROL IT REFUSES, and said ONCE. The attention row is
+  // what carries it here: it derives from the same fact the gate refuses on, so
+  // a second strip repeating the sentence is the same information twice rather
+  // than emphasis. A blocked primary in the header and its reason at the foot
+  // of the page would be two facts a reader has to join up; both live in the
+  // band, one under the other.
+  await expect(page.getByTestId("record-attention")).toContainText("no rate");
+  await expect(page.getByTestId("record-blocked")).toHaveCount(0);
+  const bandBox = (await page.locator(".ops2-page__band").boundingBox())!;
+  const rowBox = (await page.getByTestId("record-attention").boundingBox())!;
+  expect(rowBox.y, "the reason sits inside the band with the control it refuses")
+    .toBeLessThan(bandBox.y + bandBox.height);
 });
 
 test("the panel offers only what this build can actually run", async ({ page }) => {
@@ -508,4 +525,35 @@ test("a conflict re-reads the record, so the stale action goes away", async ({ p
   await expect(page.getByTestId("record-failure")).toContainText("moved to another state");
   await expect(page.getByTestId("record-primary")).toHaveCount(0);
   expect(reads).toBeGreaterThan(1);
+});
+
+test("the blocker is stated once, not twice in two colours", async ({ page }) => {
+  // The attention row derives its blockers from the same two facts the issue
+  // gate refuses on — lines with no rate, and unsettled delivery — so when the
+  // CTA is blocked for one of those, a separate refusal strip beneath it says
+  // the same thing again in a louder colour. The mock has ONE row, and its own
+  // comment says why: it "is the reason the header's CTA is disabled, so it may
+  // not disappear when the CTA is still on screen".
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 }), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" })],
+    actions: [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
+      blockedReason: "1 line is unpriced or in technical review" }],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  // The attention row is saying it, and it is the one carrying the weight.
+  await expect(page.getByTestId("record-attention")).toContainText("no rate");
+  await expect(page.getByTestId("record-blocked")).toHaveCount(0);
+
+  // A refusal the attention row CANNOT express still gets said — it is not the
+  // strip that was wrong, it was saying what was already on screen.
+  await page.unroute(RECORD_URL);
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 })],
+    actions: [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
+      blockedReason: "This quote cannot be issued from its current state." }],
+  }) }));
+  await page.reload();
+  await expect(page.getByTestId("record-blocked")).toContainText("current state");
 });
