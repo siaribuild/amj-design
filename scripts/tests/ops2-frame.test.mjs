@@ -40,31 +40,53 @@ test("setupIonicReact carries R-164's focus priority, and nothing else", () => {
   assert.doesNotMatch(args, /\bmode\s*:/, "the platform mode stays Ionic's, per ADR 0005's ASSUMED");
 });
 
-test("the console hydrates the catalogue before it mounts, and fetches nothing else", () => {
-  // R2 / P1-AC-5. `Elevation` resolves an opening's family through
+test("the catalogue starts at boot, and only the record waits for it", () => {
+  // R2 / P1-AC-5. `Elevation` resolves an opening family through
   // `getProductBySlug(productSlug)`, so the catalogue stopped being incidental
   // to ops2 the moment the record grew drawings: without it every row draws the
-  // fallback frame. The boot adopts src/ops/main.tsx's pattern exactly —
-  // `hydrateFromSanity()` never throws and races a 2500ms timeout, so the worst
-  // case with Sanity unreachable is a delayed mount on the built-in catalogue
-  // (P1-AC-6), not a hang and not a blank console.
+  // fallback frame, and a row that draws the fallback and then flips after
+  // paint is worse than one that waits.
   //
-  // A STATIC PIN because the alternative is invisible: mounting first and
-  // hydrating after type-checks, runs, and quietly draws every row twice — the
-  // fallback, then the real family — which a screenshot cannot catch either.
-  // Comments stripped: this file's prose names the call, and so does the
-  // boot's own — a scan that reads them proves nothing about the code.
-  const boot = read("src/ops2/main.tsx")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.match(boot, /hydrateFromSanity\(\)/, "the boot must hydrate the catalogue");
-  assert.match(boot, /hydrateFromSanity\(\)\s*\.finally\(/,
-    "…and render inside .finally — a rejected hydration must still mount the console");
+  // THE FIRST VERSION AWAITED IT BEFORE MOUNTING, and that was measured at ~2.9
+  // seconds before anything rendered at all: `hydrateFromSanity()` races a
+  // 2500ms timeout, and an environment that cannot reach Sanity pays the whole
+  // cap on every page load. Attention, Products, Pricing and the queue were all
+  // waiting on a dependency only the RECORD has, and a console that shows
+  // nothing for three seconds because a CMS is slow is a worse failure than the
+  // flicker it was preventing.
+  //
+  // So the request starts at boot and the console mounts immediately; the
+  // record awaits the same promise before it leaves its loading state. Nothing
+  // flips after paint, because the surface that would flip has not painted.
+  //
+  // A STATIC PIN because both halves are invisible at runtime: mounting behind
+  // hydration type-checks and runs, and so does dropping the record wait — one
+  // costs three seconds on every screen, the other draws eighteen identical
+  // windows for a job that has none. Comments are stripped: this file names the
+  // calls in prose and so do the modules, and a scan that reads prose proves
+  // nothing about the code.
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const boot = strip(read("src/ops2/main.tsx"));
+  const catalogue = strip(read("src/ops2/catalogue.ts"));
+  const record = strip(read("src/ops2/projects/useProjectRecord.ts"));
+
+  assert.match(catalogue, /hydrateFromSanity\(\)/, "something must hydrate the catalogue");
+  assert.match(boot, /catalogueReady/, "and the boot must start it");
+  assert.doesNotMatch(
+    boot,
+    /(hydrateFromSanity|catalogueReady)\s*\.\s*(then|finally)\s*\(/,
+    "the mount must not sit inside a hydration continuation",
+  );
+  assert.match(record, /await catalogueReady/,
+    "the record waits for it, so no row flips its drawing after paint");
+  // It must never reject: a waiter is a delay, never a broken screen.
+  assert.match(catalogue, /\.catch\(/, "hydration failure must not reject the promise");
 
   // AC-X5 — EXACTLY ONE REQUEST, and it is the public catalogue query the
-  // customer site already sends. Site settings are the customer's branding and
-  // the offerability check is the customer picker's filter; fetching either
-  // would widen this console's outbound surface for something it never reads.
-  assert.doesNotMatch(boot, /hydrateSiteSettings|hydrateOfferabilityFromApi/,
+  // customer site already sends. Site settings are the customer branding and
+  // the offerability check is the customer picker filter; fetching either would
+  // widen this console outbound surface for something it never reads.
+  assert.doesNotMatch(boot + catalogue, /hydrateSiteSettings|hydrateOfferabilityFromApi/,
     "ops2 boots on the catalogue alone");
 });
 

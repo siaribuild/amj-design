@@ -419,6 +419,10 @@ export function otherActions(record: ProjectRecord): RecordAction[] {
  *  that cannot run is the defect this effort has recorded four times. */
 export type Blocker =
   | { key: "unpriced"; count: number; text: string; action: "show only these" }
+  // NO ACTION ON EITHER. "Show only these" is the unpriced control, and a second
+  // filter on the same row would be two controls wearing one label; delivery is
+  // set elsewhere until ops2 has a screen for it.
+  | { key: "review"; count: number; text: string; action: null }
   | { key: "delivery"; count: 0; text: string; action: null };
 
 export type Attention =
@@ -443,14 +447,42 @@ const deliveryKnown = (record: ProjectRecord): boolean =>
 export function attentionFor(record: ProjectRecord): Attention {
   // NEVER "nothing is blocking this quote" ON AN EMPTY RECORD: it would be
   // false, since a quote with no lines cannot be issued at all.
-  if (record.lines.length === 0) return { kind: "no-lines", text: "No lines on this project yet" };
+  if (record.lines.length === 0) {
+    // AN ACCEPTED ORDER WITH NO CONTRACT LINES IS A DIFFERENT FACT — a
+    // conversion fault, not an unstarted quote — and the list below already
+    // says so. The pinned row contradicting the record body on the same screen
+    // is worse than either sentence alone.
+    return record.orderNo
+      ? { kind: "no-lines", text: "This order has no contract lines" }
+      : { kind: "no-lines", text: "No lines on this project yet" };
+  }
 
   const unpriced = record.lines.filter((l) => l.lineTotal == null).length;
+  // THE SAME SET THE GATE REFUSES ON. `issueQuote` blocks a NULL total OR a
+  // status in `ISSUE_BLOCKING_LINE_STATUSES` (worker/lib/issue.ts), and this
+  // counted only the first — so a priced line sitting in technical review left
+  // the pinned row saying "Nothing is blocking this quote" beside a disabled
+  // issue button. The console contradicting the server about its own gate is
+  // the drift this record has already been caught by twice.
+  const inReview = record.lines.filter(
+    (l) => l.lineTotal != null && BLOCKING_STATUSES.has(l.status),
+  ).length;
   const blockers: Blocker[] = [];
   if (unpriced > 0) {
     blockers.push({
       key: "unpriced", count: unpriced, action: "show only these",
       text: `${unpriced} line${unpriced === 1 ? " has" : "s have"} no rate`,
+    });
+  }
+  // RATES LEAD OVER REVIEW when both are wrong: an unpriced line is the larger
+  // piece of work, and surfacing the smaller blocker first is what trains
+  // people to distrust the row. No filter action — "show only these" is the
+  // unpriced control, and a second filter on one row would be two controls
+  // wearing one label.
+  if (inReview > 0) {
+    blockers.push({
+      key: "review", count: inReview, action: null,
+      text: `${inReview} line${inReview === 1 ? " is" : "s are"} in technical review`,
     });
   }
   if (!deliveryKnown(record)) {
@@ -483,7 +515,12 @@ export function visibleLines(record: ProjectRecord, filterOn: boolean): RecordLi
  *  does not exist. */
 export function elevationPartsFor(line: RecordLine):
   { productSlug: string; alongMm: string; qty: number }[] | undefined {
-  if (line.segments.length < 2) return undefined;
+  // UNITS, NOT ROWS. migrations/0028_composite_lines.sql states the shape
+  // verbatim: "A symmetric 2x1800 split is one segment row with qty_per_parent
+  // = 2, not two identical rows". Counting rows drew that supported storage as
+  // a single frame — no mullion, and the review body treated a joined opening
+  // as a simple one.
+  if (joinedUnitCount(line) < 2) return undefined;
   return line.segments.map((s) => ({
     productSlug: s.productSlug ?? "",
     alongMm: line.compositeAxis === "horizontal" ? s.height : s.width,
@@ -516,6 +553,12 @@ export function unitLabel(code: string, index: number): string {
 /** The statuses the server flags for a human, whatever the parser said. */
 const REVIEW_STATUSES = new Set(["needs_review", "technical_review"]);
 
+/** The statuses `issueQuote` REFUSES on — `worker/lib/issue.ts`'s
+ *  `ISSUE_BLOCKING_LINE_STATUSES`. A narrower set than the one above: a line
+ *  can want a human eye without stopping the quote, and conflating the two is
+ *  how a console starts disagreeing with the gate it reports. */
+const BLOCKING_STATUSES = new Set(["technical_review", "incomplete"]);
+
 /**
  * Does this line need a reviewer's eye? ONE BOOLEAN, whatever the reason count.
  *
@@ -531,9 +574,16 @@ export function needsReview(line: RecordLine): boolean {
 /** What KIND of figure this line's price is. `no_rate` is the absence this
  *  console exists to hunt and is never a zero; `override` is a figure a human
  *  set over the rate card's, which `priceOverrideAt` alone decides. */
-export function priceState(line: RecordLine): "no_rate" | "override" | "list" {
+export function priceState(line: RecordLine): "no_rate" | "override" | "list" | "unknown" {
   if (line.lineTotal == null) return "no_rate";
-  return line.priceOverrideAt != null ? "override" : "list";
+  if (line.priceOverrideAt != null) return "override";
+  // NOT EVERY UNSTAMPED FIGURE IS THE RATE CARD'S. Accepted order lines discard
+  // the override metadata outright, and a composite parent can hold overridden
+  // SEGMENTS while carrying no timestamp of its own — so "no timestamp" is the
+  // absence of evidence, and reading it as "list price" states a provenance the
+  // record does not have. `priceCalculated` is the rate card's own figure: when
+  // it is on the row the comparison is real and the claim is earned.
+  return line.priceCalculated != null ? "list" : "unknown";
 }
 
 /** One word for where the size came from, or nothing when there is nothing to

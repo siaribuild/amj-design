@@ -624,7 +624,7 @@ test("a row opens its project, and the destination stays lit", async ({ page }) 
   await expect(rail).toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).click();
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  await expect(page.getByTestId("record-identity")).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/ops2/projects/p_submitted");
   await expect(rail).toHaveAttribute("aria-current", "page");
 
@@ -639,7 +639,7 @@ test("a row opens its project, and the destination stays lit", async ({ page }) 
   // buys and hash routing does not.
   const deep = await page.goto(`${OPS2}/projects/p_submitted`);
   expect(deep?.status()).toBe(200);
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  await expect(page.getByTestId("record-identity")).toBeVisible();
 });
 
 test("no rendered corner on this surface exceeds the owner's 5px cap, in either mode", async ({ page }) => {
@@ -698,7 +698,7 @@ test("the record's back control is not under the band that follows it", async ({
   // Wait for the page transition to SETTLE. Ionic animates the record in, and a
   // box measured mid-slide is a box the page is not at yet — which reads as the
   // control being covered when it is only still moving.
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  await expect(page.getByTestId("record-identity")).toBeVisible();
   const back = page.locator(".ops2-page__back");
   await expect(back).toBeVisible();
   await page.waitForTimeout(600);
@@ -731,7 +731,7 @@ test("a modified click on a project opens it beside, not instead", async ({ page
   const second = await opened;
   await second.waitForLoadState();
   expect(new URL(second.url()).pathname).toBe("/ops2/projects/p_submitted");
-  await expect(second.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  await expect(second.getByTestId("record-identity")).toBeVisible();
   await second.close();
 
   // And the tab it was opened FROM did not move.
@@ -793,7 +793,12 @@ test("coming back to the queue re-reads it, rather than showing what was there",
   await expect(page.getByText("Before")).toBeVisible();
 
   await page.getByTestId("queue-row").first().click();
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  // THE URL, not the record's content: this project's own fetch is not stubbed
+  // here, so the record legitimately reports it cannot find it. What the test is
+  // about is leaving the queue and coming back, and the address is the honest
+  // proof of that. The old assertion matched the record's LOADING title, so it
+  // passed on a 404 without anyone noticing what it was really watching.
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_first$/);
 
   await page.getByRole("button", { name: "Projects" }).click();
   await expect(page.getByText("After")).toBeVisible();
@@ -810,7 +815,7 @@ test("back from a record pops the queue rather than stacking another copy of it"
   await expect(page.getByTestId("queue-row").first()).toBeVisible();
 
   await page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" }).click();
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toBeVisible();
+  await expect(page.getByTestId("record-identity")).toBeVisible();
 
   await page.getByRole("button", { name: "Projects" }).click();
   // SCOPED TO A ROW. Ionic keeps the queue page mounted in its view stack and
@@ -819,7 +824,7 @@ test("back from a record pops the queue rather than stacking another copy of it"
   expect(new URL(page.url()).pathname).toBe("/ops2/projects");
 
   await page.goBack();
-  await expect(page.getByRole("heading", { name: /^(OF-[QO]-|Project$)/, level: 1 })).toHaveCount(0);
+  await expect(page.getByTestId("record-identity")).toHaveCount(0);
   expect(new URL(page.url()).pathname, "back re-entered the record it had just left").not.toBe("/ops2/projects/p_submitted");
 
   // AND A COLD DEEP LINK STILL HAS A WAY OUT. There is nothing to pop into when

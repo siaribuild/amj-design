@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIonViewWillEnter } from "@ionic/react";
 import { parseProjectRecord, type ProjectRecord } from "./record";
+import { catalogueReady } from "../catalogue";
 
 /**
  * The record's four states.
@@ -71,7 +72,16 @@ export function useProjectRecord(id: string): { load: RecordLoad; reload: () => 
           });
           return;
         }
-        const record = parseProjectRecord(await res.json());
+        const body = await res.json();
+        // THE CATALOGUE IS PART OF BEING READY. Every row draws its opening
+        // through `getProductBySlug`, so a record rendered before the catalogue
+        // lands shows the fallback frame on every line — eighteen identical
+        // windows for a job that has none — and then flips them all after paint.
+        // Waiting here rather than at boot is what lets the rest of the console
+        // open at once; see `../catalogue.ts` for the measurement behind that.
+        // It never rejects, so this is a delay and never a failure path.
+        await catalogueReady;
+        const record = parseProjectRecord(body);
         if (!live) return;
         // A 200 whose body has no project is not a project. Treated as missing
         // rather than as an error: the outcome for the reader is the same and

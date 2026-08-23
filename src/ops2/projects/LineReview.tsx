@@ -105,6 +105,11 @@ function Units({ line }: { line: RecordLine }) {
               <span className="lp-unit__code">{unitLabel(line.code, i)}</span>
               <span className="lp-unit__name">{u.productName}</span>
               <span className="lp-unit__meta">{sizeText(u)}</span>
+              {/* THE UNIT'S OWN NOTE. `room_label` on a segment is what the
+                  customer wrote about THAT frame — "left", "opens to deck" —
+                  and the record view it replaced showed it. Dropping it left
+                  no surface in ops2 where a unit-level note can be read. */}
+              {u.note && <span className="lp-unit__note">{u.note}</span>}
               {Object.entries(u.options).filter(([, v]) => v).length > 0 && (
                 <span className="lp-unit__spec">
                   {Object.entries(u.options).filter(([, v]) => v).map(([k, v]) => (
@@ -135,10 +140,17 @@ const PRICE_STATE: Record<ReturnType<typeof priceState>, string> = {
   no_rate: "no rate on this line yet",
   override: "price set by hand",
   list: "list price",
+  // THE ABSENCE OF EVIDENCE, SAID. Claiming "list price" for every figure that
+  // happens to carry no override stamp states a provenance the record does not
+  // have — accepted order lines discard that metadata, and a composite parent
+  // can hold overridden segments without a timestamp of its own.
+  unknown: "priced",
 };
 
 export function LineReview({ line }: { line: RecordLine }) {
-  const composite = line.segments.length >= 2;
+  // UNITS, NOT ROWS — see `elevationPartsFor`. A symmetric split is stored as
+  // one row carrying two units, and counting rows called it a simple opening.
+  const composite = joinedUnitCount(line) >= 2;
   const provenance = provenanceWord(line);
   const options = Object.entries(line.options).filter(([, v]) => v);
   const reasons = Object.values(line.review ?? {});

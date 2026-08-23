@@ -266,9 +266,18 @@ test("one badge whatever the reason count, and every figure states its kind", ()
   // never a zero; a figure a human set is not the rate card's.
   const state = (over) => M.priceState(M.parseProjectRecord(body({ lines: [line(over)] })).lines[0]);
   assert.equal(state({ lineTotal: null }), "no_rate");
-  assert.equal(state({ lineTotal: 0 }), "list", "a genuine zero is a price, not an absence");
+  // A GENUINE ZERO IS A PRICE, NOT AN ABSENCE — the property this line has
+  // always been about. Which KIND of price it is depends on what evidence the
+  // row carries, so the assertion is that it is not the absence.
+  assert.notEqual(state({ lineTotal: 0 }), "no_rate", "a genuine zero is a price");
   assert.equal(state({ lineTotal: 900, priceOverrideAt: "2026-08-20T01:00:00Z" }), "override");
-  assert.equal(state({ lineTotal: 900 }), "list");
+  // `list` is CLAIMED ONLY WITH EVIDENCE. `priceCalculated` is the rate card's
+  // own figure; without it, a figure with no override stamp is a figure whose
+  // provenance this record does not know — accepted order lines discard the
+  // metadata outright, and a composite parent can hold overridden segments
+  // while carrying no timestamp of its own.
+  assert.equal(state({ lineTotal: 900, priceCalculated: 900 }), "list");
+  assert.equal(state({ lineTotal: 900 }), "unknown");
 
   // P1-AC-28 — one word of provenance, and nothing when there is none to give.
   const word = (over) => M.provenanceWord(M.parseProjectRecord(body({ lines: [line(over)] })).lines[0]);
@@ -709,4 +718,92 @@ test("the partial figure counts the delivery it already knows", () => {
   })));
   assert.equal(whole.total, 1250);
   assert.equal(whole.subtotal, 1250);
+});
+
+test("a symmetric composite is ONE segment row carrying two units", () => {
+  // migrations/0028_composite_lines.sql:33-36, verbatim: "A symmetric 2x1800
+  // split is one segment row with qty_per_parent = 2, not two identical rows —
+  // fewer rows, and it states 'these are the same frame'."
+  //
+  // So counting segment ROWS to decide whether an opening is a composite draws
+  // a supported storage shape as a single frame: the drawing loses its mullion
+  // and the review body treats a joined opening as a simple one. It is the
+  // UNITS that make a composite, not the rows they are stored in.
+  const sym = M.parseProjectRecord(body({
+    lines: [line({
+      lineKind: "composite_parent", compositeAxis: "vertical",
+      segments: [{ id: "s1", productName: "Awning 1800", productSlug: "awning-1800",
+        width: "1800", height: "1500", qtyPerParent: 2, qty: 2, lineTotal: 4000, status: "ready" }],
+    })],
+  })).lines[0];
+
+  assert.equal(M.joinedUnitCount(sym), 2, "two frames go into this opening");
+  assert.equal(M.unitsOf(sym).length, 2, "and there are two units to review");
+  const parts = M.elevationPartsFor(sym);
+  assert.ok(parts, "a symmetric composite still has parts to draw");
+  assert.equal(parts.reduce((n, p) => n + p.qty, 0), 2);
+
+  // One frame is not a composite however it is stored — handing the generator a
+  // one-unit `parts` draws a join that does not exist.
+  const single = M.parseProjectRecord(body({
+    lines: [line({ segments: [{ id: "s1", productName: "X", width: "1", height: "1", qtyPerParent: 1, qty: 1, lineTotal: 1, status: "ready" }] })],
+  })).lines[0];
+  assert.equal(M.elevationPartsFor(single), undefined);
+});
+
+test("the attention queue blocks on everything the gate blocks on", () => {
+  // The gate refuses on a NULL total OR a status in
+  // `ISSUE_BLOCKING_LINE_STATUSES` (worker/lib/issue.ts). Counting only null
+  // totals let the pinned row say "Nothing is blocking this quote" while the
+  // issue button sat disabled beside it — the console contradicting the server
+  // about its own gate, which is the drift this record has already been caught
+  // by twice.
+  const priced = M.parseProjectRecord(body({
+    lines: [line({ lineTotal: 1000, status: "technical_review" })],
+  }));
+  const att = M.attentionFor(priced);
+  assert.notEqual(att.kind, "clear", "a priced line in technical review still blocks");
+  assert.match(att.lead.text, /review/i);
+
+  // Rates lead over review when both are wrong: an unpriced line is the larger
+  // piece of work, and surfacing the smaller blocker first trains people to
+  // distrust the row.
+  const both = M.attentionFor(M.parseProjectRecord(body({
+    lines: [line({ id: "a", lineTotal: null }), line({ id: "b", lineTotal: 1000, status: "technical_review" })],
+  })));
+  assert.equal(both.lead.key, "unpriced");
+  assert.ok(both.more >= 1);
+
+  // Nothing wrong still says so.
+  assert.equal(M.attentionFor(M.parseProjectRecord(body({
+    lines: [line({ lineTotal: 1000, status: "ready" })],
+  }))).kind, "clear");
+});
+
+test("an accepted order with no contract lines is not an unstarted quote", () => {
+  // The list below says "this order has no contract lines" — a conversion
+  // fault — while the pinned row said "No lines on this project yet", which is
+  // a different thing and contradicts it on the same screen.
+  const empty = M.attentionFor(M.parseProjectRecord(body({
+    lines: [], order: { orderNo: "OF-O-2201", total: 5000 }, orderLines: [],
+  })));
+  assert.notEqual(empty.text, "No lines on this project yet");
+  assert.match(empty.text, /contract/i);
+
+  // A quote with no lines is still exactly that.
+  assert.equal(M.attentionFor(M.parseProjectRecord(body({ lines: [] }))).text,
+    "No lines on this project yet");
+});
+
+test("a price with no provenance says so rather than claiming the rate card", () => {
+  // `priceOverrideAt` is discarded on accepted order lines, and a composite
+  // parent can hold overridden SEGMENTS while carrying no parent timestamp of
+  // its own. Reading "no timestamp" as "list price" states a provenance the
+  // record does not have.
+  assert.equal(M.priceState(line({ lineTotal: null })), "no_rate");
+  assert.equal(M.priceState(line({ lineTotal: 1000, priceOverrideAt: "2026-08-01" })), "override");
+  assert.equal(M.priceState(line({ lineTotal: 1000, priceCalculated: 900 })), "list",
+    "the rate card's own figure is on the row, so the comparison is real");
+  assert.equal(M.priceState(line({ lineTotal: 1000 })), "unknown",
+    "no timestamp and no calculated figure is not evidence of a list price");
 });

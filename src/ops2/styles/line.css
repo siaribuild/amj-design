@@ -254,3 +254,12 @@
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
+
+/* A unit's own note — what the customer wrote about THAT frame. Quiet, and it
+   wraps: like the parent's, it is free text and not a label. */
+.lp-unit__note {
+  flex-basis: 100%;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+  overflow-wrap: anywhere;
+}

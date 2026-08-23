@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { Ops2App } from "./Ops2App";
-import { hydrateFromSanity } from "../data/sanity";
+import { catalogueReady } from "./catalogue";
 import "./styles/index.css";
 
 // THE CATALOGUE IS LOAD-BEARING HERE, which it was not when this file said the
@@ -11,17 +11,18 @@ import "./styles/index.css";
 // draws the fallback frame on every line, which is a picture of eighteen
 // identical windows for a job that has none.
 //
-// The pattern is src/ops/main.tsx's, deliberately, and its properties are the
-// reason: `hydrateFromSanity()` never throws and races a 2500ms timeout
-// (src/data/sanity.ts), so an unreachable CMS delays the mount and nothing
-// more — the console then runs on the built-in catalogue, which resolves every
-// slug the snapshot knows and falls through to a fixed frame for one it does
-// not. `.finally` rather than `.then`: a rejected hydration must still mount.
+// IT IS STARTED HERE AND AWAITED IN THE RECORD, not awaited here. Blocking the
+// mount on it cost every page load ~2.9s before anything rendered — measured —
+// because an environment that cannot reach Sanity pays the whole 2500ms cap
+// every time. Punishing Attention, Products and the queue for a dependency only
+// the record has is a worse failure than the flicker it prevented.
 //
 // Only this. NOT site settings (the customer's branding) and NOT the
 // offerability check (the customer picker's filter): one outbound request, the
 // same public catalogue query the customer site sends, built from constants so
 // no project, customer or line identifier can ride on it.
-hydrateFromSanity().finally(() => {
-  createRoot(document.getElementById("root")!).render(<Ops2App />);
-});
+// The request starts here — importing the module kicks it off — and the console
+// mounts without waiting for it. `./catalogue` carries the full reasoning and
+// the measurement that changed it.
+void catalogueReady;
+createRoot(document.getElementById("root")!).render(<Ops2App />);
