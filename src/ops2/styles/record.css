@@ -449,3 +449,71 @@ ion-toolbar.ops2-topbar--identity {
   gap: var(--theme-spacing-sm);
 }
 .rec-skeleton ion-skeleton-text { margin: 0; border-radius: var(--ds-radius-surface); }
+
+/* ── PHASE 2: the desk is a rail and a canvas ───────────────────────────────
+ * The list on the left, the line under review on the right. It is where line
+ * review actually happens at a desk, and it is why the mock builds the record
+ * this way rather than as one long column at every width.
+ *
+ * NO FILMSTRIP and NO FULL-WIDTH ACTION BAR — both are in the mock and both are
+ * excluded by name. A deck of thumbnails under the canvas mirrors the rail
+ * beside it, and a bar across the canvas foot is not how a line's actions are
+ * reached; they arrive through the side panel this console already has.
+ */
+.rec-zones { display: block; }
+.rec-zones[data-wide="true"] {
+  display: grid;
+  /* The rail is sized to the LIST, not to a fraction of the window: a row is a
+     code, a name, a size and a figure, and past about 30rem the money drifts so
+     far from the name that the pair stops reading as one row. The canvas takes
+     the rest, and takes the growth. */
+  grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr);
+  gap: var(--theme-spacing-lg);
+  align-items: start;
+}
+.rec-zones__rail { min-width: 0; }
+.rec-zones__canvas {
+  min-width: 0;
+  padding: var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+}
+.rec-canvas__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--theme-spacing-md);
+  margin-bottom: var(--theme-spacing-md);
+  padding-bottom: var(--theme-spacing-sm);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+.rec-canvas__head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-sm);
+  min-width: 0;
+  margin: 0;
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-lg);
+  font-weight: var(--theme-font-weight-semibold);
+  color: var(--ds-text-primary);
+}
+/* The code in the display face and tabular, the same treatment it gets in the
+   row it was chosen from — one fact, one look, wherever it appears. */
+.rec-canvas__code { font-variant-numeric: tabular-nums; }
+.rec-canvas__actions { flex: none; margin: 0; }
+.rec-canvas__empty {
+  margin: 0;
+  padding: var(--theme-spacing-2xl) var(--theme-spacing-lg);
+  text-align: center;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-muted);
+}
+
+/* The row the canvas is showing. A tint AND a leading edge, because a rail of
+   eighteen rows where one is a few per cent lighter is not a signal — and the
+   row also says `aria-current`, so it is not colour alone. */
+.rl-row[data-selected] { background: var(--ds-color-brand-wash); }
+.rl-row[data-selected] .rl-open { box-shadow: inset 3px 0 0 var(--ds-color-brand); }

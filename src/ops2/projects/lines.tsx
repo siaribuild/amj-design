@@ -37,11 +37,25 @@ import {
  * `aria-expanded`, nothing that looks pressable and answers differently — an
  * accordion was what shipped and was rejected, at every width.
  */
-function LineRow({ line, onOpen }: { line: RecordLine; onOpen: (id: string) => void }) {
+function LineRow({ line, selected, onOpen }: {
+  line: RecordLine;
+  /** Current in the canvas beside this rail. Desk only — see `selectedId`. */
+  selected: boolean;
+  onOpen: (id: string) => void;
+}) {
   const flagged = needsReview(line);
   const units = joinedUnitCount(line);
   return (
-    <li className="rl-row" data-flagged={flagged} data-testid="record-line">
+    <li
+      className="rl-row"
+      data-flagged={flagged}
+      data-selected={selected || undefined}
+      data-testid="record-line"
+      // CURRENT, SAID RATHER THAN SHADED. A tint is the whole signal otherwise,
+      // and a rail of eighteen rows where one is 4% lighter is not a signal at
+      // all for a reader who cannot see it.
+      aria-current={selected ? "true" : undefined}
+    >
       <button type="button" className="rl-open" onClick={() => onOpen(line.id)}>
         {/* DECORATIVE TO ASSISTIVE TECHNOLOGY, and the row's own text still
             carries the code, the product, the size and the flag — so the
@@ -89,7 +103,7 @@ function LineRow({ line, onOpen }: { line: RecordLine; onOpen: (id: string) => v
   );
 }
 
-export function RecordLines({ lines, total, filterOn, orderNo, onOpen, onClearFilter }: {
+export function RecordLines({ lines, total, filterOn, orderNo, selectedId, onOpen, onClearFilter }: {
   /** What to show — already filtered. */
   lines: readonly RecordLine[];
   /** How many the record has in all, for the filtered-empty sentence. */
@@ -97,6 +111,11 @@ export function RecordLines({ lines, total, filterOn, orderNo, onOpen, onClearFi
   filterOn: boolean;
   /** Present ⇒ these are CONTRACT lines, and an empty list means something else. */
   orderNo?: string | null;
+  /** THE LINE THE CANVAS IS REVIEWING, at the desk. Null on the phone, where a
+   *  row navigates away and there is nothing beside it to be current WITH — a
+   *  row that stayed marked after you left it would be describing a screen you
+   *  are no longer on. */
+  selectedId?: string | null;
   onOpen: (id: string) => void;
   onClearFilter: () => void;
 }) {
@@ -140,7 +159,14 @@ export function RecordLines({ lines, total, filterOn, orderNo, onOpen, onClearFi
   }
   return (
     <ul className="rl-list" data-testid="record-lines">
-      {lines.map((line) => <LineRow key={line.id} line={line} onOpen={onOpen} />)}
+      {lines.map((line) => (
+        <LineRow
+          key={line.id}
+          line={line}
+          selected={line.id === selectedId}
+          onOpen={onOpen}
+        />
+      ))}
     </ul>
   );
 }

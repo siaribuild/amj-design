@@ -10,6 +10,7 @@ import { useRailWidth } from "../nav/useRailWidth";
 import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
+import { LineReview } from "./LineReview";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
   ageLabel, attentionFor, cornerFigure, money, otherActions, pendingPrimary,
@@ -70,6 +71,8 @@ export function ProjectRecordPage() {
   const wide = useRailWidth();
   const { load, reload } = useProjectRecord(id);
   const [tab, setTab] = useState<Tab>("lines");
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [linePanelOpen, setLinePanelOpen] = useState(false);
   // PAGE-LOCAL, and it survives leaving and coming back because Ionic keeps the
   // page mounted in its view stack — so opening a line and returning does not
   // silently drop the filter the reviewer was working under.
@@ -91,6 +94,12 @@ export function ProjectRecordPage() {
   const others = record ? otherActions(record) : [];
   const attention = record ? attentionFor(record) : null;
   const shown = record ? visibleLines(record, filterOn) : [];
+  // THE SELECTION FOLLOWS THE LIST IT CAME FROM. Switching the filter on can
+  // take the reviewed line out of the rail; leaving the canvas on it would show
+  // a line the list beside it says is not there. It falls back to the first of
+  // what IS shown, and to nothing when the filter leaves nothing — the canvas
+  // then says so rather than holding a stale drawing (P2-AC-5).
+  const selected = shown.find((l) => l.id === selectedLineId) ?? shown[0] ?? null;
 
   const run = async (action: RecordAction) => {
     if (!record) return;
@@ -163,8 +172,16 @@ export function ProjectRecordPage() {
   // the line will lead to a new view details screen with composite details.
   // Edit, 'Why this product?' will then be accessible from here." Phase 2 makes
   // this a selection at desk width and nothing else about it changes.
-  const openLine = (lineId: string) =>
+  const openLine = (lineId: string) => {
+    // PHASE 2: AT THE DESK, CHOOSING A LINE IS NOT NAVIGATION. The canvas beside
+    // the rail is already showing one, so pushing a page would replace the very
+    // pairing the layout exists for — and would put a history entry behind every
+    // glance down a list of eighteen. On the phone there is nowhere to put the
+    // review but its own page, so it pushes. The mock draws the same branch
+    // (`RecordPage.tsx:73-76`).
+    if (wide) { setSelectedLineId(lineId); return; }
     history.push(`/projects/${encodeURIComponent(id)}/line/${encodeURIComponent(lineId)}`);
+  };
 
   return (
     <OpsPage
@@ -336,17 +353,67 @@ export function ProjectRecordPage() {
 
 
           {tab === "lines" ? (
-            <>
-              <RecordLines
-                lines={shown}
-                total={record.lines.length}
-                filterOn={filterOn}
-                orderNo={record.orderNo}
-                onOpen={openLine}
-                onClearFilter={() => setFilterOn(false)}
-              />
-              <RecordTotals record={record} />
-            </>
+            /* THE DESK IS A RAIL AND A CANVAS — the list on the left, the line
+               under review on the right, which is where line review actually
+               happens at a desk and the reason the mock builds the record this
+               way.
+
+               THE RAIL IS THE PHONE COLUMN, UNCHANGED: the same list and the
+               same totals in the same order, not a desktop variant of them. The
+               canvas mounts `LineReview`, which is the same body the line page
+               shows, so a line reads identically whichever surface reached it.
+
+               NO FILMSTRIP and NO FULL-WIDTH ACTION BAR. Both are in the mock
+               and both are excluded by name: the deck of thumbnails mirrors the
+               rail beside it, and a bar across the foot of the canvas is not how
+               a line actions should be reached. They arrive through the side
+               panel this console already has. */
+            <div className="rec-zones" data-wide={wide}>
+              <div className="rec-zones__rail">
+                <RecordLines
+                  lines={shown}
+                  total={record.lines.length}
+                  filterOn={filterOn}
+                  orderNo={record.orderNo}
+                  selectedId={wide ? selected?.id ?? null : null}
+                  onOpen={openLine}
+                  onClearFilter={() => setFilterOn(false)}
+                />
+                <RecordTotals record={record} />
+              </div>
+              {wide && (
+                <div className="rec-zones__canvas" data-testid="record-canvas">
+                  {selected ? (
+                    <>
+                      <div className="rec-canvas__head">
+                        <h2>
+                          <span className="rec-canvas__code">{selected.code || "\u2014"}</span>
+                          {selected.productName}
+                        </h2>
+                        {/* This line actions, through the panel the console
+                            already has — never a bar across the canvas foot. */}
+                        <IonButton
+                          size="small"
+                          fill="outline"
+                          className="rec-canvas__actions"
+                          data-testid="line-actions"
+                          onClick={() => setLinePanelOpen(true)}
+                        >
+                          Line actions
+                        </IonButton>
+                      </div>
+                      <LineReview line={selected} />
+                    </>
+                  ) : (
+                    <p className="rec-canvas__empty" data-testid="record-canvas-empty">
+                      {filterOn
+                        ? "Nothing is left once the filter is on. Clear it to review a line."
+                        : "Choose a line on the left to review it."}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           ) : (
             <div className="pq-empty" data-testid="record-project-tab">
               <strong>Progress, payments and files are not built yet.</strong>
@@ -386,6 +453,35 @@ export function ProjectRecordPage() {
                 {action.label}
               </IonButton>
             ))}
+          </div>
+        </SidePanel>
+      )}
+
+      {/* THE LINE UNDER REVIEW, AND WHAT CAN BE DONE TO IT — through the panel
+          this console already has, which is the owner ruling on the mock full
+          width bar at the foot of the canvas.
+
+          IT LISTS WHAT DOES NOT EXIST YET, and says so, rather than offering
+          controls wired to nothing. Editing a line and asking why a product was
+          chosen are both real destinations with their own data and their own
+          decisions; naming them here is a map, not a button. The alternative
+          tried in this repo four times is a control that looks live and is not.  */}
+      {record && selected && (
+        <SidePanel
+          open={linePanelOpen}
+          onClose={() => setLinePanelOpen(false)}
+          title={`${selected.code || "This line"} · ${selected.productName}`}
+          testId="line-actions-panel"
+        >
+          <div className="rec-actions">
+            <p className="rec-pending" data-testid="line-actions-pending">
+              <b>Edit</b>
+              <span> — lines are edited in the legacy console for now.</span>
+            </p>
+            <p className="rec-pending">
+              <b>Why this product?</b>
+              <span> — the estimator reasoning arrives on this page next.</span>
+            </p>
           </div>
         </SidePanel>
       )}

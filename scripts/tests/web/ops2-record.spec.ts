@@ -227,7 +227,7 @@ test("the totals name the absence rather than captioning a number", async ({ pag
   await expect(page.locator("body")).not.toContainText("GST");
 });
 
-test("a row opens the line's own page, at every width", async ({ page }) => {
+test("a row opens the line's own page on the phone", async ({ page }) => {
   // Grill R6, the owner verbatim: "tapping on the line will lead to a new view
   // details screen with composite details. Edit, 'Why this product?' will then
   // be accessible from here."
@@ -237,7 +237,11 @@ test("a row opens the line's own page, at every width", async ({ page }) => {
       review: { glazing: "glazing option out of range" }, status: "technical_review" })],
   }) }));
 
-  for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+  // PHONE ONLY. Phase 2 supersedes this at desk width by design (P2-AC-2): the
+  // canvas beside the rail is already showing a line, so selecting one there is
+  // not navigation. That half is covered by "the desk reviews a line beside the
+  // list", which asserts the history does NOT move.
+  for (const [width, height] of [[390, 844]] as const) {
     await page.setViewportSize({ width, height });
     await page.goto(RECORD);
     await page.getByTestId("record-line").first().click();
@@ -556,4 +560,115 @@ test("the blocker is stated once, not twice in two colours", async ({ page }) =>
   }) }));
   await page.reload();
   await expect(page.getByTestId("record-blocked")).toContainText("current state");
+});
+
+test("the desk reviews a line beside the list, and choosing one is not navigation", async ({ page }) => {
+  // P2-AC-1/2. The canvas beside the rail is already showing a line, so pushing
+  // a page would replace the very pairing the layout exists for — and would put
+  // a history entry behind every glance down a list of eighteen.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line({ id: "l1", code: "W01", productName: "Awning 600" }),
+      line({ id: "l2", code: "W02", productName: "Sliding door 2400", lineTotal: 2000 }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(RECORD);
+
+  // A canvas, and it opens on the first line rather than on an invitation the
+  // reader has to answer before seeing anything.
+  const canvas = page.getByTestId("record-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toContainText("W01");
+  await expect(page.getByTestId("record-line").nth(0)).toHaveAttribute("aria-current", "true");
+
+  const before = page.url();
+  await page.getByTestId("record-line").nth(1).click();
+  await expect(canvas).toContainText("Sliding door 2400");
+  // THE HISTORY DID NOT MOVE. That is the whole difference from the phone.
+  expect(page.url(), "selecting at the desk navigated").toBe(before);
+  await expect(page.getByTestId("record-line").nth(1)).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("record-line").nth(0)).not.toHaveAttribute("aria-current", "true");
+
+  // And the phone still pushes, because there is nowhere else to put a review.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+  await expect(page.getByTestId("record-canvas")).toHaveCount(0);
+  await page.getByTestId("record-line").nth(0).click();
+  await expect(page).toHaveURL(/\/line\/l1$/);
+});
+
+test("the rail is the phone column, and the canvas is the line page body", async ({ page }) => {
+  // P2-AC-3. Not a desktop variant of the list — the same list and the same
+  // totals in the same order, with the same body the line page shows beside it.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "l1", code: "W01", productSlug: "awning-600",
+      options: { Colour: "Monument" }, review: { glazing: "glazing option out of range" },
+      status: "technical_review", lineTotal: null })],
+  }) }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(RECORD);
+
+  const rail = page.locator(".rec-zones__rail");
+  await expect(rail.getByTestId("record-lines")).toHaveCount(1);
+  await expect(rail.getByTestId("record-totals")).toHaveCount(1);
+
+  // The canvas carries the review body — the drawing, the size, the reasons.
+  const canvas = page.getByTestId("record-canvas");
+  await expect(canvas.getByTestId("line-review")).toHaveCount(1);
+  await expect(canvas.getByTestId("line-plate")).toBeVisible();
+  await expect(canvas.getByTestId("line-review-reasons")).toContainText("glazing option out of range");
+  // The row beside it still carries only the badge.
+  await expect(rail.getByTestId("record-line").first()).not.toContainText("glazing option out of range");
+});
+
+test("no filmstrip, and no full-width action bar", async ({ page }) => {
+  // P2-AC-6/7, both excluded by the owner by name. The deck of thumbnails
+  // mirrors the rail beside it; a bar across the canvas foot is not how a
+  // line's actions are reached.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "l1" }), line({ id: "l2", code: "W02" })],
+  }) }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(RECORD);
+
+  await expect(page.locator(".rec-zones__canvas")).toBeVisible();
+  // Nothing that mirrors the rail.
+  await expect(page.locator(".deck, .linescroller, [data-testid=line-scroller]")).toHaveCount(0);
+
+  // The line's actions arrive in the side panel, from a control that is not a
+  // bar: it must be narrower than the canvas it sits in.
+  const actions = page.getByTestId("line-actions");
+  await expect(actions).toBeVisible();
+  const btn = (await actions.boundingBox())!;
+  const canvasBox = (await page.locator(".rec-zones__canvas").boundingBox())!;
+  expect(btn.width, "the line control is a full-width bar").toBeLessThan(canvasBox.width * 0.5);
+
+  await actions.click();
+  await expect(page.getByTestId("line-actions-panel")).toBeVisible();
+  // It names what does not exist yet rather than offering it.
+  await expect(page.getByTestId("line-actions-pending")).toContainText("legacy console");
+});
+
+test("the filter emptying the rail empties the canvas honestly", async ({ page }) => {
+  // P2-AC-5, and grill §7.3. Leaving the canvas on a line the list beside it
+  // says is not there is the one outcome this must not have.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line({ id: "l1", code: "W01", lineTotal: 1000 }),
+      line({ id: "l2", code: "W02", lineTotal: null, status: "draft" }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(RECORD);
+
+  const canvas = page.getByTestId("record-canvas");
+  await expect(canvas).toContainText("W01");
+
+  // Filtering to the unpriced line takes W01 out of the rail; the canvas
+  // follows the list rather than holding a stale drawing.
+  await page.getByTestId("record-attention").click();
+  await expect(page.getByTestId("record-line")).toHaveCount(1);
+  await expect(canvas).toContainText("W02");
+  await expect(canvas).not.toContainText("W01");
 });
