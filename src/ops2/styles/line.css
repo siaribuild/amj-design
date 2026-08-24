@@ -215,11 +215,12 @@
 }
 /* THE UNITS LIST IS THE MOCK'S BLOCK, NOT THE DRAWING'S WIDTH. The approved
    mock gives it 420px (`viewer__units`) while the drawing takes the room the
-   viewport allows, and the size stays RIGHT-ALIGNED inside it. Both halves matter: the
-   right-aligned figures make two units' sizes comparable down a column, and the
-   420px block is what keeps the size near its name while doing it. Widened to
-   the drawing's 720px it read as a name and a size at opposite ends of the
-   screen, ~475px apart -- the alignment was never the problem, the width was. */
+   viewport allows, and the size stays RIGHT-ALIGNED inside it. Both halves
+   matter: the right-aligned figures make two units' sizes comparable down a
+   column, and the 420px block is what keeps the size near its name while doing
+   it. Widened to the drawing's 720px it read as a name and a size at opposite
+   ends of the screen, ~475px apart -- the alignment was never the problem, the
+   width was. */
 .ops2-viewer__units {
   margin: 0 auto;
   width: 100%;
