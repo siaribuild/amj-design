@@ -6,7 +6,7 @@
 // Dry run is the default. --apply requires SANITY_WRITE_TOKEN. Existing
 // certified/manufacturer performance data is never overwritten.
 import { createClient } from "@sanity/client";
-import { deriveEstimatorFields } from "./derive-estimator-fields.mjs";
+import { deriveEstimatorFields, performanceVariantsAreAuthored } from "./derive-estimator-fields.mjs";
 
 const projectId = process.env.SANITY_PROJECT_ID || "xjtrm1ex";
 const dataset = process.env.SANITY_DATASET || "production";
@@ -52,19 +52,21 @@ const products = await client.fetch(`*[
     frameTechnology,
     coating,
     pricingOptionSlugs,
+    certificationRef,
     published
   }
 } | order(family asc)`);
 
-// Anything a person or an importer authored. The derived variant this script
-// writes is always `_key: "std"`, so a key that is anything else is by
-// construction data this script did not invent and must not overwrite. The
-// three certified/dataSource clauses that used to sit beside this one went with
-// ADR 0011; they never widened the set, because a hand-authored variant already
-// fails the key test.
-const hasProtectedPerformance = (product) => (product.performanceVariants ?? []).some(
-  (variant) => variant?._key !== "std",
-);
+// Anything a person or an importer authored, decided by
+// `performanceVariantsAreAuthored` — see the reasoning where it is defined.
+//
+// The comment that used to sit here said the three deleted certified/dataSource
+// clauses "never widened the set, because a hand-authored variant already fails
+// the key test". That was WRONG, and Codex caught it: it holds for a variant a
+// person ADDS, and not for one they EDIT IN PLACE, which keeps `_key: "std"`.
+// The deleted flags were exactly how such a row was marked authoritative, so
+// dropping them left a corrected row looking derived and replaceable.
+const hasProtectedPerformance = performanceVariantsAreAuthored;
 
 const patches = products.map((product) => {
   const fields = deriveEstimatorFields(product);

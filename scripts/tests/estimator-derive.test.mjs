@@ -125,3 +125,79 @@ test("CONTRACT: a decorative ref shape would be caught", () => {
   // assertion above must actually fail rather than pass vacuously.
   assert.equal(rateCardIds.has("price.amj80-series-awning-window.v1"), false);
 });
+
+// ── What `populate-estimator-fields --apply` must never overwrite ──────────
+//
+// CODEX P1-B. The old guard OR-ed four clauses; ADR 0011 deleted three of them
+// (`certified === true`, `dataSource === "certified"`, `dataSource ===
+// "manufacturer"`) and left `_key !== "std"`. That covers a variant a person
+// ADDS — new key — but not one they EDIT IN PLACE: correcting the derived row in
+// Studio keeps `_key: "std"`, and the deleted flags were how such a row was
+// marked authoritative. So --apply would treat a corrected row as derived and
+// replace the whole array, losing authored Uw/SHGC.
+//
+// Live dataset today: zero std rows marked authored, zero carrying a
+// certificationRef. Latent, not active — which is exactly why it must be fixed
+// now: after the strip there is no flag left to mark a row authored with, so a
+// future editor correcting a manufacturer figure would be silently overwritten
+// with no mechanism available to stop it.
+//
+// THE REPLACEMENT SIGNAL IS THE DERIVED SHAPE ITSELF, not new vocabulary. This
+// script only ever writes what `derivePerformanceVariant` produces, so a stored
+// row that DIFFERS from it is, by construction, somebody edit. It needs no
+// field, cannot be forgotten by an editor, and fails in the safe direction: if
+// the deriver is ever retuned, every row reads as authored and the script
+// declines to overwrite rather than destroying data.
+test("P1-B a std row corrected in place is authored, and is not overwritten", async () => {
+  const { performanceVariantsAreAuthored, derivePerformanceVariant } =
+    await import("../catalogue/derive-estimator-fields.mjs");
+  const product = {
+    name: "AMJ80 Awning", slug: "amj80", family: "awning-window", category: "windows",
+    standardGlass: "5+8A+5mm Double Tempered",
+    minWidth: 400, maxWidth: 1000, minHeight: 400, maxHeight: 2400,
+  };
+  const derived = derivePerformanceVariant(product);
+
+  // The row this script itself wrote: not authored, safe to refresh.
+  assert.equal(performanceVariantsAreAuthored({ ...product, performanceVariants: [{ ...derived }] }), false);
+
+  // THE FINDING: same key, a person corrected the figures to the manufacturer values.
+  assert.equal(
+    performanceVariantsAreAuthored({ ...product, performanceVariants: [{ ...derived, uValue: 2.1, shgc: 0.36 }] }),
+    true, "a corrected Uw is somebody work, not this script output",
+  );
+
+  // A WERS reference is person-or-importer supplied and survives this phase.
+  assert.equal(
+    performanceVariantsAreAuthored({ ...product, performanceVariants: [{ ...derived, certificationRef: "WERS-1" }] }),
+    true,
+  );
+
+  // The clause that already worked keeps working: a row somebody ADDED.
+  assert.equal(
+    performanceVariantsAreAuthored({ ...product, performanceVariants: [{ ...derived }, { ...derived, _key: "lowe", variantId: "lowe" }] }),
+    true,
+  );
+
+  // A product with no variants at all has nothing to protect.
+  assert.equal(performanceVariantsAreAuthored({ ...product, performanceVariants: [] }), false);
+  assert.equal(performanceVariantsAreAuthored(product), false);
+});
+
+test("P1-B an absent optional field is not mistaken for an edit", async () => {
+  const { performanceVariantsAreAuthored, derivePerformanceVariant } =
+    await import("../catalogue/derive-estimator-fields.mjs");
+  // Sanity omits unset fields rather than storing null, so a round-tripped
+  // derived row comes back with its nulls missing. Reading that as an edit
+  // would freeze the script on every product — safe, but uselessly so.
+  const product = { name: "P", slug: "p", family: "awning-window", category: "windows", standardGlass: "6mm clear" };
+  const derived = derivePerformanceVariant(product);
+  const roundTripped = Object.fromEntries(Object.entries(derived).filter(([, v]) => v !== null));
+  assert.equal(performanceVariantsAreAuthored({ ...product, performanceVariants: [roundTripped] }), false);
+});
+
+test("P1-B the populate script asks that question before it replaces anything", () => {
+  const src = readFileSync(join(projectRoot, "scripts/catalogue/populate-estimator-fields.mjs"), "utf8");
+  assert.match(src, /performanceVariantsAreAuthored/, "the script uses the shared predicate");
+  assert.match(src, /certificationRef/, "and projects the field that predicate reads");
+});

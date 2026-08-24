@@ -113,6 +113,60 @@ export function derivePerformanceVariant(product) {
   };
 }
 
+
+// ── What a person has touched, and this script must not replace ───────────
+//
+// `populate-estimator-fields --apply` REPLACES the whole `performanceVariants`
+// array, so it needs to know which products carry somebody work. It used to ask
+// four questions: a non-`std` key, `certified === true`, or a `dataSource` of
+// `certified`/`manufacturer`. ADR 0011 deleted the last three, and the key
+// alone is not enough: it catches a variant a person ADDS (new key) but not one
+// they EDIT IN PLACE, which keeps `_key: "std"`. After the strip there is no
+// flag left to mark a row authored with, so an explicit signal is not available
+// to replace them with either.
+//
+// THE SIGNAL IS THE DERIVED SHAPE ITSELF. This script only ever writes what
+// `derivePerformanceVariant` produces, so a stored row that differs from it is
+// by construction an edit. Nothing to author, nothing an editor can forget, and
+// no resurrection of the vocabulary this phase removed.
+//
+// It fails in the safe direction: if the deriver is ever retuned, every stored
+// row reads as authored and this script declines to overwrite anything. That is
+// a script that stops working, which is recoverable, rather than one that
+// destroys manufacturer figures, which is not.
+const DERIVED_FIELDS = [
+  "variantId", "glassBuildUp", "uValue", "shgc",
+  "frameType", "frameTechnology", "coating", "pricingOptionSlugs", "published",
+];
+
+// Sanity omits an unset field rather than storing null, so a derived row that
+// has been round-tripped through the dataset comes back without its nulls.
+// Treating that as an edit would freeze the script on every product.
+const same = (a, b) => {
+  if (a === b) return true;
+  if ((a ?? null) === null && (b ?? null) === null) return true;
+  if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+  return false;
+};
+
+/** True when a product performance data is somebody work rather than this
+ *  script own output, and must therefore survive `--apply` untouched. */
+export function performanceVariantsAreAuthored(product) {
+  const variants = product?.performanceVariants ?? [];
+  if (!variants.length) return false;
+  const derived = derivePerformanceVariant(product);
+  return variants.some((variant) => {
+    if (!variant) return false;
+    // A row somebody ADDED. The clause that already worked.
+    if (variant._key !== "std") return true;
+    // A WERS/AFRC reference is person-or-importer supplied, never derived, and
+    // it is one of the two facts this phase deliberately kept.
+    if (variant.certificationRef) return true;
+    // A row somebody EDITED IN PLACE — the case the deleted flags used to carry.
+    return DERIVED_FIELDS.some((f) => !same(variant[f], derived[f]));
+  });
+}
+
 // The full patch payload for one product.
 export function deriveEstimatorFields(product) {
   return {
