@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IonButtons, IonContent, IonHeader, IonIcon, IonModal, IonToolbar,
 } from "@ionic/react";
@@ -97,9 +97,17 @@ export function DrawingViewer({ subject, onClose }: {
   const [shown, setShown] = useState<ViewerSubject | null>(subject);
   useEffect(() => { if (subject) setShown(subject); }, [subject]);
 
+  // WHERE FOCUS LANDS, SAID RATHER THAN INHERITED. Ionic's focus trap keeps
+  // focus inside the surface but does not promise WHICH element it starts on,
+  // and for a screen whose only control is back the answer has to be back —
+  // otherwise a keyboard reviewer arrives somewhere with nothing to press and
+  // no announcement of where they are.
+  const back = useRef<HTMLButtonElement | null>(null);
+
   return (
     <IonModal
       isOpen={subject !== null}
+      onDidPresent={() => back.current?.focus()}
       onDidDismiss={onClose}
       className="ops2-viewer"
       data-testid="drawing-viewer"
@@ -116,6 +124,7 @@ export function DrawingViewer({ subject, onClose }: {
                   position is what makes the promise legible. */}
               <IonButtons slot="start">
                 <button
+                  ref={back}
                   type="button"
                   className="ops2-viewer__back ds-type-caption"
                   data-testid="drawing-viewer-back"
