@@ -435,3 +435,78 @@ test("CERT-AC-12 the re-population gate runs offline, before any Sanity client e
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /sanity\/cli|getCliClient|token/i,
     "the refusal costs no client and no network call");
 });
+
+test("CERT-AC-12 the gate finds the importers from the directory the operator runs in", async () => {
+  // The operator runs this through `npx sanity exec` from sanity/, not from the
+  // repo root. The gate fails CLOSED, so a cwd-relative default would refuse
+  // every legitimate run — and the obvious fix for a refusal nobody expected is
+  // to pass --catalogue-dir at something, which is how a gate gets neutered.
+  const dir = join(runDir, "cwd");
+  await mkdir(dir, { recursive: true });
+  const fresh = join(dir, "export.tar.gz");
+  await writeFile(fresh, "non-empty");
+
+  const fromSanity = await new Promise((res) => {
+    execFile(process.execPath, [STRIP, "--export", fresh, "--check"],
+      { cwd: join(projectRoot, "sanity") },
+      (error, stdout, stderr) => res({ code: error ? (error.code ?? 1) : 0, stdout, stderr }));
+  });
+  assert.equal(fromSanity.code, 0, `${fromSanity.stdout}${fromSanity.stderr}`);
+  assert.match(fromSanity.stdout, /catalogue script\(s\) clean/);
+  assert.doesNotMatch(fromSanity.stdout + fromSanity.stderr, /does not exist/);
+});
+
+// ── CERT-AC-7: the strip must actually reach the documents it claims to ───
+//
+// Codex found `_type=="frameThermalProfile"` in the profile query. No such type
+// is declared: the real one is `thermalProfile`. The run would have passed both
+// gates, reported completion and left all 21 profile documents carrying
+// `rows[].certified` — a destructive script succeeding while doing nothing,
+// wrapped in safety gates that would have made us trust the result.
+//
+// The typo is not the lesson. Nothing asserted that the queried type EXISTS,
+// and nothing made an empty match loud. Both are fixed here.
+
+test("CERT-AC-7 every type the strip targets is declared in the Studio schema", async () => {
+  const { STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  const schema = await readFile(join(projectRoot, "sanity/schemaTypes.ts"), "utf8");
+
+  const declaredTypes = new Set([...schema.matchAll(/^\s{2}name: "([A-Za-z0-9_]+)",$/gm)].map((m) => m[1]));
+  // Non-vacuity: a regex that stopped matching would make every assertion below
+  // pass over an empty set.
+  assert.ok(declaredTypes.has("product"), "the schema walk found `product`");
+  assert.ok(declaredTypes.has("thermalProfile"), "and `thermalProfile`");
+  assert.ok(declaredTypes.size >= 10, `the walk found the schema, not a corner (${declaredTypes.size})`);
+
+  assert.ok(STRIP_TARGETS.length >= 2, "both document homes are targeted");
+  for (const t of STRIP_TARGETS) {
+    assert.ok(declaredTypes.has(t.type), `the strip targets \`${t.type}\`, which no defineType declares`);
+    // The array field it patches has to exist too: a right type with a wrong
+    // field name fails exactly as silently.
+    assert.match(schema, new RegExp(`name: "${t.arrayField}"`), `\`${t.arrayField}\` is a declared field`);
+  }
+});
+
+test("CERT-AC-7 a target type that matches no document at all is LOUD, not a silent success", async () => {
+  const { loadTarget, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  const target = STRIP_TARGETS[0];
+  const asked = [];
+  const fetchFn = async (query) => { asked.push(query); return /^count\(/.test(query) ? 0 : []; };
+
+  await assert.rejects(
+    () => loadTarget(fetchFn, target),
+    (e) => /no .*document/i.test(e.message) && e.message.includes(target.type),
+    "zero documents OF THE TYPE means the type name is wrong, and the run must say so",
+  );
+  assert.equal(asked.length, 1, "and it stops at the count — it does not go on to patch nothing");
+});
+
+test("CERT-AC-7 a type that exists but carries nothing left to strip is a clean no-op", async () => {
+  const { loadTarget, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  // The state after a SUCCESSFUL strip. Re-running must not read as a failure,
+  // or the loud-on-empty rule would make the script cry wolf every second run.
+  const fetchFn = async (query) => (/^count\(/.test(query) ? 21 : []);
+  const out = await loadTarget(fetchFn, STRIP_TARGETS[1]);
+  assert.equal(out.total, 21);
+  assert.deepEqual(out.docs, []);
+});

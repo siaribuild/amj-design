@@ -6,7 +6,7 @@
 // homes:
 //
 //   product.performanceVariants[]        -> unset `certified` and `dataSource`
-//   frameThermalProfile.rows[]           -> unset `certified`
+//   thermalProfile.rows[]                -> unset `certified`
 //
 // `certificationRef` and `wersWindowId` are NOT touched. A WERS reference is a
 // real fact about a product; it simply is not a gate (grill conclusions §5).
@@ -34,7 +34,11 @@ const APPLY = argv.includes("--apply");
 /** Run both gates, report, and stop — no client, no network, no write. */
 const CHECK_ONLY = argv.includes("--check");
 const EXPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_CATALOGUE_DIR = "scripts/catalogue";
+// Anchored to THIS FILE, not to cwd: the operator runs this through
+// `npx sanity exec` from the sanity/ directory, where a cwd-relative
+// "scripts/catalogue" resolves to a path that does not exist. The gate fails
+// closed, so a cwd-relative default would refuse every legitimate run.
+const DEFAULT_CATALOGUE_DIR = join(fileURLToPath(new URL("../..", import.meta.url)), "scripts", "catalogue");
 
 const flag = (name) => {
   const i = argv.indexOf(name);
@@ -154,8 +158,48 @@ function fail(message) {
   process.exit(1);
 }
 
-const VARIANT_FIELDS = ["certified", "dataSource"];
-const ROW_FIELDS = ["certified"];
+// ── What this run rewrites ──────────────────────────────────────────────────
+//
+// DECLARED, not spelled inline in a query string. The first version of this
+// script queried `_type=="frameThermalProfile"`, which no schema declares: it
+// would have passed both gates, reported completion, and left all 21 thermal
+// profiles carrying `rows[].certified`. A destructive script that succeeds
+// while doing nothing is worse than one that fails, because the gates around it
+// make the result look verified.
+//
+// So the type and field names are data, and CERT-AC-7's test asserts each one
+// against a `defineType` / `defineField` in sanity/schemaTypes.ts.
+export const STRIP_TARGETS = [
+  { type: "product", noun: "product", arrayField: "performanceVariants", fields: ["certified", "dataSource"] },
+  { type: "thermalProfile", noun: "thermal profile", arrayField: "rows", fields: ["certified"] },
+];
+
+const countQuery = (t) => `count(*[_type=="${t.type}"])`;
+const dirtyQuery = (t) => `*[_type=="${t.type}" && count(${t.arrayField}[${
+  t.fields.map((f) => `defined(${f})`).join(" || ")}]) > 0]{
+    _id, name, "items": ${t.arrayField}[]{ _key, ${t.fields.join(", ")} }
+  }`;
+
+/** Read one target, refusing to proceed when the type matches NOTHING.
+ *
+ *  The two zeroes mean opposite things and must not be conflated:
+ *    count(type) === 0  -> the type name is wrong (or the dataset is empty).
+ *                          Loud: this is the failure mode that shipped.
+ *    count(type) > 0, no dirty docs -> everything is already clean. That is the
+ *                          state after a SUCCESSFUL run, so it is a no-op and
+ *                          not an error, or the script cries wolf every second
+ *                          time it is run. */
+export async function loadTarget(fetchFn, target) {
+  const total = await fetchFn(countQuery(target));
+  if (!Number.isFinite(total) || total === 0) {
+    throw new Error(
+      `REFUSED: no \`${target.type}\` document exists in this dataset, so this run `
+      + "would report success having changed nothing. Check the type name against "
+      + "sanity/schemaTypes.ts before trusting any result from it.",
+    );
+  }
+  return { total, docs: await fetchFn(dirtyQuery(target)) };
+}
 
 async function main() {
   const exportPath = requireVerifiedExport();
@@ -173,34 +217,22 @@ async function main() {
   const { getCliClient } = await import("sanity/cli");
   const client = getCliClient({ apiVersion: "2024-01-01" });
 
-  const products = await client.fetch(
-    `*[_type=="product" && count(performanceVariants[defined(certified) || defined(dataSource)]) > 0]{
-      _id, name, "variants": performanceVariants[]{ _key, variantId, certified, dataSource }
-    }`,
-  );
-  const profiles = await client.fetch(
-    `*[_type=="frameThermalProfile" && count(rows[defined(certified)]) > 0]{
-      _id, name, "rows": rows[]{ _key, certified }
-    }`,
-  );
-
-  let variantPatches = 0;
-  console.log(`\n${products.length} product(s) carrying variant certification values:`);
-  for (const p of products) {
-    const dirty = (p.variants ?? []).filter((v) => v && (v.certified !== undefined || v.dataSource !== undefined));
-    variantPatches += dirty.length;
-    console.log(`   ${String(p.name).padEnd(46)} ${dirty.length} variant(s)`);
+  const fetchFn = (query) => client.fetch(query);
+  const loaded = [];
+  for (const target of STRIP_TARGETS) {
+    // Throws, loudly, when the type matches nothing at all.
+    const { total, docs } = await loadTarget(fetchFn, target);
+    let items = 0;
+    console.log(`\n${docs.length} of ${total} ${target.noun}(s) carry certification values:`);
+    for (const doc of docs) {
+      const dirty = (doc.items ?? []).filter((it) => it && target.fields.some((f) => it[f] !== undefined));
+      items += dirty.length;
+      console.log(`   ${String(doc.name ?? doc._id).padEnd(46)} ${dirty.length} ${target.arrayField} entr(ies)`);
+    }
+    loaded.push({ target, docs, items });
   }
 
-  let rowPatches = 0;
-  console.log(`\n${profiles.length} thermal profile(s) carrying row certification values:`);
-  for (const f of profiles) {
-    const dirty = (f.rows ?? []).filter((r) => r && r.certified !== undefined);
-    rowPatches += dirty.length;
-    console.log(`   ${String(f.name).padEnd(46)} ${dirty.length} row(s)`);
-  }
-
-  console.log(`\n${variantPatches} variant field-set(s) and ${rowPatches} profile row(s) to clear.`);
+  console.log(`\n${loaded.map((l) => `${l.items} ${l.target.noun} field-set(s)`).join(", ")} to clear.`);
 
   if (!APPLY) {
     console.log("\nNothing was written. Re-run with --apply.");
@@ -210,21 +242,22 @@ async function main() {
   // Keyed unsets only: every path names one array member by its _key and one
   // field on it, so nothing else in the document can move.
   let tx = client.transaction();
-  for (const p of products) {
-    const paths = [];
-    for (const v of p.variants ?? []) {
-      if (!v?._key) continue;
-      for (const f of VARIANT_FIELDS) if (v[f] !== undefined) paths.push(`performanceVariants[_key=="${v._key}"].${f}`);
+  let patched = 0;
+  for (const { target, docs } of loaded) {
+    for (const doc of docs) {
+      const paths = [];
+      for (const item of doc.items ?? []) {
+        if (!item?._key) continue;
+        for (const f of target.fields) {
+          if (item[f] !== undefined) paths.push(`${target.arrayField}[_key=="${item._key}"].${f}`);
+        }
+      }
+      if (paths.length) { tx = tx.patch(doc._id, (patch) => patch.unset(paths)); patched += 1; }
     }
-    if (paths.length) tx = tx.patch(p._id, (patch) => patch.unset(paths));
   }
-  for (const f of profiles) {
-    const paths = [];
-    for (const r of f.rows ?? []) {
-      if (!r?._key) continue;
-      for (const field of ROW_FIELDS) if (r[field] !== undefined) paths.push(`rows[_key=="${r._key}"].${field}`);
-    }
-    if (paths.length) tx = tx.patch(f._id, (patch) => patch.unset(paths));
+  if (!patched) {
+    console.log("\nEvery target document is already clean. Nothing to write.");
+    return;
   }
   await tx.commit({ visibility: "sync" });
 
