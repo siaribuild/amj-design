@@ -340,11 +340,34 @@ Given a line page, When it renders, Then the elevation is drawn at a plate size 
 viewport (not the row's `xs`), on its own drawing surface, above everything else.
 *Trace:* `Plate.tsx:36-109`; `LineBody.tsx:192-196`. *Answers grill §7.4 — yes, and larger.*
 
-**P1-AC-27** — *the drawing can be enlarged, with its legend*
-Given a line page, When the drawing is activated, Then it opens enlarged with the symbol
-legend (solid V opens towards you, dashed away, apex at the hinge edge, arrow = direction
-of travel, unmarked = fixed), and closing returns to the page unchanged.
-*Trace:* `Plate.tsx:84-88, 111-148`; `elevation.tsx:392-402`.
+**P1-AC-27** — ~~*the drawing can be enlarged, with its legend*~~
+**SUPERSEDED 2026-08-25** by the shared drawing viewer (`docs/specs/ops2-why-this-product.md`,
+phase 2 — VIEW-AC-1, VIEW-AC-6, VIEW-AC-10, VIEW-AC-11), on the owner's ruling **R25**:
+*"i don't think lines like this relevant for ops"*, of the solid-V / dashed-V / apex /
+arrow / unmarked key. Ops staff read elevations for a living; that key is customer-facing
+explanation, and the ruling is about the **class** of content — the sentence teaching that
+panel widths are proportional went with it.
+
+Two live specs asserting opposite things about one screen is how the next reader builds the
+wrong one, so this is struck here rather than left to be discovered. What replaces it:
+
+> Given a line page, When the drawing is activated, Then it opens **at its own address**
+> (`/projects/:id/line/:lineId/drawing`) in the shared full-screen viewer, carrying the
+> drawing at the largest size the viewport allows and its dimensions in the caption
+> beneath it — **and no symbol legend, and no explanation of the notation anywhere**.
+> Back returns to the line. Statements about the drawing's **authority** are unaffected
+> and remain: that mullion positions are confirmed at technical review, and that an
+> unsized opening is a square stand-in.
+
+The enlargement is no longer a `SidePanel` and no longer closes with a dismiss: it is a
+node in the navigation tree with a back control, so leaving a line from an enlarged drawing
+takes **two backs** — named to the owner and accepted, not a defect (VIEW-AC-2d).
+
+*Trace, superseded:* `Plate.tsx:84-88, 111-148`; `elevation.tsx:392-402`.
+*Trace, current:* `src/ops2/chrome/DrawingViewer.tsx`; `src/ops2/projects/lineRoute.ts`;
+`scripts/tests/web/ops2-drawing-viewer.spec.ts`.
+This criterion never had a test, which is why the document is the only place the
+contradiction could be resolved.
 
 **P1-AC-28** — *the size sits with the drawing, carrying its provenance*
 Given a line page, When it renders, Then one line beneath the drawing states

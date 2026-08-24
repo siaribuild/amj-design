@@ -204,3 +204,51 @@ test("a destination that owns nested routes is exact, and the shell knows it", (
       `"${owner}" is in NESTS_BELOW but nothing nests under it — that makes its own deep links redirect away`);
   }
 });
+
+test("ops2 has exactly ONE drawing viewer, and the shared legend survives outside it", () => {
+  // VIEW-AC-5, and VIEW-AC-12 with it. Two facts a browser suite cannot reach:
+  // it can prove the viewer opens, not that a SECOND enlargement has not been
+  // built beside it on a surface nobody thought to open — which is how this
+  // console once ended up with two lists that differed in six ways nobody chose.
+  const sources = globSync("src/ops2/**/*.{ts,tsx}", { cwd: projectRoot });
+  assert.ok(sources.length > 20, "the walk found nothing — a glob that matches nothing proves nothing");
+
+  const viewers = sources.filter((f) => /DrawingViewer\.tsx$/.test(f.replace(/\\/g, "/")));
+  assert.equal(viewers.length, 1, "exactly one viewer component in ops2");
+  assert.match(viewers[0].replace(/\\/g, "/"), /^src\/ops2\/chrome\/DrawingViewer\.tsx$/,
+    "and it lives in chrome, because any surface may open it");
+
+  // THE LEGEND IS NOT RENDERED IN ops2, AND NOT IMPORTED EITHER (R25). Ops staff
+  // read elevations for a living; that key is customer-facing explanation.
+  //
+  // Comments are stripped first, deliberately: the files that removed it say so
+  // in prose, and a scan that counted those would force the reason out of the
+  // one place a future reader looks for it. Nothing in a comment renders.
+  for (const file of sources) {
+    const code = read(file)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/ElevationLegend/.test(code),
+      `${file} still reaches for the symbol legend — R25 removed it from this console`);
+  }
+
+  // AND THE SHARED EXPORT SURVIVES (VIEW-AC-12), which is a ruling this test
+  // keeps rather than a claim it endorses.
+  //
+  // THE EXEMPTION, EXECUTED — 2026-08-25. VIEW-AC-12 keeps the export on the
+  // stated ground that "the customer site still uses it". It does not. Searched
+  // across the repository, `ElevationLegend` has exactly ONE reference in code:
+  // its own definition. `docs/specs/ops2-record-design.md:42,157` records why —
+  // the export was ADDED by the ops2 record work, for the very plate this phase
+  // just stopped rendering it from. So ops2 was not one of two consumers; it was
+  // the only one.
+  //
+  // The export stays, because deleting it is out of this feature's scope and the
+  // criterion says keep it. What does not stay is the false premise: the count
+  // below is deliberately NOT asserted, because pinning "no consumer" would make
+  // a legitimate future use fail, and asserting "a consumer exists" would be
+  // asserting something untrue.
+  const elevation = read("src/components/quote-project/Elevation.tsx");
+  assert.match(elevation, /export function ElevationLegend\(\)/,
+    "the shared export must not be deleted by this feature — VIEW-AC-12, whatever its stated reason");
+});
