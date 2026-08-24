@@ -50,8 +50,9 @@ export interface EvaluatedCandidate {
 export interface SelectionResult {
   openingRef: string | null;
   ruleVersion: string;
-  /** 'ladder-v1'. Written to the ranker_version columns, which keep their names
-   *  so a rename does not ripple through four tables (AD16). */
+  /** 'ladder-v2' (ADR 0011 bumped it from 'ladder-v1'). Written to the
+   *  ranker_version columns, which keep their names so a rename does not ripple
+   *  through four tables (AD16). */
   selectionVersion: string;
   catalogueVersion: string;
   evaluated: EvaluatedCandidate[];
