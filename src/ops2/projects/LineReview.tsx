@@ -138,40 +138,40 @@ function Units({ line, onOpenDrawing }: {
               data-testid="line-unit-open"
               onClick={() => onOpenDrawing(i + 1)}
             >
-            {/* THE PURPOSE IS NAMED, AND THE ROW'S OWN WORDS SURVIVE. An
-                `aria-label` here would replace the unit's spec, its size and the
-                customer's note with four words — and that content exists nowhere
-                else in ops2. A visually hidden first child adds instead. */}
-            <span className="ops2-sr-only">Enlarge the drawing of </span>
-            <span className="lp-unit__elev">
-              <Elevation
-                productSlug={u.productSlug ?? ""}
-                widthMm={u.width}
-                heightMm={u.height}
-                size="xs"
-                square
-                className="lp-unit__svg"
-              />
-            </span>
-            <span className="lp-unit__body">
-              <span className="lp-unit__code">{unitLabel(line.code, i)}</span>
-              <span className="lp-unit__name">{u.productName}</span>
-              <span className="lp-unit__meta">{sizeText(u)}</span>
-              {/* THE UNIT'S OWN NOTE. `room_label` on a segment is what the
-                  customer wrote about THAT frame — "left", "opens to deck" —
-                  and the record view it replaced showed it. Dropping it left
-                  no surface in ops2 where a unit-level note can be read. */}
-              {u.note && <span className="lp-unit__note">{u.note}</span>}
-              {Object.entries(u.options).filter(([, v]) => v).length > 0 && (
-                <span className="lp-unit__spec">
-                  {Object.entries(u.options).filter(([, v]) => v).map(([k, v]) => (
-                    <span key={k} className="lp-unit__opt">
-                      <span className="lp-unit__opt-k">{k}</span> {v}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </span>
+              {/* THE PURPOSE IS NAMED, AND THE ROW'S OWN WORDS SURVIVE. An
+                  `aria-label` here would replace the unit's spec, its size and
+                  the customer's note with four words — and that content exists
+                  nowhere else in ops2. A hidden first child adds instead. */}
+              <span className="ops2-sr-only">Enlarge the drawing of </span>
+              <span className="lp-unit__elev">
+                <Elevation
+                  productSlug={u.productSlug ?? ""}
+                  widthMm={u.width}
+                  heightMm={u.height}
+                  size="xs"
+                  square
+                  className="lp-unit__svg"
+                />
+              </span>
+              <span className="lp-unit__body">
+                <span className="lp-unit__code">{unitLabel(line.code, i)}</span>
+                <span className="lp-unit__name">{u.productName}</span>
+                <span className="lp-unit__meta">{sizeText(u)}</span>
+                {/* THE UNIT'S OWN NOTE. `room_label` on a segment is what the
+                    customer wrote about THAT frame — "left", "opens to deck" —
+                    and the record view it replaced showed it. Dropping it left
+                    no surface in ops2 where a unit-level note can be read. */}
+                {u.note && <span className="lp-unit__note">{u.note}</span>}
+                {Object.entries(u.options).filter(([, v]) => v).length > 0 && (
+                  <span className="lp-unit__spec">
+                    {Object.entries(u.options).filter(([, v]) => v).map(([k, v]) => (
+                      <span key={k} className="lp-unit__opt">
+                        <span className="lp-unit__opt-k">{k}</span> {v}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
             </button>
           </li>
         ))}
