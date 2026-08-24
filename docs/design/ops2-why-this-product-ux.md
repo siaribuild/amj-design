@@ -1,6 +1,6 @@
 # ops2 "Why this product" — INTERACTION SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 3 (ux-designer) · **Revision 2**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 3 (ux-designer) · **Revision 3**
 **Mock — APPROVED, and the contract:** `docs/mocks/ops2-why-this-product.html`
 **Spec:** `docs/specs/ops2-why-this-product.md` (rev 4) ·
 **Rulings:** `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R24, binding) ·
@@ -9,29 +9,71 @@
 Covers **Phase 2** (the shared full-screen drawing viewer) and **Phase 3b** (the panel,
 the detail slide-out). Phase 1 and Phase 3a have no UI.
 
-> **Status: APPROVED at the UX mock gate, 2026-08-24, with five changes.** This document
-> describes the **approved** version — the five changes are folded in below, each marked
-> **[gate]** at the point it applies, so the developer builds what the owner agreed to
-> and not the first draft.
+> ## DECIDED — both screens are nodes in the tree, and the detail is addressable
+>
+> **The Why detail has its own URL: `/projects/:id/line/:lineId/why`.** Owner-confirmed.
+> It is a real route — pasteable, refresh-survivable, and it goes in the architect's route
+> table. A cold arrival renders the line page beneath and the detail over it; the back
+> control, browser back and the edge-swipe all return to `/projects/:id/line/:lineId`.
+>
+> **The drawing viewer is a tree node too, with back — not a modal.** Owner-confirmed,
+> against the recommendation. I had read "modal" narrowly, from his gloss *"switch(modal
+> aka Confirm/Cancel)"*, and concluded a drawing enlargement was a lightbox rather than a
+> place you go; the product-manager and the architect made the same call independently.
+> **All three of us were wrong the same way.** The rule is wider:
+>
+> > **Only a decision dialog — one that asks a question and returns an answer — is a
+> > modal. Everything else in ops2 is a screen in the tree, and every screen has back
+> > plus the platform's own back gesture.**
+>
+> **Nothing in this feature is a modal.** Not the detail, not the viewer. The one modal in
+> the tree is the switch confirmation, which is deferred (§5).
+>
+> **The accepted cost, recorded so nobody "fixes" it:** enlarging a drawing now takes a
+> history entry, so **leaving a line from an enlarged drawing takes two backs** — one out
+> of the drawing, one off the line. That was put to the owner explicitly and he took it.
+> It is the ruling, not an oversight. **This amends VIEW-AC-2**, which requires
+> `history.length` to be unchanged.
+>
+> **The viewer's routing mechanism is the architect's call** — its own URL segment, or a
+> state-only push. This document specifies the *behaviour* (back returns to the line, the
+> gesture works, Escape still closes) and leaves the mechanism open.
+>
+> ---
+>
+> **Status: APPROVED at the UX mock gate, 2026-08-24, with five changes, then amended
+> twice (R28, R29/R30).** This document describes the **approved** version — all eight
+> changes are folded in below, each marked **[gate]** at the point it applies, so the
+> developer builds what the owner agreed to and not the first draft.
 >
 > | # | Owner's change | Where it lands |
 > |---|---|---|
 > | 1 | Drop the symbol legend from the drawing viewer — *"i don't think lines like this relevant for ops"* | §2.1, §2.2 · **amends VIEW-AC-1** |
 > | 2 | On the phone the detail opens **full screen immediately** — *"C4 - full screen stright away"* | §4.1 · **requires a `SidePanel` change** |
-> | 3 | The detail's control is an **X**, not "Done" — *"the panel does not require actions"* | §4.1 |
+> | 3 | The detail's control is not "Done" — *"the panel does not require actions"* — **superseded in part by 7 below** | §4.1 |
 > | 4 | Drawings carry **both** dimension leaders, as the real component does | §2.2 |
 > | 5 | On a split, show the units' dimensions **and** the overall together | §2.2 |
 > | 6 | **R28 — "Change the product" is cut entirely**, control and placeholder alike — *"switching products is not part of the current run"* | §4.1, §5 · **voids WHY-AC-39…44** |
+> | 7 | **R29 — the dismiss is a BACK control** on **both** the detail and the drawing viewer; both are screens in the tree | §2.2, §2.4, §4.1 · **amends WHY-AC-7 and VIEW-AC-2** |
+> | 8 | **R30 — modals carry their controls on top, title centred** | §8 — a console convention; nothing in this feature is a modal |
 >
-> **Two spec amendments are owed to the product-manager**, and the second is large:
+> **Three spec amendments are owed to the product-manager**, and the last two are large:
 >
 > 1. VIEW-AC-1 reads *"…with the symbol legend"*. Change 1 removes it, so the criterion
 >    must be amended or its test will assert a thing the owner ruled out.
 > 2. **R28 voids WHY-AC-39, 40, 41, 42, 43 and 44 outright**, and D4 with them. It also
 >    reaches the architect's design: `LineEditStub.tsx`, the
 >    `/projects/:id/line/:lineId/edit` route in `Ops2App.tsx:216`, and X-AC-8 (the stub's
->    abuse case) all describe a screen that is no longer being built. None of that is
->    mine to edit — flagged, not changed.
+>    abuse case) all describe a screen that is no longer being built.
+> 3. **R29 inverts VIEW-AC-2**, which requires that activating the viewer's close control
+>    or Escape leaves `history.length` unchanged. Under R29 the viewer *is* a history
+>    entry and has no close control. The criterion must be rewritten, not relaxed — its
+>    Playwright assertion currently proves the opposite of the ruling. **WHY-AC-7** needs
+>    the same treatment: it specifies the detail as "the established `SidePanel`", true of
+>    its presentation and no longer true of how it opens. And the architect's route table
+>    gains `/projects/:id/line/:lineId/why`.
+>
+> None of that is mine to edit — flagged, not changed.
 
 ---
 
@@ -74,8 +116,10 @@ LinePage
     ├── Price panel                  (existing, untouched)
     └── Customer's note              (existing)
 
-WhyPanel ──(door)──► SidePanel: WhyDetail      (no action out of it; the X closes it)
-DrawingViewer  — chrome, opened from Plate and from each unit row
+WhyPanel ──(nav)──► WhyDetail            a SCREEN in the tree (R29): no action out of
+                  (SidePanel presentation)   it; back returns to the line
+DrawingViewer  — chrome, a tree node too (R29): navigated to from Plate and from
+                 each unit row; back returns to the line
 ```
 
 `WhyPanel` is mounted only when `showWhy` is true. `LinePage` passes
@@ -102,7 +146,7 @@ see **[gate 1]** below.
 
 | Region | Content |
 |---|---|
-| Bar | Title = the subject's code, and its size when known (`W03 — 1200 × 1800 mm`); a **Close** control at the trailing edge |
+| Bar | **Back** at the leading edge, naming the line it returns to (`‹ W03`); then the title. **The title names the subject** — a unit is `W07A`; when the subject *is* the line you came from, it is simply `Drawing`, because repeating the code you just pressed back to says nothing. The size lives in the caption, never in the bar |
 | Body | `Elevation` at the largest size the viewport allows, centred; then the caption; then the units block (composite parent only) |
 | Caption | `1200 × 1800 mm · height × width`; for a unit, `W07A · 1500 × 1200 mm · unit 1 of 2 in W07, which is 1500 × 2400 mm overall`; when no size was read, the existing sentence verbatim: `No size read for this opening — drawn as a square stand-in` |
 
@@ -203,11 +247,20 @@ customer note with four words, and that content exists nowhere else in ops2.
 
 ### 2.4 Behaviour, focus, keyboard
 
-- Enter or Space on a focused drawing opens the viewer; focus moves into it (IonModal's
-  trap), and its accessible name carries the opening's code (VIEW-AC-7).
-- Escape **or** Close dismisses. **No navigation occurs and `history.length` does not
-  change** (VIEW-AC-2) — the viewer is component state, never a route.
-- On dismiss, focus returns to the drawing that opened it (trigger ref).
+- Enter or Space on a focused drawing navigates to the viewer; focus moves into it, the
+  back control is the first stop, and its accessible name carries the opening's code
+  (VIEW-AC-7).
+- **Back returns to the line** (R29). The viewer is a screen in the tree, so it carries the
+  header shape every other ops2 screen has: a back control at the **leading** edge naming
+  the line it returns to (`‹ W03`), then the title. Not a trailing Close — a back-shaped
+  control parked where an X was still reads as a dismiss, and the leading position is what
+  makes the promise legible. The platform edge-swipe works alongside it.
+- **Escape still closes it.** That is a keyboard convenience, not the navigation model:
+  Escape performs the same history pop the back control does, never a second kind of exit.
+- **It takes a history entry**, so leaving a line from an enlarged drawing takes **two
+  backs**. Accepted by the owner — see the note at the head of this document.
+  **This amends VIEW-AC-2.**
+- On return, focus goes back to the drawing that opened it (trigger ref).
 - The viewer scrolls its own body when the drawing plus its units block exceeds the
   viewport (phone landscape, small laptops). The page behind does not scroll.
 
@@ -411,21 +464,56 @@ Reusing it as-is reproduces exactly what was just rejected. What has to change:
 - At full screen there is no visible scrim; the backdrop settings are inert rather than
   wrong, and need no change.
 
-#### **[gate 3]** The dismiss control is an X, not "Done"
+#### **[gate 3, amended by gate 7]** The control is BACK — R29
 
-Owner: *"the panel does not require actions, unless an action is chosen, which is a
-separate screen anyway."* "Done" claims something was completed; this panel completes
-nothing — it is read and closed.
+Owner, verbatim:
 
-A 32 × 32 icon button at the trailing end of the header bar, `aria-label="Close"`, muted
-ink, hover behind `@media (hover: hover)`. Escape still closes. The word "Done" appears
-nowhere on this surface.
+> *"dismiss == back button on the Why this product screen, it is part of the tree:
+> projects->projectDetails/list->itemDetails->whyThisProduct->switch(modal aka
+> Confirm/Cancel). Everything that is not modal - has back an action plus whatever gesture
+> it lives with as standard."*
 
-This applies to **the Why detail** at both widths. `SidePanel`'s header currently
-hard-codes an `IonButton` reading `Done`, so this is the component's second change:
-either take the dismiss control as a prop, or switch the header to the X for every caller
-— **the developer must check the Projects filter panel before doing the latter**, since
-"Done" may be the right word there and is outside this feature's approval.
+"Done" was rejected first (it claims something was completed; this screen completes
+nothing). **An X is rejected too**, for a different reason: an X claims an overlay, and
+this is a node you navigate *to* and return *from*.
+
+**The header becomes an ops2 screen header** — the same shape as `OpsPage`'s
+(`.ops-top`): a back control at the **leading** edge naming where it returns to
+(`‹ W03`), then the title `Why this product`. Not a trailing control. That shape is what
+makes the promise legible before anyone presses anything.
+
+**Presentation and navigation model are separate, and both are specified here:**
+
+| | What is specified |
+|---|---|
+| **Presentation** | **Unchanged and still approved** — the right-hand slide-out at the desk (Q9, and the mock he approved), full screen on the phone (gate 2). |
+| **Navigation model** | **Changed** — opening the detail is a **navigation, not an overlay toggle**. It pushes a history entry, and *back* means back: the header control, the browser/hardware back button, and the platform edge-swipe gesture all return to the line page. |
+
+A slide-out can be a routed screen; the two are orthogonal. But they must be specified
+together, because **`SidePanel` today is an overlay driven by a boolean** — open a
+`useState`, close it, no history touched. Hanging a back-shaped button on that produces
+the one outcome worse than an X: a control that promises the tree and does not deliver
+it, where the browser back button leaves the line page entirely with the panel still
+notionally open.
+
+**So `WhyDetail` is opened by a route change, not by `setOpen(true)`.** The panel's door
+(§3.2) performs a navigation; the detail renders while that location is active;
+every back affordance pops it. **The location is `/projects/:id/line/:lineId/why`** —
+owner-decided, so this screen is addressable: a pasted link and a refresh both land on
+it, with the line page rendered beneath.
+
+Consequences the developer must not miss:
+
+- **Escape still closes it**, and closing by any route is a history *pop*, never a second
+  forward entry — a reviewer who opens and closes the detail three times must be able to
+  press browser-back once and reach the project record.
+- **The rationale fetch is keyed to the line, not to the panel's open state**, so a back
+  and a re-open does not refetch on a warm record (§3.6's re-enter rule already says this).
+- **No `IonBackButton` `defaultHref` guesswork**: the detail always has a line to return
+  to, because the only way in is from that line. A cold link is only possible under
+  option A, and there the fallback is the line page.
+
+---
 
 ### 4.2 Reading order — the rule
 
@@ -568,9 +656,9 @@ decided it and there is no machine rationale to open (R17/WHY-AC-37).
 | Moment | Behaviour |
 |---|---|
 | Panel door focused | Enter or Space opens the detail |
-| Detail opens | Focus moves into the panel (IonModal trap); the title is the first thing announced |
-| Escape / the X | Closes; **focus returns to the panel door that opened it** |
-| Tab inside the detail | Reaches **the X and nothing else** — the ladder rows, the comparison cards and the closing note are not focusable. One tab stop, by design |
+| Detail opens | Focus moves into the screen; the back control is the first stop and the title is announced with it |
+| Escape, back control, browser back, edge-swipe | All pop the same history entry and return to the line; **focus returns to the panel door that opened it** |
+| Tab inside the detail | Reaches **the back control and nothing else** — the ladder rows, the comparison cards and the closing note are not focusable. One tab stop, by design |
 
 Screen-reader shape: each block is a `<section>` with its heading; the ladder is a `<ul>`
 whose `aria-label` is `What else was considered`; the comparison cards' column heads
@@ -588,7 +676,7 @@ ultimately, switching products is not part of the current run."*
 This **supersedes D4** (*"you may open a placeholder"*). Stated positively, so a later
 reader does not mistake it for an oversight and helpfully restore one:
 
-> **The Why detail carries no action at all. Its only control is the X that closes it.**
+> **The Why detail carries no action at all. Its only control is back.**
 
 That is the coherent end of his earlier ruling that *"the panel does not require actions,
 unless an action is chosen, which is a separate screen anyway"* — and it is the same
@@ -618,7 +706,7 @@ deliberate, and §7's checklist is what keeps it that way.
 | Need | Existing component | Change |
 |---|---|---|
 | The panel object | `LineReview.tsx`'s local `Panel` | Extract or extend with an optional `onOpen`; the door renders a stretched `<button class="lp-panel__door">`. Budget mechanism unchanged. |
-| The slide-out | `src/ops2/chrome/SidePanel.tsx` | **Two changes, both from the gate (§4.1):** a `phoneForm?: "sheet" \| "full"` prop defaulting to `"sheet"`, and an X dismiss control in place of `Done`. Neither may alter the Projects filter panel's approved behaviour. Its `footer` slot goes **unused** here (R28). |
+| The slide-out | `src/ops2/chrome/SidePanel.tsx` | **Two changes, both from the gate (§4.1):** a `phoneForm?: "sheet" \| "full"` prop defaulting to `"sheet"`, and a leading **back** control in place of `Done` (R29). Neither may alter the Projects filter panel's approved behaviour. Its `footer` slot goes **unused** here (R28). **And R29 makes it route-driven for this caller** — opened by a navigation rather than a boolean, with a leading back control in the header instead of a trailing dismiss. The filter panel stays an overlay with its own control. |
 | Drawings | `src/components/quote-project/Elevation` | None — both leaders are its default from `sm` up. `ElevationLegend` is **not** used in ops2 (gate 1); it stays for the customer site. |
 | Full-screen viewer | — | **New** `src/ops2/chrome/DrawingViewer.tsx` (design §4.6 interface). |
 | Plate enlargement | `Plate.tsx:60-106` | **Deleted**, replaced by the viewer. |
@@ -655,15 +743,56 @@ state the superseded rule (*"absent entirely on a composite"*) and the read-only
       the override.
 - [ ] The string table contains none of: wrong, incorrect, mistake, error, correction.
 - [ ] The order-record line page contains no panel and no sentence about one.
-- [ ] The detail has **exactly one** focusable control: the X. No footer bar, no CTA,
+- [ ] The detail has **exactly one** focusable control: back. No footer bar, no CTA,
       and no stub route registered anywhere (R28).
+- [ ] Browser back and the edge-swipe gesture both return from the detail to the line —
+      not to the project record, and not with the panel still open (R29).
+- [ ] `/projects/:id/line/:lineId/why` opens the detail cold, from a pasted link and after
+      a refresh.
+- [ ] The drawing viewer has a leading back control naming its line, and **no** trailing
+      Close anywhere.
+- [ ] Leaving a line from an enlarged drawing takes two backs. **That is correct** — do
+      not collapse it.
+- [ ] Opening and closing the detail three times leaves one history entry to pop, not six.
 - [ ] Escape closes the viewer and the detail; `history.length` is unchanged by either.
 
 ---
 
-## 8. Decisions needed
+## 8. **[gate 8]** R30 — a console convention, recorded for later
 
-**None for the owner, and one deferred BY him.**
+Owner: *"modals have controls on top, btw, title centered."*
+
+**Nothing in this feature is a modal**, so this changes nothing built here. It is recorded
+so the convention is inherited rather than rediscovered:
+
+> **A modal carries its controls on top, with its title centred.**
+
+Where it applies, and where it does not:
+
+| Surface | Modal? | Why |
+|---|---|---|
+| The **switch confirmation** (deferred, §5) | **Yes** — the owner names it himself: *"switch(modal aka Confirm/Cancel)"* | It asks for a decision and returns an answer. When it is built, R30 is its header spec. |
+| The **Why detail** | No | R29 puts it in the tree; it has a back control at the leading edge and a left-aligned title (§4.1). |
+| The **drawing viewer** (§2) | **No** — owner-confirmed, against the recommendation | Leading back naming the line, left-aligned title, its own history entry (R29, amending VIEW-AC-2). Three of us assumed otherwise; see the head of this document. |
+
+The distinction that makes the convention usable, and it is **narrower than it looks**:
+**a modal asks a question and returns an answer.** Nothing else qualifies — not a screen
+you navigate to however it is presented, and **not an enlargement of an on-screen element
+either**, which is the assumption three of us got wrong. If it does not have an answer to
+give back, it is a screen, and screens have back.
+
+---
+
+## 9. Decisions needed
+
+**None outstanding for the owner — both open questions came back answered — and one
+deferred BY him.**
+
+**Answered — both R29 questions.** The detail carries its own URL
+(`/projects/:id/line/:lineId/why`), and the drawing viewer is a tree node with back rather
+than a modal. Both are folded in; see the head of this document. **One item routes to the
+architect, not the owner:** the viewer's routing mechanism — its own URL segment or a
+state-only push — which this document deliberately leaves open.
 
 **Deferred — product switching (R28).** How a reviewer changes a line's product is an open
 question the owner is still thinking about, in his own framing: a button presumes a

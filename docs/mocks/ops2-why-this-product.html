@@ -233,15 +233,18 @@ body{
 /* THE PHONE FORM IS FULL SCREEN, PRESENTED AT FULL SCREEN — not a half sheet
    the reader drags up. No breakpoints, so Ionic renders no drag handle. */
 .sheet--full{inset:0;width:auto;border-radius:0}
-.sheet__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-sm) var(--theme-spacing-md);border-bottom:1px solid var(--ds-border-subtle)}
+.sheet__bar{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-sm) var(--theme-spacing-md);border-bottom:1px solid var(--ds-border-subtle)}
 /* THE BODY FACE, not the display face. `SidePanel` renders an unstyled
    `IonTitle` and ionic.css binds --ion-font-family to Inter — so this is what
    the shipped panel's title actually looks like. Flagged in the report. */
 .sheet__bar h3{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-lg);font-weight:600;line-height:var(--theme-line-height-snug)}
-/* A DISMISS AFFORDANCE, NOT A COMPLETION ONE. "Done" claims something was
-   finished; this panel finishes nothing — it is read and closed. */
-.sheet__close{display:grid;place-items:center;width:32px;height:32px;background:none;border:0;color:var(--ds-text-secondary);cursor:pointer;border-radius:var(--ds-radius-control)}
-@media (hover:hover){.sheet__close:hover{background:var(--ds-surface-sunken);color:var(--ds-text-primary)}}
+/* NOT A DISMISS — A BACK. R29: this is a screen in the tree
+   (projects → project → line → why this product), so it carries the same back
+   control every other ops2 screen does, in the same place, plus the standard
+   edge-swipe gesture. "Done" claims something was completed and an X claims an
+   overlay; both misdescribe a node you navigate to and return from. */
+.sheet__back, .viewer__back{display:inline-flex;align-items:center;gap:var(--theme-spacing-2xs);flex:none;background:none;border:0;font:inherit;font-size:var(--theme-font-size-xs);line-height:var(--theme-line-height-normal);color:var(--ds-text-link);cursor:pointer;padding:var(--theme-spacing-2xs) var(--theme-spacing-2xs) var(--theme-spacing-2xs) 0;border-radius:var(--ds-radius-control)}
+@media (hover:hover){.sheet__back:hover, .viewer__back:hover{color:var(--ds-text-link-hover)}}
 .sheet__body{flex:1;overflow:auto;padding:var(--theme-spacing-md)}
 
 /* A block of the detail. The hairline between blocks is the console's own
@@ -307,7 +310,7 @@ body{
 
 /* ── Phase 2: the full-screen drawing viewer ─────────────────────────────── */
 .viewer{position:absolute;inset:0;background:var(--ds-surface-card);display:flex;flex-direction:column}
-.viewer__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-sm) var(--theme-spacing-lg);border-bottom:1px solid var(--ds-border-subtle)}
+.viewer__bar{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-sm) var(--theme-spacing-lg);border-bottom:1px solid var(--ds-border-subtle)}
 .viewer__title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;line-height:var(--theme-line-height-snug)}
 .viewer__body{flex:1;overflow:auto;padding:var(--theme-spacing-lg);display:flex;flex-direction:column;gap:var(--theme-spacing-md);align-items:center;justify-content:flex-start}
 .viewer__cap{font-size:var(--theme-font-size-xs);color:var(--ds-text-muted);text-align:center}
@@ -348,8 +351,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <li><b>No money and no GST</b> anywhere on this surface — R10, and the house rule.</li>
     <li><b>No certification</b> anywhere, in any phase — R5.</li>
     <li><b>No excluded candidates</b> — not a list, not a count, not a reason — R9.</li>
-    <li><b>Read-only, and actionless.</b> The detail carries no action at all: its only
-      control is the X that closes it — R1, R28.</li>
+    <li><b>Read-only, and actionless.</b> The detail carries no action at all — its only
+      control is back, because it is a screen in the tree and not an overlay — R1, R28, R29.</li>
     <li><b>Nothing frames a human's change as an error</b> — R2.</li>
     <li>The panel has a <b>line budget</b> and never grows to fit content. Absences are said, never padded.</li>
     <li>Uppercase is for LABELS only; corners never exceed 5&nbsp;px.</li>
@@ -363,7 +366,9 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
   One viewer for every drawing in ops2, opened by tapping a drawing anywhere. It replaces
   the line plate's current side-panel enlargement — it is not a <code>SidePanel</code>:
   a drawing wants the whole viewport, and the legend that teaches the symbols needs room.
-  Escape or Close returns; nothing navigates and the history does not grow.
+  <b>It is a screen in the tree, not an overlay</b> (R29): back at the leading edge naming the
+  line it returns to, plus the standard edge-swipe. Escape still works — a keyboard convenience,
+  not the navigation model.
 </p>
 
 <div class="grid">
@@ -402,8 +407,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <div class="screen" style="min-height:430px">
       <div class="viewer">
         <div class="viewer__bar">
-          <span class="viewer__title">W03 — 1200 &times; 1800 mm</span>
-          <button class="btn btn--outline btn--sm">Close</button>
+          <button class="viewer__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button>
+          <span class="viewer__title">Drawing</span>
         </div>
         <div class="viewer__body">
           <svg class="elev" width="380" height="252" viewBox="0 0 380 252" aria-hidden="true">
@@ -424,7 +429,12 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     </div>
     <p class="ann">The drawing at the largest size the viewport allows, its size line, and the symbol
       legend — which only ever appears here: a 46&nbsp;px row glyph and a 300&nbsp;px hero have no room to teach.
-      <span class="ruling">VIEW-AC-1</span><span class="ruling">VIEW-AC-2</span></p>
+      <span class="ruling">VIEW-AC-1</span></p>
+    <p class="ann"><b>Back, because the viewer is a tree node.</b> Enlarging a drawing is a
+      navigation, so it takes a history entry — which means leaving a line from an enlarged
+      drawing takes <b>two backs</b>: one out of the drawing, one off the line. That cost was put
+      to the owner and accepted; it is the ruling, not an oversight, and it is not to be
+      "fixed" later. <span class="ruling">R29</span><span class="ruling">amends VIEW-AC-2</span></p>
   </div>
 
   <div class="desk">
@@ -432,8 +442,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <div class="screen" style="min-height:470px">
       <div class="viewer">
         <div class="viewer__bar">
-          <span class="viewer__title">W07 — 1500 &times; 2400 mm</span>
-          <button class="btn btn--outline btn--sm">Close</button>
+          <button class="viewer__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W07</button>
+          <span class="viewer__title">Drawing</span>
         </div>
         <div class="viewer__body">
           <svg class="elev" width="360" height="248" viewBox="0 0 360 248" aria-hidden="true">
@@ -476,8 +486,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <div class="screen" style="min-height:400px">
       <div class="viewer">
         <div class="viewer__bar">
+          <button class="viewer__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W07</button>
           <span class="viewer__title">W07A</span>
-          <button class="btn btn--outline btn--sm">Close</button>
         </div>
         <div class="viewer__body">
           <svg class="elev" width="250" height="240" viewBox="0 0 250 240" aria-hidden="true">
@@ -502,8 +512,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <div class="screen" style="min-height:340px">
       <div class="viewer">
         <div class="viewer__bar">
-          <span class="viewer__title">W11</span>
-          <button class="btn btn--outline btn--sm">Close</button>
+          <button class="viewer__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W11</button>
+          <span class="viewer__title">Drawing</span>
         </div>
         <div class="viewer__body">
           <svg class="elev" width="200" height="200" viewBox="0 0 200 200" aria-hidden="true">
@@ -885,9 +895,11 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
   The console's existing <code>SidePanel</code>: a right-hand slide-out at the desk, full screen on
   the phone. Reading order is <b>the requirement → what is unusual about this line → the ladder</b>,
   so the news is never below the routine. It scrolls; only the panel has a budget.
-  <b>There is no action in it</b> — no footer, no CTA, one X. Switching products is deferred
-  (R28): a button would imply a product is already selected to change <em>to</em>, and this
-  surface deliberately offers no such thing.
+  <b>There is no action in it</b> — no footer, no CTA. Its one control is <b>back</b>: R29 puts
+  this screen in the tree (projects → project → line → why this product), so it carries the same
+  back control and the same edge-swipe gesture as every other ops2 screen. Switching products is
+  deferred (R28): a button would imply a product is already selected to change <em>to</em>, and
+  this surface deliberately offers no such thing.
 </p>
 
 <div class="grid">
@@ -902,7 +914,7 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
       </div>
       <div class="scrim"></div>
       <div class="sheet">
-        <div class="sheet__bar"><h3>Why this product</h3><button class="sheet__close" aria-label="Close"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
         <div class="sheet__body">
 
           <div class="blk">
@@ -946,6 +958,15 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
         </div>
       </div>
     </div>
+    <p class="ann"><b>Back, not a dismiss.</b> This screen is a node in the tree — projects →
+      project → line → why this product — so its header is shaped like every other ops2 screen:
+      back at the leading edge naming where it returns to, then the title. It keeps the approved
+      slide-out presentation; what changes is that arriving here is a <em>navigation</em>, so the
+      browser back button and the edge-swipe gesture work too. A back control that does not
+      actually go back would be worse than an X, because it promises the tree and does not
+      deliver it. <b>One question is open for you:</b> whether this screen carries its own URL.
+      Both answers give you back; only one gives you a link you can paste.
+      <span class="ruling">R29</span></p>
     <p class="ann"><b>Five rows, never six, and no count of anything beyond them.</b> No excluded
       candidate, no withheld product, no exclusion reason — the server never sends them, so the
       screen cannot leak them. A candidate whose product has since left the catalogue still renders
@@ -963,7 +984,7 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
       </div>
       <div class="scrim"></div>
       <div class="sheet">
-        <div class="sheet__bar"><h3>Why this product</h3><button class="sheet__close" aria-label="Close"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W09</button><h3>Why this product</h3></div>
         <div class="sheet__body">
 
           <div class="blk">
@@ -1041,7 +1062,7 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
       </div>
       <div class="scrim"></div>
       <div class="sheet">
-        <div class="sheet__bar"><h3>Why this product</h3><button class="sheet__close" aria-label="Close"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W07</button><h3>Why this product</h3></div>
         <div class="sheet__body">
 
           <div class="blk">
@@ -1141,7 +1162,7 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
           <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ67 Awning</dd></div></dl></div>
       </div>
       <div class="sheet sheet--full">
-        <div class="sheet__bar"><h3>Why this product</h3><button class="sheet__close" aria-label="Close"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div>
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
         <div class="sheet__body">
           <div class="blk">
             <div class="blk__h">What it had to meet</div>
@@ -1178,9 +1199,10 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <p class="ann"><b>Full screen the moment it opens</b> — not a half sheet the reader drags up.
       There is no grab handle, because there is nothing to drag. The figures move under the name
       rather than beside it, because 375&nbsp;px cannot hold both on one row without truncating one.
-      <b>This needs a change to <code>SidePanel</code></b>: today it presents on the phone at
-      <code>initialBreakpoint&nbsp;0.5</code> with Ionic's drag handle — see the interaction spec.
-      <span class="ruling">R19</span><span class="ruling">WHY-AC-7</span></p>
+      <b>This needs two changes to <code>SidePanel</code></b>: today it presents on the phone at
+      <code>initialBreakpoint&nbsp;0.5</code> with Ionic's drag handle, and it is an overlay rather
+      than a routed screen — see the interaction spec, which names both.
+      <span class="ruling">R19</span><span class="ruling">R29</span><span class="ruling">WHY-AC-7</span></p>
   </div>
 
   <div class="desk">
