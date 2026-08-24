@@ -1,25 +1,41 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 15**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 16**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 15** discharges **§13.14** (the URL grammar) and **§13.15** (the viewer title) —
-both were answered by the owner at Phase 1 sign-off and Phase 2 was built against those
-answers, so the register was describing shipped decisions as still in play. **Every entry
-now carries a state** (§13), because the failure was not the two entries: it was a register
-with no way to tell an open question from a settled one. Revision 14 corrected VIEW-AC-12's
-false premise; revision 13 amended the CERT-AC-10 fence; revision 12 folded in the
-importers; revision 11 closed VIEW-AC-2's mechanism; revision 10 folded in D8 and R31;
-revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7 corrected a
-false claim about an existing legend test; revision 6 applied the closed UX mock gate;
-revision 5 repaired two architect findings; revisions 2–4 folded in the owner's decision
-rounds.
+**Revision 16** carries **two owner decisions taken at the Phase 2 tester gate**, plus the
+tester's MINOR.
 
-**Decisions needed: none** (§14). **Nothing is pending from any stage.**
+- **D11 — the desk-canvas enlargement journey now has criteria** (§8.1, VIEW-AC-13…17). It
+  shipped in **no criterion and no interaction spec**: it was added at architect-conformance
+  time (design §11.5) to satisfy VIEW-AC-5's "exactly one viewer", *after* §8 was written,
+  and reached the tester unspecified and untested — the MAJOR. The owner's ruling: **back
+  returns to the record**, the control **stops naming the line**, and the blank canvas on
+  return is **fixed, not accepted**.
+- **D12 — VIEW-AC-12 is reversed**: `ElevationLegend` is **deleted**, together with the
+  assertion that pinned it. §13.13 becomes **VETOED**. The criterion is rewritten rather
+  than quietly dropped, and all three of its states are kept — it has now flipped twice, and
+  the record of *why* is worth more than a clean-looking criterion.
+- **VIEW-AC-1 is made unambiguous** that "the largest size the viewport allows" is a
+  **measurement at more than one width**. The criterion was already correct; the
+  implementation caps the drawing at a flat 720px at every desk width, a number lifted from
+  the mock's *simulated desk frame*.
+
+Revision 15 gave **every register entry a state** (§13) and discharged §13.14/§13.15;
+revision 14 corrected VIEW-AC-12's false premise; revision 13 amended the CERT-AC-10 fence;
+revision 12 folded in the importers; revision 11 closed VIEW-AC-2's mechanism; revision 10
+folded in D8 and R31; revision 9 applied R29/R30 and added §2.1; revision 8 applied R28;
+revision 7 corrected a false claim about an existing legend test; revision 6 applied the
+closed UX mock gate; revision 5 repaired two architect findings; revisions 2–4 folded in the
+owner's decision rounds.
+
+**Decisions needed: two, both minor** (§14) — the back control's exact wording and whether
+the viewer's drawing has any ceiling on very wide screens. Both proceed on a tagged
+assumption (§13.16, §13.17) so nothing is blocked waiting for them.
 
 ---
 
@@ -76,13 +92,15 @@ not record them, they are gone.
    ops console and customer site alike. **A server write-path change, inside Phase 3.**
 4. **A shared drawing viewer** for ops2 (R21, R25) — **a node in the navigation tree with
    its own route and a back control** (R31), replacing the line plate's current side-panel
-   enlargement.
+   enlargement, **and reachable from the project record's desk canvas** (D11, §8.1).
 5. **Two changes to the shared `SidePanel`** (R26, R29): full-screen presentation on the
    phone, and a **back** control in place of "Done" — without moving the Projects filter
    panel, which is the component's other caller and was not part of this approval.
 6. **The line-route URL grammar** — the `exact` drop on the line route and the drawing
    segments — **in Phase 2, with the viewer**. Phase 3b adds only the `why` child. No new
    server endpoint anywhere except the rationale read.
+7. **Deleting the shared `ElevationLegend` export** (D12, VIEW-AC-12) — added to scope at
+   the Phase 2 tester gate, on evidence that it has no caller and no styles.
 
 ### Out of scope — and why
 
@@ -90,7 +108,7 @@ not record them, they are gone.
 |---|---|
 | **"Change the product" — the control, and any placeholder for it** | **R28, and it is deferred rather than declined.** Owner: *"do not implement CTA change the product. Need to have more thoughts on how to implement this. Having a button implies that some product must be preselected, which we don't have conceptually. not having a button means another panel perhaps. ultimately, switching products is not part of the current run."* Supersedes D4. **Whoever picks this up is picking up an open design question, not an unbuilt ticket — see §2.1 for the direction it already has.** |
 | **Re-classifying the Projects filter panel** | Under R31's literal taxonomy the filter is arguably **not a modal either** — it does not ask a question and return an answer. The architect raised this honestly rather than acting on it. R26/R27's approval explicitly excluded moving the filter, so it stays exactly as it is (WHY-AC-7b) and the question becomes **its own future ticket**. A taxonomy discovered mid-feature does not get to reach a surface nobody approved changing. |
-| **Deleting the shared `ElevationLegend` export** | This phase removes a **render**, not an API. Deleting the export is a separate decision nobody has taken, and it is not this feature's to take — see VIEW-AC-12, whose stated reason was corrected in revision 14. |
+| ~~**Deleting the shared `ElevationLegend` export**~~ | **NO LONGER OUT OF SCOPE — reversed by the owner, 2026-08-25 (D12).** The stated reason was that deleting the export was *"a separate decision nobody has taken"*. The owner has now taken it, on evidence that arrived after: zero callers **and** no `.elev-legend` rule in any stylesheet. See VIEW-AC-12 and §13.13. |
 | **Renaming the dimension-rule `dataSource`** | `worker/lib/estimator/types.ts:77` uses the same token for a **different, live, correct** concept — where a dimension rule came from. It is not certification and it is not being removed; CERT-AC-3's predicate is deliberately narrow so a bare token match cannot force a rename of a concept that is fine. |
 | Any line editor in ops2, stub or real | Follows R28: with no control to reach it, a route to it is a route to nowhere. |
 | Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28, and still not done. |
@@ -197,7 +215,8 @@ not correction of the machine. R2 is the direct consequence and the copy must ho
 **They read this surface; they do not act on it.** Owner: *"the panel does not require
 actions, unless an action is chosen, which is a separate screen anyway."* R28 is that
 sentence carried to its end — see §9.5. **Going back is not an action** (R29): it is how
-they leave a screen they navigated to.
+they leave a screen they navigated to. **And back must return them where they were** —
+D11 is that same sentence applied to the one journey nobody had specified (§8.1).
 
 **And they already know how to read a drawing.** R25 is a fact about this persona, not a
 styling preference: an elevation's notation is customer-facing explanation, and explaining
@@ -286,7 +305,10 @@ navigation tree with a real route**. So this phase now owns:
 
 - the **`exact` drop on the line route** and the whole child-route grammar under it;
 - `/projects/:id/line/:lineId/drawing` and `/projects/:id/line/:lineId/drawing/u1`, `u2`, …;
-- replacing the plate's `SidePanel` enlargement (VIEW-AC-6).
+- replacing the plate's `SidePanel` enlargement (VIEW-AC-6);
+- **the project record's desk canvas as an opener surface, with its own back destination**
+  (§8.1, D11 — added at the tester gate, revision 16);
+- **the `ElevationLegend` deletion** (VIEW-AC-12, D12 — added at the same gate).
 
 **Phase 3b then adds only the `why` child** to a grammar that already exists. That is the
 sequencing change: the routing work is Phase 2's, not Phase 3's, and a phase description
@@ -341,7 +363,7 @@ the gate did not approve.
 
 ### Wayfinder check
 
-**Not needed.** The route is visible and the decisions are made — 31 rulings, ten owner
+**Not needed.** The route is visible and the decisions are made — 31 rulings, twelve owner
 decisions, a verified join path, a writer index the design owns, and a closed mock gate.
 Three normally-sized features, not a foggy region.
 
@@ -442,6 +464,21 @@ back is component-local state that looks right and behaves wrong at the one mome
 uses the system's own back gesture · **D9** the URL grammar as designed, 1-based ordinals
 (§13.14) · **D10** the viewer's title names the subject (§13.15).
 
+**Taken at the Phase 2 tester gate, 2026-08-25:**
+
+**D11 — a drawing enlarged from the record's desk canvas goes back to the record, and the
+control says so.** The journey is legitimate and stays; what it lacked was a specification.
+Back — control, Escape or system gesture — returns the reviewer **to the record they were
+on**, not to the line page they never visited, and the control's label and accessible name
+name **what it returns to** rather than the line. The record's canvas going blank on return
+is **fixed, not accepted**. Criteria: §8.1, VIEW-AC-13…17.
+
+**D12 — `ElevationLegend` is deleted, with the assertion that pinned it.** VIEW-AC-12 said
+in its own words that deleting the export was *"a separate decision that nobody has
+taken"*. The owner has taken it, on evidence that arrived afterwards: the export has **zero
+callers repo-wide** and **no `.elev-legend` rule exists in any stylesheet**, so it could not
+render correctly even if something called it. §13.13 is VETOED.
+
 ---
 
 ## 6. Acceptance criteria — Phase 1: remove `certified`
@@ -498,7 +535,7 @@ merely listed):
 > orphaning a live ops caption. The reader, the route field and the type member have since
 > been deleted, so the exemption has nothing left to exempt.
 >
-> See §12 note 10 — this was the second of three, and the pattern is now a rule.
+> See §12 note 10 — this was the second of four, and the pattern is now a rule.
 
 **Non-vacuity, anchored the way SNAP-AC-2 is:** the walk must be **shown to have reached**
 `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`. A scan whose
@@ -778,11 +815,34 @@ opening, *When* the reviewer activates the drawing, *Then* the viewer opens carr
 drawing at the largest size the viewport allows, and its dimensions in the caption beneath
 it** — and nothing that explains the drawing's notation.
 
+> **"The largest size the viewport allows" is a measurement, not a phrase — clarified
+> revision 16, after the tester's MINOR.** The criterion was already correct; the
+> implementation does not meet it, and the wording is sharpened here so it cannot be read
+> as satisfied by a drawing that is merely large.
+>
+> **What is required:** the rendered drawing's size **responds to the viewport**. It is
+> **strictly larger at 1920 than at 1280** for the same drawing, and larger again at 2560.
+>
+> **What was measured:** identical at **1280, 1600, 1920 and 2560** — a flat 720px cap. The
+> 720 came from `docs/mocks/ops2-why-this-product.html:103`, `.desk{width:720px}`, which is
+> the mock's **simulated desk frame — the whole screen, not a column inside it.** A
+> dimension lifted out of a mock's chrome is not a design token; it is the picture frame
+> mistaken for the picture.
+>
+> **How it is verified:** by **measurement at more than one desk width** in
+> `scripts/tests/web/`, comparing the rendered drawing's own box between widths — never by
+> reading a stylesheet, which is how a cap this size survived review in the first place.
+> `ASSUMED:` §13.16 — no fixed ceiling at any width; the drawing scales with the viewport
+> and the caption carries the dimensions.
+
 **VIEW-AC-1a (title names the subject — owner-confirmed, D10, §13.15)** — *Given* the
 viewer is showing a **unit**, *When* its title is read, *Then* it is that unit's code
 (`W07A`). *Given* the viewer is showing the **line** the reviewer arrived from, *Then* the
 title is simply `Drawing` — the back control already names the line, and repeating it says
 the code twice. The size sits in the caption beneath the drawing, not in the title.
+
+**This rule is untouched by D11.** §8.1 changes the **back control's** label, and only on
+the canvas-opened path. The title still names the subject, at every entry point.
 
 **VIEW-AC-2 (R31 — entering pushes exactly one entry)** — *Given* the reviewer is on a
 line page, *When* they activate a drawing, *Then* **exactly one** history entry is pushed
@@ -792,6 +852,11 @@ and the address becomes that drawing's own URL — the opening's, or the unit's 
 reviewer uses the back control, presses Escape, **or** performs the system back gesture,
 *Then* all three do the **same single pop**: the line URL returns, the line page is **not
 remounted**, and **no record re-fetch occurs**.
+
+*(Entered from the record's desk canvas, the same "one pop from all three exits" rule
+applies and the destination is the **record** — VIEW-AC-14, VIEW-AC-16. Where the pop
+lands follows how the viewer was entered; that it is one pop, with no remount and no
+re-fetch, never varies.)*
 
 **VIEW-AC-2b (cold deep link)** — *Given* a staff user opens a drawing URL directly in a
 fresh tab, *When* it loads, *Then* the line page renders **with the viewer open**, and that
@@ -809,6 +874,10 @@ the first back closes the viewer and the second leaves the line page. **This is 
 cost of R31, not a defect** — it was named in the question the owner answered and
 accepted. Nobody may "fix" it by collapsing the two steps.
 
+*(From the desk canvas only **one** entry is ever pushed, so leaving is one back, to the
+record — VIEW-AC-14. That is not a collapse of this criterion: the second entry never
+existed, because selecting a line in the canvas is not a navigation.)*
+
 **VIEW-AC-3 (R21, composite parent)** — *Given* a composite line page, *When* the reviewer
 activates the parent drawing, *Then* the viewer shows the whole assembly with its units
 drawn in proportion to their real sizes. (The proportion is a property of the **drawing**;
@@ -821,7 +890,8 @@ captioned with its own size.
 
 **VIEW-AC-5 (R21, "one shared viewer")** — *Given* the ops2 source after this phase,
 *When* it is searched for drawing-enlargement surfaces, *Then* exactly one viewer
-component exists and every enlargeable drawing in ops2 opens it.
+component exists and every enlargeable drawing in ops2 opens it — **the record's desk
+canvas included** (VIEW-AC-13), which is the criterion that put that journey there.
 
 **VIEW-AC-6 (R21 supersedes)** — *Given* the line page after this phase, *When* the plate
 is activated, *Then* the previous `SidePanel` enlargement (`Plate.tsx:60-106`) no longer
@@ -855,6 +925,10 @@ anywhere — so nothing would have caught its removal, and nothing would catch i
 reinstatement either. A test that only searched for the word "legend" would pass a viewer
 that still explained panel proportions in a sentence; the assertion is against the class.
 
+**And after D12 it must not rest on the `.elev-legend` selector**, which can no longer
+match anything once the component is deleted — see §12 note 5. A criterion whose only
+check is a selector that cannot exist is a criterion nobody is testing.
+
 **VIEW-AC-11 (R25 — the older spec stops contradicting this one)** — *Given*
 `docs/specs/ops2-record-correction.md:343-347`, whose **P1-AC-27** requires *"the drawing
 can be enlarged, with its legend"* and spells out the whole key, *When* this phase lands,
@@ -863,42 +937,148 @@ the owner's R25 ruling. Two live specs asserting opposite things about the same 
 how the next reader builds the wrong one; P1-AC-27 was never given a test, so the document
 is the only place the contradiction can be resolved.
 
-**VIEW-AC-12 (the shared export is not deleted) — JUSTIFICATION CORRECTED, revision 14.**
+**VIEW-AC-12 (the shared export IS deleted) — RULING REVERSED by the owner, 2026-08-25
+(D12), revision 16.**
 
-*Given* `ElevationLegend` in `src/components/quote-project/Elevation.tsx`, *When* ops2
-stops rendering it, *Then* **the export itself is not deleted by this feature.**
+*Given* `ElevationLegend` at `src/components/quote-project/Elevation.tsx:571-593`, *When*
+Phase 2 lands, *Then*:
 
-> **~~As written through revision 13:~~** *"…and the customer site's use of it is
-> unaffected… the other consumer's right to it is not this feature's to remove."*
-> **That premise was false**, and it is corrected rather than quietly dropped, because a
-> criterion resting on a false premise gets "fixed" by whoever next notices — and the fix
-> they will reach for is deleting the export.
+- the export **and its body are removed** from `Elevation.tsx`;
+- the assertion that pinned its existence, `scripts/tests/ops2-frame.test.mjs:272`, is
+  **removed with it** — a test that requires a deleted symbol is a red suite, and leaving it
+  behind would make the deletion look like a regression;
+- no file under `src/**` or `scripts/**` references the identifier outside a comment (the
+  existing ops2 assertion at `ops2-frame.test.mjs:241`, that no ops2 source reaches for it,
+  **stays**);
+- `docs/adr/0010-ops2-shares-the-elevation-generator.md:21,28`, which states that ops2
+  imports `Elevation` *and* `ElevationLegend`, is **annotated** to record that the export is
+  gone and why — the same discipline VIEW-AC-11 applies to the older spec;
+- the typecheck and the build are green, and no other export in that module changes.
+
+> **The three states of this criterion, kept rather than tidied.** It has now flipped
+> twice, and the record of *why* it kept flipping is worth more than a clean-looking
+> criterion — twice, the reason given for keeping the export turned out to be an
+> unexecuted claim about the repository.
 >
-> **Executed 2026-08-25:** `ElevationLegend` is **defined once and called from
-> nowhere.** Its only non-comment occurrence in `src/**` is its own definition at
-> `Elevation.tsx:583`; every other occurrence in source is a comment recording its
-> absence (`DrawingViewer.tsx:37`, `Plate.tsx:20,24`), and the rest are documentation.
+> **~~Through revision 13:~~** *"…the export itself is not deleted… and the customer site's
+> use of it is unaffected… the other consumer's right to it is not this feature's to
+> remove."* **The premise was false.**
 >
-> *(Stated that way on purpose. Revision 14 first wrote this as "exactly one reference
-> repo-wide", which the Codex stop-gate caught as **another false repo-wide count** —
-> the identifier appears in an ADR, four documents, a test and three source files. A
-> correction for an unexecuted claim that itself asserts a count nobody ran is the same
-> defect wearing the fix's clothes. What is checkable is "no caller", not "one hit".)*
+> **~~Revision 14:~~** the premise was corrected and the ruling kept — *"this phase removes
+> a render, not an API; the export currently has no consumer, and removing it is a separate
+> decision that nobody has taken."* Executed 2026-08-25: `ElevationLegend` is **defined once
+> and called from nowhere**; its only non-comment occurrence in `src/**` is its own
+> definition, every other source hit is a comment recording its absence
+> (`DrawingViewer.tsx:37`, `Plate.tsx:20,24`), and `docs/specs/ops2-record-design.md:42,157,191`
+> records that the export was added **by the ops2 record work**, for the very plate this
+> phase has just stopped rendering it from. ops2 was never one of two consumers. It was the
+> only one.
 >
-> `docs/specs/ops2-record-design.md:42,157,191` records
-> why: the export was **added by the ops2 record work**, for the very plate this phase has
-> just stopped rendering it from. ops2 was never one of two consumers. It was the only one.
+> *(Stated as "no caller" on purpose. Revision 14 first wrote "exactly one reference
+> repo-wide", which the Codex stop-gate caught as another false repo-wide count — the
+> identifier appears in an ADR, four documents, a test and three source files. **A count is
+> a claim too.**)*
+>
+> **Revision 16 — the decision nobody had taken has been taken, by the owner (D12), on
+> evidence that did not exist when revision 14 was written.** From an independent
+> ponytail-review that executed its greps, re-run for this revision: the export has **zero
+> callers repo-wide**, **and no `.elev-legend` rule exists in any stylesheet.** The only
+> occurrences of that class name are the component's own markup, one comment, and a
+> Playwright assertion that it renders zero times. Its markup has therefore been **unstyled
+> since the plate stopped rendering it — it would not render correctly even if something
+> called it.**
+>
+> That is what changes the answer. "Removing a render, not an API" was the right
+> distinction while there was an API somebody could use. An export with no caller and no
+> styles is not an API being preserved for a future consumer; it is dead code with a door
+> painted on it, and the next reader who finds it will spend the same hour three readers
+> have already spent. Deletion is the smaller diff and the smaller future.
 
-**The true reason it stays:** this phase removes a **render**, not an **API**. Conflating
-the two is how a shared component gets deleted by a feature that only meant to stop showing
-it. The export currently has **no consumer**, and removing it is a **separate decision that
-nobody has taken** — not this feature's to take, and not a tidy-up to be performed on the
-way past.
+**What the test asserts, and what it must still not assert.** It asserts the **absence**:
+no `export function ElevationLegend` in `Elevation.tsx`, and no live-source reference to
+the identifier. It must **not** reintroduce a consumer count in either direction — that is
+exactly the claim class §12 note 10 exists to stop, and this criterion has now been wrong
+twice for that reason.
 
-**What the test may and may not assert.** It must assert the export still exists. It must
-**not** assert a consumer count in either direction: pinning "no consumer" would fail a
-legitimate future use, and asserting "a consumer exists" would assert something untrue.
-`ASSUMED:` §13.13.
+### 8.1 Opening a drawing from the project record's desk canvas (D11 — new, revision 16)
+
+**This journey shipped in no criterion and no interaction spec.** At desk width the project
+record shows the selected line in a canvas beside the rail, and that canvas renders the
+same `LineReview` body the line page does — so its plate and its unit rows are enlargeable
+there too (`src/ops2/projects/ProjectRecordPage.tsx:190-203`). The journey was added at
+**architect-conformance time** (design §11.5) to satisfy VIEW-AC-5's "exactly one viewer",
+*after* §8 was written, and so it reached the tester with nothing to test it against. That
+is the tester's MAJOR, and the class of defect is recorded at §12 note 11.
+
+**The journey itself is right and stays.** Opening a second, unrouted viewer over the
+record would have given it a back control that does not truly go back — the exact promise
+the route ruling exists to keep. What was missing is that nobody had said **where its back
+goes** or **what it says**.
+
+**Owner ruling (D11), 2026-08-25:** back returns to the **record**; the reviewer lands
+exactly where they were; the control is **relabelled so it stops naming the line**; and the
+record's canvas going blank on return is **fixed, not accepted**.
+
+**VIEW-AC-13 (the canvas is an opener surface, and it opens the one viewer)** — *Given* the
+project record at desk width with a line selected in the canvas, *When* the reviewer
+activates the canvas's plate, or a unit row on a composite, *Then* the **shared** viewer
+opens — VIEW-AC-5's single viewer, never a second copy over the record — the address
+becomes that line's own `/projects/:id/line/:lineId/drawing`, or `…/drawing/u<N>` for that
+unit's 1-based position, **the same grammar the line page uses** (D9), and **exactly one**
+history entry is pushed.
+
+**VIEW-AC-14 (back from a canvas-opened viewer lands on the record)** — *Given* the viewer
+was opened from the record's desk canvas, *When* the reviewer uses the back control,
+presses Escape, **or** performs the system back gesture, *Then* all three do the **same
+single pop**, the address returns to the **project record**, and the reviewer is on the
+record — never on the line page they never visited.
+
+*Cold arrival is unchanged.* A drawing URL opened in a fresh tab has no record behind it
+and still **replaces** to the line path (VIEW-AC-2b). The destination follows **how the
+viewer was entered**, and there are exactly two ways in: from a line page, or from the
+record's canvas.
+
+**VIEW-AC-15 (the control names what it returns to)** — *Given* the viewer was opened from
+the record's desk canvas, *When* its **visible label** and its **accessible name** are
+read, *Then* both name the destination — the project record — and **neither names the
+line**. *Given* the viewer was opened from the line page, *Then* both name the line, exactly
+as they do today. In no state does the label name one destination while the control goes to
+another.
+
+The defect this replaces was precisely that mismatch: the control rendered `‹ W07`, naming
+the line, and landed on the record. A back control that misnames its destination is worse
+than an unlabelled one, because the reviewer only learns it was wrong by arriving somewhere
+else.
+
+`ASSUMED:` §13.17 — the record's label is the **project's title**, truncated the way
+`OpsPage` already truncates a title, falling back to `Project` before the record has
+loaded. The console's own convention is that a back control names its destination (`‹
+Projects` on the record itself); the owner ruled the label must stop naming the line but
+did not name the wording.
+
+**VIEW-AC-16 (the return does not blank the canvas)** — *Given* a reviewer who opened a
+drawing from the desk canvas, *When* they go back to the record, *Then* the record page is
+**not remounted and the record is not re-fetched** — the same discipline VIEW-AC-2a already
+requires of the line page — the line that was selected is **still selected**, and the canvas
+shows that line's drawing **from the first frame after the pop**: no intermediate state in
+which it is empty, shows no selection, or shows a placeholder.
+
+**Measured, not eyeballed.** The tester's evidence for the defect was `selected row index
+-1; canvas text starts ""`. The fix is proved by the same two observations, read immediately
+after the pop **with no waiting**: the selected row's identity is the line that was
+selected, and the canvas already carries that line's own content.
+
+**VIEW-AC-17 (executed where only a browser can see it)** — *Given* Phase 2 is complete,
+*When* its test artifacts are enumerated, *Then* `scripts/tests/web/` carries **executed**
+Playwright coverage of this journey: opening from the plate **and** from a unit row
+(VIEW-AC-13), all three exits landing on the record (VIEW-AC-14), the back control naming
+the record (VIEW-AC-15), and the preserved selection with no blank frame (VIEW-AC-16).
+
+A node:test suite cannot satisfy this criterion. The whole journey is a client decision —
+which surface pushed, what the label says, what the canvas shows on return — and the
+server-rendered bytes are identical whether it works or not. That is the same blindness
+that let two MAJOR referral findings past 104 green node tests, and it is why the pipeline's
+rule is absolute: **a UI change cannot pass without Playwright coverage.**
 
 ---
 
@@ -1208,7 +1388,9 @@ in the URL — **both by navigating within the console and by visiting
 refusal for a line id that does not exist, and no candidate data is returned. A probe
 cannot learn from the difference whether the line exists, and the new addressable surfaces
 do not become the cheap way to ask. **The same holds for the drawing URLs**, which resolve
-their line through the same record fetch.
+their line through the same record fetch — **including the ones the desk canvas pushes**
+(VIEW-AC-13), which are the same addresses reached a different way and get no separate
+path through the guard.
 
 **X-AC-5 (R9, enforced server-side)** — *Given* any rationale response, *When* its raw
 body is inspected, *Then* it contains **only** the candidates the surface may show (the
@@ -1261,12 +1443,14 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **A strip launched from a stale branch** | Refused, naming the offending importer, before anything is written. | CERT-AC-13 |
 | **A snapshot written after the removal** | `performance_json` simply no longer carries the fields — no literal placeholder, no preserved vocabulary. | CERT-AC-10 amendment |
 | **`dataSource` on a dimension rule** | Untouched. Same token, different live concept — CERT-AC-3's predicate is narrow on purpose. | §2, out of scope |
-| **The `ElevationLegend` export after ops2 stops rendering it** | It stays, and it currently has **no consumer**. Removing it is a separate decision nobody has taken — this phase removed a render, not an API. | VIEW-AC-12 |
+| **The `ElevationLegend` export** | **Deleted**, together with the assertion that pinned it. Zero callers and no `.elev-legend` rule in any stylesheet — it could not render correctly if something called it. | VIEW-AC-12, D12 |
+| **Enlarging a drawing from the record's desk canvas** | One push, to that line's own drawing address; back — control, Escape or gesture — pops once to the **record**, with the selected row and the canvas intact; the control names the record, never the line. | D11, VIEW-AC-13…17 |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
-| **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** | R31, VIEW-AC-2d |
+| **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** *(From the canvas it is one back, to the record: only one entry was ever pushed.)* | R31, VIEW-AC-2d, VIEW-AC-14 |
 | **A pasted drawing or `why` link, cold** | Renders with the surface open, resolved through the record fetch; back **replaces** to the line path rather than leaving the console. | VIEW-AC-2b, WHY-AC-7c/7d |
 | **A malformed or out-of-range unit suffix** | Normalises by replace, growing no history. | VIEW-AC-2c |
+| **The viewer on a very wide screen** | The drawing keeps growing with the viewport; no fixed cap, and certainly not one lifted from the mock's simulated desk frame. `ASSUMED:` §13.16 | VIEW-AC-1 |
 | **Everything saved before Phase 3** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost. | D5 |
 | **A customer-configured line saved after Phase 3** | Thinner panel: who chose it, and its figures. | D6, D7 |
 | **A customer overrides an AI-priced line** | The recommendation's snapshot is still cleared (it no longer describes the line); the customer's own figures replace it; the requirement does not move; the panel says a person chose it though `origin` still reads `'ai'`. | SNAP-AC-14, R23, R24 |
@@ -1290,7 +1474,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 
 ## 12. Test-surface notes for the architect and tester
 
-Not a test plan — ten places where the obvious test would pass a wrong implementation:
+Not a test plan — eleven places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
@@ -1304,14 +1488,19 @@ Not a test plan — ten places where the obvious test would pass a wrong impleme
 4. **X-AC-1 must be executed for both callers separately** even though they receive the
    same refusal — X-AC-2 is precisely the assertion that they are indistinguishable, and
    it cannot be demonstrated by testing one of them.
-5. **VIEW-AC-10 is a new assertion over untested ground; VIEW-AC-11 is a document edit.**
-   Searched 2026-08-24: **no suite anywhere asserts the drawing legend** — the only hits
-   for its text are two prose comments in `scripts/tests/drawing.test.mjs` and an unrelated
-   `legendText` fixture field. So the tester must not go looking for an existing assertion
-   to update; there is none. VIEW-AC-10's scan is the element's **first** test, and it must
-   be written against the *class* of copy — a check for the word "legend" alone would pass
-   a viewer that still explained panel proportions in a sentence. VIEW-AC-11 is satisfied
-   by an edit to `ops2-record-correction.md`, not by a test run.
+5. **VIEW-AC-10 is a new assertion over untested ground; VIEW-AC-11 is a document edit —
+   and after D12 the selector is a trap.** Searched 2026-08-24: **no suite anywhere asserts
+   the drawing legend** — the only hits for its text are two prose comments in
+   `scripts/tests/drawing.test.mjs` and an unrelated `legendText` fixture field. So the
+   tester must not go looking for an existing assertion to update; there is none.
+   VIEW-AC-10's scan is the element's **first** test, and it must be written against the
+   *class* of copy — a check for the word "legend" alone would pass a viewer that still
+   explained panel proportions in a sentence. **And once `ElevationLegend` is deleted
+   (VIEW-AC-12), the `.elev-legend` locator can never match anything**, so
+   `scripts/tests/web/ops2-drawing-viewer.spec.ts:394`'s `toHaveCount(0)` becomes true by
+   construction: harmless to keep, worthless as coverage, and fatal if it is the *only*
+   thing standing behind VIEW-AC-10. The class-of-copy assertion is the coverage.
+   VIEW-AC-11 is satisfied by an edit to `ops2-record-correction.md`, not by a test run.
 6. **WHY-AC-39/40/41 assert absences, which is the easiest thing to test badly.** Enumerate
    the surface's interactive elements and assert the *set*, rather than searching for the
    string "Change the product" — a differently-worded button would pass a string search.
@@ -1322,6 +1511,9 @@ Not a test plan — ten places where the obvious test would pass a wrong impleme
    truly go back is worse than an X**, because it promises the tree and does not deliver:
    assert that activating it — and the platform's standard back gesture — lands the
    reviewer on the line page, and that the URL changed on the way in (D8).
+   **VIEW-AC-15 adds the other half of the same trap:** a back control that goes to the
+   right place while *naming* the wrong one passes every navigation assertion. Assert the
+   label and the destination **together**, in one test, or neither is pinned.
 8. **VIEW-AC-2's numbers are the assertions, and this criterion inverted between drafts.**
    Revision 9 asserted `history.length` is *unchanged*, because this spec then had the
    viewer as an overlay; R31 makes the opposite true, so anyone reusing an earlier draft's
@@ -1339,7 +1531,7 @@ Not a test plan — ten places where the obvious test would pass a wrong impleme
    CERT-AC-13's directory to match the allowlist would point its gate at the wrong tree and
    make it vacuous. Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`;
    CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder.
-10. **THE RULE THIS FEATURE LEARNED THREE TIMES — a justification naming another consumer
+10. **THE RULE THIS FEATURE LEARNED FOUR TIMES — a justification naming another consumer
     is a claim about the codebase, and it must be EXECUTED, not asserted.** Every instance
     took one grep to settle, and every one had already been believed by two or more careful
     readers:
@@ -1354,14 +1546,27 @@ Not a test plan — ten places where the obvious test would pass a wrong impleme
     - **The correction's own first draft**, which said "exactly one reference repo-wide".
       The Codex stop-gate caught it: the identifier appears in an ADR, four documents, a
       test and three source files. **A count is a claim too.** "No caller" is checkable
-      and stays true; "one hit" was neither. This is the instance worth remembering,
-      because it happened inside the fix for the same defect and passed every reader.
+      and stays true; "one hit" was neither.
+    - **And the corrected criterion's own survival argument (revision 16).** Revision 14
+      kept the export because *"this phase removes a render, not an API"* — a distinction
+      that silently assumed there was a working API to preserve. Nobody had checked the
+      stylesheets. **There is no `.elev-legend` rule anywhere**, so the retained export
+      could not have rendered correctly for any future consumer either. This is the
+      instance worth remembering, because it happened **inside the fix for the same
+      defect**, twice over, and passed every reader both times.
 
     **The tell is a sentence that sounds like verification and contains none:** "another
-    consumer", "a legacy surface", "the customer site", "everywhere else". Each is a
-    testable statement about the repository dressed as a reason. When one appears in a
-    criterion, an allowlist, or an exemption, **run the grep before believing it** — and
-    prefer a criterion that does not need the claim at all, as VIEW-AC-12 now does.
+    consumer", "a legacy surface", "the customer site", "everywhere else", "somebody might
+    use it". Each is a testable statement about the repository dressed as a reason. When one
+    appears in a criterion, an allowlist, or an exemption, **run the grep before believing
+    it** — and prefer a criterion that does not need the claim at all.
+11. **A journey that no criterion names will be tested by nobody — and it is a later stage
+    that adds them.** The desk-canvas enlargement (§8.1) was introduced at
+    **architect-conformance time**, to satisfy VIEW-AC-5, after §8 was written. It was a
+    correct decision that arrived in the one place with no route back to the spec: the
+    reviewer stage. Nothing downstream noticed, because the tester walks *the criteria*, and
+    there were none to walk. **When a review stage adds behaviour, the criterion is part of
+    the fix** — and if it adds UI, so is the `scripts/tests/web/` coverage (VIEW-AC-17).
 
 ---
 
@@ -1380,6 +1585,8 @@ decision was still in play, and might have "resolved" it a second time, differen
 
 An `OPEN` entry that has already shipped says so, because vetoing it then costs rework
 rather than an edit, and the owner deserves to know which kind of veto he is being offered.
+§13.13 is the worked example: it was OPEN-and-shipped, the owner vetoed it, and the cost is
+the deletion now specified in VIEW-AC-12.
 
 **States:** `OPEN` — still assumed, still vetoable · `DISCHARGED` — the owner or the
 architect answered it · `RETIRED` — the question dissolved · `VETOED` — answered against
@@ -1410,21 +1617,40 @@ the assumption.
 | 10 | **WHY-AC-28** — on an overridden line, R6's three labels are kept and only "Chosen" changes its sentence | **OPEN** — Phase 3b |
 | 11 | **§10** — the ops routes' existing uniform refusal is adopted as written rather than changed | **OPEN** — Phase 3b |
 | 12 | *"the drawing viewer is an overlay… it keeps a dismiss control"* | **VETOED by R31.** Kept visible because the way it was wrong is the useful part: it reasoned from *"is it an overlay?"* when the question is *"does it ask a question and return an answer?"* |
-| 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer**. *(Premise corrected revision 14; ruling unchanged.)* This feature removes a render, not an API | **OPEN — shipped in Phase 2.** Deleting the export is a separate decision for whoever takes it deliberately |
+| 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer** | **VETOED — owner, 2026-08-25 (D12).** The criterion's own reason was that deleting the export was *"a separate decision that nobody has taken"*; the owner has taken it. Decided by evidence that arrived after revision 14: **zero callers repo-wide, and no `.elev-legend` rule in any stylesheet**, so the export could not render correctly even if called. VIEW-AC-12 now **requires** the deletion, together with the assertion that pinned it (`scripts/tests/ops2-frame.test.mjs:272`) |
 | 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address: the ordinal matches what the labels already imply, and does not couple the URL to a label that changes if units are reordered |
 | 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
+| 16 | **VIEW-AC-1** — the viewer's drawing scales with the viewport at **every** desk width, with no fixed ceiling above any width | **OPEN** — Phase 2, in the fix now being built. A ceiling is the owner's to add; the recommendation is none, because the drawing is the element he rates highest and the caption carries the dimensions either way |
+| 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title** (truncated as `OpsPage` already truncates), falling back to `Project` before the record has loaded | **OPEN** — Phase 2, in the fix now being built. The owner ruled the label must stop naming the line; the wording is this assumption, and it follows the console's existing convention that a back control names its destination |
 
 ---
 
 ## 14. Decisions needed
 
-**None.** §13.14 and §13.15 are discharged with the owner's reasoning attached, and the
-register now carries a state on every entry so the next reader can tell a live assumption
-from a settled one at a glance.
+**Two, both minor, both already proceeding on a tagged assumption** so the Phase 2 fix is
+not blocked waiting for an answer. Either can be vetoed at review for the cost of a string
+or a stylesheet line.
 
-**Two entries are OPEN and already shipped** (§13.1 VIEW-AC-9, §13.13 VIEW-AC-12) — both
-still vetoable, but a veto now costs rework rather than an edit. The formerly-owed §7.4
-(`CONTEXT.md` corrections) was **discharged 2026-08-25** — verified applied at the Phase 2
-conformance review (design §11), ahead of the Phase 3 stages that read their vocabulary
-from that file. The remaining OPEN entries all belong to Phase 3 and will be live at that
-phase's gate.
+1. **What should the back control say when the viewer was opened from the record's desk
+   canvas?** The owner ruled it must stop naming the line. Recommendation, and what is being
+   built: **the project's title** (`‹ Riverstone Rd`), truncated as `OpsPage` already
+   truncates, falling back to `Project` before the record loads — matching the console's
+   existing habit of naming the destination (`‹ Projects` on the record itself). The
+   alternative is a flat `‹ Project` everywhere, which never truncates and never says which
+   one. §13.17, VIEW-AC-15.
+2. **Should the viewer's drawing keep growing on very wide screens, or stop at some width?**
+   Recommendation, and what is being built: **keep growing** — no ceiling. The drawing is
+   the element the owner rates highest in the product, the caption carries the dimensions at
+   any size, and the cap that prompted this was a number lifted from the mock's simulated
+   desk frame rather than a considered limit. A ceiling can be added later as one line.
+   §13.16, VIEW-AC-1.
+
+**Two entries were closed this revision.** §13.13 (VIEW-AC-12) is **VETOED** — the owner
+took the decision the criterion said nobody had taken, and the export is deleted. The
+desk-canvas journey is no longer unspecified: D11 rules it, §8.1 gives it five criteria, and
+VIEW-AC-17 puts it in the browser suite where it should have been.
+
+**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph). Vetoing it
+now costs rework rather than an edit. The remaining OPEN entries belong to Phase 3 and will
+be live at that phase's gate, except §13.16 and §13.17, which are live **now** and are the
+two questions above.
