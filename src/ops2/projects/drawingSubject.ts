@@ -59,6 +59,11 @@ export function drawingSubject(
   if (route.view === "line") return null;
 
   const backLabel = line.code || "the line";
+  // THE OPENING, NAMED AS BEST WE CAN — one fallback, both paths. The parser
+  // keeps a line whose code it could not read, so every sentence built here has
+  // to survive an empty one; interpolating it raw ends a caption mid-air ("unit
+  // 1 of 2 in ") and titles the viewer with a bare letter.
+  const opening = line.code || "this opening";
   const units = viewerUnitCount(line);
 
   if (route.view === "unit") {
@@ -68,8 +73,13 @@ export function drawingSubject(
     // too means a second caller cannot reintroduce it.
     if (index < 1 || index > units) return null;
     const unit = unitsOf(line)[index - 1];
-    const code = unitLabel(line.code, index - 1);
-    const place = `unit ${index} of ${units} in ${line.code}`;
+    // Without a parent code there is no `W07A` to be, so the unit is named by
+    // the ordinal — and the caption then drops its leading code, because the
+    // place clause already says "unit 1 of 2" and saying it twice is worse than
+    // a caption that starts with the size.
+    const code = line.code ? unitLabel(line.code, index - 1) : `Unit ${index}`;
+    const lead = line.code ? `${code} · ` : "";
+    const place = `unit ${index} of ${units} in ${opening}`;
     return {
       code,
       title: code,
@@ -86,8 +96,8 @@ export function drawingSubject(
         // The overall clause stops where the fact stops: "which is size not
         // read overall" reads as a rendering fault rather than as an absence.
         : sized(line)
-          ? `${code} · ${sizeText(unit)} · ${place}, which is ${sizeText(line)} overall`
-          : `${code} · ${sizeText(unit)} · ${place}`,
+          ? `${lead}${sizeText(unit)} · ${place}, which is ${sizeText(line)} overall`
+          : `${lead}${sizeText(unit)} · ${place}`,
       units: [],
       basis: null,
     };
@@ -96,7 +106,7 @@ export function drawingSubject(
   const parts = elevationPartsFor(line) ?? null;
   const shared = units > 0 ? sharedUnitSize(line) : null;
   return {
-    code: line.code || "this opening",
+    code: opening,
     title: "Drawing",
     backLabel,
     productSlug: line.productSlug,

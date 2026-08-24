@@ -1113,3 +1113,24 @@ test("a line with no code still has a back control that says where it goes", () 
   assert.equal(s.backLabel, "the line");
   assert.equal(s.code, "this opening", "and the accessible name still says what it is");
 });
+
+test("a UNIT of a line with no code names itself by its place, never by a code that is not there", () => {
+  // The same state one level down, and the level that was left interpolating
+  // the missing code raw: `unit 1 of 2 in ` is a sentence that stops mid-air,
+  // and `unitLabel("", 0)` titles the viewer with a bare `A`.
+  const s = M.drawingSubject(parse(composite({ code: "" })), { view: "unit", unitIndex: 1 });
+  assert.equal(s.backLabel, "the line");
+  assert.equal(s.title, "Unit 1", "a title is never a letter on its own");
+  assert.equal(s.code, "Unit 1");
+  // The opening is named the way the parent path already names it, and the
+  // ordinal carries the identity the code cannot — so the caption does not lead
+  // with `Unit 1` and then say `unit 1 of 2` again.
+  assert.equal(s.caption,
+    "1500 × 1200 mm · unit 1 of 2 in this opening, which is 1500 × 2400 mm overall");
+
+  // A coded line is untouched by any of it.
+  const coded = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 });
+  assert.equal(coded.title, "W07B");
+  assert.equal(coded.caption,
+    "W07B · 1500 × 1200 mm · unit 2 of 2 in W07, which is 1500 × 2400 mm overall");
+});
