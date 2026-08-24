@@ -912,7 +912,7 @@ test("the line's own drawing is titled `Drawing`, and back names the line", () =
   // VIEW-AC-1a, the owner's ruling: the back control already names the line, so
   // a title repeating the code says it twice. The size lives in the caption.
   const s = M.drawingSubject(parse(line({ code: "W03", width: "1800", height: "1200",
-    productSlug: "amj80-series-awning-window" })), { view: "drawing", unitIndex: null });
+    productSlug: "amj80-series-awning-window" })), { view: "drawing", unitIndex: null }, null);
   assert.equal(s.title, "Drawing");
   assert.equal(s.backLabel, "W03");
   assert.equal(s.code, "W03", "the accessible name still carries the subject's identity");
@@ -925,11 +925,11 @@ test("the line's own drawing is titled `Drawing`, and back names the line", () =
   assert.equal(s.basis, null, "no arrangement caveat where there is no arrangement");
 
   // The line page never asks the viewer for a subject it is not showing.
-  assert.equal(M.drawingSubject(parse(line()), { view: "line", unitIndex: null }), null);
+  assert.equal(M.drawingSubject(parse(line()), { view: "line", unitIndex: null }, null), null);
 });
 
 test("a composite's caption reads its overall and what it is drawn from, and its units are listed", () => {
-  const s = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null });
+  const s = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null }, null);
   assert.equal(s.title, "Drawing");
   assert.equal(s.backLabel, "W07");
   assert.equal(s.caption,
@@ -957,13 +957,13 @@ test("a composite's caption reads its overall and what it is drawn from, and its
       { id: "s2", productSlug: "b", productName: "Fixed 600", width: "600", height: "1500",
         qtyPerParent: 1, qty: 1, lineTotal: 300, status: "ready" },
     ],
-  })), { view: "drawing", unitIndex: null });
+  })), { view: "drawing", unitIndex: null }, null);
   assert.equal(mixed.caption, "1500 × 2400 mm overall · height × width · drawn from its 2 units");
 });
 
 test("a unit is titled with its own code and captioned with its place in the opening", () => {
   // VIEW-AC-4. 1-based, and the ordinal is the one the labels already imply.
-  const first = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 1 });
+  const first = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 1 }, null);
   assert.equal(first.title, "W07A");
   assert.equal(first.code, "W07A");
   assert.equal(first.backLabel, "W07", "back still returns to the line, not to the parent drawing");
@@ -975,7 +975,7 @@ test("a unit is titled with its own code and captioned with its place in the ope
   assert.equal(first.parts, undefined, "a unit is one frame — handing it parts draws a join that is not there");
   assert.deepEqual(first.units, [], "and it does not list the assembly it came from");
 
-  const second = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 });
+  const second = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 }, null);
   assert.equal(second.title, "W07B");
   assert.equal(second.productSlug, "amj67-fixed-window");
   assert.match(second.caption, /unit 2 of 2 in W07/);
@@ -983,15 +983,15 @@ test("a unit is titled with its own code and captioned with its place in the ope
   // An ordinal the line cannot answer is never a subject. The route grammar
   // normalises this away first; the model refuses it too, because a viewer
   // rendering `undefined` as a drawing is worse than one that does not open.
-  assert.equal(M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 3 }), null);
-  assert.equal(M.drawingSubject(parse(line()), { view: "unit", unitIndex: 1 }), null);
+  assert.equal(M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 3 }, null), null);
+  assert.equal(M.drawingSubject(parse(line()), { view: "unit", unitIndex: 1 }, null), null);
 });
 
 test("no size read is said in the existing sentence, and nothing pretends to be a measurement", () => {
   // VIEW-AC-8. The stand-in square keeps the caption it has always had — that
   // is a statement about the drawing's AUTHORITY, which R25 leaves alone.
   const s = M.drawingSubject(parse(line({ code: "W11", width: "", height: "" })),
-    { view: "drawing", unitIndex: null });
+    { view: "drawing", unitIndex: null }, null);
   assert.equal(s.caption, "No size read for this opening — drawn as a square stand-in");
   assert.equal(s.title, "Drawing");
   assert.equal(s.backLabel, "W11");
@@ -999,14 +999,14 @@ test("no size read is said in the existing sentence, and nothing pretends to be 
   // Half a size is not a size. `1200 ×` reads as a complete fact with a
   // rendering bug, which is the one line a reviewer must not skim past.
   const half = M.drawingSubject(parse(line({ width: "1200", height: "" })),
-    { view: "drawing", unitIndex: null });
+    { view: "drawing", unitIndex: null }, null);
   assert.equal(half.caption, "No size read for this opening — drawn as a square stand-in");
 
   // A unit of an opening whose own size was never read still states its place.
   // The overall clause stops where the fact stops — "which is size not read
   // overall" is a sentence that reads as a rendering fault.
   const unit = M.drawingSubject(parse(composite({ width: "", height: "" })),
-    { view: "unit", unitIndex: 1 });
+    { view: "unit", unitIndex: 1 }, null);
   assert.equal(unit.caption, "W07A · 1500 × 1200 mm · unit 1 of 2 in W07");
 });
 
@@ -1109,7 +1109,7 @@ test("a line with no code still has a back control that says where it goes", () 
   // The record keeps a line whose code the parser could not read, so the viewer
   // has to open on one. A back control labelled with an empty string is a
   // control nobody can name aloud.
-  const s = M.drawingSubject(parse(line({ code: "" })), { view: "drawing", unitIndex: null });
+  const s = M.drawingSubject(parse(line({ code: "" })), { view: "drawing", unitIndex: null }, null);
   assert.equal(s.backLabel, "the line");
   assert.equal(s.code, "this opening", "and the accessible name still says what it is");
 });
@@ -1118,7 +1118,7 @@ test("a UNIT of a line with no code names itself by its place, never by a code t
   // The same state one level down, and the level that was left interpolating
   // the missing code raw: `unit 1 of 2 in ` is a sentence that stops mid-air,
   // and `unitLabel("", 0)` titles the viewer with a bare `A`.
-  const s = M.drawingSubject(parse(composite({ code: "" })), { view: "unit", unitIndex: 1 });
+  const s = M.drawingSubject(parse(composite({ code: "" })), { view: "unit", unitIndex: 1 }, null);
   assert.equal(s.backLabel, "the line");
   assert.equal(s.title, "Unit 1", "a title is never a letter on its own");
   assert.equal(s.code, "Unit 1");
@@ -1129,7 +1129,7 @@ test("a UNIT of a line with no code names itself by its place, never by a code t
     "1500 × 1200 mm · unit 1 of 2 in this opening, which is 1500 × 2400 mm overall");
 
   // A coded line is untouched by any of it.
-  const coded = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 });
+  const coded = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 }, null);
   assert.equal(coded.title, "W07B");
   assert.equal(coded.caption,
     "W07B · 1500 × 1200 mm · unit 2 of 2 in W07, which is 1500 × 2400 mm overall");
@@ -1139,9 +1139,39 @@ test("the units list of a code-less assembly names its rows the way the viewer t
   // The same missing code, one surface further out. Each row of this list OPENS
   // the viewer above, so a row reading `A` under a viewer titled `Unit 1` is two
   // names for one frame.
-  const whole = M.drawingSubject(parse(composite({ code: "" })), { view: "drawing", unitIndex: null });
+  const whole = M.drawingSubject(parse(composite({ code: "" })), { view: "drawing", unitIndex: null }, null);
   assert.deepEqual(whole.units.map((u) => u.code), ["Unit 1", "Unit 2"]);
   // The coded assembly still reads `W07A`, `W07B`.
-  const coded = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null });
+  const coded = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null }, null);
   assert.deepEqual(coded.units.map((u) => u.code), ["W07A", "W07B"]);
+});
+
+// ── Where back goes, and therefore what it is allowed to say ────────────────
+
+test("the back control names WHERE IT GOES, and the two ways in answer differently", () => {
+  // VIEW-AC-15. There are exactly two ways into the viewer. From the line's own
+  // page back returns to the line and names it, as it always has. From the
+  // record's desk canvas back returns to the RECORD — so naming the line there
+  // promises a page the journey never visits, which is the defect this replaces.
+  const l = parse(line({ code: "W03" }));
+  const at = (route, backTo) => M.drawingSubject(l, route, backTo);
+  const drawing = { view: "drawing", unitIndex: null };
+  assert.equal(at(drawing, null).backLabel, "W03", "from the line page, the line");
+  assert.equal(at(drawing, "Wattle Grove - Lot 14").backLabel, "Wattle Grove - Lot 14",
+    "from the record's canvas, the project (ASSUMED: §13.17)");
+  // A project with no title still leaves a control someone can name aloud —
+  // the same rule `line.code || "the line"` states one level down.
+  assert.equal(at(drawing, "").backLabel, "Project");
+
+  // ONE CONTROL, so the unit path answers the same way.
+  const c = parse(composite());
+  const unit = { view: "unit", unitIndex: 1 };
+  assert.equal(M.drawingSubject(c, unit, null).backLabel, "W07");
+  assert.equal(M.drawingSubject(c, unit, "Wattle Grove").backLabel, "Wattle Grove");
+
+  // AND VIEW-AC-1a IS UNTOUCHED. Only the destination's name moves; the title
+  // still carries the SUBJECT, by whichever door the reviewer came in.
+  assert.equal(M.drawingSubject(c, unit, "Wattle Grove").title, "W07A");
+  assert.equal(at(drawing, "Wattle Grove").title, "Drawing");
+  assert.equal(at(drawing, "Wattle Grove").code, "W03");
 });

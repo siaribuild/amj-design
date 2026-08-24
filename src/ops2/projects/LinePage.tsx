@@ -81,7 +81,7 @@ export function LinePage() {
     else if (route.normalise) history.replace(linePath + route.canonical);
   }, [ready, stray, route.normalise, route.canonical, history, linePath]);
 
-  const subject = line && !route.normalise ? drawingSubject(line, route) : null;
+  const subject = line && !route.normalise ? drawingSubject(line, route, null) : null;
 
   // WHERE THE FOCUS CAME FROM. The page never remounts, so the control that
   // opened the viewer is still on screen to receive it back (VIEW-AC-7).

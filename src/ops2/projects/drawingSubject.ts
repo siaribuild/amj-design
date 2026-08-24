@@ -63,10 +63,22 @@ function sharedUnitSize(line: RecordLine): string | null {
 export function drawingSubject(
   line: RecordLine,
   route: Pick<LineRoute, "view" | "unitIndex">,
+  /**
+   * WHERE BACK GOES, and therefore what it is allowed to say (VIEW-AC-15).
+   *
+   * There are exactly two ways into this viewer, and they return to different
+   * places. `null` is the line's own page — back names the line, as it always
+   * has. A string is the project's TITLE, which is what the record's desk canvas
+   * passes: from there back returns to the record, and a control naming the line
+   * would promise a page that journey never visits. Empty falls back to
+   * `Project` for the same reason `line.code` falls back to `the line` — a
+   * control nobody can name aloud is not a control.
+   */
+  backTo: string | null,
 ): ViewerSubject | null {
   if (route.view === "line") return null;
 
-  const backLabel = line.code || "the line";
+  const backLabel = backTo === null ? (line.code || "the line") : (backTo || "Project");
   // THE OPENING, NAMED AS BEST WE CAN — one fallback, both paths. The parser
   // keeps a line whose code it could not read, so every sentence built here has
   // to survive an empty one; interpolating it raw ends a caption mid-air ("unit
