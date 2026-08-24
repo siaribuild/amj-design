@@ -92,17 +92,35 @@ const tick = (x: number, y: number, len: number) =>
  *  than the outline, so the drawing stays the subject and the numbers read as
  *  annotation. Here that is currentColor at reduced opacity — same relationship,
  *  no new token. */
-function DimGroups({ F, S, wMm, hMm }: { F: Box; S: typeof SIZES[ElevationSize]; wMm: number; hMm: number }) {
+function DimGroups({ F, S, wMm, hMm, spans, stacked, gap }: {
+  F: Box; S: typeof SIZES[ElevationSize]; wMm: number; hMm: number;
+  /** Each unit's own extent along the split axis, in viewBox units — drawn as a
+   *  second leader row between the frame and the overall one. `null` unless the
+   *  caller asked for unit dimensions on a composite. */
+  spans: { start: number; end: number; label: string }[] | null;
+  /** A horizontal split stacks its units, so they divide the HEIGHT and their
+   *  leaders go up the side rather than along the bottom. */
+  stacked: boolean;
+  /** How far the overall leader moves outward to make room for the unit row. */
+  gap: number;
+}) {
   const fs = S.font;
   const by = F.y + F.h;
   // 0.68, not the wireframe's 0.55. At 0.55 the leader number's ascender lands
   // ~0.5 units under the frame — invisible at md and lg, where the wireframe
   // draws, and a collision at sm, where this one does. The witness lines are
   // shortened to +4 to match, so the group still clears the bottom gutter.
-  const dimY = by + S.pad.b * 0.68;
-  const dimX = F.x - S.pad.l * 0.41;
-  const witX = F.x - S.pad.l * 0.65;
+  //
+  // THE OVERALL MOVES OUT, THE UNIT ROW TAKES ITS PLACE. The unit sizes sit
+  // nearest the frame they measure and the overall sits below them, which is
+  // how a shop drawing stacks them and the only order in which the two read as
+  // one statement rather than two.
+  const dimY = by + S.pad.b * 0.68 + (stacked ? 0 : gap);
+  const dimX = F.x - S.pad.l * 0.41 - (stacked ? gap : 0);
+  const witX = F.x - S.pad.l * 0.65 - (stacked ? gap : 0);
   const textX = dimX - 3;
+  const unitY = by + S.pad.b * 0.68;
+  const unitX = F.x - S.pad.l * 0.41;
   const rule = { fill: "none", stroke: "currentColor", strokeWidth: q(S.sw.dim), opacity: 0.55 } as const;
   // paint-order:stroke haloes the number so it punches its own leader without a
   // mask — one property, and exactly what a drawing does.
@@ -111,8 +129,35 @@ function DimGroups({ F, S, wMm, hMm }: { F: Box; S: typeof SIZES[ElevationSize];
   const wide = wMm / hMm > 2.4;
   const bx = F.x + F.w / 2, bw = Math.max(20, F.w * 0.12);
 
+  // ── EACH UNIT'S OWN SIZE, ticked where the mullions really are ─────────────
+  // Owner: "for splits, showing dimensions of the units, as well as overall
+  // dimensions, would be nice." Both are on the drawing, so the relationship is
+  // legible in one look rather than assembled from a caption and a list. The
+  // ticks are square witness marks rather than the overall's 45° ones, so the
+  // two rows do not read as one leader broken into pieces.
+  const edges = spans ? [spans[0].start, ...spans.map((s) => s.end)] : [];
+  const unitRow = spans && (
+    <g>
+      <path {...rule} d={
+        (stacked
+          ? `M${q(unitX)} ${q(edges[0])} V${q(edges[edges.length - 1])} `
+            + edges.map((v) => `M${q(unitX - 4)} ${q(v)} h8 `).join("")
+          : `M${q(edges[0])} ${q(unitY)} H${q(edges[edges.length - 1])} `
+            + edges.map((v) => `M${q(v)} ${q(unitY - 4)} v8 `).join(""))} />
+      {spans.map((s, i) => {
+        const mid = (s.start + s.end) / 2;
+        return stacked
+          ? <text {...text} className="elev-dim" key={i} x={q(unitX - 3)} y={q(mid)}
+              textAnchor="middle" transform={`rotate(-90 ${q(unitX - 3)} ${q(mid)})`}>{s.label}</text>
+          : <text {...text} className="elev-dim" key={i} x={q(mid)} y={q(unitY - 3)}
+              textAnchor="middle">{s.label}</text>;
+      })}
+    </g>
+  );
+
   return (
     <>
+      {unitRow}
       <g>
         <path {...rule} d={
           `M${q(F.x)} ${q(by + 2)} V${q(dimY + 4)} `
@@ -309,7 +354,7 @@ function openingSymbol(kind: string, p: Box, hand: Hand, o: { inset: number; sw:
   }
 }
 
-export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, parts, axis, opening = false, className = "" }: {
+export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, unitDims = false, parts, axis, opening = false, className = "" }: {
   productSlug: string;
   /** Draw an OPENING rather than a product: the frame and its glass, with no
    *  sash symbol and no mullions — a fixed-window square, which is what a hole
@@ -349,6 +394,16 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
    *  false at xs, true from sm up — because a 34px glyph has nowhere to put a
    *  number and a drawing big enough to be the subject should be dimensioned. */
   dims?: boolean;
+  /** Dimension each UNIT of a composite as well as the opening — a second
+   *  leader row along the split axis, ticked at the real mullions, with the
+   *  overall moved outward to make room for it.
+   *
+   *  OPT-IN, and it stays that way. Only ops2's drawing viewer asks for it, at
+   *  the owner's request; every other caller — the customer site included —
+   *  gets the drawing it got before this existed. Inert on anything that is not
+   *  a composite, and inert wherever leaders are not drawn at all, so a caller
+   *  may pass it unconditionally. */
+  unitDims?: boolean;
   className?: string;
 }) {
   const family = opening ? undefined : getFamily(getProductBySlug(productSlug)?.familySlug ?? "");
@@ -374,7 +429,23 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   // not.
   const sized = pos(widthMm, 0) > 0 && pos(heightMm, 0) > 0;
   const showDims = (dims ?? S.dims) && S.font > 0 && sized;
-  const pad = showDims ? S.pad : { l: S.pad.r, r: S.pad.r, t: S.pad.r, b: S.pad.r };
+
+  // The units, resolved before the gutters, because a second leader row is
+  // paid for in padding and the viewBox is decided from that.
+  const composite = (parts ?? []).flatMap((p) =>
+    Array.from({ length: Math.max(1, Math.floor(p.qty ?? 1)) }, () => p));
+  const alongTotal = composite.reduce((sum, p) => sum + pos(p.alongMm, 0), 0);
+  const stacked = axis === "horizontal";
+  const drawUnitDims = showDims && unitDims && composite.length >= 2 && alongTotal > 0;
+  // The room the overall leader moves outward by. Taken from the gutter it
+  // already lives in rather than from a new constant, so it scales with the
+  // size the caller asked for.
+  const gap = drawUnitDims ? (stacked ? S.pad.l : S.pad.b) * 0.62 : 0;
+
+  const base = showDims ? S.pad : { l: S.pad.r, r: S.pad.r, t: S.pad.r, b: S.pad.r };
+  const pad = !drawUnitDims ? base
+    : stacked ? { ...base, l: base.l + gap }
+    : { ...base, b: base.b + gap };
 
   // True relative proportion — the same scale on both axes. In square mode the
   // frame takes the box's shorter side on both axes instead, which is the ONLY
@@ -406,11 +477,6 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   // one panel per unit, each panel's WIDTH in proportion to that unit's real
   // size (a 2400 + 600 split must not look like two halves), each panel's SYMBOL
   // from that unit's own family, and a mullion at every real join.
-  const composite = (parts ?? []).flatMap((p) =>
-    Array.from({ length: Math.max(1, Math.floor(p.qty ?? 1)) }, () => p));
-  const alongTotal = composite.reduce((sum, p) => sum + pos(p.alongMm, 0), 0);
-  const stacked = axis === "horizontal";
-
   const compositeGeometry = composite.length >= 2 && alongTotal > 0
     ? composite.reduce<{ boxes: Box[]; joins: string[]; at: number }>((acc, p, i) => {
       const share = (pos(p.alongMm, 0) / alongTotal) * (stacked ? G.h : G.w);
@@ -448,6 +514,21 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
         return <g key={i}>{openingSymbol(kind, { x: G.x + pw * i, y: G.y, w: pw, h: G.h }, ph, symOpts)}</g>;
       });
 
+  // The unit leaders span the FRAME, not the glass, so their outer ends line up
+  // with the overall leader beneath them — a unit row a frame-thickness short
+  // at each end reads as an arithmetic error in the numbers above it.
+  const unitSpans = drawUnitDims
+    ? composite.reduce<{ rows: { start: number; end: number; label: string }[]; at: number }>(
+      (acc, p) => {
+        const along = pos(p.alongMm, 0);
+        const share = (along / alongTotal) * (stacked ? F.h : F.w);
+        const start = (stacked ? F.y : F.x) + acc.at;
+        acc.rows.push({ start, end: start + share, label: fmtMm(along) });
+        acc.at += share;
+        return acc;
+      }, { rows: [], at: 0 }).rows
+    : null;
+
   // A composite's joins are where the units actually meet, so they replace the
   // evenly-spaced mullions the single-family path would have drawn.
   const mullions = compositeGeometry
@@ -481,7 +562,8 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
           strokeLinecap="square" strokeLinejoin="miter" opacity="0.75" />
       )}
       {symbols}
-      {showDims && <DimGroups F={F} S={S} wMm={wMm} hMm={hMm} />}
+      {showDims && <DimGroups F={F} S={S} wMm={wMm} hMm={hMm}
+        spans={unitSpans} stacked={stacked} gap={gap} />}
     </svg>
   );
 }

@@ -20,9 +20,13 @@ const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("ops2-record");
 const outfile = join(runDir, "ops2-record-bundle.mjs");
 const panelOut = join(runDir, "ops2-line-review-bundle.mjs");
+const elevOut = join(runDir, "elevation-bundle.mjs");
 await build({
   stdin: {
-    contents: `export * from ${p("src/ops2/projects/record.ts")};`,
+    contents: `
+      export * from ${p("src/ops2/projects/record.ts")};
+      export { drawingSubject, viewerUnitCount } from ${p("src/ops2/projects/drawingSubject.ts")};
+    `,
     resolveDir: projectRoot,
     sourcefile: "ops2-record-entry.ts",
     loader: "ts",
@@ -37,6 +41,17 @@ await build({
     loader: "tsx",
   },
   bundle: true, format: "esm", platform: "node", outfile: panelOut, logLevel: "silent",
+  jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
+  loader: { ".css": "empty" },
+});
+await build({
+  stdin: {
+    contents: `export { Elevation } from ${p("src/components/quote-project/Elevation.tsx")};`,
+    resolveDir: projectRoot,
+    sourcefile: "elevation-entry.tsx",
+    loader: "tsx",
+  },
+  bundle: true, format: "esm", platform: "node", outfile: elevOut, logLevel: "silent",
   jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
   loader: { ".css": "empty" },
 });
@@ -852,4 +867,249 @@ ${priced}`);
   const defs = (spec.match(/<dd>/g) ?? []).length;
   assert.equal(terms, 2);
   assert.equal(defs, terms, "every definition has its term");
+});
+
+// ── What the drawing viewer is handed ────────────────────────────────────────
+//
+// The viewer itself is presentation-only — a subject in, a back closure out —
+// so everything it SAYS is decided here, where node can read it. The browser
+// suite (scripts/tests/web/ops2-drawing-viewer.spec.ts) proves it reaches the
+// screen; this proves it is the right sentence before it gets there.
+
+const composite = (over = {}) => line({
+  code: "W07", lineKind: "composite_parent", compositeAxis: "vertical",
+  width: "2400", height: "1500", productName: "Composite opening",
+  segments: [
+    { id: "s1", productSlug: "amj67t-awning-window", productName: "AMJ67T Awning",
+      width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 500, status: "ready" },
+    { id: "s2", productSlug: "amj67-fixed-window", productName: "AMJ67 Fixed",
+      width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 400, status: "ready" },
+  ],
+  ...over,
+});
+const parse = (l) => M.parseProjectRecord(body({ lines: [l] })).lines[0];
+
+test("only a composite offers units to enlarge, so an ordinal cannot address a frame that is not on screen", () => {
+  // The count the URL grammar is answered against. A simple opening displays no
+  // units list, so `…/drawing/u1` on one names nothing — and a line with a
+  // single segment is a single frame, not a split (`elevationPartsFor`'s own
+  // rule: fewer than two units is not a composite).
+  assert.equal(M.viewerUnitCount(parse(line())), 0, "a simple opening");
+  assert.equal(M.viewerUnitCount(parse(composite())), 2);
+  // Units, not rows: a symmetric split is ONE segment carrying qty 2.
+  assert.equal(M.viewerUnitCount(parse(composite({
+    segments: [{ id: "s1", productSlug: "amj67t-awning-window", productName: "AMJ67T Awning",
+      width: "1200", height: "1500", qtyPerParent: 2, qty: 2, lineTotal: 900, status: "ready" }],
+  }))), 2);
+  assert.equal(M.viewerUnitCount(parse(line({
+    lineKind: "composite_parent",
+    segments: [{ id: "s1", productSlug: "x", productName: "One frame",
+      width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 500, status: "ready" }],
+  }))), 0, "one frame is not a split");
+});
+
+test("the line's own drawing is titled `Drawing`, and back names the line", () => {
+  // VIEW-AC-1a, the owner's ruling: the back control already names the line, so
+  // a title repeating the code says it twice. The size lives in the caption.
+  const s = M.drawingSubject(parse(line({ code: "W03", width: "1800", height: "1200",
+    productSlug: "amj80-series-awning-window" })), { view: "drawing", unitIndex: null });
+  assert.equal(s.title, "Drawing");
+  assert.equal(s.backLabel, "W03");
+  assert.equal(s.code, "W03", "the accessible name still carries the subject's identity");
+  assert.equal(s.productSlug, "amj80-series-awning-window");
+  assert.equal(s.width, "1800");
+  assert.equal(s.height, "1200");
+  assert.equal(s.caption, "1200 × 1800 mm · height × width");
+  assert.equal(s.parts, null, "a simple opening is not drawn from units");
+  assert.deepEqual(s.units, [], "and has none to list");
+  assert.equal(s.basis, null, "no arrangement caveat where there is no arrangement");
+
+  // The line page never asks the viewer for a subject it is not showing.
+  assert.equal(M.drawingSubject(parse(line()), { view: "line", unitIndex: null }), null);
+});
+
+test("a composite's caption reads its overall and what it is drawn from, and its units are listed", () => {
+  const s = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null });
+  assert.equal(s.title, "Drawing");
+  assert.equal(s.backLabel, "W07");
+  assert.equal(s.caption,
+    "1500 × 2400 mm overall · height × width · drawn from its 2 units of 1500 × 1200 mm");
+  assert.equal(s.axis, "vertical");
+  assert.equal(s.parts.length, 2, "the drawing is built from the units, not guessed from a family");
+  assert.deepEqual(s.units, [
+    { code: "W07A", productName: "AMJ67T Awning", size: "1500 × 1200 mm" },
+    { code: "W07B", productName: "AMJ67 Fixed", size: "1500 × 1200 mm" },
+  ]);
+
+  // THE CAVEAT STAYS; the sentence teaching that panel widths are proportional
+  // does NOT (R25 — that one explains how to read the drawing, this one states
+  // what the drawing is worth).
+  assert.equal(s.basis,
+    "Indicative arrangement — the mullion positions are confirmed on technical review.");
+  assert.ok(!/proportion/i.test(JSON.stringify(s)), "no sentence teaches the notation");
+
+  // Units of different sizes have no single size to claim, so the caption stops
+  // where the truth does rather than picking the first one.
+  const mixed = M.drawingSubject(parse(composite({
+    segments: [
+      { id: "s1", productSlug: "a", productName: "Awning 1200", width: "1200", height: "1500",
+        qtyPerParent: 1, qty: 1, lineTotal: 500, status: "ready" },
+      { id: "s2", productSlug: "b", productName: "Fixed 600", width: "600", height: "1500",
+        qtyPerParent: 1, qty: 1, lineTotal: 300, status: "ready" },
+    ],
+  })), { view: "drawing", unitIndex: null });
+  assert.equal(mixed.caption, "1500 × 2400 mm overall · height × width · drawn from its 2 units");
+});
+
+test("a unit is titled with its own code and captioned with its place in the opening", () => {
+  // VIEW-AC-4. 1-based, and the ordinal is the one the labels already imply.
+  const first = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 1 });
+  assert.equal(first.title, "W07A");
+  assert.equal(first.code, "W07A");
+  assert.equal(first.backLabel, "W07", "back still returns to the line, not to the parent drawing");
+  assert.equal(first.productSlug, "amj67t-awning-window");
+  assert.equal(first.width, "1200");
+  assert.equal(first.height, "1500");
+  assert.equal(first.caption,
+    "W07A · 1500 × 1200 mm · unit 1 of 2 in W07, which is 1500 × 2400 mm overall");
+  assert.equal(first.parts, null, "a unit is one frame — handing it parts draws a join that is not there");
+  assert.deepEqual(first.units, [], "and it does not list the assembly it came from");
+
+  const second = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 });
+  assert.equal(second.title, "W07B");
+  assert.equal(second.productSlug, "amj67-fixed-window");
+  assert.match(second.caption, /unit 2 of 2 in W07/);
+
+  // An ordinal the line cannot answer is never a subject. The route grammar
+  // normalises this away first; the model refuses it too, because a viewer
+  // rendering `undefined` as a drawing is worse than one that does not open.
+  assert.equal(M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 3 }), null);
+  assert.equal(M.drawingSubject(parse(line()), { view: "unit", unitIndex: 1 }), null);
+});
+
+test("no size read is said in the existing sentence, and nothing pretends to be a measurement", () => {
+  // VIEW-AC-8. The stand-in square keeps the caption it has always had — that
+  // is a statement about the drawing's AUTHORITY, which R25 leaves alone.
+  const s = M.drawingSubject(parse(line({ code: "W11", width: "", height: "" })),
+    { view: "drawing", unitIndex: null });
+  assert.equal(s.caption, "No size read for this opening — drawn as a square stand-in");
+  assert.equal(s.title, "Drawing");
+  assert.equal(s.backLabel, "W11");
+
+  // Half a size is not a size. `1200 ×` reads as a complete fact with a
+  // rendering bug, which is the one line a reviewer must not skim past.
+  const half = M.drawingSubject(parse(line({ width: "1200", height: "" })),
+    { view: "drawing", unitIndex: null });
+  assert.equal(half.caption, "No size read for this opening — drawn as a square stand-in");
+
+  // A unit of an opening whose own size was never read still states its place.
+  // The overall clause stops where the fact stops — "which is size not read
+  // overall" is a sentence that reads as a rendering fault.
+  const unit = M.drawingSubject(parse(composite({ width: "", height: "" })),
+    { view: "unit", unitIndex: 1 });
+  assert.equal(unit.caption, "W07A · 1500 × 1200 mm · unit 1 of 2 in W07");
+});
+
+// ── The enlarged composite, dimensioned unit by unit ────────────────────────
+//
+// Owner, at the mock gate: "for splits, showing dimensions of the units, as
+// well as overall dimensions, would be nice." So the viewer's composite carries
+// TWO leader rows — each unit's own size ticked at the mullions, and the overall
+// below it — and the relationship is read off the drawing in one look instead of
+// being assembled from a caption and a list.
+
+const renderElevation = async (props) => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createElement } = await import("react");
+  const { Elevation } = await import(pathToFileURL(elevOut).href);
+  return renderToStaticMarkup(createElement(Elevation, props));
+};
+/** Every number the drawing prints on a leader, in document order. */
+const leaders = (svg) => [...svg.matchAll(/class="elev-dim"[^>]*>([^<]*)</g)].map((m) => m[1]);
+
+test("the viewer's composite states each unit's size AND the overall, on the drawing", async () => {
+  const svg = await renderElevation({
+    productSlug: "", widthMm: "2400", heightMm: "1500", size: "lg", axis: "vertical",
+    parts: [
+      { productSlug: "amj67t-awning-window", alongMm: "1200", qty: 1 },
+      { productSlug: "amj67-fixed-window", alongMm: "1200", qty: 1 },
+    ],
+    unitDims: true,
+  });
+  // Two unit widths, then the overall width, then the height up the side.
+  assert.deepEqual(leaders(svg), ["1200", "1200", "2400", "1500"]);
+
+  // Proportion is a property of the DRAWING, and nothing on this surface
+  // explains it in words (R25, VIEW-AC-10) — which is exactly why the numbers
+  // have to be on the drawing itself.
+  assert.ok(!/proportion/i.test(svg), "no sentence teaches the notation");
+
+  // An uneven split prints what each unit really is, not two halves.
+  const uneven = await renderElevation({
+    productSlug: "", widthMm: "3000", heightMm: "1500", size: "lg", axis: "vertical",
+    parts: [
+      { productSlug: "a", alongMm: "2400", qty: 1 },
+      { productSlug: "b", alongMm: "600", qty: 1 },
+    ],
+    unitDims: true,
+  });
+  assert.deepEqual(leaders(uneven), ["2400", "600", "3000", "1500"]);
+
+  // A horizontal split divides the HEIGHT, so its units are dimensioned up the
+  // side beside the overall height and the width row stays one number. Getting
+  // this backwards draws unit widths that add up to the wrong dimension —
+  // arithmetic a reviewer would report as a data fault.
+  const stacked = await renderElevation({
+    productSlug: "", widthMm: "1200", heightMm: "2400", size: "lg", axis: "horizontal",
+    parts: [
+      { productSlug: "a", alongMm: "1200", qty: 1 },
+      { productSlug: "b", alongMm: "1200", qty: 1 },
+    ],
+    unitDims: true,
+  });
+  assert.equal(leaders(stacked).length, 4, "two unit heights, the overall height, one width");
+  assert.equal(leaders(stacked).filter((n) => n === "2400").length, 1, "one overall height");
+  assert.equal(leaders(stacked).filter((n) => n === "1200").length, 3, "two units and the width");
+});
+
+test("unit leaders are opt-in, so the customer site's drawings are untouched", async () => {
+  // THE HALF THAT IS NOT NEW BEHAVIOUR, and the reason it is written down.
+  // `Elevation` is the CUSTOMER SITE's component: a quote's composite drawings
+  // render through this same function, and this feature has no business
+  // changing them. So the default is asserted byte-for-byte rather than trusted
+  // to a default value that a later edit could quietly move.
+  const base = {
+    productSlug: "", widthMm: "2400", heightMm: "1500", size: "lg", axis: "vertical",
+    parts: [
+      { productSlug: "amj67t-awning-window", alongMm: "1200", qty: 1 },
+      { productSlug: "amj67-fixed-window", alongMm: "1200", qty: 1 },
+    ],
+  };
+  const plain = await renderElevation(base);
+  assert.deepEqual(leaders(plain), ["2400", "1500"], "the default is one width and one height");
+  assert.equal(plain, await renderElevation({ ...base, unitDims: false }),
+    "and the flag off is the same drawing, to the byte");
+
+  // INERT WHERE THERE IS NOTHING TO DIMENSION. The viewer passes the flag on
+  // every drawing it opens, so a simple opening has to be drawn identically
+  // with it and without it — otherwise three quarters of ops2's lines would be
+  // re-laid-out by a flag that has no units to answer.
+  const simple = { productSlug: "amj80-series-awning-window", widthMm: "1800",
+    heightMm: "1200", size: "lg" };
+  assert.equal(await renderElevation({ ...simple, unitDims: true }),
+    await renderElevation(simple), "a single frame is drawn the same either way");
+
+  // And an unsized opening still draws NO leaders at all (VIEW-AC-8): the
+  // stand-in square must not start printing numbers because a flag was set.
+  const unsized = await renderElevation({ ...base, widthMm: "", heightMm: "", unitDims: true });
+  assert.deepEqual(leaders(unsized), []);
+});
+
+test("a line with no code still has a back control that says where it goes", () => {
+  // The record keeps a line whose code the parser could not read, so the viewer
+  // has to open on one. A back control labelled with an empty string is a
+  // control nobody can name aloud.
+  const s = M.drawingSubject(parse(line({ code: "" })), { view: "drawing", unitIndex: null });
+  assert.equal(s.backLabel, "the line");
+  assert.equal(s.code, "this opening", "and the accessible name still says what it is");
 });
