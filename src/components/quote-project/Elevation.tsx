@@ -135,25 +135,28 @@ function DimGroups({ F, S, wMm, hMm, spans, stacked, gap }: {
   // legible in one look rather than assembled from a caption and a list. The
   // ticks are square witness marks rather than the overall's 45° ones, so the
   // two rows do not read as one leader broken into pieces.
-  const edges = spans ? [spans[0].start, ...spans.map((s) => s.end)] : [];
-  const unitRow = spans && (
-    <g>
-      <path {...rule} d={
-        (stacked
-          ? `M${q(unitX)} ${q(edges[0])} V${q(edges[edges.length - 1])} `
-            + edges.map((v) => `M${q(unitX - 4)} ${q(v)} h8 `).join("")
-          : `M${q(edges[0])} ${q(unitY)} H${q(edges[edges.length - 1])} `
-            + edges.map((v) => `M${q(v)} ${q(unitY - 4)} v8 `).join(""))} />
-      {spans.map((s, i) => {
-        const mid = (s.start + s.end) / 2;
-        return stacked
-          ? <text {...text} className="elev-dim" key={i} x={q(unitX - 3)} y={q(mid)}
-              textAnchor="middle" transform={`rotate(-90 ${q(unitX - 3)} ${q(mid)})`}>{s.label}</text>
-          : <text {...text} className="elev-dim" key={i} x={q(mid)} y={q(unitY - 3)}
-              textAnchor="middle">{s.label}</text>;
-      })}
-    </g>
-  );
+  let unitRow = null;
+  if (spans) {
+    const edges = [spans[0].start, ...spans.map((s) => s.end)];
+    unitRow = (
+      <g>
+        <path {...rule} d={
+          (stacked
+            ? `M${q(unitX)} ${q(edges[0])} V${q(edges[edges.length - 1])} `
+              + edges.map((v) => `M${q(unitX - 4)} ${q(v)} h8 `).join("")
+            : `M${q(edges[0])} ${q(unitY)} H${q(edges[edges.length - 1])} `
+              + edges.map((v) => `M${q(v)} ${q(unitY - 4)} v8 `).join(""))} />
+        {spans.map((s, i) => {
+          const mid = (s.start + s.end) / 2;
+          return stacked
+            ? <text {...text} className="elev-dim" key={i} x={q(unitX - 3)} y={q(mid)}
+                textAnchor="middle" transform={`rotate(-90 ${q(unitX - 3)} ${q(mid)})`}>{s.label}</text>
+            : <text {...text} className="elev-dim" key={i} x={q(mid)} y={q(unitY - 3)}
+                textAnchor="middle">{s.label}</text>;
+        })}
+      </g>
+    );
+  }
 
   return (
     <>

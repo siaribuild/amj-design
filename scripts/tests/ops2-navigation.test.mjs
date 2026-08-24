@@ -273,7 +273,9 @@ test("a malformed or out-of-range suffix normalises by REPLACE, and grows no his
 });
 
 test("the opener builds the address the parser accepts, and the two cannot drift", () => {
-  assert.equal(M.drawingSuffix(), "/drawing");
+  // `null` is the opening's own drawing, and it is SAID: every caller has a
+  // unit index to hand over — `null` when the subject is the whole opening — so
+  // the parameter is required rather than defaulting a meaning nobody asked for.
   assert.equal(M.drawingSuffix(null), "/drawing");
   assert.equal(M.drawingSuffix(1), "/drawing/u1");
   // Round trip: whatever the opener builds, the parser takes without a replace.

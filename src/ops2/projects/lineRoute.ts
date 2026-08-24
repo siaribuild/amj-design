@@ -61,7 +61,7 @@ export function lineSuffixOf(pathname: string): string {
 
 /** The address an opener sends the reviewer to. The parser accepts what this
  *  builds, untouched — the round trip is asserted, so the two cannot drift. */
-export function drawingSuffix(unitIndex?: number | null): string {
+export function drawingSuffix(unitIndex: number | null): string {
   return unitIndex == null ? "/drawing" : `/drawing/u${unitIndex}`;
 }
 
