@@ -140,11 +140,17 @@ const DERIVED_FIELDS = [
 ];
 
 // Sanity omits an unset field rather than storing null, so a derived row that
-// has been round-tripped through the dataset comes back without its nulls.
-// Treating that as an edit would freeze the script on every product.
+// has been round-tripped through the dataset comes back without its nulls, and
+// without its EMPTY ARRAYS. Treating either as an edit would mark every product
+// authored and leave the script preserving everything — which fails safe, but a
+// guard that protects everything protects nothing anybody can reason about, and
+// the next person to find the script doing nothing removes the guard rather
+// than the cause. Absent, null and empty are one fact here; a non-empty array
+// is not.
+const isEmpty = (v) => v === undefined || v === null || (Array.isArray(v) && v.length === 0);
 const same = (a, b) => {
   if (a === b) return true;
-  if ((a ?? null) === null && (b ?? null) === null) return true;
+  if (isEmpty(a) && isEmpty(b)) return true;
   if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
   return false;
 };

@@ -205,7 +205,21 @@ export const STRIP_TARGETS = [
   { type: "thermalProfile", noun: "thermal profile", arrayField: "rows", fields: ["certified"] },
 ];
 
-const countQuery = (t) => `count(*[_type=="${t.type}"])`;
+/** THE ONE POPULATION BOTH SIDES COUNT.
+ *
+ *  This started as two filters: the manifest skipped ids beginning `drafts.`,
+ *  while the live queries ran under the raw perspective and counted them. With
+ *  one draft thermalProfile in production, live said 22, a correct and complete
+ *  export said 21, and the gate refused a good backup on every run \u2014 the second
+ *  gate in this script to fail closed on a legitimate operation.
+ *
+ *  So the live query now returns IDS rather than a count, and this predicate
+ *  runs over both sides. There is no GROQ draft filter left to drift from the
+ *  JavaScript one, because there is only one filter. A draft cannot restore a
+ *  published document, which is why published is the population that matters. */
+export const isPublishedId = (id) => !String(id ?? "").startsWith("drafts.");
+
+const identityQuery = (t) => `*[_type=="${t.type}"]{_id, _rev}`;
 const dirtyQuery = (t) => `*[_type=="${t.type}" && count(${t.arrayField}[${
   t.fields.map((f) => `defined(${f})`).join(" || ")}]) > 0]{
     _id, name, "items": ${t.arrayField}[]{ _key, ${t.fields.join(", ")} }
@@ -270,6 +284,10 @@ export async function readExportManifest(path) {
   if (!lines.length) throw new Error("its `data.ndjson` is empty, so it would restore nothing");
 
   const byType = new Map();
+  // Identities, for the target types only: counting is not identifying, and an
+  // export of a DIFFERENT dataset holding the same number of documents must not
+  // read as a backup of this one.
+  const idsByType = new Map(STRIP_TARGETS.map((t) => [t.type, new Map()]));
   for (const [i, line] of lines.entries()) {
     let d;
     try {
@@ -281,28 +299,47 @@ export async function readExportManifest(path) {
     if (!d?._id || !d?._type) throw new Error(`document ${i + 1} has no _id/_type, so this is not a dataset export`);
     // Drafts cannot restore a published document, so they are not counted as
     // one — the same basis the live comparison uses.
-    if (String(d._id).startsWith("drafts.")) continue;
+    if (!isPublishedId(d._id)) continue;
     byType.set(d._type, (byType.get(d._type) ?? 0) + 1);
+    idsByType.get(d._type)?.set(d._id, d._rev ?? null);
   }
   const documents = [...byType.values()].reduce((a, b) => a + b, 0);
   if (!documents) throw new Error("it carries only drafts, which cannot restore a published document");
-  return { documents, byType };
+  return { documents, byType, idsByType };
 }
 
 
 /** The archive check proves the file is a real export. It cannot prove the
- *  export is a backup OF THIS DATASET AS IT STANDS: a genuine export taken
- *  before six products were added is a real archive that would still lose them.
+ *  export is a backup OF THIS DATASET AS IT STANDS.
  *
- *  So the counts are compared once the client exists and strictly before
- *  anything is written. Holding MORE than live is fine — documents deleted since
- *  the export are not a restore risk. Holding FEWER is not. */
-export function exportShortfall(manifest, target, liveCount) {
-  const inExport = manifest.byType.get(target.type) ?? 0;
-  if (inExport >= liveCount) return null;
-  return `the export holds ${inExport} \`${target.type}\` document(s) but the dataset has `
-    + `${liveCount}. It predates documents this run is about to change and could not `
-    + "put them back.";
+ *  COUNTING IS NOT IDENTIFYING. Per-type counts pass an export from a different
+ *  dataset, and a stale one that happens to hold the same number of target
+ *  documents — and the run would then mutate production irreversibly against an
+ *  archive holding none of the documents it would need to put back. So every
+ *  live document must be present in the export BY ID, at the revision it is
+ *  currently at.
+ *
+ *  Holding MORE than live is fine: documents deleted since the export are not a
+ *  restore risk. This runs once the client exists and strictly before any write. */
+export function exportGap(manifest, target, liveDocs) {
+  const inExport = manifest.idsByType?.get(target.type) ?? new Map();
+  const missing = [];
+  const drifted = [];
+  for (const [id, rev] of liveDocs) {
+    if (!inExport.has(id)) missing.push(id);
+    else if (rev && inExport.get(id) && inExport.get(id) !== rev) drifted.push(id);
+  }
+  const sample = (ids) => `${ids.slice(0, 3).join(", ")}${ids.length > 3 ? `, +${ids.length - 3} more` : ""}`;
+  if (missing.length) {
+    return `${missing.length} live \`${target.type}\` document(s) are not in the export at all `
+      + `(${sample(missing)}). It is an export of a different or older dataset, and could `
+      + "not put back what this run is about to change.";
+  }
+  if (drifted.length) {
+    return `${drifted.length} live \`${target.type}\` document(s) have changed since the export `
+      + `was taken (${sample(drifted)}). Restoring from it would discard those edits.`;
+  }
+  return null;
 }
 
 /** Read one target, refusing to proceed when the type matches NOTHING.
@@ -315,15 +352,27 @@ export function exportShortfall(manifest, target, liveCount) {
  *                          not an error, or the script cries wolf every second
  *                          time it is run. */
 export async function loadTarget(fetchFn, target) {
-  const total = await fetchFn(countQuery(target));
-  if (!Number.isFinite(total) || total === 0) {
+  const rows = await fetchFn(identityQuery(target));
+  const live = new Map((Array.isArray(rows) ? rows : [])
+    .filter((r) => r?._id && isPublishedId(r._id))
+    .map((r) => [r._id, r._rev ?? null]));
+  if (!live.size) {
     throw new Error(
-      `REFUSED: no \`${target.type}\` document exists in this dataset, so this run `
-      + "would report success having changed nothing. Check the type name against "
+      `REFUSED: no published \`${target.type}\` document exists in this dataset, so this `
+      + "run would report success having changed nothing. Check the type name against "
       + "sanity/schemaTypes.ts before trusting any result from it.",
     );
   }
-  return { total, docs: await fetchFn(dirtyQuery(target)) };
+  const all = await fetchFn(dirtyQuery(target));
+  const carrying = Array.isArray(all) ? all.filter((d) => d?._id) : [];
+  // The same filter again, so what gets MUTATED is exactly what the export can
+  // restore. A draft is neither counted nor patched.
+  return {
+    total: live.size,
+    live,
+    docs: carrying.filter((d) => isPublishedId(d._id)),
+    draftsCarrying: carrying.filter((d) => !isPublishedId(d._id)),
+  };
 }
 
 async function main() {
@@ -345,13 +394,25 @@ async function main() {
   const loaded = [];
   for (const target of STRIP_TARGETS) {
     // Throws, loudly, when the type matches nothing at all.
-    const { total, docs } = await loadTarget(fetchFn, target);
-    // And the export has to be able to put back what is actually there. This is
-    // the last gate, and it is still before any write.
-    const shortfall = exportShortfall(manifest, target, total);
-    if (shortfall) {
-      fail(`The export at ${exportPath} cannot restore this dataset: ${shortfall}\n`
+    const { total, live, docs, draftsCarrying } = await loadTarget(fetchFn, target);
+    // And the export has to be able to put back what is actually there — BY ID,
+    // not by tally. This is the last gate, and it is still before any write.
+    const gap = exportGap(manifest, target, live);
+    if (gap) {
+      fail(`The export at ${exportPath} cannot restore this dataset: ${gap}\n`
         + "Take a fresh export and re-run.");
+    }
+    // Drafts are not mutated, because the export cannot restore them. A draft
+    // still carrying the field would reintroduce it the day somebody publishes
+    // it, so that is said out loud rather than left silent. NOT a refusal:
+    // production has such a draft today, and blocking on it would make this the
+    // third gate in this script to fail closed on a legitimate run.
+    if (draftsCarrying.length) {
+      console.log(
+        `  NOTE: ${draftsCarrying.length} DRAFT ${target.noun}(s) still carry the field and are left `
+        + `untouched (${draftsCarrying.map((d) => d._id).slice(0, 3).join(", ")}).\n`
+        + "  Publishing or discarding them is how that value finally goes.",
+      );
     }
     let items = 0;
     console.log(`\n${docs.length} of ${total} ${target.noun}(s) carry certification values:`);

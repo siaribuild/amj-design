@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   classifyGlass, deriveUwShgc, deriveConfiguration, deriveDimensionRule,
   deriveFrameTechnology, derivePerformanceVariant, deriveEstimatorFields,
+  performanceVariantsAreAuthored,
 } from "../catalogue/derive-estimator-fields.mjs";
 
 test("classifyGlass detects double glazing, Low-E and gas fill", () => {
@@ -200,4 +201,45 @@ test("P1-B the populate script asks that question before it replaces anything", 
   const src = readFileSync(join(projectRoot, "scripts/catalogue/populate-estimator-fields.mjs"), "utf8");
   assert.match(src, /performanceVariantsAreAuthored/, "the script uses the shared predicate");
   assert.match(src, /certificationRef/, "and projects the field that predicate reads");
+});
+
+test("P1-B an omitted EMPTY ARRAY is not an edit either", () => {
+  // TESTER RESIDUAL. `derivePerformanceVariant` writes `pricingOptionSlugs: []`.
+  // If Sanity omits an empty array on round-trip the way it omits an unset
+  // field, then every stored row differs from the derived one, every product
+  // reads as authored, and --apply preserves everything.
+  //
+  // That fails SAFE, but "safe and inert" is not a resting place: a guard that
+  // protects everything protects nothing anybody can reason about, and the next
+  // person to find the script doing nothing removes the guard rather than the
+  // cause. An empty array carries no information, so absent and empty are the
+  // same fact, exactly as absent and null already are.
+  const product = { name: "P", slug: "p", family: "awning-window", category: "windows", standardGlass: "6mm clear" };
+  const derived = derivePerformanceVariant(product);
+  assert.deepEqual(derived.pricingOptionSlugs, [], "precondition: the deriver writes an empty array");
+
+  const { pricingOptionSlugs, ...omitted } = derived;
+  assert.equal(performanceVariantsAreAuthored({ ...product, performanceVariants: [omitted] }), false,
+    "a row that came back without its empty array is still this script own output");
+
+  // And a row that actually HAS a surcharge is somebody work, as before.
+  assert.equal(
+    performanceVariantsAreAuthored({ ...product, performanceVariants: [{ ...derived, pricingOptionSlugs: ["glz-lowe"] }] }),
+    true,
+  );
+});
+
+test("P1-B every field the guard compares is a field the script actually reads", () => {
+  // The tester checked this by hand and named the failure mode: a field in
+  // DERIVED_FIELDS but not in the GROQ projection arrives as undefined on every
+  // stored row, so every row differs from the derived one, every product reads
+  // as authored, and the script goes silently inert. Pinned so it cannot drift
+  // back the next time either list is edited.
+  const derived = derivePerformanceVariant({ name: "P", slug: "p", family: "awning-window", category: "windows", standardGlass: "6mm clear" });
+  const compared = Object.keys(derived).filter((k) => !k.startsWith("_"));
+  const src = readFileSync(join(projectRoot, "scripts/catalogue/populate-estimator-fields.mjs"), "utf8");
+  const projection = src.slice(src.indexOf("performanceVariants[]{"), src.indexOf("} | order(family"));
+  assert.ok(projection.includes("variantId"), "found the projection");
+  const missing = compared.filter((f) => !new RegExp(`\\b${f}\\b`).test(projection));
+  assert.deepEqual(missing, [], "every derived field is projected, or the comparison sees undefined");
 });

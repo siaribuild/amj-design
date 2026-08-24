@@ -533,21 +533,23 @@ test("CERT-AC-7 a target type that matches no document at all is LOUD, not a sil
   const { loadTarget, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
   const target = STRIP_TARGETS[0];
   const asked = [];
-  const fetchFn = async (query) => { asked.push(query); return /^count\(/.test(query) ? 0 : []; };
+  const fetchFn = async (query) => { asked.push(query); return []; };
 
   await assert.rejects(
     () => loadTarget(fetchFn, target),
-    (e) => /no .*document/i.test(e.message) && e.message.includes(target.type),
+    (e) => /no published .*document/i.test(e.message) && e.message.includes(target.type),
     "zero documents OF THE TYPE means the type name is wrong, and the run must say so",
   );
-  assert.equal(asked.length, 1, "and it stops at the count — it does not go on to patch nothing");
+  assert.equal(asked.length, 1, "and it stops at the identity read — it does not go on to patch nothing");
 });
 
 test("CERT-AC-7 a type that exists but carries nothing left to strip is a clean no-op", async () => {
   const { loadTarget, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
   // The state after a SUCCESSFUL strip. Re-running must not read as a failure,
   // or the loud-on-empty rule would make the script cry wolf every second run.
-  const fetchFn = async (query) => (/^count\(/.test(query) ? 21 : []);
+  const fetchFn = async (query) => (/_rev/.test(query)
+    ? Array.from({ length: 21 }, (_, i) => ({ _id: `tp${i}`, _rev: `r${i}` }))
+    : []);
   const out = await loadTarget(fetchFn, STRIP_TARGETS[1]);
   assert.equal(out.total, 21);
   assert.deepEqual(out.docs, []);
@@ -652,39 +654,135 @@ test("P1-A the archive is read before any Sanity client exists", async () => {
     "the refusal costs no client and no network call");
 });
 
-test("P1-A an export that predates the live dataset cannot restore it", async () => {
-  // The archive check proves the file is a real export. It cannot prove the
-  // export is a backup OF THIS DATASET AS IT STANDS: a genuine export taken
-  // before six products were added is a real archive that would still lose
-  // them. That comparison needs the live counts, so it happens once the client
-  // exists — but strictly before anything is written.
-  const { exportShortfall, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
-  const target = STRIP_TARGETS[0];
-  const manifest = { documents: 5, byType: new Map([[target.type, 5]]) };
-
-  assert.equal(exportShortfall(manifest, target, 5), null, "an export that matches live is fine");
-  assert.equal(exportShortfall(manifest, target, 3), null,
-    "and one HOLDING MORE is fine too — documents deleted since are not a restore risk");
-
-  const short = exportShortfall(manifest, target, 9);
-  assert.ok(short, "an export holding fewer documents than live is refused");
-  assert.match(short, /5/);
-  assert.match(short, /9/);
-  assert.match(short, new RegExp(target.type));
-
-  // A type absent from the export entirely is the same failure, stated the same
-  // way, rather than a crash on an undefined count.
-  const absent = exportShortfall({ documents: 0, byType: new Map() }, target, 4);
-  assert.ok(absent);
-  assert.match(absent, /0/);
-});
-
 test("P1-A the run compares the export against live before it writes", async () => {
   const src = await readFile(join(projectRoot, "sanity/scripts/strip-certified.mjs"), "utf8");
   const main = src.slice(src.indexOf("async function main()"));
-  const shortfallAt = main.indexOf("exportShortfall");
+  const gapAt = main.indexOf("exportGap");
   const commitAt = main.indexOf("tx.commit");
-  assert.ok(shortfallAt > 0, "main consults the shortfall");
+  assert.ok(gapAt > 0, "main consults the identity gap");
   assert.ok(commitAt > 0, "and still commits somewhere");
-  assert.ok(shortfallAt < commitAt, "the comparison happens BEFORE the write, not after");
+  assert.ok(gapAt < commitAt, "the comparison happens BEFORE the write, not after");
+});
+
+// ── P1: an export is identified by its DOCUMENTS, not by how many ─────────
+//
+// CODEX, second pass. Comparing per-type counts passes an export from a
+// DIFFERENT DATASET, and a stale export that happens to hold the same number of
+// target documents. The script would then irreversibly mutate production
+// against an archive that does not contain the documents it would need to
+// restore. Counting is not identifying.
+test("P1 an export of the right SIZE but the wrong documents is refused", async () => {
+  const { exportGap, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  const target = STRIP_TARGETS[0];
+  const manifest = { idsByType: new Map([[target.type, new Map([["p1", "rA"], ["p2", "rB"]])]]) };
+
+  // The good case FIRST: same documents, same revisions.
+  assert.equal(exportGap(manifest, target, new Map([["p1", "rA"], ["p2", "rB"]])), null);
+  // An export holding MORE is still a backup of everything live.
+  assert.equal(exportGap(manifest, target, new Map([["p1", "rA"]])), null);
+
+  // Same COUNT, different documents — an export of another dataset.
+  const other = exportGap(manifest, target, new Map([["x9", "rA"], ["x8", "rB"]]));
+  assert.ok(other, "two documents in, two documents live, and not one of them the same");
+  assert.match(other, /x9|x8/, "and it names what it could not find");
+
+  // Present, but the document has moved on since the export was taken.
+  const drifted = exportGap(manifest, target, new Map([["p1", "rA"], ["p2", "rZZZ"]]));
+  assert.ok(drifted, "a revision that moved since the export is not restorable to");
+  assert.match(drifted, /p2/);
+});
+
+// ── P2: both sides must count the same population ──────────────────────
+//
+// CODEX, second pass, and it blocked EVERY legitimate run: the manifest
+// excluded drafts, the live queries ran under the raw perspective and counted
+// them. Production holds exactly one draft thermalProfile, so live said 22, a
+// correct complete export said 21, and the gate refused a good backup.
+//
+// The two are now provably one filter rather than two that agree today: the
+// live query returns ids, and the SAME `isPublishedId` runs over both sides.
+// There is no GROQ draft predicate left to drift from the JavaScript one.
+test("P2 a draft on the live side does not make a correct export look short", async () => {
+  const { loadTarget, exportGap, isPublishedId, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  const target = STRIP_TARGETS[1];
+
+  assert.equal(isPublishedId("tp1"), true);
+  assert.equal(isPublishedId("drafts.tp1"), false);
+
+  // Live holds one more document than the export: a DRAFT. This is the exact
+  // shape of production today.
+  const fetchFn = async (query) => (/_rev/.test(query)
+    ? [{ _id: "tp1", _rev: "r1" }, { _id: "drafts.tp1", _rev: "r2" }]
+    : []);
+  const loaded = await loadTarget(fetchFn, target);
+  assert.equal(loaded.total, 1, "the draft is not counted as a document to restore");
+  assert.deepEqual([...loaded.live.keys()], ["tp1"]);
+
+  const manifest = { idsByType: new Map([[target.type, new Map([["tp1", "r1"]])]]) };
+  assert.equal(exportGap(manifest, target, loaded.live), null,
+    "so a complete export of the published dataset PASSES, which it did not before");
+});
+
+test("P2 a draft carrying the field is reported rather than silently left behind", async () => {
+  // Published-only is the right population to mutate — it is what the export can
+  // restore — but a draft still holding `certified` would reintroduce the value
+  // the day somebody publishes it. Not a refusal: production has such a draft
+  // today and blocking on it would be the third gate to fail closed on a
+  // legitimate run. Said out loud instead.
+  const src = await readFile(join(projectRoot, "sanity/scripts/strip-certified.mjs"), "utf8");
+  assert.match(src, /draft/i, "the script has something to say about drafts");
+  const main = src.slice(src.indexOf("async function main()"));
+  assert.ok(/draft/i.test(main), "and says it during the run");
+});
+
+// ── The gate, against a REAL Sanity export ─────────────────────────────
+//
+// Every fixture above is one this suite built, so all of them prove is that the
+// reader agrees with the writer next to it. `sanity/sanity-production-before-
+// import.tar.gz` is a genuine `sanity dataset export` of this project, tracked
+// in the repo as the precedent for the export-first rule — 2 MB, `data.ndjson`
+// nested under a dated directory, assets and images after it. If the parser is
+// wrong about what a real export looks like, this is where it shows.
+const REAL_EXPORT = "sanity/sanity-production-before-import.tar.gz";
+
+test("the reader handles a real `sanity dataset export`, not just its own fixtures", async () => {
+  const { readExportManifest } = await import(pathToFileURL(STRIP).href);
+  const manifest = await readExportManifest(join(projectRoot, REAL_EXPORT));
+
+  // Nested `<dataset>-export-<date>/data.ndjson`, which is what the CLI writes
+  // and what a root-only match would have missed.
+  assert.ok(manifest.documents > 0, "it found the documents");
+  assert.equal(manifest.byType.get("product"), 18, "18 published products, as the archive holds");
+  assert.ok(manifest.idsByType.get("product").size === 18, "and it kept their identities");
+  for (const [, rev] of manifest.idsByType.get("product")) {
+    assert.ok(typeof rev === "string" && rev.length, "a real export carries _rev, which the gap check compares");
+    break;
+  }
+});
+
+test("the age gate catches the real archive first, because it is 2026-07 vintage", async () => {
+  // Gate order is itself a property: the cheapest refusal comes first, so an
+  // 854-hour-old archive is turned away before anything is decompressed.
+  const r = await runNode(["--export", join(projectRoot, REAL_EXPORT), "--check"]);
+  assert.notEqual(r.code, 0);
+  assert.match(`${r.stdout}${r.stderr}`, /h old/);
+});
+
+test("a genuine but INCOMPLETE export is refused, on its content rather than its size", async () => {
+  // The same real archive, copied and dated now so it clears the age gate and
+  // the content checks have to decide. It is from before the WERS import
+  // created any thermalProfile, so it cannot restore the 21 profiles this run
+  // would change -- 2 MB, genuine, recent, and still not a usable backup. This
+  // is the case a size-and-recency gate passed and this one does not.
+  const dir = join(runDir, "real-copy");
+  await mkdir(dir, { recursive: true });
+  const copy = join(dir, "recent-but-incomplete.tar.gz");
+  await writeFile(copy, await readFile(join(projectRoot, REAL_EXPORT)));
+  const now = new Date();
+  await utimes(copy, now, now);
+
+  const r = await runNode(["--export", copy, "--check"]);
+  assert.notEqual(r.code, 0);
+  assert.match(`${r.stdout}${r.stderr}`, /thermalProfile/, "and it names the type it could not restore");
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /h old/, "the age gate is not what caught it");
 });
