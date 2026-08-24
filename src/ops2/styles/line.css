@@ -152,6 +152,12 @@
 }
 .lp-panel__lines dt { color: var(--ds-text-muted); }
 .lp-panel__lines dd { margin: 0; color: var(--ds-text-primary); }
+/* A panel whose rows carry no term is an ordinary list, not a description list
+   (see Panel in LineReview.tsx). Its rows are the same grid items the keyed
+   panel's row wrappers are, so the arrangement is unchanged — only the element
+   that carries it, and the bullet the list would otherwise draw. */
+ul.lp-panel__lines { padding: 0; list-style: none; }
+ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 /* WHAT WAS NOT SHOWN, said rather than silently dropped. A panel with a budget
    that quietly truncates is a panel that lies about being complete. */
 .lp-panel__more {

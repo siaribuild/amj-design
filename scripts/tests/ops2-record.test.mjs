@@ -19,6 +19,7 @@ import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("ops2-record");
 const outfile = join(runDir, "ops2-record-bundle.mjs");
+const panelOut = join(runDir, "ops2-line-review-bundle.mjs");
 await build({
   stdin: {
     contents: `export * from ${p("src/ops2/projects/record.ts")};`,
@@ -27,6 +28,17 @@ await build({
     loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+});
+await build({
+  stdin: {
+    contents: `export { Panel } from ${p("src/ops2/projects/LineReview.tsx")};`,
+    resolveDir: projectRoot,
+    sourcefile: "ops2-line-review-entry.tsx",
+    loader: "tsx",
+  },
+  bundle: true, format: "esm", platform: "node", outfile: panelOut, logLevel: "silent",
+  jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
+  loader: { ".css": "empty" },
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { await removeRunDir(runDir); });
@@ -806,4 +818,38 @@ test("a price with no provenance says so rather than claiming the rate card", ()
     "the rate card's own figure is on the row, so the comparison is real");
   assert.equal(M.priceState(line({ lineTotal: 1000 })), "unknown",
     "no timestamp and no calculated figure is not evidence of a list price");
+});
+
+// ── The Price panel's markup ─────────────────────────────────────
+//
+// `Panel` wraps every row in a <dl>, and a row without a key rendered as a
+// <div><dd>…</dd></div>: a definition with no term. The Price panel is two such
+// rows, so assistive technology was handed the number and the pricing state as
+// definitions of nothing. Accessibility is binding in this repo, so the shape
+// is asserted rather than eyeballed — both panels, because the keyed one must
+// keep being a description list.
+test("a panel row without a key is not a definition without a term", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createElement } = await import("react");
+  const { Panel } = await import(pathToFileURL(panelOut).href);
+
+  const priced = renderToStaticMarkup(createElement(Panel, {
+    title: "Price", budget: 2,
+    lines: [{ v: "$1,240.00" }, { v: "Priced", quiet: true }],
+  }));
+  assert.match(priced, /\$1,240\.00/, "the figures still render");
+  assert.match(priced, /Priced/);
+  assert.ok(!/<dd>/.test(priced), `a keyless panel emits no <dd>:
+${priced}`);
+  assert.ok(!/<dl/.test(priced), "and no <dl>, because it defines nothing");
+
+  const spec = renderToStaticMarkup(createElement(Panel, {
+    title: "Specification", budget: 4,
+    lines: [{ k: "Product", v: "AMJ80 Awning" }, { k: "Glazing", v: "Double Low-E" }],
+  }));
+  assert.match(spec, /<dl/, "a keyed panel is still a description list");
+  const terms = (spec.match(/<dt>/g) ?? []).length;
+  const defs = (spec.match(/<dd>/g) ?? []).length;
+  assert.equal(terms, 2);
+  assert.equal(defs, terms, "every definition has its term");
 });

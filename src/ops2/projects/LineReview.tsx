@@ -47,8 +47,10 @@ import {
 
 type PanelLine = { k?: string; v: ReactNode; quiet?: boolean };
 
-/** THE BUDGET IS STRUCTURAL. The panel slices to it and says what it cut. */
-function Panel({ title, lines, budget, more, testId }: {
+/** THE BUDGET IS STRUCTURAL. The panel slices to it and says what it cut.
+ *
+ *  Exported for its MARKUP, which ops2-record.test.mjs renders and asserts. */
+export function Panel({ title, lines, budget, more, testId }: {
   title: string;
   lines: PanelLine[];
   budget: number;
@@ -58,17 +60,32 @@ function Panel({ title, lines, budget, more, testId }: {
 }) {
   const shown = lines.slice(0, budget);
   const cut = lines.length - shown.length;
+  // A DESCRIPTION LIST DESCRIBES SOMETHING. The Price panel's rows are a figure
+  // and a state, not term/definition pairs, and wrapping them in <dl> emitted
+  // <dd> with no <dt> — a definition of nothing, which is what a screen reader
+  // was being handed. So the container follows the CONTENT: keyed rows are a
+  // description list, keyless rows are an ordinary list. Mixed would need a
+  // term for every row, and neither caller has one, so it is not invented here.
+  const keyed = shown.some((l) => !!l.k);
+  const rowClass = (l: PanelLine) =>
+    (l.quiet ? "lp-panel__line lp-panel__line--quiet" : "lp-panel__line");
   return (
     <section className="lp-panel" data-testid={testId} aria-label={title}>
       <h2 className="lp-panel__title">{title}</h2>
-      <dl className="lp-panel__lines">
-        {shown.map((l, i) => (
-          <div key={i} className={l.quiet ? "lp-panel__line lp-panel__line--quiet" : "lp-panel__line"}>
-            {l.k && <dt>{l.k}</dt>}
-            <dd>{l.v}</dd>
-          </div>
-        ))}
-      </dl>
+      {keyed ? (
+        <dl className="lp-panel__lines">
+          {shown.map((l, i) => (
+            <div key={i} className={rowClass(l)}>
+              <dt>{l.k}</dt>
+              <dd>{l.v}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <ul className="lp-panel__lines">
+          {shown.map((l, i) => <li key={i} className={rowClass(l)}>{l.v}</li>)}
+        </ul>
+      )}
       {cut > 0 && more && <p className="lp-panel__more">{more(cut)}</p>}
     </section>
   );
