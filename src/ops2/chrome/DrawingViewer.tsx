@@ -67,12 +67,16 @@ export interface ViewerSubject {
   title: string;
   /** The line the back control returns to, named on it. */
   backLabel: string;
-  productSlug: string | null;
+  /** Typed as `Elevation` types it, so this passes straight through. An opening
+   *  with no product is the empty slug the generator already answers with a
+   *  fixed square, decided in `drawingSubject` where node can read it rather
+   *  than coalesced at the render site. */
+  productSlug: string;
   width: string;
   height: string;
-  /** The units a composite is drawn from. `null` for a single frame — handing
+  /** The units a composite is drawn from. Absent for a single frame — handing
    *  the generator one part draws a join that does not exist. */
-  parts: { productSlug: string; alongMm: string; qty: number }[] | null;
+  parts?: { productSlug: string; alongMm: string; qty: number }[];
   axis: "vertical" | "horizontal" | null;
   /** The size line under the drawing — or the stand-in sentence when no size
    *  could be read (VIEW-AC-8). */
@@ -141,10 +145,10 @@ export function DrawingViewer({ subject, onClose }: {
             <div className="ops2-viewer__body">
               <figure className="ops2-viewer__figure">
                 <Elevation
-                  productSlug={shown.productSlug ?? ""}
+                  productSlug={shown.productSlug}
                   widthMm={shown.width}
                   heightMm={shown.height}
-                  parts={shown.parts ?? undefined}
+                  parts={shown.parts}
                   axis={shown.axis}
                   // `lg` is the generator's largest row, and it is asked for by
                   // name rather than scaled up from a smaller one: the leader

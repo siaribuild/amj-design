@@ -113,11 +113,11 @@ export function useProjectRecord(id: string): { load: RecordLoad; reload: () => 
   // hook exists for — a reviewer opens a record, prices a line in the legacy
   // console beside it, comes back, and must not be reading figures from before
   // their own edit — because that page genuinely leaves the screen and says so.
-  const entered = useRef(false);
+  // The mount's own enter needs no separate guard: a page cannot have left
+  // before its first enter, so `departed` is still false and this returns.
   const departed = useRef(false);
   useIonViewDidLeave(() => { departed.current = true; });
   useIonViewWillEnter(() => {
-    if (!entered.current) { entered.current = true; return; }
     if (!departed.current) return;
     departed.current = false;
     reload();

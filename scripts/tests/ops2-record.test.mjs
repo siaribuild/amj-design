@@ -920,7 +920,7 @@ test("the line's own drawing is titled `Drawing`, and back names the line", () =
   assert.equal(s.width, "1800");
   assert.equal(s.height, "1200");
   assert.equal(s.caption, "1200 × 1800 mm · height × width");
-  assert.equal(s.parts, null, "a simple opening is not drawn from units");
+  assert.equal(s.parts, undefined, "a simple opening is not drawn from units");
   assert.deepEqual(s.units, [], "and has none to list");
   assert.equal(s.basis, null, "no arrangement caveat where there is no arrangement");
 
@@ -972,7 +972,7 @@ test("a unit is titled with its own code and captioned with its place in the ope
   assert.equal(first.height, "1500");
   assert.equal(first.caption,
     "W07A · 1500 × 1200 mm · unit 1 of 2 in W07, which is 1500 × 2400 mm overall");
-  assert.equal(first.parts, null, "a unit is one frame — handing it parts draws a join that is not there");
+  assert.equal(first.parts, undefined, "a unit is one frame — handing it parts draws a join that is not there");
   assert.deepEqual(first.units, [], "and it does not list the assembly it came from");
 
   const second = M.drawingSubject(parse(composite()), { view: "unit", unitIndex: 2 });
@@ -1133,4 +1133,15 @@ test("a UNIT of a line with no code names itself by its place, never by a code t
   assert.equal(coded.title, "W07B");
   assert.equal(coded.caption,
     "W07B · 1500 × 1200 mm · unit 2 of 2 in W07, which is 1500 × 2400 mm overall");
+});
+
+test("the units list of a code-less assembly names its rows the way the viewer titles them", () => {
+  // The same missing code, one surface further out. Each row of this list OPENS
+  // the viewer above, so a row reading `A` under a viewer titled `Unit 1` is two
+  // names for one frame.
+  const whole = M.drawingSubject(parse(composite({ code: "" })), { view: "drawing", unitIndex: null });
+  assert.deepEqual(whole.units.map((u) => u.code), ["Unit 1", "Unit 2"]);
+  // The coded assembly still reads `W07A`, `W07B`.
+  const coded = M.drawingSubject(parse(composite()), { view: "drawing", unitIndex: null });
+  assert.deepEqual(coded.units.map((u) => u.code), ["W07A", "W07B"]);
 });

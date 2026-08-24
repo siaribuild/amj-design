@@ -31,6 +31,14 @@ const NO_SIZE = "No size read for this opening — drawn as a square stand-in";
 const sized = (o: { width: string; height: string }) =>
   Number(o.width) > 0 && Number(o.height) > 0;
 
+/** What one frame of an opening is CALLED — `W07A` under a coded line. The
+ *  parser keeps a line whose code it could not read, and there is no letter to
+ *  append to nothing, so the ordinal names it instead. One helper because the
+ *  units list and the unit's own viewer must agree: a row reading `A` under a
+ *  viewer titled `Unit 1` is two names for one frame. */
+const unitName = (code: string, index: number) =>
+  (code ? unitLabel(code, index) : `Unit ${index + 1}`);
+
 /**
  * How many units this line actually OFFERS to enlarge.
  *
@@ -73,23 +81,22 @@ export function drawingSubject(
     // too means a second caller cannot reintroduce it.
     if (index < 1 || index > units) return null;
     const unit = unitsOf(line)[index - 1];
-    // Without a parent code there is no `W07A` to be, so the unit is named by
-    // the ordinal — and the caption then drops its leading code, because the
-    // place clause already says "unit 1 of 2" and saying it twice is worse than
-    // a caption that starts with the size.
-    const code = line.code ? unitLabel(line.code, index - 1) : `Unit ${index}`;
+    // The caption drops its leading code where there is none to lead with: the
+    // place clause already says "unit 1 of 2", and saying it twice is worse
+    // than a caption that starts with the size.
+    const code = unitName(line.code, index - 1);
     const lead = line.code ? `${code} · ` : "";
     const place = `unit ${index} of ${units} in ${opening}`;
     return {
       code,
       title: code,
       backLabel,
-      productSlug: unit.productSlug,
+      productSlug: unit.productSlug ?? "",
       width: unit.width,
       height: unit.height,
       // ONE FRAME. Handing the generator a one-element `parts` draws a join
       // that does not exist.
-      parts: null,
+      parts: undefined,
       axis: null,
       caption: !sized(unit)
         ? NO_SIZE
@@ -103,13 +110,13 @@ export function drawingSubject(
     };
   }
 
-  const parts = elevationPartsFor(line) ?? null;
+  const parts = elevationPartsFor(line);
   const shared = units > 0 ? sharedUnitSize(line) : null;
   return {
     code: opening,
     title: "Drawing",
     backLabel,
-    productSlug: line.productSlug,
+    productSlug: line.productSlug ?? "",
     width: line.width,
     height: line.height,
     parts,
@@ -122,7 +129,7 @@ export function drawingSubject(
         : `${sizeText(line)} · height × width`,
     units: units > 0
       ? unitsOf(line).map((u, i) => ({
-        code: unitLabel(line.code, i),
+        code: unitName(line.code, i),
         productName: u.productName,
         size: sizeText(u),
       }))
