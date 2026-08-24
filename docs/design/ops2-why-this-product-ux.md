@@ -168,8 +168,13 @@ is a caveat about the drawing's **authority**, not its notation, and stays. Chan
 the first sentence redundant anyway: the unit widths are now drawn on the leader.
 
 `ElevationLegend` itself is **not deleted**: **this phase removes a render, not an API.**
-The export currently has **no consumer anywhere in the repository** — verified, one grep,
-one hit, its own definition — because it was added by the ops2 record work for the very
+The export is **defined once and called from nowhere** — its only non-comment occurrence
+in `src/**` is its own definition; the other source hits are comments recording its
+absence, and the rest of the repository's mentions are documentation. *(Written this way
+because the first draft said "one grep, one hit", and the Codex stop-gate caught that as
+another false count — the identifier appears in an ADR, four documents, a test and three
+source files. "No caller" survives checking; "one hit" did not.)* It was added by the
+ops2 record work for the very
 plate this phase has just stopped rendering it from. Removing it is a separate decision
 nobody has taken, so it stays.
 

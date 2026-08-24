@@ -458,8 +458,10 @@ export function DrawingViewer(props: {
   and replaced by `DrawingViewer` (VIEW-AC-6). The panel's unit list, its
   proportional-arrangement sentence and its `ElevationLegend` render die with it and are
   **not** recreated in the viewer (R25/VIEW-AC-10 ban the notation class). This is
-  ops2's only `ElevationLegend` render; the export itself survives untouched for the
-  customer site (VIEW-AC-12).
+  ops2's only `ElevationLegend` render; the export itself survives untouched — **not**
+  for the customer site, which never used it (that premise was executed and disproved,
+  spec revision 14), but because this phase removes a render, not an API. It now has no
+  caller at all; deleting it is a separate decision nobody has taken (VIEW-AC-12).
 - **`docs/specs/ops2-record-correction.md:343-347`**: P1-AC-27 ("the drawing can be
   enlarged, with its legend") is **marked superseded in that document**, naming this
   feature and R25 (VIEW-AC-11) — two live specs must not assert opposite things about

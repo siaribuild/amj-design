@@ -874,8 +874,18 @@ stops rendering it, *Then* **the export itself is not deleted by this feature.**
 > criterion resting on a false premise gets "fixed" by whoever next notices — and the fix
 > they will reach for is deleting the export.
 >
-> **Executed 2026-08-25:** across the repository `ElevationLegend` has **exactly one
-> reference — its own definition.** `docs/specs/ops2-record-design.md:42,157,191` records
+> **Executed 2026-08-25:** `ElevationLegend` is **defined once and called from
+> nowhere.** Its only non-comment occurrence in `src/**` is its own definition at
+> `Elevation.tsx:583`; every other occurrence in source is a comment recording its
+> absence (`DrawingViewer.tsx:37`, `Plate.tsx:20,24`), and the rest are documentation.
+>
+> *(Stated that way on purpose. Revision 14 first wrote this as "exactly one reference
+> repo-wide", which the Codex stop-gate caught as **another false repo-wide count** —
+> the identifier appears in an ADR, four documents, a test and three source files. A
+> correction for an unexecuted claim that itself asserts a count nobody ran is the same
+> defect wearing the fix's clothes. What is checkable is "no caller", not "one hit".)*
+>
+> `docs/specs/ops2-record-design.md:42,157,191` records
 > why: the export was **added by the ops2 record work**, for the very plate this phase has
 > just stopped rendering it from. ops2 was never one of two consumers. It was the only one.
 
@@ -1339,9 +1349,13 @@ Not a test plan — ten places where the obvious test would pass a wrong impleme
       surface this feature does not touch"*. Executed: both its producers had been removed,
       orphaning a live ops caption. The exemption is gone.
     - **VIEW-AC-12's premise (§8).** *"The customer site still uses it."* Executed:
-      `ElevationLegend` has exactly one reference repo-wide — its own definition — and the
-      export was added **by ops2's own record work**. ops2 was the only consumer, and this
-      phase removed it.
+      `ElevationLegend` is defined once and **called from nowhere**; the export was added
+      **by ops2's own record work**. ops2 was the only consumer, and this phase removed it.
+    - **The correction's own first draft**, which said "exactly one reference repo-wide".
+      The Codex stop-gate caught it: the identifier appears in an ADR, four documents, a
+      test and three source files. **A count is a claim too.** "No caller" is checkable
+      and stays true; "one hit" was neither. This is the instance worth remembering,
+      because it happened inside the fix for the same defect and passed every reader.
 
     **The tell is a sentence that sounds like verification and contains none:** "another
     consumer", "a legacy surface", "the customer site", "everywhere else". Each is a
