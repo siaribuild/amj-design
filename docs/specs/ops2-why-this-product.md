@@ -1,22 +1,23 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 13**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 15**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 13** carries three corrections from the tester⇄developer round, one of which
-weakens a headline discipline and is recorded as an amendment rather than a rewrite:
-**CERT-AC-10's fence is breached by necessity** for two JSON snapshot builders; the
-CERT-AC-3 allowlist pointed at a **path that does not exist**; and one allowlist entry is
-**gone entirely**, because the claim justifying it was executed and found false. Revision 12
-folded in the importers; revision 11 closed VIEW-AC-2's mechanism; revision 10 folded in D8
-and R31; revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7
-corrected a false claim about an existing legend test; revision 6 applied the closed UX mock
-gate; revision 5 repaired two architect findings; revisions 2–4 folded in the owner's
-decision rounds.
+**Revision 15** discharges **§13.14** (the URL grammar) and **§13.15** (the viewer title) —
+both were answered by the owner at Phase 1 sign-off and Phase 2 was built against those
+answers, so the register was describing shipped decisions as still in play. **Every entry
+now carries a state** (§13), because the failure was not the two entries: it was a register
+with no way to tell an open question from a settled one. Revision 14 corrected VIEW-AC-12's
+false premise; revision 13 amended the CERT-AC-10 fence; revision 12 folded in the
+importers; revision 11 closed VIEW-AC-2's mechanism; revision 10 folded in D8 and R31;
+revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7 corrected a
+false claim about an existing legend test; revision 6 applied the closed UX mock gate;
+revision 5 repaired two architect findings; revisions 2–4 folded in the owner's decision
+rounds.
 
 **Decisions needed: none** (§14). **Nothing is pending from any stage.**
 
@@ -89,11 +90,11 @@ not record them, they are gone.
 |---|---|
 | **"Change the product" — the control, and any placeholder for it** | **R28, and it is deferred rather than declined.** Owner: *"do not implement CTA change the product. Need to have more thoughts on how to implement this. Having a button implies that some product must be preselected, which we don't have conceptually. not having a button means another panel perhaps. ultimately, switching products is not part of the current run."* Supersedes D4. **Whoever picks this up is picking up an open design question, not an unbuilt ticket — see §2.1 for the direction it already has.** |
 | **Re-classifying the Projects filter panel** | Under R31's literal taxonomy the filter is arguably **not a modal either** — it does not ask a question and return an answer. The architect raised this honestly rather than acting on it. R26/R27's approval explicitly excluded moving the filter, so it stays exactly as it is (WHY-AC-7b) and the question becomes **its own future ticket**. A taxonomy discovered mid-feature does not get to reach a surface nobody approved changing. |
+| **Deleting the shared `ElevationLegend` export** | This phase removes a **render**, not an API. Deleting the export is a separate decision nobody has taken, and it is not this feature's to take — see VIEW-AC-12, whose stated reason was corrected in revision 14. |
 | **Renaming the dimension-rule `dataSource`** | `worker/lib/estimator/types.ts:77` uses the same token for a **different, live, correct** concept — where a dimension rule came from. It is not certification and it is not being removed; CERT-AC-3's predicate is deliberately narrow so a bare token match cannot force a rename of a concept that is fine. |
 | Any line editor in ops2, stub or real | Follows R28: with no control to reach it, a route to it is a route to nowhere. |
 | Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28, and still not done. |
 | Explanatory notation of any kind on a drawing surface | R25: *"i don't think lines like this relevant for ops"* — ops staff read elevations for a living. |
-| Deleting the shared `ElevationLegend` export | It has another consumer; ops2 stops rendering it, which is a different thing (VIEW-AC-12). |
 | Switching the line's product from the "Why" surface | R1: the surface is read-only. R28 strengthens this — there is now no route out of it except back. |
 | Recording a verdict on the recommendation (`PATCH /api/ops/recommendation-outcomes/:id`) | R2. The endpoint exists and stays unwired. |
 | Reading the catalogue or the estimator **at display time**, for anything | R3 + D3: *"snapshot at the time of recalculation/save. Not extracted in real time."* |
@@ -284,7 +285,7 @@ sits.** The viewer is not an overlay that opens and dismisses — it is a **node
 navigation tree with a real route**. So this phase now owns:
 
 - the **`exact` drop on the line route** and the whole child-route grammar under it;
-- `/projects/:id/line/:lineId/drawing` and `/projects/:id/line/:lineId/drawing/u:N`;
+- `/projects/:id/line/:lineId/drawing` and `/projects/:id/line/:lineId/drawing/u1`, `u2`, …;
 - replacing the plate's `SidePanel` enlargement (VIEW-AC-6).
 
 **Phase 3b then adds only the `why` child** to a grammar that already exists. That is the
@@ -340,7 +341,7 @@ the gate did not approve.
 
 ### Wayfinder check
 
-**Not needed.** The route is visible and the decisions are made — 31 rulings, eight owner
+**Not needed.** The route is visible and the decisions are made — 31 rulings, ten owner
 decisions, a verified join path, a writer index the design owns, and a closed mock gate.
 Three normally-sized features, not a foggy region.
 
@@ -438,7 +439,8 @@ removal, and the loss of figures for everything saved before Phase 3 is accepted
 **D7** the capture extends to the customer save path · **D8** the detail screen gets its
 own URL, `/projects/:id/line/:lineId/why` — taken on the reasoning that without a route,
 back is component-local state that looks right and behaves wrong at the one moment someone
-uses the system's own back gesture.
+uses the system's own back gesture · **D9** the URL grammar as designed, 1-based ordinals
+(§13.14) · **D10** the viewer's title names the subject (§13.15).
 
 ---
 
@@ -496,10 +498,7 @@ merely listed):
 > orphaning a live ops caption. The reader, the route field and the type member have since
 > been deleted, so the exemption has nothing left to exempt.
 >
-> The lesson is the same one this spec has now learned three times — with the writer index
-> (§7.4), with the phantom Playwright assertion (§12 note 5), and here. **An allowlist entry
-> is a claim, and a claim inside a security-adjacent scan deserves a test rather than a
-> sentence.** Every entry above is written to be justified in the test that reads it.
+> See §12 note 10 — this was the second of three, and the pattern is now a rule.
 
 **Non-vacuity, anchored the way SNAP-AC-2 is:** the walk must be **shown to have reached**
 `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`. A scan whose
@@ -763,10 +762,11 @@ switching work inherits this unchanged — §2.1, point 5.)*
 
 ## 8. Acceptance criteria — Phase 2: the shared drawing viewer (R21, R25, R31)
 
-**The URL grammar** (architect's design §2.5): `/projects/:id/line/:lineId/drawing` for the
-opening, `/projects/:id/line/:lineId/drawing/u:N` for a unit — **N is 1-based in the same
-display order `unitLabel` renders**, so the URL and the on-screen code agree.
-`ASSUMED:` §13.14 — segment names and ordinal scheme.
+**The URL grammar — owner-confirmed (D9, §13.14).** `/projects/:id/line/:lineId/drawing`
+for the opening; `/projects/:id/line/:lineId/drawing/u1`, `/u2`, … for a unit — **1-based
+ordinals in the same display order `unitLabel` renders**. The owner chose this over putting
+the unit's own code in the address: the ordinal matches what the labels already imply, and
+it does not couple the URL to a label that changes if units are reordered.
 
 **A state-only history push was rejected by name.** Back would have popped honestly, but
 the address bar would lie, reload and shared links would silently lose the viewer, and the
@@ -778,14 +778,15 @@ opening, *When* the reviewer activates the drawing, *Then* the viewer opens carr
 drawing at the largest size the viewport allows, and its dimensions in the caption beneath
 it** — and nothing that explains the drawing's notation.
 
-**VIEW-AC-1a (title names the subject)** — *Given* the viewer is showing a **unit**, *When*
-its title is read, *Then* it is that unit's code (`W07A`). *Given* the viewer is showing
-the **line** the reviewer arrived from, *Then* the title is simply `Drawing` — the back
-control already names the line, and repeating it says the code twice. `ASSUMED:` §13.15.
+**VIEW-AC-1a (title names the subject — owner-confirmed, D10, §13.15)** — *Given* the
+viewer is showing a **unit**, *When* its title is read, *Then* it is that unit's code
+(`W07A`). *Given* the viewer is showing the **line** the reviewer arrived from, *Then* the
+title is simply `Drawing` — the back control already names the line, and repeating it says
+the code twice. The size sits in the caption beneath the drawing, not in the title.
 
 **VIEW-AC-2 (R31 — entering pushes exactly one entry)** — *Given* the reviewer is on a
 line page, *When* they activate a drawing, *Then* **exactly one** history entry is pushed
-and the address becomes that drawing's own URL — the opening's, or the unit's `u:N`.
+and the address becomes that drawing's own URL — the opening's, or the unit's `u1`/`u2`/….
 
 **VIEW-AC-2a (R31 — three ways out, one pop)** — *Given* the viewer is open, *When* the
 reviewer uses the back control, presses Escape, **or** performs the system back gesture,
@@ -815,7 +816,7 @@ no sentence explaining it appears — R25, VIEW-AC-10.)
 
 **VIEW-AC-4 (R21, composite unit)** — *Given* a composite line page, *When* the reviewer
 activates a single unit's drawing in the units list, *Then* the viewer shows that unit
-alone at `…/drawing/u:N` for that unit's 1-based position, titled with the unit's code and
+alone at `…/drawing/u<N>` for that unit's 1-based position, titled with the unit's code and
 captioned with its own size.
 
 **VIEW-AC-5 (R21, "one shared viewer")** — *Given* the ops2 source after this phase,
@@ -862,11 +863,32 @@ the owner's R25 ruling. Two live specs asserting opposite things about the same 
 how the next reader builds the wrong one; P1-AC-27 was never given a test, so the document
 is the only place the contradiction can be resolved.
 
-**VIEW-AC-12 (the shared export survives)** — *Given* `ElevationLegend` at
-`src/components/quote-project/Elevation.tsx:501`, *When* ops2 stops rendering it, *Then*
-the export itself is **not deleted** and the customer site's use of it is unaffected.
-Ops2 declining to render something is not the same as the repository losing it, and the
-other consumer's right to it is not this feature's to remove. `ASSUMED:` §13.13.
+**VIEW-AC-12 (the shared export is not deleted) — JUSTIFICATION CORRECTED, revision 14.**
+
+*Given* `ElevationLegend` in `src/components/quote-project/Elevation.tsx`, *When* ops2
+stops rendering it, *Then* **the export itself is not deleted by this feature.**
+
+> **~~As written through revision 13:~~** *"…and the customer site's use of it is
+> unaffected… the other consumer's right to it is not this feature's to remove."*
+> **That premise was false**, and it is corrected rather than quietly dropped, because a
+> criterion resting on a false premise gets "fixed" by whoever next notices — and the fix
+> they will reach for is deleting the export.
+>
+> **Executed 2026-08-25:** across the repository `ElevationLegend` has **exactly one
+> reference — its own definition.** `docs/specs/ops2-record-design.md:42,157,191` records
+> why: the export was **added by the ops2 record work**, for the very plate this phase has
+> just stopped rendering it from. ops2 was never one of two consumers. It was the only one.
+
+**The true reason it stays:** this phase removes a **render**, not an **API**. Conflating
+the two is how a shared component gets deleted by a feature that only meant to stop showing
+it. The export currently has **no consumer**, and removing it is a **separate decision that
+nobody has taken** — not this feature's to take, and not a tidy-up to be performed on the
+way past.
+
+**What the test may and may not assert.** It must assert the export still exists. It must
+**not** assert a consumer count in either direction: pinning "no consumer" would fail a
+legitimate future use, and asserting "a consumer exists" would assert something untrue.
+`ASSUMED:` §13.13.
 
 ---
 
@@ -1124,7 +1146,7 @@ and nothing that navigates anywhere except back to the line page.
 **WHY-AC-40 (R28 — negative, no route to a thing that does not exist)** — *Given* the ops2
 route table after both phases, *When* it is enumerated, *Then* no line-editor route exists
 — no `/edit` path, no stub, no placeholder page — and no code in ops2 references one. The
-child routes this feature adds are exactly `drawing`, `drawing/u:N` (Phase 2) and `why`
+child routes this feature adds are exactly `drawing`, `drawing/u<N>` (Phase 2) and `why`
 (Phase 3b). Nothing else.
 
 **WHY-AC-41 (R28 — negative, and it applies to the panel too)** — *Given* the "Why this
@@ -1187,7 +1209,7 @@ rendered.
 **X-AC-6 (R1, R2, R3, R28)** — *Given* the route table after both phases, *When* it is
 enumerated, *Then* this feature has added **no** POST, PATCH, PUT or DELETE endpoint, and
 `PATCH /api/ops/recommendation-outcomes/:id` is referenced by no client code. The **client**
-routes it adds are `drawing`, `drawing/u:N` and `why` — client routes are not endpoints,
+routes it adds are `drawing`, `drawing/u<N>` and `why` — client routes are not endpoints,
 and none carries a write.
 
 **X-AC-7 (no free prose escapes)** — *Given* a rationale response for an opening whose
@@ -1229,6 +1251,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **A strip launched from a stale branch** | Refused, naming the offending importer, before anything is written. | CERT-AC-13 |
 | **A snapshot written after the removal** | `performance_json` simply no longer carries the fields — no literal placeholder, no preserved vocabulary. | CERT-AC-10 amendment |
 | **`dataSource` on a dimension rule** | Untouched. Same token, different live concept — CERT-AC-3's predicate is narrow on purpose. | §2, out of scope |
+| **The `ElevationLegend` export after ops2 stops rendering it** | It stays, and it currently has **no consumer**. Removing it is a separate decision nobody has taken — this phase removed a render, not an API. | VIEW-AC-12 |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
 | **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** | R31, VIEW-AC-2d |
@@ -1243,7 +1266,6 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **A non-staff caller reaches an ops route or any new URL** | One refusal, no candidate data, and nothing inferable from the difference between an anonymous and a signed-in caller. | X-AC-1…4 |
 | **A drawing whose notation a reader might not know** | Nothing is explained. The console's readers are estimators. | R25 |
 | **A drawing whose accuracy is provisional** | Still said — mullion positions confirmed at technical review; an unsized opening drawn as a stand-in. Authority is not notation. | R25, VIEW-AC-8, VIEW-AC-10 |
-| **The customer site's own use of the legend** | Untouched. The shared export stays; only ops2 stops rendering it. | VIEW-AC-12 |
 | **The shared panel's other caller (Projects filter)** | Unmoved: same presentation, same dismiss control, existing tests green. Whether it is a modal at all is a future ticket. | WHY-AC-7b |
 | **Offerability gating** | Products withheld as incomplete and candidates excluded for `offerability` never reach the client at all — enforced server-side (X-AC-5), not by client filtering. | R9 |
 | **Delivery zones** | Not applicable; this surface reads no delivery fact. | — |
@@ -1258,7 +1280,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 
 ## 12. Test-surface notes for the architect and tester
 
-Not a test plan — nine places where the obvious test would pass a wrong implementation:
+Not a test plan — ten places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
@@ -1299,94 +1321,95 @@ Not a test plan — nine places where the obvious test would pass a wrong implem
    all three exits — control, Escape, system gesture — because a viewer whose Escape
    handler closes state without popping history leaves the address bar lying, which is the
    exact failure the route ruling rejected the state-only push to avoid.
-9. **CERT-AC-3: the predicate is narrow on purpose, the paths are not interchangeable, and
-   every allowlist entry is a claim that needs executing.**
-   - A bare `dataSource` token match is the easy scan and the wrong one — it sweeps in the
-     dimension-rule provenance at `types.ts:77`, a live and correct concept.
-   - **The strip script and the importers live in different trees**:
-     `sanity/scripts/strip-certified.mjs` versus `scripts/catalogue/*.mjs`. Revisions up to
-     12 conflated them; "correcting" CERT-AC-13's directory to match the allowlist would
-     point its gate at the wrong tree and make it vacuous.
-   - **An allowlist entry is a claim.** `src/ops/api.ts:381` was exempted as "a legacy read
-     surface this feature does not touch"; executing that claim showed both its producers
-     had been removed, orphaning a live ops caption. The entry is now gone. Same lesson as
-     the writer index and the phantom Playwright assertion: **execute the exemption, do not
-     read it.**
-   - Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`; a glob that silently
-     matched nothing is the failure mode this whole family of criteria exists to prevent.
-     CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder;
-     the rest is scan, because the scripts are not callable in isolation.
+9. **CERT-AC-3: the predicate is narrow on purpose, and the paths are not interchangeable.**
+   A bare `dataSource` token match is the easy scan and the wrong one — it sweeps in the
+   dimension-rule provenance at `types.ts:77`, a live and correct concept. And **the strip
+   script and the importers live in different trees**: `sanity/scripts/strip-certified.mjs`
+   versus `scripts/catalogue/*.mjs`. Revisions up to 12 conflated them; "correcting"
+   CERT-AC-13's directory to match the allowlist would point its gate at the wrong tree and
+   make it vacuous. Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`;
+   CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder.
+10. **THE RULE THIS FEATURE LEARNED THREE TIMES — a justification naming another consumer
+    is a claim about the codebase, and it must be EXECUTED, not asserted.** Every instance
+    took one grep to settle, and every one had already been believed by two or more careful
+    readers:
+    - **The writer index (§7.4).** A hand-maintained list of the sites writing a line's
+      product: named 1, then 4, then 8, then verified at **15**.
+    - **The `src/ops/api.ts:381` allowlist entry (§6).** Exempted as *"a legacy read
+      surface this feature does not touch"*. Executed: both its producers had been removed,
+      orphaning a live ops caption. The exemption is gone.
+    - **VIEW-AC-12's premise (§8).** *"The customer site still uses it."* Executed:
+      `ElevationLegend` has exactly one reference repo-wide — its own definition — and the
+      export was added **by ops2's own record work**. ops2 was the only consumer, and this
+      phase removed it.
+
+    **The tell is a sentence that sounds like verification and contains none:** "another
+    consumer", "a legacy surface", "the customer site", "everywhere else". Each is a
+    testable statement about the repository dressed as a reason. When one appears in a
+    criterion, an allowlist, or an exemption, **run the grep before believing it** — and
+    prefer a criterion that does not need the claim at all, as VIEW-AC-12 now does.
 
 ---
 
-## 13. `ASSUMED:` register — vetoable at acceptance
+## 13. `ASSUMED:` register — every entry carries a state
 
-Carried from the grill conclusions §7 (settled; do not re-open):
+**Why the states exist (added revision 15).** Two entries — §13.14 and §13.15 — were
+**answered by the owner at Phase 1 sign-off, and Phase 2 was built against those answers**,
+while this register still described them as open. Nobody noticed until the phase that
+depended on them was complete.
 
-- **(§7.1)** `withheldIncomplete[]` is **not** shown, following R9.
-- **(§7.2)** the `CandidateOutcome.dataSource` removal is resolved by the architect per
-  conclusions §5 constraint 2.
-- **(§7.3)** "3–5 next best" is implemented as **4** runners-up beside the chosen product
-  — five rows total (WHY-AC-12).
-- **(§7.4)** the `CONTEXT.md` corrections are the architect's to apply: correction 1
-  (Staff works for OpenFrame) is a direct owner ruling; correction 2 (define
-  "Manufacturer") is an inference and may be vetoed; correction 3 was resolved as
-  no-change. Adding the **Estimator** persona and considering the **human review gate** as
-  a named stage go with them.
+That is worse than an unanswered assumption: a later reader would have thought a shipped
+decision was still in play, and might have "resolved" it a second time, differently. So:
 
-Registered by this spec:
+> **Every entry has a state — OPEN, DISCHARGED, RETIRED or VETOED — and discharging one
+> happens when the answer arrives, not when someone next reads the file.**
 
-1. **VIEW-AC-9** — the record list's row glyph does not open the viewer. The row is
-   already one navigation target (record spec P1-AC-24/35); a second target inside it
-   would undo an approved criterion.
-2. **WHY-AC-10** — a pre-0055 run states that the reasoning was not recorded, rather than
-   reconstructing anything from the deleted scoring model's columns.
-3. **§11, GST** — no money at all on this surface.
-4. **§11, multiple runs** — the most recent selection run for the opening is the one
-   shown; earlier runs are not listed.
-5. **WHY-AC-9** — where figures were never captured, the panel says so rather than falling
-   back to a display-time catalogue read. The only reading compatible with D3.
-6. *(retired — D7 answered it: the capture extends to the customer save path.)*
-7. *(retired — R28 answered it: there is no "Change the product" control, so the question
-   of where it lives no longer exists.)*
-8. **SNAP-AC-12** — figures live in the line's existing `configuration_snapshot_json`
-   rather than in new columns; the architect may rule otherwise, and any migration follows
-   `d1-migration-safety`.
-9. **§7.4** — R22 applies to the estimator's own line-creating writers as well as the
-   human-facing ones. Which files those are is the design's index (§4.2), not this spec's.
-10. **WHY-AC-28** — on an overridden line, R6's three labels are kept and only the
-    "Chosen" line's sentence changes (a person chose this; the platform had recommended X).
-11. **§10** — the ops routes' existing uniform refusal for non-staff callers is adopted as
-    written rather than changed by this feature.
-12. **VETOED by R31.** This entry read: *"the drawing viewer is an overlay, not a step in
-    the tree… so it keeps a dismiss control while the detail gets a back one."* It was
-    flagged as the likeliest of the thirteen to be wrong, and it was. The owner ruled the
-    viewer a **tree node with back**. Kept visible rather than deleted, because the way it
-    was wrong is the useful part: it reasoned from *"is it an overlay?"* when the question
-    is *"does it ask a question and return an answer?"* — see R31's taxonomy, and the note
-    that three readers made the same error independently.
-13. **VIEW-AC-12** — the shared `ElevationLegend` export is retained for the customer site
-    even though ops2 stops rendering it. Deleting a shared export because one consumer
-    stopped using it is a decision for whoever owns the other consumer.
-14. **§8, the URL grammar** — the segment names (`drawing`, `u:N`) and the 1-based ordinal
-    scheme tied to `unitLabel`'s display order are the architect's proposal, carried here
-    so the owner can veto a URL he will see in his address bar.
-15. **VIEW-AC-1a, the viewer's title** — a unit's title is its code (`W07A`); the line's
-    own drawing is titled `Drawing`, because the back control already names the line and
-    repeating it says the code twice. The size lives in the caption. **Being put to the
-    owner as a copy question**; until answered, this is what the developer builds.
+An `OPEN` entry that has already shipped says so, because vetoing it then costs rework
+rather than an edit, and the owner deserves to know which kind of veto he is being offered.
+
+**States:** `OPEN` — still assumed, still vetoable · `DISCHARGED` — the owner or the
+architect answered it · `RETIRED` — the question dissolved · `VETOED` — answered against
+the assumption.
+
+### Carried from the grill conclusions §7
+
+| # | Entry | State |
+|---|---|---|
+| §7.1 | `withheldIncomplete[]` is **not** shown, following R9 | **OPEN** — Phase 3b, not yet built |
+| §7.2 | the `CandidateOutcome.dataSource` removal is the architect's to rule | **DISCHARGED** — ruled *remove*; ADR 0011; paid for with a `SELECTION_VERSION` bump; old `outcome_json` still parses (CERT-AC-9) |
+| §7.3 | "3–5 next best" implemented as **4** runners-up, five rows total | **OPEN** — Phase 3b, not yet built |
+| §7.4 | the `CONTEXT.md` corrections are the architect's to apply — Staff works for OpenFrame (a direct owner ruling), define "Manufacturer" (an inference, vetoable), plus the **Estimator** persona and the **human review gate** | **OPEN — owed, not phase-bound.** Confirm applied before Phase 3: every later stage reads its vocabulary from that file |
+
+### Registered by this spec
+
+| # | Entry | State |
+|---|---|---|
+| 1 | **VIEW-AC-9** — the record list's row glyph does not open the viewer; the row is already one navigation target (record spec P1-AC-24/35) | **OPEN — shipped in Phase 2.** A veto now costs rework |
+| 2 | **WHY-AC-10** — a pre-0055 run says the reasoning was not recorded, rather than reconstructing from the deleted model's columns | **OPEN** — Phase 3b |
+| 3 | **§11, GST** — no money at all on this surface | **OPEN** — Phase 3b |
+| 4 | **§11, multiple runs** — the most recent run only; earlier runs are not listed | **OPEN** — Phase 3b |
+| 5 | **WHY-AC-9** — where figures were never captured, the panel says so rather than reading the catalogue at display time | **OPEN** — Phase 3b |
+| 6 | *(the capture's reach)* | **RETIRED** — D7 answered it: the capture extends to the customer save path |
+| 7 | *(where "Change the product" lives)* | **RETIRED** — R28 answered it: there is no such control |
+| 8 | **SNAP-AC-12** — figures live in the existing `configuration_snapshot_json` rather than new columns; the architect may rule otherwise | **OPEN** — Phase 3a |
+| 9 | **§7.4** — R22 applies to the estimator's own line-creating writers too; which files is the design's index | **OPEN** — Phase 3a |
+| 10 | **WHY-AC-28** — on an overridden line, R6's three labels are kept and only "Chosen" changes its sentence | **OPEN** — Phase 3b |
+| 11 | **§10** — the ops routes' existing uniform refusal is adopted as written rather than changed | **OPEN** — Phase 3b |
+| 12 | *"the drawing viewer is an overlay… it keeps a dismiss control"* | **VETOED by R31.** Kept visible because the way it was wrong is the useful part: it reasoned from *"is it an overlay?"* when the question is *"does it ask a question and return an answer?"* |
+| 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer**. *(Premise corrected revision 14; ruling unchanged.)* This feature removes a render, not an API | **OPEN — shipped in Phase 2.** Deleting the export is a separate decision for whoever takes it deliberately |
+| 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address: the ordinal matches what the labels already imply, and does not couple the URL to a label that changes if units are reordered |
+| 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
 
 ---
 
 ## 14. Decisions needed
 
-**None, and nothing is pending from any stage.** Revision 13's three corrections are all
-factual or structural: the fence amendment is recorded with its date, cause, named
-exemptions and — importantly — **what still holds**, so the distinction between *the
-contents of a JSON blob* and *the shape of a statement* is available to whoever is asked to
-widen it next. The allowlist path is fixed, the false exemption is gone, and §12 note 9
-carries the reason both happened.
+**None.** §13.14 and §13.15 are discharged with the owner's reasoning attached, and the
+register now carries a state on every entry so the next reader can tell a live assumption
+from a settled one at a glance.
 
-Two things remain recorded rather than resolved, deliberately: the **Projects filter's
-taxonomy** (a future ticket) and the **viewer's title copy** (`ASSUMED:` §13.15, with the
-owner). Neither blocks implementation; both are vetoable at acceptance.
+**Two entries are OPEN and already shipped** (§13.1 VIEW-AC-9, §13.13 VIEW-AC-12) — both
+still vetoable, but a veto now costs rework rather than an edit. **One is owed and not
+phase-bound** (§7.4, the `CONTEXT.md` corrections) and should be confirmed applied before
+Phase 3, since every later stage reads its vocabulary from that file. The remaining OPEN
+entries all belong to Phase 3 and will be live at that phase's gate.

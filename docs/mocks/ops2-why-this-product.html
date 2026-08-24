@@ -365,7 +365,7 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
 <p class="note">
   One viewer for every drawing in ops2, opened by tapping a drawing anywhere. It replaces
   the line plate's current side-panel enlargement — it is not a <code>SidePanel</code>:
-  a drawing wants the whole viewport, and the legend that teaches the symbols needs room.
+  a drawing wants the whole viewport, not 520&nbsp;px beside the work.
   <b>It is a screen in the tree, not an overlay</b> (R29): back at the leading edge naming the
   line it returns to, plus the standard edge-swipe. Escape still works — a keyboard convenience,
   not the navigation model.
@@ -427,8 +427,9 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
         </div>
       </div>
     </div>
-    <p class="ann">The drawing at the largest size the viewport allows, its size line, and the symbol
-      legend — which only ever appears here: a 46&nbsp;px row glyph and a 300&nbsp;px hero have no room to teach.
+    <p class="ann">The drawing at the largest size the viewport allows, and its size line.
+      <b>No symbol legend</b> — gate 1 removed it: ops staff read elevations for a living, and the
+      solid/dashed/apex key is customer-facing explanation.
       <span class="ruling">VIEW-AC-1</span></p>
     <p class="ann"><b>Back, because the viewer is a tree node.</b> Enlarging a drawing is a
       navigation, so it takes a history entry — which means leaving a line from an enlarged

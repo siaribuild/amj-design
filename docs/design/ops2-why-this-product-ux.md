@@ -167,8 +167,11 @@ The first sentence explains how to *read* the drawing — same class, removed. T
 is a caveat about the drawing's **authority**, not its notation, and stays. Change 5 makes
 the first sentence redundant anyway: the unit widths are now drawn on the leader.
 
-`ElevationLegend` itself is **not deleted** — the customer site still uses it. Only ops2
-stops rendering it.
+`ElevationLegend` itself is **not deleted**: **this phase removes a render, not an API.**
+The export currently has **no consumer anywhere in the repository** — verified, one grep,
+one hit, its own definition — because it was added by the ops2 record work for the very
+plate this phase has just stopped rendering it from. Removing it is a separate decision
+nobody has taken, so it stays.
 
 #### **[gate 4]** Both leaders, wherever the real component draws them
 
@@ -707,7 +710,7 @@ deliberate, and §7's checklist is what keeps it that way.
 |---|---|---|
 | The panel object | `LineReview.tsx`'s local `Panel` | Extract or extend with an optional `onOpen`; the door renders a stretched `<button class="lp-panel__door">`. Budget mechanism unchanged. |
 | The slide-out | `src/ops2/chrome/SidePanel.tsx` | **Two changes, both from the gate (§4.1):** a `phoneForm?: "sheet" \| "full"` prop defaulting to `"sheet"`, and a leading **back** control in place of `Done` (R29). Neither may alter the Projects filter panel's approved behaviour. Its `footer` slot goes **unused** here (R28). **And R29 makes it route-driven for this caller** — opened by a navigation rather than a boolean, with a leading back control in the header instead of a trailing dismiss. The filter panel stays an overlay with its own control. |
-| Drawings | `src/components/quote-project/Elevation` | None — both leaders are its default from `sm` up. `ElevationLegend` is **not** used in ops2 (gate 1); it stays for the customer site. |
+| Drawings | `src/components/quote-project/Elevation` | None — both leaders are its default from `sm` up. `ElevationLegend` is **not rendered** (gate 1). The export stays: this phase removes a render, not an API, and it now has no consumer anywhere — removing it is a separate decision. |
 | Full-screen viewer | — | **New** `src/ops2/chrome/DrawingViewer.tsx` (design §4.6 interface). |
 | Plate enlargement | `Plate.tsx:60-106` | **Deleted**, replaced by the viewer. |
 | Unit drawings | `LineReview.tsx` `Units` + `.lp-unit` in `line.css` | The **row** becomes a viewer-opening `<button class="lp-unit__open">` carrying the grid and padding; `<li class="lp-unit">` keeps only the hairline. Mirrors `.rl-row` / `.rl-open` in `record.css`. |
