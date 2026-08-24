@@ -510,3 +510,32 @@ test("CERT-AC-7 a type that exists but carries nothing left to strip is a clean 
   assert.equal(out.total, 21);
   assert.deepEqual(out.docs, []);
 });
+
+test("CERT-AC-7 every GROQ type literal in a maintenance script names a declared type", async () => {
+  // "One wrong type name suggests the others were never verified either."
+  // They were not: nothing checked any of them. The strip's own targets are
+  // asserted above; this covers every SIBLING query in the scripts that read and
+  // rewrite the dataset, so the next typo is caught by a suite rather than by a
+  // reviewer counting production documents.
+  const declared = new Set([...(await readFile(join(projectRoot, "sanity/schemaTypes.ts"), "utf8"))
+    .matchAll(/^\s{2}name: "([A-Za-z0-9_]+)",$/gm)].map((m) => m[1]));
+  assert.ok(declared.size >= 10, `the schema walk found the types (${declared.size})`);
+
+  const files = [
+    ...await tsFilesUnderAny("scripts/catalogue", /\.mjs$/),
+    ...await tsFilesUnderAny("sanity/scripts", /\.mjs$/),
+    "worker/lib/estimator/catalogue.ts",
+    "worker/lib/catalogue.ts",
+  ];
+  const literals = [];
+  for (const rel of files) {
+    const code = stripComments(await readFile(join(projectRoot, rel), "utf8"));
+    for (const m of code.matchAll(/_type\s*==\s*"([A-Za-z0-9_]+)"/g)) literals.push([rel, m[1]]);
+  }
+  // Non-vacuity: the scan must have found real queries, or "all valid" is empty.
+  assert.ok(literals.length >= 5, `the scan found GROQ type literals (${literals.length})`);
+  assert.ok(literals.some(([, t]) => t === "product"), "including the product queries");
+
+  const unknown = literals.filter(([, t]) => !declared.has(t)).map(([rel, t]) => `${rel}: _type=="${t}"`);
+  assert.deepEqual(unknown, [], `a query names a type no defineType declares: ${unknown.join(" | ")}`);
+});
