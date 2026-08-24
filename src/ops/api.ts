@@ -378,7 +378,6 @@ export interface OpsThermalTarget {
 export interface OpsThermalProposed {
   productSlug: string | null; variantId: string | null;
   uw: number | null; shgc: number | null;
-  source: string | null;                     // certified | estimated
 }
 export interface OpsThermalRow {
   lineId: string;

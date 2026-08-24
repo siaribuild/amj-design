@@ -45,14 +45,20 @@ import {
  * justify and inventing a rationale would be worse than the absence.
  */
 
-type PanelLine = { k?: string; v: ReactNode; quiet?: boolean };
+// A panel is EITHER a set of labelled facts or a set of bare ones, never a mix.
+// The union is what makes that a compile error rather than a comment: a mixed
+// array satisfies neither member, so a caller cannot reach the case where a row
+// has no term to put in its <dt>.
+type LabelledLine = { k: string; v: ReactNode; quiet?: boolean };
+type BareLine = { k?: never; v: ReactNode; quiet?: boolean };
+type PanelLine = LabelledLine | BareLine;
 
 /** THE BUDGET IS STRUCTURAL. The panel slices to it and says what it cut.
  *
  *  Exported for its MARKUP, which ops2-record.test.mjs renders and asserts. */
 export function Panel({ title, lines, budget, more, testId }: {
   title: string;
-  lines: PanelLine[];
+  lines: LabelledLine[] | BareLine[];
   budget: number;
   /** What the remainder is called when the budget bit. */
   more?: (cut: number) => string;
@@ -63,10 +69,14 @@ export function Panel({ title, lines, budget, more, testId }: {
   // A DESCRIPTION LIST DESCRIBES SOMETHING. The Price panel's rows are a figure
   // and a state, not term/definition pairs, and wrapping them in <dl> emitted
   // <dd> with no <dt> — a definition of nothing, which is what a screen reader
-  // was being handed. So the container follows the CONTENT: keyed rows are a
-  // description list, keyless rows are an ordinary list. Mixed would need a
-  // term for every row, and neither caller has one, so it is not invented here.
-  const keyed = shown.some((l) => !!l.k);
+  // was being handed. So the container follows the CONTENT: labelled rows are a
+  // description list, bare rows are an ordinary list.
+  //
+  // `every`, not `some`, on purpose. The type union already makes a mixed panel
+  // a compile error, and this is the second lock: if one is ever bypassed, the
+  // fallback is a list that renders every value — not a <dl> with an empty <dt>,
+  // which is the exact invalid markup this whole change removed.
+  const keyed = shown.length > 0 && shown.every((l) => !!l.k);
   const rowClass = (l: PanelLine) =>
     (l.quiet ? "lp-panel__line lp-panel__line--quiet" : "lp-panel__line");
   return (

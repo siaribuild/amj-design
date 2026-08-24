@@ -772,9 +772,6 @@ function ThermalAudit({ rows }: { rows: OpsThermalRow[] }) {
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>
                     {r.verdict === "header" ? "—" : perfText(r.proposed)}
-                    {r.verdict !== "header" && r.proposed?.source === "estimated" && (
-                      <div className="t-cap" style={{ color: MUTED }}>estimated</div>
-                    )}
                   </td>
                   <td className="px-4 py-2">
                     <ThermalVerdict row={r} />

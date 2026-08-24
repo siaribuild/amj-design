@@ -153,15 +153,19 @@ const { findCertifiedWrites } = await import(pathToFileURL(STRIP).href);
 // re-stamps the field is as much a call site as a reader of it.
 const SCAN_ROOTS = ["worker", "src", "scripts", "sanity"];
 
-// Three entries, each with its reason. Do not widen this.
+// Two entries, each with its reason. Do not widen this.
+//
+// It was three. `src/ops/api.ts` was allowlisted for `OpsThermalProposed.source`
+// on the ground that it was a legacy read surface this feature does not touch —
+// and the tester executed that claim and found it false: both producers of the
+// field had been removed by this very diff, so the caption it fed would have
+// rendered only for rows written before the deploy. The reader is gone, so the
+// exemption is gone with it.
 const SCAN_ALLOWED = [
   // CERT-AC-9's pre-change fixture, and this scan's own patterns.
   /^scripts\/tests\//,
   // Must name the fields it deletes, and owns the predicate above.
   /^sanity\/scripts\/strip-certified\.mjs$/,
-  // `OpsThermalProposed.source` types an INSERT-only historical audit record: a
-  // reader of ladder-v1-era stored values (R18), which writes nothing.
-  /^src\/ops\/api\.ts$/,
 ];
 
 async function liveSourceFiles() {

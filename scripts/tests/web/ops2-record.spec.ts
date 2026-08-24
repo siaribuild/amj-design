@@ -672,3 +672,41 @@ test("the filter emptying the rail empties the canvas honestly", async ({ page }
   await expect(canvas).toContainText("W02");
   await expect(canvas).not.toContainText("W01");
 });
+
+test("a panel that labels nothing is not a description list, in the rendered DOM", async ({ page }) => {
+  // The Price panel's rows are a figure and a pricing state — neither is the
+  // definition of a term — but every row went into a <dl>, so each rendered as
+  // <div><dd>…</dd></div>: a definition with no <dt>. Assistive technology was
+  // handed the number and the state as definitions of nothing.
+  //
+  // ASSERTED IN A BROWSER, not only in SSR. The node suite renders `Panel` in
+  // isolation with react-dom/server; it cannot see what the client actually
+  // mounts, and a markup rule that only holds before hydration is not a rule.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "l1", code: "W01", productSlug: "awning-600", lineTotal: 1240,
+      options: { Colour: "Monument", Glazing: "Double clear" } })],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${RECORD}/line/l1`);
+
+  const price = page.getByTestId("line-price");
+  await expect(price).toBeVisible();
+  // The panel still says its two things — a pass must not mean it stopped
+  // rendering.
+  await expect(price).toContainText("$1,240");
+  expect(await price.locator("dl").count()).toBe(0);
+  expect(await price.locator("dd").count()).toBe(0);
+  expect(await price.locator("dt").count()).toBe(0);
+  expect(await price.locator("ul > li").count()).toBe(2);
+
+  // And the panel that DOES label its facts is still a description list, with
+  // one term per definition and no empty term among them.
+  const spec = page.getByTestId("line-spec");
+  await expect(spec).toBeVisible();
+  await expect(spec).toContainText("Monument");
+  expect(await spec.locator("dl").count()).toBe(1);
+  const terms = await spec.locator("dt").allTextContents();
+  expect(terms.length).toBe(await spec.locator("dd").count());
+  expect(terms.length).toBeGreaterThan(0);
+  expect(terms.every((t) => t.trim().length > 0)).toBe(true);
+});

@@ -2132,7 +2132,6 @@ ops.get("/projects/:id/thermal", async (c) => {
       variantId: s(r.ai_variant_id) ?? (snapshot ? s(snapshot.variantId) : null),
       uw: (perf ? n(perf.uw) : null) ?? (snapshot ? n(snapshot.uw) : null),
       shgc: (perf ? n(perf.shgc) : null) ?? (snapshot ? n(snapshot.shgc) : null),
-      source: (perf ? s(perf.source) : null) ?? (snapshot ? s(snapshot.source) : null),
     } : null;
 
     // ── verdict ───────────────────────────────────────────────────────────────

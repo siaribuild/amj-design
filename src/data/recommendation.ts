@@ -134,7 +134,7 @@ export interface CandidateOutcome {
 }
 
 export interface SelectionOutcome {
-  version: string;                        // SELECTION_VERSION, 'ladder-v1'
+  version: string;                        // SELECTION_VERSION, 'ladder-v2'
   openingRef: string | null;
   requirement: CandidateOutcome["requirement"];
   tolerance: number;                      // 0.05, stamped per run (AC-4)
