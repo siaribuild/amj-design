@@ -78,11 +78,25 @@
   border-radius: 0;
   background: var(--ds-surface-page);
 }
+/* THE SAME BAR AS EVERY OTHER OPS2 SCREEN, which is the whole claim this file
+   makes above. `--ops2-head-row` is named in ../chrome/OpsPage.tsx but defined
+   nowhere, so the fallback was the only value that ever applied and the viewer
+   opened over a 56px page bar wearing a 44px one — a 12px jump on a surface
+   whose point is that it is a screen and not an overlay. The number is
+   `ion-toolbar.ops2-topbar`'s own (nav.css), stated rather than inherited from a
+   variable that does not exist. */
 .ops2-viewer__bar {
   --background: var(--ds-surface-card);
   --border-width: 0;
-  --min-height: var(--ops2-head-row, 44px);
+  --min-height: 56px;
+  --padding-start: var(--theme-spacing-md);
+  --padding-end: var(--theme-spacing-md);
 }
+/* `font: inherit` is a SHORTHAND, so it reset the size the `ds-type-caption`
+   class on this button had just set and the label rendered at the inherited
+   16px — a back control heavier than the page's own. The face and size are
+   restated here, after it. Sage, because every other way back in this console
+   is a link and this one is not a different kind of thing. */
 .ops2-viewer__back {
   display: inline-flex;
   align-items: center;
@@ -92,12 +106,27 @@
   background: none;
   border: 0;
   font: inherit;
-  color: var(--ds-text-secondary);
+  font-size: var(--theme-font-size-xs);
+  line-height: var(--theme-line-height-normal);
+  color: var(--ds-text-link);
   cursor: pointer;
 }
+@media (hover: hover) {
+  .ops2-viewer__back:hover { color: var(--ds-text-link-hover); }
+}
+/* THE TITLE IS THE PAGE TITLE'S TWIN, and now says so by wearing the same
+   recipe: `ds-type-heading-md` is on this `<h2>` and on `OpsPage`'s `<h1>`, and
+   as of the owner's ruling it is defined (recipes/type.css). NOTHING TYPOGRAPHIC
+   BELONGS HERE — a font-size in this block would sit later in the cascade than
+   the recipe at equal specificity and silently win, which is how the bar ends up
+   disagreeing with every other bar again. Box only. */
 .ops2-viewer__title {
   margin: 0;
-  padding-inline-start: var(--theme-spacing-2xs);
+  /* Clear of the back control's FOCUS RING, not just of its text — the ring is
+     drawn 2px outside the button and this is the gap it lands in. It does NOT
+     shrink with the title: at `sm` the recipe's 21px left 6px between the ring
+     and the D, which reads as a collision rather than a gap. */
+  padding-inline-start: var(--theme-spacing-md);
   color: var(--ds-text-primary);
 }
 .ops2-viewer__content {
@@ -126,9 +155,39 @@
   margin: 0 auto;
   color: var(--ds-text-primary);
 }
+/* ── THE GENERATOR'S COMPANION RULES, which ops2 never had ───────────────────
+ * `src/styles/theme.css` carries them for the customer site and ops2 does not
+ * load that file (styles/index.css says so at its head), so every drawing in
+ * this console has been rendering without them. It did not show while a drawing
+ * was a 40px glyph or a plate at exactly 1×; here it is 1.64× and both show.
+ *
+ * STROKES DO NOT SCALE WITH THE DRAWING. Without this the frame's 2-unit line
+ * rendered at 3.3px — the viewer's drawing wearing a heavier outline than the
+ * same drawing anywhere else in the console, which is the one place the weights
+ * had to agree. Scoped to the viewer rather than to `svg[data-elevation]`: the
+ * other surfaces draw at 1× and are a wider change than this pass. */
+.ops2-viewer__svg [stroke] { vector-effect: non-scaling-stroke; }
+/* A DIMENSION IS A FIGURE, and figures in this console are the display face,
+   medium, tabular — `.lp-unit__code`, `.lp-size__v`, `.rl-money`. These were
+   the only ones that were not, so the two leader rows a composite now draws
+   could not line their digits up with each other. `vector-effect` goes back to
+   `none` because the number haloes itself with `paint-order: stroke`, and a
+   non-scaling halo is a halo that stops covering the leader it punches. */
+.ops2-viewer__svg .elev-dim {
+  font-family: var(--theme-font-display);
+  font-weight: var(--theme-font-weight-medium);
+  font-variant-numeric: tabular-nums slashed-zero;
+  vector-effect: none;
+}
+/* At 46ch the composite's caption dropped a single word onto a second line,
+   centred under the drawing where an orphan is most visible; the measure now
+   holds it on one line at the desk. `pretty` rather than `balance` for the
+   phone, where it must still wrap: balance split it evenly and broke
+   "height × width" across the two lines, which is worse than a long first line. */
 .ops2-viewer__cap {
   margin: var(--theme-spacing-sm) auto 0;
-  max-width: 46ch;
+  max-width: 56ch;
+  text-wrap: pretty;
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
@@ -246,6 +305,20 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   border-top: 1px solid var(--ds-border-subtle);
 }
 .lp-unit:first-child { border-top: 0; }
+/* THE ROW REACHES THE BLOCK'S EDGE. The panel's own side padding held the wash
+   and the focus ring 12px in from the border, so an active row read as a band
+   floating inside the panel rather than as the row itself — the same half-built
+   look the owner corrected when a list of cards became one block. The gutter
+   moves off the panel and onto the rows, which is exactly how `.rl-list` and
+   `.rl-open` already do it in the record's line list; the hairline then runs the
+   full width, as a divider between two rows should. */
+.lp-panel:has(> .lp-units__list) { padding-inline: 0; }
+.lp-panel:has(> .lp-units__list) > .lp-panel__title,
+.lp-panel:has(> .lp-units__list) > .lp-basis,
+.lp-panel:has(> .lp-units__list) > .lp-coverage,
+.lp-panel:has(> .lp-units__list) > .lp-panel__more {
+  padding-inline: var(--theme-spacing-md);
+}
 .lp-unit__open {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -256,7 +329,7 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
      hit-target floor rather than a look — it adds nothing to a row that
      already clears it. */
   min-height: 44px;
-  padding: var(--theme-spacing-sm) 0;
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
   background: none;
   border: 0;
   text-align: left;

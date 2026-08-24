@@ -51,3 +51,20 @@
   line-height: var(--theme-line-height-snug);
   letter-spacing: var(--theme-letter-spacing-tight);
 }
+
+/* The step below it — the TOP BAR's name for the surface, and the drawing
+ * viewer's. Both `../../chrome/OpsPage.tsx` and `../../chrome/DrawingViewer.tsx`
+ * have been asking for this class; until now it was defined nowhere, so both
+ * titles fell through to whatever the cascade happened to leave them (26px of
+ * Inter at weight 500) and neither was a value anyone chose. The owner's ruling:
+ * the console renders what its own code asks for.
+ *
+ * NO `letter-spacing` — that is the document's, not an omission. The tighter
+ * tracking belongs to the display sizes above this one; at 21px it starts to
+ * cost legibility in a bar that is read at a glance. */
+.ds-type-heading-md {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-xl);
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: var(--theme-line-height-snug);
+}
