@@ -1002,11 +1002,29 @@ will be misled.
 
 ---
 
-## 11. Phase 2 conformance record (architect, 2026-08-25 — final diff vs this design)
+## 11. Phase 2 conformance record (architect, 2026-08-25 — reviewed at `de2bb7c1`)
+
+**What this record was taken against, and what landed after it.** It reviewed
+`b4419105`…`de2bb7c1`, 23 files. It first called that "the final diff"; it was not, and
+the Codex stop-gate said so. Two commits landed afterwards — `a5b2b3bf` (this section
+itself, plus the spec register's §7.4) and `9e16e2ae` (`src/ops2/styles/line.css`
+only: the caption's measure, one `--viewer-column` in place of three copies of `720px`,
+a byte-identical duplicate rule deleted, and the units list restored to the approved
+mock's 420px block with its size right-aligned). **Nothing in either touches a
+structure this record checked** — no component, no route, no interface, no test
+artifact — so the conformance verdict below stands unamended. A record that names a
+range is checkable; one that says "final" is a claim that goes stale the moment the
+next commit lands, which is the same defect §12.10 of the spec is about.
+
+**Correction to this record's own process item.** It reported two edits (`Plate.tsx`'s
+header comment, `ops2-frame.test.mjs`'s VIEW-AC-12 note) as uncommitted work that must
+be committed, and HEAD as still carrying the disproved "the customer site still uses
+it" premise. Executed: both were already committed, and both already carry the "no
+caller" ground — `Plate.tsx:24` and `ops2-frame.test.mjs:248`. There was no process
+item. The claim was about the working tree and nobody ran `git status` before making it.
 
 Verdict: **CONFORMS, with seven reconciled divergences — every one absorbed by this
-design — and no implementation findings beyond committing two working-tree edits
-already made.** The diff (`b4419105`…`de2bb7c1`, 23 files) is client-only exactly as
+design — and no implementation findings.** The diff is client-only exactly as
 designed: no `migrations/`, no `worker/**`, no `src/data/**` change of any kind, and
 no new endpoint — §5's security posture is untouched. The one security-relevant
 surface Phase 2 adds, a cold deep link to a drawing URL, resolves its line through the
@@ -1104,12 +1122,16 @@ suite's pre-existing tests are unedited. Nothing §7 named for Phase 2 is missin
    the `--paper` leader-halo scope in `src/ops2/styles/record.css` for a drawing on
    the page ground rather than a card.
 
-**Process note (routes to the developer, commit only):** two working-tree edits are
-uncommitted at review time — the `src/ops2/projects/Plate.tsx` header comment and the
-`scripts/tests/ops2-frame.test.mjs` note, both replacing the disproved "the customer
-site still uses it" premise with rev 14's "no caller" ground. Their content is
-verified correct; they are part of this phase's premise correction and must land in
-the final diff rather than evaporate with the working tree.
+**Process note — WITHDRAWN, it was false.** This record reported two edits as
+uncommitted and at risk of evaporating with the working tree: the
+`src/ops2/projects/Plate.tsx` header comment and the `scripts/tests/ops2-frame.test.mjs`
+note, both replacing the disproved "the customer site still uses it" premise with
+rev 14's "no caller" ground. Both were already committed and already carry the corrected
+ground (`Plate.tsx:24`, `ops2-frame.test.mjs:248`); `git status` showed nothing of the
+kind. Kept visible rather than deleted, because of what it is: a claim about the state
+of the repository, asserted without running the one command that settles it — inside the
+very review whose job was to check claims against the repository. Same defect, one more
+costume (spec §12.10).
 
 **Register discharge performed with this record:** spec §13's §7.4 (the `CONTEXT.md`
 corrections) is **DISCHARGED** — all four verified live in `CONTEXT.md` on 2026-08-25:
