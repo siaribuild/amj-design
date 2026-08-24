@@ -1,21 +1,21 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 10**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 11**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 10** folds in **D8** (the detail gets its own URL) and **R31** (the drawing
-viewer is a tree node with back, not a modal — vetoing this spec's own `ASSUMED:` §13.12),
-and mirrors the ux-designer's separation of presentation from navigation model. Revision 9
-applied R29/R30 and added §2.1; revision 8 applied R28; revision 7 corrected a false claim
-about an existing legend test; revision 6 applied the closed UX mock gate; revision 5
-repaired two architect findings; revisions 2–4 folded in the owner's decision rounds.
+**Revision 11** closes the last open clause: the architect ruled the drawing viewer a **real
+route segment**, so VIEW-AC-2 is now four assertions rather than a `PENDING` block, and the
+URL grammar moves to **Phase 2** with the viewer. Revision 10 folded in D8 and R31;
+revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7 corrected a
+false claim about an existing legend test; revision 6 applied the closed UX mock gate;
+revision 5 repaired two architect findings; revisions 2–4 folded in the owner's decision
+rounds.
 
-**Decisions needed: none** (§14). **One clause is owed by the architect** — VIEW-AC-2's
-mechanism; it is marked `PENDING ARCHITECT`, not assumed.
+**Decisions needed: none** (§14). **Nothing is pending from any stage.**
 
 ---
 
@@ -67,25 +67,26 @@ not record them, they are gone.
 3. **The universal performance-figure capture (R22, D3, D6, D7).** *Every* save that sets
    or changes a line's product or variant records that product's Uw and SHGC on the line —
    ops console and customer site alike. **A server write-path change, inside Phase 3.**
-4. **A shared full-screen drawing viewer** for ops2 (R21, R25) — **a node in the
-   navigation tree with a back control** (R31), replacing the line plate's current
-   side-panel enlargement.
+4. **A shared drawing viewer** for ops2 (R21, R25) — **a node in the navigation tree with
+   its own route and a back control** (R31), replacing the line plate's current side-panel
+   enlargement.
 5. **Two changes to the shared `SidePanel`** (R26, R29): full-screen presentation on the
    phone, and a **back** control in place of "Done" — without moving the Projects filter
    panel, which is the component's other caller and was not part of this approval.
-6. **Client routes** for the surfaces above (D8, R31). No new server endpoint anywhere
-   except the rationale read.
+6. **The line-route URL grammar** — the `exact` drop on the line route and the drawing
+   segments — **in Phase 2, with the viewer**. Phase 3b adds only the `why` child. No new
+   server endpoint anywhere except the rationale read.
 
 ### Out of scope — and why
 
 | Not built | Because |
 |---|---|
 | **"Change the product" — the control, and any placeholder for it** | **R28, and it is deferred rather than declined.** Owner: *"do not implement CTA change the product. Need to have more thoughts on how to implement this. Having a button implies that some product must be preselected, which we don't have conceptually. not having a button means another panel perhaps. ultimately, switching products is not part of the current run."* Supersedes D4. **Whoever picks this up is picking up an open design question, not an unbuilt ticket — see §2.1 for the direction it already has.** |
+| **Re-classifying the Projects filter panel** | Under R31's literal taxonomy the filter is arguably **not a modal either** — it does not ask a question and return an answer. The architect raised this honestly rather than acting on it. R26/R27's approval explicitly excluded moving the filter, so it stays exactly as it is (WHY-AC-7b) and the question becomes **its own future ticket**. A taxonomy discovered mid-feature does not get to reach a surface nobody approved changing. |
 | Any line editor in ops2, stub or real | Follows R28: with no control to reach it, a route to it is a route to nowhere. |
 | Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28, and still not done. |
 | Explanatory notation of any kind on a drawing surface | R25: *"i don't think lines like this relevant for ops"* — ops staff read elevations for a living. |
 | Deleting the shared `ElevationLegend` export | It has another consumer; ops2 stops rendering it, which is a different thing (VIEW-AC-12). |
-| Any change to the Projects filter panel's presentation or dismiss control | R26/R29 were approved for the detail screen; the filter is the shared component's other caller and outside that approval. |
 | Switching the line's product from the "Why" surface | R1: the surface is read-only. R28 strengthens this — there is now no route out of it except back. |
 | Recording a verdict on the recommendation (`PATCH /api/ops/recommendation-outcomes/:id`) | R2. The endpoint exists and stays unwired. |
 | Reading the catalogue or the estimator **at display time**, for anything | R3 + D3: *"snapshot at the time of recalculation/save. Not extracted in real time."* |
@@ -249,19 +250,27 @@ flight.
 export first, gated in code (CERT-AC-8), per the conclusions' §5 constraint 1 and the D1
 migration lesson.
 
-### Phase 2 — The shared drawing viewer (R21, R25, R31)
+### Phase 2 — The shared drawing viewer, **and the line-route URL grammar** (R21, R25, R31)
 
 **Delivers on its own:** the element the owner rates highest in the product is readable at
 full size from every ops2 surface that draws an opening as its subject; on a composite,
-a unit can be examined alone. Replaces the line plate's current side-panel enlargement.
+a unit can be examined alone, addressably.
 
-**Why second:** small, client-only, zero server surface, and Phase 3's drawings inherit it
-rather than growing a second enlarge behaviour. It was a separate ask (*"clicking on a
-drawing opens full screen view"*), so it does not need Phase 3 to be worth deploying.
+**R31 changed what this phase is, and the architect's route ruling changed where its work
+sits.** The viewer is not an overlay that opens and dismisses — it is a **node in the
+navigation tree with a real route**. So this phase now owns:
 
-**R31 changed what this phase is.** It is no longer an overlay that opens and dismisses;
-it is a **node in the navigation tree**, entered and left like any other screen. That
-reaches the route table, so the architect owns its mechanism — see VIEW-AC-2.
+- the **`exact` drop on the line route** and the whole child-route grammar under it;
+- `/projects/:id/line/:lineId/drawing` and `/projects/:id/line/:lineId/drawing/u:N`;
+- replacing the plate's `SidePanel` enlargement (VIEW-AC-6).
+
+**Phase 3b then adds only the `why` child** to a grammar that already exists. That is the
+sequencing change: the routing work is Phase 2's, not Phase 3's, and a phase description
+or test plan that still places it in Phase 3 is stale.
+
+**Why second:** still small, still client-only, still zero server surface — and now it also
+lays the routing foundation Phase 3b builds on, which is a further reason not to reorder it
+behind Phase 3.
 
 ### Phase 3 — the capture, the panel, the detail screen
 
@@ -272,9 +281,9 @@ discovered late:**
   records what that product performs at, on both the ops console and the customer site.
   `worker/**`, so **Probity applies: the failing test comes first**. It carries the
   feature's only regression risk, and §7.2 is where that risk is pinned.
-- **Phase 3b — a read-only display surface (§9).** The panel and the detail. R1: it
-  changes nothing; WHY-AC-20 requires the whole interaction to be GETs; R28 removed the
-  one control that would have led anywhere.
+- **Phase 3b — a read-only display surface (§9).** The panel, and the detail screen at the
+  `why` child route. R1: it changes nothing; WHY-AC-20 requires the whole interaction to be
+  GETs; R28 removed the one control that would have led anywhere.
 
 **Presentation and navigation model are separate things, and this spec specifies both.**
 
@@ -299,11 +308,12 @@ between is a line that will have something to show, and a save that is missed ca
 recovered.
 
 **Dependency check:** Phase 3 does not technically depend on Phase 1 — R5 keeps
-certification off the screen either way. It does not depend on Phase 2 either; without it,
-Phase 3's drawings simply are not enlargeable. 3b depends on 3a for anything a human
-selected to have figures at all. **The `SidePanel` changes (R26, R29) belong to whichever
-of Phase 2 or 3 ships first** — they are one component edit, and shipping the detail
-against the old presentation would ship something the gate did not approve.
+certification off the screen either way. **3b now does depend on Phase 2** for the route
+grammar; if the phases were ever reordered, that grammar travels with whichever ships
+first. 3b depends on 3a for anything a human selected to have figures at all. **The
+`SidePanel` changes (R26, R29) belong to whichever of Phase 2 or 3 ships first** — one
+component edit, and shipping the detail against the old presentation would ship something
+the gate did not approve.
 
 ### Wayfinder check
 
@@ -376,12 +386,12 @@ convention is recorded for the confirm/cancel screen the deferred switching work
 
 **R31 — the drawing viewer is a tree node with a back control, not a modal.**
 
-This **vetoes this spec's `ASSUMED:` §13.12**, which had the viewer as an overlay with a
+This **vetoed this spec's `ASSUMED:` §13.12**, which had the viewer as an overlay with a
 dismiss. The owner was given the overlay reading — that a modal is a decision dialog, from
 his own gloss *"switch(modal aka Confirm/Cancel)"*, and that an enlargement is a lightbox
 rather than a destination — and chose *"a tree node, with back."* The cost was named and
 accepted: **a history entry per enlargement, so leaving a line after enlarging a drawing
-takes two backs** (§11, and WHY-AC/VIEW-AC below).
+takes two backs** (VIEW-AC-2d).
 
 **The taxonomy is narrower than it looks, and this is worth recording.** Under R29 + R31:
 
@@ -392,7 +402,10 @@ takes two backs** (§11, and WHY-AC/VIEW-AC below).
 (`ASSUMED:` §13.12), the ux-designer, and the architect — each reasoning from "it is an
 overlay over the current screen" rather than from "does it ask a question?". A rule that
 three readers got wrong the same way will be got wrong again, so it is written here in the
-index rather than left implicit in a criterion.
+index rather than left implicit in a criterion. Its first live consequence is already
+recorded: under the literal taxonomy the **Projects filter is arguably not a modal
+either**, and that goes to a future ticket rather than into this feature (§2, out of
+scope).
 
 Owner decisions: **D1** three phases, confirmed order · **D2** panel absent post-issue ·
 **D3** figures snapshotted at save, never read live · ~~**D4** placeholder~~ *(superseded
@@ -613,30 +626,46 @@ switching work inherits this unchanged — §2.1, point 5.)*
 
 ## 8. Acceptance criteria — Phase 2: the shared drawing viewer (R21, R25, R31)
 
-**VIEW-AC-1 (R21, R25)** — *Given* the line page for a simple opening, *When* the reviewer
-activates the drawing, *Then* a full-screen viewer opens carrying **the drawing at the
-largest size the viewport allows, the opening's dimensions, and its identification (the
-line's code)** — and nothing that explains the drawing's notation.
+**The URL grammar** (architect's design §2.5): `/projects/:id/line/:lineId/drawing` for the
+opening, `/projects/:id/line/:lineId/drawing/u:N` for a unit — **N is 1-based in the same
+display order `unitLabel` renders**, so the URL and the on-screen code agree.
+`ASSUMED:` §13.14 — segment names and ordinal scheme.
 
-**VIEW-AC-2 (R31 — the viewer is a tree node)** — *Given* the reviewer is on a line page,
-*When* they activate the drawing, *Then* the viewer is **entered as a node in the
-navigation tree**: a history entry is pushed, and activating back — or the platform's
-standard back gesture — returns to the line page with the viewer closed and the page
-beneath unchanged.
+**A state-only history push was rejected by name.** Back would have popped honestly, but
+the address bar would lie, reload and shared links would silently lose the viewer, and the
+route table would show nothing for a test to find — the same broken promise relocated one
+layer down.
 
-> **`PENDING ARCHITECT` — the mechanism clause of this criterion is owed by the design,
-> not assumed here.** R31 makes the viewer a tree node; whether that is realised as its own
-> route segment or as a state-only history push is a route-table decision, and the
-> assertion the tester writes differs between them (a URL to visit versus an entry to
-> count). The architect states which, and this clause is completed from their answer
-> before implementation starts. **The observable behaviour above is fixed regardless** and
-> is what the criterion is really about.
->
-> Revision 9 asserted the exact opposite of this — *"`history.length` is unchanged"* —
-> because this spec had the viewer as an overlay. That reading is vetoed (R31); a test
-> written against revision 9 would now be asserting the wrong behaviour confidently.
+**VIEW-AC-1 (R21, R25 — what the viewer carries)** — *Given* the line page for a simple
+opening, *When* the reviewer activates the drawing, *Then* the viewer opens carrying **the
+drawing at the largest size the viewport allows, and its dimensions in the caption beneath
+it** — and nothing that explains the drawing's notation.
 
-**VIEW-AC-2a (R31 — the accepted two-backs consequence)** — *Given* a reviewer who
+**VIEW-AC-1a (title names the subject)** — *Given* the viewer is showing a **unit**, *When*
+its title is read, *Then* it is that unit's code (`W07A`). *Given* the viewer is showing
+the **line** the reviewer arrived from, *Then* the title is simply `Drawing` — the back
+control already names the line, and repeating it says the code twice. `ASSUMED:` §13.15.
+
+**VIEW-AC-2 (R31 — entering pushes exactly one entry)** — *Given* the reviewer is on a
+line page, *When* they activate a drawing, *Then* **exactly one** history entry is pushed
+and the address becomes that drawing's own URL — the opening's, or the unit's `u:N`.
+
+**VIEW-AC-2a (R31 — three ways out, one pop)** — *Given* the viewer is open, *When* the
+reviewer uses the back control, presses Escape, **or** performs the system back gesture,
+*Then* all three do the **same single pop**: the line URL returns, the line page is **not
+remounted**, and **no record re-fetch occurs**.
+
+**VIEW-AC-2b (cold deep link)** — *Given* a staff user opens a drawing URL directly in a
+fresh tab, *When* it loads, *Then* the line page renders **with the viewer open**, and that
+viewer's back control **replaces** to the line path rather than popping — so the reviewer
+lands on the line page instead of being thrown out of the console.
+
+**VIEW-AC-2c (malformed or out-of-range suffix)** — *Given* a drawing URL whose unit
+suffix is malformed or names a unit that does not exist on this line, *When* it is opened,
+*Then* it **normalises by replace** — to the opening's drawing or the line page as the
+design specifies — and **grows no history**, so back still does what the reviewer expects.
+
+**VIEW-AC-2d (R31 — the accepted two-backs consequence)** — *Given* a reviewer who
 enlarged a drawing and wants to leave the line entirely, *When* they go back twice, *Then*
 the first back closes the viewer and the second leaves the line page. **This is the agreed
 cost of R31, not a defect** — it was named in the question the owner answered and
@@ -649,7 +678,8 @@ no sentence explaining it appears — R25, VIEW-AC-10.)
 
 **VIEW-AC-4 (R21, composite unit)** — *Given* a composite line page, *When* the reviewer
 activates a single unit's drawing in the units list, *Then* the viewer shows that unit
-alone, labelled with the unit's code and its own size.
+alone at `…/drawing/u:N` for that unit's 1-based position, titled with the unit's code and
+captioned with its own size.
 
 **VIEW-AC-5 (R21, "one shared viewer")** — *Given* the ops2 source after this phase,
 *When* it is searched for drawing-enlargement surfaces, *Then* exactly one viewer
@@ -661,7 +691,7 @@ appears anywhere — neither its presentation nor its dismiss-driven control flo
 
 **VIEW-AC-7 (keyboard)** — *Given* a keyboard-only reviewer, *When* they focus a drawing
 and press Enter or Space, *Then* the viewer opens, focus moves into it, its accessible
-name carries the opening's code, and on going back focus returns to the drawing that
+name carries the subject's identity, and on going back focus returns to the drawing that
 opened it.
 
 **VIEW-AC-8 (R25 — authority, not notation)** — *Given* a line for which no size could be
@@ -741,9 +771,10 @@ and the band is named rather than paraphrased as "closest available".
 
 **WHY-AC-7 (R19, R26, D8 — presentation, and how it opens)** — *Given* the panel is shown
 and the line has recorded candidates, *When* the reviewer activates the panel's action,
-*Then* ops2 **navigates to `/projects/:id/line/:lineId/why`** and that screen is
-**presented** as a right-hand slide-out at desk width and full screen on the phone — not a
-partial bottom sheet, no drag handle, no intermediate breakpoint.
+*Then* ops2 **navigates to `/projects/:id/line/:lineId/why`** — a child of the route
+grammar Phase 2 established — and that screen is **presented** as a right-hand slide-out at
+desk width and full screen on the phone: not a partial bottom sheet, no drag handle, no
+intermediate breakpoint.
 
 The presentation is `SidePanel`'s; **the control flow is not.** The screen is opened by a
 route change, never by `setOpen(true)` — reusing a component's appearance does not mean
@@ -763,14 +794,16 @@ sentences are the line page's, unchanged.
 
 **WHY-AC-7d (D8 — back on a cold arrival still goes somewhere sensible)** — *Given* the
 reviewer arrived at that URL directly, so there is nothing to pop, *When* they activate
-back, *Then* they land on the line page — the same pop-or-push discipline `OpsPage`
-already applies one level up (record design §4), never a dead control and never the
-browser's own empty history.
+back, *Then* they land on the line page — the same replace-rather-than-pop behaviour
+VIEW-AC-2b requires of the viewer, and the same pop-or-push discipline `OpsPage` already
+applies one level up (record design §4). Never a dead control, never out of the console.
 
 **WHY-AC-7b (R26, R29 — negative, the other caller does not move)** — *Given* the Projects
 filter panel, which is the shared component's other caller and was **not** part of this
 approval, *When* it is opened after these changes, *Then* its presentation and its dismiss
-control are exactly what they are today, and its existing tests pass unchanged.
+control are exactly what they are today, and its existing tests pass unchanged. *(That the
+filter may not be a modal under R31's taxonomy is a future ticket, not this feature's
+business — §2, out of scope.)*
 
 **WHY-AC-8 (R13, D6 — the thinner panel)** — *Given* a line with no selection run (a
 customer-configured or manually entered line) whose stored figures exist, *When* the line
@@ -793,9 +826,9 @@ figures from the deleted scoring model are shown, and no alternatives action is 
 **WHY-AC-11 (D2, post-issue)** — *Given* a project that has been issued and accepted, so
 the record shows order lines, *When* a line page is opened, *Then* **no "Why this product"
 panel appears at all** — not the panel, not an explanatory sentence in its place — and
-nothing on the page references a recommendation. **The `/why` route for such a line
-renders the same refusal as a line that has none** (WHY-AC-7c's sentences), so the URL is
-not a way around D2.
+nothing on the page references a recommendation. **The `why` route for such a line renders
+the same refusal as a line that has none** (WHY-AC-7c's sentences), so the URL is not a way
+around D2.
 
 ### 9.2 The detail screen (R8, R9, R10, R19, R29, D8)
 
@@ -952,10 +985,10 @@ the back control (WHY-AC-7a): no "Change the product", no button, no link, no me
 and nothing that navigates anywhere except back to the line page.
 
 **WHY-AC-40 (R28 — negative, no route to a thing that does not exist)** — *Given* the ops2
-route table after this phase, *When* it is enumerated, *Then* no line-editor route exists —
-no `/edit` path, no stub, no placeholder page — and no code in ops2 references one. (The
-routes this feature *does* add are `/why` and, per VIEW-AC-2's pending mechanism, possibly
-one for the viewer. Nothing else.)
+route table after both phases, *When* it is enumerated, *Then* no line-editor route exists
+— no `/edit` path, no stub, no placeholder page — and no code in ops2 references one. The
+child routes this feature adds are exactly `drawing`, `drawing/u:N` (Phase 2) and `why`
+(Phase 3b). Nothing else.
 
 **WHY-AC-41 (R28 — negative, and it applies to the panel too)** — *Given* the "Why this
 product" panel on the line page, *When* its elements are enumerated, *Then* its only
@@ -968,9 +1001,10 @@ detail (WHY-AC-8, WHY-AC-9, WHY-AC-10, WHY-AC-37, WHY-AC-11) it has none at all.
 
 The read surface is staff-gated and read-only, but it exposes **which competing products
 were considered and how they compared** — the sharpest competitive leak in the console.
-The capture adds a write on paths that include the customer's own save route, and D8 adds
-an addressable URL, which is a new place to probe. These are executed by the tester as
-real attempts, with the denial recorded; none is satisfied by reading the gate's source.
+The capture adds a write on paths that include the customer's own save route, and D8 plus
+the drawing grammar add addressable URLs, which are new places to probe. These are executed
+by the tester as real attempts, with the denial recorded; none is satisfied by reading the
+gate's source.
 
 **A note on status codes, corrected in revision 5.** Revision 4 asked for 401 for an
 anonymous caller and 403 for a signed-in customer. **Those are the same case at this
@@ -995,16 +1029,17 @@ of a session nor the existence of the line can be inferred from the difference.
 user whose staff role is `manufacturer` — the one identity that *does* hold a console
 session and is still refused — *When* they request the rationale, *Then* `hasAssignedRole`
 refuses them, and the raw body contains no competing product slug, tier, figure or count.
-**Executed against the `/why` URL as well as the endpoint** — a partner who guesses a URL
+**Executed against the `why` URL as well as the endpoint** — a partner who guesses a URL
 must still be refused.
 
-**X-AC-4 (cross-project probe — the interaction AND the URL, D8)** — *Given* a staff user,
+**X-AC-4 (cross-project probe — the interaction AND the URLs, D8)** — *Given* a staff user,
 *When* they request the rationale for a line belonging to a different project than the one
 in the URL — **both by navigating within the console and by visiting
 `/projects/:id/line/:lineId/why` directly** — *Then* the refusal is byte-identical to the
 refusal for a line id that does not exist, and no candidate data is returned. A probe
-cannot learn from the difference whether the line exists, and the new addressable surface
-does not become the cheap way to ask.
+cannot learn from the difference whether the line exists, and the new addressable surfaces
+do not become the cheap way to ask. **The same holds for the drawing URLs**, which resolve
+their line through the same record fetch.
 
 **X-AC-5 (R9, enforced server-side)** — *Given* any rationale response, *When* its raw
 body is inspected, *Then* it contains **only** the candidates the surface may show (the
@@ -1012,11 +1047,11 @@ chosen one and at most four runners-up): no excluded candidate, no `exclusions[]
 no `withheldIncomplete` entry. The ruling is enforced by what is sent, not by what is
 rendered.
 
-**X-AC-6 (R1, R2, R3, R28)** — *Given* the route table after Phase 3, *When* it is
+**X-AC-6 (R1, R2, R3, R28)** — *Given* the route table after both phases, *When* it is
 enumerated, *Then* this feature has added **no** POST, PATCH, PUT or DELETE endpoint, and
 `PATCH /api/ops/recommendation-outcomes/:id` is referenced by no client code. The **client**
-routes it adds are `/why` (D8) and, pending VIEW-AC-2's mechanism, possibly one for the
-viewer — client routes are not endpoints, and neither carries a write.
+routes it adds are `drawing`, `drawing/u:N` and `why` — client routes are not endpoints,
+and none carries a write.
 
 **X-AC-7 (no free prose escapes)** — *Given* a rationale response for an opening whose
 schedule row carried a free-text comment, *When* the raw body is inspected, *Then* it
@@ -1051,22 +1086,23 @@ without a verified dataset export and writes nothing.
 | Case | Required behaviour | Ruling |
 |---|---|---|
 | **GST inc/ex** | No money appears anywhere on this surface — R10 removes deltas and R3 makes stored prices stale. The line's existing Price panel keeps the account-preference rule unchanged. `ASSUMED:` §13.3 | R3, R10 |
-| **Quote lifecycle — post-issue** | Panel absent entirely on order-line records, and the `/why` URL refuses for such a line rather than serving one. | D2, WHY-AC-11 |
+| **Quote lifecycle — post-issue** | Panel absent entirely on order-line records, and the `why` URL refuses for such a line rather than serving one. | D2, WHY-AC-11 |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
-| **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** | R31, VIEW-AC-2a |
-| **A pasted `/why` link, cold** | Resolves its line the way the line page does; refusals identical; back still lands on the line page. | D8, WHY-AC-7c/7d |
+| **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** | R31, VIEW-AC-2d |
+| **A pasted drawing or `why` link, cold** | Renders with the surface open, resolved through the record fetch; back **replaces** to the line path rather than leaving the console. | VIEW-AC-2b, WHY-AC-7c/7d |
+| **A malformed or out-of-range unit suffix** | Normalises by replace, growing no history. | VIEW-AC-2c |
 | **Everything saved before Phase 3** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost. | D5 |
 | **A customer-configured line saved after Phase 3** | Thinner panel: who chose it, and its figures. | D6, D7 |
 | **A customer overrides an AI-priced line** | The recommendation's snapshot is still cleared (it no longer describes the line); the customer's own figures replace it; the requirement does not move; the panel says a person chose it though `origin` still reads `'ai'`. | SNAP-AC-14, R23, R24 |
 | **A customer restores the AI proposal** | The line reads as platform-made again, by comparison rather than by a flag. | WHY-AC-30 |
 | **The catalogue is unreachable at save time** | Save completes, figures null, nobody is told. Never a refusal. | D6 hard constraint |
 | **A product+options combination with no published variant** | Same: save completes, figures null. | SNAP-AC-6 |
-| **A non-staff caller reaches an ops route or the `/why` URL** | One refusal, no candidate data, and nothing inferable from the difference between an anonymous and a signed-in caller. | X-AC-1…4 |
+| **A non-staff caller reaches an ops route or any new URL** | One refusal, no candidate data, and nothing inferable from the difference between an anonymous and a signed-in caller. | X-AC-1…4 |
 | **A drawing whose notation a reader might not know** | Nothing is explained. The console's readers are estimators. | R25 |
 | **A drawing whose accuracy is provisional** | Still said — mullion positions confirmed at technical review; an unsized opening drawn as a stand-in. Authority is not notation. | R25, VIEW-AC-8, VIEW-AC-10 |
 | **The customer site's own use of the legend** | Untouched. The shared export stays; only ops2 stops rendering it. | VIEW-AC-12 |
-| **The shared panel's other caller (Projects filter)** | Unmoved: same presentation, same dismiss control, existing tests green. | WHY-AC-7b |
+| **The shared panel's other caller (Projects filter)** | Unmoved: same presentation, same dismiss control, existing tests green. Whether it is a modal at all is a future ticket. | WHY-AC-7b |
 | **Offerability gating** | Products withheld as incomplete and candidates excluded for `offerability` never reach the client at all — enforced server-side (X-AC-5), not by client filtering. | R9 |
 | **Delivery zones** | Not applicable; this surface reads no delivery fact. | — |
 | **More than one selection run for an opening** | The most recent run by `created_at` is shown; older runs are not listed or merged. `ASSUMED:` §13.4 | R3 |
@@ -1112,12 +1148,15 @@ Not a test plan — eight places where the obvious test would pass a wrong imple
    truly go back is worse than an X**, because it promises the tree and does not deliver:
    assert that activating it — and the platform's standard back gesture — lands the
    reviewer on the line page, and that the URL changed on the way in (D8).
-8. **VIEW-AC-2 inverted between revisions.** Revision 9 asserted `history.length` is
-   *unchanged*; R31 makes the opposite true. Anyone reusing an earlier draft's test, or
-   reasoning from "it's a modal, so it doesn't push", will assert the wrong thing
-   confidently. Wait for the architect's mechanism clause before writing it, and prefer the
-   behavioural assertion (back closes the viewer and stays on the line page) over counting
-   entries, which couples the test to the mechanism.
+8. **VIEW-AC-2's numbers are the assertions, and this criterion inverted between drafts.**
+   Revision 9 asserted `history.length` is *unchanged*, because this spec then had the
+   viewer as an overlay; R31 makes the opposite true, so anyone reusing an earlier draft's
+   test will assert the wrong thing confidently. Two numbers carry the weight: **"exactly
+   one" entry pushed** (VIEW-AC-2) catches a viewer that pushes twice, and **"one pop" from
+   all three exits** (VIEW-AC-2a) catches an orphan entry that only some exits clear. Test
+   all three exits — control, Escape, system gesture — because a viewer whose Escape
+   handler closes state without popping history leaves the address bar lying, which is the
+   exact failure the route ruling rejected the state-only push to avoid.
 
 ---
 
@@ -1170,17 +1209,26 @@ Registered by this spec:
 13. **VIEW-AC-12** — the shared `ElevationLegend` export is retained for the customer site
     even though ops2 stops rendering it. Deleting a shared export because one consumer
     stopped using it is a decision for whoever owns the other consumer.
+14. **§8, the URL grammar** — the segment names (`drawing`, `u:N`) and the 1-based ordinal
+    scheme tied to `unitLabel`'s display order are the architect's proposal, carried here
+    so the owner can veto a URL he will see in his address bar.
+15. **VIEW-AC-1a, the viewer's title** — a unit's title is its code (`W07A`); the line's
+    own drawing is titled `Drawing`, because the back control already names the line and
+    repeating it says the code twice. The size lives in the caption. **Being put to the
+    owner as a copy question**; until answered, this is what the developer builds.
 
 ---
 
 ## 14. Decisions needed
 
-**None.** D8 and R31 are folded in; §13.12 is marked vetoed rather than quietly removed;
-WHY-AC-7 now separates presentation from control flow, and WHY-AC-7c/7d cover the
-tree-node facts the URL brings with it.
+**None, and nothing is pending from any stage.** The architect's route ruling closed
+VIEW-AC-2's mechanism clause — it is now four assertions (one entry pushed, one pop from
+three exits, cold link replaces, malformed suffix normalises without growing history) — and
+the URL grammar moved to Phase 2 with the viewer, which is reflected in §2's in-scope list,
+§4's phase descriptions, WHY-AC-7, WHY-AC-40 and X-AC-6.
 
-**One clause is owed by the architect, not by the owner:** VIEW-AC-2's mechanism — own
-route segment versus state-only history push for the drawing viewer. It is marked
-`PENDING ARCHITECT` in §8 and must be settled before that criterion's test is written,
-because the assertion differs between the two and revision 9's version of this criterion
-asserted the exact opposite of what R31 now requires.
+Two things are recorded rather than resolved, deliberately: the **Projects filter's
+taxonomy** (a future ticket, §2 out of scope — R26/R27's approval excluded moving it) and
+the **viewer's title copy** (`ASSUMED:` §13.15, with the owner). Neither blocks
+implementation; both are vetoable at acceptance.
+
