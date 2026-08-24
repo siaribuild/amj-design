@@ -1,18 +1,18 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 4**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 5**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 4** folds in the owner's third decision round: the capture **extends to the
-customer save path** (D7), and three further rulings — **R22** the capture rule is
-universal, **R23** an override changes the selection but never the target, **R24** an
-overridden selection must no longer read as platform-made.
+**Revision 5** repairs two defects the architect's design found in revision 4:
+X-AC-1/X-AC-2 demanded a distinction the ops boundary cannot make (§10), and §7.4's
+hand-written writer index was incomplete — again. Both are corrected below; no ruling and
+no decision changed.
 
-**Decisions needed: none** (§14). The spec is ready for the architect.
+**Decisions needed: none** (§14).
 
 ---
 
@@ -79,6 +79,7 @@ not record them, they are gone.
 | Re-deriving, re-resolving or recomputing a thermal **requirement** anywhere | R23: *"if AI calculates a target and selects a product, which is then overriden by a client -> that does not change the target."* |
 | Any change to `quote_line.origin`, `ai_proposal_line_id`, or `aiManaged` routing | The R24 constraint: those are correct for routing and must stay. Provenance for display is **derived**, never re-stamped. |
 | Any new validation, eligibility check or refusal on any save path | D6's hard constraint — §7.2. A display feature may not make a save fail that succeeds today. |
+| Any change to the ops routes' authentication or refusal convention | §10. This feature inherits the console's uniform refusal; it does not introduce a new status code or a new distinction at that boundary. |
 | Any change to the learning corpus or the issue-time capture path | §7.6 — verified non-impact, deliberately untouched. |
 | Live re-pricing, price deltas, or any money on the surface | R10, R3. |
 | Excluded candidates, in any form — list, count, or reason | R9, verbatim owner ruling. |
@@ -215,8 +216,8 @@ selected to have figures at all.
 ### Wayfinder check
 
 **Not needed.** The route is visible and the decisions are made — 21 rulings, seven owner
-decisions, a verified join path, a verified writer index. Three normally-sized features,
-not a foggy region.
+decisions, a verified join path, and a writer index the design now owns. Three
+normally-sized features, not a foggy region.
 
 ## 5. Ruling and decision index (traceability)
 
@@ -314,9 +315,7 @@ gains or loses a field, and no price changes for an already-priced line.
 ### 7.1 One rule
 
 Owner, verbatim: *"every save should record thermal properties of selected at a time
-product."* This is **one rule with many sites**, not a set of per-route features — the
-criteria below are the rule and its structural guard; §7.4 is an index of where it lands,
-not nine separate decisions.
+product."* This is **one rule with many sites**, not a set of per-route features.
 
 **SNAP-AC-1 (R22 — the rule)** — *Given* any save that sets or changes a line's product or
 its variant, *When* it completes, *Then* the line's own stored record carries that
@@ -324,10 +323,22 @@ product+variant's `uValue` and `shgc` as they stood at that moment — regardles
 route performed the save, and regardless of whether a person or the platform chose the
 product.
 
-**SNAP-AC-2 (R22 — structural, so a future writer cannot forget)** — *Given* the
-repository after this phase, *When* every statement that writes `quote_line.product_slug`
-or `quote_line.selected_variant_id` is enumerated, *Then* each one also writes the figures
-field. A writer added later that sets a product without figures fails this test.
+**SNAP-AC-2 (R22 — structural, and the only mechanism that has actually worked)** —
+*Given* the repository after this phase, *When* a source-level scan enumerates **every**
+statement anywhere under `worker/**` that writes `quote_line.product_slug` or
+`quote_line.selected_variant_id` — routes and libs alike, including statements built in
+helpers and those inside batched arrays — *Then* every one of them also writes the figures
+field, and a writer added later that sets a product without figures fails this test.
+
+Two properties this criterion must have, because they are what makes it worth more than
+the index it replaces:
+
+- **It encodes no count.** The scan asserts a property of every match, never "there are N
+  writers". The number has been wrong three times (§7.4); the property has not.
+- **It cannot pass vacuously.** The scan asserts its own match set is non-empty and at
+  least as large as the design's index — a pattern that silently stops matching (a
+  reformatted statement, a new helper, a renamed column) must fail loudly rather than
+  report success over nothing.
 
 **SNAP-AC-3 (R22 — one place per fact)** — *Given* the figures are captured, *When* the
 display surface states what the line's current product performs at, *Then* it reads the
@@ -384,27 +395,34 @@ the platform decided is never edited by what a human later chose (R3, R11, R23).
 call — `configuration_snapshot_json` already exists on `quote_line` and is the natural
 home (`ASSUMED:` §13.8) — and any migration follows the `d1-migration-safety` procedure.
 
-### 7.4 Where the rule lands — the writer index
+### 7.4 Where the rule lands
 
-Verified 2026-08-24. **The architect confirms completeness**; SNAP-AC-2 is what makes an
-omission fail rather than pass silently.
+**The verified-complete writer index is the design's, at design §4.2. This spec does not
+restate it.**
 
-| Writer | Today | Under the rule |
-|---|---|---|
-| ops PATCH, AI-managed branch (`ops.ts:1091`) | builds a configuration snapshot; no figures | adds the resolved variant's figures |
-| ops PATCH, manual branch (`ops.ts:1109-1113`) | resolves no variant, writes no snapshot | resolves best-effort, writes figures (D6) |
-| ops PATCH, composite parent (`ops.ts:1098`) | no product of its own | rule is vacuous — no figures on a parent; each unit carries its own |
-| customer insert (`projects.ts:548-557`) | names no snapshot column at all | writes figures |
-| customer edit, ordinary line (`projects.ts:539-546`) | leaves the snapshot untouched | refreshes figures to the product now saved |
-| customer edit of an AI-priced line (`projects.ts:506-536`) | sets `configuration_snapshot_json=NULL` — **erasing** any figures captured earlier | still clears the *recommendation's* snapshot (correct — it no longer describes the line) but records **the customer's own** figures in its place |
-| customer restores the AI proposal (`projects.ts:635-650`) | rewrites the snapshot from the proposal's configuration | carries the restored product's figures; the line then reads as platform-made again (WHY-AC-30) |
-| estimator proposal writers (`ai/proposal.ts:260`, `:445`) | write the configuration; no figures | carry figures, so the panel's "This one" always reads from one place (SNAP-AC-3) |
-| composite segment writer (`composite.ts:298`) | writes the per-segment snapshot | carries each unit's own figures |
+That deferral is itself a finding. A hand-maintained list of the sites that write a line's
+product has now been **incomplete on every attempt, by three different readers**: the
+grill input named one, revision 3 found three more, revision 4's index claimed eight, and
+the architect's verification found fifteen — six of them (`ai/proposal.ts:198` and `:299`,
+`composite.ts:457` and `:524`, `parse.ts:349-372`) missed by everyone before. A list that
+has been wrong four times in a row is not a control, and the spec should stop pretending
+otherwise.
 
-`ASSUMED:` §13.9 — the last two rows extend R22 to the estimator's own line-creating
-writers. The figures for a machine-selected product already exist in `candidate_result`,
-so this is redundancy rather than new information; it is specced because R22 says every
-save, and because it lets the display read one place instead of two.
+**SNAP-AC-2 is therefore not belt-and-braces — it is the mechanism.** It is the only one
+of the two that has ever produced a correct answer, and the only one that keeps producing
+one after this feature ships. The criteria below name the writer *shapes* whose behaviour
+the owner's rulings actually decide; which files realise those shapes is the design's to
+enumerate and the scan's to enforce.
+
+Three shapes carry rulings of their own:
+
+- **A parent with no product of its own** (a composite parent) — the rule is vacuous:
+  no figures on the parent, each unit carries its own.
+- **A writer that clears a snapshot** — the recommendation's snapshot is still cleared
+  when it stops describing the line, but what replaces it is the new selection's figures,
+  never nothing (SNAP-AC-14).
+- **A writer that restores a prior configuration** — it carries that configuration's
+  figures, and the line then reads as platform-made again by comparison (WHY-AC-30).
 
 ### 7.5 The customer path, specifically
 
@@ -413,9 +431,10 @@ saved, *Then* the inserted `quote_line` carries the product's figures. A client-
 line has never carried them before.
 
 **SNAP-AC-14 (D7, the erasure)** — *Given* a customer changing the configuration of a line
-the estimator priced, *When* it is saved, *Then* the line records the figures of **what the
-customer chose**, and the reviewer's comparison (WHY-AC-25) is available on precisely the
-lines stamped `customerConfigurationChanged` for a human to confirm.
+the estimator priced — the path that today sets `configuration_snapshot_json = NULL` —
+*When* it is saved, *Then* the line records the figures of **what the customer chose**, so
+the reviewer's comparison (WHY-AC-27) is available on precisely the lines stamped
+`customerConfigurationChanged` for a human to confirm.
 
 **SNAP-AC-15 (D7, nothing customer-visible)** — *Given* the customer site after this
 change, *When* a customer configures, saves, re-opens and submits a project, *Then* every
@@ -631,9 +650,9 @@ fixture is exactly this line: an implementation reading `origin` passes a fixtur
 lacks it and fails this one.
 
 **WHY-AC-30 (R24 — restoring the proposal)** — *Given* a customer restores the AI proposal
-(`projects.ts:635-650`) so the line's product+variant match the recommendation again,
-*When* the panel renders, *Then* it reads as platform-made once more and no
-human-selection block appears — the same comparison, run again, with no state to unwind.
+so the line's product+variant match the recommendation again, *When* the panel renders,
+*Then* it reads as platform-made once more and no human-selection block appears — the same
+comparison, run again, with no state to unwind.
 
 **WHY-AC-31 (R24 — negative, the data is not re-stamped)** — *Given* the diff for this
 feature, *When* it is reviewed, *Then* no code path writes `quote_line.origin` or
@@ -711,18 +730,29 @@ The capture adds a write on paths that include the customer's own save route. Th
 executed by the tester as real attempts, with the denial recorded; none is satisfied by
 reading the gate's source.
 
-**X-AC-1** — *Given* an anonymous caller, *When* they request the rationale for a known
-line id, *Then* the response is 401 and its raw body contains no product slug, no tier, no
-thermal figure and no candidate of any kind.
+**A note on status codes, corrected in revision 5.** Revision 4 asked for 401 for an
+anonymous caller and 403 for a signed-in customer. **Those are the same case at this
+boundary** — a customer session does not authenticate an ops route, so `resolveStaff` sees
+no staff session either way and no state exists to tell them apart. The criteria below
+therefore assert **one refusal for every non-staff caller**, following the console's
+existing convention, and put the weight on the half that does not depend on a status code
+and is what actually protects the business: **no candidate data in the raw response body.**
 
-**X-AC-2** — *Given* a signed-in customer who is not staff — including the customer who
-owns the project — *When* they request the rationale, *Then* the response is 403 and the
-body carries no candidate data.
+**X-AC-1 (one refusal, no data)** — *Given* a caller who is not staff — anonymous, a
+signed-in customer including the one who owns the project, or a session that has expired —
+*When* they request the rationale for a known line id, *Then* the request is refused with
+the console's standard non-staff refusal, and the raw response body contains no product
+slug, no tier, no thermal figure and no candidate of any kind.
+
+**X-AC-2 (the refusal reveals nothing about the caller or the line)** — *Given* the
+refusals returned to an anonymous caller and to a signed-in non-staff customer, *When*
+they are compared, *Then* they are identical in status and body, so neither the existence
+of a session nor the existence of the line can be inferred from the difference.
 
 **X-AC-3 (the control that matters most — conclusions §1, R20)** — *Given* a signed-in
-user whose staff role is `manufacturer`, *When* they request the rationale, *Then*
-`hasAssignedRole` refuses them with 403, and the raw body contains no competing product
-slug, tier, figure or count.
+user whose staff role is `manufacturer` — the one identity that *does* hold a console
+session and is still refused — *When* they request the rationale, *Then* `hasAssignedRole`
+refuses them, and the raw body contains no competing product slug, tier, figure or count.
 
 **X-AC-4** — *Given* a staff user, *When* they request the rationale for a line belonging
 to a different project than the one in the URL, *Then* the refusal is byte-identical to
@@ -745,10 +775,10 @@ schedule row carried a free-text comment, *When* the raw body is inspected, *The
 contains no schedule comment text and no data belonging to any other opening, project or
 account.
 
-**X-AC-8 (the editor stub)** — *Given* the placeholder route, *When* it is opened by an
-anonymous caller, a non-staff customer or a manufacturer partner, *Then* it refuses
-exactly as every other ops2 route does, renders no project, customer, line or pricing
-data, and accepts no request of any method other than the read it inherits.
+**X-AC-8 (the editor stub)** — *Given* the placeholder route, *When* it is opened by any
+non-staff caller, *Then* it refuses exactly as every other ops2 route does, renders no
+project, customer, line or pricing data, and accepts no request of any method other than
+the read it inherits.
 
 **X-AC-9 (the capture never trusts the client — ops)** — *Given* an ops line-edit request
 whose body contains `uValue`, `shgc`, or any thermal field, *When* it is saved, *Then*
@@ -785,6 +815,7 @@ without a verified dataset export and writes nothing.
 | **A customer restores the AI proposal** | The line reads as platform-made again, by comparison rather than by a flag. | WHY-AC-30 |
 | **The catalogue is unreachable at save time** | Save completes, figures null, nobody is told. Never a refusal. | D6 hard constraint |
 | **A product+options combination with no published variant** | Same: save completes, figures null. | SNAP-AC-6 |
+| **A non-staff caller reaches an ops route** | One refusal, no candidate data, and nothing inferable from the difference between an anonymous and a signed-in caller. | X-AC-1, X-AC-2 |
 | **Offerability gating** | Products withheld as incomplete and candidates excluded for `offerability` never reach the client at all — enforced server-side (X-AC-5), not by client filtering. | R9 |
 | **Delivery zones** | Not applicable; this surface reads no delivery fact. | — |
 | **More than one selection run for an opening** | The most recent run by `created_at` is shown; older runs are not listed or merged. `ASSUMED:` §13.4 | R3 |
@@ -796,18 +827,23 @@ without a verified dataset export and writes nothing.
 
 ---
 
-## 12. Test-surface notes for the architect
+## 12. Test-surface notes for the architect and tester
 
-Not a test plan — three places where the obvious test would pass a wrong implementation:
+Not a test plan — four places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
    nothing about R24, because reading `origin` would pass it.
 2. **SNAP-AC-2 is a source-level scan**, not a behavioural test — its whole value is
    catching the writer nobody remembered, and a behavioural test can only cover writers
-   someone thought of.
+   someone thought of. It must assert a property of every match and never a count, and it
+   must fail rather than pass when its own match set is empty or smaller than the design's
+   index.
 3. **SNAP-AC-5 and SNAP-AC-15 need a customer-path test**, not an ops one. The customer
    save is where a regression would be worst and where this feature has no other business.
+4. **X-AC-1 must be executed for both callers separately** even though they receive the
+   same refusal — X-AC-2 is precisely the assertion that they are indistinguishable, and
+   it cannot be demonstrated by testing one of them.
 
 ---
 
@@ -844,18 +880,22 @@ Registered by this spec:
 8. **SNAP-AC-12** — figures live in the line's existing `configuration_snapshot_json`
    rather than in new columns; the architect may rule otherwise, and any migration follows
    `d1-migration-safety`.
-9. **§7.4, last two rows** — R22 is applied to the estimator's own line-creating writers
-   (`ai/proposal.ts`, `composite.ts`) as well. Redundant with `candidate_result` for
-   machine picks, but it is what "every save" says, and it lets the display read one place
-   (SNAP-AC-3) instead of two.
+9. **§7.4** — R22 applies to the estimator's own line-creating writers as well as the
+   human-facing ones. Redundant with `candidate_result` for machine picks, but it is what
+   "every save" says, and it lets the display read one place (SNAP-AC-3) instead of two.
+   Which files those are is the design's index (§4.2), not this spec's.
 10. **WHY-AC-28** — on an overridden line, R6's three labels are kept and only the
     "Chosen" line's sentence changes (a person chose this; the platform had recommended X).
     The full comparison lives in the detail, so the panel's line budget is not breached.
+11. **§10** — the ops routes' existing uniform refusal for non-staff callers is adopted as
+    written rather than changed by this feature. Vetoable, but changing it would be a
+    console-wide decision, not a "Why this product" one.
 
 ---
 
 ## 14. Decisions needed
 
-**None.** All seven owner decisions and rulings R22–R24 are folded in; every remaining
-judgement is registered in §13 as an `ASSUMED:` that can be vetoed at acceptance. Ready
-for the architect.
+**None.** Both of the architect's findings are repaired above: §10's refusal criteria now
+assert what the boundary can actually distinguish, and §7.4 defers its writer index to
+design §4.2 with SNAP-AC-2 strengthened as the enforcing mechanism. Every remaining
+judgement is registered in §13 as an `ASSUMED:` that can be vetoed at acceptance.
