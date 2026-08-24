@@ -206,14 +206,32 @@ export function Ops2App() {
                     above anticipated — which is what keeps Projects lit while
                     one is open. */}
                 <Route exact path="/projects/:id" render={() => <ProjectRecordPage />} />
-                {/* One opening's own page. `exact` for the same reason its
-                    parent is: a non-exact view item already on Ionic's stack
-                    matches its own children first, and the child then never
-                    renders — silently, with the URL and both navigation
-                    surfaces all correct. It nests under /projects, so
-                    `isDestinationActive`'s segment-prefix match keeps Projects
-                    lit at every width without a destination being added. */}
-                <Route exact path="/projects/:id/line/:lineId" render={() => <LinePage />} />
+                {/* One opening's own page — and NOT exact, which is the exact
+                    opposite of its parent for a reason worth writing down.
+
+                    The rule above ("exact only where something nests below")
+                    is about DESTINATIONS whose children are DIFFERENT PAGES:
+                    `/projects` must not swallow `/projects/:id`, because the
+                    record is its own screen and needs its own view item.
+
+                    This route's children are not different pages. The drawing
+                    viewer is a node in the tree with its own address
+                    (`…/drawing`, `…/drawing/u:N` — `./projects/lineRoute.ts`),
+                    but it is a surface OVER the line page: the page behind it
+                    must not remount and must not re-fetch the record. So the
+                    line path and every suffix below it match ONE Route entry —
+                    the outlet re-uses the mounted LinePage, exactly the stack
+                    behaviour the note above describes, here used deliberately
+                    instead of avoided. Registering `…/drawing` as a second
+                    Route would create the second view item this needs not to
+                    have.
+
+                    `NESTS_BELOW` is untouched by any of it: the children hang
+                    off this route, not off a destination.
+
+                    It still nests under /projects, so `isDestinationActive`'s
+                    segment-prefix match keeps Projects lit at every width. */}
+                <Route path="/projects/:id/line/:lineId" render={() => <LinePage />} />
                 <Route exact path="/"><Redirect to={HOME_PATH} /></Route>
                 {/* The not-found route, replacing the scaffold's catch-all
                     rather than dropping it. Its reason is carried forward

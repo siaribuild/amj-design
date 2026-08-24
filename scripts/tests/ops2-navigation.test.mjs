@@ -14,6 +14,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
@@ -25,6 +26,7 @@ await build({
   stdin: {
     contents: `
       export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
+      export { lineSuffixOf, parseLineRoute, drawingSuffix } from ${p("src/ops2/projects/lineRoute.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -33,6 +35,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+const read = (rel) => readFileSync(join(projectRoot, rel), "utf8");
 test.after(async () => { await removeRunDir(runDir); });
 
 test("the destination list is the owner's, in his order and his two sections", () => {
@@ -157,4 +160,126 @@ test("an address nobody claims goes back to its own destination, not to the fron
   assert.equal(M.destinationRootFor("/projectsomething"), null);
   assert.equal(M.destinationRootFor("/nowhere"), null);
   assert.equal(M.destinationRootFor("/"), null);
+});
+
+// ─── The line route's own grammar (Phase 2: the drawing viewer) ──────────────
+//
+// The viewer is a NODE IN THE TREE, not an overlay (owner ruling R31), so an
+// enlargement is an address and back is a real pop. Everything below is the
+// half of that no browser test can reach cheaply: which addresses are legal,
+// which are normalised, and — the half that keeps failing closed — which are
+// left ALONE.
+
+test("the line route is not exact, so its children mount the page it already has", () => {
+  // WHY `exact` HAS TO GO, and why this is asserted in source rather than
+  // trusted. Ionic's outlet finds a page among the view items it has already
+  // created and takes the first match (`findViewItemByPathname`/`matchView`,
+  // node_modules/@ionic/react-router/dist/index.js). With `exact` on the line
+  // route, `/projects/:id/line/:lineId/drawing` matches NO route, falls to the
+  // catch-all and redirects to /projects — a deep link to a drawing would land
+  // on the queue. Without it, the line path and its children match ONE route
+  // entry and one mounted LinePage, so the viewer opens over a page that never
+  // remounts and never re-fetches (VIEW-AC-2a).
+  const shell = read("src/ops2/Ops2App.tsx");
+  const bare = shell.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const routes = [...bare.matchAll(/<Route([^>]*)\spath="([^"]+)"/g)]
+    .map(([, attrs, path]) => [path, /\sexact\b/.test(attrs)]);
+  const line = routes.find(([path]) => path === "/projects/:id/line/:lineId");
+  assert.ok(line, "the line route must still exist at its own path");
+  assert.equal(line[1], false,
+    "the line route must NOT be exact — its children (drawing, drawing/u:N) match it, "
+    + "and an exact parent sends every one of them to the catch-all redirect");
+
+  // And the record above it keeps its own `exact`, for the reason the shell's
+  // comment gives: a non-exact `/projects/:id` view item on the stack would
+  // swallow the line page itself.
+  const record = routes.find(([path]) => path === "/projects/:id");
+  assert.ok(record, "the record route must still exist");
+  assert.equal(record[1], true, "the record route keeps `exact` — the line nests under it");
+
+  // The children are NOT separate Routes. Two Route entries would be two view
+  // items, which is a second mounted page and a re-fetch on every enlargement.
+  for (const [path] of routes) {
+    assert.ok(!path.includes("/drawing"),
+      `"${path}" registers the drawing as its own Route — the grammar is one route, one page`);
+  }
+});
+
+test("the suffix is read off the address, whatever the ids are made of", () => {
+  const base = "/projects/p_rec/line/l4";
+  assert.equal(M.lineSuffixOf(base), "");
+  assert.equal(M.lineSuffixOf(`${base}/drawing`), "/drawing");
+  assert.equal(M.lineSuffixOf(`${base}/drawing/u2`), "/drawing/u2");
+  // An id carrying an encoded character still has ONE segment, and the suffix
+  // is what follows it. Reading this by stripping a path built with
+  // encodeURIComponent would disagree with react-router's own pathname.
+  assert.equal(M.lineSuffixOf("/projects/p%20rec/line/l%2F4x/drawing"), "/drawing");
+  // Nothing below /line at all — the caller is not on a line page.
+  assert.equal(M.lineSuffixOf("/projects/p_rec"), "");
+});
+
+test("the drawing grammar accepts its own addresses UNTOUCHED", () => {
+  // THE HALF THAT MATTERS MOST. Three fail-closed defects in phase 1 came from
+  // guards tested only against what they must refuse, so every legal address
+  // here is asserted to pass through with `normalise` false: a viewer that
+  // normalised its own URL would replace on arrival, and the enlargement would
+  // flicker back to the line page for reasons nothing reports.
+  assert.deepEqual(M.parseLineRoute("", 0),
+    { view: "line", unitIndex: null, canonical: "", normalise: false });
+
+  assert.deepEqual(M.parseLineRoute("/drawing", 0),
+    { view: "drawing", unitIndex: null, canonical: "/drawing", normalise: false });
+
+  // 1-BASED, matching the ordinal the unit labels already imply — W07A is u1.
+  assert.deepEqual(M.parseLineRoute("/drawing/u1", 2),
+    { view: "unit", unitIndex: 1, canonical: "/drawing/u1", normalise: false });
+  assert.deepEqual(M.parseLineRoute("/drawing/u2", 2),
+    { view: "unit", unitIndex: 2, canonical: "/drawing/u2", normalise: false });
+  // The last unit of a longer split is not an edge case to the parser.
+  assert.equal(M.parseLineRoute("/drawing/u4", 4).normalise, false);
+});
+
+test("a malformed or out-of-range suffix normalises by REPLACE, and grows no history", () => {
+  // VIEW-AC-2c. Each case states where it lands, because "normalises" without a
+  // destination is how a mangled link ends up on a half state.
+  const cases = [
+    // Out of range: the unit does not exist on this line, but the OPENING's
+    // drawing does — so the reviewer keeps the drawing they asked for.
+    ["/drawing/u3", 2, "drawing", "/drawing"],
+    ["/drawing/u1", 0, "drawing", "/drawing"],   // a simple opening has no units
+    // Malformed, under /drawing: still a drawing address.
+    ["/drawing/u0", 2, "drawing", "/drawing"],
+    ["/drawing/u-1", 2, "drawing", "/drawing"],
+    ["/drawing/uX", 2, "drawing", "/drawing"],
+    ["/drawing/u1x", 2, "drawing", "/drawing"],
+    ["/drawing/u01", 2, "drawing", "/drawing"],  // one spelling per unit, or two URLs are one place
+    ["/drawing/2", 2, "drawing", "/drawing"],
+    ["/drawing/u2/more", 2, "drawing", "/drawing"],
+    ["/drawing/", 2, "drawing", "/drawing"],
+    // Outside the grammar entirely: the line page. `/why` is phase 3b's and is
+    // NOT served yet — until it is, it must land somewhere real rather than on
+    // a blank child.
+    ["/why", 2, "line", ""],
+    ["/edit", 2, "line", ""],
+    ["/drawings", 2, "line", ""],
+  ];
+  for (const [suffix, units, view, canonical] of cases) {
+    const route = M.parseLineRoute(suffix, units);
+    assert.equal(route.view, view, `${suffix} (${units} units) → view`);
+    assert.equal(route.canonical, canonical, `${suffix} (${units} units) → canonical`);
+    assert.equal(route.normalise, true, `${suffix} must be replaced, never pushed`);
+    assert.equal(route.unitIndex, null, `${suffix} names no unit`);
+  }
+});
+
+test("the opener builds the address the parser accepts, and the two cannot drift", () => {
+  assert.equal(M.drawingSuffix(), "/drawing");
+  assert.equal(M.drawingSuffix(null), "/drawing");
+  assert.equal(M.drawingSuffix(1), "/drawing/u1");
+  // Round trip: whatever the opener builds, the parser takes without a replace.
+  for (const i of [1, 2, 3]) {
+    const route = M.parseLineRoute(M.drawingSuffix(i), 3);
+    assert.equal(route.normalise, false, `u${i} round trip`);
+    assert.equal(route.unitIndex, i);
+  }
 });
