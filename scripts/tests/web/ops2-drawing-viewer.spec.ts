@@ -153,3 +153,73 @@ test("the plate opens the viewer at its own address, pushing exactly one entry",
   // The page behind it never remounted, so the record was never fetched twice.
   expect(calls.n).toBe(fetches);
 });
+
+test("the back control, Escape and the system back gesture are one single pop", async ({ page }) => {
+  // VIEW-AC-2a. All three, because a viewer whose Escape handler closes state
+  // without popping history leaves an orphan entry and an address bar that
+  // lies — the exact failure the route ruling rejected the state-only push to
+  // avoid — and testing only the control would never see it.
+  const calls = await serveRecord(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  const before = await historyLength(page);
+  const fetches = calls.n;
+
+  for (const exit of ["control", "escape", "gesture"] as const) {
+    await page.getByTestId("line-plate-open").click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await expect(page).toHaveURL(/\/line\/l1\/drawing$/);
+
+    if (exit === "control") await page.getByTestId("drawing-viewer-back").click();
+    else if (exit === "escape") await page.keyboard.press("Escape");
+    else await page.goBack();
+
+    // WHERE IT LANDS IS THE ASSERTION, and it catches both failures at once. An
+    // exit that closes state without popping leaves the address on `/drawing`
+    // with no viewer — the address bar lying, which is what the route ruling
+    // rejected the state-only push to avoid. An exit that pops twice lands on
+    // the project record instead of the line.
+    await expect(page, `${exit} did not land on the line`).toHaveURL(/\/line\/l1$/);
+    await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+    await expect(page.getByTestId("line-review")).toBeVisible();
+
+    // AND THE STACK DOES NOT ACCUMULATE. `history.length` does not shrink when
+    // you go back — the forward entry survives until something pushes over it —
+    // so the number to watch is not "back to where it started" but "the same
+    // after the third round as after the first". An exit that pushed the line
+    // path instead of popping would read identically on the URL and would grow
+    // the stack by one every time, which is what the old plate-and-panel shape
+    // could not have caught.
+    expect(await historyLength(page), `${exit} grew the stack`).toBe(before + 1);
+  }
+  // And the line page was mounted once for all six navigations.
+  expect(calls.n).toBe(fetches);
+});
+
+test("a page that really left still re-reads its record on the way back", async ({ page }) => {
+  // THE GOOD CASE FOR THE GUARD THAT KEEPS THE VIEWER FROM RE-FETCHING.
+  //
+  // A viewer opening under the same route made Ionic fire an enter on a page
+  // that had never left the screen, so the refresh is now armed by an actual
+  // departure. That is exactly the kind of fix that fails closed: arm it wrong
+  // and the console silently stops refreshing, which nobody notices until a
+  // reviewer prices a line in the legacy console beside this one, comes back,
+  // and reads the figures from before their own edit.
+  //
+  // So: a real trip away and back must still re-read.
+  const calls = await serveRecord(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${OPS_HOST}/ops2/projects/p_rec`);
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+  const afterRecord = calls.n;
+
+  await page.getByTestId("record-line").first().click();
+  await expect(page).toHaveURL(/\/line\/l1$/);
+  await expect(page.getByTestId("line-review")).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_rec$/);
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+  expect(calls.n, "the record did not re-read on the way back").toBeGreaterThan(afterRecord);
+});

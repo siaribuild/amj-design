@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useIonViewWillEnter } from "@ionic/react";
+import { useIonViewDidLeave, useIonViewWillEnter } from "@ionic/react";
 import { parseProjectRecord, type ProjectRecord } from "./record";
 import { catalogueReady } from "../catalogue";
 
@@ -100,9 +100,26 @@ export function useProjectRecord(id: string): { load: RecordLoad; reload: () => 
     return () => { live = false; };
   }, [id, attempt]);
 
+  // A PAGE THAT NEVER LEFT HAS NOT RE-ENTERED, and Ionic will tell you it did.
+  //
+  // The line page now owns child addresses — the drawing viewer is a node in
+  // the tree, so `…/line/:id/drawing` is a URL under the same non-exact route
+  // and the same mounted page. Ionic sees a route change and fires
+  // `ionViewWillEnter` on a page that has been on the screen the whole time. On
+  // its own that re-read the record on every enlargement: three cycles, four
+  // fetches, and a viewer whose page could flicker under it.
+  //
+  // So the refresh is armed by an actual DEPARTURE. That keeps the case this
+  // hook exists for — a reviewer opens a record, prices a line in the legacy
+  // console beside it, comes back, and must not be reading figures from before
+  // their own edit — because that page genuinely leaves the screen and says so.
   const entered = useRef(false);
+  const departed = useRef(false);
+  useIonViewDidLeave(() => { departed.current = true; });
   useIonViewWillEnter(() => {
     if (!entered.current) { entered.current = true; return; }
+    if (!departed.current) return;
+    departed.current = false;
     reload();
   });
 
