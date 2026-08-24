@@ -133,8 +133,6 @@ debug.get("/thermal/:ref", async (c) => {
         variantId: str(sel.performance_variant_id),
         uw: num(perf.uw),
         shgc: num(perf.shgc),
-        certified: typeof perf.certified === "boolean" ? perf.certified : null,
-        performanceSource: str(perf.source),      // certified | estimated
         confidence: str(sel.confidence_band),
         reviewRequired: sel.review_required === 1,
         missingInputs: arr(sel.missing_inputs_json).filter((v): v is string => typeof v === "string"),

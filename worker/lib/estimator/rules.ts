@@ -3,11 +3,10 @@
 // testable against a fixture catalogue.
 //
 // Filters we have data for run fully: publication, operation, dimensions, and
-// energy (against the estimated performance data). Filters we do NOT have data
+// energy (against the product's own thermal figures). Filters we do NOT have data
 // for (composite geometry, option compatibility) degrade to a manual-review flag
-// rather than a false pass. An energy match made against ESTIMATED (uncertified)
-// performance data passes only as an assumption-based commercial estimate —
-// never as a certified compliance pass (spec §13, safety invariant).
+// rather than a false pass. A product's thermal figures are its single source
+// (ADR 0011): a variant is judged on its Uw/SHGC and on nothing else.
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 import { coerceCoherent } from "./thermal/precedence";
 
@@ -49,8 +48,6 @@ export interface RuleOutcome {
   ruleVersion: string;
   passed: boolean;            // survived every REJECT filter (auto-selectable)
   status: OutcomeStatus;
-  /** True only when an energy requirement was satisfied by a CERTIFIED variant. */
-  energyCertified: boolean;
   /** Variants that jointly satisfy every explicit Uw/SHGC constraint. */
   eligibleVariantIds: string[];
   filters: FilterOutcome[];
@@ -142,9 +139,10 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
 //     satisfies the schedule's glazing instruction is a candidate configuration.
 //     A near-miss must stay selectable, priceable and saveable by a human
 //     (ops2 AC-3), which a filter of any severity makes impossible.
-//   • the certified determination — it moved to the exact variant, in select.ts,
-//     where it feeds LINE STATUS and nothing else. `certified` vs `estimated`
-//     never enters an ordering at any position (AC-49).
+//   • the certified determination — DELETED outright (ADR 0011, ops2 "Why this
+//     product" Phase 1). It never entered an ordering (AC-49); it only ever
+//     downgraded a line status, and it did so for 13 of 32 products purely
+//     because the Studio defaulted the same dead flag two different ways.
 //
 // The `energy` literal stays in FilterName so persisted history from before this
 // change still reads.
@@ -324,16 +322,12 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   const schedule = checkScheduleConfiguration(opening, c);
   filters.push(schedule.outcome);
   const eligibleVariants = schedule.matching;
-  // Line status only, never ordering (AC-49): an energy requirement backed by no
-  // certified variant can produce an estimate but never a compliance claim.
-  const energyCertified = eligibleVariants.some((v) => v.certified && v.dataSource === "certified");
-
 
   const rejected = filters.some((f) => !f.passed && f.severity === "reject");
   const incomplete = filters.some((f) => !f.passed && f.severity === "incomplete");
   const review = filters.some((f) => !f.passed && f.severity === "manual_review");
   // A warning keeps the candidate selectable + priceable, but the line is only
-  // ever an indicative commercial estimate — never "ready", never certified.
+  // ever an indicative commercial estimate — never "ready".
   const warned = filters.some((f) => !f.passed && f.severity === "warning");
 
   let status: OutcomeStatus;
@@ -342,7 +336,6 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   else if (incomplete) { status = "catalogue_data_incomplete"; passed = false; }
   else if (review) { status = "needs_manual_review"; passed = false; }
   else if (warned) { status = "commercial_only_estimate"; passed = true; }
-  else if (energyHadRequirement(opening) && !energyCertified) { status = "commercial_only_estimate"; passed = true; }
   else { status = "ready"; passed = true; }
 
   return {
@@ -350,13 +343,8 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
     ruleVersion,
     passed,
     status,
-    energyCertified,
     eligibleVariantIds: eligibleVariants.map((v) => v.variantId),
     filters,
   };
 }
 
-function energyHadRequirement(opening: OpeningInput): boolean {
-  const r = effectiveThermalRequirements(opening);
-  return !!r && (r.maxUValue != null || r.minShgc != null || r.maxShgc != null);
-}

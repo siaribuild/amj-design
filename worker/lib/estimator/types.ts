@@ -20,12 +20,13 @@ export interface PerformanceVariant {
   shgc: number | null;
   frameType: string | null;
   frameTechnology: "conventional" | "thermally_broken" | "unknown";
+  /** The WERS/AFRC window id backing these figures, when the editor recorded
+   *  one. A REFERENCE, never a gate: a product's thermal figures are its single
+   *  source, and a variant without a reference is ranked on the same footing
+   *  (ADR 0011, ops2 "Why this product" Phase 1). */
   certificationRef: string | null;
   /** Private D1 surcharge identifiers required to price this exact variant. */
   pricingOptionSlugs: string[];
-  /** 'certified' | 'estimated' — an estimated value is NEVER a compliance pass. */
-  dataSource: string;
-  certified: boolean;
   published: boolean;
 }
 

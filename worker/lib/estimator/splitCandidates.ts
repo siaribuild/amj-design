@@ -356,7 +356,6 @@ export function splitSegmentSpecs(
         variantId: variant?.variantId ?? null,
         uw: variant?.uValue ?? null,
         shgc: variant?.shgc ?? null,
-        source: variant?.dataSource ?? null,
         catalogueRevision: chosen.candidate.catalogueRevision ?? null,
         // WHY THIS FRAME AND NOT THE CHEAPER ONE. The unit was not chosen on its
         // own merits — it came out of the system picked for the whole opening —

@@ -157,7 +157,6 @@ export async function evaluateCandidates(
     const outcome = checkHardRules(opening, candidate, RULE_VERSION);
     if (outcome.passed && opening.thermalContext?.thermalPrecedentApplied === true) {
       outcome.status = "commercial_only_estimate";
-      outcome.energyCertified = false;
     }
     if (!outcome.passed) {
       rows.push({ candidate, outcome, selectedVariant: null, price: null, fit });
@@ -178,29 +177,17 @@ export async function evaluateCandidates(
       continue;
     }
     for (const variant of variants) {
-      const exactOutcome: RuleOutcome = {
-        ...outcome,
-        // Line STATUS only, never ordering (AC-49, A7). The comparator cannot
-        // see this field, so inverting every catalogue record's data source
-        // changes no rank anywhere.
-        energyCertified: isCertified(variant),
-        status: hasThermalRequirement(opening) && !isCertified(variant)
-          ? "commercial_only_estimate"
-          : outcome.status,
-      };
+      // The variant's own figures decide its TIER; the candidate's rules verdict
+      // decides its status. There is no third opinion: certification was deleted
+      // as a status cause in ADR 0011, and every surviving downgrade - tier,
+      // rules warning, thermal precedent - is unchanged.
+      const exactOutcome: RuleOutcome = { ...outcome };
       const price = await priceFn(candidate, opening, variant);
       rows.push({ candidate, outcome: exactOutcome, selectedVariant: variant, price, fit });
     }
   }
 
   return { rows, hadCandidates: candidates.length > 0, catalogueVersion, withheldIncomplete };
-}
-
-const isCertified = (v: PerformanceVariant | null) =>
-  !!(v && v.certified && v.dataSource === "certified");
-
-function hasThermalRequirement(opening: OpeningInput): boolean {
-  return !resolvedRequirement(opening).absent;
 }
 
 const rowKey = (row: EvaluatedRow) =>
@@ -359,9 +346,6 @@ function splitOutcomeCandidate(split: SplitCandidate): OutcomeCandidate {
       uValue: null,
       shgc: null,
       deviation: split.deviation,
-      // A composite is not one catalogue cell and carries no certification of
-      // its own; the units' own rows say where their figures came from.
-      dataSource: null,
     },
     fit: {
       fits: split.fits,
@@ -421,9 +405,6 @@ function outcomeCandidateOf(
         uValue: row.selectedVariant?.uValue ?? null,
         shgc: row.selectedVariant?.shgc ?? null,
       }),
-      dataSource: row.selectedVariant
-        ? (row.selectedVariant.dataSource === "certified" ? "certified" : "estimated")
-        : null,
     },
     fit: row.fit,
     price: row.price,

@@ -61,12 +61,12 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
     "rows": rows[]{
       "glazingOptionSlug": glazing->slug.current,
       "glazingClass": glazing->technicalValue,
-      uValue, shgc, frameTechnology, certified, certificationRef, published, wersWindowId
+      uValue, shgc, frameTechnology, certificationRef, published, wersWindowId
     }
   },
   "performanceVariants": performanceVariants[]{
     variantId, uValue, shgc, frameType, frameTechnology,
-    pricingOptionSlugs, dataSource, certified, certificationRef, published,
+    pricingOptionSlugs, certificationRef, published,
     "glazingOptionSlug": glazingOption->slug.current,
     "glazingClass": glazingOption->technicalValue
   },
@@ -139,8 +139,9 @@ function toFrameSystem(raw: any): CatalogueCandidate["frameSystem"] {
 }
 
 // M2/D5: map a shared frame thermal profile's rows to the variant shape the ranker
-// consumes. variantId is the glazing slug (stable per product × glazing). WERS rows
-// are certified; their certificationRef is the WERS window id.
+// consumes. variantId is the glazing slug (stable per product × glazing). A row's
+// certificationRef is the WERS window id when the editor recorded one — carried
+// through as a reference, never as a gate (ADR 0011).
 function profileRowsToVariants(profile: any): any[] {
   const rows = Array.isArray(profile?.rows) ? profile.rows : [];
   const profileTech = profile?.frameTechnology;
@@ -161,8 +162,6 @@ function profileRowsToVariants(profile: any): any[] {
       frameTechnology: coerceFrameTech(r?.frameTechnology ?? profileTech),
       certificationRef: r?.certificationRef ?? r?.wersWindowId ?? null,
       pricingOptionSlugs: [],
-      dataSource: r?.certified === false ? "estimated" : "certified",
-      certified: r?.certified !== false,
       published: r?.published !== false,
     }];
   });
@@ -184,7 +183,6 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     const uValue = typeof v?.uValue === "number" && v.uValue >= 0.5 && v.uValue <= 10 ? v.uValue : null;
     const shgc = typeof v?.shgc === "number" && v.shgc >= 0 && v.shgc <= 1 ? v.shgc : null;
     if (!variantId || seenVariants.has(variantId)) return [];
-    if (v?.certified === true && (!v?.certificationRef || v?.dataSource !== "certified")) return [];
     seenVariants.add(variantId);
     return [{
       variantId,
@@ -202,8 +200,6 @@ export function toCandidate(row: any): CatalogueCandidate | null {
       pricingOptionSlugs: Array.isArray(v?.pricingOptionSlugs)
         ? v.pricingOptionSlugs.filter((s: unknown): s is string => typeof s === "string" && !!s).slice(0, 20)
         : [],
-      dataSource: String(v?.dataSource ?? "estimated"),
-      certified: v?.certified === true,
       published: v?.published !== false,
     }];
   });

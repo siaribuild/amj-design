@@ -18,7 +18,7 @@ import { tierRank } from "../../../src/data/recommendation";
 export const REQUIREMENT_TOLERANCE = 0.05;
 
 /** Names the model that produced a run, written to the ranker_version columns. */
-export const SELECTION_VERSION = "ladder-v1";
+export const SELECTION_VERSION = "ladder-v2";
 
 export interface ResolvedRequirement {
   maxUValue: number | null;
@@ -225,8 +225,9 @@ function tierOf(c: LadderCandidate, best: number | null, tolerance: number): Tie
  *  position. And between two PRICEABLE candidates step 3 is a no-op, so the
  *  order of the candidates that can actually win is untouched.
  *
- *  `certified` / `estimated` appears nowhere in this list — AC-49 holds by
- *  construction, because the comparator cannot even see the field. */
+ *  `certified` / `estimated` appears nowhere in this list, and no longer exists
+ *  anywhere in the product (ADR 0011) — AC-49 held by construction even before
+ *  the field was deleted, because the comparator could never see it. */
 export function compareCandidates(a: TieredCandidate, b: TieredCandidate): number {
   const byTier = tierRank(a.tier) - tierRank(b.tier);
   if (byTier !== 0) return byTier;

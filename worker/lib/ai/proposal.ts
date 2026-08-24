@@ -375,8 +375,6 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     const performance = variant ? {
       uw: variant.uValue,
       shgc: variant.shgc,
-      source: variant.dataSource,
-      certified: variant.certified,
       certificationRef: variant.certificationRef,
     } : null;
     const rankingContext = {

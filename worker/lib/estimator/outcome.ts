@@ -49,7 +49,6 @@ export interface OutcomeCandidate {
     uValue: number | null;
     shgc: number | null;
     deviation: Deviation;
-    dataSource: "certified" | "estimated" | null;
   };
   fit: FitFacts;
   /** Only the two facts the contract needs. A make-up has no PriceSnapshot of
@@ -249,7 +248,6 @@ export function buildOutcomes(input: OutcomeInput): {
         worstAxis: c.thermal.deviation.worstAxis,
         normalisedDeviation: requirement.absent ? 0 : c.thermal.deviation.scalar,
         absoluteMiss: c.thermal.deviation.absoluteMiss,
-        dataSource: c.thermal.dataSource,
       },
       fit: {
         fits: c.fit.fits,

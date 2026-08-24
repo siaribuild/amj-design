@@ -46,7 +46,6 @@ export interface GlassCell {
   variantId: string;
   uValue: number | null;
   shgc: number | null;
-  certified: boolean;
   /** Private D1 surcharge ids to price this glass in this frame. */
   pricingOptionSlugs: string[];
 }

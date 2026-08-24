@@ -393,9 +393,9 @@ const galleryImage = defineArrayMember({
 
 // ── Estimator technical contract (CPQ Estimator spec §4) ─────────────────────
 // Machine-readable fields the estimator's deterministic rules read. Kept OUT of
-// prose so hard rules never depend on descriptions. Every performance value
-// carries an explicit provenance flag — an ESTIMATED value must never be treated
-// as a certified compliance figure (spec §13, addendum §1).
+// prose so hard rules never depend on descriptions. A product's thermal figures
+// are its single source (ADR 0011): Uw and SHGC are read directly, and the WERS
+// reference beside them is provenance rather than a gate.
 
 // Operation is a single intrinsic property of the FAMILY (family.operation), not
 // the product — every product in a family performs the same operation, so the
@@ -422,9 +422,10 @@ const dimensionRule = defineField({
   ],
 });
 
-// Whole-window energy performance. NO value here is a certified compliance figure
-// unless `dataSource: certified` AND `published: true`. An ESTIMATED variant lets
-// the estimator compute an assumption-based (non-compliance-certified) result.
+// Whole-window energy performance. A product's thermal figures are its SINGLE
+// source (ADR 0011): Uw and SHGC are what selection reads, and `published` is the
+// only gate. `certificationRef` records the WERS/AFRC window these figures came
+// from when the editor has one — provenance, never a gate.
 const performanceVariant = defineArrayMember({
   type: "object",
   name: "performanceVariant",
@@ -455,23 +456,16 @@ const performanceVariant = defineArrayMember({
       of: [{ type: "string" }], options: { layout: "tags" },
       validation: (r) => r.unique(),
     }),
-    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated", validation: (r) => r.required(),
-      options: { list: [{ title: "Certified (AFRC/WERS/NatHERS)", value: "certified" }, { title: "Estimated from glass build-up (unverified)", value: "estimated" }] } }),
-    defineField({ name: "certified", title: "Certified", type: "boolean", initialValue: false,
-      description: "TRUE only for a verified AFRC/WERS/certificate figure. Estimated values MUST be false." }),
     defineField({
       name: "certificationRef", title: "Certification reference", type: "string",
-      validation: (r) => r.custom((value, context) => {
-        const parent = context.parent as { certified?: boolean } | undefined;
-        return parent?.certified && !value ? "A certified variant requires a certification reference." : true;
-      }),
+      description: "AFRC/WERS/NatHERS reference these figures came from, when there is one. Provenance only — selection reads Uw and SHGC.",
     }),
     defineField({ name: "published", title: "Published (eligible for selection)", type: "boolean", initialValue: true }),
     defineField({ name: "effectiveFrom", title: "Effective from", type: "date" }),
   ],
   preview: {
-    select: { title: "glazingOption.name", u: "uValue", shgc: "shgc", src: "dataSource" },
-    prepare: ({ title, u, shgc, src }) => ({ title: title || "variant", subtitle: `Uw ${u ?? "?"} · SHGC ${shgc ?? "?"} · ${src}` }),
+    select: { title: "glazingOption.name", u: "uValue", shgc: "shgc" },
+    prepare: ({ title, u, shgc }) => ({ title: title || "variant", subtitle: `Uw ${u ?? "?"} · SHGC ${shgc ?? "?"}` }),
   },
 });
 
@@ -1198,7 +1192,6 @@ const thermalProfileRow = defineArrayMember({
     defineField({ name: "coolingPercentage", title: "Cooling %", type: "number" }),
     defineField({ name: "airInfiltration", title: "Air infiltration", type: "number" }),
     defineField({ name: "wersWindowId", title: "WERS window id", type: "string", description: "Provenance — WERS WindowId." }),
-    defineField({ name: "certified", title: "Certified", type: "boolean", initialValue: true }),
     defineField({ name: "certificationRef", title: "Certification ref", type: "string" }),
     defineField({ name: "published", title: "Published (eligible for selection)", type: "boolean", initialValue: true }),
   ],

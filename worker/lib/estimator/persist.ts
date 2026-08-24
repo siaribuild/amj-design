@@ -151,7 +151,6 @@ export async function persistSelection(
           name: result.selected.candidate.name,
           configuration: result.selected.candidate.configuration,
           performanceVariant: result.selected.selectedVariant,
-          energyCertified: result.selected.outcome.energyCertified,
         }
       : {
           // A make-up has no single catalogue record, so the snapshot describes
@@ -167,7 +166,6 @@ export async function persistSelection(
             units: winner.candidateOutcome.units ?? [],
           },
           performanceVariant: null,
-          energyCertified: false,
         };
     const priceSnapshot = result.selected
       ? result.selected.price

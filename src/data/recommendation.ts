@@ -8,6 +8,10 @@
 // STABILITY RULES (docs/specs/recommendation-model-design.md §3):
 //   1. Additive-only evolution. A field is added, never renamed or re-typed;
 //      `SelectionOutcome.version` names the model that emitted it.
+//      ONE SANCTIONED REMOVAL, ADR 0011: `thermal.dataSource` left this contract
+//      when certification was deleted from the product, paid for by the
+//      `ladder-v1` -> `ladder-v2` version bump. Rows emitted under `ladder-v1`
+//      keep the key in storage and parse unchanged; `ladder-v2` never had it.
 //   2. No sentences. No `message`, no `reason`, no assembled copy anywhere in
 //      outcome_json — the builder maps rules-engine prose to structured detail.
 //   3. `exclusions[].detail` carries facts about THIS opening only — catalogue
@@ -91,7 +95,6 @@ export interface CandidateOutcome {
     worstAxis: "uValue" | "minShgc" | "maxShgc" | null;
     normalisedDeviation: number | null;   // the scalar the ladder compares; null = unknown
     absoluteMiss: number | null;          // the miss in the requirement's own unit
-    dataSource: "certified" | "estimated" | null;
   };
 
   // dimensional fit
