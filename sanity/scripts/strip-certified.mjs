@@ -25,7 +25,8 @@
 //   npx sanity exec scripts/strip-certified.mjs --with-user-token -- --export ../sanity-production-2026-08-24.tar.gz --apply
 //
 // Take the export with:  npx sanity dataset export production <path>
-import { statSync, readdirSync, readFileSync } from "node:fs";
+import { statSync, readdirSync, readFileSync, createReadStream } from "node:fs";
+import { createGunzip } from "node:zlib";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,9 +46,10 @@ const flag = (name) => {
   return i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith("--") ? argv[i + 1] : null;
 };
 
-/** The gate. Returns the verified export path, or exits non-zero saying which
- *  half of "a verified export exists" is missing. No client, no network. */
-function requireVerifiedExport() {
+/** The gate. Returns the verified export and what is in it, or exits non-zero
+ *  saying which part of "a verified export exists" is missing. Reads the file;
+ *  constructs no client and makes no network call. */
+async function requireVerifiedExport() {
   const path = flag("--export");
   if (!path) {
     fail(
@@ -74,7 +76,36 @@ function requireVerifiedExport() {
       + "documents this run is about to rewrite. Take a fresh one and re-run.",
     );
   }
-  return path;
+
+  // Recent and non-empty is not a backup. OPEN IT.
+  let manifest;
+  try {
+    manifest = await readExportManifest(path);
+  } catch (error) {
+    fail(
+      `The export at ${path} cannot be trusted to restore anything: ${error.message}.\n`
+      + "Take a real one and re-run:\n"
+      + "  npx sanity dataset export production ../sanity-production-<date>.tar.gz",
+    );
+  }
+
+  // And it has to contain the documents THIS run is about to mutate. An export
+  // missing a type is not a backup of that type, however recent it is.
+  const missing = STRIP_TARGETS.filter((t) => !manifest.byType.get(t.type));
+  if (missing.length) {
+    fail(
+      `The export at ${path} contains no ${missing.map((t) => `\`${t.type}\``).join(" or ")} document,\n`
+      + "so it could not put back what this run is about to change. Export the whole\n"
+      + "dataset rather than a subset, and re-run.",
+    );
+  }
+
+  console.log(
+    `Verified export: ${path}\n`
+    + `  ${manifest.documents} published document(s), including `
+    + `${STRIP_TARGETS.map((t) => `${manifest.byType.get(t.type)} ${t.type}`).join(", ")}.`,
+  );
+  return { path, manifest };
 }
 
 // ── The re-population predicate (design §2.6, CERT-AC-3 / CERT-AC-12) ───────
@@ -180,6 +211,100 @@ const dirtyQuery = (t) => `*[_type=="${t.type}" && count(${t.arrayField}[${
     _id, name, "items": ${t.arrayField}[]{ _key, ${t.fields.join(", ")} }
   }`;
 
+
+// ── Reading the export, rather than trusting its file stat (P1-A) ─────────
+//
+// The gate used to check recency and non-emptiness, which any recent non-empty
+// file satisfies: a text file, a truncated archive, half a download. It then
+// permitted irreversible production mutations on the strength of a file nobody
+// had established was a usable backup. Same lesson as the wrong type name, one
+// level up — a gate that passes without checking what it claims to check is
+// worse than no gate, because it manufactures confidence.
+//
+// A `sanity dataset export` tarball is gzip over tar, with the documents in a
+// `data.ndjson` member (at the root or under a dataset directory) and assets
+// after it. Tar is read here directly rather than through a dependency: this is
+// the guard standing between us and an unrecoverable mistake, and it should
+// have as few moving parts as possible. Entries are consumed as they stream and
+// the read STOPS at data.ndjson, so an export carrying hundreds of megabytes of
+// images is never held in memory.
+
+/** Yields { name, body } per tar member, stopping when `wanted` returns true. */
+async function* tarMembers(stream, wanted) {
+  let buf = Buffer.alloc(0);
+  for await (const chunk of stream) {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 512) break;
+      const header = buf.subarray(0, 512);
+      if (header.every((b) => b === 0)) return;             // end-of-archive
+      const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/s, "");
+      const rawSize = header.subarray(124, 136).toString("utf8").replace(/\0.*$/s, "").trim();
+      const size = Number.parseInt(rawSize, 8);
+      if (!Number.isFinite(size) || size < 0) throw new Error("tar header is not readable");
+      const total = 512 + Math.ceil(size / 512) * 512;
+      if (buf.length < total) break;                        // member not fully arrived
+      const body = buf.subarray(512, 512 + size);
+      buf = buf.subarray(total);
+      if (wanted(name)) { yield { name, body }; return; }
+    }
+  }
+  // Ran out of input mid-member: the archive is torn.
+  if (buf.length) throw new Error("the archive ends part way through a file");
+}
+
+/** What the export actually contains, or a thrown reason it cannot be trusted.
+ *  Reads the file; constructs no client and makes no network call. */
+export async function readExportManifest(path) {
+  const gz = createReadStream(path).pipe(createGunzip());
+  let member = null;
+  try {
+    for await (const m of tarMembers(gz, (name) => name.split("/").pop() === "data.ndjson")) member = m;
+  } catch (error) {
+    throw new Error(`it is not a readable gzip archive (${error.message})`);
+  }
+  if (!member) throw new Error("it contains no `data.ndjson`, so it is not a dataset export");
+
+  const text = member.body.toString("utf8");
+  const lines = text.split("\n").filter((l) => l.trim());
+  if (!lines.length) throw new Error("its `data.ndjson` is empty, so it would restore nothing");
+
+  const byType = new Map();
+  for (const [i, line] of lines.entries()) {
+    let d;
+    try {
+      d = JSON.parse(line);
+    } catch {
+      // A torn download stops mid-document, and this is where that shows up.
+      throw new Error(`its \`data.ndjson\` stops part way through document ${i + 1}, so it is truncated`);
+    }
+    if (!d?._id || !d?._type) throw new Error(`document ${i + 1} has no _id/_type, so this is not a dataset export`);
+    // Drafts cannot restore a published document, so they are not counted as
+    // one — the same basis the live comparison uses.
+    if (String(d._id).startsWith("drafts.")) continue;
+    byType.set(d._type, (byType.get(d._type) ?? 0) + 1);
+  }
+  const documents = [...byType.values()].reduce((a, b) => a + b, 0);
+  if (!documents) throw new Error("it carries only drafts, which cannot restore a published document");
+  return { documents, byType };
+}
+
+
+/** The archive check proves the file is a real export. It cannot prove the
+ *  export is a backup OF THIS DATASET AS IT STANDS: a genuine export taken
+ *  before six products were added is a real archive that would still lose them.
+ *
+ *  So the counts are compared once the client exists and strictly before
+ *  anything is written. Holding MORE than live is fine — documents deleted since
+ *  the export are not a restore risk. Holding FEWER is not. */
+export function exportShortfall(manifest, target, liveCount) {
+  const inExport = manifest.byType.get(target.type) ?? 0;
+  if (inExport >= liveCount) return null;
+  return `the export holds ${inExport} \`${target.type}\` document(s) but the dataset has `
+    + `${liveCount}. It predates documents this run is about to change and could not `
+    + "put them back.";
+}
+
 /** Read one target, refusing to proceed when the type matches NOTHING.
  *
  *  The two zeroes mean opposite things and must not be conflated:
@@ -202,8 +327,7 @@ export async function loadTarget(fetchFn, target) {
 }
 
 async function main() {
-  const exportPath = requireVerifiedExport();
-  console.log(`Verified export: ${exportPath}`);
+  const { path: exportPath, manifest } = await requireVerifiedExport();
   const scanned = requireNoRepopulation(resolve(flag("--catalogue-dir") ?? DEFAULT_CATALOGUE_DIR));
   console.log(`Checkout will not re-populate: ${scanned} catalogue script(s) clean.`);
   if (CHECK_ONLY) {
@@ -222,6 +346,13 @@ async function main() {
   for (const target of STRIP_TARGETS) {
     // Throws, loudly, when the type matches nothing at all.
     const { total, docs } = await loadTarget(fetchFn, target);
+    // And the export has to be able to put back what is actually there. This is
+    // the last gate, and it is still before any write.
+    const shortfall = exportShortfall(manifest, target, total);
+    if (shortfall) {
+      fail(`The export at ${exportPath} cannot restore this dataset: ${shortfall}\n`
+        + "Take a fresh export and re-run.");
+    }
     let items = 0;
     console.log(`\n${docs.length} of ${total} ${target.noun}(s) carry certification values:`);
     for (const doc of docs) {

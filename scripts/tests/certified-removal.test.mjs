@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
 import { readFile, readdir, writeFile, utimes, mkdir } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot } from "./helpers.mjs";
@@ -323,7 +324,44 @@ async function tsFilesUnderAny(dir, match = /\.(ts|tsx)$/) {
   return out;
 }
 
-// ── CERT-AC-8 / X-AC-12: the strip run refuses without a verified export ────
+// ── CERT-AC-8 / X-AC-11: the strip run refuses without a verified export ────
+/** A minimal, real .tar.gz, so the fixtures below are archives rather than
+ *  mocks of one — the gate is only worth what it does to a genuine file. */
+function tarGz(entries) {
+  const blocks = [];
+  for (const [name, body] of entries) {
+    const data = Buffer.from(body, "utf8");
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 100, "utf8");
+    header.write("0000644\0", 100, 8, "utf8");            // mode
+    header.write("0000000\0", 108, 8, "utf8");            // uid
+    header.write("0000000\0", 116, 8, "utf8");            // gid
+    header.write(`${data.length.toString(8).padStart(11, "0")}\0`, 124, 12, "utf8");
+    header.write(`${Math.floor(Date.now() / 1000).toString(8).padStart(11, "0")}\0`, 136, 12, "utf8");
+    header.write("        ", 148, 8, "utf8");              // checksum placeholder
+    header.write("0", 156, 1, "utf8");                     // typeflag: regular file
+    header.write("ustar\x0000", 257, 8, "utf8");
+    let sum = 0;
+    for (const b of header) sum += b;
+    header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "utf8");
+    blocks.push(header, data, Buffer.alloc((512 - (data.length % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));                          // end of archive
+  return gzipSync(Buffer.concat(blocks));
+}
+
+const doc = (id, type) => JSON.stringify({ _id: id, _type: type, name: id });
+const FULL_EXPORT = [
+  doc("p1", "product"), doc("p2", "product"), doc("tp1", "thermalProfile"),
+].join("\n");
+
+async function writeExport(dir, file, bytes) {
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, file);
+  await writeFile(path, bytes);
+  return path;
+}
+
 function runNode(args) {
   return new Promise((resolve) => {
     execFile(process.execPath, [STRIP, ...args], { cwd: projectRoot }, (error, stdout, stderr) => {
@@ -366,7 +404,7 @@ test("CERT-AC-8 the gate runs offline, before any Sanity client exists", async (
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /sanity\/cli|getCliClient|token/i);
 });
 
-// ── CERT-AC-12: the strip cannot be undone by the next import ─────────────
+// ── CERT-AC-12 / CERT-AC-13: the strip cannot be undone by the next import ──
 //
 // The depth-(c) strip exists so the field cannot come back. An importer that
 // re-stamps it automatically is worse than the person the owner was guarding
@@ -401,11 +439,11 @@ test("CERT-AC-12 the derive builder emits no `certified` and no variant `dataSou
   assert.equal(deriveConfiguration(product).dataSource, "estimated");
 });
 
-test("CERT-AC-12 the strip run refuses from a checkout that can re-populate", async () => {
+test("CERT-AC-13 the strip run refuses from a checkout that can re-populate", async () => {
   const dir = join(runDir, "gate");
   await mkdir(dir, { recursive: true });
   const fresh = join(dir, "export.tar.gz");
-  await writeFile(fresh, "non-empty");
+  await writeFile(fresh, tarGz([["data.ndjson", FULL_EXPORT]]));
 
   // A valid export is NOT enough: the second gate reads this checkout's own
   // importers, so a strip launched from a stale branch is refused at the point
@@ -425,11 +463,11 @@ test("CERT-AC-12 the strip run refuses from a checkout that can re-populate", as
   assert.match(`${r.stdout}${r.stderr}`, /rogue\.mjs/, "and it names the file that would undo the strip");
 });
 
-test("CERT-AC-12 the re-population gate runs offline, before any Sanity client exists", async () => {
+test("CERT-AC-13 the re-population gate runs offline, before any Sanity client exists", async () => {
   const dir = join(runDir, "gate-offline");
   await mkdir(dir, { recursive: true });
   const fresh = join(dir, "export.tar.gz");
-  await writeFile(fresh, "non-empty");
+  await writeFile(fresh, tarGz([["data.ndjson", FULL_EXPORT]]));
   const dirty = join(dir, "catalogue");
   await mkdir(dirty, { recursive: true });
   await writeFile(join(dirty, "rogue.mjs"), "export const v = { dataSource: \"estimated\", certified: false };");
@@ -440,7 +478,7 @@ test("CERT-AC-12 the re-population gate runs offline, before any Sanity client e
     "the refusal costs no client and no network call");
 });
 
-test("CERT-AC-12 the gate finds the importers from the directory the operator runs in", async () => {
+test("CERT-AC-13 the gate finds the importers from the directory the operator runs in", async () => {
   // The operator runs this through `npx sanity exec` from sanity/, not from the
   // repo root. The gate fails CLOSED, so a cwd-relative default would refuse
   // every legitimate run — and the obvious fix for a refusal nobody expected is
@@ -448,7 +486,7 @@ test("CERT-AC-12 the gate finds the importers from the directory the operator ru
   const dir = join(runDir, "cwd");
   await mkdir(dir, { recursive: true });
   const fresh = join(dir, "export.tar.gz");
-  await writeFile(fresh, "non-empty");
+  await writeFile(fresh, tarGz([["data.ndjson", FULL_EXPORT]]));
 
   const fromSanity = await new Promise((res) => {
     execFile(process.execPath, [STRIP, "--export", fresh, "--check"],
@@ -542,4 +580,111 @@ test("CERT-AC-7 every GROQ type literal in a maintenance script names a declared
 
   const unknown = literals.filter(([, t]) => !declared.has(t)).map(([rel, t]) => `${rel}: _type=="${t}"`);
   assert.deepEqual(unknown, [], `a query names a type no defineType declares: ${unknown.join(" | ")}`);
+});
+
+// ── CERT-AC-8 / P1-A: the export gate has to prove RESTORABILITY ──────────
+//
+// CODEX P1-A. The gate checked recency and non-emptiness. Any recent non-empty
+// file satisfied it — a text file, a truncated archive, half a download — and it
+// then permitted irreversible production mutations on the strength of a file
+// nobody had established was a usable backup.
+//
+// This is the same lesson as the wrong type name, one level up: a gate that
+// passes without checking what it claims to check is worse than no gate,
+// because it manufactures confidence. So the archive is opened and read: it
+// must be real gzip, contain a `data.ndjson`, parse as documents, and contain
+// documents of EVERY type this run is about to mutate.
+
+test("P1-A a file that is recent and non-empty is not thereby a backup", async () => {
+  const dir = join(runDir, "p1a");
+
+  // The exact case that used to pass: someone points --export at a note, a
+  // truncated download, or a half-written archive.
+  const text = await writeExport(dir, "notes.tar.gz", "this is not an archive");
+  const notGzip = await runNode(["--export", text, "--check"]);
+  assert.notEqual(notGzip.code, 0, "a text file is refused");
+  assert.match(`${notGzip.stdout}${notGzip.stderr}`, /archive|gzip/i);
+
+  // Real gzip, real tar, but not an export: no documents in it.
+  const empty = await writeExport(dir, "empty.tar.gz", tarGz([["README.txt", "hello"]]));
+  const noData = await runNode(["--export", empty, "--check"]);
+  assert.notEqual(noData.code, 0, "an archive with no data.ndjson is refused");
+  assert.match(`${noData.stdout}${noData.stderr}`, /data\.ndjson/i);
+
+  // A truncated export: the file opens, but the documents stop part way.
+  const torn = await writeExport(dir, "torn.tar.gz", tarGz([["data.ndjson", `${doc("p1", "product")}\n{"_id":"p2","_ty`]]));
+  const truncated = await runNode(["--export", torn, "--check"]);
+  assert.notEqual(truncated.code, 0, "a torn archive is refused");
+});
+
+test("P1-A an export missing a type this run mutates cannot restore it", async () => {
+  const dir = join(runDir, "p1a-types");
+  // Products but no thermal profiles. The run is about to unset
+  // `rows[].certified` on 21 profile documents this export could not put back.
+  const partial = await writeExport(dir, "partial.tar.gz",
+    tarGz([["data.ndjson", [doc("p1", "product"), doc("p2", "product")].join("\n")]]));
+  const r = await runNode(["--export", partial, "--check"]);
+  assert.notEqual(r.code, 0);
+  assert.match(`${r.stdout}${r.stderr}`, /thermalProfile/,
+    "and it names the type the export cannot restore");
+});
+
+test("P1-A a real export of every mutated type passes, and says what it verified", async () => {
+  const dir = join(runDir, "p1a-ok");
+  const good = await writeExport(dir, "export.tar.gz", tarGz([
+    ["production/data.ndjson", FULL_EXPORT],           // nested, as the CLI writes it
+    ["assets.json", "[]"],
+  ]));
+  const r = await runNode(["--export", good, "--check"]);
+  assert.equal(r.code, 0, `${r.stdout}${r.stderr}`);
+  // Loud about WHAT it verified, so a passing gate is legible rather than silent.
+  assert.match(r.stdout, /3 published document/i);
+  assert.match(r.stdout, /product/);
+  assert.match(r.stdout, /thermalProfile/);
+});
+
+test("P1-A the archive is read before any Sanity client exists", async () => {
+  const dir = join(runDir, "p1a-offline");
+  const text = await writeExport(dir, "nope.tar.gz", "not an archive");
+  const r = await runNode(["--export", text, "--apply"]);
+  assert.notEqual(r.code, 0);
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /sanity\/cli|getCliClient|token/i,
+    "the refusal costs no client and no network call");
+});
+
+test("P1-A an export that predates the live dataset cannot restore it", async () => {
+  // The archive check proves the file is a real export. It cannot prove the
+  // export is a backup OF THIS DATASET AS IT STANDS: a genuine export taken
+  // before six products were added is a real archive that would still lose
+  // them. That comparison needs the live counts, so it happens once the client
+  // exists — but strictly before anything is written.
+  const { exportShortfall, STRIP_TARGETS } = await import(pathToFileURL(STRIP).href);
+  const target = STRIP_TARGETS[0];
+  const manifest = { documents: 5, byType: new Map([[target.type, 5]]) };
+
+  assert.equal(exportShortfall(manifest, target, 5), null, "an export that matches live is fine");
+  assert.equal(exportShortfall(manifest, target, 3), null,
+    "and one HOLDING MORE is fine too — documents deleted since are not a restore risk");
+
+  const short = exportShortfall(manifest, target, 9);
+  assert.ok(short, "an export holding fewer documents than live is refused");
+  assert.match(short, /5/);
+  assert.match(short, /9/);
+  assert.match(short, new RegExp(target.type));
+
+  // A type absent from the export entirely is the same failure, stated the same
+  // way, rather than a crash on an undefined count.
+  const absent = exportShortfall({ documents: 0, byType: new Map() }, target, 4);
+  assert.ok(absent);
+  assert.match(absent, /0/);
+});
+
+test("P1-A the run compares the export against live before it writes", async () => {
+  const src = await readFile(join(projectRoot, "sanity/scripts/strip-certified.mjs"), "utf8");
+  const main = src.slice(src.indexOf("async function main()"));
+  const shortfallAt = main.indexOf("exportShortfall");
+  const commitAt = main.indexOf("tx.commit");
+  assert.ok(shortfallAt > 0, "main consults the shortfall");
+  assert.ok(commitAt > 0, "and still commits somewhere");
+  assert.ok(shortfallAt < commitAt, "the comparison happens BEFORE the write, not after");
 });
