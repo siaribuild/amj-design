@@ -1,6 +1,9 @@
 // Unit tests for the estimator field derivation (Phase 0 catalogue enrichment).
-// Pure logic; guards the safety invariant that estimated values are never marked
-// certified.
+// Pure logic. The safety invariant it used to guard — "an estimated value is
+// never marked certified" — is now guarded by ABSENCE: ADR 0011 deleted the
+// flag, so the derived variant carries no `certified` and no `dataSource` for a
+// later import to get wrong. CERT-AC-12 in certified-removal.test.mjs owns the
+// durability half (the strip cannot be undone by re-running this builder).
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -57,13 +60,13 @@ test("dimensionRule carries bounds, derived area, and a rule version", () => {
   assert.equal(r.dataSource, "estimated");
 });
 
-test("SAFETY: derived performance is never marked certified", () => {
+test("SAFETY: derived performance carries no certification flag to get wrong", () => {
   const pv = derivePerformanceVariant({ standardGlass: "6mm Low-e+25Ar+6mm", slug: "amj150t-lift-sliding-door" });
-  assert.equal(pv.certified, false);
-  assert.equal(pv.dataSource, "estimated");
+  assert.ok(!("certified" in pv), "the flag is absent, not false (ADR 0011)");
+  assert.ok(!("dataSource" in pv), "and so is the variant data source");
   assert.equal(pv.frameTechnology, "thermally_broken");
   const all = deriveEstimatorFields({ family: "awning-window", category: "windows", slug: "amj80", standardGlass: "5+8A+5mm Double Tempered", minWidth: 400, maxWidth: 1000, minHeight: 400, maxHeight: 2400 });
-  assert.equal(all.performanceVariants[0].certified, false);
+  assert.ok(!("certified" in all.performanceVariants[0]));
   assert.equal(all.pricingRef, "amj80", "pricingRef IS the pricing_rate_card id — see 0031");
   assert.equal(all.schemaVersion, 1);
 });

@@ -29,7 +29,7 @@ const QUERY = `*[_type == "product"]{
   "hasConfiguration": defined(configuration),
   "performanceVariants": performanceVariants[]{
     variantId, glassBuildUp, uValue, shgc, frameTechnology, coating,
-    pricingOptionSlugs, dataSource, certified, certificationRef, published
+    pricingOptionSlugs, certificationRef, published
   },
   "hasPerformance": count(performanceVariants) > 0,
   "hasDimensionRule": defined(dimensionRule),

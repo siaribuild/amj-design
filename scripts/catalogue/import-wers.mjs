@@ -132,7 +132,7 @@ export function build(rows) {
       heatingStars: r.heatingStars, coolingStars: r.coolingStars,
       heatingPercentage: r.heatingPct, coolingPercentage: r.coolingPct,
       airInfiltration: r.airInfiltration,
-      wersWindowId: r.windowId, certified: true, certificationRef: r.windowId, published: true,
+      wersWindowId: r.windowId, certificationRef: r.windowId, published: true,
     });
   }
   const profiles = [...profileByFrame.values()];

@@ -109,8 +109,6 @@ export function derivePerformanceVariant(product) {
     frameTechnology,
     coating: /low-?e/i.test(product.standardGlass || "") ? "low-e (description-derived)" : null,
     pricingOptionSlugs: [],
-    dataSource: "estimated",
-    certified: false,
     published: true,
   };
 }

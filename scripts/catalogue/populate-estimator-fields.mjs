@@ -52,17 +52,18 @@ const products = await client.fetch(`*[
     frameTechnology,
     coating,
     pricingOptionSlugs,
-    dataSource,
-    certified,
     published
   }
 } | order(family asc)`);
 
+// Anything a person or an importer authored. The derived variant this script
+// writes is always `_key: "std"`, so a key that is anything else is by
+// construction data this script did not invent and must not overwrite. The
+// three certified/dataSource clauses that used to sit beside this one went with
+// ADR 0011; they never widened the set, because a hand-authored variant already
+// fails the key test.
 const hasProtectedPerformance = (product) => (product.performanceVariants ?? []).some(
-  (variant) => variant?.certified === true
-    || variant?.dataSource === "certified"
-    || variant?.dataSource === "manufacturer"
-    || variant?._key !== "std",
+  (variant) => variant?._key !== "std",
 );
 
 const patches = products.map((product) => {
@@ -94,7 +95,7 @@ if (!apply) {
     const variant = fields.performanceVariants?.[0];
     console.log(`${name} (${id})`);
     if (preservesPerformance) {
-      console.log("  performance=PRESERVED (certified/manufacturer data exists)");
+      console.log("  performance=PRESERVED (hand-authored data exists)");
     } else {
       console.log(
         `  frame=${variant.frameTechnology}  Uw=${variant.uValue}  SHGC=${variant.shgc}`
@@ -125,6 +126,6 @@ if (!apply) {
   await transaction.commit({ autoGenerateArrayKeys: true });
   console.log(
     `Applied estimator fields to ${updated} products;`
-    + ` preserved certified/manufacturer performance data on ${protectedCount}.`,
+    + ` preserved hand-authored performance data on ${protectedCount}.`,
   );
 }

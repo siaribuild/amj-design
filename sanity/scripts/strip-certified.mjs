@@ -25,11 +25,16 @@
 //   npx sanity exec scripts/strip-certified.mjs --with-user-token -- --export ../sanity-production-2026-08-24.tar.gz --apply
 //
 // Take the export with:  npx sanity dataset export production <path>
-import { statSync } from "node:fs";
+import { statSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply");
+/** Run both gates, report, and stop — no client, no network, no write. */
+const CHECK_ONLY = argv.includes("--check");
 const EXPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_CATALOGUE_DIR = "scripts/catalogue";
 
 const flag = (name) => {
   const i = argv.indexOf(name);
@@ -68,6 +73,82 @@ function requireVerifiedExport() {
   return path;
 }
 
+// ── The re-population predicate (design §2.6, CERT-AC-3 / CERT-AC-12) ───────
+//
+// EXPORTED, and the source scan in scripts/tests/certified-removal.test.mjs
+// imports it rather than restating it: the gate that refuses to strip and the
+// criterion that says the tree is clean must agree about what a re-population
+// looks like, and two copies of a regex do not stay agreed.
+//
+// `dataSource` has a SECOND, live, correct meaning — the provenance of a size
+// rule or a configuration (worker/lib/estimator/types.ts). That concept is fine
+// and is not what was deleted, so the predicate is keyed on the OBJECT the
+// field belongs to rather than on the bare token: a bare-token match would
+// force renaming a concept nobody asked to remove.
+const stripSourceComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+/** Unconditional: these two names only ever meant the deleted gate. */
+const DEAD_NAMES = /\b(isCertified|energyCertified)\b/;
+/** `certified` as a field name, a projection member, a read, or a written value. */
+const CERTIFIED_FIELD = /(^|[^A-Za-z0-9_$.])certified\s*[:,}]|\.certified\b|["']certified["']/;
+const DATA_SOURCE = /\bdataSource\b/;
+/** The object whose `certified` / `dataSource` this phase deleted. */
+const THERMAL_CONTEXT = /performanceVariants?|thermalProfile|thermalProfileRow|GlassCell|\bvariantId\b|\bvariant\b|glazingOption|wersWindowId|\buValue\b|\bshgc\b|\brows\b/;
+/** The DIFFERENT concept, which survives deliberately. */
+const PROVENANCE_CONTEXT = /deriveConfiguration|deriveDimensionRule|\bdimensionRule\b|\bconfiguration\b/;
+
+/** The lines of `source` that would re-populate the deleted field. Comments are
+ *  stripped first: a comment is where a supersession gets EXPLAINED. */
+export function findCertifiedWrites(source) {
+  const lines = stripSourceComments(source).split("\n");
+  const hits = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (DEAD_NAMES.test(line)) { hits.push(line.trim()); continue; }
+    if (!CERTIFIED_FIELD.test(line) && !DATA_SOURCE.test(line)) continue;
+    // Nearest enclosing concept wins. Unclassifiable fails CLOSED: an
+    // unattributable `certified` is a finding, never a pass.
+    let provenance = false;
+    for (let j = i; j >= 0 && i - j <= 30; j -= 1) {
+      if (THERMAL_CONTEXT.test(lines[j])) break;
+      if (PROVENANCE_CONTEXT.test(lines[j])) { provenance = true; break; }
+    }
+    if (!provenance) hits.push(line.trim());
+  }
+  return hits;
+}
+
+/** The second gate (design §4.1, rev 4). A strip launched from a checkout whose
+ *  importers still write the field would be undone by the next import run, so
+ *  it is refused at the point of harm rather than discovered later in a design
+ *  doc. Reads files only — no client, no network, same discipline as the export
+ *  gate above. */
+function requireNoRepopulation(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir).filter((f) => f.endsWith(".mjs"));
+  } catch {
+    fail(`The catalogue script directory ${dir} does not exist, so this run cannot prove\n`
+      + "its own checkout will not re-populate the fields it is about to delete.");
+  }
+  const offenders = [];
+  for (const file of entries) {
+    for (const line of findCertifiedWrites(readFileSync(join(dir, file), "utf8"))) {
+      offenders.push(`  ${file}: ${line}`);
+    }
+  }
+  if (offenders.length) {
+    fail(
+      `This checkout can still re-populate what this run deletes:\n${offenders.join("\n")}\n`
+      + "Strip from a checkout where the importers no longer write the field, or the\n"
+      + "next import puts it straight back (CERT-AC-12).",
+    );
+  }
+  return entries.length;
+}
+
 function fail(message) {
   console.error(`REFUSED: ${message}`);
   process.exit(1);
@@ -79,6 +160,12 @@ const ROW_FIELDS = ["certified"];
 async function main() {
   const exportPath = requireVerifiedExport();
   console.log(`Verified export: ${exportPath}`);
+  const scanned = requireNoRepopulation(resolve(flag("--catalogue-dir") ?? DEFAULT_CATALOGUE_DIR));
+  console.log(`Checkout will not re-populate: ${scanned} catalogue script(s) clean.`);
+  if (CHECK_ONLY) {
+    console.log("── CHECK ONLY ── both gates pass; nothing was read from Sanity.");
+    return;
+  }
   console.log(APPLY ? "── WRITING ──" : "── DRY RUN (pass --apply to write) ──");
 
   // Imported only once the gate has passed, so a refusal never constructs a
@@ -145,4 +232,8 @@ async function main() {
   console.log("no `certified` and no variant `dataSource` anywhere, nothing else changed (CERT-AC-7).");
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+// Only when RUN, never when imported: the test suite imports
+// `findCertifiedWrites` from here so the gate and CERT-AC-3 share one predicate.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => { console.error(error); process.exit(1); });
+}

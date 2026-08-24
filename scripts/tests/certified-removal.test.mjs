@@ -136,41 +136,92 @@ test("CERT-AC-5 an unconstrained line off a legacy product reads READY", () => {
 });
 
 // ── CERT-AC-3: no call site survives ────────────────────────────────────────
+const STRIP = join(projectRoot, "sanity/scripts/strip-certified.mjs");
+
 const stripComments = (src) => src
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
-async function tsFilesUnder(dir) {
+// The scan predicate is the STRIP SCRIPT'S OWN, imported rather than re-written
+// here (design §2.6 / §4.1 rev 4). The script refuses to write when its checkout
+// can still re-populate the field, and this test refuses to pass when the same
+// is true — one implementation, so the gate and the criterion cannot drift into
+// disagreeing about what a re-population looks like.
+const { findCertifiedWrites } = await import(pathToFileURL(STRIP).href);
+
+// Scope is now ALL live source, not three named paths: an importer that
+// re-stamps the field is as much a call site as a reader of it.
+const SCAN_ROOTS = ["worker", "src", "scripts", "sanity"];
+
+// Three entries, each with its reason. Do not widen this.
+const SCAN_ALLOWED = [
+  // CERT-AC-9's pre-change fixture, and this scan's own patterns.
+  /^scripts\/tests\//,
+  // Must name the fields it deletes, and owns the predicate above.
+  /^sanity\/scripts\/strip-certified\.mjs$/,
+  // `OpsThermalProposed.source` types an INSERT-only historical audit record: a
+  // reader of ladder-v1-era stored values (R18), which writes nothing.
+  /^src\/ops\/api\.ts$/,
+];
+
+async function liveSourceFiles() {
   const out = [];
-  for (const entry of await readdir(join(projectRoot, dir), { withFileTypes: true })) {
-    const rel = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...await tsFilesUnder(rel));
-    else if (entry.name.endsWith(".ts")) out.push(rel);
+  for (const root of SCAN_ROOTS) {
+    for (const rel of await tsFilesUnderAny(root, /\.(ts|tsx|mjs|js)$/)) {
+      if (!SCAN_ALLOWED.some((re) => re.test(rel))) out.push(rel);
+    }
   }
   return out;
 }
 
-// `dimensionRule.dataSource` is a DIFFERENT fact — the provenance of a size
-// rule, not of a thermal figure — and is out of scope for this phase. It is
-// allow-listed by exact line so a re-introduced VARIANT dataSource cannot hide
-// behind it.
-const DATASOURCE_ALLOWED = new Set([
-  "worker/lib/estimator/types.ts::dataSource?: string;",
-]);
+test("CERT-AC-3 the scan predicate itself still works (non-vacuity)", () => {
+  // A scan that silently stops matching reports success over an empty set. So
+  // the predicate is exercised against known-bad source before it is trusted to
+  // report a clean tree, and against the two live senses that must SURVIVE.
+  const caught = findCertifiedWrites([
+    "const isCertified = (v) => !!v;",
+    "const x = { energyCertified: true };",
+    "  wersWindowId: r.windowId, certified: true, certificationRef: r.windowId,",
+    "const variants = performanceVariants[]{",
+    '  variantId, uValue, shgc, dataSource, certified, published',
+    "};",
+  ].join("\n"));
+  assert.ok(caught.some((l) => /isCertified/.test(l)), "isCertified is caught");
+  assert.ok(caught.some((l) => /energyCertified/.test(l)), "energyCertified is caught");
+  assert.ok(caught.some((l) => /wersWindowId/.test(l)), "a certified field write is caught");
+  assert.ok(caught.some((l) => /variantId/.test(l)), "a variant dataSource projection is caught");
 
-test("CERT-AC-3 no `certified`, `isCertified`, `energyCertified` or variant `dataSource` remains", async () => {
-  const files = [
-    ...await tsFilesUnder("worker/lib/estimator"),
-    "sanity/schemaTypes.ts",
-    "src/data/recommendation.ts",
-  ];
+  // The two senses that are a DIFFERENT concept and must not be swept in:
+  // dimension-rule / configuration provenance.
+  assert.deepEqual(findCertifiedWrites([
+    "  dimensionRule: {",
+    "    ruleVersion: string | null;",
+    "    dataSource?: string;",
+    "  } | null;",
+  ].join("\n")), [], "dimension-rule provenance survives");
+  assert.deepEqual(findCertifiedWrites([
+    "export function deriveConfiguration(product) {",
+    "  return {",
+    '    operationTypes: ops,',
+    '    dataSource: "estimated",',
+    "  };",
+    "}",
+  ].join("\n")), [], "configuration provenance survives");
+});
+
+test("CERT-AC-3 no live source names the deleted field, anywhere", async () => {
+  const files = await liveSourceFiles();
+
+  // The walk must demonstrably have REACHED the two files this phase is about,
+  // or a clean result proves only that the walk went nowhere.
+  assert.ok(files.includes("worker/lib/estimator/catalogue.ts"), "the walk reached catalogue.ts");
+  assert.ok(files.includes("scripts/catalogue/import-wers.mjs"), "the walk reached import-wers.mjs");
+  assert.ok(files.length > 100, `the walk reached the tree, not a corner (${files.length} files)`);
+
   const offenders = [];
   for (const rel of files) {
-    const code = stripComments(await readFile(join(projectRoot, rel), "utf8"));
-    for (const line of code.split("\n")) {
-      const t = line.trim();
-      if (/\b(certified|isCertified|energyCertified)\b/.test(t)) offenders.push(`${rel}: ${t}`);
-      if (/\bdataSource\b/.test(t) && !DATASOURCE_ALLOWED.has(`${rel}::${t}`)) offenders.push(`${rel}: ${t}`);
+    for (const line of findCertifiedWrites(await readFile(join(projectRoot, rel), "utf8"))) {
+      offenders.push(`${rel}: ${line}`);
     }
   }
   assert.deepEqual(offenders, [], `certification vocabulary survives:\n${offenders.join("\n")}`);
@@ -256,19 +307,19 @@ test("CERT-AC-9 an outcome_json written under ladder-v1 still parses, dataSource
   assert.deepEqual(offenders, [], "no renderer references the removed field");
 });
 
-async function tsFilesUnderAny(dir) {
+async function tsFilesUnderAny(dir, match = /\.(ts|tsx)$/) {
   const out = [];
   for (const entry of await readdir(join(projectRoot, dir), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...await tsFilesUnderAny(rel));
-    else if (/\.(ts|tsx)$/.test(entry.name)) out.push(rel);
+    // Build output and vendored code are not source anyone can re-populate from.
+    if (/^(node_modules|dist|\.wrangler|\.vite)$/.test(entry.name)) continue;
+    if (entry.isDirectory()) out.push(...await tsFilesUnderAny(rel, match));
+    else if (match.test(entry.name)) out.push(rel);
   }
   return out;
 }
 
 // ── CERT-AC-8 / X-AC-12: the strip run refuses without a verified export ────
-const STRIP = join(projectRoot, "sanity/scripts/strip-certified.mjs");
-
 function runNode(args) {
   return new Promise((resolve) => {
     execFile(process.execPath, [STRIP, ...args], { cwd: projectRoot }, (error, stdout, stderr) => {
@@ -309,4 +360,78 @@ test("CERT-AC-8 the gate runs offline, before any Sanity client exists", async (
   // If the script had reached getCliClient it would have failed on a missing
   // CLI context / token instead of on our own gate.
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /sanity\/cli|getCliClient|token/i);
+});
+
+// ── CERT-AC-12: the strip cannot be undone by the next import ─────────────
+//
+// The depth-(c) strip exists so the field cannot come back. An importer that
+// re-stamps it automatically is worse than the person the owner was guarding
+// against, and after CERT-AC-6 it would be writing data the Studio can no
+// longer display or validate. Proven behaviourally where the script exposes a
+// pure builder, and by the widened source scan everywhere else.
+
+test("CERT-AC-12 the derive builder emits no `certified` and no variant `dataSource`", async () => {
+  const { derivePerformanceVariant, deriveEstimatorFields, deriveDimensionRule, deriveConfiguration } =
+    await import(pathToFileURL(join(projectRoot, "scripts/catalogue/derive-estimator-fields.mjs")).href);
+
+  const product = {
+    name: "AMJ80 Series Awning Window", family: "awning-window", category: "windows",
+    standardGlass: "Double glazed Low-E argon",
+    minWidth: 400, maxWidth: 1200, minHeight: 400, maxHeight: 2400,
+  };
+
+  const variant = derivePerformanceVariant(product);
+  assert.ok(typeof variant.uValue === "number", "it still derives the figures that matter");
+  assert.ok(!("certified" in variant), "no `certified` key");
+  assert.ok(!("dataSource" in variant), "no variant `dataSource` key");
+
+  const all = deriveEstimatorFields(product);
+  for (const v of all.performanceVariants ?? []) {
+    assert.ok(!("certified" in v) && !("dataSource" in v), "nor on the full patch payload");
+  }
+  assert.ok(!JSON.stringify(all.performanceVariants).includes("certified"));
+
+  // The DIFFERENT concept survives untouched: a size rule and a configuration
+  // still record where they came from.
+  assert.equal(deriveDimensionRule(product).dataSource, "estimated");
+  assert.equal(deriveConfiguration(product).dataSource, "estimated");
+});
+
+test("CERT-AC-12 the strip run refuses from a checkout that can re-populate", async () => {
+  const dir = join(runDir, "gate");
+  await mkdir(dir, { recursive: true });
+  const fresh = join(dir, "export.tar.gz");
+  await writeFile(fresh, "non-empty");
+
+  // A valid export is NOT enough: the second gate reads this checkout's own
+  // importers, so a strip launched from a stale branch is refused at the point
+  // of harm rather than silently undone by the next import.
+  const clean = await runNode(["--export", fresh, "--apply", "--check"]);
+  assert.equal(clean.code, 0, `the gate passes on this checkout:\n${clean.stdout}${clean.stderr}`);
+
+  const dirty = join(dir, "catalogue");
+  await mkdir(dirty, { recursive: true });
+  await writeFile(join(dirty, "rogue.mjs"), [
+    "export const row = {",
+    "  wersWindowId: id, certified: true, certificationRef: id, published: true,",
+    "};",
+  ].join("\n"));
+  const r = await runNode(["--export", fresh, "--apply", "--check", "--catalogue-dir", dirty]);
+  assert.notEqual(r.code, 0, "a checkout that still writes the field is refused");
+  assert.match(`${r.stdout}${r.stderr}`, /rogue\.mjs/, "and it names the file that would undo the strip");
+});
+
+test("CERT-AC-12 the re-population gate runs offline, before any Sanity client exists", async () => {
+  const dir = join(runDir, "gate-offline");
+  await mkdir(dir, { recursive: true });
+  const fresh = join(dir, "export.tar.gz");
+  await writeFile(fresh, "non-empty");
+  const dirty = join(dir, "catalogue");
+  await mkdir(dirty, { recursive: true });
+  await writeFile(join(dirty, "rogue.mjs"), "export const v = { dataSource: \"estimated\", certified: false };");
+
+  const r = await runNode(["--export", fresh, "--apply", "--catalogue-dir", dirty]);
+  assert.notEqual(r.code, 0);
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /sanity\/cli|getCliClient|token/i,
+    "the refusal costs no client and no network call");
 });
