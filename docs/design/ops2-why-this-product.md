@@ -6,6 +6,11 @@
 plus the mock-gate rulings R25–R27, the R28 scope cut, and **R29** (the Why detail is a
 node in the navigation tree — owner ruling relayed 2026-08-24; the architecture it forces
 is ruled in §4.8).
+**Revision 6 (Phase 2 conformance record)** reconciles this design with the Phase 2
+diff as verified: the viewer's units block and the `ViewerSubject` extensions (D10, the
+approved mock) are absorbed into §4.6, `Elevation.tsx`'s opt-in `unitDims` (owner, UX
+gate 5) and the two pure route/subject modules join the index, and §7's placement of the
+one-viewer/legend-export assertions is corrected. See §11 for the full record.
 **Revision 5 (conformance record)** reconciles this design with the Phase 1 diff as
 verified: CERT-AC-10's fence is amended for two JSON snapshot builders (§10.1), the
 orphaned `source` caption chain and the Panel markup repair are brought into the index
@@ -435,6 +440,10 @@ export function DrawingViewer(props: {
 }): JSX.Element;
 ```
 
+(As shipped the subject carries more than this sketch — `title` and `backLabel` per the
+owner's D10 ruling at Phase 1 sign-off, `units[]` and `basis` per the approved mock — and
+is built by a pure module, `src/ops2/projects/drawingSubject.ts`. Rev 6, §11.1.)
+
 - Implementation: a full-screen `IonModal` (no breakpoints, no side animation — this is
   not `SidePanel`; a drawing wants the whole viewport). `Elevation` at the largest size
   the viewport allows. **No `ElevationLegend`, no symbol key, no explanatory notation of
@@ -455,9 +464,12 @@ export function DrawingViewer(props: {
   returns to the opener (IonModal focus trap + explicit return via the trigger ref)
   (VIEW-AC-7).
 - **`src/ops2/projects/Plate.tsx:60-106`**: the SidePanel enlargement block is deleted
-  and replaced by `DrawingViewer` (VIEW-AC-6). The panel's unit list, its
-  proportional-arrangement sentence and its `ElevationLegend` render die with it and are
-  **not** recreated in the viewer (R25/VIEW-AC-10 ban the notation class). This is
+  and replaced by `DrawingViewer` (VIEW-AC-6). The panel's proportional-arrangement
+  sentence and its `ElevationLegend` render die with it and are **not** recreated in the
+  viewer (R25/VIEW-AC-10 ban the notation class). **The unit list IS recreated (rev 6)**
+  — the mock gate put a units block (composite parent only) and the authority sentence on
+  the approved surface (UX design §2.2 and gate 1): a list of what the assembly is made
+  of is not notation, and rev 2's grouping of it under the ban was overbroad. This is
   ops2's only `ElevationLegend` render; the export itself survives untouched — **not**
   for the customer site, which never used it (that premise was executed and disproved,
   spec revision 14), but because this phase removes a render, not an API. It now has no
@@ -873,8 +885,8 @@ basis of a customer's project — in scope and intended (R4).
 | `scripts/tests/why-capture-api.test.mjs` | **new** | `test:heavy` list + `test:why` | SNAP-AC-1, 4, 5, 6, 8, 9, 11, 13, 14, 15; X-AC-8, 9, 10 (real attempts, denial recorded) |
 | `scripts/tests/why-rationale-api.test.mjs` | **new** | `test:heavy` list + `test:why` | DTO kinds incl. WHY-AC-10; WHY-AC-12/13 cap; WHY-AC-25 (requirement from run only); WHY-AC-29 fixture (§12.1: origin-reading implementations fail); WHY-AC-30; X-AC-1..7 raw-body |
 | `scripts/tests/ops2-why.test.mjs` | **new** | `test:pure` + `test:ops2` | whyCopy: WHY-AC-2/3/5/6/17 sentence facts; WHY-AC-21 vocabulary ban over the string table |
-| `scripts/tests/web/ops2-drawing-viewer.spec.ts` | **new** | Playwright dir glob (`test:web`) | VIEW-AC-1..10 (VIEW-AC-2 as amended, §2.5: push-on-open, one pop for control/Escape/system back, no remount, deep link, replace-normalisation) and 12; focus return, one-viewer check via DOM, no-notation class assertion, legend export untouched |
-| `scripts/tests/ops2-navigation.test.mjs` | extended (Phase 2, then 3b) | existing `test:ops2` / `test:pure` | the line route's non-exact shape and its two children (`drawing…` then `why`); `NESTS_BELOW` unchanged (`ops2-frame.test.mjs` itself needs no edit) |
+| `scripts/tests/web/ops2-drawing-viewer.spec.ts` | **new** | Playwright dir glob (`test:web`) | VIEW-AC-1..10 (VIEW-AC-2 as amended, §2.5: push-on-open, one pop for control/Escape/system back, no remount, deep link, replace-normalisation); focus return; no-notation class assertion. (Rev 6: VIEW-AC-5/6/12 moved to a source-level test in `ops2-frame.test.mjs` — a browser proves a viewer opens, not that a second was never built; §11.4) |
+| `scripts/tests/ops2-navigation.test.mjs` | extended (Phase 2, then 3b) | existing `test:ops2` / `test:pure` | the line route's non-exact shape and its two children (`drawing…` then `why`); `NESTS_BELOW` unchanged. (Rev 6: `ops2-frame.test.mjs`'s existing tests are indeed unedited, but the file gained the relocated VIEW-AC-5/6/12 source scan — §11.4) |
 | `scripts/tests/web/ops2-line-why.spec.ts` | **new** | Playwright dir glob | WHY-AC-1/4/7/8/9/11 panel states; the routed detail (R29: open pushes `/why`, browser back closes, deep link lands, back control pops-or-replaces); WHY-AC-7 phone-full-screen + desk slide-out; WHY-AC-7b filter untouched; WHY-AC-20 network trace GET-only; WHY-AC-22/28 both-shown rendering; WHY-AC-39/40/41 negatives (no action controls anywhere; no `/edit` route in the enumerated route table) |
 | `scripts/db/seed.sql` | extended | web + heavy harnesses | the fixtures above; staff allocations `u_staff4`/`u_staff5` |
 | `scripts/tests/api.test.mjs` | untouched | — | its existing DTO key-set assertions ARE the CERT-AC-11 / record-unchanged guard; if it stays green with zero edits, the blast radius claim holds |
@@ -988,3 +1000,121 @@ the export gate as "X-AC-12"; spec rev 13 numbers it **X-AC-11** (spec :1214; X-
 is the blast radius). Comment-only, but a later tester walking abuse cases by number
 will be misled.
 
+---
+
+## 11. Phase 2 conformance record (architect, 2026-08-25 — final diff vs this design)
+
+Verdict: **CONFORMS, with seven reconciled divergences — every one absorbed by this
+design — and no implementation findings beyond committing two working-tree edits
+already made.** The diff (`b4419105`…`de2bb7c1`, 23 files) is client-only exactly as
+designed: no `migrations/`, no `worker/**`, no `src/data/**` change of any kind, and
+no new endpoint — §5's security posture is untouched. The one security-relevant
+surface Phase 2 adds, a cold deep link to a drawing URL, resolves its line through the
+record fetch the page already makes, so a cross-project line and a nonexistent one
+stay one code path saying one sentence — executed for real in the browser suite
+("a drawing URL for a line this project does not have refuses exactly as a missing
+one does").
+
+**Every structure §4.6/§4.8 named exists at the path named.**
+`src/ops2/chrome/DrawingViewer.tsx` sits in `chrome/` beside `SidePanel` and is
+presentation-only — `subject` + `onClose`, no router import, the back control leading
+and naming the line (`backLabel`), the modal's accessible name carrying the subject.
+The line Route at `src/ops2/Ops2App.tsx` dropped `exact` and **no second Route exists
+for `/drawing`** — both facts asserted against the route table by the Phase 2
+extension of `scripts/tests/ops2-navigation.test.mjs`, exactly the artifact §7 named.
+`LinePage.tsx` hosts the grammar: push to open, one guarded pop for the back control,
+Escape, backdrop and hardware back alike (the double-fire guard reads the live
+pathname), `replace` for cold links and every normalisation. `Plate.tsx`'s SidePanel
+enlargement is deleted outright — `SidePanel` and `useState` banished from the file,
+asserted at source level — and the legend render died with it while the export
+survives at `src/components/quote-project/Elevation.tsx:583` (VIEW-AC-12, premise as
+corrected in spec rev 14). `LineReview.tsx`'s unit rows are whole-row openers;
+`lines.tsx` is untouched (VIEW-AC-9); P1-AC-27 is marked superseded in
+`docs/specs/ops2-record-correction.md:343` naming this feature and R25 (VIEW-AC-11);
+`line.css` carries the viewer block on FrameFlow tokens. **`FilterSheet.tsx` and
+`SidePanel.tsx` appear nowhere in the diff** — the R26/R27/R29 `SidePanel` change is
+correctly still Phase 3b's (§6, Phase 2 step 4), and WHY-AC-7b's proof-by-absence
+already holds.
+
+**§7's Phase 2 artifacts, checked on disk rather than in the diff:**
+`scripts/tests/web/ops2-drawing-viewer.spec.ts` exists (507 lines; VIEW-AC-1, 1a, 2,
+2a–2d, 3, 4, 7, 8, 9, 10 executed in a browser, plus the refusal-parity case above,
+signing in as its own `u_staff5`), and the `ops2-navigation.test.mjs` extension holds
+the grammar pure-side: legal addresses asserted **untouched** (`normalise: false`),
+normalisations each with a named destination, the opener/parser round trip, and
+`/why` refused until Phase 3b serves it. `NESTS_BELOW` is unchanged and the frame
+suite's pre-existing tests are unedited. Nothing §7 named for Phase 2 is missing.
+
+### 11.1–11.7 Reconciled divergences (each absorbed into this design)
+
+1. **The viewer carries a units block, and `ViewerSubject` grew.** §4.6 (rev 2) said
+   the panel's unit list is "not recreated in the viewer"; the approved mock put a
+   units block (composite parent only) and the authority sentence on the surface (UX
+   design §2.2, gate 1), and the owner's D10 ruling gave the subject `title` (a unit's
+   code; the line's own drawing is `Drawing`) and the back control `backLabel`. The
+   R25 ban is on the **notation class** — the proportionality sentence stayed dead; a
+   list of what the assembly is made of is not notation. §4.6 amended (rev 6).
+2. **`src/components/quote-project/Elevation.tsx` gained opt-in `unitDims`** — a file
+   this design's Phase 2 index never named. Owner, at the mock gate (UX gate 5):
+   *"for splits, showing dimensions of the units, as well as overall dimensions,
+   would be nice."* A second leader row ticked at the real mullions, the overall
+   moved outward; **opt-in and inert** off-composite and wherever leaders are not
+   drawn, so every other caller — the customer site included — renders byte-identical
+   drawings, held by `scripts/tests/ops2-record.test.mjs` ("unit leaders are opt-in,
+   so the customer site's drawings are untouched").
+3. **The grammar and the viewer's copy are pure modules, not `LinePage` internals:**
+   `src/ops2/projects/lineRoute.ts` (parse/build/normalise — one suffix, siblings by
+   construction) and `src/ops2/projects/drawingSubject.ts` (every sentence on the
+   surface, including VIEW-AC-1a's titles and VIEW-AC-8's stand-in caption). The seam
+   this design ruled — navigation in the host, viewer presentation-only — is exactly
+   preserved; the extraction is a deepening that let node suites hold the grammar
+   (`ops2-navigation.test.mjs`) and the captions (`ops2-record.test.mjs`) without a
+   browser. Index updated.
+4. **VIEW-AC-5/6/12 relocated from the browser spec to a source-level test** — a new
+   test in `scripts/tests/ops2-frame.test.mjs` ("ops2 has exactly ONE drawing
+   viewer…"): exactly one `DrawingViewer.tsx`, in `chrome/`; `Plate.tsx` owns neither
+   panel nor open-state; no ops2 file imports `ElevationLegend` (comments stripped
+   first); the export survives with **no consumer count asserted in either
+   direction**, per rev 14. §7's placement (a DOM check in the Playwright spec, frame
+   suite "needs no edit") was wrong about what the facts are: they are source facts —
+   a browser proves a viewer opens, not that a second was never built. §7 rows
+   amended (rev 6).
+5. **A second `LineReview` host this index missed: the record page's desk canvas.**
+   `src/ops2/projects/ProjectRecordPage.tsx` renders the same `LineReview` body at
+   desk width, so its plate and unit rows are enlargeable there too — and VIEW-AC-5
+   ("every enlargeable drawing in ops2 opens it") made wiring them mandatory. The
+   wiring is the only one consistent with §4.8: the canvas **navigates** to the
+   line's own drawing address (one push; back returns to the record) rather than
+   mounting a second, unrouted viewer whose back control could not truly pop.
+6. **VIEW-AC-2a's "no record re-fetch" needed a mechanism this design assumed was
+   free.** §4.8 claimed the one-Route mechanics gave "no second record fetch" by
+   construction; Ionic in fact fires `ionViewWillEnter` on a same-page URL change, so
+   the non-exact route alone re-read the record on every enlargement.
+   `src/ops2/projects/useProjectRecord.ts` now arms its re-enter refresh on an actual
+   `ionViewDidLeave` — the reviewer-returns-from-the-legacy-console case the refresh
+   exists for still refreshes; a page that never left has not re-entered. The
+   property this design named was right; it cost one guard, not zero.
+7. **Sequencing and riders.** The `u_staff5` seed allocation shipped with Phase 2
+   (§6 listed it under Phase 3b step 4, but the suite that signs in as it is Phase
+   2's; `u_staff4` stays reserved for `ops2-line-why.spec.ts`, recorded in the seed
+   comment — and the new staff row is an estimator, not a third admin, so api-edge's
+   last-admin guard keeps its two). Two style riders consistent with §4.6's tokens
+   rule: `.ds-type-heading-md` finally defined in `src/ops2/styles/recipes/type.css`
+   (both `OpsPage` and the viewer had been asking for a class defined nowhere), and
+   the `--paper` leader-halo scope in `src/ops2/styles/record.css` for a drawing on
+   the page ground rather than a card.
+
+**Process note (routes to the developer, commit only):** two working-tree edits are
+uncommitted at review time — the `src/ops2/projects/Plate.tsx` header comment and the
+`scripts/tests/ops2-frame.test.mjs` note, both replacing the disproved "the customer
+site still uses it" premise with rev 14's "no caller" ground. Their content is
+verified correct; they are part of this phase's premise correction and must land in
+the final diff rather than evaporate with the working tree.
+
+**Register discharge performed with this record:** spec §13's §7.4 (the `CONTEXT.md`
+corrections) is **DISCHARGED** — all four verified live in `CONTEXT.md` on 2026-08-25:
+Staff works for OpenFrame, not AMJ (Actors → Staff); Manufacturer partner defined
+(Actors); Estimator (persona) defined, distinct from the subsystem and not an RBAC
+role (Actors); Human review gate defined as a stage (Language). §3's two further
+glossary terms (Captured figures, Selection attribution) are also in place ahead of
+Phase 3.

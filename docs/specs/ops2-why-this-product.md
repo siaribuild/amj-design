@@ -1392,7 +1392,7 @@ the assumption.
 | §7.1 | `withheldIncomplete[]` is **not** shown, following R9 | **OPEN** — Phase 3b, not yet built |
 | §7.2 | the `CandidateOutcome.dataSource` removal is the architect's to rule | **DISCHARGED** — ruled *remove*; ADR 0011; paid for with a `SELECTION_VERSION` bump; old `outcome_json` still parses (CERT-AC-9) |
 | §7.3 | "3–5 next best" implemented as **4** runners-up, five rows total | **OPEN** — Phase 3b, not yet built |
-| §7.4 | the `CONTEXT.md` corrections are the architect's to apply — Staff works for OpenFrame (a direct owner ruling), define "Manufacturer" (an inference, vetoable), plus the **Estimator** persona and the **human review gate** | **OPEN — owed, not phase-bound.** Confirm applied before Phase 3: every later stage reads its vocabulary from that file |
+| §7.4 | the `CONTEXT.md` corrections are the architect's to apply — Staff works for OpenFrame (a direct owner ruling), define "Manufacturer" (an inference, vetoable), plus the **Estimator** persona and the **human review gate** | **DISCHARGED — architect, verified applied 2026-08-25 (Phase 2 conformance review, design §11).** All four are live in `CONTEXT.md`: Staff works for OpenFrame, not AMJ (Actors → Staff); **Manufacturer partner** defined as an actor, `hasAssignedRole` the one predicate (Actors); **Estimator (persona)** defined, distinct from the subsystem and explicitly not an RBAC role (Actors); **Human review gate** defined as a stage between submission and issue (Language). The design §3 glossary additions (Captured figures, Selection attribution) are also in place ahead of Phase 3 |
 
 ### Registered by this spec
 
@@ -1423,7 +1423,8 @@ register now carries a state on every entry so the next reader can tell a live a
 from a settled one at a glance.
 
 **Two entries are OPEN and already shipped** (§13.1 VIEW-AC-9, §13.13 VIEW-AC-12) — both
-still vetoable, but a veto now costs rework rather than an edit. **One is owed and not
-phase-bound** (§7.4, the `CONTEXT.md` corrections) and should be confirmed applied before
-Phase 3, since every later stage reads its vocabulary from that file. The remaining OPEN
-entries all belong to Phase 3 and will be live at that phase's gate.
+still vetoable, but a veto now costs rework rather than an edit. The formerly-owed §7.4
+(`CONTEXT.md` corrections) was **discharged 2026-08-25** — verified applied at the Phase 2
+conformance review (design §11), ahead of the Phase 3 stages that read their vocabulary
+from that file. The remaining OPEN entries all belong to Phase 3 and will be live at that
+phase's gate.
