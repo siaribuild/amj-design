@@ -4,7 +4,8 @@
 // This suite owns the criteria that only exist once the ladder is WIRED: the
 // hard constraints refusing a substitution and saying so in structured detail
 // (AC-7, AC-11), energy behaving as an objective (AC-9, AC-10, AC-12), the
-// emitted contract (AC-22), certified-vs-estimated moving no order (AC-49), and
+// emitted contract (AC-22), a WERS reference moving neither order nor status
+// (AC-49, now ADR 0011), and
 // the run statuses that have to tell a catalogue gap from a measuring gap
 // (E3, E7). The ladder's own arithmetic is proven fixture-only in
 // recommendation-ladder.test.mjs.
@@ -95,13 +96,13 @@ test("AC-22 every candidate carries a structured verdict, and the run carries on
   const r = await selectForOpening(opening({ requirements: { maxUValue: 2.0 } }), repo, priceFn);
 
   // Run level: the tolerance is stamped so a past run is reproducible (AC-4).
-  assert.equal(r.selection.version, "ladder-v1");
+  assert.equal(r.selection.version, "ladder-v2");
   assert.equal(r.selection.tolerance, 0.05);
   assert.equal(r.selection.competingTier, "meets");
   assert.equal(r.selection.requirement.maxUValue, 2.0);
   assert.equal(r.selection.requirement.absent, false);
   assert.equal(r.selection.selectedProductSlug, r.selected.candidate.slug);
-  assert.equal(r.selectionVersion, "ladder-v1");
+  assert.equal(r.selectionVersion, "ladder-v2");
 
   // Candidate level: a verdict on every row, ranked, with the pick at rank 1 and
   // a zero delta against itself (A17's sign convention).
@@ -257,26 +258,26 @@ test("AC-12 a near-miss survives into the ranked set, priced and selectable", as
   }
 });
 
-// ── AC-49: the certified/estimated defect, killed ───────────────────────────
+// ── AC-49 / ADR 0011: certification moves nothing, because it is gone ──────
 
-test("AC-49 inverting every data source changes the rank order not at all", async () => {
-  const invert = (v) => ({
-    ...v,
-    certified: !v.certified,
-    dataSource: v.dataSource === "certified" ? "estimated" : "certified",
-    certificationRef: v.dataSource === "certified" ? null : "WERS-INV",
-  });
-  const inverted = {
+test("AC-49 stripping every WERS reference changes neither the rank order nor the status", async () => {
+  // The original AC-49 inverted `certified`/`dataSource` and proved the ORDER
+  // held while accepting that the STATUS moved — that moving status was the
+  // defect the owner killed (13 of 32 products downgraded on a dead flag).
+  // ADR 0011 deleted the flag, so the assertion gets stronger: nothing moves at
+  // all, and `certificationRef` is the surviving fact that must read on nothing.
+  const stripped = {
     async queryCandidates(_family, operation) {
       return (CATALOGUE[operation] ?? []).map((c) => ({
-        ...c, performanceVariants: c.performanceVariants.map(invert),
+        ...c,
+        performanceVariants: c.performanceVariants.map((v) => ({ ...v, certificationRef: null })),
       }));
     },
     catalogueVersion() { return "cat-v1"; },
   };
   const op = opening({ requirements: { maxUValue: 2.0 } });
   const before = await selectForOpening(op, repo, priceFn);
-  const after = await selectForOpening(op, inverted, priceFn);
+  const after = await selectForOpening(op, stripped, priceFn);
 
   const order = (r) => r.evaluated
     .filter((e) => e.candidateOutcome.rank != null)
@@ -285,9 +286,8 @@ test("AC-49 inverting every data source changes the rank order not at all", asyn
   assert.deepEqual(order(after), order(before), "the complete rank order is identical");
   assert.equal(after.selected.candidate.slug, before.selected.candidate.slug);
   assert.equal(after.selected.selectedVariant.variantId, before.selected.selectedVariant.variantId);
-  // Line STATUS may still differ, and that is intended: a certified variant can
-  // back a compliance claim and an estimated one cannot.
-  assert.notEqual(after.status, before.status);
+  assert.equal(after.status, before.status, "and the LINE STATUS is identical too — the defect ADR 0011 removed");
+  assert.equal(after.selected.candidateOutcome.tier, before.selected.candidateOutcome.tier);
 });
 
 // ── Edge cases the run status has to tell apart ─────────────────────────────

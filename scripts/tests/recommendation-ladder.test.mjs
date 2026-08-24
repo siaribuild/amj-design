@@ -428,7 +428,7 @@ test("AC-49 the comparator cannot see certified vs estimated at any position", (
 
 test("AC-4 REQUIREMENT_TOLERANCE is 0.05 and the model names itself", () => {
   assert.equal(REQUIREMENT_TOLERANCE, 0.05);
-  assert.equal(SELECTION_VERSION, "ladder-v1");
+  assert.equal(SELECTION_VERSION, "ladder-v2");
   // It is a parameter, not a hard-coded edge: a run can be replayed at the
   // tolerance it was decided under.
   const strict = runLadder([

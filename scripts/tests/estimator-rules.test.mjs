@@ -64,7 +64,6 @@ test("operation + dimensions: in-range awning is READY, out-of-range is WARNED (
   const tooWide = checkHardRules({ family: "window", operationType: "awning", widthMm: 1400, heightMm: 1200 }, cand());
   assert.equal(tooWide.passed, true, "out-of-range stays selectable so it can be priced");
   assert.equal(tooWide.status, "commercial_only_estimate", "…but never 'ready'");
-  assert.equal(tooWide.energyCertified, false);
   const dim = tooWide.filters.find((f) => f.filter === "dimensions");
   assert.equal(dim.severity, "warning");
   assert.match(dim.reason, /composite\/custom/i);
@@ -153,14 +152,19 @@ test("wrong operation is rejected", () => {
   assert.ok(r.filters.find((f) => f.filter === "operation" && f.severity === "reject"));
 });
 
-test("SAFETY: an energy requirement met only by ESTIMATED data ⇒ commercial_only_estimate, not certified", () => {
+test("ADR 0011: a requirement met by the product's own figures is READY, with no second opinion", () => {
+  // WAS: "an energy requirement met only by ESTIMATED data ⇒ commercial_only_estimate".
+  // The `certified` flag that produced that downgrade is deleted (ADR 0011). A
+  // product's thermal figures are its single source: Uw 3.9 against a 4.5 cap
+  // MEETS, and the line says so. The variant carries no certification reference
+  // at all here, which is precisely the case that used to be punished.
   const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 4.5 } }, cand());
-  assert.equal(r.passed, true, "estimated data can still produce an estimate");
-  assert.equal(r.status, "commercial_only_estimate", "but never a certified pass");
-  assert.equal(r.energyCertified, false);
+  assert.equal(r.passed, true);
+  assert.equal(r.status, "ready");
+  assert.equal(cand().performanceVariants[0].certificationRef, null, "and it is ready WITHOUT a reference");
 });
 
-test("D4 energy is an OBJECTIVE: the rules engine emits no energy filter at all", () => {
+test("D4 energy is an OBJECTIVE: the rules engine emits no energy filter and no energy status", () => {
   // The band a product cannot meet is no longer a rules verdict of any severity
   // — not reject, not warning. Every published variant that satisfies the
   // schedule's glazing instruction is a candidate configuration, and the LADDER
@@ -169,11 +173,13 @@ test("D4 energy is an OBJECTIVE: the rules engine emits no energy filter at all"
   const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 2.0 } }, cand());
   assert.equal(r.passed, true, "thermal never eliminates a product");
   assert.equal(r.filters.find((f) => f.filter === "energy"), undefined, "no energy filter is emitted");
-  assert.equal(r.energyCertified, false);
   assert.deepEqual(r.eligibleVariantIds, ["std"], "every published variant stays eligible");
-  // The line is still an indicative estimate, because nothing certified backs
-  // the requirement — that downgrade is line STATUS and it survives (AC-49).
-  assert.equal(r.status, "commercial_only_estimate");
+  // Nor an energy STATUS. The rules engine now has no opinion about thermal at
+  // any severity: this variant misses the 2.0 cap badly and the verdict is still
+  // 'ready', because the downgrade for missing a band belongs to the LADDER
+  // (tier != meets ⇒ commercial_only_estimate) and to it alone. Proven
+  // end-to-end below and in certified-removal.test.mjs (CERT-AC-5).
+  assert.equal(r.status, "ready");
 });
 
 test("energy requirement with NO performance data ⇒ catalogue_data_incomplete (never a guess)", () => {
@@ -183,30 +189,29 @@ test("energy requirement with NO performance data ⇒ catalogue_data_incomplete 
   assert.equal(r.status, "catalogue_data_incomplete");
 });
 
-test("energy met by CERTIFIED data ⇒ ready + energyCertified", () => {
-  const certified = toCandidate({ ...awning, performanceVariants: [{
+test("ADR 0011: a WERS reference changes nothing — it is provenance, not a gate", () => {
+  const referenced = toCandidate({ ...awning, performanceVariants: [{
     ...awning.performanceVariants[0],
-    certified: true,
-    dataSource: "certified",
     certificationRef: "WERS-TEST-1",
   }] });
-  const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 4.5 } }, certified);
+  const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 4.5 } }, referenced);
   assert.equal(r.status, "ready");
-  assert.equal(r.energyCertified, true);
+  // Same verdict as the unreferenced variant above: the reference is carried
+  // through to the candidate, and reads on nothing.
+  assert.equal(referenced.performanceVariants[0].certificationRef, "WERS-TEST-1");
 });
 
-test("explicit report limits are exact: a miss is a warned commercial estimate, never a silent 'ready' match", () => {
-  // The intent survives the non-blocking move: a near-miss is NOT quietly treated
-  // as a certified match. It never reads 'ready'/certified — it warns and stays
-  // commercial_only_estimate. No hidden tolerance promotes a miss to a pass.
-  const r = checkHardRules({
-    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
-    requirements: { maxUValue: 3.85 },
-  }, cand());
-  assert.equal(r.passed, true, "non-blocking: product assigned");
-  assert.notEqual(r.status, "ready", "a miss is never a certified/ready match");
+test("explicit report limits are exact: a miss is an indicative estimate, never a silent 'ready' match", async () => {
+  // The intent survives both the non-blocking move AND the certification removal
+  // — but it now lives one layer up. checkHardRules has no thermal opinion, so
+  // the miss has to be caught by the ladder, and the LINE is what must never
+  // read 'ready'. No hidden tolerance promotes a miss to a pass.
+  const miss = { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 3.85 } };
+  const r = await selectForOpening(miss, fixtureCatalogueRepository([awning]), async () => ({ ok: true, total: 500, unit: 500 }));
+  assert.ok(r.selected, "non-blocking: product assigned");
+  assert.equal(r.selected.candidateOutcome.tier, "within_tolerance", "3.9 against a 3.85 cap is inside the 5% tolerance");
+  assert.notEqual(r.status, "ready", "a miss is never a silent ready match");
   assert.equal(r.status, "commercial_only_estimate");
-  assert.equal(r.energyCertified, false);
 });
 
 test("Uw and SHGC not jointly met by one variant ⇒ warns + assigns closest (never eliminated)", () => {
@@ -225,7 +230,7 @@ test("Uw and SHGC not jointly met by one variant ⇒ warns + assigns closest (ne
     requirements: { maxUValue: 3, maxShgc: 0.5 },
   }, split);
   assert.equal(r.passed, true);
-  assert.equal(r.status, "commercial_only_estimate");
+  assert.equal(r.status, "ready", "the rules engine no longer downgrades for thermal at all (ADR 0011)");
   assert.ok(r.eligibleVariantIds.length > 0, "closest glass stays eligible, not empty");
 });
 
@@ -269,7 +274,6 @@ test("human-approved thermal precedent is a conservative eligibility floor, not 
   // is a real requirement, and the ladder judges every candidate against it. It
   // no longer culls the eligible set, because a near-miss must stay selectable.
   assert.deepEqual(learned.eligibleVariantIds, ["standard", "improved"]);
-  assert.equal(learned.energyCertified, false);
   assert.equal(effectiveThermalRequirements({
     advisoryRequirements: { maxUValue: 2.8 },
     thermalContext: { requirementBasis: "human_override" },
@@ -424,9 +428,9 @@ test("M2: toCandidate reads the shared thermal profile, preferring it over legac
     thermalProfile: {
       frameTechnology: "thermally_broken",
       rows: [
-        { glazingOptionSlug: "dg-lowe", glazingClass: "double_lowe", uValue: 3.9, shgc: 0.24, certified: true, certificationRef: "WERS-1", published: true },
-        { glazingOptionSlug: "dg-clear", glazingClass: "double_clear", uValue: 4.6, shgc: 0.47, certified: true, certificationRef: "WERS-2", published: true },
-        { glazingOptionSlug: "junk", glazingClass: "not_a_real_class", uValue: 4, shgc: 0.3, certified: true, certificationRef: "W", published: true },
+        { glazingOptionSlug: "dg-lowe", glazingClass: "double_lowe", uValue: 3.9, shgc: 0.24, certificationRef: "WERS-1", published: true },
+        { glazingOptionSlug: "dg-clear", glazingClass: "double_clear", uValue: 4.6, shgc: 0.47, certificationRef: "WERS-2", published: true },
+        { glazingOptionSlug: "junk", glazingClass: "not_a_real_class", uValue: 4, shgc: 0.3, certificationRef: "W", published: true },
       ],
     },
   });
@@ -434,8 +438,8 @@ test("M2: toCandidate reads the shared thermal profile, preferring it over legac
   // unknown-class row is dropped (no invisible variant).
   assert.deepEqual(c.performanceVariants.map((v) => v.variantId).sort(), ["dg-clear", "dg-lowe"]);
   assert.ok(c.performanceVariants.every((v) => v.frameTechnology === "thermally_broken"));
-  assert.ok(c.performanceVariants.every((v) => v.certified && v.dataSource === "certified"));
-  assert.equal(catalogueCandidateReadiness(c).ready, true, "a certified multi-glazing profile is ready");
+  assert.deepEqual(c.performanceVariants.map((v) => v.certificationRef).sort(), ["WERS-1", "WERS-2"], "the WERS reference is carried through as provenance");
+  assert.equal(catalogueCandidateReadiness(c).ready, true, "a multi-glazing profile is ready");
 });
 
 test("low-E survives EITHER spelling — `double_low_e` (WERS import) and `double_lowe` (seed) are one class", () => {

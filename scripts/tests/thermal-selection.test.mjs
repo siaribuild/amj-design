@@ -30,6 +30,9 @@ await build({
       export { deviationOf } from ${p("worker/lib/estimator/ladder.ts")};
       export { computeThermalBand, zoneCapValues, ZONE_U_CAP } from ${p("worker/lib/estimator/thermal/computedBand.ts")};
       export { COMPASS_POINTS, DOCUMENT_SOURCES, readSourced, THERMAL_INPUT_CONTRACT_VERSION } from ${p("worker/lib/estimator/thermal/contract.ts")};
+      export { toCandidate, fixtureCatalogueRepository } from ${p("worker/lib/estimator/catalogue.ts")};
+      export { checkHardRules } from ${p("worker/lib/estimator/rules.ts")};
+      export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
@@ -38,10 +41,11 @@ await build({
 const {
   coerceCoherent, deviationOf, computeThermalBand, zoneCapValues, ZONE_U_CAP,
   COMPASS_POINTS, DOCUMENT_SOURCES, readSourced, THERMAL_INPUT_CONTRACT_VERSION,
+  toCandidate, fixtureCatalogueRepository, checkHardRules, selectForOpening,
 } = await import(pathToFileURL(outfile).href);
 
 const band = (maxUValue, minShgc, maxShgc, shgcTarget = null) => ({ maxUValue, minShgc, maxShgc, shgcTarget });
-const cell = (slug, uValue, shgc, over = {}) => ({ glassOptionSlug: slug, variantId: slug, uValue, shgc, certified: false, pricingOptionSlugs: [], ...over });
+const cell = (slug, uValue, shgc, over = {}) => ({ glassOptionSlug: slug, variantId: slug, uValue, shgc, pricingOptionSlugs: [], ...over });
 
 // ── coherence guard (WS2) — the anti-regression ──────────────────────────────
 test("coerceCoherent: an impossible SHGC band (min>max) drops the SHGC pair, keeps Uw + target", () => {
@@ -300,4 +304,89 @@ test("TB-5: exactly one module computes a thermal band, and the mapping and zone
   assert.deepEqual(mappings, [home]);
   assert.deepEqual(zoneTables, [home]);
   assert.deepEqual(stragglers, [], "the superseded flat-constant band left no second home behind");
+});
+
+
+// ── CERT-AC-5: what a thermally-constrained line is downgraded FOR ─────────
+//
+// Certification was a THIRD opinion about thermal, sitting beside the band and
+// the rules engine and disagreeing with both: it stamped
+// commercial_only_estimate on a line whose figures met the band outright. ADR
+// 0011 deleted it. These cases pin the causes that remain, so a future change
+// that quietly reintroduces a thermal status source has to break one of them.
+
+const thermalProduct = (slug, variants) => ({
+  sanityProductId: `id-${slug}`, catalogueRevision: "rev1", schemaVersion: 1,
+  name: slug, slug, family: "windows", series: "awning-window", seriesOperation: "awning",
+  configuration: { operationTypes: ["awning"] },
+  dimensionRule: {
+    minWidthMm: 400, maxWidthMm: 1300, minHeightMm: 400, maxHeightMm: 2400,
+    maxAreaM2: null, maxAspectRatio: null, ruleVersion: "v1",
+  },
+  performanceVariants: variants, optionGroups: [], pricingRef: `price.${slug}`,
+});
+const thermalVariant = (id, uValue, shgc, over = {}) => ({
+  variantId: id, glazingOptionSlug: id, glazingClass: "double_lowe",
+  uValue, shgc, frameType: "aluminium", frameTechnology: "conventional",
+  certificationRef: null, pricingOptionSlugs: [], published: true, ...over,
+});
+const flatPrice = async () => ({ ok: true, total: 500, unit: 500 });
+const thermalOpening = (over = {}) => ({
+  family: "windows", operationType: "awning", widthMm: 1000, heightMm: 1200, ...over,
+});
+
+test("CERT-AC-5: meeting the band is READY, and no certification opinion overrides it", async () => {
+  const repo = fixtureCatalogueRepository([thermalProduct("p-meets", [thermalVariant("dg-lowe", 1.6, 0.4)])]);
+  const r = await selectForOpening(thermalOpening({ requirements: { maxUValue: 2.0 } }), repo, flatPrice);
+  assert.equal(r.selected.candidateOutcome.tier, "meets");
+  assert.equal(r.status, "ready", "the figures met the band, so the line says so");
+});
+
+test("CERT-AC-5: missing the band still downgrades — the tier is the cause", async () => {
+  // Only ONE product, so the ladder has no better deviation to measure against
+  // and everything sits inside its own tolerance: still not `meets`, so the line
+  // is still an estimate. Tolerance is relative to the best candidate, which is
+  // why the tier here reads within_tolerance rather than misses.
+  const near = fixtureCatalogueRepository([thermalProduct("p-near", [thermalVariant("dg-clear", 2.1, 0.55)])]);
+  const nearRun = await selectForOpening(thermalOpening({ requirements: { maxUValue: 2.0 } }), near, flatPrice);
+  assert.notEqual(nearRun.selected.candidateOutcome.tier, "meets");
+  assert.equal(nearRun.status, "commercial_only_estimate");
+
+  // Beside a product that meets the band, the far one is a plain miss.
+  const both = fixtureCatalogueRepository([
+    thermalProduct("p-meets", [thermalVariant("dg-lowe", 1.6, 0.4)]),
+    thermalProduct("p-misses", [thermalVariant("single", 5.4, 0.62)]),
+  ]);
+  const r = await selectForOpening(thermalOpening({ requirements: { maxUValue: 2.0 } }), both, flatPrice);
+  const missed = r.evaluated.find((e) => e.candidate.slug === "p-misses");
+  assert.equal(missed.candidateOutcome.tier, "misses");
+  assert.equal(r.selected.candidate.slug, "p-meets", "and the meeting product is the one chosen");
+});
+
+test("CERT-AC-5: a product with no figures is still withheld as a catalogue gap", async () => {
+  // The removal made certification stop gating. It did NOT make half-authored
+  // products offerable: a variant with no Uw is still a data gap, and the run
+  // says so rather than pricing a guess.
+  const repo = fixtureCatalogueRepository([thermalProduct("p-unknown", [thermalVariant("no-uw", null, 0.4)])]);
+  const r = await selectForOpening(thermalOpening({ requirements: { maxUValue: 2.0 } }), repo, flatPrice);
+  assert.equal(r.status, "catalogue_data_incomplete");
+  assert.deepEqual(r.withheldIncomplete.map((w) => w.slug), ["p-unknown"]);
+  assert.equal(r.selected, null, "nothing is selected off a record nobody finished");
+});
+
+test("CERT-AC-5: a rules WARNING still downgrades, whatever the thermal verdict", () => {
+  const c = toCandidate(thermalProduct("p-wide", [thermalVariant("dg-lowe", 1.6, 0.4)]));
+  const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 4000, heightMm: 1200, requirements: { maxUValue: 2.0 } }, c);
+  assert.equal(r.status, "commercial_only_estimate", "an oversized opening is a composite/custom job");
+  assert.equal(r.passed, true, "and stays selectable so it can be priced");
+});
+
+test("CERT-AC-5: an applied thermal precedent still downgrades", async () => {
+  const repo = fixtureCatalogueRepository([thermalProduct("p-precedent", [thermalVariant("dg-lowe", 1.6, 0.4)])]);
+  const r = await selectForOpening(
+    thermalOpening({ requirements: { maxUValue: 2.0 }, thermalContext: { thermalPrecedentApplied: true } }),
+    repo, flatPrice,
+  );
+  assert.equal(r.selected.candidateOutcome.tier, "meets", "the figures still meet the band");
+  assert.equal(r.status, "commercial_only_estimate", "but a borrowed precedent is never a ready line");
 });

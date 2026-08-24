@@ -228,7 +228,7 @@ test("A17/AC-4 the price delta's sign is fixed, and the tolerance is stamped on 
   // AC-4's stamp half: the run records the tolerance it was decided under, so a
   // past selection stays reproducible after the constant is ever retuned.
   assert.equal(result.selection.tolerance, 0.05);
-  assert.equal(result.selection.version, "ladder-v1");
+  assert.equal(result.selection.version, "ladder-v2");
   assert.equal(result.selection.openingRef, "W09");
   assert.deepEqual(result.selection.withheldIncomplete, []);
 });
