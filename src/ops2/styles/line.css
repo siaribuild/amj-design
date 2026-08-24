@@ -133,6 +133,10 @@
   --background: var(--ds-surface-page);
 }
 .ops2-viewer__body {
+  /* ONE COLUMN WIDTH, SAID ONCE. The drawing, its caption and the units list
+     are one stacked block and must share an edge; three copies of the number is
+     how they stop sharing it. */
+  --viewer-column: 720px;
   display: flex;
   flex-direction: column;
   gap: var(--theme-spacing-lg);
@@ -149,7 +153,7 @@
 .ops2-viewer__svg {
   display: block;
   width: 100%;
-  max-width: min(100%, 720px);
+  max-width: min(100%, var(--viewer-column));
   height: auto;
   max-height: 62vh;
   margin: 0 auto;
@@ -179,31 +183,34 @@
   font-variant-numeric: tabular-nums slashed-zero;
   vector-effect: none;
 }
-/* At 46ch the composite's caption dropped a single word onto a second line,
-   centred under the drawing where an orphan is most visible; the measure now
-   holds it on one line at the desk. `pretty` rather than `balance` for the
-   phone, where it must still wrap: balance split it evenly and broke
+/* THE CAPTION'S MEASURE IS THE DRAWING'S. A ch-based measure was tried twice
+   (46, then 56) to stop the composite's caption dropping a word onto a second
+   line, centred under the drawing where an orphan is most visible — and at the
+   desk both still orphaned it, because the sentence a composite writes ("…
+   overall · height × width · drawn from its 2 units of …") is longer than any
+   comfortable reading measure. It is a caption, not reading matter: it takes
+   the column the drawing and the units list already share, so it can only wrap
+   when the drawing itself has run out of room. `pretty` rather than `balance`
+   for the phone, where it must still wrap: balance split it evenly and broke
    "height × width" across the two lines, which is worse than a long first line. */
 .ops2-viewer__cap {
   margin: var(--theme-spacing-sm) auto 0;
-  max-width: 56ch;
+  max-width: min(100%, var(--viewer-column));
   text-wrap: pretty;
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
+/* THE UNITS LIST IS THE MOCK'S BLOCK, NOT THE DRAWING'S COLUMN. The approved
+   mock gives it 420px (`viewer__units`) while the drawing keeps the wider
+   column, and the size stays RIGHT-ALIGNED inside it. Both halves matter: the
+   right-aligned figures make two units' sizes comparable down a column, and the
+   420px block is what keeps the size near its name while doing it. Widened to
+   the drawing's 720px it read as a name and a size at opposite ends of the
+   screen, ~475px apart -- the alignment was never the problem, the width was. */
 .ops2-viewer__units {
   margin: 0 auto;
   width: 100%;
-  max-width: 720px;
-}
-.ops2-viewer__units-title {
-  margin: 0 0 var(--theme-spacing-xs);
-  font-family: var(--theme-font-sans);
-  font-size: var(--theme-font-size-xs);
-  font-weight: var(--theme-font-weight-medium);
-  letter-spacing: var(--theme-letter-spacing-wider);
-  text-transform: uppercase;
-  color: var(--ds-text-muted);
+  max-width: 420px;
 }
 .ops2-viewer__units ul {
   margin: 0;
@@ -258,7 +265,11 @@
 /* UPPERCASE IS RESERVED FOR LABELS in FrameFlow — small and wide-tracked — and
    a panel's title is exactly that: a name for the block, not a heading someone
    reads as a sentence. */
-.lp-panel__title {
+/* "ITS UNITS" over the viewer's list is the same object as a panel's own title —
+   the small uppercase name of the block under it — so it wears the same rule
+   rather than a byte-identical copy of it under another name. */
+.lp-panel__title,
+.ops2-viewer__units-title {
   margin: 0 0 var(--theme-spacing-xs);
   font-family: var(--theme-font-sans);
   font-size: var(--theme-font-size-xs);
