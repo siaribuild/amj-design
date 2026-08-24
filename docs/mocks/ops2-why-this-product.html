@@ -243,7 +243,6 @@ body{
 .sheet__close{display:grid;place-items:center;width:32px;height:32px;background:none;border:0;color:var(--ds-text-secondary);cursor:pointer;border-radius:var(--ds-radius-control)}
 @media (hover:hover){.sheet__close:hover{background:var(--ds-surface-sunken);color:var(--ds-text-primary)}}
 .sheet__body{flex:1;overflow:auto;padding:var(--theme-spacing-md)}
-.sheet__foot{display:flex;flex-direction:column;gap:var(--theme-spacing-2xs);padding:var(--theme-spacing-sm) var(--theme-spacing-md);border-top:1px solid var(--ds-border-subtle);background:var(--ds-surface-card)}
 
 /* A block of the detail. The hairline between blocks is the console's own
    rhythm device — the same rule that separates a pair of rows separates a pair
@@ -303,7 +302,6 @@ body{
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--theme-spacing-sm);font:inherit;font-size:var(--theme-font-size-sm);font-weight:500;padding:var(--theme-spacing-sm) var(--theme-spacing-lg);border-radius:var(--ds-radius-control);border:1px solid transparent;cursor:pointer}
 .btn--solid{background:var(--ds-interactive-dark);color:var(--ds-text-inverse)}
 .btn--outline{background:none;border-color:var(--ds-border-default);color:var(--ds-text-primary)}
-.btn--block{width:100%}
 .btn--sm{padding:var(--theme-spacing-xs) var(--theme-spacing-md)}
 @media (hover:hover){.btn--outline:hover{background:var(--ds-color-brand-wash)}}
 
@@ -325,9 +323,6 @@ body{
    is then indistinguishable from a static one, which is an interaction
    question rather than a visual one. */
 
-/* ── The editor stub ─────────────────────────────────────────────────────── */
-.stub{padding:var(--theme-spacing-2xl) var(--theme-spacing-lg);text-align:center;display:flex;flex-direction:column;align-items:center;gap:var(--theme-spacing-md)}
-.stub p{max-width:40ch;font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary)}
 
 /* The skeleton: the SHAPE the panel is about to be, so it does not jump. */
 .skel{display:flex;flex-direction:column;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-2xs) 0}
@@ -342,9 +337,9 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
 
 <h1>Why this product — ops2</h1>
 <p class="lede">
-  Phase&nbsp;2 (the shared full-screen drawing viewer) and Phase&nbsp;3b (the panel, its
-  detail slide-out, and the editor placeholder). Every state is drawn, not just the
-  happy one — most of the rulings are about what shows when something is missing.
+  Phase&nbsp;2 (the shared full-screen drawing viewer) and Phase&nbsp;3b (the panel and its
+  detail slide-out). Every state is drawn, not just the happy one — most of the rulings
+  are about what shows when something is missing.
 </p>
 
 <div class="rules">
@@ -353,7 +348,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
     <li><b>No money and no GST</b> anywhere on this surface — R10, and the house rule.</li>
     <li><b>No certification</b> anywhere, in any phase — R5.</li>
     <li><b>No excluded candidates</b> — not a list, not a count, not a reason — R9.</li>
-    <li><b>Read-only.</b> Nothing here changes the quote; the one control is a link out — R1.</li>
+    <li><b>Read-only, and actionless.</b> The detail carries no action at all: its only
+      control is the X that closes it — R1, R28.</li>
     <li><b>Nothing frames a human's change as an error</b> — R2.</li>
     <li>The panel has a <b>line budget</b> and never grows to fit content. Absences are said, never padded.</li>
     <li>Uppercase is for LABELS only; corners never exceed 5&nbsp;px.</li>
@@ -886,9 +882,12 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
 <div class="sect">
 <h2>Section C — the detail slide-out</h2>
 <p class="note">
-  The console's existing <code>SidePanel</code>, unchanged: a right-hand slide-out at the desk, a
-  bottom sheet on the phone. Reading order is <b>the requirement → what is unusual about this line →
-  the ladder</b>, so the news is never below the routine. It scrolls; only the panel has a budget.
+  The console's existing <code>SidePanel</code>: a right-hand slide-out at the desk, full screen on
+  the phone. Reading order is <b>the requirement → what is unusual about this line → the ladder</b>,
+  so the news is never below the routine. It scrolls; only the panel has a budget.
+  <b>There is no action in it</b> — no footer, no CTA, one X. Switching products is deferred
+  (R28): a button would imply a product is already selected to change <em>to</em>, and this
+  surface deliberately offers no such thing.
 </p>
 
 <div class="grid">
@@ -942,10 +941,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
               and nothing here changes the line.</p>
           </div>
 
-        </div>
-        <div class="sheet__foot">
-          <button class="btn btn--outline btn--block">Change the product</button>
-          <p class="reason">Nothing on this screen changes the quote.</p>
+          <p class="reason">Nothing on this screen changes the quote — it is read and
+            closed.</p>
         </div>
       </div>
     </div>
@@ -1022,10 +1019,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
               exists, with nothing padded and no remainder counted.</p>
           </div>
 
-        </div>
-        <div class="sheet__foot">
-          <button class="btn btn--outline btn--block">Change the product</button>
-          <p class="reason">Nothing on this screen changes the quote.</p>
+          <p class="reason">Nothing on this screen changes the quote — it is read and
+            closed.</p>
         </div>
       </div>
     </div>
@@ -1126,10 +1121,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
 
           <p class="reason">A three-unit make-up was tried and no frame system could supply it.</p>
 
-        </div>
-        <div class="sheet__foot">
-          <button class="btn btn--outline btn--block">Change the product</button>
-          <p class="reason">Nothing on this screen changes the quote.</p>
+          <p class="reason">Nothing on this screen changes the quote — it is read and
+            closed.</p>
         </div>
       </div>
     </div>
@@ -1177,10 +1170,8 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
               </li>
             </ul>
           </div>
-        </div>
-        <div class="sheet__foot">
-          <button class="btn btn--outline btn--block">Change the product</button>
-          <p class="reason">Nothing on this screen changes the quote.</p>
+          <p class="reason">Nothing on this screen changes the quote — it is read and
+            closed.</p>
         </div>
       </div>
     </div>
@@ -1214,54 +1205,6 @@ svg.elev{display:block;margin:0 auto;color:var(--ds-text-primary)}
       worth retrying. The rest of the line page is unaffected.</p>
   </div>
 
-</div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════ -->
-<div class="sect">
-<h2>Section D — "Change the product" and where it goes</h2>
-<p class="note">
-  The only control this feature adds. It is enabled, it lives in the detail's footer alone, and it
-  navigates to the ops2 line editor's own route — which does not exist yet and says so.
-</p>
-
-<div class="grid">
-  <div class="phone">
-    <div class="cap">D1 · Phone 375 — the placeholder</div>
-    <div class="screen" style="min-height:300px">
-      <div class="ops-top"><span class="ops-back">&#8592; W03</span><span class="ops-title">Change the product</span></div>
-      <div class="stub">
-        <p>The ops2 line editor is not built yet.</p>
-        <button class="btn btn--outline">Back to W03</button>
-      </div>
-    </div>
-    <p class="ann"><b>A stated absence, not a broken form.</b> No input, no disabled control, no Save,
-      no Cancel, and no link into the legacy console. Returning changes nothing on the line.
-      <span class="ruling">D4</span><span class="ruling">WHY-AC-40</span><span class="ruling">WHY-AC-41</span><span class="ruling">WHY-AC-43</span></p>
-  </div>
-
-  <div class="phone">
-    <div class="cap">D2 · Where the control is NOT</div>
-    <div class="screen" style="min-height:250px">
-      <div class="ops-top"><span class="ops-back">&#8592; QT-2214</span><span class="ops-title">W14</span></div>
-      <div class="ops-body">
-        <div class="lp-panel">
-          <h2 class="lp-panel__title">Why this product</h2>
-          <dl class="lp-panel__lines">
-            <div><dt>This one</dt><dd><span class="fig">Uw 4.35 &middot; SHGC 0.58</span></dd></div>
-            <div><dt>Chosen</dt><dd>a person chose this product</dd></div>
-          </dl>
-        </div>
-        <div class="lp-panel">
-          <h2 class="lp-panel__title">Price</h2>
-          <dl class="lp-panel__lines"><div><dd class="money">$2,110.00</dd></div><div><dd class="money__note">list price</dd></div></dl>
-        </div>
-      </div>
-    </div>
-    <p class="ann">A line with no detail slide-out has no "Change the product" control anywhere —
-      the control lives in the footer of a panel that does not open here. It attaches to the line
-      page when the real editor ships. <span class="ruling">WHY-AC-44</span></p>
-  </div>
 </div>
 </div>
 

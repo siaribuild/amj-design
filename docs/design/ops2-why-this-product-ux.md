@@ -7,7 +7,7 @@
 **Design:** `docs/design/ops2-why-this-product.md` (rev 1)
 
 Covers **Phase 2** (the shared full-screen drawing viewer) and **Phase 3b** (the panel,
-the detail slide-out, the editor placeholder). Phase 1 and Phase 3a have no UI.
+the detail slide-out). Phase 1 and Phase 3a have no UI.
 
 > **Status: APPROVED at the UX mock gate, 2026-08-24, with five changes.** This document
 > describes the **approved** version — the five changes are folded in below, each marked
@@ -21,10 +21,17 @@ the detail slide-out, the editor placeholder). Phase 1 and Phase 3a have no UI.
 > | 3 | The detail's control is an **X**, not "Done" — *"the panel does not require actions"* | §4.1 |
 > | 4 | Drawings carry **both** dimension leaders, as the real component does | §2.2 |
 > | 5 | On a split, show the units' dimensions **and** the overall together | §2.2 |
+> | 6 | **R28 — "Change the product" is cut entirely**, control and placeholder alike — *"switching products is not part of the current run"* | §4.1, §5 · **voids WHY-AC-39…44** |
 >
-> **One spec amendment is owed to the product-manager:** VIEW-AC-1 reads *"…with the
-> symbol legend"*. Change 1 removes it, so the criterion must be amended or its test will
-> assert a thing the owner ruled out.
+> **Two spec amendments are owed to the product-manager**, and the second is large:
+>
+> 1. VIEW-AC-1 reads *"…with the symbol legend"*. Change 1 removes it, so the criterion
+>    must be amended or its test will assert a thing the owner ruled out.
+> 2. **R28 voids WHY-AC-39, 40, 41, 42, 43 and 44 outright**, and D4 with them. It also
+>    reaches the architect's design: `LineEditStub.tsx`, the
+>    `/projects/:id/line/:lineId/edit` route in `Ops2App.tsx:216`, and X-AC-8 (the stub's
+>    abuse case) all describe a screen that is no longer being built. None of that is
+>    mine to edit — flagged, not changed.
 
 ---
 
@@ -67,8 +74,7 @@ LinePage
     ├── Price panel                  (existing, untouched)
     └── Customer's note              (existing)
 
-WhyPanel ──(door)──► SidePanel: WhyDetail ──(footer)──► /projects/:id/line/:lineId/edit
-                                                        └── LineEditStub
+WhyPanel ──(door)──► SidePanel: WhyDetail      (no action out of it; the X closes it)
 DrawingViewer  — chrome, opened from Plate and from each unit row
 ```
 
@@ -371,8 +377,8 @@ it just has more room. The only width-dependent behaviour is **where its detail 
 ### 4.1 The container
 
 `SidePanel`, reused: a **right-hand slide-out** at desk width (`min(88vw, 520px)`, in from
-the right, corners rounded on the leading edge only). Title `Why this product`. Footer
-slot = the "Change the product" control plus its note.
+the right, corners rounded on the leading edge only). Title `Why this product`.
+**`SidePanel`'s `footer` slot is not used** — see **[gate 6]** below.
 
 **No second panel idiom is invented.** No bottom sheet at the desk, no inline expansion,
 no full route.
@@ -432,7 +438,12 @@ So the news is never below the routine. Concretely:
 3. **Why it was split** — composite only.
 4. **Each unit's own band** — composite only.
 5. **What else was considered** — the ladder. Always last.
-6. *(closing)* the unsupplied-make-up sentence, when one was recorded.
+6. *(closing)* the unsupplied-make-up sentence, when one was recorded, and then always
+   `Nothing on this screen changes the quote — it is read and closed.`
+
+The detail **ends with that sentence and nothing else**. There is no footer bar: a bar
+whose only remaining content is one muted line is a bar built for a button that no longer
+exists (**[gate 6]**).
 
 For the ordinary machine case, blocks 2–4 do not exist and the ladder is second — which
 is the reading the surface is mostly for. The detail **scrolls**; only the panel is
@@ -559,8 +570,7 @@ decided it and there is no machine rationale to open (R17/WHY-AC-37).
 | Panel door focused | Enter or Space opens the detail |
 | Detail opens | Focus moves into the panel (IonModal trap); the title is the first thing announced |
 | Escape / the X | Closes; **focus returns to the panel door that opened it** |
-| Tab inside the detail | Reaches only the X and `Change the product` — the ladder rows and comparison cards are not focusable |
-| "Change the product" | The panel closes and ops2 navigates; on returning from the stub the line page renders fresh and focus lands at the page's start (the console's normal route behaviour — not special-cased) |
+| Tab inside the detail | Reaches **the X and nothing else** — the ladder rows, the comparison cards and the closing note are not focusable. One tab stop, by design |
 
 Screen-reader shape: each block is a `<section>` with its heading; the ladder is a `<ul>`
 whose `aria-label` is `What else was considered`; the comparison cards' column heads
@@ -568,29 +578,38 @@ whose `aria-label` is `What else was considered`; the comparison cards' column h
 
 ---
 
-## 5. "Change the product" and the placeholder
+## 5. **[gate 6]** The detail has no action — R28
 
-- **Exactly one control**, labelled `Change the product`, **enabled**, in the detail's
-  **footer only** (WHY-AC-39). It is an outline button, full width of the footer —
-  deliberately not a solid primary: the primary action on this surface is reading, and an
-  over-prominent control has already been rejected on this console once.
-- Beneath it, always: `Nothing on this screen changes the quote.`
-- **A line with no detail has no such control anywhere** (WHY-AC-44) — mock D2. It
-  attaches to the line page when the real editor ships.
-- It navigates to `/projects/:id/line/:lineId/edit`.
+Owner, verbatim: *"do not implement CTA change the product. Need to have more thoughts on
+how to implement this. Having a button implies that some product must be preselected,
+which we don't have conceptually. not having a button means another panel perhaps.
+ultimately, switching products is not part of the current run."*
 
-**The stub** (mock D1) — `LineEditStub.tsx`:
+This **supersedes D4** (*"you may open a placeholder"*). Stated positively, so a later
+reader does not mistake it for an oversight and helpfully restore one:
 
-- Header: back control labelled with the line's code; title `Change the product`.
-- Body: **one sentence** — `The ops2 line editor is not built yet.` — and one control,
-  `Back to W03`.
-- **No input, no disabled form control, no Save, no Cancel, no placeholder field, no
-  "coming soon" illustration** (WHY-AC-41). It is a stated absence, not a broken form.
-- It fetches nothing and renders no project, customer, line or pricing data (X-AC-8).
-- **No control anywhere in this feature navigates to the legacy ops console**
-  (WHY-AC-43).
-- Returning leaves the line unchanged: no `edit_version` bump, no request beyond the
-  record read (WHY-AC-42).
+> **The Why detail carries no action at all. Its only control is the X that closes it.**
+
+That is the coherent end of his earlier ruling that *"the panel does not require actions,
+unless an action is chosen, which is a separate screen anyway"* — and it is the same
+instinct behind the ladder rows being `<li>` rather than buttons (§4.4): a control implies
+a product is already selected to change **to**, and this surface deliberately offers no
+such thing.
+
+**Not built, anywhere in this feature:**
+
+- No "Change the product" control — not in the detail, not on the panel, not on the line
+  page; not enabled, and not disabled either.
+- **No placeholder and no stub** — no `LineEditStub.tsx`, no
+  `/projects/:id/line/:lineId/edit` route, no route registration in `Ops2App.tsx`.
+- No footer on the `SidePanel`; the closing note lives at the end of the scrolling body
+  (§4.2).
+
+**Status: deferred, pending a decision on how product switching should work.** Not
+"unnecessary" — the owner is still thinking about it, and his own framing names the open
+question: a button presumes a pre-selected product, and the alternative may be another
+panel. When that decision is made it arrives as its own spec. Its absence here is
+deliberate, and §7's checklist is what keeps it that way.
 
 ---
 
@@ -599,7 +618,7 @@ whose `aria-label` is `What else was considered`; the comparison cards' column h
 | Need | Existing component | Change |
 |---|---|---|
 | The panel object | `LineReview.tsx`'s local `Panel` | Extract or extend with an optional `onOpen`; the door renders a stretched `<button class="lp-panel__door">`. Budget mechanism unchanged. |
-| The slide-out | `src/ops2/chrome/SidePanel.tsx` | **Two changes, both from the gate (§4.1):** a `phoneForm?: "sheet" \| "full"` prop defaulting to `"sheet"`, and an X dismiss control in place of `Done`. Neither may alter the Projects filter panel's approved behaviour. |
+| The slide-out | `src/ops2/chrome/SidePanel.tsx` | **Two changes, both from the gate (§4.1):** a `phoneForm?: "sheet" \| "full"` prop defaulting to `"sheet"`, and an X dismiss control in place of `Done`. Neither may alter the Projects filter panel's approved behaviour. Its `footer` slot goes **unused** here (R28). |
 | Drawings | `src/components/quote-project/Elevation` | None — both leaders are its default from `sm` up. `ElevationLegend` is **not** used in ops2 (gate 1); it stays for the customer site. |
 | Full-screen viewer | — | **New** `src/ops2/chrome/DrawingViewer.tsx` (design §4.6 interface). |
 | Plate enlargement | `Plate.tsx:60-106` | **Deleted**, replaced by the viewer. |
@@ -636,14 +655,25 @@ state the superseded rule (*"absent entirely on a composite"*) and the read-only
       the override.
 - [ ] The string table contains none of: wrong, incorrect, mistake, error, correction.
 - [ ] The order-record line page contains no panel and no sentence about one.
+- [ ] The detail has **exactly one** focusable control: the X. No footer bar, no CTA,
+      and no stub route registered anywhere (R28).
 - [ ] Escape closes the viewer and the detail; `history.length` is unchanged by either.
 
 ---
 
 ## 8. Decisions needed
 
-**None for the owner.** Three judgements were made here rather than escalated; each is
-reversible at the mock gate and is flagged in the mock's annotations:
+**None for the owner, and one deferred BY him.**
+
+**Deferred — product switching (R28).** How a reviewer changes a line's product is an open
+question the owner is still thinking about, in his own framing: a button presumes a
+pre-selected product, and the alternative may be another panel. Nothing in this feature
+anticipates either answer — no control, no route, no stub (§5). This is a deferral, not a
+decision that it is unwanted, and it does not block anything here: the surface reads
+completely without it.
+
+Four judgements were made here rather than escalated; each is reversible and is flagged in
+the mock's annotations:
 
 1. **The panel's door is a stretched button, not a wrapping one** (§3.2) — an
    accessibility mechanic, not a design choice.

@@ -1,16 +1,17 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 5**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 8**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 5** repairs two defects the architect's design found in revision 4:
-X-AC-1/X-AC-2 demanded a distinction the ops boundary cannot make (§10), and §7.4's
-hand-written writer index was incomplete — again. Both are corrected below; no ruling and
-no decision changed.
+**Revision 8** applies **R28**: "Change the product" is not implemented — no control and no
+placeholder — and the detail slide-out therefore carries **no action at all** (§9.5). This
+supersedes D4. Revision 7 corrected a false claim about an existing legend test; revision 6
+applied the closed UX mock gate (R25–R27); revision 5 repaired two architect findings;
+revisions 2–4 folded in the owner's decision rounds.
 
 **Decisions needed: none** (§14).
 
@@ -56,30 +57,36 @@ not record them, they are gone.
    Composites included (R14–R17), including the per-lite thermal bands that have been
    written on every split since migration 0036 and read by nothing. A **thinner panel**
    for lines nobody's estimator ever evaluated: no target, but the product's own figures
-   (D6).
+   (D6). **No action anywhere on it** (R28).
 2. **The `certified` removal, depth (c)** — code, Studio schema, and the values in the
    live documents (R5, §5 of the conclusions). **Phase 1, and nothing else rides with it**
    (D5).
 3. **The universal performance-figure capture (R22, D3, D6, D7).** *Every* save that sets
    or changes a line's product or variant records that product's Uw and SHGC on the line —
    ops console and customer site alike. **A server write-path change, inside Phase 3.**
-4. **A shared full-screen drawing viewer** for ops2 (R21), replacing the line plate's
+4. **A shared full-screen drawing viewer** for ops2 (R21, R25), replacing the line plate's
    current side-panel enlargement.
-5. **A "Change the product" control with a stated placeholder destination** (D4).
+5. **Two changes to the shared `SidePanel`** (R26, R27): full-screen presentation on the
+   phone, and an X as the dismiss control — without moving the Projects filter panel,
+   which is the component's other caller and was not part of this approval.
 
 ### Out of scope — and why
 
 | Not built | Because |
 |---|---|
-| An actual line editor in ops2 | D4: *"still to be built. you may open a placeholder."* Phase 3 ships the control and the stub, not the editor. |
-| Any deep-link into the legacy ops console | D4, explicit. |
-| Switching the line's product from the "Why" surface | R1: the surface is read-only; the control is a link out. |
+| **"Change the product" — the control, and any placeholder for it** | **R28, and it is deferred rather than declined.** Owner: *"do not implement CTA change the product. Need to have more thoughts on how to implement this. Having a button implies that some product must be preselected, which we don't have conceptually. not having a button means another panel perhaps. ultimately, switching products is not part of the current run."* Supersedes D4. **Whoever picks this up is picking up an open design question, not an unbuilt ticket.** |
+| Any line editor in ops2, stub or real | Follows R28: with no control to reach it, a route to it is a route to nowhere. |
+| Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28, and still not done. |
+| Explanatory notation of any kind on a drawing surface | R25: *"i don't think lines like this relevant for ops"* — ops staff read elevations for a living. |
+| Deleting the shared `ElevationLegend` export | It has another consumer; ops2 stops rendering it, which is a different thing (VIEW-AC-12). |
+| Any change to the Projects filter panel's presentation or dismiss control | R26/R27 were approved for the detail panel; the filter is the shared component's other caller and outside that approval. |
+| Switching the line's product from the "Why" surface | R1: the surface is read-only. R28 strengthens this — there is now no route out of it at all. |
 | Recording a verdict on the recommendation (`PATCH /api/ops/recommendation-outcomes/:id`) | R2. The endpoint exists and stays unwired. |
 | Reading the catalogue or the estimator **at display time**, for anything | R3 + D3: *"snapshot at the time of recalculation/save. Not extracted in real time."* |
 | Re-deriving, re-resolving or recomputing a thermal **requirement** anywhere | R23: *"if AI calculates a target and selects a product, which is then overriden by a client -> that does not change the target."* |
 | Any change to `quote_line.origin`, `ai_proposal_line_id`, or `aiManaged` routing | The R24 constraint: those are correct for routing and must stay. Provenance for display is **derived**, never re-stamped. |
 | Any new validation, eligibility check or refusal on any save path | D6's hard constraint — §7.2. A display feature may not make a save fail that succeeds today. |
-| Any change to the ops routes' authentication or refusal convention | §10. This feature inherits the console's uniform refusal; it does not introduce a new status code or a new distinction at that boundary. |
+| Any change to the ops routes' authentication or refusal convention | §10. This feature inherits the console's uniform refusal. |
 | Any change to the learning corpus or the issue-time capture path | §7.6 — verified non-impact, deliberately untouched. |
 | Live re-pricing, price deltas, or any money on the surface | R10, R3. |
 | Excluded candidates, in any form — list, count, or reason | R9, verbatim owner ruling. |
@@ -120,6 +127,14 @@ The need, in the owner's own terms:
 Read together: **confidence in the platform's reasoning, and speed through the review** —
 not correction of the machine. R2 is the direct consequence and the copy must honour it.
 
+**They read this surface; they do not act on it.** Owner: *"the panel does not require
+actions, unless an action is chosen, which is a separate screen anyway."* R28 is that
+sentence carried to its end — see §9.5.
+
+**And they already know how to read a drawing.** R25 is a fact about this persona, not a
+styling preference: an elevation's notation is customer-facing explanation, and explaining
+it to an estimator costs space and says the reader is a novice.
+
 ### Customer (existing — newly relevant, via D6/D7)
 
 A customer who configures a line themselves, or overrides what the estimator proposed,
@@ -157,8 +172,7 @@ overridden. A stage in a quote's life, not a persona and not a role. Not named i
 ## 4. Phasing — **owner-confirmed (D1, amended by D5)**
 
 Three independently deployable phases, in this order. Pipeline stages 1–8 run **per
-phase**, not once across all three. Phases 2 and 3 may share one UX mock-gate session
-while still deploying separately.
+phase**, not once across all three. Phases 2 and 3 share one UX mock gate, now **closed**.
 
 ### Phase 1 — Remove `certified` (no UI) · **strictly this, nothing else** (D5)
 
@@ -176,7 +190,7 @@ flight.
 export first, gated in code (CERT-AC-8), per the conclusions' §5 constraint 1 and the D1
 migration lesson.
 
-### Phase 2 — The shared full-screen drawing viewer (R21)
+### Phase 2 — The shared full-screen drawing viewer (R21, R25)
 
 **Delivers on its own:** the element the owner rates highest in the product is readable at
 full size from every ops2 surface that draws an opening as its subject; on a composite,
@@ -186,7 +200,7 @@ a unit can be examined alone. Replaces the line plate's current side-panel enlar
 rather than growing a second enlarge behaviour. It was a separate ask (*"clicking on a
 drawing opens full screen view"*), so it does not need Phase 3 to be worth deploying.
 
-### Phase 3 — the capture, the panel, the slide-out, the placeholder
+### Phase 3 — the capture, the panel, the slide-out
 
 **It is two kinds of change in one deployment, named separately here so neither is
 discovered late:**
@@ -196,7 +210,8 @@ discovered late:**
   `worker/**`, so **Probity applies: the failing test comes first**. It carries the
   feature's only regression risk, and §7.2 is where that risk is pinned.
 - **Phase 3b — a read-only display surface (§9).** The panel and the detail. R1: it
-  changes nothing; WHY-AC-20 requires the whole interaction to be GETs.
+  changes nothing; WHY-AC-20 requires the whole interaction to be GETs; R28 removes the
+  one control that would have led anywhere.
 
 **The cost the owner accepted (D5):** the capture does not ship until Phase 3, and there
 is no backfill, so **every line saved before Phase 3 has no figures** and shows the honest
@@ -211,13 +226,15 @@ recovered.
 **Dependency check:** Phase 3 does not technically depend on Phase 1 — R5 keeps
 certification off the screen either way. It does not depend on Phase 2 either; without it,
 Phase 3's drawings simply are not enlargeable. 3b depends on 3a for anything a human
-selected to have figures at all.
+selected to have figures at all. **The `SidePanel` changes (R26, R27) belong to whichever
+of Phase 2 or 3 ships first** — they are one component edit, and shipping the detail
+against the old presentation would ship something the gate did not approve.
 
 ### Wayfinder check
 
-**Not needed.** The route is visible and the decisions are made — 21 rulings, seven owner
-decisions, a verified join path, and a writer index the design now owns. Three
-normally-sized features, not a foggy region.
+**Not needed.** The route is visible and the decisions are made — 28 rulings, seven owner
+decisions, a verified join path, a writer index the design owns, and a closed mock gate.
+Three normally-sized features, not a foggy region.
 
 ## 5. Ruling and decision index (traceability)
 
@@ -233,19 +250,41 @@ gate as the record · R21 full-screen drawing viewer.
 selected at a time product."* One rule, every writer (§7.1).
 
 **R23 — a target is not a selection.** *"if AI calculates a target and selects a product,
-which is then overriden by a client -> that does not change the target."* An override
-moves the selection side of the comparison and nothing else (WHY-AC-25).
+which is then overriden by a client -> that does not change the target."*
 
 **R24 — an overridden selection must no longer read as platform-made.** *"a selection
 shall not be perceived as AI-made anymore."* Attribution is **derived by comparison**,
-never read from `origin` (WHY-AC-28, WHY-AC-29).
+never read from `origin`.
+
+**From the closed UX mock gate:**
+
+**R25 — no explanatory notation on an ops drawing surface.** Owner, on the symbol key
+(solid-V / dashed-V / apex / arrow / unmarked): *"i don't think lines like this relevant
+for ops"*. **This is a class, not a block.** What goes: anything that teaches the reader
+how to read the drawing — the symbol legend, and the sentence explaining that panel widths
+are proportional to each unit's real size. What stays: statements about the drawing's
+**authority** rather than its notation — that mullion positions are confirmed at technical
+review, and that an unsized opening is drawn as a stand-in.
+
+**R26 — the phone detail opens full screen**, not as a partial bottom sheet.
+
+**R27 — the dismiss control is an X**, not "Done".
+
+**R28 — "Change the product" is not implemented, and neither is a placeholder for it.**
+*"do not implement CTA change the product. Need to have more thoughts on how to implement
+this. Having a button implies that some product must be preselected, which we don't have
+conceptually. not having a button means another panel perhaps. ultimately, switching
+products is not part of the current run."* **Supersedes D4.** The reasoning is conceptual:
+the alternatives are `<li>` rows and not choices, precisely so nothing reads as selectable
+(R1, R10) — a button would have imported the implication of a selection without the
+feature behind it.
 
 Owner decisions: **D1** three phases, confirmed order · **D2** panel absent post-issue ·
-**D3** figures snapshotted at save, never read live · **D4** "Change the product" ships
-with a placeholder, no legacy deep-link · **D5** the capture waits for Phase 3; Phase 1
-stays strictly the `certified` removal, and the loss of figures for everything saved
-before Phase 3 is accepted · **D6** a client/manual-picked line shows a thinner panel
-**with** its product's figures · **D7** the capture extends to the customer save path.
+**D3** figures snapshotted at save, never read live · ~~**D4** placeholder~~ *(superseded
+by R28)* · **D5** the capture waits for Phase 3; Phase 1 stays strictly the `certified`
+removal, and the loss of figures for everything saved before Phase 3 is accepted ·
+**D6** a client/manual-picked line shows a thinner panel **with** its product's figures ·
+**D7** the capture extends to the customer save path.
 
 ---
 
@@ -403,10 +442,9 @@ restate it.**
 That deferral is itself a finding. A hand-maintained list of the sites that write a line's
 product has now been **incomplete on every attempt, by three different readers**: the
 grill input named one, revision 3 found three more, revision 4's index claimed eight, and
-the architect's verification found fifteen — six of them (`ai/proposal.ts:198` and `:299`,
-`composite.ts:457` and `:524`, `parse.ts:349-372`) missed by everyone before. A list that
-has been wrong four times in a row is not a control, and the spec should stop pretending
-otherwise.
+the architect's verification found fifteen — six of them missed by everyone before. A list
+that has been wrong four times in a row is not a control, and the spec should stop
+pretending otherwise.
 
 **SNAP-AC-2 is therefore not belt-and-braces — it is the mechanism.** It is the only one
 of the two that has ever produced a correct answer, and the only one that keeps producing
@@ -454,19 +492,21 @@ against the learning path; it is out of scope by intent, not by omission.
 
 ---
 
-## 8. Acceptance criteria — Phase 2: the full-screen drawing viewer (R21)
+## 8. Acceptance criteria — Phase 2: the full-screen drawing viewer (R21, R25)
 
-**VIEW-AC-1 (R21)** — *Given* the line page for a simple opening, *When* the reviewer
-activates the drawing, *Then* a full-screen viewer opens showing that opening's elevation
-at the largest size the viewport allows, with the symbol legend.
+**VIEW-AC-1 (R21, R25)** — *Given* the line page for a simple opening, *When* the reviewer
+activates the drawing, *Then* a full-screen viewer opens carrying **the drawing at the
+largest size the viewport allows, the opening's dimensions, and its identification (the
+line's code)** — and nothing that explains the drawing's notation.
 
-**VIEW-AC-2 (R21)** — *Given* the viewer is open, *When* the reviewer activates its close
-control or presses Escape, *Then* the viewer closes, no navigation occurs, and
-`history.length` is unchanged.
+**VIEW-AC-2 (R21, R27)** — *Given* the viewer is open, *When* the reviewer activates its
+dismiss control (an X, per R27) or presses Escape, *Then* the viewer closes, no navigation
+occurs, and `history.length` is unchanged.
 
 **VIEW-AC-3 (R21, composite parent)** — *Given* a composite line page, *When* the reviewer
 activates the parent drawing, *Then* the viewer shows the whole assembly with its units
-drawn in proportion to their real sizes.
+drawn in proportion to their real sizes. (The proportion is a property of the **drawing**;
+no sentence explaining it appears — R25, VIEW-AC-10.)
 
 **VIEW-AC-4 (R21, composite unit)** — *Given* a composite line page, *When* the reviewer
 activates a single unit's drawing in the units list, *Then* the viewer shows that unit
@@ -484,13 +524,42 @@ appears anywhere.
 and press Enter or Space, *Then* the viewer opens, focus moves into it, its accessible
 name carries the opening's code, and on close focus returns to the drawing that opened it.
 
-**VIEW-AC-8 (no size read)** — *Given* a line for which no size could be read, *When* its
-drawing is opened full screen, *Then* the stand-in square is shown with the existing
-sentence and no dimension leaders are drawn.
+**VIEW-AC-8 (R25 — authority, not notation)** — *Given* a line for which no size could be
+read, *When* its drawing is opened full screen, *Then* the stand-in square is shown with
+the existing sentence and no dimension leaders are drawn. This sentence **stays**: it
+states what the drawing is worth, not how to read it.
 
 **VIEW-AC-9 (negative — the row stays one target)** — *Given* the project record's line
 list, *When* a row's `xs` glyph is activated, *Then* the row navigates to the line page as
 it does today and **no** viewer opens. `ASSUMED:` §13.1.
+
+**VIEW-AC-10 (R25 — the class, negative, and the element's first test)** — *Given* any
+ops2 drawing surface after this phase, *When* its text is read, *Then* it contains **no
+explanatory notation**: no symbol key or legend, no sentence describing what solid,
+dashed, apex, arrow or unmarked lines mean, and no sentence teaching that panel widths are
+proportional to unit sizes. Statements about the drawing's **authority** are unaffected and
+must remain — that mullion positions are confirmed at technical review, and that an
+unsized opening is a stand-in.
+
+*This assertion is new, and it is the first test this element has ever had.* The legend has
+been rendered by `Plate.tsx:104` since the record work shipped and is asserted by no suite
+anywhere — so nothing would have caught its removal, and nothing would catch its
+reinstatement either. A test that only searched for the word "legend" would pass a viewer
+that still explained panel proportions in a sentence; the assertion is against the class.
+
+**VIEW-AC-11 (R25 — the older spec stops contradicting this one)** — *Given*
+`docs/specs/ops2-record-correction.md:343-347`, whose **P1-AC-27** requires *"the drawing
+can be enlarged, with its legend"* and spells out the whole key, *When* this phase lands,
+*Then* that criterion is **marked superseded in that document**, naming this feature and
+the owner's R25 ruling. Two live specs asserting opposite things about the same screen is
+how the next reader builds the wrong one; P1-AC-27 was never given a test, so the document
+is the only place the contradiction can be resolved.
+
+**VIEW-AC-12 (the shared export survives)** — *Given* `ElevationLegend` at
+`src/components/quote-project/Elevation.tsx:501`, *When* ops2 stops rendering it, *Then*
+the export itself is **not deleted** and the customer site's use of it is unaffected.
+Ops2 declining to render something is not the same as the repository losing it, and the
+other consumer's right to it is not this feature's to remove. `ASSUMED:` §13.13.
 
 ---
 
@@ -530,10 +599,20 @@ constrained axis; `does_not_fit` → nothing fitted, so the best fit was taken.
 sentence renders, *Then* it says 8% — the figure is read from the run, never hardcoded,
 and the band is named rather than paraphrased as "closest available".
 
-**WHY-AC-7 (R19)** — *Given* the panel is shown and the line has recorded candidates,
+**WHY-AC-7 (R19, R26)** — *Given* the panel is shown and the line has recorded candidates,
 *When* the reviewer activates the panel's action, *Then* the detail opens as the
-established `SidePanel`: a right-hand slide-out at desk width, a bottom sheet on the
-phone.
+console's shared panel: a **right-hand slide-out** at desk width, and **full screen** on
+the phone — not a partial bottom sheet, with no drag handle and no intermediate
+breakpoint.
+
+**WHY-AC-7a (R27 — the dismiss control)** — *Given* the detail is open at either width,
+*When* the reviewer looks for the way out, *Then* the dismiss control is an **X** with an
+accessible name, and no "Done" button appears.
+
+**WHY-AC-7b (R26, R27 — negative, the other caller does not move)** — *Given* the Projects
+filter panel, which is the shared component's other caller and was **not** part of this
+approval, *When* it is opened after these changes, *Then* its presentation and its dismiss
+control are exactly what they are today, and its existing tests pass unchanged.
 
 **WHY-AC-8 (R13, D6 — the thinner panel)** — *Given* a line with no selection run (a
 customer-configured or manually entered line) whose stored figures exist, *When* the line
@@ -690,35 +769,30 @@ reason or alternatives list is shown.
 **WHY-AC-38 (R14, `splitNote`)** — *Given* a run that recorded a make-up was attempted and
 no frame system could supply it, *When* the detail opens, *Then* that fact is stated.
 
-### 9.5 "Change the product" and its placeholder (R1, D4)
+### 9.5 No action, anywhere on this surface (R28, R1)
 
-Owner, verbatim: *"still to be built. you may open a placeholder."*
+R28 removed the one control this surface was going to have. **That absence is the design,
+not a gap** — say it here so a later reader does not helpfully restore it.
 
-**WHY-AC-39 (D4)** — *Given* the detail slide-out is open for a line with a recorded
-rationale, *When* the reviewer reads its footer, *Then* exactly one control labelled
-"Change the product" is present and **enabled**.
+Owner, on the shape: *"the panel does not require actions, unless an action is chosen,
+which is a separate screen anyway."* And on the control itself: *"Having a button implies
+that some product must be preselected, which we don't have conceptually."* The alternatives
+are list items and not choices (R10, WHY-AC-16); a "Change the product" button beside them
+would have implied a selection the surface deliberately does not offer.
 
-**WHY-AC-40 (D4)** — *Given* the reviewer activates it, *When* the destination renders,
-*Then* ops2 has navigated to the line editor's own addressable route
-(`/projects/:id/line/:lineId/edit` — the architect confirms the shape), and that route
-renders a stub stating in one sentence that the ops2 line editor is not built yet, with a
-control back to the line.
+**WHY-AC-39 (R28 — the detail's only control is its dismiss)** — *Given* the detail
+slide-out in any state, *When* every interactive element in it is enumerated, *Then* the
+only one is the X that closes it (WHY-AC-7a): no "Change the product", no button, no link,
+no menu, and nothing that navigates anywhere.
 
-**WHY-AC-41 (D4 — negative)** — *Given* the stub, *When* it renders, *Then* it contains no
-input, no disabled form control, no Save, no Cancel, and no control that submits anything
-— it is a stated absence, not a broken form.
+**WHY-AC-40 (R28 — negative, no route to a thing that does not exist)** — *Given* the ops2
+route table after this phase, *When* it is enumerated, *Then* no line-editor route exists —
+no `/edit` path, no stub, no placeholder page — and no code in ops2 references one.
 
-**WHY-AC-42 (D4)** — *Given* the reviewer returns from the stub, *When* the line page
-renders again, *Then* the line is unchanged: no `edit_version` bump, no stored value
-altered, and no request other than the record read.
-
-**WHY-AC-43 (D4 — negative)** — *Given* every control this feature adds, *When* their
-destinations are enumerated, *Then* none navigates to the legacy ops console.
-
-**WHY-AC-44 (D4, reach)** — *Given* a line with no detail slide-out (WHY-AC-8, WHY-AC-9,
-WHY-AC-10, WHY-AC-37) or an order-line record (WHY-AC-11), *When* the line page renders,
-*Then* no "Change the product" control appears — the control lives in the detail's footer
-only, and attaches to the line page when the real editor ships. `ASSUMED:` §13.7.
+**WHY-AC-41 (R28 — negative, and it applies to the panel too)** — *Given* the "Why this
+product" panel on the line page, *When* its elements are enumerated, *Then* its only
+interactive element is the one that opens the detail (WHY-AC-7), and on a line with no
+detail (WHY-AC-8, WHY-AC-9, WHY-AC-10, WHY-AC-37, WHY-AC-11) it has none at all.
 
 ---
 
@@ -765,41 +839,40 @@ chosen one and at most four runners-up): no excluded candidate, no `exclusions[]
 no `withheldIncomplete` entry. The ruling is enforced by what is sent, not by what is
 rendered.
 
-**X-AC-6 (R1, R2, R3)** — *Given* the route table after Phase 3, *When* it is enumerated,
-*Then* this feature has added **no** POST, PATCH, PUT or DELETE endpoint, and
-`PATCH /api/ops/recommendation-outcomes/:id` is referenced by no client code. (The capture
-changes what existing save routes store; it adds no route and widens no method.)
+**X-AC-6 (R1, R2, R3, R28)** — *Given* the route table after Phase 3, *When* it is
+enumerated, *Then* this feature has added **no** POST, PATCH, PUT or DELETE endpoint, no
+new client route, and `PATCH /api/ops/recommendation-outcomes/:id` is referenced by no
+client code. (The capture changes what existing save routes store; it adds no route and
+widens no method.)
 
 **X-AC-7 (no free prose escapes)** — *Given* a rationale response for an opening whose
 schedule row carried a free-text comment, *When* the raw body is inspected, *Then* it
 contains no schedule comment text and no data belonging to any other opening, project or
 account.
 
-**X-AC-8 (the editor stub)** — *Given* the placeholder route, *When* it is opened by any
-non-staff caller, *Then* it refuses exactly as every other ops2 route does, renders no
-project, customer, line or pricing data, and accepts no request of any method other than
-the read it inherits.
-
-**X-AC-9 (the capture never trusts the client — ops)** — *Given* an ops line-edit request
+**X-AC-8 (the capture never trusts the client — ops)** — *Given* an ops line-edit request
 whose body contains `uValue`, `shgc`, or any thermal field, *When* it is saved, *Then*
 those body values are ignored entirely and the stored figures are the ones the server
 resolved from the catalogue for the saved product+options.
 
-**X-AC-10 (the capture never trusts the client — customer)** — *Given* a customer save
+**X-AC-9 (the capture never trusts the client — customer)** — *Given* a customer save
 request whose body contains `uValue`, `shgc` or any thermal field, *When* it is saved,
 *Then* those body values are ignored entirely. A customer can never write a thermal figure
 onto a line, so a staff reviewer reading the panel is never reading a number the customer
 supplied — which is the whole point of the panel.
 
-**X-AC-11 (the capture never crosses a project)** — *Given* a save request naming a line
+**X-AC-10 (the capture never crosses a project)** — *Given* a save request naming a line
 id that belongs to another project or another account, *When* it is processed, *Then* the
 existing ownership guards refuse it unchanged, and no figure is written to any line
 outside the caller's own project.
 
-**X-AC-12 (Phase 1, irreversible write)** — CERT-AC-8: the value-stripping run refuses
+**X-AC-11 (Phase 1, irreversible write)** — CERT-AC-8: the value-stripping run refuses
 without a verified dataset export and writes nothing.
 
-**X-AC-13 (Phase 1, blast radius)** — CERT-AC-11: no customer-facing response changes.
+**X-AC-12 (Phase 1, blast radius)** — CERT-AC-11: no customer-facing response changes.
+
+*(Revision 8 removed the abuse case that gated the editor stub: under R28 there is no stub
+to gate — WHY-AC-40.)*
 
 ---
 
@@ -809,6 +882,7 @@ without a verified dataset export and writes nothing.
 |---|---|---|
 | **GST inc/ex** | No money appears anywhere on this surface — R10 removes deltas and R3 makes stored prices stale. The line's existing Price panel keeps the account-preference rule unchanged. `ASSUMED:` §13.3 | R3, R10 |
 | **Quote lifecycle — post-issue** | Panel absent entirely on order-line records; no plumbing added to `order_line`. | D2 |
+| **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. | R28 |
 | **Everything saved before Phase 3** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost. | D5 |
 | **A customer-configured line saved after Phase 3** | Thinner panel: who chose it, and its figures. | D6, D7 |
 | **A customer overrides an AI-priced line** | The recommendation's snapshot is still cleared (it no longer describes the line); the customer's own figures replace it; the requirement does not move; the panel says a person chose it though `origin` still reads `'ai'`. | SNAP-AC-14, R23, R24 |
@@ -816,6 +890,10 @@ without a verified dataset export and writes nothing.
 | **The catalogue is unreachable at save time** | Save completes, figures null, nobody is told. Never a refusal. | D6 hard constraint |
 | **A product+options combination with no published variant** | Same: save completes, figures null. | SNAP-AC-6 |
 | **A non-staff caller reaches an ops route** | One refusal, no candidate data, and nothing inferable from the difference between an anonymous and a signed-in caller. | X-AC-1, X-AC-2 |
+| **A drawing whose notation a reader might not know** | Nothing is explained. The console's readers are estimators. | R25 |
+| **A drawing whose accuracy is provisional** | Still said — mullion positions confirmed at technical review; an unsized opening drawn as a stand-in. Authority is not notation. | R25, VIEW-AC-8, VIEW-AC-10 |
+| **The customer site's own use of the legend** | Untouched. The shared export stays; only ops2 stops rendering it. | VIEW-AC-12 |
+| **The shared panel's other caller (Projects filter)** | Unmoved: same presentation, same dismiss control, existing tests green. | WHY-AC-7b |
 | **Offerability gating** | Products withheld as incomplete and candidates excluded for `offerability` never reach the client at all — enforced server-side (X-AC-5), not by client filtering. | R9 |
 | **Delivery zones** | Not applicable; this surface reads no delivery fact. | — |
 | **More than one selection run for an opening** | The most recent run by `created_at` is shown; older runs are not listed or merged. `ASSUMED:` §13.4 | R3 |
@@ -829,21 +907,34 @@ without a verified dataset export and writes nothing.
 
 ## 12. Test-surface notes for the architect and tester
 
-Not a test plan — four places where the obvious test would pass a wrong implementation:
+Not a test plan — six places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
    nothing about R24, because reading `origin` would pass it.
 2. **SNAP-AC-2 is a source-level scan**, not a behavioural test — its whole value is
-   catching the writer nobody remembered, and a behavioural test can only cover writers
-   someone thought of. It must assert a property of every match and never a count, and it
-   must fail rather than pass when its own match set is empty or smaller than the design's
-   index.
+   catching the writer nobody remembered. It must assert a property of every match and
+   never a count, and it must fail rather than pass when its own match set is empty or
+   smaller than the design's index.
 3. **SNAP-AC-5 and SNAP-AC-15 need a customer-path test**, not an ops one. The customer
    save is where a regression would be worst and where this feature has no other business.
 4. **X-AC-1 must be executed for both callers separately** even though they receive the
    same refusal — X-AC-2 is precisely the assertion that they are indistinguishable, and
    it cannot be demonstrated by testing one of them.
+5. **VIEW-AC-10 is a new assertion over untested ground; VIEW-AC-11 is a document edit.**
+   Searched 2026-08-24: **no suite anywhere asserts the drawing legend** — the only hits
+   for its text are two prose comments in `scripts/tests/drawing.test.mjs` and an unrelated
+   `legendText` fixture field. So the tester must not go looking for an existing assertion
+   to update; there is none, and inventing one or marking the criterion satisfied because
+   nothing contradicts it are both wrong. VIEW-AC-10's scan is the element's **first**
+   test, and it must be written against the *class* of copy — a check for the word
+   "legend" alone would pass a viewer that still explained panel proportions in a sentence.
+   VIEW-AC-11 is satisfied by an edit to `ops2-record-correction.md`, not by a test run.
+6. **WHY-AC-39/40/41 assert absences, which is the easiest thing to test badly.** Enumerate
+   the surface's interactive elements and assert the *set*, rather than searching for the
+   string "Change the product" — a differently-worded button would pass a string search.
+   WHY-AC-40 is a route-table assertion, not a page test: a route nobody links to is
+   invisible to a click-driven test but is still a route that exists.
 
 ---
 
@@ -875,27 +966,31 @@ Registered by this spec:
 5. **WHY-AC-9** — where figures were never captured, the panel says so rather than falling
    back to a display-time catalogue read. The only reading compatible with D3.
 6. *(retired — D7 answered it: the capture extends to the customer save path.)*
-7. **WHY-AC-44** — "Change the product" lives in the detail's footer only, so lines with
-   no detail have no such control until the real editor ships.
+7. *(retired — R28 answered it: there is no "Change the product" control, so the question
+   of where it lives no longer exists.)*
 8. **SNAP-AC-12** — figures live in the line's existing `configuration_snapshot_json`
    rather than in new columns; the architect may rule otherwise, and any migration follows
    `d1-migration-safety`.
 9. **§7.4** — R22 applies to the estimator's own line-creating writers as well as the
-   human-facing ones. Redundant with `candidate_result` for machine picks, but it is what
-   "every save" says, and it lets the display read one place (SNAP-AC-3) instead of two.
-   Which files those are is the design's index (§4.2), not this spec's.
+   human-facing ones. Which files those are is the design's index (§4.2), not this spec's.
 10. **WHY-AC-28** — on an overridden line, R6's three labels are kept and only the
     "Chosen" line's sentence changes (a person chose this; the platform had recommended X).
-    The full comparison lives in the detail, so the panel's line budget is not breached.
 11. **§10** — the ops routes' existing uniform refusal for non-staff callers is adopted as
-    written rather than changed by this feature. Vetoable, but changing it would be a
-    console-wide decision, not a "Why this product" one.
+    written rather than changed by this feature.
+12. **VIEW-AC-2 / R27's reach** — the drawing viewer's dismiss control is an X too, not
+    only the detail panel's. R27 was ruled on the panel; applying it to the viewer keeps
+    one dismissal affordance in one console rather than two.
+13. **VIEW-AC-12** — the shared `ElevationLegend` export is retained for the customer site
+    even though ops2 stops rendering it. Deleting a shared export because one consumer
+    stopped using it is a decision for whoever owns the other consumer.
 
 ---
 
 ## 14. Decisions needed
 
-**None.** Both of the architect's findings are repaired above: §10's refusal criteria now
-assert what the boundary can actually distinguish, and §7.4 defers its writer index to
-design §4.2 with SNAP-AC-2 strengthened as the enforcing mechanism. Every remaining
-judgement is registered in §13 as an `ASSUMED:` that can be vetoed at acceptance.
+**None.** R28 is a scope cut, applied as one: the placeholder criteria and the abuse case
+that gated the stub are removed, and §9.5 states the resulting absence positively so it
+reads as the design rather than an oversight. **Product switching is deferred with an open
+design question attached** — recorded in §2's out-of-scope table in the owner's own words,
+so whoever picks it up knows they are picking up the question, not a ticket. Every
+remaining judgement is registered in §13 as an `ASSUMED:` that can be vetoed at acceptance.
