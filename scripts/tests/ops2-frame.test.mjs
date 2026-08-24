@@ -246,12 +246,22 @@ test("ops2 has exactly ONE drawing viewer, and the shared legend survives outsid
   // keeps rather than a claim it endorses.
   //
   // THE EXEMPTION, EXECUTED — 2026-08-25. VIEW-AC-12 keeps the export on the
-  // stated ground that "the customer site still uses it". It does not. Searched
-  // across the repository, `ElevationLegend` has exactly ONE reference in code:
-  // its own definition. `docs/specs/ops2-record-design.md:42,157` records why —
-  // the export was ADDED by the ops2 record work, for the very plate this phase
-  // just stopped rendering it from. So ops2 was not one of two consumers; it was
-  // the only one.
+  // stated ground that "the customer site still uses it". It does not:
+  // `ElevationLegend` is DEFINED ONCE AND CALLED FROM NOWHERE. Its only
+  // non-comment occurrence under `src/**` is its own definition; the other
+  // source hits are comments recording its absence.
+  // `docs/specs/ops2-record-design.md:42,157` records why — the export was
+  // ADDED by the ops2 record work, for the very plate this phase just stopped
+  // rendering it from. So ops2 was not one of two consumers; it was the only
+  // one.
+  //
+  // SAY "NO CALLER", NEVER "ONE HIT". The first version of this note counted
+  // references repo-wide, and the Codex gate caught the spec's copy of the same
+  // sentence as false: the identifier appears in an ADR, four documents, a test
+  // and three source files, so "exactly one reference" read as a claim about
+  // all of them. "No caller" is a property of the code and stays true; "one
+  // hit" was a property of somebody's terminal, and writing it down made it
+  // false.
   //
   // The export stays, because deleting it is out of this feature's scope and the
   // criterion says keep it. What does not stay is the false premise: the count

@@ -21,9 +21,10 @@ import { elevationPartsFor, type RecordLine } from "./record";
  * enlargement is now `../chrome/DrawingViewer` — a node in the navigation tree
  * with its own address, hosted by the page rather than by this figure — and the
  * symbol legend is gone entirely from ops2 (R25: ops staff read elevations for
- * a living). The shared `ElevationLegend` export survives untouched for the
- * customer site, which still uses it; ops2 declining to render something is not
- * the repository losing it.
+ * a living). The shared `ElevationLegend` export survives untouched: THIS PHASE
+ * REMOVES A RENDER, NOT AN API. The export has no caller anywhere now, and
+ * deleting it is a separate decision nobody has taken; declining to render
+ * something is not the repository losing it.
  *
  * So this file no longer knows what enlarging MEANS. It reports that the
  * drawing was activated and the page decides — the same seam the viewer keeps.
