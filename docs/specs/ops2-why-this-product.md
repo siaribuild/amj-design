@@ -1,20 +1,22 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 12**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 13**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 12** folds in design revision 4 (§2.6): the **catalogue importers are in Phase
-1**, because they write `certified`/`dataSource` back onto every row and would have expired
-CERT-AC-7's strip at the next import. CERT-AC-3's scan widens and sharpens, CERT-AC-12–14
-are new, and the deploy order is now enforced rather than stated. Revision 11 closed
-VIEW-AC-2's mechanism; revision 10 folded in D8 and R31; revision 9 applied R29/R30 and
-added §2.1; revision 8 applied R28; revision 7 corrected a false claim about an existing
-legend test; revision 6 applied the closed UX mock gate; revision 5 repaired two architect
-findings; revisions 2–4 folded in the owner's decision rounds.
+**Revision 13** carries three corrections from the tester⇄developer round, one of which
+weakens a headline discipline and is recorded as an amendment rather than a rewrite:
+**CERT-AC-10's fence is breached by necessity** for two JSON snapshot builders; the
+CERT-AC-3 allowlist pointed at a **path that does not exist**; and one allowlist entry is
+**gone entirely**, because the claim justifying it was executed and found false. Revision 12
+folded in the importers; revision 11 closed VIEW-AC-2's mechanism; revision 10 folded in D8
+and R31; revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7
+corrected a false claim about an existing legend test; revision 6 applied the closed UX mock
+gate; revision 5 repaired two architect findings; revisions 2–4 folded in the owner's
+decision rounds.
 
 **Decisions needed: none** (§14). **Nothing is pending from any stage.**
 
@@ -65,8 +67,9 @@ not record them, they are gone.
    the product's own figures (D6). **No action anywhere on it** (R28) — back is
    navigation, not an action (R29).
 2. **The `certified` removal, depth (c)** — code, Studio schema, the values in the live
-   documents, **and the catalogue importers that would write them back** (R5, conclusions
-   §5, design §2.6). **Phase 1, and nothing else rides with it** (D5).
+   documents, **the catalogue importers that would write them back**, and **the JSON
+   snapshot builders whose source fields this removes** (R5, conclusions §5, design §2.6;
+   CERT-AC-10's amendment). **Phase 1, and nothing else rides with it** (D5).
 3. **The universal performance-figure capture (R22, D3, D6, D7).** *Every* save that sets
    or changes a line's product or variant records that product's Uw and SHGC on the line —
    ops console and customer site alike. **A server write-path change, inside Phase 3.**
@@ -252,11 +255,9 @@ known expiry is not Phase 1.** After CERT-AC-6 the Studio schema no longer decla
 fields, so a post-strip import would write data the Studio can neither display nor
 validate — an invisible, unvalidatable field re-appearing across the catalogue.
 
-**CERT-AC-10's fence has not moved.** These are **operator-run Sanity maintenance
-scripts** — the same artifact class as `strip-certified.mjs`, which was already in this
-phase — not application save paths. The fence still forbids what it always forbade: the
-staff role vocabulary, migrations, and the Phase 3 capture. It now says so explicitly, so
-nobody reads the importer work as the fence quietly relaxing.
+**And two JSON snapshot builders are in it, which breaches the fence — see CERT-AC-10's
+amendment.** That is recorded there rather than smoothed over here, because a fence that
+quietly widens to admit whatever arrived is not a fence.
 
 **Deploy order, and it is enforced rather than trusted (CERT-AC-13, CERT-AC-14):**
 
@@ -264,7 +265,7 @@ nobody reads the importer work as the fence quietly relaxing.
 2. Studio deploy (the schema stops declaring the fields — CERT-AC-6)
 3. dataset export, verified restorable (CERT-AC-8)
 4. strip dry-run
-5. `strip-certified.mjs --apply`
+5. `sanity/scripts/strip-certified.mjs --apply`
 
 **The strip is last, and final — not provisional on anything.** And it refuses to run from
 a checkout whose own importers would undo it (CERT-AC-13), so a strip launched from a
@@ -470,13 +471,35 @@ correct meaning** — dimension-rule provenance at `worker/lib/estimator/types.t
 token match would sweep it in and force the rename of a concept that is fine. A scan
 written the easy way passes today and costs a pointless refactor tomorrow.
 
-**Allowlist, with its reasons** (each must be justified in the test, not merely listed):
+**Allowlist — two entries, each with its reason** (each must be justified in the test, not
+merely listed):
 
 | Allowed | Why |
 |---|---|
 | `scripts/tests/**` | A test that asserts the field is gone has to be able to name it. |
-| `scripts/catalogue/strip-certified.mjs` | The script whose entire job is removing the field must name it. |
-| `src/ops/api.ts:381` | The **legacy** ops thermal DTO's `source` field, documented `certified \| estimated`. A legacy read surface this feature does not touch, and not a catalogue write. |
+| `sanity/scripts/strip-certified.mjs` | The script whose entire job is removing the field must name it. |
+
+> **Two corrections here, revision 13, both from the tester⇄developer round.**
+>
+> **The path was wrong.** Revisions 12 and earlier allowlisted
+> `scripts/catalogue/strip-certified.mjs`. **No such file exists** — the strip script is at
+> `sanity/scripts/strip-certified.mjs`. The spec was authorising a nonexistent file and
+> never authorising the real one. Note that CERT-AC-13's scanned directory,
+> `scripts/catalogue/*.mjs`, **was and remains correct**: the importers really do live
+> there. The two paths look like the same mistake and are not — they point at different
+> trees, and "fixing" CERT-AC-13 to match this correction would make its gate scan the
+> wrong one.
+>
+> **A third entry is gone entirely.** `src/ops/api.ts:381` was exempted on the stated
+> ground that it was *"a legacy read surface this feature does not touch"*. **The tester
+> executed that claim and it was false:** this phase removed both producers feeding it,
+> orphaning a live ops caption. The reader, the route field and the type member have since
+> been deleted, so the exemption has nothing left to exempt.
+>
+> The lesson is the same one this spec has now learned three times — with the writer index
+> (§7.4), with the phantom Playwright assertion (§12 note 5), and here. **An allowlist entry
+> is a claim, and a claim inside a security-adjacent scan deserves a test rather than a
+> sentence.** Every entry above is written to be justified in the test that reads it.
 
 **Non-vacuity, anchored the way SNAP-AC-2 is:** the walk must be **shown to have reached**
 `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`. A scan whose
@@ -516,15 +539,42 @@ nothing to the dataset.
 *When* an `outcome_json` written before this change is parsed, *Then* it parses without
 error, and no surface renders the field either way.
 
-**CERT-AC-10 (the fence — unchanged, and stated so it cannot look otherwise)** — *Given*
-the diff for this phase, *When* it is reviewed, *Then* it changes no file under
-`worker/lib/staff.ts`, no role CHECK constraint, no migration, **and no application save
-path** — the staff role vocabulary and the Phase 3 capture are both outside this phase.
+**CERT-AC-10 (the fence) — AMENDED 2026-08-24. Cause: `performance_json`.**
 
-**The catalogue importers are inside the fence, not an exception to it.**
+> **~~As written through revision 12:~~** *"…no migration, no role CHECK constraint, **and
+> no application save path**."* **That is no longer true, and the amendment is recorded
+> rather than the criterion rewritten** — a fence that quietly widens to admit whatever
+> arrived is not a fence, and a later reader must be able to see that this one was moved,
+> when, and why.
+
+*Given* the diff for this phase, *When* it is reviewed, *Then* it changes no file under
+`worker/lib/staff.ts`, no role CHECK constraint, no migration, and **no application save
+path other than the JSON snapshot builders whose source fields this phase deletes** —
+namely:
+
+- `worker/lib/ai/proposal.ts:375` — the `performance` object `JSON.stringify`'d into
+  `INSERT INTO ai_proposal_line … performance_json` at `:415`
+- `worker/lib/estimator/splitCandidates.ts:356` — the same shape for split candidates
+
+**Why the breach is necessary, not creep.** Those builders assemble `source`/`certified`
+from fields this phase removes. The only alternative to editing them is writing **literal**
+values for fields whose source data no longer exists — which would preserve the exact
+vocabulary the owner deleted, inside a stored snapshot, forever. Deleting the flag
+everywhere except the JSON blob that records what was decided is not a removal; it is a
+removal with a copy kept.
+
+**What still holds, and it is most of the fence.** No migration. No role vocabulary. No
+schema change. No column added or dropped. **No statement's column list or WHERE clause
+altered.** The breach is confined to the **contents of a JSON blob** whose fields no longer
+have a source — not to the shape of any statement, any table, or any query. That
+distinction is the entire reason this is amendable rather than a scope failure, and a
+future amendment that cannot make the same distinction should be refused.
+
+**The catalogue importers remain inside the fence, not an exception to it.**
 `scripts/catalogue/*.mjs` are **operator-run Sanity maintenance scripts** — the same
-artifact class as `strip-certified.mjs`, which this phase already owned. They are not save
-paths, they serve no request, and no customer or staff action invokes them.
+artifact class as `sanity/scripts/strip-certified.mjs`, which this phase already owned.
+They are not save paths, they serve no request, and no customer or staff action invokes
+them.
 
 **CERT-AC-11 (blast radius)** — *Given* a signed-out visitor and a signed-in customer,
 *When* every customer-facing route is exercised after this phase, *Then* no response body
@@ -544,10 +594,14 @@ This is the criterion that makes Phase 1 a fix rather than a delay. Without it,
 the next run and CERT-AC-7 silently becomes false — and after CERT-AC-6 they would be
 writing a field the Studio can neither display nor validate.
 
-**CERT-AC-13 (the strip refuses a stale checkout)** — *Given* `strip-certified.mjs` is run
-from a checkout whose own `scripts/catalogue/*.mjs` still contains a `certified` or
-certification-valued `dataSource` **field write**, *When* the strip is invoked — dry-run or
-`--apply` — *Then* it **refuses and writes nothing**, naming the offending file.
+**CERT-AC-13 (the strip refuses a stale checkout)** — *Given* `sanity/scripts/strip-certified.mjs`
+is run from a checkout whose own **`scripts/catalogue/*.mjs`** still contains a `certified`
+or certification-valued `dataSource` **field write**, *When* the strip is invoked — dry-run
+or `--apply` — *Then* it **refuses and writes nothing**, naming the offending file.
+
+The two paths in that sentence are deliberately different trees: the strip lives under
+`sanity/scripts/`, the importers it checks live under `scripts/catalogue/`. Neither is a
+typo for the other.
 
 This is a second gate beside CERT-AC-8's export gate, and it exists because the failure it
 prevents is invisible: a strip from a stale branch *succeeds*, reports success, and expires
@@ -1173,6 +1227,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **Quote lifecycle — post-issue** | Panel absent entirely on order-line records, and the `why` URL refuses for such a line rather than serving one. | D2, WHY-AC-11 |
 | **A catalogue import run after the strip** | No row regains the fields — the importers were fixed in the same phase. | CERT-AC-12 |
 | **A strip launched from a stale branch** | Refused, naming the offending importer, before anything is written. | CERT-AC-13 |
+| **A snapshot written after the removal** | `performance_json` simply no longer carries the fields — no literal placeholder, no preserved vocabulary. | CERT-AC-10 amendment |
 | **`dataSource` on a dimension rule** | Untouched. Same token, different live concept — CERT-AC-3's predicate is narrow on purpose. | §2, out of scope |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
@@ -1244,15 +1299,23 @@ Not a test plan — nine places where the obvious test would pass a wrong implem
    all three exits — control, Escape, system gesture — because a viewer whose Escape
    handler closes state without popping history leaves the address bar lying, which is the
    exact failure the route ruling rejected the state-only push to avoid.
-9. **CERT-AC-3's predicate is narrow on purpose, and CERT-AC-12 is why the phase is a
-   fix.** A bare `dataSource` token match is the easy scan and the wrong one — it sweeps in
-   the dimension-rule provenance at `types.ts:77`, a live and correct concept, and forces a
-   rename nobody wants. Match on the *values* and the *row shapes* instead, justify every
-   allowlist entry rather than listing it, and anchor non-vacuity on `catalogue.ts` **and**
-   `import-wers.mjs` — a glob that silently matched nothing is the failure mode this whole
-   family of criteria exists to prevent. CERT-AC-12's behavioural half runs against the
-   pure `derive-estimator-fields` builder; the rest is scan, because the scripts are not
-   callable in isolation.
+9. **CERT-AC-3: the predicate is narrow on purpose, the paths are not interchangeable, and
+   every allowlist entry is a claim that needs executing.**
+   - A bare `dataSource` token match is the easy scan and the wrong one — it sweeps in the
+     dimension-rule provenance at `types.ts:77`, a live and correct concept.
+   - **The strip script and the importers live in different trees**:
+     `sanity/scripts/strip-certified.mjs` versus `scripts/catalogue/*.mjs`. Revisions up to
+     12 conflated them; "correcting" CERT-AC-13's directory to match the allowlist would
+     point its gate at the wrong tree and make it vacuous.
+   - **An allowlist entry is a claim.** `src/ops/api.ts:381` was exempted as "a legacy read
+     surface this feature does not touch"; executing that claim showed both its producers
+     had been removed, orphaning a live ops caption. The entry is now gone. Same lesson as
+     the writer index and the phantom Playwright assertion: **execute the exemption, do not
+     read it.**
+   - Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`; a glob that silently
+     matched nothing is the failure mode this whole family of criteria exists to prevent.
+     CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder;
+     the rest is scan, because the scripts are not callable in isolation.
 
 ---
 
@@ -1317,12 +1380,12 @@ Registered by this spec:
 
 ## 14. Decisions needed
 
-**None, and nothing is pending from any stage.** Design revision 4's importer ruling is
-folded in as CERT-AC-3 (widened scan, narrow predicate, justified allowlist, anchored
-non-vacuity), CERT-AC-12 (durability — the strip does not expire), CERT-AC-13 (the strip
-refuses a stale checkout) and CERT-AC-14 (deploy order, with the two preconditions enforced
-rather than trusted). CERT-AC-10 now states in its own text that the fence has **not**
-moved and why the importers sit inside it.
+**None, and nothing is pending from any stage.** Revision 13's three corrections are all
+factual or structural: the fence amendment is recorded with its date, cause, named
+exemptions and — importantly — **what still holds**, so the distinction between *the
+contents of a JSON blob* and *the shape of a statement* is available to whoever is asked to
+widen it next. The allowlist path is fixed, the false exemption is gone, and §12 note 9
+carries the reason both happened.
 
 Two things remain recorded rather than resolved, deliberately: the **Projects filter's
 taxonomy** (a future ticket) and the **viewer's title copy** (`ASSUMED:` §13.15, with the
