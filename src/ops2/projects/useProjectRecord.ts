@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIonViewDidLeave, useIonViewWillEnter } from "@ionic/react";
+import { useHistory } from "react-router-dom";
 import { parseProjectRecord, type ProjectRecord } from "./record";
+import { lineSuffixOf } from "./lineRoute";
 import { catalogueReady } from "../catalogue";
 
 /**
@@ -36,6 +38,7 @@ export type RecordLoad =
  * before their own edit.
  */
 export function useProjectRecord(id: string): { load: RecordLoad; reload: () => void } {
+  const history = useHistory();
   const [load, setLoad] = useState<RecordLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
@@ -113,10 +116,28 @@ export function useProjectRecord(id: string): { load: RecordLoad; reload: () => 
   // hook exists for — a reviewer opens a record, prices a line in the legacy
   // console beside it, comes back, and must not be reading figures from before
   // their own edit — because that page genuinely leaves the screen and says so.
+  // AND GOING TO A DRAWING IS NOT LEAVING (VIEW-AC-16).
+  //
+  // The record page DOES genuinely leave when the desk canvas enlarges one of
+  // its own drawings: that address belongs to the line's route, so a second page
+  // mounts over it and Ionic reports a real departure. Armed on that, the return
+  // pop put the record back to `loading` — and everything derived from the
+  // record went with it, which is the blank canvas and the lost selection the
+  // tester measured as `selected row index -1; canvas text starts ""`.
+  //
+  // A drawing of this record is not somewhere else. What the refresh exists for
+  // is the reviewer who went off to work in the legacy console and must not come
+  // back to figures from before their own edit; enlarging a drawing and closing
+  // it again is one glance inside the same job. So the question asked on the way
+  // out is WHERE TO, not merely whether — and the pathname is already the new
+  // address by the time this fires.
+  //
   // The mount's own enter needs no separate guard: a page cannot have left
-  // before its first enter, so `departed` is still false and this returns.
+  // before its first enter, so `departed` is still false and the enter returns.
   const departed = useRef(false);
-  useIonViewDidLeave(() => { departed.current = true; });
+  useIonViewDidLeave(() => {
+    departed.current = lineSuffixOf(history.location.pathname) === "";
+  });
   useIonViewWillEnter(() => {
     if (!departed.current) return;
     departed.current = false;

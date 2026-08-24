@@ -114,6 +114,19 @@
 @media (hover: hover) {
   .ops2-viewer__back:hover { color: var(--ds-text-link-hover); }
 }
+/* THE DESTINATION'S NAME, AT WHATEVER LENGTH IT CAME IN. From the record's desk
+   canvas this is the project's own title (VIEW-AC-15), which is as long as
+   someone typed it — so it truncates exactly as `.ops2-topbar__title` does
+   rather than pushing the bar's heading off the screen. The cap is a share of
+   the viewport because the heading beside it must stay readable at every width;
+   the accessible name is the element's text and is never shortened. */
+.ops2-viewer__back-label {
+  min-width: 0;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* THE TITLE IS THE PAGE TITLE'S TWIN, and now says so by wearing the same
    recipe: `ds-type-heading-md` is on this `<h2>` and on `OpsPage`'s `<h1>`, and
    as of the owner's ruling it is defined (recipes/type.css). NOTHING TYPOGRAPHIC

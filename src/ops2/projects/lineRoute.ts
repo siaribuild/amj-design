@@ -59,6 +59,25 @@ export function lineSuffixOf(pathname: string): string {
   return match?.[1] ?? "";
 }
 
+/**
+ * WHICH DOOR THE VIEWER WAS OPENED THROUGH — carried on the history entry.
+ *
+ * There are exactly two ways in, and they return to different places: the
+ * line's own page, and the record's desk canvas. The ADDRESS is the same either
+ * way (D9 — one grammar), so it cannot answer this, and the back control's
+ * label depends on it (VIEW-AC-15).
+ *
+ * `history.push`'s per-entry state is where it lives, because that is the one
+ * thing that travels with the entry a pop returns to and cannot be reconstructed
+ * from the URL. A cold arrival has no state, so it reads as the line — which is
+ * the right answer for a link with no record behind it (VIEW-AC-2b).
+ */
+export const VIEWER_FROM_RECORD = { viewerFrom: "record" } as const;
+
+export function openedFromRecord(state: unknown): boolean {
+  return (state as { viewerFrom?: unknown } | null | undefined)?.viewerFrom === "record";
+}
+
 /** The address an opener sends the reviewer to. The parser accepts what this
  *  builds, untouched — the round trip is asserted, so the two cannot drift. */
 export function drawingSuffix(unitIndex: number | null): string {

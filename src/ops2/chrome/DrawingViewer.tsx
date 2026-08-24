@@ -135,7 +135,13 @@ export function DrawingViewer({ subject, onClose }: {
                   onClick={onClose}
                 >
                   <IonIcon icon={chevronBack} aria-hidden="true" />
-                  {shown.backLabel}
+                  {/* THE LABEL TRUNCATES, THE ACCESSIBLE NAME DOES NOT. A
+                      project's title is as long as someone typed it, and this
+                      control sits beside the bar's own heading; ellipsis is how
+                      `OpsPage` already handles the same fact. It is a span
+                      because a bare text node in a flex container is an
+                      anonymous item that no rule can reach. */}
+                  <span className="ops2-viewer__back-label">{shown.backLabel}</span>
                 </button>
               </IonButtons>
               <h2 className="ops2-viewer__title ds-type-heading-md">{shown.title}</h2>

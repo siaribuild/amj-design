@@ -11,7 +11,7 @@ import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
-import { drawingSuffix } from "./lineRoute";
+import { drawingSuffix, VIEWER_FROM_RECORD } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
   ageLabel, attentionFor, cornerFigure, money, otherActions, pendingPrimary,
@@ -198,9 +198,16 @@ export function ProjectRecordPage() {
    * does not truly go back, which is the promise the route ruling exists to
    * keep. So the canvas hands the reviewer to the address instead: one push,
    * and back returns them to this record.
+   *
+   * AND THE PUSH SAYS WHICH DOOR IT CAME THROUGH (VIEW-AC-15). There are exactly
+   * two ways into the viewer and they return to different places, so the label
+   * on its back control cannot be read off the address — the address is the same
+   * either way. `history.push`'s own per-entry state carries it, which means a
+   * cold arrival simply has none and falls back to the line, which is the right
+   * answer for a link with no record behind it (VIEW-AC-2b).
    */
   const openDrawing = (lineId: string, unitIndex: number | null) => {
-    history.push(linePath(lineId) + drawingSuffix(unitIndex));
+    history.push(linePath(lineId) + drawingSuffix(unitIndex), VIEWER_FROM_RECORD);
   };
 
   return (

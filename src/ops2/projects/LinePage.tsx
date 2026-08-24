@@ -7,7 +7,7 @@ import { OpsPage } from "../chrome/OpsPage";
 import { DrawingViewer } from "../chrome/DrawingViewer";
 import { LineReview } from "./LineReview";
 import { drawingSubject, viewerUnitCount } from "./drawingSubject";
-import { drawingSuffix, lineSuffixOf, parseLineRoute } from "./lineRoute";
+import { drawingSuffix, lineSuffixOf, openedFromRecord, parseLineRoute } from "./lineRoute";
 import { useProjectRecord } from "./useProjectRecord";
 
 const PROJECTS = destination("projects");
@@ -81,7 +81,16 @@ export function LinePage() {
     else if (route.normalise) history.replace(linePath + route.canonical);
   }, [ready, stray, route.normalise, route.canonical, history, linePath]);
 
-  const subject = line && !route.normalise ? drawingSubject(line, route, null) : null;
+  // WHERE BACK GOES DECIDES WHAT IT SAYS (VIEW-AC-15). The reviewer who opened
+  // this drawing from the record's desk canvas never visited this page, and one
+  // pop returns them to the record — so the control names the project, not the
+  // line. Read off the history entry rather than the address, because the two
+  // doors share one address by design; `openedFromRecord` is in `./lineRoute.ts`
+  // beside the grammar it belongs to.
+  const fromRecord = openedFromRecord(location.state);
+  const subject = line && !route.normalise
+    ? drawingSubject(line, route, fromRecord && record ? record.title : null)
+    : null;
 
   // WHERE THE FOCUS CAME FROM. The page never remounts, so the control that
   // opened the viewer is still on screen to receive it back (VIEW-AC-7).

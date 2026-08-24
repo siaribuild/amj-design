@@ -547,3 +547,264 @@ test("a drawing URL for a line this project does not have refuses exactly as a m
   }
   expect(new Set(refusals).size, "the refusals differ, so a probe can tell them apart").toBe(1);
 });
+
+// ── §8.1 — the project record's desk canvas as an opener surface ─────────────
+//
+// VIEW-AC-13…17, added at revision 16 after the tester found this journey
+// shipped with no criterion and no test. It is the SECOND of exactly two ways
+// into the viewer, and the one whose back control goes somewhere else: from the
+// canvas the reviewer returns to the RECORD, never to a line page they never
+// visited. Everything here is a client decision — which surface pushed, what the
+// label says, what the canvas shows on the way back — so the Worker serves the
+// same bytes whether it works or not (VIEW-AC-17).
+
+const RECORD_PAGE = `${OPS_HOST}/ops2/projects/p_rec`;
+const PROJECT_TITLE = record.project.title;
+
+/** The canvas's own copy of a control. A popped LinePage stays in Ionic's view
+ *  stack with its body hidden, so the bare test id matches twice after a round
+ *  trip; the canvas is the one the reviewer is looking at. */
+const canvasPlate = (page: import("@playwright/test").Page) =>
+  page.getByTestId("record-canvas").getByTestId("line-plate-open");
+const canvasUnit = (page: import("@playwright/test").Page, i: number) =>
+  page.getByTestId("record-canvas").getByTestId("line-unit-open").nth(i);
+
+/** The record at desk width with the composite selected in the canvas. */
+async function canvasWithComposite(page: import("@playwright/test").Page) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(RECORD_PAGE);
+  await expect(page.getByTestId("record-canvas")).toBeVisible();
+  await page.getByTestId("record-line").nth(1).click();
+  await expect(page.getByTestId("record-line").nth(1)).toHaveAttribute("aria-current", "true");
+  await expect(page.getByTestId("line-review")).toBeVisible();
+}
+
+test("the desk canvas opens the ONE viewer at the line's own address", async ({ page }) => {
+  // VIEW-AC-13. The canvas renders the same LineReview body, so its plate and
+  // its unit rows are enlargeable there too — and they reach the SAME viewer at
+  // the SAME grammar (D9), not a second unrouted copy over the record.
+  await serveRecord(page);
+  await canvasWithComposite(page);
+  const before = await historyLength(page);
+
+  await canvasPlate(page).click();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_rec\/line\/l2\/drawing$/);
+  expect(await historyLength(page) - before, "one entry, not two").toBe(1);
+  // ONE viewer in the document, whichever surface opened it (VIEW-AC-5).
+  expect(await page.getByTestId("drawing-viewer").count()).toBe(1);
+
+  // And a unit row of the same composite opens that unit's own address.
+  //
+  // "Exactly one entry" is asserted here as ONE POP GETS HOME rather than as a
+  // `history.length` delta, because the delta stops meaning that once a back has
+  // happened in this page session: the forward entry survives, and a push over
+  // it leaves the length unchanged. The property that matters is the one a
+  // reviewer feels, and it is the same claim.
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/projects\/p_rec$/);
+  await canvasUnit(page, 1).click();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page).toHaveURL(/\/line\/l2\/drawing\/u2$/);
+  await expect(page.getByTestId("drawing-viewer").getByRole("heading", { name: "W07B" }))
+    .toBeVisible();
+  await page.goBack();
+  await expect(page, "one pop returns to the record, so exactly one was pushed")
+    .toHaveURL(/\/projects\/p_rec$/);
+});
+
+test("the line page left behind by a canvas enlargement is hidden, controls and all",
+  async ({ page }) => {
+    // FOUND BY THE SUITE ABOVE, and worth its own assertion. The canvas journey
+    // mounts a LinePage over the record and pops it again, and Ionic keeps the
+    // popped page in its view stack — so the document ends up holding TWO
+    // controls named "Enlarge the drawing of W07". Duplicated accessible names
+    // on one screen are a real defect if the leftover is reachable; Ionic's
+    // `ion-page-hidden` (display: none) is what keeps it out of the tree, and
+    // nothing else asserts that it is applied.
+    await serveRecord(page);
+    await canvasWithComposite(page);
+    await canvasPlate(page).click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await page.getByTestId("drawing-viewer-back").click();
+    await expect(page).toHaveURL(/\/projects\/p_rec$/);
+
+    // However many copies the stack holds, exactly one may be REACHABLE — which
+    // is the same thing as saying exactly one is in the accessibility tree.
+    //
+    // POLLED, because during the dismiss both pages are genuinely laid out:
+    // measured mid-transition, both plates carried real boxes and neither page
+    // was `aria-hidden`, `inert` or `ion-page-hidden`. That is the animation,
+    // not the resting state, and a single-shot read of it fails on a build that
+    // is perfectly correct a frame later. What must be true is that it SETTLES.
+    const plates = page.getByTestId("line-plate-open");
+    await expect.poll(() => plates.evaluateAll(
+      (els) => els.filter((el) => (el as HTMLElement).offsetParent !== null).length),
+    { message: "two enlargeable plates stay reachable at once" }).toBe(1);
+    await expect(canvasPlate(page)).toBeVisible();
+  });
+
+test("from the canvas the control names the RECORD, and all three exits land there",
+  async ({ page }) => {
+    // VIEW-AC-14 and VIEW-AC-15 together, in one test, because they are the two
+    // halves of one trap: a control that goes to the right place while naming
+    // the wrong one passes every navigation assertion, and a correctly labelled
+    // control that lands elsewhere passes every label assertion (spec §12.7).
+    await serveRecord(page);
+    await canvasWithComposite(page);
+
+    for (const exit of ["control", "escape", "gesture"] as const) {
+      await canvasPlate(page).click();
+      await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+      await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+
+      // THE VISIBLE LABEL and THE ACCESSIBLE NAME, and neither names the line.
+      const back = page.getByTestId("drawing-viewer-back");
+      await expect(back).toHaveText(PROJECT_TITLE);
+      await expect(back).not.toHaveText(/W07/);
+      await expect(page.getByTestId("drawing-viewer")
+        .getByRole("button", { name: PROJECT_TITLE })).toBeVisible();
+      // VIEW-AC-1a is untouched: the bar still titles the SUBJECT.
+      await expect(page.getByTestId("drawing-viewer")
+        .getByRole("heading", { name: "Drawing" })).toBeVisible();
+      // The viewer's only control still receives focus on the way in (VIEW-AC-7).
+      await expect(back).toBeFocused();
+
+      if (exit === "control") await back.click();
+      else if (exit === "escape") await page.keyboard.press("Escape");
+      else await page.goBack();
+
+      await expect(page, `${exit} did not land on the record`).toHaveURL(/\/projects\/p_rec$/);
+      await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+      await expect(page.getByTestId("record-canvas")).toBeVisible();
+    }
+  });
+
+test("back from a canvas-opened drawing does not blank the canvas", async ({ page }) => {
+  // VIEW-AC-16, proved by the tester's own two measurements — `selected row
+  // index` and the canvas's leading text — read in ONE evaluate immediately
+  // after the pop, with no waiting. A retrying locator would pass on a canvas
+  // that was empty for a beat and recovered, which is precisely the defect.
+  const calls = await serveRecord(page);
+  await canvasWithComposite(page);
+
+  await canvasPlate(page).click();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  // COUNTED FROM HERE. The canvas pushes the line's own address, so a second
+  // page really does mount and reads the record for itself on the way in; the
+  // criterion is about the RETURN, which must add nothing.
+  const fetches = calls.n;
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/projects\/p_rec$/);
+
+  const state = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('[data-testid="record-line"]')];
+    const canvas = document.querySelector('[data-testid="record-canvas"]');
+    return {
+      selected: rows.findIndex((r) => r.getAttribute("aria-current") === "true"),
+      canvas: (canvas?.textContent ?? "").slice(0, 60),
+    };
+  });
+  expect(state.selected, "the line that was selected is still selected").toBe(1);
+  expect(state.canvas, "the canvas already carries that line, from the first frame")
+    .toContain("W07");
+
+  // NOT REMOUNTED AND NOT RE-FETCHED — the same discipline VIEW-AC-2a requires
+  // of the line page. A refetch is what emptied the canvas: the record goes back
+  // to `loading`, and everything derived from it goes with it.
+  expect(calls.n, "the record was re-read on the way back").toBe(fetches);
+});
+
+// ── Folded in from the tester's probe file ──────────────────────────────────
+//
+// Written as probes against the shipped build, and kept because each covers a
+// criterion this suite did not execute. They live here rather than in a second
+// spec on purpose: both files sign in as the same staff identity, and code
+// issuance refuses a second challenge to one address inside RESEND_COOLDOWN_MS,
+// so two specs sharing this mailbox cannot run in the same battery.
+
+test("a cold deep link onto a composite UNIT lands with that unit open", async ({ page }) => {
+  // VIEW-AC-2b on the unit branch — the one that has to resolve an ordinal
+  // against a record that has not arrived yet. The cold-link test above uses
+  // `/drawing` on a simple opening only.
+  await serveRecord(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${LINE("l2")}/drawing/u2`);
+
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page).toHaveURL(/\/line\/l2\/drawing\/u2$/);
+  await expect(page.getByTestId("drawing-viewer").getByRole("heading", { name: "W07B" }))
+    .toBeVisible();
+  await expect(page.getByTestId("drawing-viewer-caption")).toHaveText(
+    "W07B · 1500 × 1200 mm · unit 2 of 2 in W07, which is 1500 × 2400 mm overall");
+  // A cold arrival has no record behind it, so it REPLACES to the line path and
+  // the control names the line — the destination follows how the viewer was
+  // entered, and this door is the line's.
+  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
+  const before = await historyLength(page);
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  expect(await historyLength(page), "a cold link REPLACES, it does not push").toBe(before);
+});
+
+test("walking the tree repeatedly never re-reads the record", async ({ page }) => {
+  // VIEW-AC-2a's no-refetch pushed harder than once. The refresh is armed by an
+  // actual departure; a page that keeps changing suffix without leaving must
+  // never re-arm it, however many times it is walked.
+  const calls = await serveRecord(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LINE("l2"));
+  await expect(page.getByTestId("line-units")).toBeVisible();
+  const fetches = calls.n;
+
+  for (let i = 0; i < 3; i += 1) {
+    await page.getByTestId("line-plate-open").first().click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+    await page.getByTestId("drawing-viewer-back").click();
+    await expect(page).toHaveURL(/\/line\/l2$/);
+    await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+
+    // Only one line body may be mounted — a second is a second LinePage, which
+    // is the remount VIEW-AC-2a forbids.
+    expect(await page.getByTestId("line-review").count(),
+      `round ${i}: more than one line body is mounted`).toBe(1);
+
+    await page.getByTestId("line-unit-open").nth(0).click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await expect(page.getByTestId("drawing-viewer-back")).toBeFocused();
+    await expect(page).toHaveURL(/\/line\/l2\/drawing\/u1$/);
+    await page.keyboard.press("Escape");
+    await expect(page, `round ${i}: Escape did not close the UNIT viewer`)
+      .toHaveURL(/\/line\/l2$/);
+    await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+  }
+  expect(calls.n, "the record was re-read while the page never left").toBe(fetches);
+});
+
+test("an unauthenticated visitor gets nothing from a drawing URL", async ({ browser }) => {
+  // Phase 2 adds addressable URLs, so the first thing to attempt is reaching one
+  // without a session. NO record route mock here — this must hit the real
+  // Worker, or it proves nothing about who is allowed to read a project.
+  const context = await browser.newContext();   // no staff cookies
+  const page = await context.newPage();
+
+  const answers: string[] = [];
+  page.on("response", (r) => {
+    if (r.url().includes("/api/ops/projects/")) answers.push(String(r.status()));
+  });
+
+  await page.goto(`${LINE("l2")}/drawing`);
+  await expect(page.locator("ion-app")).toBeVisible();
+  await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+
+  const text = await page.evaluate(() => document.body.innerText);
+  for (const leak of ["W07", "Wattle Grove", "OF-Q-10482", "Ana Bianchi", "AMJ67"]) {
+    expect(text, `an anonymous caller was shown ${leak}`).not.toContain(leak);
+  }
+  for (const status of answers) {
+    expect(status, "the record endpoint answered an anonymous caller").toMatch(/^(401|403)$/);
+  }
+  await context.close();
+});
