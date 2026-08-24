@@ -23,6 +23,10 @@
 --   u_staff1 → scripts/tests/web/ops.spec.ts        (the legacy console)
 --   u_staff2 → scripts/tests/web/ops2-projects.spec.ts
 --   u_staff3 → scripts/tests/web/ops2-record.spec.ts
+--   u_staff5 → scripts/tests/web/ops2-drawing-viewer.spec.ts
+-- (u_staff4 is reserved for scripts/tests/web/ops2-line-why.spec.ts, which
+--  arrives with phase 3b — the allocation is the design's, and taking its
+--  number here would hand two suites one mailbox the day that file lands.)
 -- A new browser suite that signs in needs a new row here.
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_demo',  'gediminas.bereznevicius@gmail.com',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
@@ -35,7 +39,11 @@ INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   -- for its starting state and asserts on there being exactly two to demote
   -- through. A third admin made the guard unreachable and the test failed on a
   -- rule that had not changed.
-  ('u_staff3', 'rea@openframe.com.au', 'Rea Alaraj',    NULL,             'internal', 'estimator', datetime('now'));
+  ('u_staff3', 'rea@openframe.com.au', 'Rea Alaraj',    NULL,             'internal', 'estimator', datetime('now')),
+  -- ESTIMATOR for the same reason u_staff3 is: api-edge's "the last admin
+  -- cannot be demoted" counts the admins in this seed, so a browser suite that
+  -- only needs to READ must not become a third one.
+  ('u_staff5', 'mira@openframe.com.au', 'Mira Kovac',    NULL,             'internal', 'estimator', datetime('now'));
 
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES

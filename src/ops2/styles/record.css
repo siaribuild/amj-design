@@ -21,8 +21,15 @@
  * So ops2 supplies it, scoped to the surfaces a drawing sits on. At `xs` the
  * leaders are suppressed entirely (font: 0) and this never fires; the line
  * page draws at `hero` and `lg`, where it always does. */
-.rl-elev, .lp-plate, .lp-plate-big, .lp-unit__elev {
+.rl-elev, .lp-plate, .lp-unit__elev {
   --paper: var(--ds-surface-card);
+}
+/* The viewer draws on the page's own ground rather than on a card — the drawing
+   IS the screen there — so its halo is that colour and not the card's. Getting
+   this wrong does not fail loudly: it paints a card-coloured smear behind every
+   leader number. */
+.ops2-viewer__figure {
+  --paper: var(--ds-surface-page);
 }
 
 /* ── The head row's controls ────────────────────────────────────────────────*/

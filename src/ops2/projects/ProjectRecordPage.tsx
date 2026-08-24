@@ -11,6 +11,7 @@ import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
+import { drawingSuffix } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
   ageLabel, attentionFor, cornerFigure, money, otherActions, pendingPrimary,
@@ -172,6 +173,9 @@ export function ProjectRecordPage() {
   // the line will lead to a new view details screen with composite details.
   // Edit, 'Why this product?' will then be accessible from here." Phase 2 makes
   // this a selection at desk width and nothing else about it changes.
+  const linePath = (lineId: string) =>
+    `/projects/${encodeURIComponent(id)}/line/${encodeURIComponent(lineId)}`;
+
   const openLine = (lineId: string) => {
     // PHASE 2: AT THE DESK, CHOOSING A LINE IS NOT NAVIGATION. The canvas beside
     // the rail is already showing one, so pushing a page would replace the very
@@ -180,7 +184,23 @@ export function ProjectRecordPage() {
     // review but its own page, so it pushes. The mock draws the same branch
     // (`RecordPage.tsx:73-76`).
     if (wide) { setSelectedLineId(lineId); return; }
-    history.push(`/projects/${encodeURIComponent(id)}/line/${encodeURIComponent(lineId)}`);
+    history.push(linePath(lineId));
+  };
+
+  /**
+   * ENLARGING A DRAWING FROM THE DESK CANVAS IS A NAVIGATION, and it lands on
+   * the line's own page with the viewer already open.
+   *
+   * The canvas renders the same `LineReview` body the line page does, so its
+   * plate and its unit rows are enlargeable here too — and there is exactly one
+   * viewer in ops2, reached at exactly one address (`./lineRoute.ts`). Opening a
+   * second, unrouted copy over the record would give it a back control that
+   * does not truly go back, which is the promise the route ruling exists to
+   * keep. So the canvas hands the reviewer to the address instead: one push,
+   * and back returns them to this record.
+   */
+  const openDrawing = (lineId: string, unitIndex: number | null) => {
+    history.push(linePath(lineId) + drawingSuffix(unitIndex));
   };
 
   return (
@@ -402,7 +422,10 @@ export function ProjectRecordPage() {
                           Line actions
                         </IonButton>
                       </div>
-                      <LineReview line={selected} />
+                      <LineReview
+                        line={selected}
+                        onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
+                      />
                     </>
                   ) : (
                     <p className="rec-canvas__empty" data-testid="record-canvas-empty">

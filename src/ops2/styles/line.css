@@ -43,9 +43,6 @@
   border-radius: var(--ds-radius-control);
   cursor: pointer;
 }
-/* The enlargement is already open behind the panel's own scrim, so the copy
-   inside it is a picture rather than a control. */
-.lp-plate__face--static { cursor: default; }
 @media (hover: hover) {
   button.lp-plate__face:hover { background: var(--ds-color-brand-wash); }
 }
@@ -61,21 +58,86 @@
   color: var(--ds-text-muted);
 }
 
-/* The enlargement, inside the panel: drawing, the units it was built from, and
-   the symbol legend — which lives with the generator, because a symbol added
-   there without a row added here is a drawing nobody can read. */
-.lp-plate-big {
+/* ── THE FULL-SCREEN DRAWING VIEWER ─────────────────────────────────────────
+ * It replaced a `SidePanel` enlargement, and the difference is the point: a
+ * SidePanel is 520px of reading matter BESIDE the work, and a drawing wants the
+ * whole viewport. Full screen at every width — no breakpoints, no bottom sheet,
+ * no side animation.
+ *
+ * It is a screen in the tree, so its bar is the shape every other ops2 screen
+ * has: a back control at the LEADING edge naming the line it returns to, then
+ * the title, left-aligned. Not a centred title with a trailing Close — that is
+ * the modal convention, and nothing here is a modal.
+ *
+ * NO LEGEND, and no block for one. R25: ops staff read elevations for a living. */
+.ops2-viewer::part(content) {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  background: var(--ds-surface-page);
+}
+.ops2-viewer__bar {
+  --background: var(--ds-surface-card);
+  --border-width: 0;
+  --min-height: var(--ops2-head-row, 44px);
+}
+.ops2-viewer__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 var(--theme-spacing-2xs) 0 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+}
+.ops2-viewer__title {
+  margin: 0;
+  padding-inline-start: var(--theme-spacing-2xs);
+  color: var(--ds-text-primary);
+}
+.ops2-viewer__content {
+  --background: var(--ds-surface-page);
+}
+.ops2-viewer__body {
   display: flex;
   flex-direction: column;
-  gap: var(--theme-spacing-md);
+  gap: var(--theme-spacing-lg);
   padding: var(--theme-spacing-md);
 }
-.lp-plate-big .lp-plate {
-  box-shadow: none;
-  border: 0;
-  padding: 0;
+.ops2-viewer__figure {
+  margin: 0;
+  text-align: center;
 }
-.lp-plate-parts h2 {
+/* THE LARGEST SIZE THE VIEWPORT ALLOWS. The generator is called at `lg` and the
+   drawing is fitted here rather than re-generated per width — its leader text is
+   designed in viewBox units, so the whole drawing scales together and the
+   numbers keep their relationship to the frame. */
+.ops2-viewer__svg {
+  display: block;
+  width: 100%;
+  max-width: min(100%, 720px);
+  height: auto;
+  max-height: 62vh;
+  margin: 0 auto;
+  color: var(--ds-text-primary);
+}
+.ops2-viewer__cap {
+  margin: var(--theme-spacing-sm) auto 0;
+  max-width: 46ch;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+.ops2-viewer__units {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 720px;
+}
+.ops2-viewer__units-title {
   margin: 0 0 var(--theme-spacing-xs);
   font-family: var(--theme-font-sans);
   font-size: var(--theme-font-size-xs);
@@ -84,20 +146,23 @@
   text-transform: uppercase;
   color: var(--ds-text-muted);
 }
-.lp-plate-parts ul {
+.ops2-viewer__units ul {
   margin: 0;
   padding: 0;
   list-style: none;
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-primary);
 }
-.lp-plate-parts li {
+.ops2-viewer__units li {
   display: flex;
+  align-items: baseline;
   gap: var(--theme-spacing-sm);
   padding: var(--theme-spacing-2xs) 0;
   border-top: 1px solid var(--ds-border-subtle);
 }
-.lp-plate-parts li:first-child { border-top: 0; }
+.ops2-viewer__units li:first-child { border-top: 0; }
+.ops2-viewer__unit-name { min-width: 0; }
+.ops2-viewer__units li .lp-unit__meta { margin-inline-start: auto; }
 
 /* ── The size, and where it came from ───────────────────────────────────────
  * The figure leads; its provenance follows quietly. A size read off a drawing
@@ -174,15 +239,37 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   padding: 0;
   list-style: none;
 }
+/* THE ROW IS THE VIEWER'S OPENER, so the <li> keeps only the hairline and the
+   button carries the grid, the padding and the hover — the shipped `.rl-open`
+   move from the record's line list, reused rather than re-invented. */
 .lp-unit {
+  border-top: 1px solid var(--ds-border-subtle);
+}
+.lp-unit:first-child { border-top: 0; }
+.lp-unit__open {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--theme-spacing-sm);
+  width: 100%;
+  /* A unit with no note and no options is 40px on content alone, and 44 is a
+     hit-target floor rather than a look — it adds nothing to a row that
+     already clears it. */
+  min-height: 44px;
   padding: var(--theme-spacing-sm) 0;
-  border-top: 1px solid var(--ds-border-subtle);
+  background: none;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
-.lp-unit:first-child { border-top: 0; padding-top: var(--theme-spacing-2xs); }
+/* Inside the row, so it draws against the row's own edge rather than over the
+   hairline of the row above it. */
+.lp-unit__open:focus-visible { outline-offset: -2px; }
+@media (hover: hover) {
+  .lp-unit__open:hover { background: var(--ds-color-brand-wash); }
+}
 .lp-unit__elev { display: block; flex: none; }
 .lp-unit__svg { display: block; }
 .lp-unit__body { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--theme-spacing-sm); }

@@ -102,8 +102,22 @@ export function Panel({ title, lines, budget, more, testId }: {
 }
 
 /** The units a composite is actually made of. No price and no edit control: the
- *  parent owns the total, and a unit is reached through the parent. */
-function Units({ line }: { line: RecordLine }) {
+ *  parent owns the total, and a unit is reached through the parent.
+ *
+ *  THE WHOLE ROW IS THE VIEWER'S OPENER — the shipped `.rl-open` move from the
+ *  record's line list, reused rather than re-invented. A button around the
+ *  drawing alone does not work here: its only rest-state affordance would be a
+ *  box drawn behind it, which is out of this console's vocabulary, and without
+ *  the box it is pixel-identical to the static glyph in the row above it. Hover
+ *  is not a fallback — half this console's use is on a phone.
+ *
+ *  The button must never come to contain another interactive element: a button
+ *  inside a button is invalid and the inner one is unreachable. If a unit ever
+ *  needs its own control, this decision is reopened rather than worked around. */
+function Units({ line, onOpenDrawing }: {
+  line: RecordLine;
+  onOpenDrawing: (unitIndex: number) => void;
+}) {
   const units = unitsOf(line);
   const stacked = line.compositeAxis === "horizontal";
   const openingAlong = Number(stacked ? line.height : line.width);
@@ -118,6 +132,17 @@ function Units({ line }: { line: RecordLine }) {
       <ul className="lp-units__list">
         {units.map((u, i) => (
           <li key={`${u.id}-${i}`} className="lp-unit">
+            <button
+              type="button"
+              className="lp-unit__open"
+              data-testid="line-unit-open"
+              onClick={() => onOpenDrawing(i + 1)}
+            >
+            {/* THE PURPOSE IS NAMED, AND THE ROW'S OWN WORDS SURVIVE. An
+                `aria-label` here would replace the unit's spec, its size and the
+                customer's note with four words — and that content exists nowhere
+                else in ops2. A visually hidden first child adds instead. */}
+            <span className="ops2-sr-only">Enlarge the drawing of </span>
             <span className="lp-unit__elev">
               <Elevation
                 productSlug={u.productSlug ?? ""}
@@ -147,6 +172,7 @@ function Units({ line }: { line: RecordLine }) {
                 </span>
               )}
             </span>
+            </button>
           </li>
         ))}
       </ul>
@@ -174,7 +200,13 @@ const PRICE_STATE: Record<ReturnType<typeof priceState>, string> = {
   unknown: "priced",
 };
 
-export function LineReview({ line }: { line: RecordLine }) {
+export function LineReview({ line, onOpenDrawing }: {
+  line: RecordLine;
+  /** A drawing was activated: the opening itself (`null`) or the 1-based unit.
+   *  WHAT that means is the page's, not this body's — see the router-free note
+   *  above. The viewer is a node in the tree, so opening it is a navigation. */
+  onOpenDrawing: (unitIndex: number | null) => void;
+}) {
   // UNITS, NOT ROWS — see `elevationPartsFor`. A symmetric split is stored as
   // one row carrying two units, and counting rows called it a simple opening.
   const composite = joinedUnitCount(line) >= 2;
@@ -184,7 +216,7 @@ export function LineReview({ line }: { line: RecordLine }) {
 
   return (
     <div className="lp-body" data-testid="line-review">
-      <Plate line={line} />
+      <Plate line={line} onOpen={() => onOpenDrawing(null)} />
 
       {/* The size sits with the drawing it dimensions, carrying one word of
           provenance — a number off a plan and one a customer gave on the phone
@@ -213,7 +245,7 @@ export function LineReview({ line }: { line: RecordLine }) {
       )}
 
       {composite ? (
-        <Units line={line} />
+        <Units line={line} onOpenDrawing={onOpenDrawing} />
       ) : (
         <Panel
           title="Specification"
