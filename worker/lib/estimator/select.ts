@@ -179,8 +179,13 @@ export async function evaluateCandidates(
     for (const variant of variants) {
       // The variant's own figures decide its TIER; the candidate's rules verdict
       // decides its status. There is no third opinion: certification was deleted
-      // as a status cause in ADR 0011, and every surviving downgrade - tier,
-      // rules warning, thermal precedent - is unchanged.
+      // as a status cause in ADR 0011, and every surviving downgrade — tier,
+      // rules warning, thermal precedent — is unchanged.
+      //
+      // The copy is NOT redundant now that nothing is overridden per variant:
+      // compositeSelect.ts assigns `selected.outcome.status` in place, so every
+      // row must own its RuleOutcome or one unit's downgrade would land on all
+      // the sibling rows built from the same candidate.
       const exactOutcome: RuleOutcome = { ...outcome };
       const price = await priceFn(candidate, opening, variant);
       rows.push({ candidate, outcome: exactOutcome, selectedVariant: variant, price, fit });
