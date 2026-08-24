@@ -154,6 +154,48 @@ test("the plate opens the viewer at its own address, pushing exactly one entry",
   expect(calls.n).toBe(fetches);
 });
 
+test("the drawing takes the size the VIEWPORT allows, at every viewport", async ({ page }) => {
+  // VIEW-AC-1, and the half of it a single-width test cannot see. The rule was
+  // headed "the largest size the viewport allows" and capped the drawing at a
+  // fixed 720px column, so 1280, 1600, 1920 and 2560 all drew the same 720×503
+  // — 28% of a desk monitor. THREE widths, because one proves nothing about a
+  // constant and two could still be a step.
+  await serveRecord(page);
+  const drawn: { width: number; height: number; viewport: number }[] = [];
+  for (const [width, height] of [[1280, 900], [1920, 1080], [2560, 1440]]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(LINE("l1"));
+    await expect(page.getByTestId("line-review")).toBeVisible();
+    await page.getByTestId("line-plate-open").click();
+    const svg = page.getByTestId("drawing-viewer").locator("svg[data-elevation]");
+    await expect(svg).toBeVisible();
+    const box = await svg.boundingBox();
+    if (!box) throw new Error(`no box for the drawing at ${width}×${height}`);
+    drawn.push({ width: box.width, height: box.height, viewport: width });
+    // And it never runs past the edge it was fitted to.
+    expect(box.width).toBeLessThanOrEqual(width);
+  }
+
+  // AND THE BOX IS THE DRAWING. `width: 100%` with a height cap passes every
+  // assertion below while the drawing sits letterboxed inside an element twice
+  // its width — the measurement would be of the container, not the ink. The
+  // drawing's own proportion is the tell: it is constant when the box is tight
+  // and tracks the viewport when it is not.
+  const ratio = drawn.map((d) => d.width / d.height);
+  for (const r of ratio) expect(Math.abs(r - ratio[0])).toBeLessThan(0.05);
+
+  // Strictly larger every time — a constant fails on the first comparison, and
+  // a cap that binds from the second viewport up fails on the second.
+  for (let i = 1; i < drawn.length; i += 1) {
+    expect(drawn[i].height,
+      `${drawn[i].viewport}px must draw taller than ${drawn[i - 1].viewport}px`)
+      .toBeGreaterThan(drawn[i - 1].height + 50);
+    expect(drawn[i].width).toBeGreaterThan(drawn[i - 1].width + 50);
+  }
+  // A desk monitor gets a drawing worth the name, not a column out of a mock.
+  expect(drawn[drawn.length - 1].width).toBeGreaterThan(900);
+});
+
 test("the back control, Escape and the system back gesture are one single pop", async ({ page }) => {
   // VIEW-AC-2a. All three, because a viewer whose Escape handler closes state
   // without popping history leaves an orphan entry and an address bar that

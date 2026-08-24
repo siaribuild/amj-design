@@ -265,8 +265,15 @@ ion-toolbar.ops2-topbar--identity {
 .rl-row[data-flagged="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
 
 /* THE WHOLE ROW IS ONE TARGET. One button filling it, opening that line's page
-   — no twisty, nothing that looks pressable and answers differently. */
-.rl-open {
+   — no twisty, nothing that looks pressable and answers differently.
+
+   THE LINE PAGE'S UNIT ROWS ARE THE SAME OBJECT, so they are the same selector
+   rather than a second copy of these nine declarations: a row that fills its
+   li, opens what it names, and washes on hover. `line.css` overrides only the
+   four things a unit row does differently (it is a grid, and it carries a hit
+   floor); everything a reader would expect the two to share is stated once. */
+.rl-open,
+.lp-unit__open {
   display: flex;
   align-items: center;
   gap: var(--theme-spacing-sm);
@@ -280,7 +287,8 @@ ion-toolbar.ops2-topbar--identity {
   cursor: pointer;
 }
 @media (hover: hover) {
-  .rl-open:hover { background: var(--ds-color-brand-wash); }
+  .rl-open:hover,
+  .lp-unit__open:hover { background: var(--ds-color-brand-wash); }
 }
 
 /* The drawing leads, so the list is scannable by SHAPE before a word is read.

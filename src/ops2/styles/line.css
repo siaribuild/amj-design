@@ -133,10 +133,6 @@
   --background: var(--ds-surface-page);
 }
 .ops2-viewer__body {
-  /* ONE COLUMN WIDTH, SAID ONCE. The drawing, its caption and the units list
-     are one stacked block and must share an edge; three copies of the number is
-     how they stop sharing it. */
-  --viewer-column: 720px;
   display: flex;
   flex-direction: column;
   gap: var(--theme-spacing-lg);
@@ -146,16 +142,32 @@
   margin: 0;
   text-align: center;
 }
-/* THE LARGEST SIZE THE VIEWPORT ALLOWS. The generator is called at `lg` and the
-   drawing is fitted here rather than re-generated per width — its leader text is
-   designed in viewBox units, so the whole drawing scales together and the
-   numbers keep their relationship to the frame. */
+/* THE LARGEST SIZE THE VIEWPORT ALLOWS, and the viewport is what says so. The
+   generator is called at `lg` and the drawing is fitted here rather than
+   re-generated per width — its leader text is designed in viewBox units, so the
+   whole drawing scales together and the numbers keep their relationship to the
+   frame.
+
+   THE HEIGHT IS THE GOVERNOR. A drawing has a fixed aspect, so one cap is
+   enough and height is the one that leaves the caption and the units list on
+   the screen under it; the width cap is only the edge of the viewport. This
+   carried a 720px column cap instead, taken from the MOCK'S SIMULATED DESK
+   FRAME rather than from a column inside it, and it bound at every width — the
+   same 720×503 drawing at 1280, 1600, 1920 and 2560, which on a desk monitor is
+   28% of the screen. `scripts/tests/web/ops2-drawing-viewer.spec.ts` measures it
+   at three widths, because one width cannot see a constant. */
 .ops2-viewer__svg {
   display: block;
-  width: 100%;
-  max-width: min(100%, var(--viewer-column));
-  height: auto;
-  max-height: 62vh;
+  /* THE HEIGHT IS SET AND THE WIDTH FOLLOWS IT. `width: 100%` with a
+     `max-height` gives a full-width box with the drawing LETTERBOXED inside it —
+     the same picture, but an element far wider than its own ink, so anything
+     measuring the drawing measures the container instead. Stating the height
+     and letting the viewBox's ratio answer for the width makes the box the
+     drawing; `max-width` is then only the viewport's edge, and shrinks the
+     height with it on a phone. */
+  height: 62vh;
+  width: auto;
+  max-width: 100%;
   margin: 0 auto;
   color: var(--ds-text-primary);
 }
@@ -183,26 +195,27 @@
   font-variant-numeric: tabular-nums slashed-zero;
   vector-effect: none;
 }
-/* THE CAPTION'S MEASURE IS THE DRAWING'S. A ch-based measure was tried twice
-   (46, then 56) to stop the composite's caption dropping a word onto a second
-   line, centred under the drawing where an orphan is most visible — and at the
-   desk both still orphaned it, because the sentence a composite writes ("…
-   overall · height × width · drawn from its 2 units of …") is longer than any
-   comfortable reading measure. It is a caption, not reading matter: it takes
-   the column the drawing and the units list already share, so it can only wrap
-   when the drawing itself has run out of room. `pretty` rather than `balance`
-   for the phone, where it must still wrap: balance split it evenly and broke
-   "height × width" across the two lines, which is worse than a long first line. */
+/* THE CAPTION KEEPS A MEASURE; THE DRAWING NO LONGER HAS ONE. A ch-based
+   measure was tried twice (46, then 56) to stop the composite's caption
+   dropping a word onto a second line, centred under the drawing where an orphan
+   is most visible — and at the desk both still orphaned it, because the sentence
+   a composite writes ("… overall · height × width · drawn from its 2 units of
+   …") is longer than any comfortable reading measure. 720px is what it was
+   given then, and it stays: the drawing above it now grows with the viewport,
+   and a caption that grew with it would be one 2400px line. `pretty` rather than
+   `balance` for the phone, where it must still wrap: balance split it evenly and
+   broke "height × width" across the two lines, which is worse than a long first
+   line. */
 .ops2-viewer__cap {
   margin: var(--theme-spacing-sm) auto 0;
-  max-width: min(100%, var(--viewer-column));
+  max-width: min(100%, 720px);
   text-wrap: pretty;
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
-/* THE UNITS LIST IS THE MOCK'S BLOCK, NOT THE DRAWING'S COLUMN. The approved
-   mock gives it 420px (`viewer__units`) while the drawing keeps the wider
-   column, and the size stays RIGHT-ALIGNED inside it. Both halves matter: the
+/* THE UNITS LIST IS THE MOCK'S BLOCK, NOT THE DRAWING'S WIDTH. The approved
+   mock gives it 420px (`viewer__units`) while the drawing takes the room the
+   viewport allows, and the size stays RIGHT-ALIGNED inside it. Both halves matter: the
    right-aligned figures make two units' sizes comparable down a column, and the
    420px block is what keeps the size near its name while doing it. Widened to
    the drawing's 720px it read as a name and a size at opposite ends of the
@@ -311,7 +324,8 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 }
 /* THE ROW IS THE VIEWER'S OPENER, so the <li> keeps only the hairline and the
    button carries the grid, the padding and the hover — the shipped `.rl-open`
-   move from the record's line list, reused rather than re-invented. */
+   move from the record's line list, and the same SELECTOR rather than a second
+   copy of it (see `.rl-open` in record.css). */
 .lp-unit {
   border-top: 1px solid var(--ds-border-subtle);
 }
@@ -330,30 +344,22 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 .lp-panel:has(> .lp-units__list) > .lp-panel__more {
   padding-inline: var(--theme-spacing-md);
 }
+/* The row's treatment is `.rl-open`'s, shared with it in `record.css`. What is
+   left here is only what a UNIT row does differently: a grid rather than a
+   flex row, because the drawing must stay top-aligned while the body beside it
+   wraps to two lines. */
 .lp-unit__open {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: var(--theme-spacing-sm);
-  width: 100%;
   /* A unit with no note and no options is 40px on content alone, and 44 is a
      hit-target floor rather than a look — it adds nothing to a row that
      already clears it. */
   min-height: 44px;
-  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
-  background: none;
-  border: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
 }
 /* Inside the row, so it draws against the row's own edge rather than over the
    hairline of the row above it. */
 .lp-unit__open:focus-visible { outline-offset: -2px; }
-@media (hover: hover) {
-  .lp-unit__open:hover { background: var(--ds-color-brand-wash); }
-}
 .lp-unit__elev { display: block; flex: none; }
 .lp-unit__svg { display: block; }
 .lp-unit__body { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--theme-spacing-sm); }
