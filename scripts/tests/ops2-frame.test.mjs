@@ -218,6 +218,16 @@ test("ops2 has exactly ONE drawing viewer, and the shared legend survives outsid
   assert.match(viewers[0].replace(/\\/g, "/"), /^src\/ops2\/chrome\/DrawingViewer\.tsx$/,
     "and it lives in chrome, because any surface may open it");
 
+  // AND THE PLATE'S OLD ENLARGEMENT IS GONE, not merely unreachable (VIEW-AC-6).
+  // It was a `SidePanel` the plate owned, with its own open-state and a "Done"
+  // that dismissed it — a control flow the tree ruling replaces outright. Left
+  // in the file behind a dead branch it would be the obvious thing to revive.
+  const plate = read("src/ops2/projects/Plate.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/SidePanel/.test(plate), "the plate must not own a panel any more");
+  assert.ok(!/useState/.test(plate), "nor an open-state — the address is the open-state now");
+
   // THE LEGEND IS NOT RENDERED IN ops2, AND NOT IMPORTED EITHER (R25). Ops staff
   // read elevations for a living; that key is customer-facing explanation.
   //

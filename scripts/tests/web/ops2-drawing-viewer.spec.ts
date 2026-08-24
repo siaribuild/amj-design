@@ -474,3 +474,34 @@ test("the record list's row glyph still opens the line, and never the viewer", a
   await expect(page).toHaveURL(/\/line\/l1$/);
   await expect(page.getByTestId("drawing-viewer")).toBeHidden();
 });
+
+test("a drawing URL for a line this project does not have refuses exactly as a missing one does", async ({ page }) => {
+  // X-AC-4, for the addresses this phase adds. The new URLs must not become the
+  // cheap way to ask whether a line exists: they resolve their line through the
+  // record fetch the page already made, so "belongs to another project" and
+  // "does not exist" are the SAME code path and say the same sentence.
+  //
+  // Asserted as a byte comparison of what the reader is shown, because a probe
+  // learns from a DIFFERENCE — two refusals that merely both refuse would still
+  // leak if one of them were phrased more specifically than the other.
+  await serveRecord(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  const refusals: string[] = [];
+  // `l_other` stands for a line on a different project; `l_nope` for one that
+  // exists nowhere. The record for p_rec contains neither, which is the whole
+  // mechanism: absence from this project's record is indistinguishable from
+  // absence from the database.
+  for (const lineId of ["l_other", "l_nope"]) {
+    for (const suffix of ["/drawing", "/drawing/u1"]) {
+      await page.goto(`${LINE(lineId)}${suffix}`);
+      // The suffix normalises away rather than opening a viewer over nothing.
+      await expect(page).toHaveURL(new RegExp(`/line/${lineId}$`));
+      await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+      const refusal = page.getByTestId("line-not-found");
+      await expect(refusal).toBeVisible();
+      refusals.push((await refusal.innerText()).trim());
+    }
+  }
+  expect(new Set(refusals).size, "the refusals differ, so a probe can tell them apart").toBe(1);
+});
