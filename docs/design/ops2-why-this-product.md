@@ -6,6 +6,11 @@
 plus the mock-gate rulings R25–R27, the R28 scope cut, and **R29** (the Why detail is a
 node in the navigation tree — owner ruling relayed 2026-08-24; the architecture it forces
 is ruled in §4.8).
+**Revision 5 (conformance record)** reconciles this design with the Phase 1 diff as
+verified: CERT-AC-10's fence is amended for two JSON snapshot builders (§10.1), the
+orphaned `source` caption chain and the Panel markup repair are brought into the index
+(§10.2-10.3), and §2.6's third allowlist entry is struck — the claim behind it was
+executed and found false. See §10 for the full record.
 **Revision 4** closes the Phase 1 gap the developer correctly refused to close
 silently: the catalogue importers re-stamp `certified`/`dataSource` on every run, so the
 strip had an expiry date. Ruling: **the importers come into Phase 1** (§4.1 addendum),
@@ -152,17 +157,24 @@ presence, never on version. Verified: no reader compares against the literal `"l
      provenance (`worker/lib/estimator/types.ts:77`) is a different concept and must
      not be swept in. Named allowlist, each with its reason: `scripts/tests/**`
      (CERT-AC-9 fixtures and the scan's own patterns);
-     `sanity/scripts/strip-certified.mjs` (must name the fields it deletes);
-     `src/ops/api.ts` `OpsThermalProposed.source` (types an INSERT-only historical
-     audit record — a reader of ladder-v1-era stored values, R18, writes nothing).
+     `sanity/scripts/strip-certified.mjs` (must name the fields it deletes).
+     **A third entry — `src/ops/api.ts` as an untouched historical reader — was struck
+     during implementation**: the tester executed the claim and it was false. This
+     phase deleted both producers of `OpsThermalProposed.source`, so the "historical"
+     caption would have meant two different things depending on write date; the reader,
+     the route field and the type member were deleted instead (§10.2). The lesson is
+     recorded in the spec and in the suite: an allowlist entry is a claim, and a claim
+     inside a security-adjacent scan deserves a test rather than a sentence.
    - **New CERT-AC-12 (durability)**: *Given* the strip has run, *When* any catalogue
      import or derive script runs, *Then* no document regains a `certified` or
      `dataSource` field — proven behaviourally where the script exposes a pure builder
      (`derive-estimator-fields`), by the widened source scan everywhere.
-   - **CERT-AC-10 is not breached and needs no edit**: `scripts/catalogue/**` are
-     operator-run Sanity maintenance scripts — the same artifact class as
-     `strip-certified.mjs`, already in the phase. No save path, no role, no migration,
-     no customer-facing response is touched by editing them.
+   - **CERT-AC-10, for the importers**: `scripts/catalogue/**` are operator-run
+     Sanity maintenance scripts — the same artifact class as `strip-certified.mjs`,
+     already in the phase; they are inside the fence, not an exception to it. The
+     fence itself was later amended on other grounds (two JSON snapshot builders whose
+     source fields this phase deletes — §10.1); the amendment is recorded in the spec
+     rather than the criterion silently rewritten.
 
 ---
 
@@ -227,8 +239,9 @@ Affected files (hand-off index):
 Phase 1.** A Phase 1 that ships with a known expiry date is not Phase 1: the strip's
 whole point (owner, depth (c)) is that the field cannot come back, and an importer that
 re-stamps it automatically is worse than the human the owner was guarding against. The
-phase's discipline survives intact — these are operator-run Sanity scripts, not save
-paths (CERT-AC-10 untouched) — and after CERT-AC-6 the Studio schema no longer declares
+phase's discipline survives for the importers — operator-run Sanity scripts, not save
+paths — though CERT-AC-10 itself was later amended for two JSON snapshot builders this
+addendum did not foresee (§10.1) — and after CERT-AC-6 the Studio schema no longer declares
 the fields, so an importer writing them would be creating data the Studio cannot even
 display. Four sites:
 
@@ -918,3 +931,58 @@ untouched). `ASSUMED:` tags registered by this design, vetoable at acceptance:
   `drawing/u:N` naming a unit by 1-based display order; suffixes outside the grammar,
   `/why` on a line with no detail, and out-of-range unit ordinals are normalised away
   with `history.replace`.
+
+---
+
+## 10. Phase 1 conformance record (architect, 2026-08-24 — final diff vs this design)
+
+Verdict: **CONFORMS, with four reconciled divergences and one MINOR finding.** Every
+artifact §4.1 (with addendum) and §7 named for Phase 1 exists on the branch and is
+wired: `scripts/tests/certified-removal.test.mjs` (in `test:pure` and the new
+`test:certified` script), the extended `thermal-selection.test.mjs`,
+`sanity/scripts/strip-certified.mjs` (dry-run default; export gate and re-population
+gate both before any client import; `STRIP_TARGETS` asserted against
+`sanity/schemaTypes.ts` with a loud refusal when a type matches nothing),
+`docs/adr/0011`, the four importer edits exactly as the addendum table specifies
+(`wersWindowId`/`certificationRef` surviving), `ladder-v2`, and an untouched
+`scripts/tests/api.test.mjs` as the blast-radius evidence. No migration, no D1 change,
+no role vocabulary, no statement's column list or WHERE clause altered.
+
+Reconciled divergences — each had a good reason, so this document was corrected rather
+than the implementation:
+
+1. **CERT-AC-10 amended (spec rev 13), not "no save path" as §4.1 claimed.**
+   `worker/lib/ai/proposal.ts:375` and `worker/lib/estimator/splitCandidates.ts:356`
+   build JSON blobs (`performance_json`, the unit configurationSnapshot) from fields
+   this phase deletes; leaving them meant writing literal values for a concept the
+   owner removed — a removal with a copy kept. The breach is confined to JSON blob
+   contents; the fence otherwise holds, and the spec records the amendment visibly.
+2. **The orphaned caption chain** — deleting both producers stranded a live reader, so
+   the reader went too: `src/ops/ProjectRecord.tsx:772-777` (the "estimated" caption),
+   `src/ops/api.ts:381` (`OpsThermalProposed.source`), `worker/routes/ops.ts` (the
+   route field), `worker/routes/debug.ts:133-138` (same vocabulary on the debug
+   surface). Covered by a new suite this design did not name,
+   `scripts/tests/ops-thermal-source-orphan.test.mjs` (wired into `test:pure` and
+   `test:certified`), asserting the reader is gone at all four levels. §2.6's
+   allowlist entry for `src/ops/api.ts` is struck accordingly.
+3. **A review-mandated repair rode the branch** (found in this review, beyond the
+   coordinator's list): `src/ops2/projects/LineReview.tsx` + `src/ops2/styles/line.css`
+   — the `Panel` component emitted `<dd>` without `<dt>` for keyless rows (a
+   definition of nothing, handed to assistive technology), found by Codex review on
+   *shipped ops2-record code from the prior feature* and fixed in place, test-first
+   (`scripts/tests/ops2-record.test.mjs` +46, `scripts/tests/web/ops2-record.spec.ts`
+   +38). By D5's letter a ride-along; by this repo's review-loop rules a mandated
+   defect fix on code the phase's suites exercise. Accepted as a declared repair
+   rider: it touches no certified vocabulary, no save path, no schema. LineReview's
+   superseded header comment (`:38-45`) is deliberately untouched — its deletion
+   remains a Phase 3b task (WHY-AC-32).
+4. **`worker/lib/estimator/thermal/types.ts:49`** (`GlassCell.certified`) — inside
+   CERT-AC-3's scope and the "follow the compiler" class, but absent from §4.1's
+   named-line index; recorded here for completeness.
+
+**MINOR finding (routes to the developer, one line):**
+`scripts/tests/certified-removal.test.mjs:326` — the section comment cross-references
+the export gate as "X-AC-12"; spec rev 13 numbers it **X-AC-11** (spec :1214; X-AC-12
+is the blast radius). Comment-only, but a later tester walking abuse cases by number
+will be misled.
+
