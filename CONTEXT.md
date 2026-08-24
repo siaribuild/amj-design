@@ -11,8 +11,15 @@ Anyone with an account on the customer site — private or business. Trade terms
 _Avoid_: client, user (ambiguous), buyer
 
 **Staff**:
-An ops-console operator working for AMJ. Staff-ness is its own axis on an account — a staff account is excluded from customer-facing programs (e.g. referrals) regardless of any other property.
+An ops-console operator working for OpenFrame — OpenFrame's own people (two owners today). Not AMJ: AMJ is the manufacturer. Staff-ness is its own axis on an account — a staff account is excluded from customer-facing programs (e.g. referrals) regardless of any other property.
 _Avoid_: admin, operator
+
+**Manufacturer partner**:
+A manufacturer's person with a console sign-in. Authenticated but never Staff: excluded from customer data and from every surface that compares products (recommendation rationales, candidate lists) — a manufacturer reading how competing products fared would be a competitive leak. One predicate decides it, everywhere. AMJ is the manufacturer.
+_Avoid_: manufacturer staff, partner staff
+
+**Estimator (persona)**:
+The person auditing the platform's recommendations and the accuracy of its thermal modelling at the human review gate — served by being shown the right things, never by fencing others out. A persona with needs, deliberately NOT an RBAC role: nothing about authorization may derive from it. Today performed by an owner — a staffing fact, not a model fact. Distinct from the Estimator subsystem below.
 
 **Payable account**:
 An account with complete, ABN-valid payout details. Payability gates what an account can *receive* (e.g. a referral code); it is a different axis from staff-ness, which gates what an account can *participate in*. It is never a purchase gate — nothing anywhere may condition a referrer's capabilities on the referrer's own order history.
@@ -58,6 +65,9 @@ _Avoid_: status, stage (reserved for order progress within later phases)
 **Quote**:
 The priced offer for a project's lines. A quote is a quote — there are no revisions, versions, or drafts; at every phase the customer sees one list of lines and one totals panel. Reprice in place, never fork.
 _Avoid_: revision, draft quote, estimate (the estimator is a different concept)
+
+**Human review gate**:
+The stage between submission and issue where the platform's recommendation is confirmed or overridden by a person. A stage in a quote's life — not a persona, not a role.
 
 **Line**:
 One configured opening (window/door) on a project: product, dimensions, options, quantity, price. A quote line becomes an order line after acceptance without changing identity.
@@ -117,8 +127,8 @@ A customer-uploaded document (plans, window schedule) listing openings to be quo
 **Schedule parse**:
 Turning an uploaded schedule into proposed lines. Parsed lines carry their origin and stay reviewable — a parse proposes, a person confirms.
 
-**Estimator**:
-The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
+**Estimator (the subsystem)**:
+Distinct from the Estimator persona above — one word, two senses, both live. The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
 _Avoid_: quote (an estimator output is not a quote)
 
 **Candidate**:
@@ -158,6 +168,14 @@ The minimum breadth below which calibration's report-demand axis is labelled ina
 
 **Candidate outcome**:
 The structured facts the estimator emits per candidate — tier, rank, per-axis deviation, price delta against the pick, exclusion constraints. Facts only, never sentences: each surface composes its own wording. This is the contract the ops derivation surface reads.
+
+**Captured figures**:
+A line's own record of its product's Uw and SHGC, written at the moment of every save that sets or changes the product or variant — a snapshot, never a lookup, on every save path alike (ops, customer, estimator). Absence is recorded as absence: a captured unknown is a different fact from "saved before capture existed", and neither is ever filled by a display-time catalogue read. Distinct from the candidate outcome, which records what the recommendation was judged on.
+_Avoid_: live figures, current performance (implies recomputation)
+
+**Selection attribution**:
+Whether a line's current selection reads as platform-made or person-chosen. Derived on every read by comparing the recorded recommendation's product+variant against the line's current product+variant — never stored, and never read from routing provenance (`origin`), which answers a different question. An override moves the selection side only; the requirement it was judged against never moves with it.
+_Avoid_: AI-made flag, override flag
 
 **Learned layer (dark)**:
 The estimator's memory of what humans actually issued, consulted per candidate and applied to nothing: it records what it would have preferred and shows that to staff, and moves no recommendation until it is deliberately switched on.
