@@ -6,6 +6,12 @@
 plus the mock-gate rulings R25–R27, the R28 scope cut, and **R29** (the Why detail is a
 node in the navigation tree — owner ruling relayed 2026-08-24; the architecture it forces
 is ruled in §4.8).
+**Revision 4** closes the Phase 1 gap the developer correctly refused to close
+silently: the catalogue importers re-stamp `certified`/`dataSource` on every run, so the
+strip had an expiry date. Ruling: **the importers come into Phase 1** (§4.1 addendum),
+CERT-AC-3's scan widens to the whole live source with a refined predicate (§2.6), and
+the strip run gains a pre-flight self-check so a stale checkout is refused at the point
+of harm.
 **Revision 3** applies the owner's two navigation verdicts: the detail's URL is
 confirmed, and the drawing viewer is **overturned from modal to tree node** — under his
 literal rule, *only a decision dialog that asks a question and returns an answer is a
@@ -129,6 +135,34 @@ presence, never on version. Verified: no reader compares against the literal `"l
    popping out of the console; **(d)** a malformed or out-of-range drawing suffix
    normalises to the line path by replace, growing no history. VIEW-AC-9 (the record
    row opens no viewer) is unaffected.
+6. **CERT-AC-3's scope excluded half the writers, and CERT-AC-7 had an expiry date.**
+   Found post-implementation: `scripts/catalogue/import-wers.mjs:135` writes
+   `certified: true` onto every thermal-profile row and
+   `scripts/catalogue/derive-estimator-fields.mjs:112-113` writes
+   `dataSource: "estimated", certified: false` onto every derived variant — so the
+   depth-(c) strip holds only until the next import, which defeats the owner's stated
+   intent (stop the field being re-populated by someone assuming it still matters) more
+   thoroughly than a person would. **PM to amend Phase 1's criteria:**
+   - **CERT-AC-3, scope**: the scan covers **all live source** — `worker/**`, `src/**`,
+     `scripts/**` and `sanity/**` — not the three named paths. Forbidden, with comments
+     stripped: `isCertified`, `energyCertified`, `certified` as a field name or written
+     value, and `dataSource` **when valued `"certified"`, `"estimated"` or
+     `"manufacturer"` or written/projected on a performance variant or thermal-profile
+     row**. Bare `dataSource` in other senses survives deliberately — dimension-rule
+     provenance (`worker/lib/estimator/types.ts:77`) is a different concept and must
+     not be swept in. Named allowlist, each with its reason: `scripts/tests/**`
+     (CERT-AC-9 fixtures and the scan's own patterns);
+     `sanity/scripts/strip-certified.mjs` (must name the fields it deletes);
+     `src/ops/api.ts` `OpsThermalProposed.source` (types an INSERT-only historical
+     audit record — a reader of ladder-v1-era stored values, R18, writes nothing).
+   - **New CERT-AC-12 (durability)**: *Given* the strip has run, *When* any catalogue
+     import or derive script runs, *Then* no document regains a `certified` or
+     `dataSource` field — proven behaviourally where the script exposes a pure builder
+     (`derive-estimator-fields`), by the widened source scan everywhere.
+   - **CERT-AC-10 is not breached and needs no edit**: `scripts/catalogue/**` are
+     operator-run Sanity maintenance scripts — the same artifact class as
+     `strip-certified.mjs`, already in the phase. No save path, no role, no migration,
+     no customer-facing response is touched by editing them.
 
 ---
 
@@ -189,6 +223,22 @@ Affected files (hand-off index):
 | `sanity/scripts/strip-certified.mjs` | **new** — the depth-(c) value-stripping run (below) |
 | `docs/adr/0011-remove-datasource-from-candidate-outcome.md` | **new** — §1.3 |
 
+**Addendum (revision 4, post-implementation) — the catalogue importers come into
+Phase 1.** A Phase 1 that ships with a known expiry date is not Phase 1: the strip's
+whole point (owner, depth (c)) is that the field cannot come back, and an importer that
+re-stamps it automatically is worse than the human the owner was guarding against. The
+phase's discipline survives intact — these are operator-run Sanity scripts, not save
+paths (CERT-AC-10 untouched) — and after CERT-AC-6 the Studio schema no longer declares
+the fields, so an importer writing them would be creating data the Studio cannot even
+display. Four sites:
+
+| File | Change |
+|---|---|
+| `scripts/catalogue/import-wers.mjs:135` | drop `certified: true` from the thermalProfileRow it builds; `wersWindowId` and `certificationRef` stay (they are the kept facts) |
+| `scripts/catalogue/derive-estimator-fields.mjs:112-113` | drop `dataSource: "estimated", certified: false` from every derived variant |
+| `scripts/catalogue/populate-estimator-fields.mjs:62-64` | `hasProtectedPerformance` loses its three `certified`/`dataSource` clauses (including `"manufacturer"` — same dead vocabulary); the surviving `_key !== "std"` clause alone still protects hand-authored variants (developer-verified) |
+| `scripts/catalogue/readiness-report.mjs:32` | drop `dataSource, certified` from the GROQ projection; `certificationRef`, `published` stay |
+
 **The value-stripping run** (`sanity/scripts/strip-certified.mjs`, precedent:
 `sanity/scripts/remove-legacy-dimension-fields.mjs`):
 
@@ -197,12 +247,20 @@ Affected files (hand-off index):
   nothing unless the file exists, is non-empty, and its mtime is within 24 h. The check
   runs before any client is constructed, so the refusal is testable offline by invoking
   the script with no/stale args and asserting a non-zero exit and no network.
+- **Re-population gate (rev 4, same refusal discipline):** before writing, the script
+  scans its own checkout's `scripts/catalogue/*.mjs` for a `certified` or `dataSource`
+  field write and refuses if one exists — so a strip run from a stale branch that still
+  re-populates is refused **at the point of harm**, not discovered later in a design
+  doc. Offline, a few lines, testable the same way as the export gate.
 - Strips: `certified` and `dataSource` from every `performanceVariants[]` item;
   `certified` from every thermal-profile row. Touches nothing else; `certificationRef`
   and `wersWindowId` byte-identical (CERT-AC-7 verifies against the export).
-- Deploy order: worker code first (reads no longer select the fields), then Studio
-  deploy, then the dataset run. The code tolerates the fields still existing (GROQ
-  simply no longer selects them), so the between-deploys window is safe.
+- Deploy order: worker code **and the four importer edits** first (reads no longer
+  select the fields; nothing left in the repo can write them), then Studio deploy, then
+  the dataset run — **last, and final**: with the importers in the phase the strip is
+  not provisional on anything. The code tolerates the fields still existing (GROQ
+  simply no longer selects them), so the between-deploys window is safe, and the
+  re-population gate above enforces the ordering for whoever runs it.
 
 **Behavioural consequence to pin (CERT-AC-1/2/5):** legacy variants previously dropped at
 `catalogue.ts:187` re-enter the candidate set (subject to the surviving guards: variantId
@@ -742,8 +800,12 @@ basis of a customer's project — in scope and intended (R4).
    `scripts/tests/thermal-selection.test.mjs` where the status branch lives today.
 2. Green: estimator + contract removals (§4.1 table), `ladder-v2`, ADR 0011.
 3. Studio schema edits; `sanity/scripts/strip-certified.mjs`.
-4. Deploy worker → deploy Studio → export dataset → dry-run → `--apply` → CERT-AC-7
-   verification against the export.
+4. **(rev 4)** Red: the widened CERT-AC-3 scan + CERT-AC-12 + the re-population-gate
+   refusal, in the same suite; green: the four `scripts/catalogue/**` edits (§4.1
+   addendum) and the strip script's second gate clause.
+5. Deploy worker + importer edits → deploy Studio → export dataset → dry-run →
+   `--apply` → CERT-AC-7 verification against the export. The strip runs last and is
+   final.
 
 **Phase 2** (client-only)
 1. Red: `scripts/tests/web/ops2-drawing-viewer.spec.ts` (VIEW-AC-1..10 with 2 as
@@ -790,7 +852,7 @@ basis of a customer's project — in scope and intended (R4).
 
 | Artifact | New/extended | Wired into | Proves |
 |---|---|---|---|
-| `scripts/tests/certified-removal.test.mjs` | **new** | `test:pure` list + new `test:certified` script in `package.json` | CERT-AC-1, 2, 3 (source scan), 5, 6 (schema source scan), 8 (script refusal), 9 (old-JSON fixture parses; no renderer references the field) |
+| `scripts/tests/certified-removal.test.mjs` | **new**; extended in rev 4 | `test:pure` list + new `test:certified` script in `package.json` | CERT-AC-1, 2, 3 (source scan — **widened per §2.6** to all live source with the refined `dataSource` predicate and the named allowlist; non-vacuity anchored by asserting the walk reached `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`), 5, 6 (schema source scan), 8 (export-gate refusal), 9 (old-JSON fixture parses; no renderer references the field), 12 (derive builder emits no `certified`/`dataSource`; re-population-gate refusal) |
 | `scripts/tests/thermal-selection.test.mjs` | extended | existing `test:thermal` | CERT-AC-5 downgrade-cause coherence beside its existing status cases |
 | `scripts/tests/figure-capture.test.mjs` | **new** | `test:pure` list + `test:why` script | resolver matching rules (variantId hit, glazing-unique hit, ambiguity→null), `figuresJson` shapes, **SNAP-AC-2 structural scan** |
 | `scripts/tests/why-capture-api.test.mjs` | **new** | `test:heavy` list + `test:why` | SNAP-AC-1, 4, 5, 6, 8, 9, 11, 13, 14, 15; X-AC-8, 9, 10 (real attempts, denial recorded) |
@@ -840,9 +902,11 @@ customer save route in `why-capture-api.test.mjs`, not through ops.
 extends to estimator writers; `dataSource` removed with a version bump + ADR 0011), and
 the R29 navigation model is ruled in §4.8 (a routed screen presented as the approved
 panel — the owner's own words already place the surface in the tree, so the remaining
-choices were architectural). Two items route to the **product-manager**: fold R29 into the spec (§2.4 — the
-WHY-AC-7a/WHY-AC-39 "X" wording, plus criteria for the URL, back and deep link), and
-amend VIEW-AC-2 to the routed-viewer assertions specified in §2.5. `ASSUMED:` tags registered by this design, vetoable at acceptance:
+choices were architectural). Three items route to the **product-manager**: fold R29 into the spec (§2.4 — the
+WHY-AC-7a/WHY-AC-39 "X" wording, plus criteria for the URL, back and deep link);
+amend VIEW-AC-2 to the routed-viewer assertions specified in §2.5; and apply the
+Phase 1 criteria changes in §2.6 (CERT-AC-3 scope, new CERT-AC-12, CERT-AC-10
+untouched). `ASSUMED:` tags registered by this design, vetoable at acceptance:
 
 - §4.3 — an ambiguous variant resolution stores null, never a guess.
 - §4.3 — the capture's catalogue budget is 1500 ms inside the executor's 4 s cap.

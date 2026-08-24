@@ -1,19 +1,20 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 11**
+**Date:** 2026-08-24 · **Stage:** pipeline stage 1 (product-manager) · **Revision 12**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 11** closes the last open clause: the architect ruled the drawing viewer a **real
-route segment**, so VIEW-AC-2 is now four assertions rather than a `PENDING` block, and the
-URL grammar moves to **Phase 2** with the viewer. Revision 10 folded in D8 and R31;
-revision 9 applied R29/R30 and added §2.1; revision 8 applied R28; revision 7 corrected a
-false claim about an existing legend test; revision 6 applied the closed UX mock gate;
-revision 5 repaired two architect findings; revisions 2–4 folded in the owner's decision
-rounds.
+**Revision 12** folds in design revision 4 (§2.6): the **catalogue importers are in Phase
+1**, because they write `certified`/`dataSource` back onto every row and would have expired
+CERT-AC-7's strip at the next import. CERT-AC-3's scan widens and sharpens, CERT-AC-12–14
+are new, and the deploy order is now enforced rather than stated. Revision 11 closed
+VIEW-AC-2's mechanism; revision 10 folded in D8 and R31; revision 9 applied R29/R30 and
+added §2.1; revision 8 applied R28; revision 7 corrected a false claim about an existing
+legend test; revision 6 applied the closed UX mock gate; revision 5 repaired two architect
+findings; revisions 2–4 folded in the owner's decision rounds.
 
 **Decisions needed: none** (§14). **Nothing is pending from any stage.**
 
@@ -39,7 +40,9 @@ Underneath it sits a defect that makes the audit read wrong before it starts. A 
 `certified` flag — never asked for, wired to opposite default values in two places of the
 Sanity schema — downgrades **13 of 32 products to "indicative estimate only" on every
 thermally-constrained line**, while the other 19 pass untouched. A reviewer auditing
-recommendations would spend their first week reporting that.
+recommendations would spend their first week reporting that. **And the catalogue importers
+write the flag back on every run**, so removing it from the documents without removing it
+from them buys days, not a fix (§6, CERT-AC-12).
 
 And a third gap, now the widest of the three: **a product's thermal performance is not
 recorded on the line that uses it.** Not when a reviewer changes the frame or glazing, not
@@ -61,9 +64,9 @@ not record them, they are gone.
    nothing. A **thinner panel** for lines nobody's estimator ever evaluated: no target, but
    the product's own figures (D6). **No action anywhere on it** (R28) — back is
    navigation, not an action (R29).
-2. **The `certified` removal, depth (c)** — code, Studio schema, and the values in the
-   live documents (R5, §5 of the conclusions). **Phase 1, and nothing else rides with it**
-   (D5).
+2. **The `certified` removal, depth (c)** — code, Studio schema, the values in the live
+   documents, **and the catalogue importers that would write them back** (R5, conclusions
+   §5, design §2.6). **Phase 1, and nothing else rides with it** (D5).
 3. **The universal performance-figure capture (R22, D3, D6, D7).** *Every* save that sets
    or changes a line's product or variant records that product's Uw and SHGC on the line —
    ops console and customer site alike. **A server write-path change, inside Phase 3.**
@@ -83,6 +86,7 @@ not record them, they are gone.
 |---|---|
 | **"Change the product" — the control, and any placeholder for it** | **R28, and it is deferred rather than declined.** Owner: *"do not implement CTA change the product. Need to have more thoughts on how to implement this. Having a button implies that some product must be preselected, which we don't have conceptually. not having a button means another panel perhaps. ultimately, switching products is not part of the current run."* Supersedes D4. **Whoever picks this up is picking up an open design question, not an unbuilt ticket — see §2.1 for the direction it already has.** |
 | **Re-classifying the Projects filter panel** | Under R31's literal taxonomy the filter is arguably **not a modal either** — it does not ask a question and return an answer. The architect raised this honestly rather than acting on it. R26/R27's approval explicitly excluded moving the filter, so it stays exactly as it is (WHY-AC-7b) and the question becomes **its own future ticket**. A taxonomy discovered mid-feature does not get to reach a surface nobody approved changing. |
+| **Renaming the dimension-rule `dataSource`** | `worker/lib/estimator/types.ts:77` uses the same token for a **different, live, correct** concept — where a dimension rule came from. It is not certification and it is not being removed; CERT-AC-3's predicate is deliberately narrow so a bare token match cannot force a rename of a concept that is fine. |
 | Any line editor in ops2, stub or real | Follows R28: with no control to reach it, a route to it is a route to nowhere. |
 | Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28, and still not done. |
 | Explanatory notation of any kind on a drawing surface | R25: *"i don't think lines like this relevant for ops"* — ops staff read elevations for a living. |
@@ -241,14 +245,32 @@ estimate only" because of a flag nobody asked for. 13 of 32 products rejoin the 
 the same footing as the other 19, and legacy variants that the catalogue loader silently
 *dropped* (`catalogue.ts:187`) become candidates again.
 
-**Why first:** it is a live correctness defect, it is the only phase that touches the
-estimator and the production Sanity dataset, and it has no UI — so no mock gate, no
-Playwright dependency, and its blast radius is contained while it is the only thing in
-flight.
+**The importers are in this phase (design §2.6).** `import-wers.mjs:135` and
+`derive-estimator-fields.mjs:112-113` write `certified`/`dataSource` back onto every row,
+so stripping the documents without fixing them buys days: **a Phase 1 that ships with a
+known expiry is not Phase 1.** After CERT-AC-6 the Studio schema no longer declares these
+fields, so a post-strip import would write data the Studio can neither display nor
+validate — an invisible, unvalidatable field re-appearing across the catalogue.
 
-**Risk owned here:** an irreversible write against the live Sanity dataset. Dataset
-export first, gated in code (CERT-AC-8), per the conclusions' §5 constraint 1 and the D1
-migration lesson.
+**CERT-AC-10's fence has not moved.** These are **operator-run Sanity maintenance
+scripts** — the same artifact class as `strip-certified.mjs`, which was already in this
+phase — not application save paths. The fence still forbids what it always forbade: the
+staff role vocabulary, migrations, and the Phase 3 capture. It now says so explicitly, so
+nobody reads the importer work as the fence quietly relaxing.
+
+**Deploy order, and it is enforced rather than trusted (CERT-AC-13, CERT-AC-14):**
+
+1. worker code **plus the four importer edits**
+2. Studio deploy (the schema stops declaring the fields — CERT-AC-6)
+3. dataset export, verified restorable (CERT-AC-8)
+4. strip dry-run
+5. `strip-certified.mjs --apply`
+
+**The strip is last, and final — not provisional on anything.** And it refuses to run from
+a checkout whose own importers would undo it (CERT-AC-13), so a strip launched from a
+stale branch fails at the point of harm rather than succeeding and expiring quietly.
+
+**Risk owned here:** an irreversible write against the live Sanity dataset.
 
 ### Phase 2 — The shared drawing viewer, **and the line-route URL grammar** (R21, R25, R31)
 
@@ -433,11 +455,36 @@ catalogue is loaded, *Then* the variant is present in the candidate set, provide
 passes the non-certification checks (variant id present, not a duplicate, figures in
 range).
 
-**CERT-AC-3 (call sites)** — *Given* the repository after this phase, *When*
-`worker/lib/estimator/**`, `sanity/schemaTypes.ts` and `src/data/recommendation.ts` are
-searched, *Then* no `certified` field, no `isCertified`, no `energyCertified` and no
-variant `dataSource` remain, **and** `certificationRef` / `wersWindowId` are still read
-and still carried through to the candidate.
+**CERT-AC-3 (the scan — all live source, and deliberately narrow in one place)** —
+*Given* the repository after this phase, *When* a source-level scan walks **all live
+source** — `worker/**`, `src/**`, `scripts/**`, `sanity/**`, with comments stripped —
+*Then* it finds no occurrence of:
+
+- `isCertified` or `energyCertified`;
+- `certified` as a field name or as a written value;
+- `dataSource` **only** where it is valued `"certified" | "estimated" | "manufacturer"`, or
+  written/projected on a performance variant or thermal-profile row.
+
+**The narrowness is deliberate and must be preserved.** `dataSource` has a **second, live,
+correct meaning** — dimension-rule provenance at `worker/lib/estimator/types.ts:77`. A bare
+token match would sweep it in and force the rename of a concept that is fine. A scan
+written the easy way passes today and costs a pointless refactor tomorrow.
+
+**Allowlist, with its reasons** (each must be justified in the test, not merely listed):
+
+| Allowed | Why |
+|---|---|
+| `scripts/tests/**` | A test that asserts the field is gone has to be able to name it. |
+| `scripts/catalogue/strip-certified.mjs` | The script whose entire job is removing the field must name it. |
+| `src/ops/api.ts:381` | The **legacy** ops thermal DTO's `source` field, documented `certified \| estimated`. A legacy read surface this feature does not touch, and not a catalogue write. |
+
+**Non-vacuity, anchored the way SNAP-AC-2 is:** the walk must be **shown to have reached**
+`worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`. A scan whose
+glob silently matched nothing must fail loudly rather than report success over an empty
+set.
+
+**And `certificationRef` / `wersWindowId` are still read and still carried** through to the
+candidate — a WERS reference is a real fact about a product; it simply is not a gate.
 
 **CERT-AC-4 (R18)** — *Given* a line whose stored status is `commercial_only_estimate`
 from a run before this change, *When* the change is deployed, *Then* that line's stored
@@ -469,14 +516,50 @@ nothing to the dataset.
 *When* an `outcome_json` written before this change is parsed, *Then* it parses without
 error, and no surface renders the field either way.
 
-**CERT-AC-10 (no ride-along — conclusions §8 + D5)** — *Given* the diff for this phase,
-*When* it is reviewed, *Then* it changes no file under `worker/lib/staff.ts`, no role CHECK
-constraint, no migration, **and no save path** — the staff role vocabulary and the capture
-are both outside this phase.
+**CERT-AC-10 (the fence — unchanged, and stated so it cannot look otherwise)** — *Given*
+the diff for this phase, *When* it is reviewed, *Then* it changes no file under
+`worker/lib/staff.ts`, no role CHECK constraint, no migration, **and no application save
+path** — the staff role vocabulary and the Phase 3 capture are both outside this phase.
+
+**The catalogue importers are inside the fence, not an exception to it.**
+`scripts/catalogue/*.mjs` are **operator-run Sanity maintenance scripts** — the same
+artifact class as `strip-certified.mjs`, which this phase already owned. They are not save
+paths, they serve no request, and no customer or staff action invokes them.
 
 **CERT-AC-11 (blast radius)** — *Given* a signed-out visitor and a signed-in customer,
 *When* every customer-facing route is exercised after this phase, *Then* no response body
 gains or loses a field, and no price changes for an already-priced line.
+
+**CERT-AC-12 (durability — the strip does not expire)** — *Given* the dataset after the
+strip, *When* the catalogue importers and derive scripts are run as an operator would run
+them, *Then* **no row regains `certified` or a certification-valued `dataSource`**.
+
+Proved two ways, because one is not available everywhere: **behaviourally** against the
+pure builder in `derive-estimator-fields` — call it with representative input and assert
+the absence of those keys in what it returns — and by **source scan** (CERT-AC-3's
+predicate) everywhere the code is not callable in isolation.
+
+This is the criterion that makes Phase 1 a fix rather than a delay. Without it,
+`import-wers.mjs:135` and `derive-estimator-fields.mjs:112-113` write the fields back on
+the next run and CERT-AC-7 silently becomes false — and after CERT-AC-6 they would be
+writing a field the Studio can neither display nor validate.
+
+**CERT-AC-13 (the strip refuses a stale checkout)** — *Given* `strip-certified.mjs` is run
+from a checkout whose own `scripts/catalogue/*.mjs` still contains a `certified` or
+certification-valued `dataSource` **field write**, *When* the strip is invoked — dry-run or
+`--apply` — *Then* it **refuses and writes nothing**, naming the offending file.
+
+This is a second gate beside CERT-AC-8's export gate, and it exists because the failure it
+prevents is invisible: a strip from a stale branch *succeeds*, reports success, and expires
+at the next import. **It belongs in the criteria and not only in the deploy prose** — a
+safeguard described in a runbook is the kind of thing that gets dropped as an
+implementation detail.
+
+**CERT-AC-14 (deploy order — the strip is last, and final)** — *Given* the Phase 1 rollout,
+*When* it is performed, *Then* the order is: worker code **and the four importer edits** →
+Studio deploy → verified dataset export → strip dry-run → `strip-certified.mjs --apply`.
+The strip is **not provisional on anything that follows it**, and CERT-AC-8 and CERT-AC-13
+are what enforce the two preconditions rather than trusting the operator to remember them.
 
 ---
 
@@ -1074,8 +1157,9 @@ id that belongs to another project or another account, *When* it is processed, *
 existing ownership guards refuse it unchanged, and no figure is written to any line
 outside the caller's own project.
 
-**X-AC-11 (Phase 1, irreversible write)** — CERT-AC-8: the value-stripping run refuses
-without a verified dataset export and writes nothing.
+**X-AC-11 (Phase 1, the two gates on an irreversible write)** — CERT-AC-8: no verified
+export, no strip. CERT-AC-13: a checkout whose own importers would undo the strip, no
+strip. Both refuse and write nothing; both are executed as real attempts.
 
 **X-AC-12 (Phase 1, blast radius)** — CERT-AC-11: no customer-facing response changes.
 
@@ -1087,6 +1171,9 @@ without a verified dataset export and writes nothing.
 |---|---|---|
 | **GST inc/ex** | No money appears anywhere on this surface — R10 removes deltas and R3 makes stored prices stale. The line's existing Price panel keeps the account-preference rule unchanged. `ASSUMED:` §13.3 | R3, R10 |
 | **Quote lifecycle — post-issue** | Panel absent entirely on order-line records, and the `why` URL refuses for such a line rather than serving one. | D2, WHY-AC-11 |
+| **A catalogue import run after the strip** | No row regains the fields — the importers were fixed in the same phase. | CERT-AC-12 |
+| **A strip launched from a stale branch** | Refused, naming the offending importer, before anything is written. | CERT-AC-13 |
+| **`dataSource` on a dimension rule** | Untouched. Same token, different live concept — CERT-AC-3's predicate is narrow on purpose. | §2, out of scope |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
 | **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** | R31, VIEW-AC-2d |
@@ -1116,7 +1203,7 @@ without a verified dataset export and writes nothing.
 
 ## 12. Test-surface notes for the architect and tester
 
-Not a test plan — eight places where the obvious test would pass a wrong implementation:
+Not a test plan — nine places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
@@ -1157,6 +1244,15 @@ Not a test plan — eight places where the obvious test would pass a wrong imple
    all three exits — control, Escape, system gesture — because a viewer whose Escape
    handler closes state without popping history leaves the address bar lying, which is the
    exact failure the route ruling rejected the state-only push to avoid.
+9. **CERT-AC-3's predicate is narrow on purpose, and CERT-AC-12 is why the phase is a
+   fix.** A bare `dataSource` token match is the easy scan and the wrong one — it sweeps in
+   the dimension-rule provenance at `types.ts:77`, a live and correct concept, and forces a
+   rename nobody wants. Match on the *values* and the *row shapes* instead, justify every
+   allowlist entry rather than listing it, and anchor non-vacuity on `catalogue.ts` **and**
+   `import-wers.mjs` — a glob that silently matched nothing is the failure mode this whole
+   family of criteria exists to prevent. CERT-AC-12's behavioural half runs against the
+   pure `derive-estimator-fields` builder; the rest is scan, because the scripts are not
+   callable in isolation.
 
 ---
 
@@ -1221,14 +1317,13 @@ Registered by this spec:
 
 ## 14. Decisions needed
 
-**None, and nothing is pending from any stage.** The architect's route ruling closed
-VIEW-AC-2's mechanism clause — it is now four assertions (one entry pushed, one pop from
-three exits, cold link replaces, malformed suffix normalises without growing history) — and
-the URL grammar moved to Phase 2 with the viewer, which is reflected in §2's in-scope list,
-§4's phase descriptions, WHY-AC-7, WHY-AC-40 and X-AC-6.
+**None, and nothing is pending from any stage.** Design revision 4's importer ruling is
+folded in as CERT-AC-3 (widened scan, narrow predicate, justified allowlist, anchored
+non-vacuity), CERT-AC-12 (durability — the strip does not expire), CERT-AC-13 (the strip
+refuses a stale checkout) and CERT-AC-14 (deploy order, with the two preconditions enforced
+rather than trusted). CERT-AC-10 now states in its own text that the fence has **not**
+moved and why the importers sit inside it.
 
-Two things are recorded rather than resolved, deliberately: the **Projects filter's
-taxonomy** (a future ticket, §2 out of scope — R26/R27's approval excluded moving it) and
-the **viewer's title copy** (`ASSUMED:` §13.15, with the owner). Neither blocks
-implementation; both are vetoable at acceptance.
-
+Two things remain recorded rather than resolved, deliberately: the **Projects filter's
+taxonomy** (a future ticket) and the **viewer's title copy** (`ASSUMED:` §13.15, with the
+owner). Neither blocks implementation; both are vetoable at acceptance.
