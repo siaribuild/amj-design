@@ -134,6 +134,14 @@ export function useProjectRecord(id: string): { load: RecordLoad; reload: () => 
   //
   // The mount's own enter needs no separate guard: a page cannot have left
   // before its first enter, so `departed` is still false and the enter returns.
+  //
+  // ponytail: the ceiling of arming on departure. A reviewer who leaves the
+  // DRAWING sideways — a typed address, the browser's own history — works
+  // elsewhere and comes back has not armed anything, because this page's only
+  // departure was the one to that drawing. Reachable by URL rather than by any
+  // control ops2 renders, and the cost is one stale read that a refresh fixes.
+  // Closing it means tracking where the reviewer WENT rather than whether they
+  // left, which is more machinery than the case has earned.
   const departed = useRef(false);
   useIonViewDidLeave(() => {
     departed.current = lineSuffixOf(history.location.pathname) === "";
