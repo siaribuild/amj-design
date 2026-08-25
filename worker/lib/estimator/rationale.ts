@@ -90,13 +90,10 @@ interface LineRow {
 
 interface SegmentRow {
   product_slug: string | null;
-  options_json: string | null;
-  selected_variant_id: string | null;
   performance_figures_json: string | null;
   segment_requirements_json: string | null;
   segment_requirement_basis: string | null;
   segment_thermal_review: number | null;
-  segment_seq: number | null;
   /** How many lites this ONE row stands for (a symmetric split stores one). */
   qty_per_parent: number | null;
 }
@@ -221,17 +218,16 @@ export async function lineRationale(
   const selection = parse<SelectionOutcome>(run.selection_json);
   const requirement = selection?.requirement ?? chosen.outcome.requirement;
 
-  const alternatives = recorded
+  // THE RUNNER-UP RULE, once: not selected, not excluded, ranked, by rank. Both
+  // the ladder and the beaten single are slices of the same ordering, and it was
+  // spelled twice — two chances to disagree about which candidates count.
+  const runnersUp = recorded
     .filter((r) => !r.outcome.selected && r.outcome.tier !== "excluded" && r.outcome.rank != null)
-    .sort((a, b) => (a.outcome.rank ?? 0) - (b.outcome.rank ?? 0))
-    .slice(0, 4)                                   // D18: four runners-up, five rows
-    .map((r) => candidateOf(r.outcome));
+    .sort((a, b) => (a.outcome.rank ?? 0) - (b.outcome.rank ?? 0));
 
+  const alternatives = runnersUp.slice(0, 4).map((r) => candidateOf(r.outcome));
   const beatenSingle = chosen.outcome.form === "split"
-    ? recorded
-        .filter((r) => !r.outcome.selected && r.outcome.form !== "split"
-          && r.outcome.tier !== "excluded" && r.outcome.rank != null)
-        .sort((a, b) => (a.outcome.rank ?? 0) - (b.outcome.rank ?? 0))[0] ?? null
+    ? runnersUp.find((r) => r.outcome.form !== "split") ?? null
     : null;
 
   return {
@@ -265,9 +261,9 @@ async function unitsOf(
 ): Promise<RationaleUnit[]> {
   const code = line.external_ref ?? "";
   const segments = (await env.DB.prepare(
-    `SELECT product_slug, options_json, selected_variant_id, performance_figures_json,
+    `SELECT product_slug, performance_figures_json,
             segment_requirements_json, segment_requirement_basis, segment_thermal_review,
-            segment_seq, qty_per_parent
+            qty_per_parent
        FROM quote_line
       WHERE parent_line_id = ? AND project_id = ?
       ORDER BY segment_seq`,

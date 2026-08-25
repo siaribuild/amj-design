@@ -354,7 +354,6 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
         ["amj100l-series-awning-window", "amj100t-awning-window", "amj-discontinued-awning", "amj150-series-awning-window"],
         "the next FOUR by ascending rank — rank 6 is recorded and is not sent (D18: five rows)",
       );
-      assert.equal(body.alternatives.length, 4);
 
       // A SPLIT ROW NAMES ITS UNITS. The approved mock's ladder renders a
       // make-up as "Split: awning + fixed" with "2 units" where the figures
@@ -443,8 +442,8 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
         ["ql_zero", "everything withheld, so zero candidate rows"],
       ]) {
         const { body } = await rationale("p_rat", lineId);
-        assert.equal(body.kind, "unresolved", `${shape}: evaluated, nothing chosen`);
-        assert.notEqual(body.kind, "unrecorded", `${shape} is not "an earlier model"`);
+        // The kind is pinned, which already says it is not the other one.
+        assert.equal(body.kind, "unresolved", `${shape}: evaluated, nothing chosen — and not "an earlier model"`);
         assert.deepEqual(body.current.figures, { uValue: null, shgc: null },
           "the figures are present-and-null in BOTH cases — the KIND is what tells the two absences apart, never the figures");
       }
@@ -620,8 +619,8 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       const partner = new Session(baseUrl);
       await login(partner, "/api/ops/auth", "fab@openframe.com.au");
       // The session IS valid on the console — the refusal is about the role.
-      const identity = await partner.request("/api/ops/me");
-      assert.equal(identity.status, 200, "authenticated, so this is a refusal and not a sign-in failure");
+      // Authenticated, so what follows is a refusal and not a sign-in failure.
+      await requestJson(partner, "/api/ops/me");
 
       const response = await partner.request("/api/ops/projects/p_rat/lines/ql_rat/rationale");
       const text = await response.text();

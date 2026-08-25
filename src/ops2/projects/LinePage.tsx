@@ -114,13 +114,12 @@ export function LinePage() {
   // reason the unit count does: `/why` is judged against whether this line HAS
   // a detail, and correcting a cold link while that is still loading would
   // throw away an address that turns out to be perfectly good.
-  // …AND ONLY WHERE THERE IS A RATIONALE TO WAIT FOR. A line this project does
-  // not have never enables the fetch, so the hook stays at `loading` forever —
-  // and gating on it left `/line/l99/why` uncorrected in the address bar behind
-  // the not-found sentence. Found by the browser suite, which is the only place
-  // it is visible.
-  const ready = load.status === "ready"
-    && (!line || isOrder || rationale.status !== "loading");
+  // A read that was never enabled ANSWERS `missing`, so there is no third case
+  // to carry here. It used to sit at `loading` forever, which left
+  // `/line/l99/why` uncorrected in the address bar behind the not-found
+  // sentence and put one rule — D2's "an order record has no rationale" — in
+  // three places at once.
+  const ready = load.status === "ready" && rationale.status !== "loading";
   const stray = ready && !line && route.view !== "line";
   useEffect(() => {
     if (!ready) return;
@@ -288,16 +287,16 @@ export function LinePage() {
         <LineReview
           line={line}
           onOpenDrawing={openDrawing}
-          why={isOrder ? null : (
-            <WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />
-          )}
+          why={<WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />}
         />
       )}
 
       <DrawingViewer subject={subject} onClose={closeChild} />
       <WhyDetail
         dto={rationale.status === "ready" ? rationale.dto : null}
-        open={route.view === "why" && !route.normalise}
+        // `view === "why"` is only reachable when the line HAS a detail, and the
+        // grammar returns it canonical — so there is no un-normalised `why`.
+        open={route.view === "why"}
         backLabel={line?.code || "Line"}
         onClose={closeChild}
       />

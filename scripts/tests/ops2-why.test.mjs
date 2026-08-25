@@ -327,6 +327,36 @@ test("WHY-AC-4 a composite parent has no figures of its own, so it states no abs
   );
 });
 
+test("WHY-AC-4 a half-known figure is a figure, on every state that shows one", () => {
+  // ONE RULE IN FOUR PLACES, and the fourth was the one that was right.
+  // `figuresText` calls it an absence only when BOTH axes are missing; the
+  // three `absent` flags beside it tested `figures === null` once and
+  // `figures == null || uValue == null` twice. So `Uw not recorded · SHGC 0.41`
+  // rendered fully muted on two kinds and not on the third — a half-known
+  // figure styled as though nothing were known, on the one surface whose whole
+  // subject is telling absence from fact.
+  const half = { uValue: null, shgc: 0.41 };
+  const states = {
+    recommendation: recommendation({ current: { productSlug: "p", productName: "P", figures: half } }),
+    human: { kind: "human", units: null, current: { productSlug: "p", productName: "P", figures: half } },
+    unrecorded: { kind: "unrecorded", current: { productSlug: "p", productName: "P", figures: half } },
+  };
+  for (const [kind, dto] of Object.entries(states)) {
+    const row = M.panelCopy(dto).lines.find((l) => l.k === "This one");
+    assert.equal(row.v, "Uw not recorded · SHGC 0.41", `${kind} states both axes`);
+    assert.notEqual(row.absent, true, `${kind} must not mute a figure it is showing`);
+  }
+
+  // AND A REAL ABSENCE IS STILL AN ABSENCE, on all three — otherwise the fix
+  // could be "never mute anything", which loses the other half.
+  for (const [kind, dto] of Object.entries(states)) {
+    const none = M.panelCopy({ ...dto, current: { ...dto.current, figures: { uValue: null, shgc: null } } });
+    const row = none.lines.find((l) => l.k === "This one");
+    assert.equal(row.v, "not recorded", `${kind} says so when nothing is known`);
+    assert.equal(row.absent, true, `${kind} mutes it`);
+  }
+});
+
 test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () => {
   // THREE SPELLINGS OF ONE FACT, and the reader had the one nobody writes.
   // Migration 0036's comment says the column "mirrors thermal/types.ts
@@ -508,8 +538,10 @@ test("WHY-AC-5/6 the 'Chosen' sentence names the winning rule, and reads the ban
   // WHY-AC-3's other half: with no requirement, the sentence claims no thermal
   // victory — every candidate meets by definition and saying so would be a
   // boast about nothing.
+  // The sentence is pinned exactly, so "and it names no cap" was a second
+  // assertion the first one already made — it could only fire after the line
+  // above had thrown.
   assert.equal(chosen({ requirement: { absent: true } }).text, "the cheapest that fitted the opening");
-  assert.equal(chosen({ requirement: { absent: true } }).text.includes("cap"), false);
 
   // TONE. `warn` in this console means "ours to resolve, the human proceeds" —
   // never attention/red, because nothing on this surface is an error.

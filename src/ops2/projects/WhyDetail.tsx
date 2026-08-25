@@ -73,7 +73,7 @@ function Body({ dto }: { dto: Recommendation }) {
       {dto.composite && <Bands units={dto.composite.units} />}
 
       <Block heading={DETAIL.ladder} testId="why-ladder">
-        <ul className="wd__ladder" aria-label={DETAIL.ladderLabel}>
+        <ul className="wd__ladder" aria-label={DETAIL.ladder}>
           {ladder.map((c, i) => (
             <li
               key={`${c.productSlug}-${c.rank ?? i}`}

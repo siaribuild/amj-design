@@ -110,6 +110,25 @@ export const NOT_RECORDED = "not recorded";
  * by the panel's foot sentence and by the DTO's kind — never by this function,
  * which can only see the figures and could never tell them apart.
  */
+/**
+ * THE FIGURES ROW — the words and whether they are an absence, decided together.
+ *
+ * They were decided apart, and disagreed. `figuresText` calls it an absence
+ * only when BOTH axes are missing; the three `absent` flags that styled its
+ * output spelled the test three other ways, none of them this one. So
+ * `Uw not recorded · SHGC 0.41` rendered fully muted on two panel kinds and not
+ * on the third — a half-known figure dressed as nothing known, on the surface
+ * whose entire subject is telling absence from fact.
+ *
+ * One rule in four places, and the fourth was the one that was right. There is
+ * one now, and it returns both halves so they cannot come apart again.
+ */
+export const figuresRow = (f: RationaleFigures | null | undefined):
+  { v: string; absent: boolean } => ({
+  v: figuresText(f),
+  absent: !f || (f.uValue == null && f.shgc == null),
+});
+
 export function figuresText(f: RationaleFigures | null | undefined): string {
   if (!f || (f.uValue == null && f.shgc == null)) return NOT_RECORDED;
   return [
@@ -198,6 +217,15 @@ export function chosenLine(dto: LineRationaleDto): ChosenLine {
  * the recorded caps and nothing more: R2 bans framing it as anyone's fault, and
  * an axis with no recorded figure is not named rather than assumed missed.
  */
+/** WHICH CAP a set of figures is over — one comparison, two callers. It was
+ *  byte-identical in both, which is how two verdicts on one screen come to
+ *  disagree about the same two numbers. */
+const overCaps = (f: RationaleFigures, r: Requirement) => ({
+  uValue: r.maxUValue != null && f.uValue != null && f.uValue > r.maxUValue,
+  shgc: (r.maxShgc != null && f.shgc != null && f.shgc > r.maxShgc)
+    || (r.minShgc != null && f.shgc != null && f.shgc < r.minShgc),
+});
+
 export function verdictWord(
   candidate: RationaleCandidate, requirement: Requirement, tolerance: number,
 ): string {
@@ -207,13 +235,10 @@ export function verdictWord(
     case "thermal_unknown": return "no figure on the constrained axis";
     case "does_not_fit": return "would not fit at this size";
     case "misses": {
-      const { uValue, shgc } = candidate.figures;
-      const overU = requirement.maxUValue != null && uValue != null && uValue > requirement.maxUValue;
-      const overShgc = (requirement.maxShgc != null && shgc != null && shgc > requirement.maxShgc)
-        || (requirement.minShgc != null && shgc != null && shgc < requirement.minShgc);
-      if (overU && overShgc) return "missed both caps";
-      if (overU) return "missed the Uw cap";
-      if (overShgc) return "missed the SHGC cap";
+      const over = overCaps(candidate.figures, requirement);
+      if (over.uValue && over.shgc) return "missed both caps";
+      if (over.uValue) return "missed the Uw cap";
+      if (over.shgc) return "missed the SHGC cap";
       return "missed the caps";
     }
     default: return "recorded without a verdict";
@@ -325,7 +350,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
   if (dto.kind === "unrecorded") {
     return {
       lines: [
-        { k: "This one", v: figuresText(dto.current.figures), absent: dto.current.figures === null },
+        { k: "This one", ...figuresRow(dto.current.figures) },
         chosenRow(),
       ],
       foot: foot(dto.current), door: null,
@@ -334,6 +359,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
 
   if (dto.kind === "human") {
     const units = dto.units;
+    const remainder = units ? unitRemainder(units) : null;
     return {
       lines: [
         units
@@ -341,13 +367,9 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
               k: "These ones",
               v: "",
               units: unitLines(units),
-              ...(unitRemainder(units) ? { more: unitRemainder(units)! } : {}),
+              ...(remainder ? { more: remainder } : {}),
             }
-          : {
-              k: "This one",
-              v: figuresText(dto.current.figures),
-              absent: dto.current.figures == null || dto.current.figures.uValue == null,
-            },
+          : { k: "This one", ...figuresRow(dto.current.figures) },
         chosenRow(),
       ],
       foot: units ? null : foot(dto.current),
@@ -356,15 +378,16 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
   }
 
   const thisOne: PanelLine = dto.composite
-    ? { k: "This one", v: `made as ${dto.composite.units.length} units` }
+    ? {
+        k: "This one",
+        v: `made as ${dto.composite.units.length} units`,
+        qualifier: changeQualifier(dto.selectionChanged),
+      }
     : {
         k: "This one",
-        v: figuresText(dto.current.figures),
+        ...figuresRow(dto.current.figures),
         qualifier: changeQualifier(dto.selectionChanged),
-        absent: dto.current.figures == null || dto.current.figures.uValue == null,
       };
-  if (dto.composite) thisOne.qualifier = changeQualifier(dto.selectionChanged);
-
   return {
     lines: [
       {
@@ -412,9 +435,7 @@ export function comparisonVerdict(
   if (!figures || (figures.uValue == null && figures.shgc == null)) return null;
 
   const { uValue, shgc } = figures;
-  const overU = requirement.maxUValue != null && uValue != null && uValue > requirement.maxUValue;
-  const overShgc = (requirement.maxShgc != null && shgc != null && shgc > requirement.maxShgc)
-    || (requirement.minShgc != null && shgc != null && shgc < requirement.minShgc);
+  const { uValue: overU, shgc: overShgc } = overCaps(figures, requirement);
   if (!overU && !overShgc) return "met the caps";
 
   const band = 1 + tolerance;
@@ -443,7 +464,6 @@ export const DETAIL = {
   split: "Why it was split",
   bands: "Each unit's own band",
   ladder: "What else was considered",
-  ladderLabel: "What else was considered",
   targetHeld:
     "This is the target the platform recorded when it made its recommendation. "
     + "A later change to the product does not move it.",
@@ -484,7 +504,9 @@ export function ladderNote(shown: number): string {
     return "The chosen product and the next four by rank. No price, nothing to price, "
       + "and nothing here changes the line.";
   }
-  const count = NUMBER_WORD[shown] ?? String(shown);
+  // `shown` is 1-4 here: 5 and above took the branch above, and a ladder with
+  // no rows renders no note at all.
+  const count = NUMBER_WORD[shown];
   return `${count} candidate${shown === 1 ? " was" : "s were"} recorded for this opening — `
     + "the list is what exists, with nothing padded and no remainder counted.";
 }

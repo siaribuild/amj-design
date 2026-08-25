@@ -563,6 +563,13 @@ test("WHY-AC-43 the record canvas shows no panel AND issues no rationale request
   await page.waitForLoadState("networkidle");
   await page.getByText("W03", { exact: false }).first().click({ timeout: 10_000 })
     .catch(() => { /* the canvas may already have a line selected */ });
+
+  // THE CANVAS REACHED THE STATE UNDER TEST. The click is `.catch()`-swallowed,
+  // so without this the empty request list below also holds when no line body
+  // ever rendered — and the control that follows runs on a DIFFERENT page, so
+  // it proves the counter is live, not that this page was ever in the state D21
+  // is about. A control on another page is not a control.
+  await expect(page.getByTestId("line-review")).toBeVisible();
   await page.waitForTimeout(1500);
 
   await expect(page.getByTestId("line-why")).toHaveCount(0);

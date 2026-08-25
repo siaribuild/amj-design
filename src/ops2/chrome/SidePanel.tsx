@@ -111,33 +111,12 @@ export function SidePanel({
   children: ReactNode;
 }) {
   const wide = useRailWidth();
-  const back = useRef<HTMLIonButtonElement>(null);
   // The resolved form, which is what the remount guard has to key on: a window
   // crossing the change point while a FULL-SCREEN panel is open must not be
   // told it is still whatever it opened as.
-  const form = wide ? "side" : phoneForm === "screen" ? "screen" : "sheet";
+  const form = wide ? "side" : phoneForm;
   const sheet = form === "sheet";
 
-  /**
-   * FOCUS MOVES INTO THE SCREEN, and it has to be asked for.
-   *
-   * MEASURED, twice. Opening this panel left focus on the control that opened
-   * it — a button in the page BEHIND — so Ionic's Escape handler, which
-   * dismisses the topmost overlay from a keydown on the document, never ran and
-   * Escape did nothing at all. A keyboard reader was stranded outside a screen
-   * they had just navigated to, and for a ROUTED caller that is worse than a
-   * dead key: back is the only way out and Escape is how most people reach it.
-   *
-   * The second measurement is why this is an effect rather than `onDidPresent`:
-   * that handler never fired here at all. And the SHADOW button is focused
-   * rather than the host, because `ion-button` is a custom element wrapping a
-   * real one and focusing the host is a no-op unless the browser forwards it —
-   * "unless" is not something an exit route may rest on.
-   *
-   * Only for the back form, so the Projects filter's approved behaviour is
-   * byte-identical (WHY-AC-7b): nothing in the queue holds focus the way a
-   * stretched door button does.
-   */
   /**
    * FOCUS MOVES INTO THE SCREEN, and it has to be asked for.
    *
@@ -166,7 +145,6 @@ export function SidePanel({
   const live = useRef(open);
   live.current = open;
   const takeFocus = (el: HTMLIonButtonElement | null) => {
-    back.current = el;
     if (!el || !routed) return;
     requestAnimationFrame(() => {
       if (!live.current) return;

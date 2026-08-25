@@ -83,6 +83,22 @@ export function useLineRationale(
    * leaving. `…/why` and `…/drawing` are this page's own addresses, so an
    * enlargement or a rationale must not re-read anything.
    */
+  /**
+   * A DISABLED READ ANSWERS `missing`, and it answers SYNCHRONOUSLY.
+   *
+   * The effect used to just return, leaving the hook at `loading` forever — so
+   * every consumer had to know that, and D2's one rule was enforced in three
+   * places. Setting `missing` from inside the effect fixes the count and breaks
+   * a cold `/why`: `enabled` flips true the moment the record resolves, and for
+   * one render the state still says `missing`, so the address normalises away
+   * before the read it was waiting for has even started.
+   *
+   * Derived instead of stored. `load` stays `loading` until a real answer
+   * arrives, which is what the readiness gate needs, and `missing` is true the
+   * instant the read is off, which is what D2 needs.
+   */
+  const effective: RationaleLoad = enabled ? load : { status: "missing" };
+
   const departed = useRef(false);
   useIonViewDidLeave(() => {
     // STILL UNDER THIS LINE'S PATH IS NOT LEAVING — `…/why` and `…/drawing`
@@ -96,5 +112,5 @@ export function useLineRationale(
     reload();
   });
 
-  return { load, reload };
+  return { load: effective, reload };
 }

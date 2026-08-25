@@ -1,5 +1,5 @@
 import { IonButton, IonSkeletonText } from "@ionic/react";
-import { panelCopy, type PanelLine } from "./whyCopy";
+import { NOT_RECORDED, panelCopy, type PanelLine } from "./whyCopy";
 import type { RationaleLoad } from "./useLineRationale";
 
 /**
@@ -112,7 +112,7 @@ function Value({ line }: { line: PanelLine }) {
         {line.units.map((u) => (
           <span key={u.code} className="lp-why__unit">
             <span className="lp-why__unit-code">{u.code}</span>
-            <span className={u.figures === "not recorded" ? "lp-why__fig ops2-absent" : "lp-why__fig"}>
+            <span className={u.figures === NOT_RECORDED ? "lp-why__fig ops2-absent" : "lp-why__fig"}>
               {u.figures}
             </span>
           </span>

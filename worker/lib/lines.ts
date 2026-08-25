@@ -12,6 +12,7 @@
 // lines, only to AI ones.
 import type { Env } from "../types";
 import { getProductBySlug } from "../../src/data/catalogue";
+import { glazingOf } from "./figures";
 import { productColours } from "../../src/data/configurator";
 import { ensureCatalogue } from "./catalogue";
 import { pricingOptionSlugsFromOptions } from "./estimator/estimate";
@@ -161,7 +162,9 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, unkn
   // actually offers; otherwise the product's default glass identity. Validating
   // against the frame's own thermal matrix stops a client pricing an off-list glass.
   // (Both are absent on the built-in fallback catalogue, where glass rides the area rate.)
-  const chosen = typeof options.glazing === "string" ? options.glazing : "";
+  // ONE SPELLING, imported. `figures.ts` names this line as the authority its
+  // own `glazingOf` must match; it was two copies agreeing by hand until now.
+  const chosen = glazingOf(options);
   const offered = new Set((product?.thermal ?? []).map((t) => t.slug).filter((s): s is string => !!s));
   if (chosen && !offered.has(chosen)) {
     console.log(`[pricing] glazing "${chosen}" not offered by "${productSlug}" — using the default glass`);
