@@ -1,33 +1,43 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 27**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 28**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 
-**Phase 2 is ACCEPTED and DEPLOYED** — owner sign-off, production version `9285d642`.
-**Phase 3a is ACCEPTED** — owner sign-off on the stage-8 verdict (**D15**), certified at
-`72d6b28b` with `ce73f41a` landing after. **Not yet deployed, by the owner's choice** (**D17**).
+**Phase 2 ACCEPTED and DEPLOYED** (`9285d642`). **Phase 3a ACCEPTED** (D15), certified at
+`72d6b28b`; **not yet deployed, by the owner's choice** (D17). **The Phase 3b gate is closed**
+— D18, D19, D20 answered all three questions as built.
 
-**Revision 27 records the Phase 3a sign-off and its two rulings, and sets the Phase 3b gate.**
+**Revision 28 closes the 3b gate and repairs what eleven revisions of 3a rulings left stale in
+§9.** The gate's three rulings discharge **seven** register entries; six `ASSUMED:` tags in §9
+and §11 are replaced by the ruling that closed them.
 
-- **D16 — the glazing-only change is confirmed as built**, and it made **WHY-AC-4
-  load-bearing**: the owner accepted a row whose `selected_variant_id` does not describe its
-  figures **on the strength of the panel never captioning the figures with that id**. That
-  dependency is now written into WHY-AC-4 itself. **If 3b weakens it, D16 re-opens.**
-- **D17 — 3a and 3b deploy together.** Migration `0058` reaches production **with 3b**, not
-  before. **This is the opposite of the retracted urgency, not its return** (§4).
-- **§14 is now the Phase 3b decision gate** — the seven OPEN entries grouped into **three
-  questions**, each with what a veto costs today and **which criteria move with it**.
+**And it repairs two criteria that Phase 3a's own findings had overtaken** — the class §12
+note 13 exists to catch, found this time by walking §9 against the rulings rather than by an
+implementation:
 
-**Revision 26** recorded the phase's own lesson (§12 note 15): **one rule in two places caused
-every defect in Phase 3a**. **Revision 25** folded in three tester observations. **Revision 24**
-scoped SNAP-AC-16 (A6). **Revision 23** repaired SNAP-AC-1 vs SNAP-AC-9 (A4). **Revision 22**
-reconciled the register against the design. **Revision 21** retracted a false urgency.
-**Revision 20** recorded the assertion-that-cannot-fail rule; **19** corrected VIEW-AC-15; **18**
-resolved VIEW-AC-1's internal contradiction; **17** carried the veto of §13.17; **16** carried
-D11 and D12.
+- **WHY-AC-27 conflated the two absences.** It said *"figures are absent — changed before the
+  capture shipped, or resolved to null"*, treating a `NULL` column and a present-and-null the
+  same way. **SNAP-AC-8 made those different facts**, and WHY-AC-9 already distinguishes them.
+  Corrected.
+- **WHY-AC-4 said "a figure recorded as null"** without saying which null. **Three states, three
+  sentences** (A1, SNAP-AC-8) — corrected, and the boundary with WHY-AC-8/WHY-AC-9 stated.
+
+Also: **WHY-AC-16 widened from "any alternative row" to the whole surface**, because D18's ruling
+is *no money anywhere* and the criterion only covered the rows; and **WHY-AC-1 now says "the most
+recent selection run"**, which is what D19 confirmed and what the design already queries.
+
+**§12 note 10 gains a variant nobody had named:** *a measurement carried from one code path to
+another is the same defect as an unexecuted claim, wearing a result.*
+
+**Revision 27** recorded D15–D17 and set the 3b gate. **Revision 26** recorded the phase's lesson
+(§12 note 15). **Revision 25** folded in three tester observations. **Revision 24** scoped
+SNAP-AC-16 (A6). **Revision 23** repaired SNAP-AC-1 vs SNAP-AC-9 (A4). **Revision 22** reconciled
+the register against the design. **Revision 21** retracted a false urgency. **Revision 20**
+recorded the assertion-that-cannot-fail rule; **19** corrected VIEW-AC-15; **18** resolved
+VIEW-AC-1's internal contradiction; **17** carried the veto of §13.17; **16** carried D11 and D12.
 
 Revision 15 gave every register entry a state; revision 14 corrected VIEW-AC-12's false premise;
 revision 13 amended the CERT-AC-10 fence; revision 12 folded in the importers; revision 11 closed
@@ -36,8 +46,7 @@ VIEW-AC-2's mechanism; revision 10 folded in D8 and R31; revision 9 applied R29/
 revision 6 applied the closed UX mock gate; revision 5 repaired two architect findings; revisions
 2–4 folded in the owner's decision rounds.
 
-**Decisions needed: three grouped questions, at the Phase 3b gate** (§14). Nothing is blocked;
-every one is cheap now and expensive after the panel ships.
+**Decisions needed: none** (§14). Two entries remain open and neither is a 3b build blocker.
 
 ---
 
@@ -53,20 +62,17 @@ database and never spoken.
 The consequence lands at the **human review gate**, the stage between submission and issue where
 a recommendation is confirmed or overridden. The person standing there today either takes the
 machine's word or re-does the thermal comparison by hand. Neither is a review. In the owner's
-words: *"I want to be able to audit recommendations and accuracy of thermal modelling"* and
-*"the bigger vision is to surface most likely alternatives hopefully making human's work
-easier."*
+words: *"I want to be able to audit recommendations and accuracy of thermal modelling"* and *"the
+bigger vision is to surface most likely alternatives hopefully making human's work easier."*
 
 Underneath it sits a defect that makes the audit read wrong before it starts. A dead `certified`
 flag — never asked for, wired to opposite default values in two places of the Sanity schema —
 downgrades **13 of 32 products to "indicative estimate only" on every thermally-constrained
 line**. **And the catalogue importers write the flag back on every run** (§6, CERT-AC-12).
 
-And a third gap, now closed by Phase 3a: **a product's thermal performance was not recorded on
-the line that uses it.** The save paths stored the product, the options and the price; the Uw and
-SHGC that make the choice reviewable were looked up at selection time and dropped. Under R3/D3
-nothing may look them up at display time to recover them — so if a save does not record them,
-they are gone.
+And a third gap, **closed by Phase 3a**: a product's thermal performance was not recorded on the
+line that uses it. Under R3/D3 nothing may look it up at display time to recover it — so if a save
+does not record it, it is gone.
 
 ## 2. Scope
 
@@ -74,49 +80,40 @@ they are gone.
 
 1. **The read surface.** A three-line "Why this product" panel on the line detail view, and the
    detail **screen** it leads to — its own route (D8) — carrying the requirement and its origin,
-   the chosen product against it, why it won, and the 3–5 next-best alternatives by ladder rank.
-   Composites included (R14–R17). A **thinner panel** for lines nobody's estimator ever evaluated
-   (D6). **No action anywhere on it** (R28).
-2. **The `certified` removal, depth (c)** — code, Studio schema, the values in the live
-   documents, **the catalogue importers that would write them back**, and **the JSON snapshot
-   builders whose source fields this removes** (R5, conclusions §5; CERT-AC-10's amendment).
-   **Phase 1, and nothing else rides with it** (D5).
+   the chosen product against it, why it won, and **four** next-best alternatives by ladder rank
+   (D18). Composites included (R14–R17). A **thinner panel** for lines nobody's estimator ever
+   evaluated (D6). **No action anywhere on it** (R28).
+2. **The `certified` removal, depth (c)** (R5, conclusions §5; CERT-AC-10's amendment). **Phase 1,
+   and nothing else rides with it** (D5).
 3. **The universal performance-figure capture (R22, D3, D6, D7)** — **shipped in Phase 3a.**
-   Every save that **moves a line's pick**, and every **validated re-derivation** by a derivation
-   writer (§7.0), records the resolved configuration's Uw and SHGC on the line.
-4. **A shared drawing viewer** for ops2 (R21, R25) — **a node in the navigation tree with its own
-   route and a back control** (R31), **and reachable from the project record's desk canvas**
-   (D11, §8.1).
-5. **Two changes to the shared `SidePanel`** (R26, R29): full-screen on the phone, and a **back**
-   control in place of "Done" — without moving the Projects filter panel.
-6. **The line-route URL grammar** — **in Phase 2, with the viewer**. Phase 3b adds only the `why`
-   child. No new server endpoint anywhere except the rationale read.
-7. **Deleting the shared `ElevationLegend` export** (D12, VIEW-AC-12).
+4. **A shared drawing viewer** for ops2 (R21, R25, R31) — **shipped in Phase 2.**
+5. **Two changes to the shared `SidePanel`** (R26, R29) — shipped with Phase 2.
+6. **The line-route URL grammar** — shipped in Phase 2. **Phase 3b adds only the `why` child.**
+7. **Deleting the shared `ElevationLegend` export** (D12, VIEW-AC-12) — shipped.
 
 ### Out of scope — and why
 
 | Not built | Because |
 |---|---|
-| **"Change the product" — the control, and any placeholder for it** | **R28, deferred rather than declined.** Owner: *"do not implement CTA change the product… ultimately, switching products is not part of the current run."* Supersedes D4. See §2.1. |
+| **"Change the product" — the control, and any placeholder for it** | **R28, deferred rather than declined.** Supersedes D4. See §2.1. |
 | **Re-classifying the Projects filter panel** | R26/R27's approval explicitly excluded moving it (WHY-AC-7b); **its own future ticket**. |
-| ~~**Deleting the shared `ElevationLegend` export**~~ | **NO LONGER OUT OF SCOPE — reversed by the owner (D12).** |
 | **Renaming the dimension-rule `dataSource`** | `types.ts:77` uses the same token for a **different, live, correct** concept. |
-| **Re-resolving figures on an unmoved pick — by a BEST-EFFORT writer** | **A4.** A recompute of a captured snapshot (SNAP-AC-9); during an outage it asserts "no figure exists" on a save that never successfully asked. **Does not govern derivation writers — §7.0, A6.** |
-| **Opportunistic backfill of pre-capture lines on touch** | Same ruling. A lookup at edit time is a display-time catalogue read wearing a snapshot's clothes. |
+| **Re-resolving figures on an unmoved pick — by a BEST-EFFORT writer** | **A4.** A recompute of a captured snapshot (SNAP-AC-9). **Does not govern derivation writers — §7.0, A6.** |
+| **Opportunistic backfill of pre-capture lines on touch** | Same ruling, and **D19 confirms it on the read side**: the panel never reaches back to fill a gap. |
+| **Filling a missing figure from today's catalogue at display time** | **D19**, and it would have reversed **D3 and D5** — the owner was shown that and did not take it. |
+| **Showing withheld products, or any money, on the surface** | **D18.** Withheld follows R9; money would have re-opened **R10**, not toggled a setting. |
 | **Conditioning the aiManaged branch on a new "material change" predicate** | A6's rejected alternative. |
-| **Re-resolving a `selected_variant_id` to match the figures on a glazing-only change** | **D16.** The stored id stays **stable** rather than churning on every glass swap; the figures describe the configuration, and **the id is not their caption** (WHY-AC-4). |
+| **Re-resolving a `selected_variant_id` to match the figures on a glazing-only change** | **D16.** The id stays **stable**; the figures describe the configuration, and **the id is not their caption** (WHY-AC-4). |
 | Any line editor in ops2, stub or real | Follows R28. |
-| Any deep-link into the legacy ops console | Was D4's rejected alternative; moot under R28. |
 | Explanatory notation of any kind on a drawing surface | R25 — ops staff read elevations for a living. |
 | Switching the line's product from the "Why" surface | R1: read-only. |
 | Recording a verdict on the recommendation | R2. The endpoint exists and stays unwired. |
-| Reading the catalogue or the estimator **at display time**, for anything | R3 + D3. |
+| Reading the catalogue or the estimator **at display time**, for anything | R3 + D3 + **D19**. |
 | Re-deriving a thermal **requirement** anywhere | R23. |
 | Any change to `quote_line.origin`, `ai_proposal_line_id`, or `aiManaged` routing | R24. |
 | Any new validation, eligibility check or refusal on any save path | D6's hard constraint — §7.2. |
 | **Any change to the ops routes' authentication or refusal convention** | §10 — which is why §13.11 is RETIRED. |
 | Any change to the learning corpus or the issue-time capture path | §7.6. |
-| Live re-pricing, price deltas, or any money on the surface | R10, R3. |
 | Excluded candidates, in any form | R9. |
 | Backfilling anything | R18 *"leave history"*; accepted explicitly (D5). |
 | Carrying the rationale past issue | D2. |
@@ -138,44 +135,33 @@ The owner's sketch, verbatim:
    then. Switch panel = what is true now.**
 2. **The switching list is probably not the audit list.** Expect its own query.
 3. **Do not drop the dismiss from the switching panel.** Under R29/R31 that exit is back.
-4. **The confirmation screen has four things to show, each a reason to abort:** whether the new
-   choice still meets the requirement, the price, whether the line drops out of `ready`, and that
-   the line stops being platform-chosen (R24).
+4. **The confirmation screen has four things to show, each a reason to abort.**
 5. **The learning path already handles it** — §7.6.
 6. **This is the decision surface the owner declined at grill Q1**, returning properly separated.
 
-**Console convention it will inherit (R30).** **No modal exists in this feature.**
-
 ## 3. Actors and needs
 
-*Carried verbatim from the grill conclusions §1 — the owner is the only primary source, and
-nothing below is inferred.*
+*Carried verbatim from the grill conclusions §1 — the owner is the only primary source.*
 
 **Two axes, never merged** — **Persona** is who someone is and what they need; **RBAC** is what
 the platform permits (R20).
 
-### Estimator (persona — new to the domain; the architect adds it to `CONTEXT.md`)
-
-Owner: *"yes, estimator, as a persona, has the needs. But that does not need to translate into a
-separate rbac role with limited feature set, not at this point of time."*
+### Estimator (persona)
 
 > *"I want to be able to audit recommendations and accuracy of thermal modelling."*
 > *"the bigger vision is to surface most likely alternatives hopefully making human's work easier."*
 > *"this is for human review gate."*
 
-Read together: **confidence in the platform's reasoning, and speed through the review** — not
-correction of the machine. R2 is the direct consequence and the copy must honour it.
+**Confidence in the platform's reasoning, and speed through the review** — not correction of the
+machine. R2 is the direct consequence and the copy must honour it.
 
-**They read this surface; they do not act on it.** **Going back is not an action** (R29), and
-**back must return them where they were, saying where that is in the words they already use**
-(D11).
+**They read this surface; they do not act on it.** **Going back is not an action** (R29).
 
-**And they already know how to read a drawing** (R25). **What they do need is to see the whole of
-it at once** — VIEW-AC-1.
+**And they already know how to read a drawing** (R25).
 
 **And what they read must be what was established.** A4 and A6 are that sentence applied to the
-capture; **WHY-AC-4 is it applied to the copy** — the panel states what the figures describe,
-never what a stored identifier implies. **D16 rests on that.**
+capture; **WHY-AC-4 is it applied to the copy**, and **D16 rests on it**. **D19 is the same
+sentence again**: the panel says what was recorded and never reaches back to fill a gap.
 
 ### Customer (existing — newly relevant, via D6/D7)
 
@@ -184,20 +170,18 @@ performance data is fine, I think. It simply means that this panel will be far l
 details."* And: *"a selection shall not be perceived as AI-made anymore"* — while *"that does not
 change the target."*
 
-The Customer is not a reader of this surface. What changes for them is invisible: what their save
-*records*. **Their save must never start failing** (§7.2), and **an autosave that changes nothing
-about the pick must not touch their figures** (A4, SNAP-AC-16).
+The Customer is not a reader of this surface. **Their save must never start failing** (§7.2), and
+**an autosave that changes nothing about the pick must not touch their figures** (A4, SNAP-AC-16).
 
 ### Staff (existing — and `CONTEXT.md:14` is wrong)
 
-Owner: *"staff is our own people, 2 owners at this point of time, only. **OpenFrame people. AMJ
-is manufacturer.**"*
+Owner: *"staff is our own people, 2 owners at this point of time, only. **OpenFrame people. AMJ is
+manufacturer.**"*
 
 ### Manufacturer partner (an RBAC exclusion, recorded to close it)
 
-`hasAssignedRole` already refuses them (`worker/lib/staff.ts:150`). Recorded because **this
-surface exposes which competing products were considered and how they compared**. §10 executes it
-as an abuse case rather than trusting it.
+`hasAssignedRole` already refuses them (`worker/lib/staff.ts:150`). **This surface exposes which
+competing products were considered and how they compared**; §10 executes it as an abuse case.
 
 ### The stage: the human review gate
 
@@ -207,60 +191,39 @@ Between submission and issue. A stage in a quote's life, not a persona and not a
 
 ### Phase 1 — Remove `certified` (no UI) · **strictly this, nothing else** (D5)
 
-**Delivers on its own:** thermally-constrained lines stop being downgraded because of a flag
-nobody asked for. **The importers are in this phase**: a Phase 1 that ships with a known expiry is
-not Phase 1. **Deploy order, enforced rather than trusted (CERT-AC-13, CERT-AC-14):** worker code
-**plus the four importer edits** → Studio deploy → verified export → dry-run → `--apply`. **The
-strip is last, and final.**
+**Deploy order, enforced rather than trusted (CERT-AC-13, CERT-AC-14):** worker code **plus the
+four importer edits** → Studio deploy → verified export → dry-run → `--apply`. **The strip is
+last, and final.** **Risk owned here:** an irreversible write against the live Sanity dataset.
 
-**Risk owned here:** an irreversible write against the live Sanity dataset.
-
-### Phase 2 — The shared drawing viewer, **and the line-route URL grammar** · **SHIPPED**
-
-**Accepted and deployed 2026-08-25**, production version `9285d642`.
+### Phase 2 — the shared drawing viewer and the URL grammar · **SHIPPED** (`9285d642`)
 
 ### Phase 3 — the capture, the panel, the detail screen
 
-- **Phase 3a — a server write-path change (§7)** · **ACCEPTED (D15)**, certified at `72d6b28b`,
-  `ce73f41a` after. `worker/**`, so **Probity applies**. It carries the feature's only regression
-  risk.
-- **Phase 3b — a read-only display surface (§9)** · next.
+- **Phase 3a — a server write-path change (§7)** · **ACCEPTED (D15)**, certified at `72d6b28b`.
+- **Phase 3b — a read-only display surface (§9)** · next; **its gate is closed** (D18–D20).
 
 **Deploy sequencing — D17: 3a and 3b deploy together.** Migration `0058` reaches production
 **with 3b**, and remote apply has not happened.
 
-> **This is the opposite of the retracted urgency, not its return.** The retraction (§4, revision
-> 21) killed the claim that *saves would be lost between the two deployments* — the owner's
-> ruling being that **there are no saves in between**. That same fact is what makes one deploy
-> event safer than two: nothing is waiting to be captured, so shipping the write path early buys
-> nothing and costs a second production change against a save path. **Nobody may cite D17 as
-> evidence for urgency in either direction.**
-
-**Presentation and navigation model are separate things, and this spec specifies both.**
-Presentation — a right-hand slide-out at desk width, full screen on the phone (R19, R26).
-Navigation — a **screen in the tree** with its own route (R29, D8), opened by a route change.
+> **This is the opposite of the retracted urgency, not its return.** The retraction killed the
+> claim that *saves would be lost between the two deployments* — **there are no saves in between**.
+> That same fact is what makes one deploy event safer than two. **Nobody may cite D17 as evidence
+> for urgency in either direction.**
 
 **The cost the owner accepted (D5):** no backfill, so **every line saved before Phase 3 has no
 figures** (WHY-AC-9, WHY-AC-27).
 
-**Sequencing inside the phase:** 3a landed first and alone — red test, then the write, then its
-negative criteria green — before any read endpoint or UI work started. **The certified diff
-contains no `src/` change at all**, which is what made that separation real rather than nominal.
-
-> **~~The reason this paragraph used to give:~~** *"…every save in between is a line that will
-> have something to show, and a save that is missed cannot be recovered."*
->
-> **That is false, and it is retracted here rather than deleted.** **There will be no saves
-> between 3a and 3b. The phasing exists to make the change manageable, nothing more.** **Nobody
-> may accept a schedule risk, a shortened review or a rushed deploy on the strength of it.**
+> **~~The reason the sequencing paragraph used to give:~~** *"…every save in between is a line
+> that will have something to show, and a save that is missed cannot be recovered."* **False, and
+> retracted rather than deleted.**
 
 **Dependency check:** **3b depends on Phase 2** for the route grammar, which has shipped, and on
 3a for anything a human selected to have figures at all.
 
 ### Wayfinder check
 
-**Not needed.** 31 rulings, seventeen owner decisions, six architect rulings taken out loud in
-design §1.
+**Not needed.** 31 rulings, twenty owner decisions, six architect rulings taken out loud in design
+§1.
 
 ## 5. Ruling and decision index (traceability)
 
@@ -271,100 +234,104 @@ changed · R13 no-run lines still show the panel · R14 panel on machine-propose
 split reason then per-lite bands · R16 per-lite bands are real · R17 ops split = R13 · R18 leave
 history · R19 right-hand slide-out · R20 same gate as the record · R21 full-screen drawing viewer.
 
-**R22 — the capture rule is universal.** **A4 and A6 sharpen what "every save" means without
-weakening the rule: every save at which a product is actually selected.**
+**R22 — the capture rule is universal.** **A4 and A6 sharpen what "every save" means: every save at
+which a product is actually selected.**
 
 **R23 — a target is not a selection.** **R24 — an overridden selection must no longer read as
-platform-made**; attribution is **derived by comparison**, never read from `origin`.
+platform-made.**
 
 **R25 — no explanatory notation on an ops drawing surface.** **A class, not a block.**
 
 **R26 — the phone detail opens full screen.** **~~R27~~ AMENDED BY R29**; what survives is that
 **"Done" is wrong**. **R28 — "Change the product" is not implemented, and neither is a
-placeholder** (supersedes D4). **R30 — modals carry controls on top, title centred**; **no modal
-exists in this feature**.
+placeholder.** **R30 — modals carry controls on top, title centred**; **no modal exists in this
+feature**.
 
 **R29 — the detail is a screen in the navigation tree; its dismiss is a BACK control.**
 
 > *"dismiss == back button on the Why this product screen, it is part of the tree:
-> projects->projectDetails/list->itemDetails->whyThisProduct->switch(modal aka Confirm/Cancel).
-> Everything that is not modal - has back an action plus whatever gesture it lives with as
-> standard."*
+> projects->projectDetails/list->itemDetails->whyThisProduct->switch(modal aka Confirm/Cancel)."*
 
-**R31 — the drawing viewer is a tree node with a back control, not a modal.** The cost was named
-and accepted: **two backs to leave a line after enlarging** (VIEW-AC-2d).
+**R31 — the drawing viewer is a tree node with a back control, not a modal.** Cost named and
+accepted: **two backs to leave a line after enlarging** (VIEW-AC-2d).
 
 > **A modal is only a decision dialog — something that asks a question and returns an answer.**
 
-**Three careful readers independently placed the viewer on the modal side** — each reasoning from
-"it is an overlay" rather than from "does it ask a question?".
-
 Owner decisions: **D1** three phases · **D2** panel absent post-issue · **D3** figures snapshotted
-at save, never read live · ~~**D4**~~ · **D5** the capture waits for Phase 3 — ***about lines
-saved BEFORE THE CAPTURE EXISTED, which is history; never about a gap between the 3a and 3b
-deployments*** · **D6** a client/manual-picked line shows a thinner panel **with** its product's
-figures · **D7** the capture extends to the customer save path · **D8** the detail screen gets its
-own URL · **D9** the URL grammar · **D10** the viewer's title names the subject · **D11** back
-from the canvas returns to the record and the control says so · **D12** `ElevationLegend` is
-deleted · **D13** the drawing claims all leftover space · **D14** the phasing is about
-manageability, not urgency.
+at save, never read live · ~~**D4**~~ · **D5** the capture waits for Phase 3 — ***about lines saved
+BEFORE THE CAPTURE EXISTED, which is history*** · **D6** a client/manual-picked line shows a
+thinner panel **with** its product's figures · **D7** the capture extends to the customer save
+path · **D8** the detail screen gets its own URL · **D9** the URL grammar · **D10** the viewer's
+title names the subject · **D11** back from the canvas returns to the record and the control says
+so · **D12** `ElevationLegend` is deleted · **D13** the drawing claims all leftover space · **D14**
+the phasing is about manageability, not urgency.
 
-**Taken at Phase 3a acceptance, 2026-08-25:**
+**Taken at Phase 3a acceptance:**
 
-**D15 — Phase 3a is accepted**, certified at `72d6b28b`; `ce73f41a` (the fourth coercion site plus
-two one-liners) landed after certification and is being verified as a delta.
+**D15 — Phase 3a is accepted**, certified at `72d6b28b`; `ce73f41a` landed after.
 
-**D16 — the glazing-only change is confirmed as built.** On a customer glazing-only change the
-figures describe **the glass the customer chose**, and the row **keeps the estimator's
-`selected_variant_id`** rather than churning it. The owner accepted the stated consequence — **an
-ops reader looking at the raw row sees a variant id that is not what the figures describe** —
-**on the strength of WHY-AC-4 forbidding the panel from captioning the figures with that id.**
+**D16 — the glazing-only change is confirmed as built.** The figures describe **the glass the
+customer chose**; the row **keeps the estimator's `selected_variant_id`**. The owner accepted the
+stated consequence — **an ops reader looking at the raw row sees a variant id that is not what the
+figures describe** — **on the strength of WHY-AC-4 forbidding the panel from captioning the
+figures with that id.**
 
-> **WHY-AC-4 is therefore load-bearing for a decision, not merely a copy rule.** It is the reason
-> the data shape was acceptable. **If Phase 3b ever weakens it — captions figures with the stored
-> variant id, or attributes them to "the variant" in words — D16 has to be re-opened**, because
-> the trade the owner accepted no longer holds.
+> **WHY-AC-4 is therefore load-bearing for a decision, not merely a copy rule. If Phase 3b ever
+> weakens it, D16 has to be re-opened**, because the trade the owner accepted no longer holds.
 
-**D17 — 3a and 3b deploy together.** Migration `0058` reaches production with 3b, not before.
-**Not urgency in reverse** — see §4: with no saves in between, one deploy event carries less risk
-than two.
+**D17 — 3a and 3b deploy together.** `0058` reaches production with 3b.
+
+**Taken at the Phase 3b gate, 2026-08-25 — all three as built, with alternatives and costs in
+front of him:**
+
+**D18 — panel scope.** The chosen product **plus four alternatives, five rows**. **Withheld
+products stay hidden.** **No money anywhere on the surface** — no price, no delta, no currency
+symbol. *(He was told that showing money would have **re-opened R10**, not toggled a setting.)*
+Discharges §7.3, §7.1, §13.3.
+
+**D19 — thin, old and plural records.** The panel **shows what was recorded and says so plainly
+when there is nothing; it never reaches back to fill a gap.** Figures never captured say so, with
+**no catalogue lookup**; a pre-0055 recommendation says its reasoning was not recorded, with **no
+reconstruction**; an opening estimated more than once shows **the most recent run only**. *(He was
+shown explicitly that filling missing figures from today's catalogue would **reverse D3 and D5**
+and undo what Phase 3a was built to protect, and he did not take it.)* Discharges §13.5, §13.2,
+§13.4.
+
+**D20 — the overridden line.** **The same three lines everywhere**; only the **"Chosen" sentence**
+changes. Discharges §13.10.
 
 ### Architect rulings — delegated by this spec, taken in `docs/design/ops2-why-this-product.md` §1
 
-**These are decisions, not opinions.** Indexed here because the register was twice found reporting
-a settled question as open.
-
-- **A1 (§1.1) — storage: a new column, `quote_line.performance_figures_json`.** Overrides §13.8.
-  Migration `0058_quote_line_performance_figures.sql`.
+- **A1 (§1.1) — a new column, `quote_line.performance_figures_json`.** Overrides §13.8. Migration
+  `0058`.
 - **A2 (§1.2) — the capture extends to the estimator's own writers: yes.** Confirms §13.9.
 - **A3 (§1.3) — `CandidateOutcome.thermal.dataSource` removed from the contract.** ADR 0011.
 - **A4 (§1.4) — the capture fires when the pick moves, never on a save that leaves it untouched.**
-- **A5 (§1.5) — a singleton answer set is not ambiguity.** **Vetoable at acceptance as one pair
-  with the design's ambiguity rule.**
-- **A6 (§1.6) — a validated re-derivation is a capture moment.** Two classes of writer, one
-  honesty invariant (§7.0).
+- **A5 (§1.5) — a singleton answer set is not ambiguity.** **Still OPEN — vetoable as one pair with
+  the design's ambiguity rule at Phase 3 acceptance.**
+- **A6 (§1.6) — a validated re-derivation is a capture moment.** Two classes of writer, one honesty
+  invariant (§7.0).
 
 ---
 
 ## 6. Acceptance criteria — Phase 1: remove `certified`
 
-**CERT-AC-1 (R5)** — *Given* a product whose thermal figures come only from legacy
-`performanceVariants` with `certified` absent or false, *When* a project estimate runs against an
-opening that has a thermal requirement, *Then* the resulting line's status is not
-`commercial_only_estimate` on account of certification.
+**CERT-AC-1 (R5)** — a product whose thermal figures come only from legacy `performanceVariants`
+with `certified` absent or false is **not** downgraded to `commercial_only_estimate` on account of
+certification, and is ranked on its Uw/SHGC figures alone.
 
 **CERT-AC-2 (the drop-guard)** — a legacy variant previously removed by the guard at
-`catalogue.ts:187` is present in the candidate set, provided it still passes the
-non-certification checks.
+`catalogue.ts:187` is present in the candidate set, provided it still passes the non-certification
+checks.
 
 **CERT-AC-3 (the scan — all live source, and deliberately narrow in one place)** — a source-level
-scan of `worker/**`, `src/**`, `scripts/**`, `sanity/**`, comments stripped, finds no
-`isCertified` or `energyCertified`; no `certified` as a field name or written value; and no
-`dataSource` **where it is valued** `"certified" | "estimated" | "manufacturer"` or
-written/projected on a performance variant or thermal-profile row.
+scan of `worker/**`, `src/**`, `scripts/**`, `sanity/**`, comments stripped, finds no `isCertified`
+or `energyCertified`; no `certified` as a field name or written value; and no `dataSource` **where
+it is valued** `"certified" | "estimated" | "manufacturer"` or written/projected on a performance
+variant or thermal-profile row.
 
-**The narrowness is deliberate and must be preserved.** `dataSource` has a **second, live, correct
-meaning** — dimension-rule provenance at `types.ts:77`.
+**The narrowness is deliberate.** `dataSource` has a **second, live, correct meaning** —
+dimension-rule provenance at `types.ts:77`.
 
 | Allowed | Why |
 |---|---|
@@ -374,16 +341,16 @@ meaning** — dimension-rule provenance at `types.ts:77`.
 > **Two corrections here, revision 13.** The allowlisted path was wrong — **no
 > `scripts/catalogue/strip-certified.mjs` exists**. CERT-AC-13's scanned directory,
 > `scripts/catalogue/*.mjs`, **was and remains correct**. **And a third entry is gone** —
-> `src/ops/api.ts:381`, exempted as *"a legacy read surface"*. **The tester executed that claim
-> and it was false.** See §12 note 10.
+> `src/ops/api.ts:381`, exempted as *"a legacy read surface"*; **the tester executed that claim and
+> it was false.** See §12 note 10.
 
 **Non-vacuity:** the walk must be **shown to have reached** `catalogue.ts` and `import-wers.mjs`.
 
 **And `certificationRef` / `wersWindowId` are still read and still carried** — a WERS reference is
 a real fact about a product; it simply is not a gate.
 
-**CERT-AC-4 (R18)** — a stored `commercial_only_estimate` is unchanged, and the diff contains no
-migration and no script that rewrites a stored status.
+**CERT-AC-4 (R18)** — a stored `commercial_only_estimate` is unchanged; no migration and no script
+rewrites a stored status.
 
 **CERT-AC-5 (status coherence)** — a line outside the `meets` tier, or whose rules run raised a
 warning, is still downgraded for **that** reason.
@@ -392,11 +359,10 @@ warning, is still downgraded for **that** reason.
 rule gone, the WERS reference field still editable.
 
 **CERT-AC-7 (document values, depth (c))** — after the strip, no document carries `certified` or a
-variant `dataSource`, every `certificationRef` / `wersWindowId` is byte-identical to the export,
-and no other field differs.
+variant `dataSource`; every `certificationRef` / `wersWindowId` is byte-identical to the export;
+no other field differs.
 
-**CERT-AC-8 (export gate — abuse case)** — no verified export, no strip: it refuses and writes
-nothing.
+**CERT-AC-8 (export gate — abuse case)** — no verified export, no strip.
 
 **CERT-AC-9 (contract stability)** — *Given* **A3**, an `outcome_json` written before the change
 parses without error, and no surface renders the field.
@@ -413,95 +379,70 @@ deletes** — `proposal.ts:375` (written at `:415`) and `splitCandidates.ts:356`
 **Why the breach is necessary, not creep.** The only alternative is writing **literal** values for
 fields whose source data no longer exists — a removal with a copy kept.
 
-**What still holds, and it is most of the fence.** No migration, no role vocabulary, no schema
-change, **no statement's column list or WHERE clause altered**.
-
 **CERT-AC-11 (blast radius)** — no customer-facing response body gains or loses a field, and no
 price changes for an already-priced line.
 
 **CERT-AC-12 (durability)** — running the importers as an operator would, **no row regains
 `certified` or a certification-valued `dataSource`**.
 
-**CERT-AC-13 (the strip refuses a stale checkout)** — run from a checkout whose own
-`scripts/catalogue/*.mjs` still writes those fields, the strip **refuses and writes nothing**.
+**CERT-AC-13 (the strip refuses a stale checkout)** — refuses and writes nothing, naming the
+offending file.
 
 **CERT-AC-14 (deploy order)** — worker code **and the four importer edits** → Studio deploy →
 verified export → dry-run → `--apply`.
 
 ---
 
-## 7. Acceptance criteria — Phase 3a: the universal capture (R22, D3, D6, D7) · **ACCEPTED (D15)**
+## 7. Acceptance criteria — Phase 3a: the universal capture · **ACCEPTED (D15)**
 
-**Why this is its own phase.** **Not urgency** — see §4's retraction. It is a **server write-path
-change with the widest blast radius in this feature**, it falls under Probity, and §7.2's negative
-criteria are worth proving against a deployment in which nothing else moved.
+**Why this is its own phase.** **Not urgency** — §4's retraction. It is a **server write-path change
+with the widest blast radius in this feature**, it falls under Probity, and §7.2's negative criteria
+are worth proving against a deployment in which nothing else moved.
 
-**Where the figures live: A1.** A **new nullable column**,
-`quote_line.performance_figures_json`, migration `0058_quote_line_performance_figures.sql` —
-**local-only; it reaches production with 3b (D17).**
-
-**When they move: A4 and A6.** §7.0 defines the terms every criterion below depends on.
+**Where the figures live: A1** — `quote_line.performance_figures_json`, migration `0058`
+**(local-only; production with 3b, D17)**.
 
 ### 7.0 The definitions every criterion below depends on
 
 #### The pick (A4)
 
-**The pick is exactly the resolver's inputs:** `product_slug`, `selected_variant_id`, and
-`options.glazing` — the glass identity every pricing path already reads (`lib/lines.ts:164`).
-
-- An option the resolver never consults — **colour, hardware, the room label, dimensions** —
-  cannot move the figures.
-- A pick that names **no** variant does not move the variant term; only an explicit, **different**
-  `variantId` does (the restore path).
-- **The predicate lives once**, in `worker/lib/figures.ts`. **§12 note 15 is what happens when a
-  distinction lives in two places.**
+**Exactly the resolver's inputs:** `product_slug`, `selected_variant_id`, `options.glazing`
+(`lib/lines.ts:164`). **Colour, hardware, the room label, dimensions cannot move the figures.** A
+pick that names **no** variant does not move the variant term. **The predicate lives once**, in
+`worker/lib/figures.ts` — **§12 note 15 is what happens when a distinction lives in two places.**
 
 #### The two classes of writer, and the one invariant (A6)
 
-> **The honesty invariant, and it is what a new writer must be tested against:**
-> **no writer may assert an absence it did not establish.**
+> **No writer may assert an absence it did not establish.**
 
-- **Best-effort writers** — they **ask** the catalogue and must succeed even when it cannot
-  answer. **They have a failure channel**, so a re-resolve on an unmoved pick can only degrade or
-  lie. **A4's predicate governs them.**
-- **Derivation writers** — they **are** the derivation. **They have no failure channel that can
-  write a dishonest absence.** **For them the pick-moved predicate is the wrong condition**: a
-  dimension or quantity edit does not move the pick but must reprice, and carrying figures forward
-  while `line_total`, `pricing_snapshot_json` and `configuration_snapshot_json` re-derive beside
-  them would describe **one variant at two different times in adjacent columns**.
+- **Best-effort writers** **ask** the catalogue and **have a failure channel**, so a re-resolve on
+  an unmoved pick can only degrade or lie. **A4's predicate governs them.**
+- **Derivation writers** **are** the derivation and have **no failure channel that can write a
+  dishonest absence**. **For them the pick-moved predicate is the wrong condition**: a dimension or
+  quantity edit does not move the pick but must reprice, and carrying figures forward while
+  `line_total` and both snapshots re-derive beside them would describe **one variant at two
+  different times in adjacent columns**.
 
-**Membership is a property, not a list.** **Verified at 3a: the tester attacked this as a property
-rather than sampling it, and could not construct a violating path.**
+**Membership is a property, not a list.** **Verified at 3a: attacked as a property, not sampled.**
 
 **The residual, named rather than hidden (A6).** An ops edit of an AI-priced line refreshes price,
-snapshots **and** figures to the current catalogue even when nothing material changed. **The
-branch's pre-existing contract**, and a **product question about that branch**, not a figures
-defect.
+snapshots **and** figures even when nothing material changed — **the branch's pre-existing
+contract**, and a **product question about that branch**.
 
 ### 7.1 One rule
 
-Owner, verbatim: *"every save should record thermal properties of selected at a time product."*
+**SNAP-AC-1 (R22 + A4 + A6)** — a save whose **stored pick actually differs after the save**, or a
+**validated re-derivation by a derivation writer**, records **the Uw and SHGC of the configuration
+that save established** — the variant the pick named, or, where the pick named none, the variant
+its product and glazing resolved to.
 
-**SNAP-AC-1 (R22 + A4 + A6 — the rule)** — *Given* a save whose **stored pick actually differs
-after the save** (§7.0), **or** a **validated re-derivation by a derivation writer**, *Then* the
-line's `performance_figures_json` carries **the Uw and SHGC of the configuration that save
-established** — the variant the pick named, or, where the pick named none, the variant its product
-and glazing resolved to.
+*And the other half, scoped by A6:* a **best-effort** writer's save that **leaves the pick
+untouched** carries the figures **forward verbatim** and **reads no catalogue at all**.
 
-*And the other half, scoped by A6:* **Given a save by a BEST-EFFORT writer that leaves the pick
-untouched**, *Then* the figures are **carried forward verbatim** and **no catalogue read is made
-for that line at all**.
-
-> **Why "the configuration that save established" and not "that product+variant's".** On a
-> **glazing-only** change the pick moves, the figures re-resolve with **no variant named**, and the
-> row **deliberately retains its old `selected_variant_id`** (`projects.ts:579`). **The row
-> therefore stores a variant that disagrees with its figures — ruled, not accidental** (design
-> §4.3; **confirmed by the owner as D16**).
->
-> **Verified at 3a:** the two limbs map one-to-one onto `resolveFigures`' two branches. Tester:
-> *"the new wording is what the code does; the old wording was not."*
->
-> **The consequence is a Phase 3b copy rule: WHY-AC-4 — and D16 rests on it.**
+> **Why "the configuration that save established".** On a **glazing-only** change the pick moves,
+> the figures re-resolve with **no variant named**, and the row **deliberately retains its old
+> `selected_variant_id`** — **ruled, and confirmed by the owner as D16**. **Verified at 3a:** the
+> two limbs map one-to-one onto `resolveFigures`' two branches.
 
 **SNAP-AC-2 (R22 — structural)** — every statement under `worker/**` that writes
 `quote_line.product_slug` or `quote_line.selected_variant_id` also writes
@@ -512,39 +453,34 @@ its list says.**
 
 ### 7.2 The hard constraint — capture is never a gate
 
-**SNAP-AC-4 / SNAP-AC-5 (negative — no new refusal)** — an ops edit and a customer save that
-succeed today still succeed, same status, stored values and price; **no new validation, 409 or
-error path**. *(The pre-existing aiManaged 409 is not a new refusal.)*
+**SNAP-AC-4 / SNAP-AC-5** — an ops edit and a customer save that succeed today still succeed, same
+status, stored values and price; **no new validation, 409 or error path**.
 
-**SNAP-AC-6 (best-effort resolution — scoped by A4 and A6)** — a **best-effort writer's save that
-moved the pick** to a configuration the catalogue cannot answer for completes, stores
-**present-and-null**, and tells nobody.
+**SNAP-AC-6 (best-effort resolution)** — a **best-effort writer's save that moved the pick** to a
+configuration the catalogue cannot answer for completes, stores **present-and-null**, tells nobody.
 
-**SNAP-AC-7 (no latency regression)** — the catalogue is consulted at most once per save request.
-**Lines whose pick did not move contribute nothing.**
+**SNAP-AC-7** — the catalogue is consulted at most once per save request. **Lines whose pick did
+not move contribute nothing.**
 
 ### 7.3 What is stored
 
 **SNAP-AC-8 (absence is recorded as absence)** — present-and-null, so a later reader can tell "no
 figure exists" apart from "saved before the capture shipped". *Under A1 the three states are
-structural.*
+structural: `NULL` = never captured; `{"uValue":null,"shgc":null}` = captured, no figure exists;
+numbers = captured.*
 
-**SNAP-AC-16 (A4 + A6 — negative; every present-and-null was established)** — a present-and-null
-was written by **one of three honest authors**: a best-effort save that moved the pick and could
-not resolve; a successful resolution of a variant that genuinely carries no figures; or a
-derivation writer's deliberate *"evaluated, nothing chosen"*. **Given a best-effort writer's save
-that did not move the pick — including during an outage — the stored figures are byte-identical
-and no present-and-null is written.**
-
-> **Read it against the invariant, not a list of sites.** **A tester must classify the writer
-> first** — an unclear class is a design question, **not a licence to weaken the criterion**.
+**SNAP-AC-16 (A4 + A6 — negative)** — a present-and-null was written by **one of three honest
+authors**: a best-effort save that moved the pick and could not resolve; a successful resolution of
+a variant that genuinely carries no figures; or a derivation writer's deliberate *"evaluated,
+nothing chosen"*. **A best-effort save that did not move the pick — including during an outage —
+leaves the figures byte-identical and writes no present-and-null.**
 
 **SNAP-AC-9 (it is a snapshot)** — stored figures do not change when the catalogue changes, **and
 nothing recomputes them outside a capture moment**: a save that moved the pick, or a derivation
-writer's validated save. **Everything else is forbidden.**
+writer's validated save.
 
 **SNAP-AC-10 (no backfill — D5)** — no script and no migration writes figures onto lines saved
-before this phase.
+before this phase. **D19 confirms the same refusal on the read side.**
 
 **SNAP-AC-11** — the capture writes only to the line's own configuration record.
 
@@ -554,20 +490,13 @@ before this phase.
 
 **The verified-complete writer index is the design's, at design §4.2.** A hand-maintained list has
 been **incomplete on every attempt**: 1, then 4, then 8, verified at **15** — **and the list layer
-failed a third time in a different direction** when A6's re-walk found two writers in a class
-nobody had enumerated. **Write criteria against properties, and let the design carry the
-membership.**
-
-Five shapes carry rulings of their own: a composite parent (vacuous); a writer that clears a
-snapshot; a writer that restores a prior configuration; **a best-effort writer that touches a line
-without moving its pick** (the most common save in the product); and **a derivation writer at a
-validated save**.
+failed a third time in a different direction** when A6's re-walk found two writers in a class nobody
+had enumerated. **Write criteria against properties, and let the design carry the membership.**
 
 ### 7.5 The customer path, specifically
 
 **SNAP-AC-13 / 14 / 15 (D7)** — a new customer line carries figures; a customer override records
-**what the customer chose**; and **nothing customer-visible changes** — on a save that moved no
-pick, nothing is stored at all.
+**what the customer chose**; **nothing customer-visible changes**.
 
 ### 7.6 Verified non-impact — the learning corpus
 
@@ -578,37 +507,34 @@ An override fails `sameCoreConfiguration`, so the outcome is `"adjusted"` and pa
 
 ## 8. Acceptance criteria — Phase 2: the shared drawing viewer · **ACCEPTED, DEPLOYED**
 
-> **Accepted at stage 8 and deployed** (`9285d642`). Verified against executed evidence including
-> mutation checks. **The criteria stay exactly as written: they are what the next reader must not
-> break.**
+> Verified against executed evidence including mutation checks. **The criteria stay exactly as
+> written: they are what the next reader must not break.**
 
 **The URL grammar (D9).** `/projects/:id/line/:lineId/drawing`; `…/drawing/u1`, `/u2`, … —
 **1-based ordinals in the display order `unitLabel` renders**. **A state-only history push was
 rejected by name.**
 
 **VIEW-AC-1 (R21, R25)** — **the whole drawing and its caption visible together, the drawing as
-large as the viewport permits** — and nothing that explains the drawing's notation.
+large as the viewport permits**, and nothing that explains the drawing's notation.
 
 > **The criterion was requiring two things that cannot both hold.** A landscape drawing grown to
-> claim 2560px of width stands roughly **1790px** tall on a **1080px** screen. **A drawing you
-> have to scroll to see is not "the largest size the viewport allows".**
->
-> **Which dimension governs: whichever one binds.** As shipped it was height alone:
+> claim 2560px of width stands roughly **1790px** tall on a **1080px** screen. **Which dimension
+> governs: whichever one binds.** As shipped it was height alone:
 >
 > ```
 > WIDTH-ONLY    1280 → 887×620    1920 → 887×620    2560 → 887×620
 > HEIGHT-ONLY    900 → 799×558    1400 → 1242×868
 > ```
 >
-> **The magic number went with it.** **Verified by three shapes, each moving one dimension.**
+> **Verified by three shapes, each moving one dimension.**
 
 **VIEW-AC-1a (D10)** — a **unit** shows its code; the **line** is titled `Drawing`.
 
 **VIEW-AC-2 / 2a / 2b / 2c / 2d (R31)** — **exactly one** history entry on entry; back, Escape and
-the system gesture all do the **same single pop** with **no remount and no record re-fetch**; a
-cold deep link renders with the viewer open and **replaces** to the line path; a malformed suffix
-**normalises by replace**; and leaving a line after enlarging takes **two backs** — **agreed cost,
-not to be collapsed**.
+the system gesture all do the **same single pop** with **no remount and no record re-fetch**; a cold
+deep link renders with the viewer open and **replaces** to the line path; a malformed suffix
+**normalises by replace**; leaving a line after enlarging takes **two backs** — **agreed cost, not
+to be collapsed**.
 
 **VIEW-AC-3 / 4 (composites)** — the whole assembly in proportion; a single unit alone at
 `…/drawing/u<N>`.
@@ -631,12 +557,7 @@ styles mean. **Must not rest on the `.elev-legend` selector.**
 
 **VIEW-AC-12 (the shared export IS deleted) — REVERSED by the owner (D12).**
 
-> **Twice, the reason given for keeping it was an unexecuted claim.** An export with no caller and
-> no styles is dead code with a door painted on it.
-
 ### 8.1 Opening a drawing from the project record's desk canvas (D11)
-
-**This journey shipped in no criterion and no interaction spec** — §12 note 11.
 
 **VIEW-AC-13** — the canvas opens the **shared** viewer at the line's own drawing URL, **same
 grammar**, **exactly one** history entry.
@@ -647,121 +568,182 @@ grammar**, **exactly one** history entry.
 **reference**; from the line page, both name the line. **In no state does the label name one
 destination while the control goes to another.**
 
-**There is no `Project` fallback on the viewer's control, and that is not a descope.** **The
-page-level control keeps `Project`**; **if one of these two labels ever changes, both change.**
-**The never-empty guarantee is pinned, not assumed.**
-
 **VIEW-AC-16** — the record is **not remounted and not re-fetched**, the selected line is **still
 selected**, and the canvas shows its drawing **from the first frame after the pop**.
 
-**VIEW-AC-17** — `scripts/tests/web/` carries **executed** Playwright coverage. **A node:test
-suite cannot satisfy this criterion.**
+**VIEW-AC-17** — `scripts/tests/web/` carries **executed** Playwright coverage.
 
 ---
 
 ## 9. Acceptance criteria — Phase 3b: "Why this product"
 
+> **Gate closed 2026-08-25 (D18, D19, D20).** Every `ASSUMED:` this section carried is discharged;
+> the criteria below name the ruling that closed each. **Two criteria were repaired in revision 28**
+> — WHY-AC-27 and WHY-AC-4 — because Phase 3a's three-state distinction (SNAP-AC-8) had overtaken
+> their wording. **§12 note 13's class, found this time by walking §9 against the rulings.**
+
+### 9.0 The three states, and the three sentences (A1, SNAP-AC-8 — the definition §9 depends on)
+
+A line's `performance_figures_json` is in exactly one of three states, and **the panel must not
+collapse them**:
+
+| State | What it means | What the panel says |
+|---|---|---|
+| **Column `NULL`** | The line was saved **before the capture existed**. Nobody ever asked. | *"not recorded"* — WHY-AC-9 |
+| **`{"uValue":null,"shgc":null}`** | **Captured**, and the answer was **"no figure exists"** — *or* a derivation writer's *"evaluated, nothing chosen"* | Two causes, **distinguished from the row** — WHY-AC-9 |
+| **Numbers** | Captured, with figures | The figures — WHY-AC-4 |
+
+**Where present-and-null has two causes, the row settles which** (`line_total`, `status`,
+`selected_variant_id`): a line with **no selection** is not a line whose **product has no published
+figure**. **The figures alone cannot tell them apart, and copy that assumes one will mis-state the
+other.**
+
 ### 9.1 The panel on the line detail (R6)
 
-**WHY-AC-1 (R6)** — the panel appears between the specification (or units block) and the price,
-carrying exactly three lines: **Had to meet**, **This one**, **Chosen**.
+**WHY-AC-1 (R6, D19)** — *Given* a line whose opening resolves to a **most recent** selection run
+with recorded candidate outcomes, and whose product is still the one the platform selected, *When*
+the reviewer opens the line page, *Then* a panel appears between the specification (or units block)
+and the price, carrying exactly three lines: **Had to meet**, **This one**, **Chosen**.
 
 **WHY-AC-2 (R4)** — `default_envelope` states the caps as figures **and** an origin label naming
 them a platform default; equivalently `explicit_energy_report`, `plan_derived`, `human_override`.
 
 **WHY-AC-3 (R4, absent)** — "Had to meet" says this opening had no thermal requirement.
 
-**WHY-AC-4 (R6, SNAP-AC-3 — what the figures are attributed to; LOAD-BEARING for D16)** — *Given*
-the line's stored figures, *When* "This one" renders, *Then* it shows the Uw and SHGC **from the
-line's own record**, attributed to **the product and the glass they describe** — never to the row's
-`selected_variant_id`, and never phrased as *"this variant performs at X"*. A null figure is stated
-as not recorded and never rendered as a number, a zero or a dash.
+**WHY-AC-4 (R6, SNAP-AC-3, §9.0 — what the figures are attributed to; LOAD-BEARING for D16;
+repaired revision 28)** — *Given* a line whose stored figures **are numbers**, *When* "This one"
+renders, *Then* it shows the Uw and SHGC **from the line's own record**, attributed to **the product
+and the glass they describe** — never to the row's `selected_variant_id`, and never phrased as
+*"this variant performs at X"*.
+
+*Given* a figure is **not a number**, *Then* it is **never rendered as a number, a zero or a dash**,
+and which sentence it gets is **§9.0's, by state**: a `NULL` column and a present-and-null do not
+say the same thing (WHY-AC-9).
 
 > **This criterion is the consideration the owner was given for D16.** He accepted a row whose
-> `selected_variant_id` does not describe its figures **because the panel never captions the
-> figures with that id**. **Weakening this criterion re-opens D16** — it is not a copy preference,
-> it is the other half of a decision.
+> `selected_variant_id` does not describe its figures **because the panel never captions the figures
+> with that id**. **Weakening it re-opens D16** — it is the other half of a decision, not a copy
+> preference.
 >
-> After a customer glazing-only change the id is deliberately **left as the estimator's** while the
-> figures describe what the glass resolved to. Copy that reads the id and captions the numbers with
-> it would state something the row does not mean — on exactly the lines a reviewer is most likely
-> to be auditing.
+> **~~As written through revision 27:~~** *"a figure recorded as null is stated as not recorded"* —
+> which collapsed two different facts into one sentence. **SNAP-AC-8 made them distinct**, and the
+> correction is recorded rather than quietly reworded.
 
-**WHY-AC-5 (R6, R7)** — "Chosen" states the winning rule in one sentence per tier.
+**WHY-AC-5 (R6, R7)** — "Chosen" states the winning rule in one sentence per tier: `meets`,
+`within_tolerance`, `misses`, `thermal_unknown`, `does_not_fit`.
 
 **WHY-AC-6 (R7)** — a run stored with `tolerance` 0.08 says 8% — read from the run, never
 hardcoded.
 
-**WHY-AC-7 / 7a / 7b / 7c / 7d (R19, R26, R29, D8)** — activating the panel's action **navigates
-to `/projects/:id/line/:lineId/why`**, presented as a right-hand slide-out at desk width and full
+**WHY-AC-7 / 7a / 7b / 7c / 7d (R19, R26, R29, D8)** — activating the panel's action **navigates to
+`/projects/:id/line/:lineId/why`**, presented as a right-hand slide-out at desk width and full
 screen on the phone; the way out is a **back** control with an accessible name and the standard
-gesture, **no "Done" and no X**; a cold arrival renders the rationale with the line page's
-not-found and refusal sentences and back **replaces** to the line page; and the Projects filter
-panel is unchanged, tests included.
+gesture, **no "Done" and no X**; a cold arrival renders the rationale with the line page's not-found
+and refusal sentences and back **replaces** to the line page; and the Projects filter panel is
+unchanged, tests included.
 
-**WHY-AC-8 (R13, D6 — the thinner panel)** — a line with no selection run whose stored figures
-exist shows **two** lines: that a person chose this product, and that product's own Uw and SHGC.
+**WHY-AC-8 (R13, D6, §9.0 — the thinner panel)** — *Given* a line with **no selection run** whose
+stored figures **are numbers**, *When* the line page opens, *Then* the panel shows **two** lines:
+that a person chose this product, and that product's own Uw and SHGC. No "Had to meet", no
+"Chosen", no alternatives action.
 
-**WHY-AC-9 (D5, the honest gap — and present-and-null has two meanings)** — *Given* a line whose
-stored figures are **absent** (`NULL`), *Then* the panel states that a person chose this product
-and that its figures were not recorded, and **no** catalogue lookup fills the gap. `ASSUMED:`
-§13.5.
+*The boundary with WHY-AC-9 is the state, not the presence of a run:* a human-chosen line whose
+figures are `NULL` or present-and-null takes WHY-AC-9's sentence for the figures and keeps this
+criterion's two-line shape.
 
-> **`NULL` and present-and-null are different sentences, and present-and-null has two causes.**
-> A derivation writer records *"evaluated, nothing chosen"* the same way, and one of them
-> (`proposal.ts:262`) **nulls the variant while leaving `product_slug` standing**. **The 3b copy
-> must distinguish them from the row, not from the figures alone**: a line with no selection is not
-> a line whose product has no published figure.
+**WHY-AC-9 (D5, D19, §9.0 — the honest gap, and which absence it is)** — *Given* a line whose stored
+figures are **`NULL`** — saved before the capture existed — *Then* the panel states that a person
+chose this product and that **its figures were not recorded**, and **no catalogue lookup fills the
+gap**.
 
-**WHY-AC-10 (R3, pre-0055 rows)** — the panel states that this recommendation was made by an
-earlier model whose reasoning was not recorded. `ASSUMED:` §13.2.
+*Given* the figures are **present-and-null**, *Then* the panel distinguishes the two causes **from
+the row**: where the row shows a selection, it says the product has **no published figure**; where
+the row shows **no selection was made** (`line_total` null, `status` incomplete, variant null with
+`product_slug` standing — `proposal.ts:262`), it says that instead.
 
-**WHY-AC-11 (D2, post-issue)** — **no panel at all**, and **the `why` route renders the same
-refusal as a line that has none**.
+**D19 is what makes the absence final:** the panel never reaches back to today's catalogue to fill
+either one. *(The owner was shown that filling them would reverse D3 and D5.)*
+
+**WHY-AC-10 (R3, D19, pre-0055 rows)** — the panel states that this recommendation was made by an
+earlier model whose reasoning was not recorded; **no reconstruction from the deleted model's
+columns**, and no alternatives action.
+
+**WHY-AC-11 (D2, post-issue)** — **no panel at all**, and **the `why` route renders the same refusal
+as a line that has none**.
 
 ### 9.2 The detail screen (R8, R9, R10, R19, R29, D8)
 
-**WHY-AC-12 / 13 (R8)** — chosen first, then the next four by ascending ladder rank — five rows, no
-more; fewer than five: the ones that exist, **no count of anything beyond the list**.
+**WHY-AC-12 (R8, D18)** — the chosen product first, marked as chosen, then **the next four** by
+ascending ladder rank — **five rows, no more**.
 
-**WHY-AC-14 / 15 (R9 — negative)** — no excluded candidate, no count, no exclusion reason text;
-nothing about withheld products.
+**WHY-AC-13 (R8)** — fewer than five: the ones that exist, no placeholder rows and **no count of
+anything beyond the list**.
 
-**WHY-AC-16 (R10 — negative)** — no price, no delta, no currency symbol, no control that prices it.
+**WHY-AC-14 (R9 — negative)** — no excluded candidate, no count of them, no exclusion reason text.
 
-**WHY-AC-17 (R6, R7)** — name, recorded Uw and SHGC, and a verdict in words derived from its tier.
+**WHY-AC-15 (R9, D18 — negative)** — **nothing about withheld products appears.**
 
-**WHY-AC-18 (R3, D3)** — every figure shown is a stored one; no request to recompute anything.
+**WHY-AC-16 (R10, D18 — negative, and it governs the whole surface; widened revision 28)** — *Given*
+**any part of this surface — the panel's three lines, the thinner panel, and every row of the
+detail** — *When* it renders, *Then* it carries **no price, no price delta, no currency symbol and
+no control that prices anything**.
+
+> **Widened because D18's ruling is "no money anywhere" and this criterion covered only the
+> alternative rows.** The gap was never exploited — the DTO has no price field — but a criterion
+> narrower than its ruling is a criterion that stops protecting it the moment the DTO changes.
+
+**WHY-AC-17 (R6, R7)** — an alternative row states the product's name, its recorded Uw and SHGC, and
+its verdict in words derived from its tier.
+
+**WHY-AC-18 (R3, D3, D19)** — every figure shown is a stored one; the surface issues **no request to
+the catalogue or the estimator to recompute anything**.
 
 **WHY-AC-19 (R3)** — a recorded candidate whose product no longer exists is still shown from the
-recorded facts.
+recorded facts, never blank or dropped.
 
-**WHY-AC-20 (R1 — negative)** — no control changes anything; a network trace contains only GETs.
+**WHY-AC-20 (R1 — negative)** — no control changes the line, the quote or any stored value; a
+network trace contains only GETs.
 
-**WHY-AC-21 (R2 — negative)** — no wording describes a human's change as wrong, a mistake or a
-correction of the platform.
+**WHY-AC-21 (R2 — negative)** — no wording describes a human's product change as wrong, incorrect, a
+mistake, an error or a correction of the platform.
 
 ### 9.3 When a human changed the make-up (R11, R12, R23, R24)
 
-**WHY-AC-22 / 23** — the platform's original recommendation shown **unchanged**, with a comparison
-of the current product against the **same** requirement beside it; variant/glazing differing counts
-as a change.
+**WHY-AC-22 / 23 (R11, R12)** — the platform's original recommendation shown **unchanged**, with a
+comparison of the current product against the **same** requirement beside it; variant **or** glazing
+differing counts as a change.
 
-**WHY-AC-24 (negative)** — nothing changed: no human-selection block at all.
+**WHY-AC-24 (R11 — negative)** — neither changed: no human-selection block at all.
 
 **WHY-AC-25 / 26 (R23)** — the requirement shown is exactly the one recorded at selection time, and
 **no code path re-resolves, recomputes or re-derives a requirement**.
 
-**WHY-AC-27 (D3, D5)** — the comparison uses the **stored** figures against the run's recorded
-caps. Figures absent: it says so and makes no live lookup.
+**WHY-AC-27 (D3, D5, §9.0 — the mechanism and its gap; repaired revision 28)** — *Given* a line
+whose make-up was changed and whose stored figures **are numbers**, *When* the comparison renders,
+*Then* it compares those **stored** figures against the run's recorded caps — meet, within the
+stored tolerance band, or miss — in WHY-AC-17's vocabulary, with no wording that frames the change
+as an error (R2).
 
-**WHY-AC-28 (R24)** — the current selection is attributed to a person and never to the platform.
-`ASSUMED:` §13.10.
+*Given* the figures are **not numbers**, *Then* the comparison is **not attempted**, the panel says
+which absence it is **in §9.0's terms**, and it **still shows the requirement and the platform's
+recommendation unchanged**, with **no live lookup** (D19).
+
+> **~~As written through revision 27:~~** *"the figures are absent — changed before the capture
+> shipped, or resolved to null"* — **one sentence for two different facts.** A `NULL` column means
+> nobody ever asked; a present-and-null means somebody asked and established there was nothing. **A
+> reviewer auditing a thermal decision needs to know which**, and SNAP-AC-8 exists precisely so the
+> row can tell them. Recorded rather than quietly reworded, because this is the third time a
+> criterion has been overtaken by a ruling downstream of it (§12 note 13).
+
+**WHY-AC-28 (R24, D20 — attribution)** — *Given* a line whose current product+variant differ from
+the configuration the platform recommended, *Then* the current selection is attributed to a person
+and never to the platform: **R6's three labels are kept and only the "Chosen" sentence changes** —
+it says a person chose this product and names what the platform had recommended instead.
 
 **WHY-AC-29 (R24 — the trap, and the test that catches it)** — a line the estimator created
-(`origin = 'ai'`) whose configuration a customer has since overridden says a person chose this
-product. Derived by **comparing the recorded recommendation against the line's current
-product+variant** — never from `origin`.
+(`origin = 'ai'`, `ai_proposal_line_id` set) whose configuration a customer has since overridden
+says a person chose this product. Derived by **comparing the recorded recommendation's
+product+variant against the line's current product+variant** — never from `origin`.
 
 **WHY-AC-30 / 31 (R24)** — a restore reads as platform-made once more by the same comparison; no
 code path writes `origin` or `ai_proposal_line_id`.
@@ -770,15 +752,18 @@ code path writes `origin` or `ai_proposal_line_id`.
 
 **WHY-AC-32 (R14)** — a composite parent whose `composite_origin` is `'ai'` **shows** the panel.
 
-**WHY-AC-33 (R15)** — the split reason first, then each lite's own band.
+**WHY-AC-33 (R15)** — the split reason first — the make-up that won and the single unit it beat —
+then each lite's own band.
 
 **WHY-AC-34 / 35 / 36 (R16)** — each unit states its own caps and origin label; a unit with no
-recorded band says so; a recorded `segment_thermal_review` flag is shown against that unit.
+recorded band says so, and **no band is computed for it**; a recorded `segment_thermal_review` flag
+is shown against that unit.
 
 **WHY-AC-37 (R17, D6)** — `composite_origin = 'ops'` gets the WHY-AC-8 treatment.
 
 **WHY-AC-38 (R14, `splitNote`)** — a recorded "no frame system could supply it" is stated. *(One
-stored home: `quote_line.review_json.composite`; the fixture must carry the unresolved flag.)*
+stored home: `quote_line.review_json.composite`; if staff have resolved that flag the trace is gone
+— a named residual, and the fixture must carry the unresolved flag.)*
 
 ### 9.5 No action, anywhere on this surface (R28, R1, R29)
 
@@ -786,15 +771,12 @@ stored home: `quote_line.review_json.composite`; the fixture must carry the unre
 
 **WHY-AC-39** — the detail's only interactive element is the back control. **WHY-AC-40** — no
 line-editor route exists; the child routes are exactly `drawing`, `drawing/u<N>` and `why`.
-**WHY-AC-41** — the panel's only interactive element is the one that opens the detail.
+**WHY-AC-41** — the panel's only interactive element is the one that opens the detail, and on a line
+with no detail it has none at all.
 
 ---
 
 ## 10. Abuse-case criteria (negative)
-
-The read surface is staff-gated and read-only, but it exposes **which competing products were
-considered and how they compared**. These are executed by the tester as real attempts, with the
-denial recorded.
 
 **X-AC-1 / X-AC-2** — a non-staff caller is refused with the console's standard refusal, the raw
 body carries no product slug, tier, thermal figure or candidate, and the anonymous and
@@ -804,11 +786,11 @@ signed-in-customer refusals are **identical in status and body**.
 `why` URL as well as the endpoint.**
 
 **X-AC-4 (cross-project probe)** — the refusal for a line in another project is byte-identical to
-the refusal for a line that does not exist, **both by navigating and by visiting the URL
-directly**, **including the drawing URLs the desk canvas pushes**.
+the refusal for a line that does not exist, **both by navigating and by visiting the URL directly**.
 
-**X-AC-5 (R9, enforced server-side)** — the raw body contains **only** the chosen candidate and at
-most four runners-up.
+**X-AC-5 (R9, D18, enforced server-side)** — the raw body contains **only** the chosen candidate and
+at most four runners-up: no excluded candidate, no `exclusions[]`, **no `withheldIncomplete`**, no
+price.
 
 **X-AC-6** — this feature adds **no** POST, PATCH, PUT or DELETE endpoint.
 
@@ -819,17 +801,16 @@ ignored entirely, on both the ops and customer routes.
 
 **X-AC-10** — the existing ownership guards refuse a line id from another project unchanged.
 
-**X-AC-13 (the split path trusts no client field either)** — a split request carrying
-`configurationSnapshot`, `selectedVariantId`, `performanceFigures` or any field outside the route's
-accepted set has those values **ignored entirely**, and is neither refused nor altered by their
-presence.
+**X-AC-13 (the split path trusts no client field either)** — client-supplied `configurationSnapshot`,
+`selectedVariantId`, `performanceFigures` or any field outside the route's accepted set are
+**ignored entirely**, and the request is neither refused nor altered by their presence.
 
-> **Safe today by construction** (an explicit whitelist) — **but that safety lives in a list**, and
-> this repo's list layers have been wrong repeatedly. **Mutation-proven at 3a:** the tester widened
-> the whitelist by exactly one field and watched the criterion go red.
+> **Safe today by construction** (an explicit whitelist) — **but that safety lives in a list**.
+> **Mutation-proven at 3a:** the tester widened the whitelist by exactly one field and watched the
+> criterion go red.
 
-**X-AC-11 / X-AC-12 (Phase 1)** — CERT-AC-8 and CERT-AC-13 both refuse and write nothing, executed
-as real attempts; CERT-AC-11: no customer-facing response changes.
+**X-AC-11 / X-AC-12 (Phase 1)** — the two gates on the irreversible write both refuse and write
+nothing; no customer-facing response changes.
 
 ---
 
@@ -837,32 +818,27 @@ as real attempts; CERT-AC-11: no customer-facing response changes.
 
 | Case | Required behaviour | Ruling |
 |---|---|---|
-| **GST inc/ex** | No money appears anywhere on this surface. `ASSUMED:` §13.3 | R3, R10 |
+| **GST inc/ex** | **No money appears anywhere on this surface** — not the panel, not the rows. The line's existing Price panel is untouched. | **D18**, WHY-AC-16 |
 | **Quote lifecycle — post-issue** | Panel absent entirely, and the `why` URL refuses. | D2, WHY-AC-11 |
 | **A catalogue import run after the strip** | No row regains the fields. | CERT-AC-12 |
-| **A strip launched from a stale branch** | Refused, naming the offending importer. | CERT-AC-13 |
-| **The `ElevationLegend` export** | **Deleted**, with the assertion that pinned it. | VIEW-AC-12, D12 |
 | **A room-label, colour or dimension edit on an ordinary line — including during an outage** | **Best-effort writer: figures carried forward verbatim, no catalogue read.** | A4, SNAP-AC-16 |
 | **A customer autosave that changes nothing about the pick** | Nothing stored, nothing fetched. | A4, SNAP-AC-16 |
-| **A dimension or quantity edit on an AI-priced line** | **Derivation writer: figures re-derive with the price and both snapshots.** Not a breach — that save is a capture moment. | A6, §7.0 |
-| **An estimator re-run that re-picks the same variant after the catalogue moved** | Figures refresh with the rest of the derivation. **Correct code.** | A6 |
+| **A dimension or quantity edit on an AI-priced line** | **Derivation writer: figures re-derive with the price and both snapshots.** Not a breach. | A6, §7.0 |
 | **An ops edit of an AI-priced line where nothing material changed** | Price, snapshots **and** figures refresh. **Named residual, pre-existing contract.** | A6 |
-| **A customer changes only the glass** | The figures re-resolve **from the glass**; the row **keeps its old `selected_variant_id`**. **The figures describe the configuration; the id is not their caption.** | **D16**, SNAP-AC-1, WHY-AC-4 |
-| **A line whose variant was nulled but whose product still stands** | Present-and-null means **"no selection was made"**, not "this product has no figure". **3b's copy must read the row.** | WHY-AC-9, SNAP-AC-8 |
-| **A save that genuinely moves the pick while the catalogue is unreachable** | Present-and-null, and **here it is the honest fact**. | SNAP-AC-6 |
-| **A successful resolution of a published variant that carries no figures** | Present-and-null, **honestly**. | SNAP-AC-16 |
-| **A pre-capture line that a best-effort writer edits** | Stays `NULL`. **No opportunistic backfill.** | A4, SNAP-AC-10 |
-| **A product offering exactly one published variant, with no variant named** | Resolves to that variant — **a singleton answer set is not ambiguity**. | A5 |
+| **A customer changes only the glass** | The figures re-resolve **from the glass**; the row **keeps its old `selected_variant_id`**. **The id is not the figures' caption.** | **D16**, WHY-AC-4 |
+| **A line saved before the capture existed** | Column `NULL`. The panel says **"not recorded"** and **looks nothing up**. | **D19**, §9.0, WHY-AC-9 |
+| **A line whose variant was nulled but whose product still stands** | Present-and-null meaning **"no selection was made"**, not "this product has no figure". **The row settles it; the figures cannot.** | §9.0, WHY-AC-9 |
+| **A published variant that genuinely carries no figures** | Present-and-null, **honestly** — the answer was established. | SNAP-AC-16, §9.0 |
+| **An opening estimated more than once** | **The most recent run only**; earlier runs are not listed or merged. | **D19**, WHY-AC-1 |
+| **A product held back because our catalogue record is unfinished** | **Not shown at all**, and never sent to the client. | **D18**, WHY-AC-15, X-AC-5 |
+| **A line a human changed** | **Same three lines**; only the **"Chosen"** sentence changes. | **D20**, WHY-AC-28 |
+| **A product offering exactly one published variant, with no variant named** | Resolves to that variant — **a singleton answer set is not ambiguity**. | A5 (**still open**) |
 | **A split request carrying a client-supplied snapshot or variant id** | Ignored entirely. Executed, not inspected. | X-AC-13 |
 | **Enlarging a drawing from the record's desk canvas** | One push; back pops once to the **record**, selection and canvas intact. | D11, VIEW-AC-13…17 |
 | **Leaving a line after enlarging a drawing** | **Two backs.** Agreed cost of R31. | VIEW-AC-2d |
 | **A short wide viewport — 2560×1080** | **Height binds.** | VIEW-AC-1, D13 |
-| **Everything saved before the capture exists** | No figures, no backfill: the honest absence. | D5, R18, SNAP-AC-10 |
 | **A non-staff caller reaches an ops route or any new URL** | One refusal, no candidate data. | X-AC-1…4 |
-| **Offerability gating** | Withheld and excluded candidates never reach the client — server-side. | R9, X-AC-5 |
-| **More than one selection run for an opening** | The most recent by `created_at`. `ASSUMED:` §13.4 | R3 |
-| **Null thermal figures** | Stated as not recorded. Never 0, never "—". | R6 |
-| **Catalogue moved since the run or since the save** | Stored facts only; no live lookup at display time, ever. | R3, D3, SNAP-AC-9 |
+| **Catalogue moved since the run or since the save** | Stored facts only; **no live lookup at display time, ever**. | R3, D3, **D19**, SNAP-AC-9 |
 | **Certification** | Never appears on this screen in any phase. | R5 |
 
 ---
@@ -874,62 +850,81 @@ as real attempts; CERT-AC-11: no customer-facing response changes.
 > **Five were found in a single day of Phase 2**, every one written while *adding* coverage, and
 > **not one of them looked wrong**.
 >
-> > **Break the thing on purpose and watch the test go red. Make the pattern match nothing and
-> > watch the scan complain.** If neither happens, the assertion was decoration.
+> > **Break the thing on purpose and watch the test go red. Make the pattern match nothing and watch
+> > the scan complain.** If neither happens, the assertion was decoration.
 
 Not a test plan — fifteen places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since overridden.
 2. **SNAP-AC-2 is a source-level scan.** Property of every match, never a count.
-3. **SNAP-AC-5 and SNAP-AC-15 need a customer-path test** — where the widest defect nearly shipped.
-4. **X-AC-1 must be executed for both callers separately.** **And X-AC-13 must be an executed
-   attempt, not an inspection.**
+3. **SNAP-AC-5 and SNAP-AC-15 need a customer-path test.**
+4. **X-AC-1 must be executed for both callers separately.** **X-AC-13 must be an executed attempt.**
 5. **VIEW-AC-10, and the selector that became a trap.**
 6. **WHY-AC-39/40/41 assert absences.** Enumerate and assert the *set*.
-7. **WHY-AC-7a must assert where back GOES**; **VIEW-AC-15 adds the other half** — assert label and
-   destination **together**. The never-empty guarantee is **only half pinned**.
+7. **WHY-AC-7a must assert where back GOES**; **VIEW-AC-15 adds the other half.**
 8. **VIEW-AC-2's numbers are the assertions.**
 9. **CERT-AC-3's predicate is narrow on purpose.**
 10. **A JUSTIFICATION IS A CLAIM, AND IT MUST BE CHECKED — six times about the codebase, once about
-    the world, once about this spec's own register.**
+    the world, once about this spec's own register, and once about which code path a measurement
+    came from.**
 
     > **A claim about the codebase is settled by running something. A claim about the world is
     > settled by asking the person who owns it.**
 
+    **THE FOURTH SHAPE — A MEASUREMENT CARRIED FROM ONE PATH TO ANOTHER (new, revision 28).** The
+    Phase 3a acceptance said a coercion site *"produces a unit whose stored glass differs from the
+    opening it was split from"*. **The probe behind that was real and its result was true — at the
+    ops paths.** The claim then described **a different site**, where
+    `splitCandidates.ts:344-347` overwrites `glazing` with the unit's own chosen variant, because a
+    split picks glass per unit. On that path the divergence **could never happen**, and it **could
+    never reach the figures at all**, since `glazingOf` reads only `glazing`.
+    *(Verified before amending: line `:347` is `glazing: variant?.glazingOptionSlug ?? ""`, after
+    the inherited spread.)*
+
+    **The defect was real and the fix warranted — it was a faithfulness defect, not a capture
+    defect:** every *other* inherited option (colour, hardware, flyscreen, installation) was
+    corrupted, so a unit's spec stopped matching the opening it came from. The sharpest instance:
+    **`String(false ?? "")` is `"false"`** — a boolean `false` became a **truthy string**.
+
+    > **A measurement is evidence for the thing measured. Generalising it to a sibling path is the
+    > same defect as an unexecuted claim, wearing a result** — and it is *harder* to catch, because
+    > a number looks like verification. **Re-measure on the path you are describing, or describe the
+    > path you measured.**
+
+    **Both the developer and the tester caught it**, the tester correcting its own earlier report.
+    That is the escalation pattern working on a finding rather than on a criterion.
+
 11. **A journey that no criterion names will be tested by nobody.**
 12. **A two-variable measurement proves nothing about which variable did the work.**
-13. **A CRITERION IS CHECKED AGAINST THE OTHER CRITERIA IT CONSTRAINS — three instances, none found
-    by reading.** VIEW-AC-1 (a measurement); SNAP-AC-1 vs SNAP-AC-9 (an implementation); SNAP-AC-1
-    vs SNAP-AC-14 (a tester tracing a path). **All three had a shared subject.**
+13. **A CRITERION IS CHECKED AGAINST THE OTHER CRITERIA IT CONSTRAINS — four instances now, and none
+    was found by reading it alone.** VIEW-AC-1 (a measurement); SNAP-AC-1 vs SNAP-AC-9 (an
+    implementation); SNAP-AC-1 vs SNAP-AC-14 (a tester tracing a path); **and WHY-AC-27/WHY-AC-4 vs
+    SNAP-AC-8 (revision 28) — found by walking §9 against the rulings made after it was written.**
+
+    **All four had a shared subject.** **The fourth adds a trigger worth keeping: when a phase
+    establishes a new distinction, walk the criteria written before it.** SNAP-AC-8 split one
+    absence into two; two display criteria still spoke of "absent" as one thing.
+
 14. **A CRITERION GENERALISED FROM ONE INSTANCE MUST NAME THE PROPERTY THAT MADE THAT INSTANCE
-    WRONG, NOT THE BEHAVIOUR IT EXHIBITED.** **A criterion that is too strong gets found by an
-    implementer who cannot satisfy it — and the pressure then is to quietly weaken it at the one
-    inconvenient site.**
-15. **ONE RULE IN TWO PLACES — the defect Phase 3a produced four times, and the phase's own
-    lesson.** A4, A6, SNAP-AC-1's wording and the coercion sites were all **a distinction that
-    existed in one spot and was needed in two**.
+    WRONG, NOT THE BEHAVIOUR IT EXHIBITED.**
+15. **ONE RULE IN TWO PLACES — the defect Phase 3a produced four times.** **The remedy is not
+    vigilance; it is a single home.**
 
-    **The remedy is not vigilance; it is a single home.** **When a distinction has to be re-stated
-    at a second site, that is the moment it should become a function, a criterion or a definition —
-    never a second copy of a sentence.**
+    **And the triage lesson.** *"Four sites, two legitimate"* **is a triage result, and the triage
+    stopped at three.** **When a tool is dropped for being noisy, its findings do not go with it.**
 
-    **And the triage lesson.** The fourth coercion site was found by a scan that returned four
-    hits, two legitimate — and the scan was then dropped as noisy. **Abandoning the scan was
-    correct; abandoning the finding along with the tool was not.** *"Four sites, two legitimate"*
-    **is a triage result, and the triage stopped at three.**
+    > **Coercing a caller's input is normalisation; coercing a stored value to stand in for an input
+    > the caller never sent is fabrication.**
 
-    > **Coercing a caller's input is normalisation; coercing a stored value to stand in for an
-    > input the caller never sent is fabrication.**
-
-**THE ESCALATION IS THE MODEL, AND IT HAS NOW HAPPENED THREE TIMES.** **A criterion that cannot be
-satisfied honestly is a defect in the criterion, and it goes back up the pipeline.**
+**THE ESCALATION IS THE MODEL.** **A criterion that cannot be satisfied honestly is a defect in the
+criterion, and it goes back up the pipeline.**
 
 ---
 
 ## 13. `ASSUMED:` register — every entry carries a state
 
-> **Every entry has a state — OPEN, DISCHARGED, RETIRED or VETOED — and discharging one happens
-> when the answer arrives, not when someone next reads the file.**
+> **Every entry has a state — OPEN, DISCHARGED, RETIRED or VETOED — and discharging one happens when
+> the answer arrives, not when someone next reads the file.**
 
 **States:** `OPEN` — still assumed, still vetoable · `DISCHARGED` — whoever this spec delegated it
 to has answered it · `RETIRED` — the question dissolved · `VETOED` — answered against the
@@ -937,15 +932,13 @@ assumption.
 
 ### The failure this register has had twice, and the only mechanism that closes it
 
-> **The states were built for OWNER answers, which arrive at a decision gate the product-manager
-> attends. A DELEGATED answer lands in another document, at a stage nobody re-reads the register.**
+> **A DELEGATED answer lands in another document, at a stage nobody re-reads the register.**
 
 1. **A delegating entry names where the answer will land.**
 2. **The rulings are indexed in this spec too**, at §5 (A1–A6).
 3. **One command before any "live at this gate" list leaves the product-manager's hands:**
-   `grep -n "§13\.\|ASSUMED" docs/design/ops2-why-this-product.md`. **Run for §14's Phase 3b gate,
-   2026-08-25: nothing discharged behind the register's back — the design *adopts* all seven, which
-   is what their annotations already say. Adoption is not discharge.**
+   `grep -n "§13\.\|ASSUMED" docs/design/ops2-why-this-product.md`. **Run for the Phase 3b gate,
+   2026-08-25: nothing discharged behind the register's back.**
 
 **And the honest limit: none of that is automatic.**
 
@@ -956,26 +949,26 @@ vetoable with it as one pair.** **Two registers, one per document.**
 
 | # | Entry | State |
 |---|---|---|
-| §7.1 | `withheldIncomplete[]` is **not** shown, following R9 | **OPEN — at the Phase 3b gate (§14, Q1).** Built as assumed: excluded at **DTO construction**; X-AC-5 asserts it on the raw body. **The grill flagged it as not separately ruled** |
+| §7.1 | `withheldIncomplete[]` is **not** shown | **DISCHARGED — owner, Phase 3b gate (D18).** Confirmed as built: withheld products stay hidden, enforced at DTO construction and asserted on the raw body (X-AC-5) |
 | §7.2 | the `CandidateOutcome.dataSource` removal is the architect's to rule | **DISCHARGED — architect (A3)**; ADR 0011 |
-| §7.3 | "3–5 next best" implemented as **4** runners-up | **OPEN — at the Phase 3b gate (§14, Q1).** Within R8's "3–5" |
+| §7.3 | "3–5 next best" implemented as **4** runners-up | **DISCHARGED — owner (D18).** Five rows total; within R8's "3–5" |
 | §7.4 | the `CONTEXT.md` corrections are the architect's to apply | **DISCHARGED — verified applied** |
 
 ### Registered by this spec
 
 | # | Entry | State |
 |---|---|---|
-| 1 | **VIEW-AC-9** — the record row's glyph does not open the viewer | **OPEN — shipped and deployed.** A veto now costs rework |
-| 2 | **WHY-AC-10** — a pre-0055 run says the reasoning was not recorded | **OPEN — at the Phase 3b gate (§14, Q2)** |
-| 3 | **§11, GST** — no money at all on this surface | **OPEN — at the Phase 3b gate (§14, Q1)** |
-| 4 | **§11, multiple runs** — the most recent only | **OPEN — at the Phase 3b gate (§14, Q2)** |
-| 5 | **WHY-AC-9** — where figures were never captured, the panel says so | **OPEN — at the Phase 3b gate (§14, Q2)** |
+| 1 | **VIEW-AC-9** — the record row's glyph does not open the viewer | **OPEN — shipped and deployed.** A veto now costs rework. **The only open entry of this spec's own** |
+| 2 | **WHY-AC-10** — a pre-0055 run says the reasoning was not recorded | **DISCHARGED — owner (D19).** No reconstruction from the deleted model's columns |
+| 3 | **§11, GST** — no money at all on this surface | **DISCHARGED — owner (D18).** He was told showing money would **re-open R10**, not toggle a setting. WHY-AC-16 widened to the whole surface (revision 28) |
+| 4 | **§11, multiple runs** — the most recent only | **DISCHARGED — owner (D19)** |
+| 5 | **WHY-AC-9** — where figures were never captured, the panel says so | **DISCHARGED — owner (D19).** He was shown that filling them from today's catalogue would **reverse D3 and D5**; he did not take it |
 | 6 | *(the capture's reach)* | **RETIRED** — D7 |
 | 7 | *(where "Change the product" lives)* | **RETIRED** — R28 |
-| 8 | **SNAP-AC-12** — figures live in `configuration_snapshot_json` | **DISCHARGED — architect (A1): OVERRIDDEN.** A **new nullable column**; that column is deliberately nulled when a customer materially edits an AI-priced line, so the save that most needs to *record* figures is the save that *erases* it |
+| 8 | **SNAP-AC-12** — figures live in `configuration_snapshot_json` | **DISCHARGED — architect (A1): OVERRIDDEN** |
 | 9 | **§7.4** — R22 reaches the estimator's own writers | **DISCHARGED — architect (A2): yes** |
-| 10 | **WHY-AC-28** — R6's three labels kept, only "Chosen" changes | **OPEN — at the Phase 3b gate (§14, Q3)** |
-| 11 | **§10** — the uniform refusal is adopted as written | **RETIRED** — §2 puts changing it out of scope |
+| 10 | **WHY-AC-28** — R6's three labels kept, only "Chosen" changes | **DISCHARGED — owner (D20)** |
+| 11 | **§10** — the uniform refusal is adopted as written | **RETIRED** |
 | 12 | *"the drawing viewer is an overlay"* | **VETOED by R31** |
 | 13 | **VIEW-AC-12** — the export is retained | **VETOED — owner (D12)** |
 | 14 | **The URL grammar** | **DISCHARGED — owner (D9)** |
@@ -984,108 +977,26 @@ vetoable with it as one pair.** **Two registers, one per document.**
 | 17 | **VIEW-AC-15** — the project's **title** | **VETOED — owner** |
 | 18 | **VIEW-AC-1** — all the leftover space; the caption never scrolls | **DISCHARGED — owner (D13)** |
 | 19 | *(the 3a-before-3b urgency)* | **VETOED — owner (D14)** |
-| 20 | *(SNAP-AC-1's "sets or changes", read as including a rewrite of the same pick)* | **VETOED — architect (A4)** |
-| 21 | *(SNAP-AC-16's "exactly one author", read as governing every writer)* | **VETOED — architect (A6).** The opposite failure to §13.20: **too strong** |
-| 22 | *(SNAP-AC-1's "that product+variant's figures", read as a promise that the row's `selected_variant_id` describes them)* | **DISCHARGED — owner, Phase 3a acceptance (D16).** Confirmed as built: the figures describe the glass, the row keeps the estimator's id. **He accepted the raw-row consequence on the strength of WHY-AC-4**, which is now load-bearing for this decision |
+| 20 | *(SNAP-AC-1's "sets or changes")* | **VETOED — architect (A4)** |
+| 21 | *(SNAP-AC-16's "exactly one author")* | **VETOED — architect (A6).** **Too strong** — the opposite failure to §13.20 |
+| 22 | *(SNAP-AC-1's "that product+variant's figures")* | **DISCHARGED — owner (D16).** **He accepted the raw-row consequence on the strength of WHY-AC-4**, now load-bearing |
 
 ---
 
-## 14. Decisions needed — **the Phase 3b gate**
+## 14. Decisions needed
 
-**Seven OPEN entries, grouped into three questions.** Every one is **cheap to veto now and
-expensive after the panel ships**, which is why the gate is before the build, not after it.
+**None.** The Phase 3b gate is closed (D18, D19, D20) and **§9 is ready to build against** — every
+`ASSUMED:` it carried is discharged, and revision 28 repaired the two criteria that Phase 3a's
+three-state distinction had overtaken.
 
-*Check run first (§13's mechanism): the design **adopts** all seven and rules on none. Nothing was
-answered behind the register's back.*
+**Two things remain open, and neither blocks 3b:**
 
----
+- **§13.1 (VIEW-AC-9)** — the record row's glyph does not open the viewer. **OPEN and already
+  shipped**; a veto now costs rework, not an edit.
+- **A5** (a singleton answer set is not ambiguity) — the **architect's**, and **vetoable as one pair
+  with the design's ambiguity rule** at Phase 3 acceptance. It is a capture-side rule; 3b only
+  reads what it produced.
 
-### Q1 — How much does the panel show? *(§7.3, §7.1, §13.3)*
-
-**As built and recommended:** the chosen product **plus four alternatives, five rows total**;
-**products held back because their catalogue record is unfinished are not shown at all**; and
-**no money appears anywhere on the surface** — no price, no delta, no currency symbol.
-
-**Reasoning.** R8 said "3–5 next best" and four is the middle of it; R19 said *"the list does not
-need to be long — i don't want a full catalogue sorted by match level"*. Withheld products follow
-R9's *"i'm not interested in, nor ever asked for, excluded"* — **though the grill flagged that
-withheld is arguably a different thing** (the fix is ours, not the opening's), which is why it is
-being asked rather than assumed. Money follows R10 and R3 together: a stored price from a past run
-is stale by the time anyone reads it.
-
-**Alternatives:** three or five alternatives instead of four; showing withheld products as a
-"could not be offered" group; showing the recorded price beside each row.
-
-**Veto cost today** — one number, one DTO field, one criterion each:
-- **Alternatives count:** a number in one place. **Moves WHY-AC-12, WHY-AC-13, X-AC-5.**
-- **Show withheld:** the more expensive of the three — it crosses the server boundary. **Inverts
-  WHY-AC-15, changes X-AC-5 (an abuse criterion), and adds a DTO field.**
-- **Show money:** **contradicts R10, an existing ruling of his own**, so it is not a toggle — it
-  re-opens a decision. **Moves WHY-AC-16 and X-AC-5.**
-
----
-
-### Q2 — What does it say when the record is thin, old, or plural? *(§13.5, §13.2, §13.4)*
-
-**As built and recommended, one principle in three places: the panel shows what was recorded at
-the time and says so plainly when there is nothing. It never reaches back to fill a gap.**
-
-- **Figures never captured** (a line saved before Phase 3): *"figures were not recorded"* — **and
-  no catalogue lookup to fill it in.**
-- **A recommendation older than the recording** (pre-migration-0055): *"made by an earlier model
-  whose reasoning was not recorded"* — no reconstruction, no alternatives offered.
-- **An opening estimated more than once:** the **most recent** run only. Earlier runs are not
-  listed or merged.
-
-**Reasoning.** R3 and D3 are the owner's own: *"snapshot at the time of recalculation/save. Not
-extracted in real time."* An honest gap is auditable; a filled-in gap is a number a reviewer would
-trust that nobody established — which is the same rule Phase 3a spent four rounds enforcing on the
-write side.
-
-**Alternatives:** look up today's catalogue to fill missing figures; reconstruct old
-recommendations from the deleted scoring model's columns; list every run with dates.
-
-**Veto cost today — this is the group with a genuinely expensive member:**
-- **Fill missing figures from the catalogue:** **not cheap and not local.** It contradicts **R3/D3
-  head-on**, undoes **SNAP-AC-10** (no backfill) and the **honest-absence design** the whole of
-  Phase 3a was built to protect, and inverts **WHY-AC-9 and WHY-AC-27**. **If he wants this, it is
-  a re-opening of D3 and D5, not a tweak.**
-- **Reconstruct pre-0055 reasoning:** **the alternative may not exist** — the old model's columns
-  were deleted. Inverts **WHY-AC-10** and would need an investigation before it could be costed.
-- **List earlier runs:** a **new surface**, not a tweak — a history section, a DTO list, and
-  WHY-AC-1's "a selection run" becomes plural. Moderate today, larger later.
-
----
-
-### Q3 — What does the panel say on a line a human changed? *(§13.10)*
-
-**As built and recommended:** the panel keeps its **same three lines** — *Had to meet*, *This one*,
-*Chosen* — and **only the "Chosen" sentence changes**: it says a person chose this product and
-names what the platform had recommended instead.
-
-**Reasoning.** R6 fixed the three lines; R11 requires both the platform's recommendation and the
-human's choice to be visible; R24 requires the current selection never to read as platform-made.
-Changing the **sentence** rather than the **structure** means a reviewer sees the same shape on
-every line and reads the difference, rather than learning a second layout.
-
-**Alternatives:** a fourth line for the override; a visually distinct block; a different label set
-on overridden lines.
-
-**Veto cost today:** copy plus one layout branch. **Moves WHY-AC-28, and interacts with WHY-AC-22
-and WHY-AC-23** (the both-shown treatment). Cheap now; after the panel ships it is a redesign of the
-surface a reviewer has learned.
-
----
-
-### One dependency he should know about, whatever he decides here
-
-**WHY-AC-4 is load-bearing for D16.** He accepted a row whose `selected_variant_id` does not
-describe its figures **because the panel never captions the figures with that id**. **Any 3b change
-that weakens WHY-AC-4 re-opens D16** — it is the other half of a decision, not a copy preference.
-
-### Also outstanding, not part of this gate
-
-- **§13.1 (VIEW-AC-9)** — OPEN and already shipped; a veto now costs rework.
-- **A5** (a singleton answer set is not ambiguity) — the architect's, **vetoable as one pair with
-  the design's ambiguity rule** at Phase 3 acceptance.
-- **The deploy** — `0058` is local-only and reaches production with 3b (D17).
+**Still to happen, and it is the owner's:** the deploy. `0058` is **local-only**; it reaches
+production **with 3b** (D17), under the deploy protocol — full gates green, security sweep green on
+the deployed commit, preview smoke-test before promoting, because this touches a save path.
