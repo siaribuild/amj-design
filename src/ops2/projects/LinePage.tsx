@@ -133,10 +133,33 @@ export function LinePage() {
    * `canGoBack()` is `OpsPage`'s own discipline one level down: pop when there
    * is something to pop, replace when there is not — which is the cold link,
    * arriving from a paste or an email with no line page behind it.
+   *
+   * ── BUT `canGoBack()` DOES NOT MEAN "THERE IS NOWHERE TO GO BACK TO" ────────
+   * It means Ionic has no VIEW in its stack to pop, and that stack is in memory:
+   * a reload, a restored session, a recovered crash all rebuild it empty while
+   * the BROWSER's session history is untouched. On the canvas door those two
+   * facts came apart and the surface gave three answers at once — the control
+   * and Escape replaced to the line path, the platform's own gesture popped to
+   * the record, and the label went on naming the record throughout, because the
+   * label reads the entry's state and the state survives a reload.
+   *
+   * So the door is asked, not the stack. An entry that says it was opened from
+   * the record HAS the record behind it in session history — the gesture landing
+   * there is the proof — so going back means the browser's own back, and all
+   * three exits become the one pop VIEW-AC-14 requires.
+   *
+   * The line door is untouched by any of it: no state, so a reloaded or pasted
+   * line drawing still replaces to the line path (VIEW-AC-2b), which is the case
+   * most easily broken by "fixing" the reload rather than the conflation.
+   *
+   * Read off `history.location` rather than the render's `location` for the same
+   * reason the pathname guard above is: what this control does is decided at the
+   * moment it is pressed.
    */
   const closeViewer = useCallback(() => {
     if (lineSuffixOf(history.location.pathname) === "") return;
-    if (router.canGoBack()) router.goBack();
+    if (router.canGoBack()) { router.goBack(); return; }
+    if (openedFromRecord(history.location.state)) history.goBack();
     else history.replace(linePath);
   }, [history, router, linePath]);
 

@@ -163,6 +163,10 @@ export function DrawingViewer({ subject, onClose }: {
                   // other. The stylesheet fits the drawing to the viewport.
                   size="lg"
                   unitDims
+                  // NO SIZE OF ITS OWN — the stylesheet fits it to whatever the
+                  // bar and the caption leave, and an intrinsic size would be a
+                  // ceiling on that.
+                  fluid
                   className="ops2-viewer__svg"
                 />
                 <figcaption className="ops2-viewer__cap" data-testid="drawing-viewer-caption">

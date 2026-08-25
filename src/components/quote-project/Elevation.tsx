@@ -357,7 +357,7 @@ function openingSymbol(kind: string, p: Box, hand: Hand, o: { inset: number; sw:
   }
 }
 
-export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, unitDims = false, parts, axis, opening = false, className = "" }: {
+export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, unitDims = false, parts, axis, opening = false, fluid = false, className = "" }: {
   productSlug: string;
   /** Draw an OPENING rather than a product: the frame and its glass, with no
    *  sash symbol and no mullions — a fixed-window square, which is what a hole
@@ -393,6 +393,24 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   /** Which way the units are stacked. Vertical splits the WIDTH (side by side),
    *  horizontal splits the HEIGHT. Matches quote_line.composite_axis. */
   axis?: "vertical" | "horizontal" | null;
+  /**
+   * DRAW WITHOUT A SIZE OF ITS OWN, so the container decides how big this is.
+   *
+   * Normally the `<svg>` carries `width`/`height` attributes equal to its
+   * viewBox, which give it an intrinsic size — seven of this component's eight
+   * callers rely on that and set no CSS size at all. But an intrinsic size is a
+   * CEILING for `width: auto`, so a drawing that must fill whatever box it is
+   * given cannot use one: `max-width`/`max-height` would shrink it and nothing
+   * would ever grow it past its own `size` row.
+   *
+   * With the attributes omitted the element keeps its viewBox — and so its
+   * aspect ratio — and takes its size entirely from CSS, which is the only
+   * arrangement in which "whichever dimension binds" is decided by the browser
+   * rather than by arithmetic somebody has to write down. Used by ops2's drawing
+   * viewer (VIEW-AC-1); measured against five other arrangements, all of which
+   * either letterboxed the drawing inside its own element or capped it.
+   */
+  fluid?: boolean;
   /** Draw the width and height leaders. Defaults to the size's own answer —
    *  false at xs, true from sm up — because a 34px glyph has nowhere to put a
    *  number and a drawing big enough to be the subject should be dimensioned. */
@@ -553,7 +571,8 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
     <svg data-elevation="" data-unsized={sized ? undefined : ""}
       data-opening={opening && !compositeGeometry ? "" : undefined}
       data-wide={wMm / hMm > 2.4 ? "1" : undefined}
-      viewBox={`0 0 ${q(vbw)} ${q(vbh)}`} width={q(vbw)} height={q(vbh)}
+      viewBox={`0 0 ${q(vbw)} ${q(vbh)}`}
+      width={fluid ? undefined : q(vbw)} height={fluid ? undefined : q(vbh)}
       className={className} aria-hidden="true" fill="none"
       preserveAspectRatio="xMidYMid meet">
       <rect x={q(F.x)} y={q(F.y)} width={q(F.w)} height={q(F.h)} rx="1"

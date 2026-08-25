@@ -154,47 +154,102 @@ test("the plate opens the viewer at its own address, pushing exactly one entry",
   expect(calls.n).toBe(fetches);
 });
 
-test("the drawing takes the size the VIEWPORT allows, at every viewport", async ({ page }) => {
-  // VIEW-AC-1, and the half of it a single-width test cannot see. The rule was
-  // headed "the largest size the viewport allows" and capped the drawing at a
-  // fixed 720px column, so 1280, 1600, 1920 and 2560 all drew the same 720×503
-  // — 28% of a desk monitor. THREE widths, because one proves nothing about a
-  // constant and two could still be a step.
+/**
+ * VIEW-AC-1's size rule, revision 18: "the whole drawing and its caption are
+ * visible together, and within that the drawing is as large as the viewport
+ * permits."
+ *
+ * ONE DIMENSION PER SWEEP, and this replaces rather than joins the round-1 test.
+ * That one moved width and height together across (1280,900), (1920,1080),
+ * (2560,1440) and asserted the drawing grew — which passes whichever dimension
+ * is doing the work, so it proved nothing about which one was. A
+ * height-governed implementation sailed through it and an ultrawide 2560×1080
+ * got exactly what a 1280×1080 window got. Leaving the weaker test beside these
+ * would give a future reader something to trust that cannot fail (§12 note 12).
+ */
+async function drawingAt(
+  page: import("@playwright/test").Page, width: number, height: number, lineId = "l1",
+) {
+  await page.setViewportSize({ width, height });
+  await page.goto(LINE(lineId));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await page.getByTestId("line-plate-open").click();
+  const svg = page.getByTestId("drawing-viewer").locator("svg[data-elevation]");
+  await expect(svg).toBeVisible();
+  const box = await svg.boundingBox();
+  if (!box) throw new Error(`no box for the drawing at ${width}×${height}`);
+  return box;
+}
+
+test("the drawing grows with the viewport's WIDTH when width is what binds", async ({ page }) => {
+  // Tall and narrow: the height budget is generous, so the available width is
+  // the constraint. Only the width moves.
   await serveRecord(page);
-  const drawn: { width: number; height: number; viewport: number }[] = [];
-  for (const [width, height] of [[1280, 900], [1920, 1080], [2560, 1440]]) {
-    await page.setViewportSize({ width, height });
-    await page.goto(LINE("l1"));
-    await expect(page.getByTestId("line-review")).toBeVisible();
-    await page.getByTestId("line-plate-open").click();
-    const svg = page.getByTestId("drawing-viewer").locator("svg[data-elevation]");
-    await expect(svg).toBeVisible();
-    const box = await svg.boundingBox();
-    if (!box) throw new Error(`no box for the drawing at ${width}×${height}`);
-    drawn.push({ width: box.width, height: box.height, viewport: width });
-    // And it never runs past the edge it was fitted to.
-    expect(box.width).toBeLessThanOrEqual(width);
-  }
-
-  // AND THE BOX IS THE DRAWING. `width: 100%` with a height cap passes every
-  // assertion below while the drawing sits letterboxed inside an element twice
-  // its width — the measurement would be of the container, not the ink. The
-  // drawing's own proportion is the tell: it is constant when the box is tight
-  // and tracks the viewport when it is not.
-  const ratio = drawn.map((d) => d.width / d.height);
-  for (const r of ratio) expect(Math.abs(r - ratio[0])).toBeLessThan(0.05);
-
-  // Strictly larger every time — a constant fails on the first comparison, and
-  // a cap that binds from the second viewport up fails on the second.
-  for (let i = 1; i < drawn.length; i += 1) {
-    expect(drawn[i].height,
-      `${drawn[i].viewport}px must draw taller than ${drawn[i - 1].viewport}px`)
-      .toBeGreaterThan(drawn[i - 1].height + 50);
-    expect(drawn[i].width).toBeGreaterThan(drawn[i - 1].width + 50);
-  }
-  // A desk monitor gets a drawing worth the name, not a column out of a mock.
-  expect(drawn[drawn.length - 1].width).toBeGreaterThan(900);
+  const narrow = await drawingAt(page, 1100, 1440);
+  const wide = await drawingAt(page, 1500, 1440);
+  expect(wide.width, `1500×1440 drew ${wide.width}, 1100×1440 drew ${narrow.width}`)
+    .toBeGreaterThan(narrow.width);
+  // The box stays the drawing rather than a letterboxed container: same shape,
+  // both times. A container-shaped box would track the viewport's proportion.
+  expect(Math.abs(wide.width / wide.height - narrow.width / narrow.height)).toBeLessThan(0.05);
 });
+
+test("the drawing grows with the viewport's HEIGHT when height is what binds", async ({ page }) => {
+  // Short and wide — the ultrawide the round-1 test could not see. Only the
+  // height moves, and 2560×1080 against 2560×1440 is the exact pair the tester
+  // measured as identical.
+  await serveRecord(page);
+  const short = await drawingAt(page, 2560, 1080);
+  const tall = await drawingAt(page, 2560, 1440);
+  expect(tall.height, `2560×1440 drew ${tall.height} tall, 2560×1080 drew ${short.height}`)
+    .toBeGreaterThan(short.height);
+  expect(Math.abs(tall.width / tall.height - short.width / short.height)).toBeLessThan(0.05);
+});
+
+test("the whole drawing and its whole caption fit the viewport, at every shape",
+  async ({ page }) => {
+    // THE FENCE. "As large as the viewport permits" is bounded by this and not
+    // the other way round: a drawing grown to claim an ultrawide's 2560px stands
+    // ~1790px tall on a 1080px screen, which puts the caption below the fold and
+    // a third of the drawing with it.
+    await serveRecord(page);
+    // `l2` is the composite: it carries a units list UNDER the caption, so it is
+    // the shape most able to push the caption out of the fence.
+    for (const [w, h, line] of [
+      [2560, 1080, "l1"], [1920, 1080, "l1"], [1280, 900, "l1"], [375, 667, "l1"],
+      [2560, 1080, "l2"], [1280, 900, "l2"], [375, 667, "l2"],
+    ] as [number, number, string][]) {
+      await drawingAt(page, w, h, line);
+      const seen = await page.evaluate(() => {
+        const svg = document.querySelector('[data-testid="drawing-viewer"] svg[data-elevation]');
+        const cap = document.querySelector('[data-testid="drawing-viewer-caption"]');
+        const r = (el: Element | null) => {
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+        };
+        return { svg: r(svg), cap: r(cap), vw: window.innerWidth, vh: window.innerHeight };
+      });
+      if (!seen.svg || !seen.cap) throw new Error(`nothing measured at ${w}×${h} (${line})`);
+      // A pixel of tolerance for sub-pixel layout, and no more.
+      for (const [what, box] of [["drawing", seen.svg], ["caption", seen.cap]] as const) {
+        const at = `${line} at ${w}×${h}`;
+        expect(box.top, `${what} starts above the viewport, ${at}`).toBeGreaterThanOrEqual(-1);
+        expect(box.bottom, `${what} runs past the fold, ${at}`).toBeLessThanOrEqual(seen.vh + 1);
+        expect(box.left, `${what} starts left of the viewport, ${at}`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${what} runs past the right edge, ${at}`).toBeLessThanOrEqual(seen.vw + 1);
+      }
+      // The caption is BELOW the drawing, and NEAR it. "Visible together" is not
+      // the same as "both on the screen somewhere": a first cut of this layout
+      // gave the drawing's row all the height it was offered and pinned the
+      // caption to the bottom of the figure — 648px of blank between a drawing
+      // and the sentence stating its size, at 1100×1440. Every assertion above
+      // passed on it, which is the whole reason this line exists.
+      expect(seen.cap.top).toBeGreaterThanOrEqual(seen.svg.bottom - 1);
+      expect(seen.cap.top - seen.svg.bottom,
+        `the caption is adrift from its drawing, ${line} at ${w}×${h}`).toBeLessThan(80);
+    }
+  });
 
 test("the back control, Escape and the system back gesture are one single pop", async ({ page }) => {
   // VIEW-AC-2a. All three, because a viewer whose Escape handler closes state
@@ -737,6 +792,69 @@ test("a long reference is shortened to fit the bar, and read out whole", async (
   expect(phone.width).toBeLessThan(375 * 0.5);
 });
 
+test("a RELOADED canvas drawing still returns to the record, by all three exits",
+  async ({ page }) => {
+    // F5, a restored session, a recovered crash. The door lives on the history
+    // entry's state, which survives a reload — but Ionic's route stack does not,
+    // and `closeViewer` used to read that stack as "is there anywhere to go back
+    // to". After a reload it answered no, so the control replaced to the line
+    // path while its label still said the record and the browser's own gesture
+    // still went to the record: three exits, two destinations, and a label that
+    // agreed with neither reliably.
+    //
+    // Measured before the fix — the label was identical in all three rows, so
+    // asserting the label alone would have passed:
+    //   control OF-Q-10482 → /line/l2 · escape OF-Q-10482 → /line/l2
+    //   gesture OF-Q-10482 → /projects/p_rec
+    await serveRecord(page);
+
+    for (const exit of ["control", "escape", "gesture"] as const) {
+      await canvasWithComposite(page);
+      await canvasPlate(page).click();
+      await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+
+      await page.reload();
+      await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+      const back = page.getByTestId("drawing-viewer-back");
+      await expect(back).toHaveText(PROJECT_REF);
+
+      if (exit === "control") await back.click();
+      else if (exit === "escape") await page.keyboard.press("Escape");
+      else await page.goBack();
+
+      // LABEL AND DESTINATION IN ONE ASSERTION. Either alone passes the build
+      // this test was written against.
+      await expect(page, `${exit} after a reload did not land on the record`)
+        .toHaveURL(/\/projects\/p_rec$/);
+      await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+      await expect(page.getByTestId("record-canvas")).toBeVisible();
+    }
+  });
+
+test("a RELOADED line drawing still names the line and replaces to it", async ({ page }) => {
+  // The control case, and the one most likely to break in fixing the above: a
+  // line-door drawing carries no state either way, so a reload must leave it
+  // behaving exactly as a cold link — names the line, REPLACES to the line path,
+  // grows no history. If this ever starts landing on the record, the fix has
+  // stopped reading the door and started guessing from the reload.
+  await serveRecord(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LINE("l2"));
+  await page.getByTestId("line-plate-open").first().click();
+  await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+
+  await page.reload();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
+  const before = await historyLength(page);
+
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  expect(await historyLength(page), "a reloaded line door replaced, it did not push")
+    .toBe(before);
+});
+
 test("back from a canvas-opened drawing does not blank the canvas", async ({ page }) => {
   // VIEW-AC-16, proved by the tester's own two measurements — `selected row
   // index` and the canvas's leading text — read in ONE evaluate immediately
@@ -864,4 +982,90 @@ test("an unauthenticated visitor gets nothing from a drawing URL", async ({ brow
     expect(status, "the record endpoint answered an anonymous caller").toMatch(/^(401|403)$/);
   }
   await context.close();
+});
+
+test("the door does not leak between journeys in one page session", async ({ page }) => {
+  // VIEW-AC-15 both ways, in ONE session. The door rides on `history.push`
+  // state, so the risk this creates is a value that outlives its journey: a
+  // reviewer who used the canvas once and then reaches a line page properly
+  // must get the LINE's name, not the reference left over from before.
+  await serveRecord(page);
+  await canvasWithComposite(page);
+
+  await canvasPlate(page).click();
+  await expect(page.getByTestId("drawing-viewer-back")).toHaveText(PROJECT_REF);
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/projects\/p_rec$/);
+
+  // Now reach the line page as a reviewer actually would at phone width, in the
+  // same session, and open the same drawing through the other door.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByTestId("record-line").nth(1).click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  await expect(page.getByTestId("line-review")).toBeVisible();
+
+  await page.getByTestId("line-plate-open").first().click();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  const back = page.getByTestId("drawing-viewer-back");
+  await expect(back, "the record's reference leaked onto the line's own door").toHaveText("W07");
+  await expect(back).not.toHaveText(/OF-Q/);
+  await back.click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+});
+
+test("a real visit to the line page still refreshes the record on the way back", async ({ page }) => {
+  // THE NARROWED DEPARTURE GUARD, at the chain that asks it twice. `departed` is
+  // set from WHERE the page went, and the record's departure here is to the LINE
+  // PAGE (no suffix), not to a drawing — so the return must still refresh, or
+  // the fix for VIEW-AC-16 has disabled the thing the hook exists for.
+  const calls = await serveRecord(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(RECORD_PAGE);
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+  const afterRecord = calls.n;
+
+  await page.getByTestId("record-line").nth(1).click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  await expect(page.getByTestId("line-review")).toBeVisible();
+
+  await page.getByTestId("line-plate-open").first().click();
+  await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_rec$/);
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+
+  expect(calls.n, "a real visit to the line page no longer refreshes the record")
+    .toBeGreaterThan(afterRecord);
+});
+
+test("a UNIT opened from the canvas returns to the record by all three exits", async ({ page }) => {
+  // VIEW-AC-13 names "the canvas's plate, or a unit row on a composite", and
+  // VIEW-AC-14 applies to both. The plate gets all three exits above; without
+  // this the unit row gets one.
+  await serveRecord(page);
+  await canvasWithComposite(page);
+
+  for (const exit of ["control", "escape", "gesture"] as const) {
+    await canvasUnit(page, 1).click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await expect(page).toHaveURL(/\/line\/l2\/drawing\/u2$/);
+    // The door is the canvas's, so the control names the record even here —
+    // while the TITLE still names the subject (VIEW-AC-1a is untouched by D11).
+    await expect(page.getByTestId("drawing-viewer-back")).toHaveText(PROJECT_REF);
+    await expect(page.getByTestId("drawing-viewer")
+      .getByRole("heading", { name: "W07B" })).toBeVisible();
+
+    if (exit === "control") await page.getByTestId("drawing-viewer-back").click();
+    else if (exit === "escape") await page.keyboard.press("Escape");
+    else await page.goBack();
+
+    await expect(page, `${exit} did not land on the record`).toHaveURL(/\/projects\/p_rec$/);
+    await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+    // And the selection survived every exit, not only the control (VIEW-AC-16).
+    const selected = await page.evaluate(() => [...document.querySelectorAll(
+      '[data-testid="record-line"]')].findIndex((r) => r.getAttribute("aria-current") === "true"));
+    expect(selected, `${exit} lost the selection`).toBe(1);
+  }
 });

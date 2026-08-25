@@ -171,43 +171,75 @@
 .ops2-viewer__content {
   --background: var(--ds-surface-page);
 }
+/* THE BUDGET IS WHAT IS LEFT, AND IT IS NEVER A NUMBER (VIEW-AC-1, revision 18).
+   The body fills the content area exactly, the units list takes what it needs,
+   and the drawing gets the rest — so how much of the screen a drawing may claim
+   is a consequence of the layout rather than a figure somebody chose. The two
+   figures that used to choose it, `720px` and `62vh`, each caused a finding. */
 .ops2-viewer__body {
   display: flex;
   flex-direction: column;
   gap: var(--theme-spacing-lg);
   padding: var(--theme-spacing-md);
+  height: 100%;
 }
+/* The drawing and its caption are ONE BLOCK and are fenced together: the caption
+   is the size statement, and a drawing whose size has scrolled off is not
+   showing its size.
+
+   TWO `auto` ROWS CENTRED AS A GROUP, not a `1fr` row with the caption beneath
+   it. Both cap the drawing correctly; the difference is where the caption ends
+   up when the drawing is WIDTH-bound and does not need the height it was given.
+   A `1fr` row keeps that spare height for itself and pins the caption to the
+   bottom of the figure — measured at 1100x1440, a 648px gulf between a drawing
+   and the sentence that states its size. Sized rows centred together stay 8px
+   apart at every shape. */
 .ops2-viewer__figure {
   margin: 0;
   text-align: center;
+  /* `1 1 0`, not `1 1 auto`: the basis must be ZERO so the figure takes only
+     what is FREE, after the units list has had its content height. From `auto`
+     the basis is the drawing's own max-content — which, on a drawing that
+     deliberately has no intrinsic size, is large enough to win the negotiation
+     and clip the list beneath it mid-row. */
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-items: center;
 }
-/* THE LARGEST SIZE THE VIEWPORT ALLOWS, and the viewport is what says so. The
-   generator is called at `lg` and the drawing is fitted here rather than
-   re-generated per width — its leader text is designed in viewBox units, so the
-   whole drawing scales together and the numbers keep their relationship to the
-   frame.
+/* AS LARGE AS THE VIEWPORT PERMITS — and the viewport, not this rule, decides
+   which dimension says so.
 
-   THE HEIGHT IS THE GOVERNOR. A drawing has a fixed aspect, so one cap is
-   enough and height is the one that leaves the caption and the units list on
-   the screen under it; the width cap is only the edge of the viewport. This
-   carried a 720px column cap instead, taken from the MOCK'S SIMULATED DESK
-   FRAME rather than from a column inside it, and it bound at every width — the
-   same 720×503 drawing at 1280, 1600, 1920 and 2560, which on a desk monitor is
-   28% of the screen. `scripts/tests/web/ops2-drawing-viewer.spec.ts` measures it
-   at three widths, because one width cannot see a constant. */
+   Four declarations, no arithmetic, and that is the point: with both maximums
+   set and both dimensions `auto`, the browser's own constrained-sizing pass
+   fits a fixed-aspect box into its grid area by whichever bound is tighter. A
+   tall narrow viewport is limited by width, a short wide one by height, and
+   nothing here has to know which — the rule that named ONE of them is what
+   shipped, and it gave a 2560x1080 ultrawide precisely what a 1280x1080 window
+   got.
+
+   IT ONLY WORKS ON A DRAWING WITH NO INTRINSIC SIZE — hence `fluid` on the
+   generator. An intrinsic size is a ceiling for `width: auto`, so the drawing
+   would shrink correctly and never grow. Five other arrangements were measured
+   and every one of them failed the same way: any rule that SPECIFIES one
+   dimension (`height: 62vh`, `width: 100%`, `aspect-ratio` with either) stops
+   the ratio being re-derived when the other bound binds, and the drawing
+   letterboxes inside its own element — a box wider than its own ink, which then
+   makes every measurement of it a measurement of the container.
+
+   THE BOX IS THE DRAWING, and the sweeps in
+   `scripts/tests/web/ops2-drawing-viewer.spec.ts` assert it by holding the
+   drawing's proportion constant across viewport shapes. They move ONE dimension
+   each, because a sweep that moves both passes on whichever governor happens to
+   be working — which is how the height-only rule got through the last one. */
 .ops2-viewer__svg {
   display: block;
-  /* THE HEIGHT IS SET AND THE WIDTH FOLLOWS IT. `width: 100%` with a
-     `max-height` gives a full-width box with the drawing LETTERBOXED inside it —
-     the same picture, but an element far wider than its own ink, so anything
-     measuring the drawing measures the container instead. Stating the height
-     and letting the viewBox's ratio answer for the width makes the box the
-     drawing; `max-width` is then only the viewport's edge, and shrinks the
-     height with it on a phone. */
-  height: 62vh;
   width: auto;
+  height: auto;
   max-width: 100%;
-  margin: 0 auto;
+  max-height: 100%;
   color: var(--ds-text-primary);
 }
 /* ── THE GENERATOR'S COMPANION RULES, which ops2 never had ───────────────────
@@ -264,6 +296,12 @@
   margin: 0 auto;
   width: 100%;
   max-width: 420px;
+  /* Takes what it needs out of the body's height and no more; the drawing
+     absorbs the rest. A composite with many units scrolls HERE rather than
+     pushing the drawing's caption past the fold. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .ops2-viewer__units ul {
   margin: 0;
