@@ -280,8 +280,113 @@ test("WHY-AC-10/41 a run from an earlier model says so, and offers no door", asy
   await expect(page.getByTestId("line-why"))
     .toContainText("recorded by an earlier model, whose reasoning was not kept");
   // WHY-AC-41: not a disabled control, not a chevron — no control at all.
+  // `ion-button` IS in the selector, because the one control this panel can
+  // legitimately grow — WHY-AC-42's retry — is an `ion-button`, and a negative
+  // that could not see it would pass with a control on screen.
   await expect(page.getByTestId("line-why-open")).toHaveCount(0);
-  expect(await page.getByTestId("line-why").locator("button, a, [role=button]").count()).toBe(0);
+  expect(await page.getByTestId("line-why")
+    .locator("ion-button, button, a, [role=button]").count()).toBe(0);
+});
+
+test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE different sentences", async ({ page }) => {
+  // THE WHOLE DEFECT IS THE COLLAPSE. A reviewer told "not recorded" stops
+  // looking — they conclude the platform never had a reason and move on,
+  // possibly confirming a recommendation they could have audited. A reviewer
+  // told "could not be read" tries again. So the three are gathered here and
+  // asserted to be mutually distinct, rather than each checked alone where any
+  // two of them could quietly become one string.
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const said: Record<string, string> = {};
+
+  // 1. FAILED — a 5xx. The panel remains, offers a retry, and never states an
+  //    absence it did not establish: a false absence generated at display time
+  //    is exactly what the capture rules forbid the writers from producing.
+  const fail = async (route: import("@playwright/test").Route) =>
+    route.fulfill({ status: 500, json: { error: "boom" } });
+  await page.route(RATIONALE_URL, fail);
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  const panel = page.getByTestId("line-why");
+  await expect(panel).toBeVisible();
+  said.failed = await panel.innerText();
+  expect(said.failed).toContain("The reasoning for this line could not be read just now.");
+  expect(said.failed).not.toMatch(/not recorded/i);
+  await expect(page.getByTestId("line-why-retry")).toBeVisible();
+  // THE REST OF THE PAGE IS UNAFFECTED — the two reads are independent, so a
+  // rationale that cannot be read must not take the line's own facts with it.
+  await expect(page.getByTestId("line-spec")).toBeVisible();
+  await expect(page.getByTestId("line-price")).toBeVisible();
+
+  // …and the retry actually recovers, which is the only thing that makes
+  // offering it honest.
+  await page.unroute(RATIONALE_URL, fail);
+  await page.getByTestId("line-why-retry").click();
+  await expect(panel).toContainText("the cheapest of those that met the caps");
+  await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
+
+  // 2. REFUSED — a 404, which is what "this line has no rationale" and "not a
+  //    parent of this project" both are. NOT a failure: no panel, and no retry
+  //    for something that will refuse identically next time.
+  const refuse = async (route: import("@playwright/test").Route) =>
+    route.fulfill({ status: 404, json: { error: "not_found" } });
+  await page.route(RATIONALE_URL, refuse);
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await expect(page.getByTestId("line-why")).toHaveCount(0);
+  await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
+  said.refused = await page.getByTestId("line-review").innerText();
+  expect(said.refused).not.toMatch(/could not be read|not recorded/i);
+  await page.unroute(RATIONALE_URL, refuse);
+
+  // 3. RECORDED ABSENCE — the read succeeded and the answer was "nothing was
+  //    kept". Says so, and offers no retry: there is nothing to try again for.
+  await serve(page, { l4: humanPick(null) });
+  await openLine(page, "l4");
+  said.absent = await page.getByTestId("line-why").innerText();
+  expect(said.absent).toMatch(/not recorded/);
+  expect(said.absent).not.toMatch(/could not be read/i);
+  await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
+
+  // THE THREE ARE THREE. Any two of them collapsing into one string is the
+  // defect this criterion exists for, and it would survive every assertion
+  // above taken separately.
+  expect(new Set([said.failed, said.refused, said.absent]).size).toBe(3);
+});
+
+test("WHY-AC-42 the panel is present while the read is in flight, in the shape it is about to be", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // HELD OPEN deliberately: the loading state is the one this suite cannot see
+  // by accident, because a local Worker answers faster than a frame.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(RATIONALE_URL, async (route) => {
+    await held;
+    return route.fulfill({ json: RATIONALE.l1 });
+  });
+
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  const panel = page.getByTestId("line-why");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveAttribute("aria-busy", "true");
+  // THREE BARS, one per line the panel is about to have — the shape is the
+  // point, not the animation.
+  await expect(panel.locator("ion-skeleton-text")).toHaveCount(3);
+  // AND IT STATES NOTHING WHILE IT IS STILL ASKING. "Not recorded" shown for a
+  // read still in flight is the same false absence one beat earlier.
+  expect(await panel.innerText()).not.toMatch(/not recorded|could not be read/i);
+  const loading = (await panel.boundingBox())!.height;
+
+  release();
+  await expect(panel).toContainText("the cheapest of those that met the caps");
+  const settled = (await panel.boundingBox())!.height;
+
+  // SO THE PAGE DOES NOT JUMP. A skeleton that reserves the wrong shape moves
+  // the price panel under the reader's cursor as the answer lands.
+  expect(Math.abs(settled - loading), `panel jumped ${loading} -> ${settled}`).toBeLessThan(24);
 });
 
 test("WHY-AC-11 an order record has no panel, and its /why address refuses", async ({ page }) => {
