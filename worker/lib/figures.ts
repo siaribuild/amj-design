@@ -1,9 +1,17 @@
 // Captured figures (ops2 "Why this product", Phase 3a — spec §7, design §4.3).
 //
-// A line's own record of its product+variant's Uw and SHGC, written at the
-// moment a save MOVES the pick — product, variant or glazing (§7.0) — and never
-// on a save that leaves it alone. A snapshot, never a lookup: nothing here is
-// ever called to DISPLAY a figure, and nothing re-derives a stored one.
+// A line's own record of its product+variant's Uw and SHGC. A snapshot, never a
+// lookup: nothing here is ever called to DISPLAY a figure.
+//
+// TWO KINDS OF WRITER (design §1.6). Best-effort writers — the ops manual edit,
+// the customer save, the segment edit, the schedule upsert — go through
+// `captureFigures`, which writes only when the pick MOVED (§7.0: product,
+// variant, glazing) and otherwise carries the stored value forward verbatim.
+// Derivation writers — the ops aiManaged branch and the estimator's own writers
+// — call `figuresFromVariant` on every save, because their figures come from the
+// same validated in-memory variant that produces the price and both snapshots in
+// the same statement, and they have no failure channel that could write a
+// dishonest absence.
 //
 // THE ONE HARD CONSTRAINT: the capture is never a gate. A save that succeeds
 // today must still succeed after this ships — same status, same stored values,
@@ -22,8 +30,10 @@ export interface LineFigures { uValue: number | null; shgc: number | null }
  *  says "this line was saved before the capture existed" (SNAP-AC-8). */
 export const NULL_FIGURES: LineFigures = { uValue: null, shgc: null };
 
-/** The request's products, each with the published variants that carry figures. */
-export type FigureCatalogue = ReadonlyMap<string, PerformanceVariant[]>;
+/** The request's products, each with the published variants that carry figures.
+ *  Not exported: every consumer receives one from `fetchFigureCatalogue` and
+ *  passes it straight on, so nothing outside this file needs to name it. */
+type FigureCatalogue = ReadonlyMap<string, PerformanceVariant[]>;
 
 const EMPTY_CATALOGUE: FigureCatalogue = new Map();
 
@@ -60,10 +70,29 @@ export function resolveFigures(
   return matches.length === 1 ? figuresFromVariant(matches[0]) : NULL_FIGURES;
 }
 
-/** The glass identity every pricing path already reads (lib/lines.ts:164) — one
- *  place per fact, so the figures follow the glass the line was priced for. */
-const glazingOf = (options: Record<string, string> | null | undefined): string =>
+/** THE glass identity, read exactly as every pricing path reads it
+ *  (`lib/lines.ts:164`, verified 2026-08-25). One expression, used on BOTH sides
+ *  of `pickMoved` — the saved pick and the stored row.
+ *
+ *  It must stay one expression. `options_json` is stored uncoerced, so a client
+ *  posting `{"glazing": 5}` puts a number in the column; a stored side that read
+ *  it as `String(v)` while the pick side read it as `typeof v === "string"` would
+ *  compare `"5"` against `""` and report a move on a pick that never moved,
+ *  re-resolving a snapshot §1.4 forbids. A non-string glass is no glass chosen —
+ *  which is also exactly what pricing does with it. */
+const glazingOf = (options: Record<string, unknown> | null | undefined): string =>
   typeof options?.glazing === "string" ? options.glazing : "";
+
+/** Options as stored on a row. Unreadable JSON is no options on record — never a
+ *  throw, because nothing in the capture may fail a save. */
+export const storedOptions = (optionsJson: string | null | undefined): Record<string, string> => {
+  try {
+    const parsed = JSON.parse(optionsJson || "{}") as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, string>
+      : {};
+  } catch { return {}; }
+};
 
 /** What a save must have on the row for the stored figures to still describe it. */
 export interface StoredPick {
@@ -71,6 +100,27 @@ export interface StoredPick {
   variantId: string | null;
   glazing: string | null;
   figuresJson: string | null;
+}
+
+/** The pick a stored row is carrying — the only place a `StoredPick` is built.
+ *
+ *  Every capture path reads its row through here, so the stored side and the
+ *  save side cannot drift into two readings of one fact. They already had:
+ *  four hand-written literals over three different JSON parsers, one of which
+ *  coerced values and the others did not. */
+export function storedPickOf(row: {
+  product_slug: string | null;
+  options_json?: string | null;
+  selected_variant_id?: string | null;
+  performance_figures_json?: string | null;
+} | null | undefined): StoredPick | null {
+  if (!row) return null;
+  return {
+    productSlug: row.product_slug,
+    variantId: row.selected_variant_id ?? null,
+    glazing: glazingOf(storedOptions(row.options_json)) || null,
+    figuresJson: row.performance_figures_json ?? null,
+  };
 }
 
 /** Has this save actually moved the pick? EXACTLY the resolver's own inputs are
@@ -104,6 +154,18 @@ export function pickMoved(
  *  configuration the row no longer has. That is why "never overwrite a good
  *  value with null" is the wrong shape: safe on an unmoved pick, and on a moved
  *  one it pins the old product's figures to the new configuration. */
+/** `captureFigures` for a save that touches ONE row: at most one catalogue read,
+ *  and the predicate evaluated once rather than once per use. */
+export async function captureOne(
+  env: Env,
+  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  stored: StoredPick | null,
+): Promise<string | null> {
+  const moved = pickMoved(pick, stored);
+  return captureFigures(
+    await fetchFigureCatalogue(env, moved ? [pick.productSlug] : []), pick, stored);
+}
+
 export function captureFigures(
   catalogue: FigureCatalogue,
   pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
@@ -145,8 +207,15 @@ const FIGURE_QUERY = defineQuery(`*[_type == "product" && defined(schemaVersion)
  *  become a slow save (SNAP-AC-6/7).
  *
  *  `executor` is for tests only — same seam as the thermal calibration reader
- *  (estimator/thermal/calibration.ts:310). No route passes it, and the pick's
- *  fields are server-resolved, so no client value can reach the catalogue. */
+ *  (estimator/thermal/calibration.ts:310); no production call site passes it
+ *  (grepped 2026-08-25: only `figure-capture.test.mjs` does).
+ *
+ *  The slugs ARE client-supplied — a customer names `productSlug` on their own
+ *  save. They are safe because they are BOUND, never interpolated:
+ *  `sanityExecutor` puts each parameter through `URLSearchParams`, and
+ *  `$slugs` is a GROQ parameter rather than query text. Anyone widening this
+ *  query or adding a parameter must keep that property; it is what makes the
+ *  input harmless, not any claim that the input is trusted. */
 export async function fetchFigureCatalogue(
   env: Env, slugs: string[], executor?: QueryExecutor,
 ): Promise<FigureCatalogue> {
@@ -156,7 +225,7 @@ export async function fetchFigureCatalogue(
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const rows = await Promise.race([
-      Promise.resolve(exec(FIGURE_QUERY, { slugs: distinct })),
+      exec(FIGURE_QUERY, { slugs: distinct }),
       new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 1500); }),
     ]);
     if (!Array.isArray(rows)) return EMPTY_CATALOGUE;

@@ -41,7 +41,7 @@ import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { refreshLearningExampleEligibility } from "../lib/ai/examples";
 import { getProductBySlug, families } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
-import { captureFigures, fetchFigureCatalogue, figuresFromVariant, figuresJson, pickMoved } from "../lib/figures";
+import { captureOne, figuresFromVariant, figuresJson, storedPickOf } from "../lib/figures";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
 import { opsThermal } from "./ops-thermal";
@@ -1129,16 +1129,10 @@ ops.patch("/lines/:id", async (c) => {
     // A moved pick resolves best-effort: an unreachable catalogue or an
     // ambiguous product stores null and the edit proceeds exactly as it does
     // today (SNAP-AC-4).
-    const pick = { productSlug, variantId: null, options: options as Record<string, string> };
-    const storedPick = {
-      productSlug: line.product_slug,
-      variantId: line.selected_variant_id ?? null,
-      glazing: String(safeParse(line.options_json).glazing ?? "") || null,
-      figuresJson: line.performance_figures_json ?? null,
-    };
-    nextFigures = captureFigures(
-      await fetchFigureCatalogue(c.env, pickMoved(pick, storedPick) ? [productSlug] : []),
-      pick, storedPick,
+    nextFigures = await captureOne(
+      c.env,
+      { productSlug, variantId: null, options: options as Record<string, string> },
+      storedPickOf(line),
     );
   }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still

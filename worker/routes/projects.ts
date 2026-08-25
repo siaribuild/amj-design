@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { itemToInsert, itemFields, itemProductSlug, itemOptions, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
-import { captureFigures, fetchFigureCatalogue, pickMoved } from "../lib/figures";
+import { captureFigures, captureOne, fetchFigureCatalogue, pickMoved, storedPickOf } from "../lib/figures";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid, normNote } from "../lib/util";
@@ -428,14 +428,7 @@ projects.put("/current/lines", async (c) => {
       // selected_variant_id: once the glazing has moved it is stale as a
       // figures key, and SNAP-AC-14 records what the CUSTOMER chose (§4.3).
       pick: { productSlug: itemProductSlug(raw), variantId: null, options: itemOptions(raw) },
-      stored: row
-        ? {
-          productSlug: row.product_slug,
-          variantId: row.selected_variant_id,
-          glazing: String(safeParse(row.options_json ?? "").glazing ?? "") || null,
-          figuresJson: row.performance_figures_json,
-        }
-        : null,
+      stored: storedPickOf(row),
     };
   });
   const figureCatalogue = await fetchFigureCatalogue(
@@ -685,21 +678,21 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
   // does not require the line to have been edited, only the browser does).
   // A restore that does move the pick resolves best-effort: a catalogue that
   // will not answer stores present-and-null and the restore is unaffected.
-  const restorePick = {
-    productSlug: proposal.product_slug,
-    variantId: proposal.performance_variant_id,
-    options: options as Record<string, string>,
-  };
-  const restoreStored = {
-    productSlug: proposal.line_product_slug,
-    variantId: proposal.line_variant_id,
-    glazing: String(safeParse(proposal.line_options_json ?? "").glazing ?? "") || null,
-    figuresJson: proposal.line_figures,
-  };
-  const restoredFigures = captureFigures(
-    await fetchFigureCatalogue(
-      c.env, pickMoved(restorePick, restoreStored) ? [proposal.product_slug] : []),
-    restorePick, restoreStored,
+  const restoredFigures = await captureOne(
+    c.env,
+    {
+      productSlug: proposal.product_slug,
+      variantId: proposal.performance_variant_id,
+      options: options as Record<string, string>,
+    },
+    // The line's own columns, aliased in the SELECT because `pl.product_slug` is
+    // already taken — a rename, not a second reading.
+    storedPickOf({
+      product_slug: proposal.line_product_slug,
+      options_json: proposal.line_options_json,
+      selected_variant_id: proposal.line_variant_id,
+      performance_figures_json: proposal.line_figures,
+    }),
   );
 
   const restored = await c.env.DB.batch([

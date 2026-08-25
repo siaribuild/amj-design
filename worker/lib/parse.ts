@@ -13,19 +13,8 @@ import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
 import { createCachedPriceResolver } from "./estimator/pricing";
 import type { Product } from "../../src/data/catalogue";
 import { priceItem } from "./lines";
-import { captureFigures, fetchFigureCatalogue, pickMoved } from "./figures";
+import { captureFigures, fetchFigureCatalogue, pickMoved, storedOptions, storedPickOf } from "./figures";
 import type { ProjectRow } from "./access";
-
-/** Options as stored on a draft row. Unreadable JSON is no glass on record —
- *  never a throw, because nothing in the capture may fail a save. */
-const storedOptions = (optionsJson: string | null | undefined): Record<string, string> => {
-  try {
-    const parsedOptions = JSON.parse(optionsJson || "{}") as unknown;
-    return parsedOptions && typeof parsedOptions === "object" && !Array.isArray(parsedOptions)
-      ? parsedOptions as Record<string, string>
-      : {};
-  } catch { return {}; }
-};
 
 /** The pick this row will actually CARRY once the upsert's COALESCEs land.
  *
@@ -359,16 +348,7 @@ export async function runScheduleParse(
     } catch { return []; }
   };
   const pickOf = (l: ParsedLine) => effectiveParsePick(l, matchOf(l) ?? null, locksOf(matchOf(l)));
-  const storedOf = (l: ParsedLine) => {
-    const match = matchOf(l);
-    if (!match) return null;
-    return {
-      productSlug: match.product_slug,
-      variantId: null,
-      glazing: String(storedOptions(match.options_json).glazing ?? "") || null,
-      figuresJson: match.performance_figures_json,
-    };
-  };
+  const storedOf = (l: ParsedLine) => storedPickOf(matchOf(l));
   // The slug asked for is the one the row will END UP with — a locked product
   // that the parse tried to change must be resolved as itself, not as the
   // product it refused.

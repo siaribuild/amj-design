@@ -22,7 +22,7 @@
 import type { Env } from "../types";
 import { priceItem } from "./lines";
 import { uuid } from "./util";
-import { captureFigures, fetchFigureCatalogue, figuresJson, pickMoved, resolveFigures, type LineFigures } from "./figures";
+import { captureOne, fetchFigureCatalogue, figuresJson, resolveFigures, storedPickOf, type LineFigures } from "./figures";
 import { ensureCatalogue } from "./catalogue";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
@@ -477,17 +477,8 @@ export async function updateSegment(env: Env, args: {
   // record is carried forward and the catalogue is not consulted at all. Only a
   // unit whose product or glass actually moved is re-resolved — the machine's
   // frozen snapshot no longer describes that one.
-  const pick = { productSlug, variantId: null, options };
-  const storedPick = {
-    productSlug: segment.product_slug,
-    variantId: null,
-    glazing: String(parentOptions(segment.options_json).glazing ?? "") || null,
-    figuresJson: segment.performance_figures_json ?? null,
-  };
-  const figures = captureFigures(
-    await fetchFigureCatalogue(env, pickMoved(pick, storedPick) ? [productSlug] : []),
-    pick, storedPick,
-  );
+  const figures = await captureOne(
+    env, { productSlug, variantId: null, options }, storedPickOf(segment));
 
   await env.DB.prepare(
     `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty_per_parent=?,
@@ -557,10 +548,8 @@ export async function addSegment(
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,
   });
 
-  const figures = resolveFigures(
-    await fetchFigureCatalogue(env, [productSlug]),
-    { productSlug, variantId: null, options },
-  );
+  // A new row: nothing stored to carry, so it always resolves.
+  const figures = await captureOne(env, { productSlug, variantId: null, options }, null);
 
   const id = uuid();
   await env.DB.prepare(
@@ -574,7 +563,7 @@ export async function addSegment(
     productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
     qty, total, total == null ? "incomplete" : "ready", existing.length, origin,
-    figuresJson(figures),
+    figures,
   ).run();
 
   await recomputeComposite(env, parent.id);

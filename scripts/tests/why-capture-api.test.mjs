@@ -145,7 +145,13 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         },
       });
       assert.equal(saved.body.items[0].lineTotal, 510, "the save succeeded and priced as before");
-      assert.equal(await figuresOf(insertedLineId), ABSENT, "the line's own record is untouched");
+      // NOTE the claim this does NOT make: the prior value is ABSENT and every
+      // resolution here is ABSENT, so "untouched" and "rewritten identically"
+      // are indistinguishable at this site. The smuggling axis is X-AC-9's
+      // subject and is what the next save pins; §1.4's carry-forward is pinned
+      // where a real figure is seeded (SNAP-AC-16, below).
+      assert.equal(await figuresOf(insertedLineId), ABSENT,
+        "the stored figures are still the server's own, whatever the body said");
 
       // And on a save that DOES move the pick, so a resolution really runs: the
       // stored figures are the server's, not the body's.
@@ -238,10 +244,10 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       // SNAP-AC-4's premise.
       assert.equal(await figuresOf("ql_s1"), null, "the line starts with no capture at all");
 
-      // Two edits that both MOVE the pick, the second carrying every thermal
-      // field a client could invent. The only difference between them is the
-      // smuggled data, so any difference in the outcome is that data having
-      // reached something.
+      // Two edits that MOVE the pick to the same place, the second carrying
+      // every thermal field a client could invent. The glazing is identical in
+      // both, so the smuggled payload is the ONLY variable and any difference in
+      // the outcome is that payload having reached something.
       const plain = await requestJson(ops, "/api/ops/lines/ql_s1", {
         method: "PATCH", json: { options: { glazing: "double-lowe" } },
       });
@@ -250,8 +256,11 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.equal(before.figures, ABSENT, "the edit captured the server's own resolution");
       assert.ok(before.total > 0, "and it is still priced");
 
+      // Same glazing as `plain`, so this save's pick has NOT moved — which is
+      // itself the point: the payload cannot write a figure on a save that
+      // resolves nothing either.
       const laden = await requestJson(ops, "/api/ops/lines/ql_s1", {
-        method: "PATCH", json: { options: { glazing: "double-clear" }, ...CLIENT_THERMAL },
+        method: "PATCH", json: { options: { glazing: "double-lowe" }, ...CLIENT_THERMAL },
       });
       assert.equal(laden.response.status, 200, "still no refusal");
       assert.equal(mentionsAFigure(laden.body), false, "and the response is unchanged in shape");
@@ -384,6 +393,43 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         "the proposal describes the configuration the line already had, so nothing about the pick moved and the capture stands");
     });
 
+    await t.test("SNAP-AC-16 a non-string glazing cannot fake a moved pick", async () => {
+      // REACHABILITY FIRST. itemOptions() casts the client's options object
+      // without coercing its values, and itemFields serialises it verbatim — so
+      // a number lands in options_json and both sides of the comparison have to
+      // read it the same way. Two readings of one fact is what produced every
+      // other defect in this phase.
+      const oddball = new Session(baseUrl);
+      await login(oddball, "/api/auth", "numeric-glazing@example.com");
+      const made = await requestJson(oddball, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Numeric glazing",
+          items: [{ ...aLine(), options: { ...aLine().options, glazing: 5 } }],
+        },
+      });
+      const lineId = made.body.items[0].id;
+      const [row] = await sql(`SELECT options_json AS o FROM quote_line WHERE id='${lineId}'`);
+      assert.match(row.o, /"glazing":5/,
+        "reachable: the number is stored as a number, uncoerced, on the customer's own save path");
+
+      // Now the rule. Nothing about the pick changes between these two saves.
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='${lineId}'`);
+      const again = await requestJson(oddball, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Numeric glazing",
+          items: [{
+            ...aLine(), serverId: lineId, location: "Renamed",
+            options: { ...aLine().options, glazing: 5 },
+          }],
+        },
+      });
+      assert.equal(again.response.status, 200, "the save still succeeds");
+      assert.equal(await figuresOf(lineId), FIGURES_2_4,
+        "the pick did not move, so the capture stands — the stored side and the pick side must read `glazing` through the same expression");
+    });
+
     // ── SNAP-AC-9 / the composite parent ────────────────────────────────────
     await t.test("SNAP-AC-9 a save that chooses no product recomputes nothing; the units own the facts", async () => {
       const cust = new Session(baseUrl);
@@ -421,11 +467,24 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.equal(await figuresOf(parentId), '{"uValue":2.4,"shgc":0.32}',
         "the parent's record stands — the rule is vacuous on a parent, and a snapshot is never re-derived");
 
-      // A unit edit DOES choose a product, so it re-captures.
+      // A unit edit DOES move the pick, so it re-captures. Seeded with a REAL
+      // figure first: the catalogue is unreachable all run, so without a
+      // distinguishable starting value an ABSENT result would be true whether
+      // updateSegment re-resolved, carried forward, or never wrote the column.
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='${units[1].id}'`);
       await requestJson(ops, `/api/ops/segments/${units[1].id}`, {
         method: "PATCH", json: { productSlug: "amj80-series-awning-window" },
       });
-      assert.equal(await figuresOf(units[1].id), ABSENT, "and a unit that was re-specified re-captures");
+      assert.equal(await figuresOf(units[1].id), ABSENT,
+        "a unit that was re-specified re-captures — 2.4/0.32 described the frame it no longer has");
+
+      // And its sibling, untouched by that PATCH, keeps whatever it had.
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='${units[0].id}'`);
+      await requestJson(ops, `/api/ops/segments/${units[0].id}`, {
+        method: "PATCH", json: { note: "left unit" },
+      });
+      assert.equal(await figuresOf(units[0].id), FIGURES_2_4,
+        "a note-only unit edit moves no pick, so it fetches nothing and writes the same bytes back");
     });
 
     // ── SNAP-AC-11: the platform's own record is never edited ───────────────
