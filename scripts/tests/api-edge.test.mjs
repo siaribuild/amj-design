@@ -121,6 +121,85 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await requestJson(s, "/api/guest/record", {}, 404);
     });
 
+    // Criterion 2. Burning the challenge is only a real bound if REPLACING it is
+    // also bounded — an attacker whose optimal move is "spend the attempts, then
+    // ask for another code" is back to unlimited guessing, just noisier. Six
+    // wrong codes is what it costs to clear the slot (five are counted, the sixth
+    // finds the cap and deletes the record), after which the per-window issuance
+    // cap is the only thing left holding the line.
+    await t.test("guest tracking: re-issuing does not refill the guess budget", async () => {
+      const s = new Session(baseUrl);
+      const ref = "OF-Q-10002";
+      const headers = { "X-Forwarded-For": "198.51.100.21" }; // TEST-NET-2; isolates this from the per-IP cap
+      let issued = 0;
+      for (let round = 0; round < 8; round++) {
+        const req = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref }, headers });
+        if (!req.body.devCode) continue;   // refused: cooldown or window cap
+        issued++;
+        for (let i = 0; i < 6; i++) {
+          await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref, code: "000000" }, headers }, 400);
+        }
+      }
+      // Five codes per window, five counted guesses each: 25 guesses per 15
+      // minutes against a 10^6 space, and every one of those five costs the
+      // customer an email they can see. Unbounded is what this replaced.
+      assert.equal(issued, 5, "issuance must stop at the per-window cap however often the challenge is burned");
+    });
+
+    // Criterion 4. The neutral response is load-bearing: it is the only reason an
+    // attacker cannot use this endpoint to learn which references exist or
+    // whether they are mid-attack. Three different internal states, one reply.
+    await t.test("guest tracking: wrong, absent and capped are indistinguishable", async () => {
+      const s = new Session(baseUrl);
+      // Sarah's submitted quote — a pair no other subtest in this file tracks, so
+      // it arrives with a clean issuance cooldown and window budget.
+      const ref = "OF-Q-10003";
+      const email = "sarah@northsidebuild.com.au";
+      const headers = { "X-Forwarded-For": "198.51.100.22" };
+      const verify = (who, code) =>
+        requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: who, ref, code }, headers }, 400);
+
+      // (a) No challenge was ever issued for this pair.
+      const absent = await verify("never-asked@example.com", "123456");
+      // (b) A live challenge exists and the code is wrong.
+      const issued = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref }, headers });
+      assert.match(issued.body.devCode, /^\d{6}$/, "a fresh pair must issue, or (b) and (c) below test nothing");
+      const wrong = await verify(email, "000000");
+      // (c) The attempt cap is reached and the code being offered is the RIGHT
+      // one. Four more, not five: the call above already counted one, and the cap
+      // is observed on the call AFTER the fifth — that call is `capped` below,
+      // and it is the only moment the record exists with attempts at the limit.
+      // (Overshooting by one deletes the record first, which silently turns this
+      // into a second copy of case (a); a mutation that made the capped state
+      // observable proved that version of the assertion could not fail.)
+      for (let i = 0; i < 4; i++) await verify(email, "000000");
+      const capped = await verify(email, issued.body.devCode);
+
+      assert.deepEqual(wrong.body, absent.body, "a wrong code must not look different from no code at all");
+      assert.deepEqual(capped.body, absent.body, "being capped must not be visible to the caller");
+      assert.deepEqual(absent.body, { error: "invalid" });
+    });
+
+    // Defence in depth, and deliberately NOT the control that protects the code:
+    // this bounds one client grinding across many targets, while the attempt cap
+    // bounds guesses against any one target regardless of how many hosts an
+    // attacker rents.
+    await t.test("guest tracking: verification is capped per source", async () => {
+      const s = new Session(baseUrl);
+      const headers = { "X-Forwarded-For": "198.51.100.23" };
+      let rateLimited = 0;
+      for (let i = 0; i < 65; i++) {
+        const r = await s.request("/api/guest/track/verify",
+          { method: "POST", json: { email: demoEmail, ref: "OF-58001", code: "000000" }, headers });
+        if (r.status === 429) rateLimited++;
+        await r.arrayBuffer();
+      }
+      assert.ok(rateLimited > 0, "one source must eventually be refused");
+      // A different source is unaffected — the cap is on the caller, not the app.
+      await requestJson(s, "/api/guest/track/verify",
+        { method: "POST", json: { email: demoEmail, ref: "OF-58001", code: "000000" }, headers: { "X-Forwarded-For": "198.51.100.24" } }, 400);
+    });
+
     await t.test("file upload: rejects empty and oversized; download is owner-only", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "files@example.com");
