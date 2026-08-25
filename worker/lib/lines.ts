@@ -134,7 +134,7 @@ const canonSlug = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "
  *  window priced $710 instead of $510 because all four standard choices were
  *  billed). Anything the catalogue does not recognise is logged, never guessed.
  */
-function chargeableOptionSlugs(productSlug: string, options: Record<string, string>): string[] {
+function chargeableOptionSlugs(productSlug: string, options: Record<string, unknown>): string[] {
   const product = getProductBySlug(productSlug);
   const slugs: string[] = [];
   for (const [typeSlug, value] of Object.entries(options)) {
@@ -176,7 +176,7 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
  *  goes through here, so there is one engine and one set of rules. Returns null
  *  when the line cannot be priced; callers must not substitute an estimate. */
 export async function priceItem(env: Env, it: {
-  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+  productSlug: string; width: string; height: string; options: Record<string, unknown>; qty: number;
   /** Owner of the project, for the account discount. Anonymous ⇒ null ⇒ 0%. */
   ownerUserId?: string | null;
 }): Promise<number | null> {
@@ -218,9 +218,9 @@ export const itemProductSlug = (raw: unknown): string =>
 /** The options a client item names, on the same terms itemFields stores them —
  *  read before a save batch to decide which picks moved, and inside itemFields
  *  to serialise them. One expression, so the two cannot disagree. */
-export const itemOptions = (raw: unknown): Record<string, string> => {
+export const itemOptions = (raw: unknown): Record<string, unknown> => {
   const o = ((raw ?? {}) as Record<string, unknown>).options;
-  return (o && typeof o === "object" ? o : {}) as Record<string, string>;
+  return (o && typeof o === "object" ? o : {}) as Record<string, unknown>;
 };
 
 export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | null) {

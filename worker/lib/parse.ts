@@ -29,10 +29,10 @@ import type { ProjectRow } from "./access";
  *  A LOCK IS NOT AN EXEMPTION FROM THE RULE — it is an input to what the pick
  *  becomes. Ask what survives the save, then let `captureFigures` decide. */
 export function effectiveParsePick(
-  parsed: { productSlug: string; options: Record<string, string> },
+  parsed: { productSlug: string; options: Record<string, unknown> },
   stored: { product_slug: string | null; options_json: string | null } | null,
   locks: string[],
-): { productSlug: string; variantId: string | null; options: Record<string, string> } {
+): { productSlug: string; variantId: string | null; options: Record<string, unknown> } {
   const kept = (field: string) => !!stored && locks.includes(field);
   return {
     productSlug: kept("product_slug") ? (stored!.product_slug ?? "") : parsed.productSlug,

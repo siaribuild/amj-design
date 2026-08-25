@@ -86,7 +86,8 @@ export interface SegmentSpec {
   heightMm: number;
   productSlug: string;
   qtyPerParent?: number;
-  options?: Record<string, string>;
+  /** Uncoerced, as stored: `options_json` may hold non-string values. */
+  options?: Record<string, unknown>;
   selectedVariantId?: string | null;
   resolvedBand?: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null; shgcTarget?: number | null } | null;
   requirementBasis?: string | null;
@@ -544,7 +545,7 @@ export async function addSegment(
   // reading that `updateSegment` just lost. No stored pick exists yet, so this
   // is not a live defect; it is the same construction, and "safe because the
   // other side is null" is the reasoning that failed here twice.
-  const options = origin === "manual" ? (draft?.options ?? {}) : storedOptions(last.options_json);
+  const options: Record<string, unknown> = origin === "manual" ? (draft?.options ?? {}) : storedOptions(last.options_json);
   const qty = Math.max(1, parent.qty);
   const total = await priceItem(env, {
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,

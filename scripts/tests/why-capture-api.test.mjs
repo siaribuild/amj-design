@@ -532,12 +532,11 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
     });
 
     await t.test("SNAP-AC-16 a UNIT whose stored glazing is not a string survives a note-only edit", async () => {
-      // The same rule as the customer-path test above, at the writer where the
-      // two readings of `glazing` were NOT unified: updateSegment's stored side
-      // now goes through storedOptions (uncoerced), but its PICK side still
-      // falls back to parentOptions(segment.options_json), which String()s every
-      // value (composite.ts:434, :174-184). Two readings of one column, on the
-      // two sides of the comparison — the shape 97c5e427 exists to remove.
+      // The invariant this defends: a unit's stored glass is read the same way
+      // on both sides of `pickMoved`, so an edit that touches neither product
+      // nor glass reports no movement — whatever type the glass happens to be.
+      // A non-string glass is no glass chosen, on both sides, exactly as
+      // pricing reads it (`lines.ts:164`).
       const owner = new Session(baseUrl);
       await login(owner, "/api/auth", "unit-numeric-glazing@example.com");
       const made = await requestJson(owner, "/api/projects/current/lines", {
@@ -582,6 +581,69 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.equal(patched.response.status, 200, "the edit still succeeds — the capture is never a gate");
       assert.equal(await figuresOf(units[0].id), FIGURES_2_4,
         "the pick did not move, so the capture stands — the stored side and the pick side must read `glazing` through the same expression");
+    });
+
+    await t.test("X-AC-13 the split path ignores every field outside its accepted set", async () => {
+      // The route maps an explicit whitelist (ops.ts:953-966), so the forbidden
+      // fields are never read. That was true by INSPECTION, and §12 note 4 is
+      // blunt about why that is not enough: a whitelist is a list layer, and
+      // list layers in this phase have been wrong repeatedly. So the attempt is
+      // made for real and the denial recorded.
+      const splitter = new Session(baseUrl);
+      await login(splitter, "/api/auth", "split-whitelist@example.com");
+      const made = await requestJson(splitter, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Whitelist project", items: [aLine({ code: "W30", width: "2400", height: "900" })] },
+      });
+      const projectId = made.body.project.id;
+      const parentId = made.body.items[0].id;
+      await completeAccount(splitter, { name: "Whitelist Tester" });
+      await requestJson(splitter, `/api/projects/${projectId}/submit`, {
+        method: "POST", json: { delivery: { suburb: "Rowville", postcode: "3178" } },
+      });
+
+      const forbidden = {
+        selectedVariantId: "dg-attacker",
+        configurationSnapshot: { productSlug: "amj-attacker", uw: 0.11, shgc: 0.99 },
+        performanceFigures: { uValue: 0.11, shgc: 0.99 },
+        performance_figures_json: '{"uValue":0.11,"shgc":0.99}',
+        resolvedBand: { maxUValue: 0.1, minShgc: 0.9, maxShgc: 0.99 },
+        requirementBasis: "explicit_energy_report",
+        thermalReview: true,
+        ...CLIENT_THERMAL,
+      };
+      const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1, ...forbidden },
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1, ...forbidden },
+          ],
+        },
+      });
+      // "Neither refused nor altered by their presence": the split lands exactly
+      // as it would without them.
+      assert.equal(split.response.status, 200, "the request is not refused");
+      assert.equal(split.body.ok, true);
+      assert.equal(mentionsAFigure(split.body), false, "and nothing is echoed back");
+
+      const units = await sql(
+        `SELECT id, product_slug AS p, selected_variant_id AS v, configuration_snapshot_json AS snap,
+                performance_figures_json AS figures, segment_requirements_json AS band,
+                segment_requirement_basis AS basis, segment_thermal_review AS review
+           FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      assert.equal(units.length, 2, "the split landed");
+      for (const u of units) {
+        assert.equal(u.p, "amj80-series-sliding-window", "the accepted fields were used");
+        assert.equal(u.v, null, "the body's variant id reached nothing");
+        assert.equal(u.snap, null, "nor its configuration snapshot");
+        assert.equal(u.band, null, "nor its resolved band");
+        assert.equal(u.basis, null, "nor its requirement basis");
+        assert.equal(u.review, 0, "nor its thermal-review flag");
+        assert.equal(u.figures, ABSENT,
+          "and the figures are the server's own derivation, not the body's 0.11/0.99");
+      }
     });
 
     // ── SNAP-AC-11: the platform's own record is never edited ───────────────

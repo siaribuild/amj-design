@@ -3,15 +3,22 @@
 // A line's own record of its product+variant's Uw and SHGC. A snapshot, never a
 // lookup: nothing here is ever called to DISPLAY a figure.
 //
-// TWO KINDS OF WRITER (design §1.6). Best-effort writers — the ops manual edit,
-// the customer save, the segment edit, the schedule upsert — go through
-// `captureFigures`, which writes only when the pick MOVED (§7.0: product,
-// variant, glazing) and otherwise carries the stored value forward verbatim.
-// Derivation writers — the ops aiManaged branch and the estimator's own writers
-// — call `figuresFromVariant` on every save, because their figures come from the
-// same validated in-memory variant that produces the price and both snapshots in
-// the same statement, and they have no failure channel that could write a
-// dishonest absence.
+// TWO KINDS OF WRITER — the classes and their membership are design §1.6, and
+// the per-writer index is design §4.2. Deliberately NOT restated here: a
+// restated list has been wrong three times in this phase, which is why §4.2
+// switched its own cells to pointers.
+//
+// The PROPERTY, which is what this module implements:
+//   • A writer with a stored row to compare against must not write a figure it
+//     did not establish. It goes through `captureFigures`, which writes only
+//     when the pick MOVED (§7.0 — product, variant, glazing) and otherwise
+//     returns the stored value unchanged.
+//   • A writer whose figures come from a variant it has just validated in
+//     memory has no failure channel that could invent an absence, so it derives
+//     on every save (`figuresFromVariant`) and keeps its figures in step with
+//     the price and snapshots written in the same statement.
+// Which writer is which is §1.6's to say. If this comment and §1.6 disagree,
+// §1.6 is right.
 //
 // THE ONE HARD CONSTRAINT: the capture is never a gate. A save that succeeds
 // today must still succeed after this ships — same status, same stored values,
@@ -58,7 +65,7 @@ export function figuresFromVariant(
  *  that variant is the only answer there is. */
 export function resolveFigures(
   catalogue: FigureCatalogue,
-  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  pick: { productSlug: string; variantId: string | null; options: Record<string, unknown> },
 ): LineFigures {
   const published = (catalogue.get(pick.productSlug) ?? []).filter((v) => v.published);
   if (pick.variantId) {
@@ -83,13 +90,21 @@ export function resolveFigures(
 const glazingOf = (options: Record<string, unknown> | null | undefined): string =>
   typeof options?.glazing === "string" ? options.glazing : "";
 
-/** Options as stored on a row. Unreadable JSON is no options on record — never a
- *  throw, because nothing in the capture may fail a save. */
-export const storedOptions = (optionsJson: string | null | undefined): Record<string, string> => {
+/** Options as stored on a row, exactly as stored.
+ *
+ *  `unknown`, not `string`, and that is the point: `options_json` is written
+ *  uncoerced, so a client posting `{"glazing": 5}` puts a number in the column,
+ *  and this function's whole reason to exist is reading such a value WITHOUT
+ *  changing it. Declaring the values as strings would be a type-level version
+ *  of exactly the fabrication this phase has now been bitten by twice.
+ *
+ *  Unreadable JSON is no options on record — never a throw, because nothing in
+ *  the capture may fail a save. */
+export const storedOptions = (optionsJson: string | null | undefined): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(optionsJson || "{}") as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, string>
+      ? parsed as Record<string, unknown>
       : {};
   } catch { return {}; }
 };
@@ -132,7 +147,7 @@ export function storedPickOf(row: {
  *  save loop re-resolving on a dims-only edit through a retained
  *  `selected_variant_id`. */
 export function pickMoved(
-  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  pick: { productSlug: string; variantId: string | null; options: Record<string, unknown> },
   stored: StoredPick | null,
 ): boolean {
   if (!stored) return true;                                   // a new row has nothing to carry
@@ -158,7 +173,7 @@ export function pickMoved(
  *  and the predicate evaluated once rather than once per use. */
 export async function captureOne(
   env: Env,
-  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  pick: { productSlug: string; variantId: string | null; options: Record<string, unknown> },
   stored: StoredPick | null,
 ): Promise<string | null> {
   const moved = pickMoved(pick, stored);
@@ -168,7 +183,7 @@ export async function captureOne(
 
 export function captureFigures(
   catalogue: FigureCatalogue,
-  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  pick: { productSlug: string; variantId: string | null; options: Record<string, unknown> },
   stored: StoredPick | null,
 ): string | null {
   return pickMoved(pick, stored) ? figuresJson(resolveFigures(catalogue, pick)) : stored!.figuresJson;
