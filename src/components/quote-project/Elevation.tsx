@@ -570,27 +570,3 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
     </svg>
   );
 }
-
-/**
- * The symbol language, written out — the legend from the header of this file,
- * as markup.
- *
- * It lives with the generator rather than beside any one consumer, because it
- * describes what THIS code draws: a symbol added here without a row added there
- * is a drawing nobody can read. Each console styles `.elev-legend` itself.
- *
- * Shown only where the drawing is the SUBJECT — the expanded plate. A row's
- * 46×34 glyph and a phone hero have no room to teach, and a legend printed
- * beside every drawing is the per-row noise the list is trying to avoid.
- */
-export function ElevationLegend() {
-  return (
-    <dl className="elev-legend">
-      <div><dt>solid V</dt><dd>opens towards you</dd></div>
-      <div><dt>dashed V</dt><dd>opens away from you</dd></div>
-      <div><dt>apex</dt><dd>points at the hinge edge</dd></div>
-      <div><dt>arrow</dt><dd>direction of travel</dd></div>
-      <div><dt>unmarked</dt><dd>fixed</dd></div>
-    </dl>
-  );
-}

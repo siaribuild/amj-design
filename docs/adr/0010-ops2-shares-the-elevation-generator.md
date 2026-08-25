@@ -18,14 +18,26 @@ the files "compiled into BOTH graphs" and holds them router-free.
 
 ## Decision
 
-ops2 imports `Elevation` (and `ElevationLegend`) directly from
-`src/components/quote-project/Elevation.tsx`. The generator is one module with two
+ops2 imports `Elevation` directly from
+`src/components/quote-project/Elevation.tsx`.
+
+> **Amended 2026-08-25 (owner ruling D12, spec `ops2-why-this-product.md` VIEW-AC-12).**
+> This decision originally read "`Elevation` (and `ElevationLegend`)". **`ElevationLegend`
+> no longer exists.** ops2 stopped rendering the symbol key under R25 — ops staff read
+> elevations for a living — and the export then turned out to have had no other consumer:
+> zero callers repo-wide, and no `.elev-legend` rule in any stylesheet, so its markup could
+> not have rendered correctly for any caller it might have found. It was added by the ops2
+> record work for the very plate that stopped rendering it. The decision below stands
+> exactly as written for the generator itself, which is the part that is genuinely shared;
+> `scripts/tests/ops2-frame.test.mjs` now asserts the legend's absence, so this cannot be
+> quietly reintroduced. The generator is one module with two
 skins: each console styles the SVG's container and supplies `--paper`; the drawing
 arithmetic exists once.
 
 Additive extensions land in the shared file, never in a fork: the `hero` size row
-(R-49 — the generator is called at the size closest to the intended pixels) and the
-`ElevationLegend` export both live there.
+(R-49 — the generator is called at the size closest to the intended pixels) lives
+there. (The `ElevationLegend` export named here originally was removed by D12 — see
+the amendment above.)
 
 ## The boundary rule, restated so it cannot be misread again
 

@@ -432,9 +432,17 @@ test("no symbol legend and no explanation of the notation survives anywhere in o
     for (const pattern of NOTATION) {
       expect(text, `${url} still teaches the notation: ${pattern}`).not.toMatch(pattern);
     }
-    // And the legend's own markup is gone, not merely hidden.
-    await expect(page.locator(".elev-legend")).toHaveCount(0);
   }
+  // THE ELEVEN PATTERNS ARE THE COVERAGE, and they are now all of it.
+  //
+  // This loop also carried `expect(page.locator(".elev-legend")).toHaveCount(0)`.
+  // With `ElevationLegend` deleted (VIEW-AC-12, D12) nothing in the repository
+  // can emit that class, so the locator can never match and the assertion can
+  // never fail — a line that reads as coverage of VIEW-AC-10 while standing
+  // behind nothing. It is removed rather than kept, because the danger is not
+  // the wasted millisecond, it is a reviewer counting it. The scan above runs
+  // over rendered text on six addresses and still fails if a key comes back in
+  // any markup at all, or if a sentence teaches the notation in prose.
 
   // THE AUTHORITY STATEMENT STAYS. A scan that deleted the sentence along with
   // the key would be removing the one thing the drawing owes the reviewer.

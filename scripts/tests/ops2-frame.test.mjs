@@ -242,33 +242,29 @@ test("ops2 has exactly ONE drawing viewer, and the shared legend survives outsid
       `${file} still reaches for the symbol legend — R25 removed it from this console`);
   }
 
-  // AND THE SHARED EXPORT SURVIVES (VIEW-AC-12), which is a ruling this test
-  // keeps rather than a claim it endorses.
+  // AND THE SHARED EXPORT IS GONE (VIEW-AC-12, reversed by the owner at spec
+  // revision 16 — D12).
   //
-  // THE EXEMPTION, EXECUTED — 2026-08-25. VIEW-AC-12 keeps the export on the
-  // stated ground that "the customer site still uses it". It does not:
-  // `ElevationLegend` is DEFINED ONCE AND CALLED FROM NOWHERE. Its only
-  // non-comment occurrence under `src/**` is its own definition; the other
-  // source hits are comments recording its absence.
-  // `docs/specs/ops2-record-design.md:42,157` records why — the export was
-  // ADDED by the ops2 record work, for the very plate this phase just stopped
-  // rendering it from. So ops2 was not one of two consumers; it was the only
-  // one.
+  // This assertion has been inverted, not deleted. It previously PINNED the
+  // export's existence, on a criterion that kept it for a consumer that turned
+  // out not to exist. Executed twice independently: `ElevationLegend` had zero
+  // callers repo-wide, AND no `.elev-legend` rule existed in any stylesheet — so
+  // its markup had been unstyled since the plate stopped rendering it and it
+  // could not have rendered correctly for any caller it might have found.
+  // `docs/specs/ops2-record-design.md:42,157` records that the export was ADDED
+  // by the ops2 record work, for that very plate. ops2 was never one of two
+  // consumers; it was the only one.
   //
-  // SAY "NO CALLER", NEVER "ONE HIT". The first version of this note counted
-  // references repo-wide, and the Codex gate caught the spec's copy of the same
-  // sentence as false: the identifier appears in an ADR, four documents, a test
-  // and three source files, so "exactly one reference" read as a claim about
-  // all of them. "No caller" is a property of the code and stays true; "one
-  // hit" was a property of somebody's terminal, and writing it down made it
-  // false.
-  //
-  // The export stays, because deleting it is out of this feature's scope and the
-  // criterion says keep it. What does not stay is the false premise: the count
-  // below is deliberately NOT asserted, because pinning "no consumer" would make
-  // a legitimate future use fail, and asserting "a consumer exists" would be
-  // asserting something untrue.
-  const elevation = read("src/components/quote-project/Elevation.tsx");
-  assert.match(elevation, /export function ElevationLegend\(\)/,
-    "the shared export must not be deleted by this feature — VIEW-AC-12, whatever its stated reason");
+  // Kept as an assertion rather than dropped, because the value here is stopping
+  // it coming BACK. A deletion nothing pins is a deletion the next reader
+  // reverses in good faith — and `docs/adr/0010` said ops2 imported it right up
+  // until this landed.
+  const elevation = read("src/components/quote-project/Elevation.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/ElevationLegend/.test(elevation),
+    "the symbol legend is deleted — VIEW-AC-12 (D12), and nothing may reintroduce it");
+  // The rest of the module is untouched: the generator itself is what ops2 and
+  // the customer site actually share, and it is not what was deleted.
+  assert.match(elevation, /export function Elevation\(/);
 });
