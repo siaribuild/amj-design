@@ -283,6 +283,27 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
     "Why this product — open why it was split and what else was considered");
 });
 
+test("WHY-AC-34 a lite's origin label is its OWN vocabulary, not the opening's", () => {
+  // `quote_line.segment_requirement_basis` (migration 0036) stores a BandBasis
+  // — explicit_ref | shared_type | computed | none — and NOT a RequirementBasis.
+  // Feeding it to `basisLabel` silently yields nothing, so a lite would carry
+  // caps with no provenance beside them while the code looked correct.
+  assert.equal(M.basisLabel("explicit_ref"), null, "the opening's labels do not know these tokens");
+
+  assert.deepEqual(
+    ["explicit_ref", "shared_type", "computed"].map((b) => M.unitBasisLabel(b)),
+    [
+      "from this lite's own reference in the energy report",
+      "from the band shared by lites of this type",
+      "modelled by the platform for this lite",
+    ],
+  );
+  // `none` is a recorded absence of provenance, not a label to print.
+  assert.equal(M.unitBasisLabel("none"), null);
+  assert.equal(M.unitBasisLabel(null), null);
+  assert.equal(M.unitBasisLabel("plan_derived"), null, "and the opening's vocabulary is not accepted here either");
+});
+
 test("WHY-AC-12/13/33 the ladder names what it shows and counts nothing beyond it", () => {
   const candidate = (o) => ({
     productSlug: "p", productName: "AMJ67 Awning", variantId: null, form: "single",
