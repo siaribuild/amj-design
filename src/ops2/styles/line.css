@@ -575,17 +575,46 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 .lp-panel--door .lp-panel__lines { margin-top: var(--theme-spacing-xs); }
 
 /* ── The panel's own values ────────────────────────────────────────────────*/
+/* A THERMAL FIGURE IS A FIGURE, and figures in this console are the display
+   face, medium, tabular — `.lp-unit__code`, `.lp-size__v`, `.rl-money`, and the
+   drawing's own leaders. The approved mock says so for the panel in as many
+   words (`.fig`, docs/mocks/ops2-why-this-product.html) and the rule had not
+   been carried across, so "Uw ≤ 3.90 · SHGC ≤ 0.44" and "Uw 3.72 · SHGC 0.41"
+   rendered as body prose with digits that did not line up in the column a
+   reviewer reads DOWN. The ladder is the same object one tap away and the same
+   comparison, five rows deep, which is why the detail's spans are here too. */
+.lp-why__fig,
+.wd__fig,
+.wd__row-figs {
+  font-family: var(--theme-font-display);
+  font-weight: var(--theme-font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
 .lp-why__fig { overflow-wrap: anywhere; }
 /* The origin label sits UNDER the caps it qualifies, quiet and small. Never a
    badge and never a chip: it is the second half of one fact, not a second. */
 .lp-why__origin {
   display: block;
+  margin-top: var(--theme-spacing-2xs);
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
 /* WHICH of the frame or the glass moved, riding on the figures line it
-   explains — not a fourth line, which would breach the budget R6 sets. */
+   explains — not a fourth line, which would breach the budget R6 sets.
+
+   THE DASH IS WHAT MAKES IT A CLAUSE. It is the mock's (`.qual::before`) and it
+   had not been carried across, so the qualifier ran on from the figures with
+   only a space — "Uw 4.10 · SHGC 0.52 glazing changed" reads as one string, and
+   at 375px it wrapped mid-phrase ("… 0.52 glazing / changed"), which is a
+   second layout appearing rather than a sentence changing. The dash is punctu-
+   ation on a rendered line, not copy: `whyCopy.ts` still owns every word.
+
+   THE LEADING SPACE IS LOAD-BEARING. The mock separates the two spans in its
+   markup and puts none in the content; this component puts the space INSIDE the
+   qualifier span, so a bare "— " would land between the space and the word and
+   weld the dash to the figures ("…0.52— glazing changed"). */
 .lp-why__qual { color: var(--ds-text-secondary); }
+.lp-why__qual::before { content: " — "; color: var(--ds-text-muted); }
 /* An ops split's per-unit figures: one unit per line, code then figures. */
 .lp-why__unit { display: block; }
 .lp-why__unit-code {
@@ -602,6 +631,14 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-primary);
 }
+/* THE ONLY CONTROL IN THE ONLY STATE THAT NEEDS ONE, so it clears the floor the
+   rest of this console holds — `.lp-unit__open` and the drawing viewer's back
+   are both 44px, and half this console's use is on a phone. Measured at 85×27
+   before this: `size="small"` is a type size, and `ion-button` sizes itself from
+   its content, which is the same few-pixels-short diagnosis `.pq-funnel`
+   already carries in projects.css. `height` on the host is how this console
+   answers it; the small type stays, because a retry is a quiet control. */
+.lp-why__retry { height: 44px; }
 .lp-why__skeleton { display: grid; gap: var(--theme-spacing-2xs); }
 
 /* AN ABSENCE HAS A ROLE OF ITS OWN, because this surface states five of them

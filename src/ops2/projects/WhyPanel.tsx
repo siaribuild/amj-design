@@ -54,7 +54,7 @@ export function WhyPanel({ load, onOpen, reload }: {
       <section className="lp-panel" data-testid="line-why" aria-label="Why this product">
         <h2 className="lp-panel__title">Why this product</h2>
         <p className="lp-why__error">The reasoning for this line could not be read just now.</p>
-        <IonButton size="small" fill="outline" onClick={reload} data-testid="line-why-retry">
+        <IonButton className="lp-why__retry" size="small" fill="outline" onClick={reload} data-testid="line-why-retry">
           Try again
         </IonButton>
       </section>
