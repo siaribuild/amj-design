@@ -263,7 +263,7 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         "and the body's 0.11/0.99 reached nothing — the stored figures are the server's own resolution");
     });
 
-    // ── §1.4: the outage triad — the defect this phase shipped and unshipped ──
+    // ── §1.4: the outage triad — the defect this phase caught before deploy ──
     //
     // As first built, every writer re-resolved on every save. A room-label edit
     // during a catalogue outage overwrote a good capture with present-and-null,
