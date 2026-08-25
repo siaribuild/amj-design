@@ -41,6 +41,7 @@ import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { refreshLearningExampleEligibility } from "../lib/ai/examples";
 import { getProductBySlug, families } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
+import { fetchFigureCatalogue, figuresFromVariant, figuresJson, resolveFigures } from "../lib/figures";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
 import { opsThermal } from "./ops-thermal";
@@ -1036,6 +1037,11 @@ ops.patch("/lines/:id", async (c) => {
   let nextPricingSnapshot: string | null = line.pricing_snapshot_json ?? null;
   let nextConfigurationSnapshot: string | null = line.configuration_snapshot_json ?? null;
   let nextVariantId = line.selected_variant_id ?? null;
+  // Captured figures (SNAP-AC-1). The default carries the line's existing record
+  // forward, which is what a composite parent wants — the rule is vacuous on a
+  // parent, because each unit owns its own facts. The two branches below that
+  // actually choose a product overwrite it.
+  let nextFigures: string | null = line.performance_figures_json ?? null;
   const aiManaged = line.origin === "ai" || !!line.ai_proposal_line_id;
   const requestedVariantId = body?.selectedVariantId !== undefined ? String(body.selectedVariantId) : null;
   if (aiManaged) {
@@ -1087,6 +1093,9 @@ ops.patch("/lines/:id", async (c) => {
     if (!exact?.ok) return c.json({ error: "exact_pricing_unavailable", missingOptions }, 409);
     lineTotal = exact.total;
     nextVariantId = variant.variantId;
+    // The variant was validated against the catalogue a few lines above, so its
+    // figures are already in hand — no second consultation.
+    nextFigures = figuresJson(figuresFromVariant(variant));
     nextPricingSnapshot = JSON.stringify(exact);
     nextConfigurationSnapshot = JSON.stringify({
       productId: candidate.sanityProductId, productSlug: candidate.slug,
@@ -1110,6 +1119,14 @@ ops.patch("/lines/:id", async (c) => {
     // Same engine as the customer save and the schedule parse — a reviewer edit
     // must never produce a different number from the one the customer saw.
     lineTotal = await priceItem(c.env, { productSlug, width, height, options, qty, ownerUserId: line.owner_user_id ?? null });
+    // A manual line names no variant, so the figures are resolved from the
+    // product and the glass it was priced for. Best-effort by construction: an
+    // unreachable catalogue or an ambiguous product stores null and the edit
+    // proceeds exactly as it does today (SNAP-AC-4).
+    nextFigures = figuresJson(resolveFigures(
+      await fetchFigureCatalogue(c.env, [productSlug]),
+      { productSlug, variantId: null, options: options as Record<string, string> },
+    ));
   }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
   // carrying review flags ⇒ technical_review (submittable, staff must resolve);
@@ -1142,7 +1159,8 @@ ops.patch("/lines/:id", async (c) => {
     // onto a 2400mm one.
     `UPDATE quote_line SET product_slug=?, dims_json=?, options_json=?, qty=?, external_ref=?, room_label=?,
        line_total=?, status=?, review_json=?, pricing_snapshot_json=?,
-       configuration_snapshot_json=?, selected_variant_id=?, edited_fields=?,
+       configuration_snapshot_json=?, selected_variant_id=?,
+       performance_figures_json=?, edited_fields=?,
        price_calculated=NULL, price_override_by=NULL, price_override_at=NULL,
        edit_version=edit_version+1, updated_at=datetime('now')
        WHERE id=? AND edit_version=?
@@ -1153,7 +1171,7 @@ ops.patch("/lines/:id", async (c) => {
     ).bind(
     productSlug, JSON.stringify({ width, height }), JSON.stringify(options), qty, code || null, room || null,
     lineTotal, status, hasReview ? JSON.stringify(review) : null,
-    nextPricingSnapshot, nextConfigurationSnapshot, nextVariantId, JSON.stringify([...locks]),
+    nextPricingSnapshot, nextConfigurationSnapshot, nextVariantId, nextFigures, JSON.stringify([...locks]),
     line.id, line.edit_version, line.project_id, line.quote_edit_version ?? 0, ...mutableStates,
     ),
     c.env.DB.prepare(

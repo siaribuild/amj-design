@@ -13,6 +13,7 @@ import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
 import { createCachedPriceResolver } from "./estimator/pricing";
 import type { Product } from "../../src/data/catalogue";
 import { priceItem } from "./lines";
+import { fetchFigureCatalogue, figuresJson, resolveFigures } from "./figures";
 import type { ProjectRow } from "./access";
 
 export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
@@ -307,6 +308,13 @@ export async function runScheduleParse(
   // Priced up front: the loop below builds statements synchronously, and with a
   // single engine pricing is now a D1 round-trip.
   const lineTotals = await Promise.all(lines.map((l) => priceItem(env, l)));
+  // ONE catalogue consultation for the whole import, never one per line
+  // (SNAP-AC-7) — the loop below is synchronous, so the figures are resolved up
+  // front exactly as the prices are.
+  const figureCatalogue = await fetchFigureCatalogue(env, lines.map((l) => l.productSlug));
+  const figuresFor = (l: ParsedLine) => figuresJson(resolveFigures(figureCatalogue, {
+    productSlug: l.productSlug, variantId: null, options: l.options,
+  }));
   lines.forEach((l, idx) => {
     const priced = { ok: lineTotals[idx] != null };
     const hasReview = !!l.review && Object.keys(l.review).length > 0;
@@ -347,35 +355,43 @@ export async function runScheduleParse(
         if (hasReview) needsReview++;
         stmts.push(env.DB.prepare(
           `UPDATE quote_line SET room_label=?, product_slug=?, options_json=?,
-             dims_json=?, qty=?, line_total=?, status=?, review_json=?
+             dims_json=?, qty=?, line_total=?, status=?, review_json=?,
+             performance_figures_json=?
             WHERE id=? AND ${mutationGuard}`,
         ).bind(l.location || null, l.productSlug, JSON.stringify(l.options),
           JSON.stringify({ width: l.width, height: l.height }), l.qty, lineTotal, status,
-          l.review ? JSON.stringify(l.review) : null, qlId,
+          l.review ? JSON.stringify(l.review) : null, figuresFor(l), qlId,
           project.id, nextQuoteVersion, mutationToken));
       } else {
         stmts.push(env.DB.prepare(
+          // The figures follow the PRODUCT's own lock, on the same keep()
+          // discipline: kept when product_slug is kept, refreshed when it moves.
+          // Re-resolving them under a locked product would describe a product
+          // this row is not carrying.
           `UPDATE quote_line SET room_label = COALESCE(?, room_label),
              product_slug = COALESCE(?, product_slug), options_json = COALESCE(?, options_json),
-             dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty)
+             dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty),
+             performance_figures_json = COALESCE(?, performance_figures_json)
             WHERE id=? AND ${mutationGuard}`,
         ).bind(l.location || null, keep("product_slug", l.productSlug),
           keep("options_json", JSON.stringify(l.options)),
           keep("dims_json", JSON.stringify({ width: l.width, height: l.height })),
-          keep("qty", l.qty), qlId, project.id, nextQuoteVersion, mutationToken));
+          keep("qty", l.qty), keep("product_slug", figuresFor(l)),
+          qlId, project.id, nextQuoteVersion, mutationToken));
       }
     } else {
       if (hasReview) needsReview++;
       added++;
       qlId = uuid();
       stmts.push(env.DB.prepare(
-        `INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
-         SELECT ?,?,?,?,?,?,?,?,?,?,?, 'schedule', ?
+        `INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json, performance_figures_json)
+         SELECT ?,?,?,?,?,?,?,?,?,?,?, 'schedule', ?,?
           WHERE ${mutationGuard}`,
       ).bind(
         qlId, project.id, l.code || null, l.location || null, l.productSlug,
         JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }),
         l.qty, lineTotal, status, position++, l.review ? JSON.stringify(l.review) : null,
+        figuresFor(l),
         project.id, nextQuoteVersion, mutationToken,
       ));
     }

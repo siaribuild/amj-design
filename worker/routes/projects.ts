@@ -5,7 +5,8 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
+import { itemToInsert, itemFields, itemProductSlug, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
+import { fetchFigureCatalogue, figuresJson, resolveFigures } from "../lib/figures";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid, normNote } from "../lib/util";
@@ -407,6 +408,15 @@ projects.put("/current/lines", async (c) => {
   }
   // Composite parents whose derived fields must be rebuilt once the batch lands.
   const recomputeParents: string[] = [];
+  // Captured figures: ONE catalogue consultation for the whole save, never one
+  // per line (SNAP-AC-7). It cannot fail — an unreachable catalogue yields an
+  // empty one and every line below stores present-and-null, with the save,
+  // the price and the response unchanged (SNAP-AC-5/15).
+  const figureCatalogue = await fetchFigureCatalogue(c.env, resolved.map(({ raw }) => itemProductSlug(raw)));
+  const figuresFor = (productSlug: string, optionsJson: string, variantId: string | null) =>
+    figuresJson(resolveFigures(figureCatalogue, {
+      productSlug, variantId, options: safeParse(optionsJson) as Record<string, string>,
+    }));
   for (const { raw, i, id } of resolved) {
     const f = await itemFields(c.env, raw, project.owner_user_id);
     if (id) {
@@ -511,7 +521,7 @@ projects.put("/current/lines", async (c) => {
              edited_fields=?,
              recommendation_basis=NULL, recommendation_confidence=NULL,
              pricing_snapshot_json=NULL, configuration_snapshot_json=NULL,
-             selected_variant_id=?,
+             selected_variant_id=?, performance_figures_json=?,
              edit_version=edit_version+1, updated_at=datetime('now')
            WHERE id=? AND project_id=? AND parent_line_id IS NULL
              AND EXISTS (
@@ -532,29 +542,37 @@ projects.put("/current/lines", async (c) => {
           }),
           edited,
           stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
+          // The configuration snapshot the estimator priced is voided above, but
+          // what replaces it is the figures of WHAT THE CUSTOMER CHOSE, never
+          // nothing (SNAP-AC-14) — so the reviewer's comparison is available on
+          // precisely the lines stamped customerConfigurationChanged.
+          figuresFor(
+            f.product_slug, f.options_json,
+            stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
+          ),
           id, project.id, project.id, nextQuoteVersion, mutationToken,
         ));
         continue;
       }
       stmts.push(c.env.DB.prepare(
-        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
+        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, performance_figures_json=?, edit_version=edit_version+1, updated_at=datetime('now')
          WHERE id=? AND project_id=? AND parent_line_id IS NULL
            AND EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.qty, f.line_total, f.status, i, f.review_json, edited, figuresFor(f.product_slug, f.options_json, null), id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
       const r = await itemToInsert(c.env, project.id, raw, i, project.owner_user_id);
       stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
-           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json, performance_figures_json)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
            WHERE EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, project.id, nextQuoteVersion, mutationToken));
+      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, figuresFor(r.product_slug, r.options_json, null), project.id, nextQuoteVersion, mutationToken));
     }
   }
   stmts.push(hasTitle
@@ -637,7 +655,8 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
     `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty=?,
        line_total=?, status=?, review_json=?, edited_fields=NULL,
        ai_proposal_line_id=?,
-       selected_variant_id=?, configuration_snapshot_json=?,
+       selected_variant_id=?, performance_figures_json=?,
+       configuration_snapshot_json=?,
        pricing_snapshot_json=?, recommendation_basis=?,
        recommendation_confidence=?, edit_version=edit_version+1,
        updated_at=datetime('now')
@@ -664,7 +683,20 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
     total, proposal.review_required ? "technical_review" : "ready",
     review ? JSON.stringify(review) : null,
     proposal.proposal_line_id,
-    proposal.performance_variant_id, proposal.configuration_json,
+    proposal.performance_variant_id,
+    // The restored configuration's OWN figures — so the line reads as
+    // platform-made again by comparison, exactly as it did before the customer
+    // edited it. Best-effort: a catalogue that will not answer stores
+    // present-and-null and the restore is unaffected.
+    figuresJson(resolveFigures(
+      await fetchFigureCatalogue(c.env, [proposal.product_slug]),
+      {
+        productSlug: proposal.product_slug,
+        variantId: proposal.performance_variant_id,
+        options: options as Record<string, string>,
+      },
+    )),
+    proposal.configuration_json,
     proposal.price_snapshot_json, proposal.recommendation_basis,
     proposal.confidence_band, c.req.param("id"), project.id,
     proposal.edit_version, restoreState.quote_edit_version, proposal.proposal_line_id,

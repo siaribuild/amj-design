@@ -7,6 +7,7 @@ import type { OpeningInput } from "../estimator/types";
 import { defaultOptions } from "../../../src/data/configurator";
 import { getProductBySlug } from "../../../src/data/catalogue";
 import { dimsJson } from "../lines";
+import { NULL_FIGURES, figuresFromVariant, figuresJson } from "../figures";
 
 export interface ProposalSelection {
   openingId: string;
@@ -196,10 +197,14 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     if (!chosen) {
       if (!quote) {
         stmts.push(env.DB.prepare(
+          // The figures are present-and-null: this opening was evaluated and
+          // nothing was chosen, which is a different fact from a line saved
+          // before the capture existed (SNAP-AC-8).
           `INSERT INTO quote_line
              (id, project_id, external_ref, product_slug, options_json,
-              dims_json, qty, line_total, status, position, origin, review_json)
-           SELECT ?,?,?,'','{}',?,?,NULL,'incomplete',?,'ai',?
+              dims_json, qty, line_total, status, position, origin, review_json,
+              performance_figures_json)
+           SELECT ?,?,?,'','{}',?,?,NULL,'incomplete',?,'ai',?,?
              WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
         ).bind(
           effectiveQuoteLineId, input.projectId, line.externalRef,
@@ -208,6 +213,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           JSON.stringify({
             product: "We found this opening but could not select and exactly price a suitable configuration.",
           }),
+          figuresJson(NULL_FIGURES),
           proposalId,
         ));
         stmts.push(env.DB.prepare(
@@ -257,6 +263,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           `UPDATE quote_line SET line_total=NULL, status='incomplete',
              review_json=json_patch(COALESCE(review_json,'{}'), ?),
              ai_proposal_line_id=?, selected_variant_id=NULL,
+             performance_figures_json=?,
              configuration_snapshot_json=?, pricing_snapshot_json=NULL,
              recommendation_basis=?, recommendation_confidence='low',
              edit_version=edit_version+1
@@ -271,7 +278,8 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           JSON.stringify({
             product: "We found this opening but could not select and exactly price a suitable configuration.",
           }),
-          proposalLineId, JSON.stringify(configuration), basis, quote.id, quote.edit_version,
+          proposalLineId, figuresJson(NULL_FIGURES),
+          JSON.stringify(configuration), basis, quote.id, quote.edit_version,
           proposalId, input.sourceGeneration,
         ));
         stmts.push(env.DB.prepare(
@@ -297,14 +305,18 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       stmts.push(env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, external_ref, product_slug, options_json,
-            dims_json, qty, line_total, status, position, origin)
-         SELECT ?,?,?,?,?,?,?,?, 'technical_review',?, 'ai'
+            dims_json, qty, line_total, status, position, origin,
+            performance_figures_json)
+         SELECT ?,?,?,?,?,?,?,?, 'technical_review',?, 'ai',?
            WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
       ).bind(
         effectiveQuoteLineId, input.projectId, line.externalRef, chosen.candidate.slug,
         JSON.stringify(draftOptions),
         JSON.stringify(dimsJson(line.opening.widthMm, line.opening.heightMm)),
         Math.max(1, Math.floor(line.opening.qty ?? 1)), chosen.price!.total, nextPosition++,
+        // The variant the estimator itself selected is already in memory, so
+        // this path never consults the catalogue.
+        figuresJson(figuresFromVariant(chosen.selectedVariant)),
         proposalId,
       ));
       stmts.push(env.DB.prepare(
@@ -440,6 +452,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
            product_slug = ?, options_json = json_patch(COALESCE(options_json, '{}'), ?),
            line_total = ?, status = ?, review_json = json_patch(COALESCE(review_json, '{}'), ?),
            ai_proposal_line_id = ?, selected_variant_id = ?,
+           performance_figures_json = ?,
            configuration_snapshot_json = ?, pricing_snapshot_json = ?,
            recommendation_basis = ?, recommendation_confidence = ?,
            edit_version=edit_version+1
@@ -455,6 +468,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         chosen.candidate.slug, JSON.stringify(cartOptions), chosen.price!.total,
         reviewRequired ? "technical_review" : "ready",
         review, proposalLineId, variant?.variantId ?? null,
+        figuresJson(figuresFromVariant(variant)),
         JSON.stringify(configuration), JSON.stringify(chosen.price), basis, confidence,
         quote.id, isNewQuoteLine ? 0 : quote.edit_version,
         proposalId, input.sourceGeneration,

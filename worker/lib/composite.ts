@@ -22,6 +22,7 @@
 import type { Env } from "../types";
 import { priceItem } from "./lines";
 import { uuid } from "./util";
+import { fetchFigureCatalogue, figuresJson, resolveFigures, type LineFigures } from "./figures";
 import { ensureCatalogue } from "./catalogue";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
@@ -278,6 +279,22 @@ export async function splitLine(env: Env, args: {
   const inherited = parentOptions(parent.options_json);
   const segments = args.segments.map((s) => ({ ...s, options: s.options ?? inherited }));
 
+  // Captured figures per unit. The machine's own frozen record already carries
+  // them for a unit it planned (splitCandidates.ts writes uw/shgc there at the
+  // moment it chose), so those units cost no catalogue read at all; only the
+  // rest go to the one consultation below.
+  const fromSnapshot = (s: SegmentSpec): LineFigures | null => {
+    const snap = s.configurationSnapshot;
+    if (!snap) return null;
+    const num = (v: unknown) => (typeof v === "number" ? v : null);
+    return { uValue: num(snap.uw), shgc: num(snap.shgc) };
+  };
+  const figureCatalogue = await fetchFigureCatalogue(
+    env, segments.flatMap((s) => (fromSnapshot(s) ? [] : [s.productSlug])));
+  const figuresOf = (s: SegmentSpec) => figuresJson(fromSnapshot(s) ?? resolveFigures(figureCatalogue, {
+    productSlug: s.productSlug, variantId: s.selectedVariantId ?? null, options: s.options ?? {},
+  }));
+
   // Price each segment through THE engine — same rates, same surcharges, same
   // modifiers as any other line. Per frame, which is the whole point.
   const totals = await Promise.all(segments.map((s) => priceItem(env, {
@@ -295,8 +312,8 @@ export async function splitLine(env: Env, args: {
           external_ref, room_label, product_slug, options_json, dims_json,
           qty, line_total, status, position, origin, selected_variant_id,
           segment_requirements_json, segment_requirement_basis, segment_thermal_review,
-          configuration_snapshot_json)
-       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          configuration_snapshot_json, performance_figures_json)
+       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uuid(), parent.project_id, parent.id, i, Math.max(1, s.qtyPerParent ?? 1),
       s.productSlug, JSON.stringify(s.options),
@@ -312,6 +329,7 @@ export async function splitLine(env: Env, args: {
       s.resolvedBand ? JSON.stringify(s.resolvedBand) : null,
       s.requirementBasis ?? null, s.thermalReview ? 1 : 0,
       s.configurationSnapshot ? JSON.stringify(s.configurationSnapshot) : null,
+      figuresOf(s),
     )),
     env.DB.prepare(
       "UPDATE quote_line SET line_kind='composite_parent', composite_axis=?, coverage_delta_mm=?, composite_origin=?, updated_at=datetime('now') WHERE id=?",
@@ -453,13 +471,22 @@ export async function updateSegment(env: Env, args: {
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,
   });
 
+  // A human has just re-specified this unit, so the machine's frozen snapshot no
+  // longer describes it — the figures are resolved from what was chosen here.
+  const figures = resolveFigures(
+    await fetchFigureCatalogue(env, [productSlug]),
+    { productSlug, variantId: null, options },
+  );
+
   await env.DB.prepare(
     `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty_per_parent=?,
-       room_label=?, line_total=?, status=?, updated_at=datetime('now') WHERE id=?`,
+       room_label=?, line_total=?, status=?, performance_figures_json=?,
+       updated_at=datetime('now') WHERE id=?`,
   ).bind(
     productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
-    qtyPerParent, note || null, total, total == null ? "incomplete" : "ready", segment.id,
+    qtyPerParent, note || null, total, total == null ? "incomplete" : "ready",
+    figuresJson(figures), segment.id,
   ).run();
 
   await recomputeComposite(env, parent.id);
@@ -519,18 +546,24 @@ export async function addSegment(
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,
   });
 
+  const figures = resolveFigures(
+    await fetchFigureCatalogue(env, [productSlug]),
+    { productSlug, variantId: null, options },
+  );
+
   const id = uuid();
   await env.DB.prepare(
     `INSERT INTO quote_line
        (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
         external_ref, room_label, product_slug, options_json, dims_json,
-        qty, line_total, status, position, origin)
-     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        qty, line_total, status, position, origin, performance_figures_json)
+     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id, parent.project_id, parent.id, existing.length,
     productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
     qty, total, total == null ? "incomplete" : "ready", existing.length, origin,
+    figuresJson(figures),
   ).run();
 
   await recomputeComposite(env, parent.id);
