@@ -114,15 +114,26 @@
 @media (hover: hover) {
   .ops2-viewer__back:hover { color: var(--ds-text-link-hover); }
 }
-/* THE DESTINATION'S NAME, AT WHATEVER LENGTH IT CAME IN. From the record's desk
-   canvas this is the project's own title (VIEW-AC-15), which is as long as
-   someone typed it — so it truncates exactly as `.ops2-topbar__title` does
-   rather than pushing the bar's heading off the screen. The cap is a share of
-   the viewport because the heading beside it must stay readable at every width;
-   the accessible name is the element's text and is never shortened. */
+/* THE DESTINATION'S NAME, SHORTENED TO A NAME. From the record's desk canvas
+   this is the project's own title (VIEW-AC-15), which is as long as someone
+   typed it, so it truncates rather than pushing the bar's heading off the
+   screen. The accessible name is the element's text and is never shortened.
+
+   THE CAP IS A TEXT MEASURE, NOT A SHARE OF THE VIEWPORT. `40vw` was neither of
+   the things its own comment claimed: `.ops2-topbar__title` carries no
+   max-width at all (nav.css) — it truncates under flex pressure from the rest
+   of its bar — and a viewport share does not keep the heading readable, it just
+   moves where it starts. Measured with a 108-character title: 410px of back
+   label at 1024 and 512px at 1280, putting "Drawing" 42% of the way across its
+   own bar; and at 1920, where the cap is 768px, nothing truncated at all and
+   the control ran to its full 625px. The cap grew exactly where it was least
+   needed. A `ch` measure resolves against this label's own font-size, so the
+   control is the same width on every monitor and the heading starts in the
+   same place. A back control owes a name recognisable, not a title complete:
+   the record's own top bar showed it in full one navigation ago. */
 .ops2-viewer__back-label {
   min-width: 0;
-  max-width: 40vw;
+  max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
