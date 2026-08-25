@@ -36,13 +36,16 @@ import {
  * this same body beside the rail without changing a word of it.
  *
  * ── AND READ-ONLY ───────────────────────────────────────────────────────────
- * No Edit, no re-pricing, no "Why this product?" — each is its own feature with
- * its own decisions, and a control drawn for an action this build cannot
- * perform is the defect this effort has recorded four times. "Why this product"
- * attaches between the specification and the price, and is absent entirely on a
- * composite: the estimator recommends a product per OPENING, and a composite is
- * one opening that ops divided, so there is no machine recommendation to
- * justify and inventing a rationale would be worse than the absence.
+ * No Edit and no re-pricing: each is its own feature with its own decisions,
+ * and a control drawn for an action this build cannot perform is the defect
+ * this effort has recorded four times.
+ *
+ * "Why this product" attaches between the specification and the price. It is
+ * NOT absent on a composite — that sentence was written before R14 and is void:
+ * a composite the machine proposed has a rationale of its own, the split that
+ * won and the single unit it beat. An ops-decided split is the case with no
+ * machine reasoning to show, and it says so in two lines rather than by
+ * disappearing.
  */
 
 // A panel is EITHER a set of labelled facts or a set of bare ones, never a mix.
@@ -200,12 +203,16 @@ const PRICE_STATE: Record<ReturnType<typeof priceState>, string> = {
   unknown: "priced",
 };
 
-export function LineReview({ line, onOpenDrawing }: {
+export function LineReview({ line, onOpenDrawing, why }: {
   line: RecordLine;
   /** A drawing was activated: the opening itself (`null`) or the 1-based unit.
    *  WHAT that means is the page's, not this body's — see the router-free note
    *  above. The viewer is a node in the tree, so opening it is a navigation. */
   onOpenDrawing: (unitIndex: number | null) => void;
+  /** The "Why this product" panel, already wired by the page. `null` on an
+   *  order record: D2 puts no panel there at all, and no sentence in its
+   *  place — so the absence is a missing element rather than a rendered one. */
+  why: ReactNode;
 }) {
   // UNITS, NOT ROWS — see `elevationPartsFor`. A symmetric split is stored as
   // one row carrying two units, and counting rows called it a simple opening.
@@ -258,6 +265,8 @@ export function LineReview({ line, onOpenDrawing }: {
           ]}
         />
       )}
+
+      {why}
 
       <Panel
         title="Price"

@@ -429,9 +429,21 @@ export function ProjectRecordPage() {
                           Line actions
                         </IonButton>
                       </div>
+                      {/* NO "WHY THIS PRODUCT" ON THE CANVAS, and the null is
+                          deliberate rather than forgotten. Every state the
+                          owner approved shows the panel on the LINE PAGE
+                          (mock B1-B12), and its door navigates to that line's
+                          own `/why` address — which from here would be a
+                          different page with a different back. Wiring it is a
+                          real decision about this surface, not a rider on the
+                          line page's, so it is raised rather than assumed.
+                          The drawing viewer is wired here because VIEW-AC-5
+                          says every enlargeable drawing opens it; no criterion
+                          says the same about the panel. */}
                       <LineReview
                         line={selected}
                         onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
+                        why={null}
                       />
                     </>
                   ) : (

@@ -20,7 +20,9 @@
  *  • WHY-AC-6 — the tolerance is read from the run and formatted. Never `5`.
  */
 import type { RequirementBasis } from "../../data/recommendation";
-import type { LineRationaleDto, RationaleCandidate, RationaleFigures } from "../../data/rationale";
+import type {
+  LineRationaleDto, RationaleCandidate, RationaleFigures, UnitBandBasis,
+} from "../../data/rationale";
 
 /** Two places on both axes, so 3.9 and 3.90 are one number on the screen as
  *  well as in the row. */
@@ -40,6 +42,26 @@ export function basisLabel(basis: string | null | undefined): string | null {
   return basis && basis in BASIS_LABELS
     ? BASIS_LABELS[basis as RequirementBasis]
     : null;
+}
+
+/** A LITE's own provenance vocabulary, which is NOT the opening's.
+ *
+ *  `quote_line.segment_requirement_basis` (migration 0036) stores a BandBasis —
+ *  how a lite's band was resolved — while an opening's `requirement.basis` says
+ *  where its caps came from. They are different mechanisms and mapping one onto
+ *  the other would state a provenance the row does not carry, so each keeps its
+ *  own labels and neither accepts the other's tokens.
+ *
+ *  `none` is a recorded absence of provenance, not a label to print. */
+const UNIT_BASIS_LABELS: Record<UnitBandBasis, string | null> = {
+  explicit_ref: "from this lite's own reference in the energy report",
+  shared_type: "from the band shared by lites of this type",
+  computed: "modelled by the platform for this lite",
+  none: null,
+};
+
+export function unitBasisLabel(basis: string | null | undefined): string | null {
+  return basis && basis in UNIT_BASIS_LABELS ? UNIT_BASIS_LABELS[basis as UnitBandBasis] : null;
 }
 
 export interface Requirement {

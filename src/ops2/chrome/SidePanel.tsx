@@ -71,25 +71,60 @@ const slideOut = (baseEl: HTMLElement) =>
 
 export function SidePanel({
   open, onClose, title, testId, footer, children,
+  phoneForm = "sheet", dismiss = "done",
 }: {
   open: boolean;
+  /**
+   * THE ONE DISMISS PATH. The backdrop, Escape, the control and the platform's
+   * back gesture all funnel here, and the CALLER decides what closing means —
+   * the filter sets state, the rationale pops history. That is the whole seam:
+   * this component stays a presentation adapter and never imports a router.
+   */
   onClose: () => void;
   title: string;
   /** The surface's own handle for its panel, so tests name the panel they mean. */
   testId: string;
   /** Below the scrolling content: the panel's own closing note or controls. */
   footer?: ReactNode;
+  /**
+   * The PHONE form. `"sheet"` is today's half-height bottom sheet with Ionic's
+   * drag handle; `"screen"` is full screen with no breakpoints, which is what
+   * R26 asked for and what an `IonModal` does when given neither. The handle
+   * disappears on its own, because Ionic renders it only for sheet modals — it
+   * is not hidden with CSS.
+   *
+   * DEFAULTED, and the default is today's behaviour byte-for-byte. The Projects
+   * filter is the other caller and its phone form is approved and shipped;
+   * changing the default would move a surface outside this feature, which is
+   * why `FilterSheet.tsx` appears nowhere in this diff.
+   */
+  phoneForm?: "sheet" | "screen";
+  /**
+   * The dismiss control. `"done"` is today's trailing Done button.
+   * `{ back }` is a LEADING back control naming where it returns to — R29's
+   * shape for a routed caller, and the label travels with the choice rather
+   * than beside it so a back control cannot exist without a destination. A
+   * back-shaped control that does not name where it goes is VIEW-AC-15's
+   * defect one surface over.
+   */
+  dismiss?: "done" | { back: string };
   children: ReactNode;
 }) {
   const wide = useRailWidth();
+  // The resolved form, which is what the remount guard has to key on: a window
+  // crossing the change point while a FULL-SCREEN panel is open must not be
+  // told it is still whatever it opened as.
+  const form = wide ? "side" : phoneForm === "screen" ? "screen" : "sheet";
+  const sheet = form === "sheet";
   return (
     <IonModal
       isOpen={open}
       onDidDismiss={onClose}
-      // The breakpoints ARE the bottom sheet — passing them at the desk is what
-      // would make a side panel try to drag itself up from the bottom edge.
-      initialBreakpoint={wide ? undefined : 0.5}
-      breakpoints={wide ? undefined : [0, 0.5]}
+      // The breakpoints ARE the bottom sheet — passing them at the desk, or on a
+      // phone form that is meant to be full screen, is what would make a panel
+      // try to drag itself up from the bottom edge.
+      initialBreakpoint={sheet ? 0.5 : undefined}
+      breakpoints={sheet ? [0, 0.5] : undefined}
       enterAnimation={wide ? slideIn : undefined}
       leaveAnimation={wide ? slideOut : undefined}
       className={wide ? "pq-sheet pq-sheet--side" : "pq-sheet"}
@@ -99,14 +134,27 @@ export function SidePanel({
       // point while the panel is open keeps whichever mode it opened in — a
       // half-translated sheet wearing side-panel styling, or a full-screen
       // modal where the bottom sheet should be.
-      key={wide ? "side" : "sheet"}
+      key={form}
     >
       <IonHeader className="ion-no-border">
         <IonToolbar>
+          {/* LEADING, and that is the point of it. A back-shaped control parked
+              where an X was still reads as a dismiss; the leading position is
+              what makes the promise legible before anyone presses anything. */}
+          {dismiss !== "done" && (
+            <IonButtons slot="start">
+              <IonButton onClick={onClose} data-testid={`${testId}-back`} className="pq-sheet__back">
+                <span aria-hidden="true" className="pq-sheet__chev">‹</span>
+                {dismiss.back}
+              </IonButton>
+            </IonButtons>
+          )}
           <IonTitle>{title}</IonTitle>
-          <IonButtons slot="end">
-            <IonButton onClick={onClose}>Done</IonButton>
-          </IonButtons>
+          {dismiss === "done" && (
+            <IonButtons slot="end">
+              <IonButton onClick={onClose}>Done</IonButton>
+            </IonButtons>
+          )}
         </IonToolbar>
       </IonHeader>
       <IonContent>

@@ -523,3 +523,199 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   color: var(--ds-text-muted);
   overflow-wrap: anywhere;
 }
+
+/* ── "Why this product" (phase 3b) ──────────────────────────────────────────
+ * The panel is the console's own `lp-panel` and nothing new: same card, same
+ * title, same budgeted grid. Only the door, the qualifier and the absence role
+ * are added — everything else here is the approved mock's own values.
+ */
+
+/* A ROW SPANS THE GRID'S TWO COLUMNS. `Panel`'s repair (the <dd> with no <dt>
+   handed to assistive technology) wrapped each row in a div, which became a
+   grid ITEM and put every second row in the value column. The approved mock
+   carries this rule; the stylesheet had not caught up. It fixes the
+   Specification and Price panels at the same time — they use the same object,
+   and were wearing the same defect. */
+.lp-panel__lines > div { display: contents; }
+
+/* ── The door ───────────────────────────────────────────────────────────────
+ * A STRETCHED BUTTON, not a wrapping one: a button around a dl is invalid and
+ * flattens every term/value pair into one accessible name. The focus ring is
+ * drawn around the CARD, because that is the thing that moves. */
+.lp-panel--door { position: relative; }
+.lp-panel__door {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: var(--ds-radius-surface);
+}
+/* Hover is not an affordance on a phone, which is half this console's use — so
+   it decorates and never carries the meaning. */
+@media (hover: hover) {
+  .lp-panel--door:hover { background: var(--ds-color-brand-wash); }
+}
+.lp-panel__door:focus-visible { outline-offset: 2px; }
+.lp-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--theme-spacing-sm);
+}
+.lp-panel__head > .lp-panel__title { margin-bottom: 0; }
+.lp-panel__chev {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--ds-text-muted);
+}
+.lp-panel--door .lp-panel__lines { margin-top: var(--theme-spacing-xs); }
+
+/* ── The panel's own values ────────────────────────────────────────────────*/
+.lp-why__fig { overflow-wrap: anywhere; }
+/* The origin label sits UNDER the caps it qualifies, quiet and small. Never a
+   badge and never a chip: it is the second half of one fact, not a second. */
+.lp-why__origin {
+  display: block;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+/* WHICH of the frame or the glass moved, riding on the figures line it
+   explains — not a fourth line, which would breach the budget R6 sets. */
+.lp-why__qual { color: var(--ds-text-secondary); }
+/* An ops split's per-unit figures: one unit per line, code then figures. */
+.lp-why__unit { display: block; }
+.lp-why__unit-code {
+  display: inline-block;
+  min-width: 4rem;
+  color: var(--ds-text-muted);
+}
+/* WARNING MEANS "OURS TO RESOLVE, THE HUMAN PROCEEDS" in this console — never
+   attention/red. Nothing on this surface is an error, least of all a person's
+   decision, and figures themselves are never coloured. */
+.lp-why__warn { color: var(--ds-color-warning-text); }
+.lp-why__error {
+  margin: 0 0 var(--theme-spacing-xs);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-primary);
+}
+.lp-why__skeleton { display: grid; gap: var(--theme-spacing-2xs); }
+
+/* AN ABSENCE HAS A ROLE OF ITS OWN, because this surface states five of them
+   and none may read as a value. Muted and italic — never a dash, never a zero. */
+.ops2-absent {
+  font-style: italic;
+  color: var(--ds-text-muted);
+}
+
+/* ── The detail screen ──────────────────────────────────────────────────────
+ * Inside SidePanel, so the container's finish is already the console's. What is
+ * here is the reading order made visible: blocks, then the ladder last. */
+.wd { display: grid; gap: var(--theme-spacing-lg); padding: var(--theme-spacing-md); }
+.wd__blk { display: grid; gap: var(--theme-spacing-xs); }
+.wd__blk-h {
+  margin: 0;
+  font-family: var(--theme-font-sans);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+.wd__kv {
+  display: grid;
+  grid-template-columns: minmax(4rem, auto) 1fr;
+  gap: var(--theme-spacing-2xs) var(--theme-spacing-md);
+  margin: 0;
+  font-size: var(--theme-font-size-sm);
+}
+.wd__kv-row { display: contents; }
+.wd__kv dt { color: var(--ds-text-muted); }
+.wd__kv dd { margin: 0; color: var(--ds-text-primary); }
+.wd__fig { color: var(--ds-text-primary); }
+.wd__origin {
+  display: block;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+
+/* TWO CARDS OF THE SAME SHAPE, so a reviewer compares by LOOKING rather than by
+   reading. At 375px they stack, current first — the news above the routine. */
+.wd__cmp { display: grid; gap: var(--theme-spacing-sm); }
+@media (min-width: 480px) {
+  .wd__cmp { grid-template-columns: 1fr 1fr; }
+}
+.wd__card {
+  display: grid;
+  gap: var(--theme-spacing-2xs);
+  padding: var(--theme-spacing-sm);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  font-size: var(--theme-font-size-sm);
+}
+.wd__card--current { background: var(--ds-color-brand-wash); }
+.wd__who {
+  font-size: var(--theme-font-size-xs);
+  letter-spacing: var(--theme-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+.wd__what { color: var(--ds-text-primary); font-weight: var(--theme-font-weight-medium); }
+.wd__verd { font-size: var(--theme-font-size-xs); color: var(--ds-text-secondary); }
+.wd__verd--warn { color: var(--ds-color-warning-text); }
+
+/* THE LADDER. Rows are li and not buttons: nothing here prices, switches or
+   selects, so nothing looks tappable — no chevron, no hover, no trailing
+   control (R1/R28). */
+.wd__ladder { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--theme-spacing-xs); }
+.wd__row {
+  display: grid;
+  gap: 2px;
+  padding-block: var(--theme-spacing-2xs);
+  border-top: 1px solid var(--ds-border-subtle);
+  font-size: var(--theme-font-size-sm);
+}
+.wd__row:first-child { border-top: 0; }
+.wd__row-top {
+  display: flex;
+  gap: var(--theme-spacing-sm);
+  justify-content: space-between;
+  align-items: baseline;
+}
+.wd__row-name { color: var(--ds-text-primary); overflow-wrap: anywhere; }
+.wd__row--chosen .wd__row-name { font-weight: var(--theme-font-weight-medium); }
+.wd__row-mark { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
+.wd__row-figs { flex: none; color: var(--ds-text-secondary); }
+.wd__row-verdict { font-size: var(--theme-font-size-xs); color: var(--ds-text-muted); }
+
+/* Each lite's own band. Two bands side by side must read as two. */
+.wd__lites { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--theme-spacing-sm); }
+.wd__lite {
+  display: grid;
+  gap: var(--theme-spacing-2xs);
+  padding: var(--theme-spacing-sm);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  font-size: var(--theme-font-size-sm);
+}
+.wd__lite-h { display: flex; gap: var(--theme-spacing-sm); align-items: baseline; }
+.wd__lite-code { color: var(--ds-text-muted); }
+.wd__lite-name { color: var(--ds-text-primary); }
+.wd__lite-row { display: flex; flex-wrap: wrap; gap: var(--theme-spacing-md); }
+/* The same warning treatment the Needs-review panel already uses — one meaning,
+   one colour, and it belongs to the unit that carries the flag. */
+.wd__flag { font-size: var(--theme-font-size-xs); color: var(--ds-color-warning-text); }
+
+.wd__reason {
+  margin: 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+.wd__closing { padding-top: var(--theme-spacing-sm); }
+
+/* The panel's back control: LEADING, and it names where it returns to. */
+.pq-sheet__back { text-transform: none; }
+.pq-sheet__chev { margin-right: 2px; }

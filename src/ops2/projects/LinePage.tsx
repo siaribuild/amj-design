@@ -6,10 +6,14 @@ import { destination } from "../nav/destinations";
 import { OpsPage } from "../chrome/OpsPage";
 import { DrawingViewer } from "../chrome/DrawingViewer";
 import { LineReview } from "./LineReview";
+import { WhyDetail } from "./WhyDetail";
+import { WhyPanel } from "./WhyPanel";
 import { drawingSubject, viewerUnitCount } from "./drawingSubject";
 import {
-  drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, VIEWER_FROM_LINE,
+  drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, whyDoor,
+  VIEWER_FROM_LINE, WHY_FROM_LINE, WHY_SUFFIX,
 } from "./lineRoute";
+import { useLineRationale } from "./useLineRationale";
 import { useProjectRecord } from "./useProjectRecord";
 
 const PROJECTS = destination("projects");
@@ -65,9 +69,21 @@ export function LinePage() {
   const recordPath = `/projects/${encodeURIComponent(id)}`;
   const linePath = `${recordPath}/line/${encodeURIComponent(lineId)}`;
 
+  // D2 — AN ORDER RECORD HAS NO PANEL AND NEVER FETCHES ONE. The rationale is
+  // a pre-issue reviewing surface; once a quote is issued the reasoning does
+  // not travel with it, so the endpoint is not called rather than called and
+  // hidden.
+  const isOrder = !!record && record.orderNo != null;
+  const { load: rationale, reload: reloadRationale } = useLineRationale(id, lineId, !!line && !isOrder);
+  // WHICH ADDRESSES THIS LINE SERVES, both of them, answered in one place.
+  // `/why` behind a line whose rationale has no detail is the same class of
+  // address as a unit ordinal this line does not have — see `./lineRoute.ts`.
+  const hasWhy = rationale.status === "ready" && rationale.dto.kind === "recommendation";
+
   const route = parseLineRoute(
     lineSuffixOf(location.pathname),
     line ? viewerUnitCount(line) : 0,
+    hasWhy,
   );
 
   // NORMALISE ONLY ONCE THE RECORD HAS ANSWERED. The unit count is what an
@@ -94,7 +110,11 @@ export function LinePage() {
   // `scripts/tests/ops2-navigation.test.mjs` holds the rule, because this is the
   // third way the mark has gone missing and there is no structural fix — state
   // is the only thing a `replace` can carry.
-  const ready = load.status === "ready";
+  // AND IT WAITS FOR THE RATIONALE AS WELL AS THE RECORD, for exactly the
+  // reason the unit count does: `/why` is judged against whether this line HAS
+  // a detail, and correcting a cold link while that is still loading would
+  // throw away an address that turns out to be perfectly good.
+  const ready = load.status === "ready" && (isOrder || rationale.status !== "loading");
   const stray = ready && !line && route.view !== "line";
   useEffect(() => {
     if (!ready) return;
@@ -133,6 +153,14 @@ export function LinePage() {
     // the mark's PRESENCE says the viewer was opened from a page in this session
     // — which is what makes back a pop rather than a replace after a reload.
     history.push(linePath + drawingSuffix(unitIndex), VIEWER_FROM_LINE);
+  }, [history, linePath]);
+
+  // ONE DOOR, so the mark answers presence only (`./lineRoute.ts`). The panel
+  // on this page is the only way in; a pasted link carries no mark and replaces
+  // rather than popping out of the console.
+  const openWhy = useCallback(() => {
+    opener.current = document.activeElement as HTMLElement | null;
+    history.push(linePath + WHY_SUFFIX, WHY_FROM_LINE);
   }, [history, linePath]);
 
   useEffect(() => {
@@ -187,10 +215,14 @@ export function LinePage() {
    * reason the pathname guard above is: what this control does is decided at the
    * moment it is pressed.
    */
-  const closeViewer = useCallback(() => {
+  const closeChild = useCallback(() => {
     if (lineSuffixOf(history.location.pathname) === "") return;
     if (router.canGoBack()) { router.goBack(); return; }
-    if (viewerDoor(history.location.state)) history.goBack();
+    // EITHER MARK MEANS A PAGE OF OURS IS BEHIND THIS ENTRY. The two are
+    // separate keys because the two surfaces have different exits, but the
+    // question asked here — warm or cold — is the same question, and asking it
+    // once is what stops the second surface answering it differently.
+    if (viewerDoor(history.location.state) || whyDoor(history.location.state)) history.goBack();
     else history.replace(linePath);
   }, [history, router, linePath]);
 
@@ -246,9 +278,23 @@ export function LinePage() {
         </div>
       )}
 
-      {record && line && <LineReview line={line} onOpenDrawing={openDrawing} />}
+      {record && line && (
+        <LineReview
+          line={line}
+          onOpenDrawing={openDrawing}
+          why={isOrder ? null : (
+            <WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />
+          )}
+        />
+      )}
 
-      <DrawingViewer subject={subject} onClose={closeViewer} />
+      <DrawingViewer subject={subject} onClose={closeChild} />
+      <WhyDetail
+        dto={rationale.status === "ready" ? rationale.dto : null}
+        open={route.view === "why" && !route.normalise}
+        backLabel={line?.code || "Line"}
+        onClose={closeChild}
+      />
     </OpsPage>
   );
 }
