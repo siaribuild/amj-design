@@ -54,12 +54,61 @@ export function resolveFigures(
     const named = published.find((v) => v.variantId === pick.variantId);
     return named ? figuresFromVariant(named) : NULL_FIGURES;
   }
-  // `options.glazing` is the glass identity every pricing path already reads
-  // (lib/lines.ts:164) — one place per fact, so the figures follow the glass the
-  // line was actually priced for.
-  const glazing = typeof pick.options?.glazing === "string" ? pick.options.glazing : "";
+  const glazing = glazingOf(pick.options);
   const matches = glazing ? published.filter((v) => v.glazingOptionSlug === glazing) : published;
   return matches.length === 1 ? figuresFromVariant(matches[0]) : NULL_FIGURES;
+}
+
+/** The glass identity every pricing path already reads (lib/lines.ts:164) — one
+ *  place per fact, so the figures follow the glass the line was priced for. */
+const glazingOf = (options: Record<string, string> | null | undefined): string =>
+  typeof options?.glazing === "string" ? options.glazing : "";
+
+/** What a save must have on the row for the stored figures to still describe it. */
+export interface StoredPick {
+  productSlug: string | null;
+  variantId: string | null;
+  glazing: string | null;
+  figuresJson: string | null;
+}
+
+/** Has this save actually moved the pick? EXACTLY the resolver's own inputs are
+ *  the pick — an option it never consults (colour, hardware) cannot change what
+ *  it would answer, so it cannot move the figures.
+ *
+ *  A pick naming NO variant does not move the variant term; only an explicit,
+ *  different id does (the restore path). That clause is what stops the customer
+ *  save loop re-resolving on a dims-only edit through a retained
+ *  `selected_variant_id`. */
+export function pickMoved(
+  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  stored: StoredPick | null,
+): boolean {
+  if (!stored) return true;                                   // a new row has nothing to carry
+  return pick.productSlug !== (stored.productSlug ?? "")
+    || glazingOf(pick.options) !== (stored.glazing ?? "")
+    || (!!pick.variantId && pick.variantId !== stored.variantId);
+}
+
+/** §1.4 — THE write-time rule, in one place, so no call site re-derives it.
+ *
+ *  Re-resolving an UNMOVED pick against today's catalogue recomputes a captured
+ *  snapshot, which SNAP-AC-9 forbids: figures stay figures, present-and-null
+ *  stays present-and-null, and a pre-capture NULL stays NULL — no opportunistic
+ *  backfill on touch, which would be a display-time catalogue read wearing a
+ *  snapshot's clothes (SNAP-AC-10's reasoning).
+ *
+ *  A MOVED pick resolves fresh, and a failed resolution stores present-and-null
+ *  — honest here and only here, because the stored figures describe a
+ *  configuration the row no longer has. That is why "never overwrite a good
+ *  value with null" is the wrong shape: safe on an unmoved pick, and on a moved
+ *  one it pins the old product's figures to the new configuration. */
+export function captureFigures(
+  catalogue: FigureCatalogue,
+  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  stored: StoredPick | null,
+): string | null {
+  return pickMoved(pick, stored) ? figuresJson(resolveFigures(catalogue, pick)) : stored!.figuresJson;
 }
 
 // The rows `toCandidate` needs to decide a product's variants, and nothing else.

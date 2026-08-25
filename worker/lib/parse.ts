@@ -13,7 +13,7 @@ import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
 import { createCachedPriceResolver } from "./estimator/pricing";
 import type { Product } from "../../src/data/catalogue";
 import { priceItem } from "./lines";
-import { fetchFigureCatalogue, figuresJson, resolveFigures } from "./figures";
+import { captureFigures, fetchFigureCatalogue, pickMoved } from "./figures";
 import type { ProjectRow } from "./access";
 
 export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
@@ -264,9 +264,9 @@ export async function runScheduleParse(
   // writes a manual line — spec §1b). A manual line whose code collides with a
   // parsed tag stands as-is; the parsed row is skipped (the Link/Keep-separate
   // card arrives with the digest UI).
-  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null; product_slug: string | null; dims_json: string | null; qty: number | null }
+  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null; product_slug: string | null; dims_json: string | null; qty: number | null; options_json: string | null; performance_figures_json: string | null }
   const draftRows = mode === "upsert"
-    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice, product_slug, dims_json, qty FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
+    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice, product_slug, dims_json, qty, options_json, performance_figures_json FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
     : [];
   const byTag = new Map<string, DraftRow>();
   const manualTags = new Map<string, DraftRow>();
@@ -310,11 +310,27 @@ export async function runScheduleParse(
   const lineTotals = await Promise.all(lines.map((l) => priceItem(env, l)));
   // ONE catalogue consultation for the whole import, never one per line
   // (SNAP-AC-7) — the loop below is synchronous, so the figures are resolved up
-  // front exactly as the prices are.
-  const figureCatalogue = await fetchFigureCatalogue(env, lines.map((l) => l.productSlug));
-  const figuresFor = (l: ParsedLine) => figuresJson(resolveFigures(figureCatalogue, {
-    productSlug: l.productSlug, variantId: null, options: l.options,
-  }));
+  // front exactly as the prices are. §1.4: the slug set is built from MOVED
+  // picks only, so an identical re-upload carries every matched row's record
+  // forward and asks the catalogue nothing (the existing "no changes"
+  // discipline, extended to figures).
+  const pickOf = (l: ParsedLine) => ({ productSlug: l.productSlug, variantId: null, options: l.options });
+  const storedOf = (l: ParsedLine) => {
+    const match = mode === "upsert" && l.code ? byTag.get(l.code) : undefined;
+    if (!match) return null;
+    let glazing: string | null = null;
+    try { glazing = String((JSON.parse(match.options_json || "{}") as Record<string, unknown>).glazing ?? "") || null; }
+    catch { /* unreadable options ⇒ no glass on record */ }
+    return {
+      productSlug: match.product_slug,
+      variantId: null,
+      glazing,
+      figuresJson: match.performance_figures_json,
+    };
+  };
+  const figureCatalogue = await fetchFigureCatalogue(
+    env, lines.flatMap((l) => (pickMoved(pickOf(l), storedOf(l)) ? [l.productSlug] : [])));
+  const figuresFor = (l: ParsedLine) => captureFigures(figureCatalogue, pickOf(l), storedOf(l));
   lines.forEach((l, idx) => {
     const priced = { ok: lineTotals[idx] != null };
     const hasReview = !!l.review && Object.keys(l.review).length > 0;

@@ -23,6 +23,8 @@ import {
 /** A captured unknown: the catalogue was consulted and had no figure. Distinct
  *  from SQL NULL, which means the line predates the capture (SNAP-AC-8). */
 const ABSENT = '{"uValue":null,"shgc":null}';
+/** A real captured figure, used where a test must prove one SURVIVES. */
+const FIGURES_2_4 = '{"uValue":2.4,"shgc":0.32}';
 
 const aLine = (overrides = {}) => ({
   code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
@@ -133,6 +135,8 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
     });
 
     await t.test("X-AC-9 a customer cannot write a thermal figure onto a line", async () => {
+      // A note-only edit: the pick has not moved, so nothing is resolved and
+      // nothing is written (§1.4). The body's numbers have no path in at all.
       const saved = await requestJson(customer, "/api/projects/current/lines", {
         method: "PUT",
         json: {
@@ -141,6 +145,21 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         },
       });
       assert.equal(saved.body.items[0].lineTotal, 510, "the save succeeded and priced as before");
+      assert.equal(await figuresOf(insertedLineId), ABSENT, "the line's own record is untouched");
+
+      // And on a save that DOES move the pick, so a resolution really runs: the
+      // stored figures are the server's, not the body's.
+      const moved = await requestJson(customer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Capture project",
+          items: [{
+            ...aLine(), serverId: insertedLineId, location: "Living 2",
+            options: { ...aLine().options, glazing: "double-lowe" }, ...CLIENT_THERMAL,
+          }],
+        },
+      });
+      assert.equal(moved.response.status, 200);
       assert.equal(await figuresOf(insertedLineId), ABSENT,
         "the body's 0.11/0.99 reached nothing — the stored figures are the server's own resolution");
     });
@@ -156,14 +175,22 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
                    performance_figures_json='{"uValue":2.4,"shgc":0.32}'
                  WHERE id='${insertedLineId}'`);
 
-      const saved = await requestJson(customer, "/api/projects/current/lines", {
+      // A COLOUR change is a material edit — it voids the estimator's snapshot —
+      // but colour is not part of the pick (§1.4): the product and the glass are
+      // unchanged, so the recorded figures still describe this line exactly.
+      const colour = await requestJson(customer, "/api/projects/current/lines", {
         method: "PUT",
         json: {
           title: "Capture project",
-          items: [{ ...aLine(), serverId: insertedLineId, options: { ...aLine().options, colour: "Monument" } }],
+          items: [{
+            ...aLine(), serverId: insertedLineId,
+            // The glass stays exactly as the preceding save left it: this edit
+            // changes a finish and nothing the resolver reads.
+            options: { ...aLine().options, glazing: "double-lowe", colour: "Monument" },
+          }],
         },
       });
-      assert.equal(saved.response.status, 200, "the edit still succeeds");
+      assert.equal(colour.response.status, 200, "the edit still succeeds");
 
       const [row] = await sql(
         `SELECT configuration_snapshot_json AS snap, performance_figures_json AS figures,
@@ -172,8 +199,36 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.equal(row.snap, null, "the estimator's configuration snapshot is still voided, exactly as before");
       assert.match(row.review, /customerConfigurationChanged/, "and the line is still stamped for a human to confirm");
       assert.ok(row.total > 0, "and it is still priced — the capture changed no branch here");
-      assert.equal(row.figures, ABSENT,
-        "what replaces the snapshot is the figures of what the CUSTOMER chose — not the estimator's old 2.4/0.32, and not nothing");
+      assert.equal(row.figures, FIGURES_2_4,
+        "and the figures stand: the customer changed a finish, not the glass, so the record still describes what this line performs at");
+
+      // Re-arm: put the line back to an AI-priced line meeting its FIRST
+      // material edit. Without this the next save lands on the reload/autosave
+      // repair branch (the edited-field set is already ["options_json"], so
+      // editedFieldsAfterSave returns it unchanged), which writes no product and
+      // therefore no figures — pre-existing behaviour, and not what SNAP-AC-14
+      // is about.
+      await sql(`UPDATE quote_line SET edited_fields=NULL, origin='ai', selected_variant_id='dg-lowe',
+                   configuration_snapshot_json='{"productSlug":"amj80-series-sliding-window"}',
+                   performance_figures_json='${FIGURES_2_4}'
+                 WHERE id='${insertedLineId}'`);
+
+      // Now move the GLASS, which IS the pick. What replaces the snapshot is the
+      // figures of what the customer chose — never the estimator's old ones, and
+      // never nothing.
+      const glass = await requestJson(customer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Capture project",
+          items: [{
+            ...aLine(), serverId: insertedLineId,
+            options: { ...aLine().options, colour: "Monument", glazing: "double-clear" },
+          }],
+        },
+      });
+      assert.equal(glass.response.status, 200, "that edit succeeds too");
+      assert.equal(await figuresOf(insertedLineId), ABSENT,
+        "the estimator's 2.4/0.32 describes a glass this line no longer has, so it is replaced — with an honest absence, because the catalogue is down");
     });
 
     // ── SNAP-AC-4 / X-AC-8: the ops path ────────────────────────────────────
@@ -183,11 +238,12 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       // SNAP-AC-4's premise.
       assert.equal(await figuresOf("ql_s1"), null, "the line starts with no capture at all");
 
-      // Two identical edits, the second carrying every thermal field a client
-      // could invent. The only difference between them is the smuggled data, so
-      // any difference in the outcome is that data having reached something.
+      // Two edits that both MOVE the pick, the second carrying every thermal
+      // field a client could invent. The only difference between them is the
+      // smuggled data, so any difference in the outcome is that data having
+      // reached something.
       const plain = await requestJson(ops, "/api/ops/lines/ql_s1", {
-        method: "PATCH", json: { room: "Bed 1 revised" },
+        method: "PATCH", json: { options: { glazing: "double-lowe" } },
       });
       assert.equal(plain.response.status, 200, "no new refusal — no configuration_not_eligible, no 409");
       const [before] = await sql("SELECT status, line_total AS total, performance_figures_json AS figures FROM quote_line WHERE id='ql_s1'");
@@ -195,7 +251,7 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.ok(before.total > 0, "and it is still priced");
 
       const laden = await requestJson(ops, "/api/ops/lines/ql_s1", {
-        method: "PATCH", json: { room: "Bed 1 revised", ...CLIENT_THERMAL },
+        method: "PATCH", json: { options: { glazing: "double-clear" }, ...CLIENT_THERMAL },
       });
       assert.equal(laden.response.status, 200, "still no refusal");
       assert.equal(mentionsAFigure(laden.body), false, "and the response is unchanged in shape");
@@ -205,6 +261,82 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.equal(after.total, before.total, "same price");
       assert.equal(after.figures, ABSENT,
         "and the body's 0.11/0.99 reached nothing — the stored figures are the server's own resolution");
+    });
+
+    // ── §1.4: the outage triad — the defect this phase shipped and unshipped ──
+    //
+    // As first built, every writer re-resolved on every save. A room-label edit
+    // during a catalogue outage overwrote a good capture with present-and-null,
+    // asserting "the catalogue has no figure for this product" on a save that
+    // never successfully asked — and W3 did it to EVERY ordinary line on EVERY
+    // customer autosave. Re-resolving an unmoved pick is a recompute of a
+    // captured snapshot, which SNAP-AC-9 forbids outright; the outage is only
+    // its loudest symptom. The catalogue is down for this whole run, so if any
+    // of these three re-resolved, it would show.
+    await t.test("§1.4 an ops save that leaves the pick alone leaves the figures byte-identical", async () => {
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='ql_s1'`);
+
+      for (const [what, body] of [
+        ["a note", { room: "Bed 1, revised again" }],
+        ["a size", { width: "1600" }],
+        ["a quantity", { qty: 7 }],
+      ]) {
+        const r = await requestJson(ops, "/api/ops/lines/ql_s1", { method: "PATCH", json: body });
+        assert.equal(r.response.status, 200, `the ${what} edit succeeds`);
+        assert.equal(await figuresOf("ql_s1"), FIGURES_2_4,
+          `${what} is not the pick, so the capture stands — a save that never asked the catalogue cannot report what it says`);
+      }
+
+      // And the other half of the same rule: a moved pick DOES re-resolve, and
+      // an honest absence is right there, because the stored figures describe a
+      // glass this line no longer has.
+      const moved = await requestJson(ops, "/api/ops/lines/ql_s1", {
+        method: "PATCH", json: { options: { glazing: "triple-lowe" } },
+      });
+      assert.equal(moved.response.status, 200);
+      assert.equal(await figuresOf("ql_s1"), ABSENT,
+        "pinning 2.4/0.32 onto a configuration the row no longer has would be worse than an honest null");
+    });
+
+    await t.test("§1.4 a customer autosave that moves no pick rewrites nothing, on any line", async () => {
+      // This is the one that mattered most: W3 rewrote every ordinary line on
+      // every project save. One autosave during an outage would have nulled a
+      // whole project.
+      const autosaver = new Session(baseUrl);
+      await login(autosaver, "/api/auth", "autosave-capture@example.com");
+      const made = await requestJson(autosaver, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Autosave project",
+          items: [aLine({ code: "W01" }), aLine({ code: "W02", location: "Kitchen" }), aLine({ code: "W03", location: "Bed" })],
+        },
+      });
+      const ids = made.body.items.map((i) => i.id);
+      assert.equal(ids.length, 3);
+
+      // Two of them carry real captures; the third is left as a pre-capture
+      // NULL, which must also survive untouched (SNAP-AC-10 — no opportunistic
+      // backfill on touch).
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id IN ('${ids[0]}','${ids[1]}')`);
+      await sql(`UPDATE quote_line SET performance_figures_json=NULL WHERE id='${ids[2]}'`);
+
+      const autosave = await requestJson(autosaver, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Autosave project",
+          items: [
+            { ...aLine({ code: "W01" }), serverId: ids[0], location: "Living, renamed" },
+            { ...aLine({ code: "W02", location: "Kitchen" }), serverId: ids[1], width: "1300" },
+            { ...aLine({ code: "W03", location: "Bed" }), serverId: ids[2] },
+          ],
+        },
+      });
+      assert.equal(autosave.response.status, 200, "the autosave succeeds");
+
+      assert.equal(await figuresOf(ids[0]), FIGURES_2_4, "a renamed line keeps its capture");
+      assert.equal(await figuresOf(ids[1]), FIGURES_2_4, "a resized line keeps its capture");
+      assert.equal(await figuresOf(ids[2]), null,
+        "and a line that predates the capture is still NULL — a figure fetched now for a product chosen months ago is a display-time read wearing a snapshot's clothes");
     });
 
     // ── SNAP-AC-9 / the composite parent ────────────────────────────────────
@@ -269,7 +401,9 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       assert.match(before, /sr_cap/, "the platform record under test is present");
       assert.match(before, /cr_cap/);
 
-      const patched = await requestJson(ops, "/api/ops/lines/ql_s2", { method: "PATCH", json: { qty: 5 } });
+      const patched = await requestJson(ops, "/api/ops/lines/ql_s2", {
+        method: "PATCH", json: { productSlug: "amj80-series-awning-window" },
+      });
       assert.equal(patched.response.status, 200);
       assert.equal(await figuresOf("ql_s2"), ABSENT, "the line captured");
       assert.equal(await digest(), before,

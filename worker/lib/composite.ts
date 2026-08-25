@@ -22,7 +22,7 @@
 import type { Env } from "../types";
 import { priceItem } from "./lines";
 import { uuid } from "./util";
-import { fetchFigureCatalogue, figuresJson, resolveFigures, type LineFigures } from "./figures";
+import { captureFigures, fetchFigureCatalogue, figuresJson, pickMoved, resolveFigures, type LineFigures } from "./figures";
 import { ensureCatalogue } from "./catalogue";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
@@ -366,6 +366,8 @@ export interface SegmentRow {
   /** Optional because only loadSegment selects it, and loadSegment is its only
    *  reader. The other SELECTs typed as SegmentRow predate the unit note. */
   room_label?: string | null;
+  /** Same: only loadSegment selects it, for §1.4's carry-forward. */
+  performance_figures_json?: string | null;
 }
 
 /** Load a segment together with the opening it belongs to. */
@@ -374,7 +376,7 @@ export async function loadSegment(env: Env, segmentId: string): Promise<
 > {
   const segment = await env.DB.prepare(
     `SELECT id, parent_line_id, project_id, product_slug, options_json, dims_json,
-            qty_per_parent, segment_seq, room_label
+            qty_per_parent, segment_seq, room_label, performance_figures_json
        FROM quote_line WHERE id=? AND parent_line_id IS NOT NULL`,
   ).bind(segmentId).first<SegmentRow>();
   if (!segment) return null;
@@ -471,11 +473,20 @@ export async function updateSegment(env: Env, args: {
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,
   });
 
-  // A human has just re-specified this unit, so the machine's frozen snapshot no
-  // longer describes it — the figures are resolved from what was chosen here.
-  const figures = resolveFigures(
-    await fetchFigureCatalogue(env, [productSlug]),
-    { productSlug, variantId: null, options },
+  // §1.4: a note- or size-only edit leaves the pick alone, so the unit's own
+  // record is carried forward and the catalogue is not consulted at all. Only a
+  // unit whose product or glass actually moved is re-resolved — the machine's
+  // frozen snapshot no longer describes that one.
+  const pick = { productSlug, variantId: null, options };
+  const storedPick = {
+    productSlug: segment.product_slug,
+    variantId: null,
+    glazing: String(parentOptions(segment.options_json).glazing ?? "") || null,
+    figuresJson: segment.performance_figures_json ?? null,
+  };
+  const figures = captureFigures(
+    await fetchFigureCatalogue(env, pickMoved(pick, storedPick) ? [productSlug] : []),
+    pick, storedPick,
   );
 
   await env.DB.prepare(
@@ -486,7 +497,7 @@ export async function updateSegment(env: Env, args: {
     productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
     qtyPerParent, note || null, total, total == null ? "incomplete" : "ready",
-    figuresJson(figures), segment.id,
+    figures, segment.id,
   ).run();
 
   await recomputeComposite(env, parent.id);

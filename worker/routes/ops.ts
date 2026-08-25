@@ -41,7 +41,7 @@ import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { refreshLearningExampleEligibility } from "../lib/ai/examples";
 import { getProductBySlug, families } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
-import { fetchFigureCatalogue, figuresFromVariant, figuresJson, resolveFigures } from "../lib/figures";
+import { captureFigures, fetchFigureCatalogue, figuresFromVariant, figuresJson, pickMoved } from "../lib/figures";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
 import { opsThermal } from "./ops-thermal";
@@ -131,6 +131,9 @@ interface LineRow {
   origin?: string | null; review_json?: string | null;
   ai_proposal_line_id?: string | null; selected_variant_id?: string | null;
   configuration_snapshot_json?: string | null; pricing_snapshot_json?: string | null;
+  /** Captured figures (0058): this line's own record of what its product+variant
+   *  performed at when the pick last moved. A snapshot, never re-read live. */
+  performance_figures_json?: string | null;
   edited_fields?: string | null; edit_version: number;
   owner_user_id?: string | null;
   quote_edit_version?: number;
@@ -1119,14 +1122,24 @@ ops.patch("/lines/:id", async (c) => {
     // Same engine as the customer save and the schedule parse — a reviewer edit
     // must never produce a different number from the one the customer saw.
     lineTotal = await priceItem(c.env, { productSlug, width, height, options, qty, ownerUserId: line.owner_user_id ?? null });
-    // A manual line names no variant, so the figures are resolved from the
-    // product and the glass it was priced for. Best-effort by construction: an
-    // unreachable catalogue or an ambiguous product stores null and the edit
-    // proceeds exactly as it does today (SNAP-AC-4).
-    nextFigures = figuresJson(resolveFigures(
-      await fetchFigureCatalogue(c.env, [productSlug]),
-      { productSlug, variantId: null, options: options as Record<string, string> },
-    ));
+    // §1.4: the figures move when, and only when, the pick moves. A note- or
+    // size-only edit carries the line's own record forward and consults nothing
+    // — re-resolving an unmoved pick recomputes a captured snapshot
+    // (SNAP-AC-9), and during a catalogue outage it would erase a good one.
+    // A moved pick resolves best-effort: an unreachable catalogue or an
+    // ambiguous product stores null and the edit proceeds exactly as it does
+    // today (SNAP-AC-4).
+    const pick = { productSlug, variantId: null, options: options as Record<string, string> };
+    const storedPick = {
+      productSlug: line.product_slug,
+      variantId: line.selected_variant_id ?? null,
+      glazing: String(safeParse(line.options_json).glazing ?? "") || null,
+      figuresJson: line.performance_figures_json ?? null,
+    };
+    nextFigures = captureFigures(
+      await fetchFigureCatalogue(c.env, pickMoved(pick, storedPick) ? [productSlug] : []),
+      pick, storedPick,
+    );
   }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
   // carrying review flags ⇒ technical_review (submittable, staff must resolve);

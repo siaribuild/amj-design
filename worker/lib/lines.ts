@@ -83,9 +83,6 @@ export interface LineRow {
   selected_variant_id?: string | null;
   configuration_snapshot_json?: string | null;
   pricing_snapshot_json?: string | null;
-  /** Captured figures (0058): this line's own record of what its product+variant
-   *  performed at when it was last saved. A snapshot, never re-read live. */
-  performance_figures_json?: string | null;
   recommendation_basis?: string | null;
   recommendation_confidence?: string | null;
   composite_axis?: string | null;
@@ -218,11 +215,19 @@ export async function priceItem(env: Env, it: {
 export const itemProductSlug = (raw: unknown): string =>
   String(((raw ?? {}) as Record<string, unknown>).productSlug ?? "");
 
+/** The options a client item names, on the same terms itemFields stores them —
+ *  read before a save batch to decide which picks moved, and inside itemFields
+ *  to serialise them. One expression, so the two cannot disagree. */
+export const itemOptions = (raw: unknown): Record<string, string> => {
+  const o = ((raw ?? {}) as Record<string, unknown>).options;
+  return (o && typeof o === "object" ? o : {}) as Record<string, string>;
+};
+
 export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | null) {
   const it = (raw ?? {}) as Record<string, unknown>;
   const width = String(it.width ?? "");
   const height = String(it.height ?? "");
-  const options = (it.options && typeof it.options === "object" ? it.options : {}) as Record<string, string>;
+  const options = itemOptions(raw);
   const qty = Math.max(1, Math.floor(Number(it.qty) || 1));
   const productSlug = itemProductSlug(raw);
 

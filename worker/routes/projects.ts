@@ -5,8 +5,8 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, itemFields, itemProductSlug, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
-import { fetchFigureCatalogue, figuresJson, resolveFigures } from "../lib/figures";
+import { itemToInsert, itemFields, itemProductSlug, itemOptions, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
+import { captureFigures, fetchFigureCatalogue, figuresJson, pickMoved, resolveFigures } from "../lib/figures";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid, normNote } from "../lib/util";
@@ -352,6 +352,7 @@ projects.put("/current/lines", async (c) => {
     id: string; origin: string | null; ai_proposal_line_id: string | null;
     pricing_snapshot_json: string | null; configuration_snapshot_json: string | null;
     selected_variant_id: string | null; line_total: number | null; line_kind: string | null;
+    performance_figures_json: string | null;
   };
   // parent_line_id IS NULL — OPENINGS only, matching the read route, which
   // returns segments nested inside their parent rather than as items.
@@ -372,7 +373,7 @@ projects.put("/current/lines", async (c) => {
   const storedRows = ((await c.env.DB.prepare(
     `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
             ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
-            selected_variant_id, line_total, line_kind
+            selected_variant_id, line_total, line_kind, performance_figures_json
        FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
@@ -408,15 +409,39 @@ projects.put("/current/lines", async (c) => {
   }
   // Composite parents whose derived fields must be rebuilt once the batch lands.
   const recomputeParents: string[] = [];
-  // Captured figures: ONE catalogue consultation for the whole save, never one
-  // per line (SNAP-AC-7). It cannot fail — an unreachable catalogue yields an
-  // empty one and every line below stores present-and-null, with the save,
-  // the price and the response unchanged (SNAP-AC-5/15).
-  const figureCatalogue = await fetchFigureCatalogue(c.env, resolved.map(({ raw }) => itemProductSlug(raw)));
-  const figuresFor = (productSlug: string, optionsJson: string, variantId: string | null) =>
-    figuresJson(resolveFigures(figureCatalogue, {
-      productSlug, variantId, options: safeParse(optionsJson) as Record<string, string>,
-    }));
+  // Captured figures. §1.4: the figures move when, and only when, the pick
+  // moves — so an autosave that changed a note or a size carries every line's
+  // record forward untouched and asks the catalogue nothing. Before this rule
+  // W3 rewrote EVERY ordinary line's figures on EVERY project save: one
+  // autosave during a catalogue outage would have nulled a whole project's
+  // captures (SNAP-AC-9).
+  //
+  // What is left is ONE consultation for the whole save, over the moved picks
+  // only, never one per line (SNAP-AC-7) — and none at all when nothing moved.
+  // It cannot fail: an unreachable catalogue yields an empty one, the moved
+  // lines store present-and-null, and the save, the price and the response are
+  // unchanged (SNAP-AC-5/15).
+  const picks = resolved.map(({ raw, id }) => {
+    const row = id ? existing.get(id) : undefined;
+    return {
+      // A fresh customer-path resolution never carries the retained
+      // selected_variant_id: once the glazing has moved it is stale as a
+      // figures key, and SNAP-AC-14 records what the CUSTOMER chose (§4.3).
+      pick: { productSlug: itemProductSlug(raw), variantId: null, options: itemOptions(raw) },
+      stored: row
+        ? {
+          productSlug: row.product_slug,
+          variantId: row.selected_variant_id,
+          glazing: String(safeParse(row.options_json ?? "").glazing ?? "") || null,
+          figuresJson: row.performance_figures_json,
+        }
+        : null,
+    };
+  });
+  const figureCatalogue = await fetchFigureCatalogue(
+    c.env, picks.flatMap((p) => (pickMoved(p.pick, p.stored) ? [p.pick.productSlug] : [])));
+  const figuresFor = (index: number) =>
+    captureFigures(figureCatalogue, picks[index].pick, picks[index].stored);
   for (const { raw, i, id } of resolved) {
     const f = await itemFields(c.env, raw, project.owner_user_id);
     if (id) {
@@ -546,10 +571,7 @@ projects.put("/current/lines", async (c) => {
           // what replaces it is the figures of WHAT THE CUSTOMER CHOSE, never
           // nothing (SNAP-AC-14) — so the reviewer's comparison is available on
           // precisely the lines stamped customerConfigurationChanged.
-          figuresFor(
-            f.product_slug, f.options_json,
-            stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
-          ),
+          figuresFor(i),
           id, project.id, project.id, nextQuoteVersion, mutationToken,
         ));
         continue;
@@ -561,7 +583,7 @@ projects.put("/current/lines", async (c) => {
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.qty, f.line_total, f.status, i, f.review_json, edited, figuresFor(f.product_slug, f.options_json, null), id, project.id, project.id, nextQuoteVersion, mutationToken));
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.qty, f.line_total, f.status, i, f.review_json, edited, figuresFor(i), id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
       const r = await itemToInsert(c.env, project.id, raw, i, project.owner_user_id);
       stmts.push(c.env.DB.prepare(
@@ -572,7 +594,7 @@ projects.put("/current/lines", async (c) => {
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, figuresFor(r.product_slug, r.options_json, null), project.id, nextQuoteVersion, mutationToken));
+      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, figuresFor(i), project.id, nextQuoteVersion, mutationToken));
     }
   }
   stmts.push(hasTitle

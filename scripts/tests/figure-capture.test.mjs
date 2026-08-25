@@ -153,7 +153,11 @@ await build({
 });
 const {
   NULL_FIGURES, figuresJson, figuresFromVariant, resolveFigures, fetchFigureCatalogue,
+  captureFigures, pickMoved,
 } = await import(pathToFileURL(bundle).href);
+
+/** A captured unknown, as stored. Distinct from SQL NULL (SNAP-AC-8). */
+const ABSENT_JSON = '{"uValue":null,"shgc":null}';
 
 const variant = (variantId, glazingOptionSlug, uValue, shgc, over = {}) => ({
   variantId, glazingOptionSlug, glazingClass: "double_lowe", uValue, shgc,
@@ -295,4 +299,82 @@ test("the catalogue read prefers the shared thermal profile over the legacy vari
     async () => [{ ...row, thermalProfile: null }]);
   assert.deepEqual(resolveFigures(legacyOnly, pick({ variantId: "legacy" })),
     { uValue: 9.9, shgc: 0.99 }, "and without one the legacy variants still resolve");
+});
+
+// ── §1.4: figures move when, and only when, the pick moves ──────────────────
+//
+// Re-resolving an UNMOVED pick against today's catalogue is a recompute of a
+// captured snapshot, which SNAP-AC-9 forbids outright. The outage — a room-label
+// edit overwriting a good figure with present-and-null — is the loud symptom of
+// that quieter breach, not a separate concern.
+
+const stored = (over = {}) => ({
+  productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
+  figuresJson: '{"uValue":2.4,"shgc":0.32}', ...over,
+});
+const lowe = catalogue("amj-awning", [variant("dg-lowe", "double-lowe", 2.4, 0.32)]);
+const glazed = (glazing) => pick({ options: glazing ? { glazing } : {} });
+
+test("SNAP-AC-9 an unmoved pick carries the stored figures forward verbatim, and consults nothing", () => {
+  // The empty catalogue is the outage. If this resolved, the answer would be
+  // present-and-null — so a stored figure surviving it is the whole property.
+  assert.equal(
+    captureFigures(new Map(), glazed("double-lowe"), stored()),
+    '{"uValue":2.4,"shgc":0.32}',
+    "a save that leaves the pick alone cannot erase a valid capture, outage or not");
+  assert.equal(
+    captureFigures(lowe, glazed("double-lowe"), stored({ figuresJson: '{"uValue":9.9,"shgc":0.99}' })),
+    '{"uValue":9.9,"shgc":0.99}',
+    "and it is not re-derived even when the catalogue is answering — a snapshot is not a lookup");
+});
+
+test("SNAP-AC-10 an unmoved pick never backfills a line that predates the capture", () => {
+  assert.equal(captureFigures(lowe, glazed("double-lowe"), stored({ figuresJson: null })), null,
+    "NULL stays NULL: figures fetched at edit time for a product chosen months ago are a display-time read in a snapshot's clothes");
+  assert.equal(captureFigures(new Map(), glazed("double-lowe"), stored({ figuresJson: ABSENT_JSON })), ABSENT_JSON,
+    "and a captured absence stays a captured absence rather than being re-asked");
+});
+
+test("SNAP-AC-1 a moved pick resolves fresh, and a failed resolution is honest THERE", () => {
+  const moved = pick({ options: { glazing: "double-clear" } });
+  assert.equal(captureFigures(new Map(), moved, stored()), ABSENT_JSON,
+    "the stored 2.4/0.32 describes a configuration the row no longer has — pinning it would be worse than an honest null");
+  assert.equal(
+    captureFigures(
+      catalogue("amj-awning", [variant("dg-clear", "double-clear", 3.9, 0.61)]), moved, stored()),
+    '{"uValue":3.9,"shgc":0.61}',
+    "and when the catalogue answers, the figures are the new pick's");
+});
+
+test("SNAP-AC-13 a new row has no stored pick, so it always resolves", () => {
+  assert.equal(captureFigures(lowe, glazed("double-lowe"), null), '{"uValue":2.4,"shgc":0.32}');
+  assert.equal(captureFigures(new Map(), glazed("double-lowe"), null), ABSENT_JSON);
+});
+
+test("§1.4 the pick is exactly the resolver's inputs — nothing else can move the figures", () => {
+  const moves = (p, s = stored()) => pickMoved(p, s);
+
+  assert.equal(moves(glazed("double-lowe")), false, "the same pick has not moved");
+  assert.equal(moves(pick({ productSlug: "amj-slider", options: { glazing: "double-lowe" } })), true,
+    "a different product moves it");
+  assert.equal(moves(glazed("double-clear")), true, "a different glass moves it");
+  assert.equal(moves(glazed(null)), true, "and clearing the glass moves it too");
+
+  // An option the resolver never consults cannot change what it would answer.
+  assert.equal(
+    moves(pick({ options: { glazing: "double-lowe", colour: "Monument", hardware: "D Shape" } })),
+    false,
+    "colour and hardware are not the pick — the resolver never reads them");
+
+  // A pick naming no variant does not move the variant term; only an explicit,
+  // different id does. This is what stopped W2 re-resolving on a dims-only edit
+  // through a retained selected_variant_id.
+  assert.equal(moves(glazed("double-lowe"), stored({ variantId: "dg-lowe" })), false,
+    "a pick that names no variant leaves the variant term alone");
+  assert.equal(moves(pick({ variantId: "dg-lowe", options: { glazing: "double-lowe" } }),
+    stored({ variantId: "dg-lowe" })), false, "naming the same variant is not a move");
+  assert.equal(moves(pick({ variantId: "dg-other", options: { glazing: "double-lowe" } }),
+    stored({ variantId: "dg-lowe" })), true, "naming a different one is");
+
+  assert.equal(pickMoved(glazed("double-lowe"), null), true, "and a row with no stored pick always resolves");
 });
