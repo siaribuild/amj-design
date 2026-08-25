@@ -1,13 +1,25 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 18**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 19**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 18 resolves a tension inside VIEW-AC-1 that the round-2 tester measured** — the
+**Revision 19 corrects VIEW-AC-15**, which described a state its own subject cannot be in.
+The criterion put the reference *"falling back to `Project` while the record has not
+loaded"* — but the viewer's back control never renders in that state: its subject is only
+built once the record has resolved a line. The developer implemented the fallback twice,
+deleted the unreachable copy, and **said so rather than descoping it silently**. Executed
+here before ruling: `src/ops2/projects/LinePage.tsx:124` builds the subject only with a
+resolved `record`, and `LinePage.tsx:201` — the **page-level** control, where the pre-load
+state is real — keeps `Project` untouched. **The criterion now says what is true**, and
+names where the never-empty guarantee lives, because a fallback would have masked the pin
+and made it look optional. Two stale citations of `LinePage.tsx:136` are corrected to
+`:201` throughout; the file moved while the phase was being built.
+
+**Revision 18 resolved a tension inside VIEW-AC-1 that the round-2 tester measured** — the
 criterion was requiring two things that cannot both hold on a short wide screen, so no
 implementation could satisfy it as written. Revision 16 required the drawing to grow with
 **width**; revision 17 required the **caption** to be readable at every width. On a 2560×1080
@@ -15,16 +27,15 @@ ultrawide a landscape drawing grown to claim the width would stand taller than t
 putting the caption — and most of the drawing — below the fold. **The ruling: there is one
 guarantee, not two — the whole drawing and its caption are visible together, and within that
 the drawing is as large as the viewport permits.** Which dimension governs is whichever one
-binds, and the `62vh` that governs it today goes the same way the `720px` went in revision
-16. `ASSUMED:` §13.18; §13.16 is RETIRED as the wrong question.
+binds, and the `62vh` that governed it went the way the `720px` went in revision 16.
+`ASSUMED:` §13.18; §13.16 is RETIRED as the wrong question.
 
 **Revision 17** carried the owner's **veto of §13.17** — the canvas back control's label —
 taken after the developer found a precedent nobody had checked: the line page's own back
 control already names that same destination by its **reference**
-(`src/ops2/projects/LinePage.tsx:136`, `label: record ? record.ref : "Project"`). The spec
+(`src/ops2/projects/LinePage.tsx:201`, `label: record ? record.ref : "Project"`). The spec
 had assumed the project's *title*, which would have given one destination two names in one
-console. **VIEW-AC-15 requires the reference**, and the pre-load fallback is not an
-assumption at all: `Project` is what the precedent already uses.
+console. **VIEW-AC-15 requires the reference.**
 
 **Revision 16** carried **two owner decisions taken at the Phase 2 tester gate**, plus the
 tester's MINOR.
@@ -42,7 +53,7 @@ tester's MINOR.
 - **VIEW-AC-1 is made unambiguous** that "the largest size the viewport allows" is a
   **measurement**. The criterion was already correct in intent; the implementation capped the
   drawing at a flat 720px at every desk width, a number lifted from the mock's *simulated
-  desk frame*. (Revision 18 finishes the job: the replacement number is gone too.)
+  desk frame*. (Revision 18 finished the job: the replacement number is gone too.)
 
 Revision 15 gave **every register entry a state** (§13) and discharged §13.14/§13.15;
 revision 14 corrected VIEW-AC-12's false premise; revision 13 amended the CERT-AC-10 fence;
@@ -497,7 +508,7 @@ is **fixed, not accepted**. Criteria: §8.1, VIEW-AC-13…17.
 > **D11's label half, sharpened the same day and against this spec's recommendation.**
 > Revision 16 assumed the project's **title** (§13.17). The developer then found the
 > precedent: the line page's own back control names that same destination by its
-> **reference** — `src/ops2/projects/LinePage.tsx:136`,
+> **reference** — `src/ops2/projects/LinePage.tsx:201`,
 > `backTo={{ label: record ? record.ref : "Project", href: recordPath }}`. Two controls,
 > one destination, two vocabularies. **The owner ruled for the reference**: one
 > console-wide convention, matching the control a reviewer already uses daily. The cost he
@@ -566,7 +577,7 @@ merely listed):
 > orphaning a live ops caption. The reader, the route field and the type member have since
 > been deleted, so the exemption has nothing left to exempt.
 >
-> See §12 note 10 — this was the second of four, and the pattern is now a rule.
+> See §12 note 10 — this was the second of six, and the pattern is now a rule.
 
 **Non-vacuity, anchored the way SNAP-AC-2 is:** the walk must be **shown to have reached**
 `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`. A scan whose
@@ -870,23 +881,23 @@ permits** — and nothing that explains the drawing's notation.
 > **Which dimension governs: whichever one binds.** On a tall narrow viewport the available
 > width binds; on a short wide one the available height binds. Neither is *the* governor,
 > and a rule naming one is wrong on the other shape — which is exactly what shipped.
-> `.ops2-viewer__svg` is governed by height alone (`height: 62vh; width: auto`), measured by
-> the tester with each dimension moved separately:
+> `.ops2-viewer__svg` was governed by height alone (`height: 62vh; width: auto`), measured
+> by the tester with each dimension moved separately:
 >
 > ```
 > WIDTH-ONLY    1280 → 887×620    1920 → 887×620    2560 → 887×620
 > HEIGHT-ONLY    900 → 799×558    1400 → 1242×868
 > ```
 >
-> So an ultrawide **2560×1080** — a common ops shape — gets precisely the drawing a
-> 1280×1080 window gets. Width contributes nothing.
+> So an ultrawide **2560×1080** — a common ops shape — got precisely the drawing a
+> 1280×1080 window got. Width contributed nothing.
 >
-> **The magic number goes with it.** `62vh` is the sibling of the `720px` that caused round
-> 1's MINOR: a figure nobody has defended, silently deciding how much of the screen the
-> drawing may claim. Under this rule the budget is not chosen — **it is what is left**: the
-> viewer's own space after its chrome and its caption. Fitting a fixed-aspect drawing into a
-> box is something the platform already does for an SVG that carries its own aspect ratio;
-> no arithmetic about viewport percentages belongs in this component.
+> **The magic number goes with it.** `62vh` was the sibling of the `720px` that caused
+> round 1's MINOR: a figure nobody had defended, silently deciding how much of the screen
+> the drawing may claim. Under this rule the budget is not chosen — **it is what is left**:
+> the viewer's own space after its chrome and its caption. Fitting a fixed-aspect drawing
+> into a box is something the platform already does for an SVG that carries its own aspect
+> ratio; no arithmetic about viewport percentages belongs in this component.
 >
 > **`ASSUMED:` §13.18** — the drawing may claim **all** of that remaining space rather than
 > a share of it, and the caption never scrolls out of view. That is the reading of R21 this
@@ -1120,18 +1131,47 @@ record's canvas.
 **VIEW-AC-15 (the control names what it returns to — and names it the way this console
 already does)** — *Given* the viewer was opened from the record's desk canvas, *When* its
 **visible label** and its **accessible name** are read, *Then* both are the record's
-**reference** (`OF-Q-10482`), falling back to `Project` while the record has not loaded —
-and **neither names the line**. *Given* the viewer was opened from the line page, *Then*
-both name the line, exactly as they do today. In no state does the label name one
-destination while the control goes to another.
+**reference** (`OF-Q-10482`), and **neither names the line**. *Given* the viewer was opened
+from the line page, *Then* both name the line, exactly as they do today. In no state does
+the label name one destination while the control goes to another.
 
 **Why the reference and not the project's name — owner ruling, 2026-08-25 (§13.17 VETOED).**
 The line page's back control already names this same destination, and it names it by
-reference: `src/ops2/projects/LinePage.tsx:136`,
+reference: `src/ops2/projects/LinePage.tsx:201`,
 `backTo={{ label: record ? record.ref : "Project", href: recordPath }}`. One destination
 must not have two vocabularies in one console, and the reviewer already reads that control
-daily. **The fallback is the same precedent's `Project`** — it is not a separate assumption
-and must not be "improved" independently of `LinePage`; if one changes, both change.
+daily.
+
+**There is no `Project` fallback on the viewer's control, and that is not a descope —
+corrected revision 19.** Revisions 17 and 18 wrote the reference *"falling back to `Project`
+while the record has not loaded"*. **The viewer's control cannot be in that state:** its
+subject is built only once the record has resolved a line
+(`src/ops2/projects/LinePage.tsx:124` passes the reference only when `record` exists), so
+there is no moment at which the viewer is on screen with nothing behind it. The developer
+implemented the fallback in both places, deleted the unreachable copy and said so rather
+than dropping it quietly; the criterion is corrected to match reality rather than the code
+kept unreachable to match a sentence.
+
+**What that clause was protecting still stands, in the two places it is real:**
+
+- **The page-level control keeps `Project`.** `LinePage.tsx:201` is the *page's* back
+  control, not the viewer's — a different control, on a surface where the pre-load state
+  genuinely exists. It is untouched, and it is not VIEW-AC-15's subject. **If one of these
+  two labels ever changes, both change**; that is the one-vocabulary rule, and it is what
+  §13.17 settled.
+- **The never-empty guarantee is pinned, not assumed.** The reference cannot be blank:
+  `src/ops2/projects/record.ts:314` sets `ref: str(publicRef) ?? id`, and
+  `parseProjectRecord` returns `null` without a non-empty trimmed id — asserted in
+  `scripts/tests/ops2-record.test.mjs`. **A fallback here would have masked that pin and
+  made it look optional**, which is why its absence is the safer shape: if the guarantee
+  ever breaks, a test fails loudly instead of a label quietly reading `Project`.
+
+**It can be long, and that is not a reason to change the vocabulary.** `public_ref` is
+nullable (`migrations/0011_project_ref.sql`) and the id is a UUID, so a record served
+without a reference labels this control with 36 characters rather than ten. The console
+handles that as a **display** problem (the cap in `src/ops2/styles/line.css:122-129`), never
+by falling back to the project's title — that would reintroduce the vocabulary the owner
+vetoed, on exactly the records where the two controls would then disagree.
 
 The cost the owner accepted, stated to him: a reference is an identifier rather than a name
 — it says *which record*, not *which job*. **The general rule still governs and outranks the
@@ -1531,6 +1571,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **`dataSource` on a dimension rule** | Untouched. Same token, different live concept — CERT-AC-3's predicate is narrow on purpose. | §2, out of scope |
 | **The `ElevationLegend` export** | **Deleted**, together with the assertion that pinned it. Zero callers and no `.elev-legend` rule in any stylesheet — it could not render correctly if something called it. | VIEW-AC-12, D12 |
 | **Enlarging a drawing from the record's desk canvas** | One push, to that line's own drawing address; back — control, Escape or gesture — pops once to the **record**, with the selected row and the canvas intact; the control carries the record's **reference**, never the line. | D11, VIEW-AC-13…17 |
+| **A project served without a `public_ref`** | The back control shows the id — 36 characters — and is **capped as a display problem** (`src/ops2/styles/line.css:122-129`). Never a fallback to the project's title: that would reintroduce the vetoed vocabulary on exactly the records where the two back controls would then disagree. | VIEW-AC-15, §13.17 |
 | **A reviewer who wants to change the product** | They leave this surface and use the console they use today. Nothing here offers to do it, by ruling. Direction for the future surface: §2.1. | R28 |
 | **Leaving the detail** | Back, with the standard gesture, popping to the line page. Never "Done", never an X. | R29, D8 |
 | **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** *(From the canvas it is one back, to the record: only one entry was ever pushed.)* | R31, VIEW-AC-2d, VIEW-AC-14 |
@@ -1607,10 +1648,12 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
    right place while *naming* the wrong one passes every navigation assertion. Assert the
    label and the destination **together**, in one test, or neither is pinned. **And before
    inventing a label, check whether the destination already has one somewhere in this
-   console** — §13.17 was vetoed precisely because it did (`LinePage.tsx:136` names the
+   console** — §13.17 was vetoed precisely because it did (`LinePage.tsx:201` names the
    record by its reference), and neither the spec nor the gate that approved it had looked.
    A label is a convention, and a convention that already exists is not a decision to
-   re-take.
+   re-take. **Two controls, two states:** the *page's* back control has a real pre-load
+   state and keeps `Project`; the *viewer's* has none, so it has no fallback (VIEW-AC-15,
+   revision 19). Do not test one against the other's expectations.
 8. **VIEW-AC-2's numbers are the assertions, and this criterion inverted between drafts.**
    Revision 9 asserted `history.length` is *unchanged*, because this spec then had the
    viewer as an overlay; R31 makes the opposite true, so anyone reusing an earlier draft's
@@ -1651,16 +1694,23 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
       could not have rendered correctly for any future consumer either.
     - **And the absence that is the same defect inverted (revision 17): §13.17's label.**
       The spec proposed a *new* convention for naming the project record without checking
-      whether the console already had one. It did — `LinePage.tsx:136` — and the owner
+      whether the console already had one. It did — `LinePage.tsx:201` — and the owner
       vetoed the invention. **"There is no precedent" is a claim too**, and it is the one
       nobody thinks to grep, because an absence does not announce itself.
 
+    **A seventh instance closed itself the right way (revision 19), and it is the model.**
+    VIEW-AC-15's *"falling back to `Project` while the record has not loaded"* was a claim
+    about a **state**, and the state does not exist on that control. The developer executed
+    it, deleted the unreachable branch, **and reported it as a spec defect instead of
+    quietly not building it.** That is the loop working: a criterion that cannot be
+    satisfied honestly is a defect in the criterion, and it comes back up the pipeline.
+
     **The tell is a sentence that sounds like verification and contains none:** "another
     consumer", "a legacy surface", "the customer site", "everywhere else", "somebody might
-    use it", "there is nothing like this yet". Each is a testable statement about the
-    repository dressed as a reason. When one appears in a criterion, an allowlist, an
-    exemption or a piece of new copy, **run the grep before believing it** — and prefer a
-    criterion that does not need the claim at all.
+    use it", "there is nothing like this yet", "while it is still loading". Each is a
+    testable statement about the repository dressed as a reason. When one appears in a
+    criterion, an allowlist, an exemption or a piece of new copy, **run the grep before
+    believing it** — and prefer a criterion that does not need the claim at all.
 11. **A journey that no criterion names will be tested by nobody — and it is a later stage
     that adds them.** The desk-canvas enlargement (§8.1) was introduced at
     **architect-conformance time**, to satisfy VIEW-AC-5, after §8 was written. It was a
@@ -1671,8 +1721,8 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
 12. **A two-variable measurement proves nothing about which variable did the work.**
     VIEW-AC-1's round-1 test grew viewport width and height together — (1280,900),
     (1920,1080), (2560,1440) — and asserted the drawing got bigger. It passed a drawing
-    governed **entirely by height**, which is why an ultrawide 2560×1080 gets exactly what a
-    1280×1080 window gets. **Move one dimension per sweep, and assert the dimension that
+    governed **entirely by height**, which is why an ultrawide 2560×1080 got exactly what a
+    1280×1080 window got. **Move one dimension per sweep, and assert the dimension that
     should have moved.** This is SNAP-AC-2's non-vacuity rule in a browser: a check that
     cannot fail for the reason the criterion exists is not coverage, it is a green light
     with nothing behind it. The same trap is waiting in any "it gets bigger / smaller /
@@ -1731,9 +1781,9 @@ the assumption.
 | 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer** | **VETOED — owner, 2026-08-25 (D12).** The criterion's own reason was that deleting the export was *"a separate decision that nobody has taken"*; the owner has taken it. Decided by evidence that arrived after revision 14: **zero callers repo-wide, and no `.elev-legend` rule in any stylesheet**, so the export could not render correctly even if called. VIEW-AC-12 now **requires** the deletion, together with the assertion that pinned it |
 | 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address: the ordinal matches what the labels already imply, and does not couple the URL to a label that changes if units are reordered |
 | 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
-| 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** "Is there a ceiling?" dissolved once the round-2 measurement arrived: there is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` goes now), but there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18, which asks the question that actually has an owner in it. What was measured under this assumption: `height: 62vh; width: auto`, ~1278×893 at 2560×1440, **and the same drawing at 2560×1080 as at 1280×1080** |
-| 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, truncated as `OpsPage` truncates, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. **The precedent nobody had checked:** the line page's back control already names this destination by its **reference** — `src/ops2/projects/LinePage.tsx:136`, `label: record ? record.ref : "Project"`. The owner ruled for the reference: **one console-wide convention**, matching the control a reviewer already uses daily. Cost he accepted: a reference says which record, not which job. **Rework: the label expression only** — destination, exits, focus and the canvas fix are untouched, and the pre-load fallback `Project` was already the precedent's, so it stops being an assumption at all. VIEW-AC-15 carries the ruling; §12 note 7 carries the lesson |
-| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — goes to the owner at acceptance.** The two things he might prefer instead: hold the drawing to a *share* of the screen (today's undefended `62vh` is one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — which is the same reasoning that produced revision 17's fence, now applied to the drawing itself |
+| 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** "Is there a ceiling?" dissolved once the round-2 measurement arrived: there is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` went now), but there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18, which asks the question that actually has an owner in it. What was measured under this assumption: `height: 62vh; width: auto`, ~1278×893 at 2560×1440, **and the same drawing at 2560×1080 as at 1280×1080** |
+| 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, truncated as `OpsPage` truncates, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. **The precedent nobody had checked:** the line page's back control already names this destination by its **reference** — `src/ops2/projects/LinePage.tsx:201`, `label: record ? record.ref : "Project"`. The owner ruled for the reference: **one console-wide convention**, matching the control a reviewer already uses daily. Cost he accepted: a reference says which record, not which job. **Rework: the label expression only** — destination, exits, focus and the canvas fix were untouched. *(Revision 19: the `Project` half of this entry was never the viewer's to carry — that control has no pre-load state. It stays on the page-level control where the state is real. VIEW-AC-15 says so now.)* |
+| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — goes to the owner at acceptance.** The two things he might prefer instead: hold the drawing to a *share* of the screen (the deleted `62vh` was one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — the same reasoning that produced revision 17's fence, applied to the drawing itself |
 
 ---
 
@@ -1746,24 +1796,29 @@ the whole drawing and its caption are visible together and the drawing takes eve
 left over, at every viewport shape. **Recommendation: as written** — R21 makes the drawing
 the element that matters most in the product, and a size the reviewer must scroll to read
 is not a size statement. The alternatives, if the owner wants one: hold the drawing to a
-share of the screen (`62vh` today, a figure nobody chose deliberately), or let the caption
+share of the screen (the deleted `62vh` was one, chosen by nobody), or let the caption
 scroll off a very wide screen so the drawing can claim more. **Nothing is blocked** — the
-assumption is what is being built, it is one stylesheet rule either way, and he sees it at
+assumption is what was built, it is one stylesheet rule either way, and he sees it at
 acceptance with the rest of Phase 2.
 
-**What closed this round.** §13.16 ("no ceiling on the growth") is **RETIRED** — the
-measurement showed it was the wrong question; there is no *fixed* ceiling, and there is a
-real one, the viewport. VIEW-AC-1's internal contradiction is resolved into one guarantee
-rather than two requirements, and its verification is now three single-dimension sweeps
-(§12 note 12) rather than the two-variable test that let a height-only implementation
-through.
+**What closed in revision 19.** VIEW-AC-15's fallback clause described a state the viewer's
+control cannot be in, and it is corrected rather than left for the code to satisfy with an
+unreachable branch. The console's `Project` fallback stays where the state is real — the
+page-level control — and the never-empty guarantee behind it is named in the criterion
+(`record.ts:314`, `parseProjectRecord`, pinned in `scripts/tests/ops2-record.test.mjs`),
+because **a fallback would have masked that pin and made it look optional**.
 
-**One thing stays with the design stage**, and is fenced rather than left loose: the
-drawing's dimension leaders scale with it — large on a big screen, a few pixels on a phone.
-That is indifferent to VIEW-AC-1 **because the caption states the size at every shape**. If
-the ui-designer's answer ever needs the caption to move, change or disappear at some width,
-that comes back here as a VIEW-AC-1 change, not a styling decision.
+**What closed in revision 18.** §13.16 ("no ceiling on the growth") is **RETIRED** — the
+measurement showed it was the wrong question. VIEW-AC-1's internal contradiction is resolved
+into one guarantee rather than two requirements, and its verification is three
+single-dimension sweeps (§12 note 12) rather than the two-variable test that let a
+height-only implementation through.
 
-**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph). §13.18 is
-OPEN and *being* built, which is the cheaper end of the same state. The remaining OPEN
-entries belong to Phase 3 and will be live at that phase's gate.
+**One thing stays with the design stage**, fenced rather than left loose: the drawing's
+dimension leaders scale with it — large on a big screen, a few pixels on a phone. That is
+indifferent to VIEW-AC-1 **because the caption states the size at every shape**. If the
+ui-designer's answer ever needs the caption to move, change or disappear at some width, that
+comes back here as a VIEW-AC-1 change, not a styling decision.
+
+**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph) and §13.18.
+The remaining OPEN entries belong to Phase 3 and will be live at that phase's gate.
