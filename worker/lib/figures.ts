@@ -1,8 +1,9 @@
 // Captured figures (ops2 "Why this product", Phase 3a — spec §7, design §4.3).
 //
 // A line's own record of its product+variant's Uw and SHGC, written at the
-// moment of every save that sets or changes the product or variant. A snapshot,
-// never a lookup: nothing here is ever called to DISPLAY a figure.
+// moment a save MOVES the pick — product, variant or glazing (§7.0) — and never
+// on a save that leaves it alone. A snapshot, never a lookup: nothing here is
+// ever called to DISPLAY a figure, and nothing re-derives a stored one.
 //
 // THE ONE HARD CONSTRAINT: the capture is never a gate. A save that succeeds
 // today must still succeed after this ships — same status, same stored values,
