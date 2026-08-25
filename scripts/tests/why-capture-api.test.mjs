@@ -273,7 +273,7 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
     // captured snapshot, which SNAP-AC-9 forbids outright; the outage is only
     // its loudest symptom. The catalogue is down for this whole run, so if any
     // of these three re-resolved, it would show.
-    await t.test("§1.4 an ops save that leaves the pick alone leaves the figures byte-identical", async () => {
+    await t.test("SNAP-AC-16 an ops save that leaves the pick alone leaves the figures byte-identical", async () => {
       await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='ql_s1'`);
 
       for (const [what, body] of [
@@ -298,7 +298,7 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         "pinning 2.4/0.32 onto a configuration the row no longer has would be worse than an honest null");
     });
 
-    await t.test("§1.4 a customer autosave that moves no pick rewrites nothing, on any line", async () => {
+    await t.test("SNAP-AC-16 a customer autosave that moves no pick rewrites nothing, on any line", async () => {
       // This is the one that mattered most: W3 rewrote every ordinary line on
       // every project save. One autosave during an outage would have nulled a
       // whole project.

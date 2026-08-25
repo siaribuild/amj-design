@@ -351,7 +351,7 @@ test("SNAP-AC-13 a new row has no stored pick, so it always resolves", () => {
   assert.equal(captureFigures(new Map(), glazed("double-lowe"), null), ABSENT_JSON);
 });
 
-test("§1.4 the pick is exactly the resolver's inputs — nothing else can move the figures", () => {
+test("SNAP-AC-16 / §7.0 the pick is exactly the resolver's inputs — nothing else can move the figures", () => {
   const moves = (p, s = stored()) => pickMoved(p, s);
 
   assert.equal(moves(glazed("double-lowe")), false, "the same pick has not moved");
