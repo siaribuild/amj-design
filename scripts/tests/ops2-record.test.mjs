@@ -95,9 +95,23 @@ test("the record reads the endpoint's own vocabulary, and absence stays absent",
   // is only worth having while a reference can be longer than a label. A future
   // parser that dropped the fallback would make that truncation dead code, and
   // the next reader would delete it without knowing what it was for.
-  const refless = body({ lines: [line()] });
-  delete refless.project.publicRef;
-  assert.equal(M.parseProjectRecord(refless).ref, "p_1", "no publicRef falls back to the id");
+  const withRef = (publicRef) => {
+    const b = body({ lines: [line()] });
+    if (publicRef === undefined) delete b.project.publicRef;
+    else b.project.publicRef = publicRef;
+    return M.parseProjectRecord(b).ref;
+  };
+  assert.equal(withRef(undefined), "p_1", "no publicRef falls back to the id");
+  // AND SO DOES A REF THAT IS ONLY SPACE. `str()` trims before it decides, so an
+  // empty or whitespace-only value is an ABSENT one — which is the half of this
+  // guarantee that rests on the trim rather than on the `??`, and the half no
+  // test exercised. Two decisions lean on it: the viewer's back control has no
+  // `Project` fallback of its own (drawingSubject), and the label's truncation
+  // is kept on the ground that a reference can be long. If `str` were ever
+  // simplified to a plain truthiness check, a whitespace ref would render an
+  // unnameable control and nothing here would have said so.
+  assert.equal(withRef(""), "p_1", "an empty ref is an absent one");
+  assert.equal(withRef("   "), "p_1", "and so is one that is only spaces");
   assert.equal(r.stateLabel, "Technical review");
   assert.equal(r.waitingOn, "Us");
   assert.equal(r.lines.length, 1);
