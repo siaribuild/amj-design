@@ -26,7 +26,7 @@ await build({
   stdin: {
     contents: `
       export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
-      export { lineSuffixOf, parseLineRoute, drawingSuffix, viewerDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD } from ${p("src/ops2/projects/lineRoute.ts")};
+      export { lineSuffixOf, parseLineRoute, drawingSuffix, WHY_SUFFIX, viewerDoor, whyDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD, WHY_FROM_LINE } from ${p("src/ops2/projects/lineRoute.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -256,20 +256,89 @@ test("a malformed or out-of-range suffix normalises by REPLACE, and grows no his
     ["/drawing/2", 2, "drawing", "/drawing"],
     ["/drawing/u2/more", 2, "drawing", "/drawing"],
     ["/drawing/", 2, "drawing", "/drawing"],
-    // Outside the grammar entirely: the line page. `/why` is phase 3b's and is
-    // NOT served yet — until it is, it must land somewhere real rather than on
-    // a blank child.
-    ["/why", 2, "line", ""],
+    // A LINE WITH NO DETAIL TO OPEN. `/why` is in the grammar from phase 3b,
+    // but a line whose rationale is `human`, `unrecorded` or `unresolved` has
+    // nothing behind that address — so it lands on the line page rather than on
+    // an empty screen, and by replace, so back does not return to it.
+    ["/why", 2, "line", "", false],
     ["/edit", 2, "line", ""],
     ["/drawings", 2, "line", ""],
+    ["/why/more", 2, "line", "", true],
+    ["/why/", 2, "line", "", true],
   ];
-  for (const [suffix, units, view, canonical] of cases) {
-    const route = M.parseLineRoute(suffix, units);
+  for (const [suffix, units, view, canonical, hasWhy] of cases) {
+    const route = M.parseLineRoute(suffix, units, hasWhy);
     assert.equal(route.view, view, `${suffix} (${units} units) → view`);
     assert.equal(route.canonical, canonical, `${suffix} (${units} units) → canonical`);
     assert.equal(route.normalise, true, `${suffix} must be replaced, never pushed`);
     assert.equal(route.unitIndex, null, `${suffix} names no unit`);
   }
+});
+
+// ─── The `why` child (Phase 3b: the rationale screen) ───────────────────────
+
+test("the why screen is a sibling of the drawing, and cannot stack with it", () => {
+  // ONE SUFFIX, so the two children are siblings by construction rather than by
+  // a rule somebody has to keep obeying (design §4.8). There is no address on
+  // which a rationale opens over an enlarged drawing.
+  assert.deepEqual(M.parseLineRoute("/why", 0, true),
+    { view: "why", unitIndex: null, canonical: "/why", normalise: false });
+  assert.deepEqual(M.parseLineRoute("/why", 3, true),
+    { view: "why", unitIndex: null, canonical: "/why", normalise: false });
+
+  // A composite's rationale is still ONE screen — units have no `why` of their
+  // own, because a unit's facts arrive inside its parent's rationale.
+  for (const suffix of ["/why/u1", "/why/drawing"]) {
+    const route = M.parseLineRoute(suffix, 3, true);
+    assert.equal(route.view, "line", `${suffix} is not an address this page serves`);
+    assert.equal(route.normalise, true);
+  }
+  // And a `why` hung off a drawing keeps the SHIPPED answer for everything
+  // under `/drawing`: the reviewer asked for a drawing, so they get the
+  // opening's. The two never stack either way.
+  assert.deepEqual(M.parseLineRoute("/drawing/u1/why", 3, true),
+    { view: "drawing", unitIndex: null, canonical: "/drawing", normalise: true });
+
+  // And the drawing grammar is untouched by the new sibling — asserted with
+  // `hasWhy` BOTH ways, because a capability flag that leaked into the drawing
+  // branch would show up on exactly one of them.
+  for (const hasWhy of [false, true]) {
+    assert.equal(M.parseLineRoute("/drawing", 2, hasWhy).view, "drawing");
+    assert.equal(M.parseLineRoute("/drawing/u2", 2, hasWhy).unitIndex, 2);
+    assert.equal(M.parseLineRoute("/drawing/u9", 2, hasWhy).canonical, "/drawing");
+  }
+
+  // WHY THE CAPABILITY GOES IN RATHER THAN THE ANSWER COMING OUT. `unitCount`
+  // is already this parameter's twin: an ordinal is judged against what the
+  // line displays, not against the URL alone. Deciding `/why` anywhere else
+  // would put one rule — which addresses this line serves — in two places,
+  // which is the defect phase 3a produced four times.
+  assert.equal(M.parseLineRoute("/why", 2, false).normalise, true, "no detail behind it");
+  assert.equal(M.parseLineRoute("/why", 2, false).canonical, "", "so it lands on the line page");
+  assert.equal(M.parseLineRoute("/why", 2, false).view, "line");
+});
+
+test("the why screen's own history mark answers presence, and asks no door question", () => {
+  // The viewer has two doors and its mark's VALUE names which. The rationale has
+  // exactly one — the panel on the line page — so only PRESENCE is asked: was
+  // this opened from a page in this session, or pasted cold? A cold arrival
+  // replaces onto the line page; a warm one pops.
+  assert.equal(M.whyDoor(M.WHY_FROM_LINE), true);
+  assert.equal(M.whyDoor(null), false, "pasted, emailed or reloaded — nothing of ours behind it");
+  assert.equal(M.whyDoor(undefined), false);
+  assert.equal(M.whyDoor({}), false);
+  assert.equal(M.whyDoor({ whyFrom: "canvas" }), false, "a door nobody has built is no door");
+  assert.equal(M.whyDoor("line"), false, "a bare string is not the state");
+  assert.equal(M.whyDoor({ whyFrom: "line", other: 1 }), true,
+    "but a state carrying someone else's keys too is still ours");
+
+  // THE TWO MARKS ARE NOT ONE. A drawing entry must not read as a rationale
+  // entry, or a back out of an enlargement would be decided by the wrong rule —
+  // and the round trip is asserted in BOTH directions, because a renamed key on
+  // either end would silently turn every marked screen into a cold one.
+  assert.equal(M.whyDoor(M.VIEWER_FROM_LINE), false);
+  assert.equal(M.whyDoor(M.VIEWER_FROM_RECORD), false);
+  assert.equal(M.viewerDoor(M.WHY_FROM_LINE), null);
 });
 
 test("which door the viewer was opened through — and whether there was one at all", () => {

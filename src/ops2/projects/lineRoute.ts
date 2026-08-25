@@ -27,7 +27,7 @@
  * `scripts/tests/ops2-navigation.test.mjs` holds it.
  */
 
-export type LineView = "line" | "drawing" | "unit";
+export type LineView = "line" | "drawing" | "unit" | "why";
 
 export interface LineRoute {
   view: LineView;
@@ -95,6 +95,18 @@ export function lineSuffixOf(pathname: string): string {
 export const VIEWER_FROM_LINE = { viewerFrom: "line" } as const;
 export const VIEWER_FROM_RECORD = { viewerFrom: "record" } as const;
 
+/** The rationale screen's own mark, and it is a SEPARATE key from the viewer's.
+ *
+ *  Same second question — was this opened from a page in this session, so is
+ *  back a real pop? — and no first question, because the rationale has exactly
+ *  one door: the panel on the line page. Only presence is asked.
+ *
+ *  Separate rather than shared, because the two surfaces have different exits.
+ *  One key read by both would make a drawing entry and a rationale entry
+ *  indistinguishable, and each one's back would then be decided by the other's
+ *  rule. */
+export const WHY_FROM_LINE = { whyFrom: "line" } as const;
+
 type ViewerDoor = "line" | "record";
 
 /** The door this viewer was opened through, or `null` for a cold arrival that
@@ -104,11 +116,21 @@ export function viewerDoor(state: unknown): ViewerDoor | null {
   return from === "record" || from === "line" ? from : null;
 }
 
+/** Was this rationale entry opened from the panel, or arrived at cold? */
+export function whyDoor(state: unknown): boolean {
+  return (state as { whyFrom?: unknown } | null | undefined)?.whyFrom === "line";
+}
+
 /** The address an opener sends the reviewer to. The parser accepts what this
  *  builds, untouched — the round trip is asserted, so the two cannot drift. */
 export function drawingSuffix(unitIndex: number | null): string {
   return unitIndex == null ? "/drawing" : `/drawing/u${unitIndex}`;
 }
+
+/** The rationale screen's address — one suffix, no ordinals. A unit has no
+ *  `why` of its own: its facts arrive inside its parent's rationale, because
+ *  the estimator recommends a product per OPENING. */
+export const WHY_SUFFIX = "/why";
 
 const at = (view: LineView, unitIndex: number | null, canonical: string, given: string): LineRoute =>
   ({ view, unitIndex, canonical, normalise: canonical !== given });
@@ -119,15 +141,23 @@ const at = (view: LineView, unitIndex: number | null, canonical: string, given: 
  *
  * `unitCount` is how many units this line actually DISPLAYS (a simple opening
  * shows none), so an out-of-range ordinal is answered by the line rather than by
- * the URL alone.
+ * the URL alone. `hasWhy` is its twin, and is here for the same reason: whether
+ * `/why` is an address THIS line serves is a fact about the line — a rationale
+ * that was never recorded has no screen behind it — and answering it anywhere
+ * else would put one rule in two places.
  *
  * The normalisations, and each one's destination:
  *   • a malformed or out-of-range unit → the OPENING's drawing. It is still a
  *     drawing address; the reviewer keeps the drawing they asked for.
+ *   • `/why` on a line with no detail → the line page.
  *   • anything else outside the grammar → the line page.
  */
-export function parseLineRoute(suffix: string, unitCount: number): LineRoute {
+export function parseLineRoute(suffix: string, unitCount: number, hasWhy: boolean): LineRoute {
   if (suffix === "") return at("line", null, "", suffix);
+
+  if (suffix === WHY_SUFFIX) {
+    return hasWhy ? at("why", null, WHY_SUFFIX, suffix) : at("line", null, "", suffix);
+  }
 
   const drawing = /^\/drawing(\/.*)?$/.exec(suffix);
   if (!drawing) return at("line", null, "", suffix);
