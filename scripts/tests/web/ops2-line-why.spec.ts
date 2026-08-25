@@ -217,6 +217,26 @@ test("WHY-AC-1 the panel carries exactly three lines, between the specification 
 
   // WHERE IT SITS. Between the specification (or units) and the price, which is
   // a fact about the rendered order and not about the component tree.
+  // A LABEL SITS BESIDE ITS VALUE, on both panels.
+  //
+  // `Panel`'s accessibility repair wrapped each row in a div, which became a
+  // grid ITEM in a two-column grid and put every second row in the value
+  // column. The approved mock carries the `display: contents` rule that spans
+  // the row; the stylesheet had not caught up, and the Specification panel
+  // beside this one was wearing the same defect — which is why the shipped
+  // panel is measured here too rather than only the new one.
+  for (const panel of ["line-spec", "line-why"]) {
+    const rows = await page.getByTestId(panel).evaluate((el) =>
+      [...el.querySelectorAll("dt")].map((dt) => {
+        const dd = dt.nextElementSibling as HTMLElement | null;
+        const a = dt.getBoundingClientRect();
+        const b = dd?.getBoundingClientRect();
+        return b ? { sameRow: Math.abs(a.top - b.top) < 4, rightOf: b.left > a.left } : null;
+      }));
+    expect(rows.length, `${panel} has rows to measure`).toBeGreaterThan(0);
+    for (const row of rows) expect(row, panel).toMatchObject({ sameRow: true, rightOf: true });
+  }
+
   const order = await page.getByTestId("line-review").evaluate((el) => {
     const ids = [...el.querySelectorAll("[data-testid]")].map((n) => n.getAttribute("data-testid"));
     return ids.filter((id) => id === "line-spec" || id === "line-why" || id === "line-price");
