@@ -312,6 +312,28 @@ test("the phone keeps the top safe-area inset it used to get from the header", a
   }
 });
 
+/**
+ * A MEASUREMENT READ ONCE IT HAS STOPPED MOVING — two consecutive identical
+ * reads, or the poll gives up and says so.
+ *
+ * Duplicated from `ops2-drawing-viewer.spec.ts` rather than shared: these specs
+ * are deliberately self-contained — each re-derives its own staff identity and
+ * its own helpers — and one shared module for two callers would be the first of
+ * its kind in this directory. Eight lines is the cheaper debt.
+ */
+async function settled<T>(read: () => Promise<T>): Promise<T> {
+  let previous = "";
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await read());
+      const same = now === previous;
+      previous = now;
+      return same;
+    }, { timeout: 5_000, message: "the layout never stopped moving" })
+    .toBe(true);
+  return read();
+}
+
 test("the skeleton is the shape that actually arrives, at both widths", async ({ page }) => {
   // A SKELETON IS A PROMISE ABOUT THE COMING LAYOUT, so it is wrong in a way a
   // spinner cannot be: it can promise a block that never lands, or a block the
@@ -349,8 +371,24 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     // any more — it lives in the white band, which holds its own space with a
     // placeholder — so the band is measured directly and the skeleton stands in
     // for the list alone.
-    const rowDuring = (await page.locator(".pq-controls").boundingBox())!;
-    const listDuring = (await skeleton.locator("ion-skeleton-text").first().boundingBox())!;
+    // READ ONCE THE PROMISE HAS STOPPED MOVING. Under a parallel battery this
+    // pair was taken the instant the skeleton became visible, before Ionic had
+    // finished hydrating `ion-skeleton-text` — so "the promised height" was
+    // measured against a bar that had not reached its own size yet, and the
+    // comparison below came back 17px out against a 4px bound. Intermittent,
+    // and it always passed serially, because the machine was fast enough to
+    // finish before anyone looked.
+    //
+    // The bounds are untouched: 2px and 4px are the sizes of the layout
+    // differences this test exists to catch, and a bound wide enough to absorb
+    // 17px would absorb the defect it was written for — the band growing by a
+    // row when the data lands, which is exactly the jump the skeleton prevents.
+    const during = await settled(async () => ({
+      row: (await page.locator(".pq-controls").boundingBox())!,
+      list: (await skeleton.locator("ion-skeleton-text").first().boundingBox())!,
+    }));
+    const rowDuring = during.row;
+    const listDuring = during.list;
 
     release();
     await loading;

@@ -206,6 +206,50 @@ test("the drawing grows with the viewport's HEIGHT when height is what binds", a
   expect(Math.abs(tall.width / tall.height - short.width / short.height)).toBeLessThan(0.05);
 });
 
+/** The drawing, the caption and the viewport, in one read. */
+const readFence = (page: import("@playwright/test").Page) => page.evaluate(() => {
+  const svg = document.querySelector('[data-testid="drawing-viewer"] svg[data-elevation]');
+  const cap = document.querySelector('[data-testid="drawing-viewer-caption"]');
+  const r = (el: Element | null) => {
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+  };
+  return { svg: r(svg), cap: r(cap), vw: window.innerWidth, vh: window.innerHeight };
+});
+
+/**
+ * A GEOMETRY READ ONCE IT HAS STOPPED MOVING — two consecutive identical reads,
+ * or the poll gives up and says so.
+ *
+ * WHY A POLL AND NOT A BIGGER TOLERANCE, which is what the fence's `+1` looks
+ * like it wants. Measured under a parallel battery, the caption's bottom at
+ * 1920×1080 came back 1081.1214752197266, then 1098.6176757812, then
+ * 1098.4442138671875, and on other runs it was the DRAWING that overshot rather
+ * than the caption. Sub-pixel float is the same number every time; this moves by
+ * up to 17px and changes which element it lands on, because the read was taken
+ * the instant the modal became visible and the viewer's layout was still
+ * settling behind its enter animation. Serially it always passed, which is why
+ * it survived: the machine was fast enough to finish before anyone looked.
+ *
+ * A tolerance that hid 17px would hide the regression this fence exists to
+ * catch — a drawing grown to claim an ultrawide's width standing ~1790px tall
+ * on a 1080px screen. So the `+1` stays exactly as it was, for real sub-pixel
+ * float, and the instability is removed instead of tolerated.
+ */
+async function settled<T>(read: () => Promise<T>): Promise<T> {
+  let previous = "";
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await read());
+      const same = now === previous;
+      previous = now;
+      return same;
+    }, { timeout: 5_000, message: "the layout never stopped moving" })
+    .toBe(true);
+  return read();
+}
+
 test("the whole drawing and its whole caption fit the viewport, at every shape",
   async ({ page }) => {
     // THE FENCE. "As large as the viewport permits" is bounded by this and not
@@ -220,16 +264,7 @@ test("the whole drawing and its whole caption fit the viewport, at every shape",
       [2560, 1080, "l2"], [1280, 900, "l2"], [375, 667, "l2"],
     ] as [number, number, string][]) {
       await drawingAt(page, w, h, line);
-      const seen = await page.evaluate(() => {
-        const svg = document.querySelector('[data-testid="drawing-viewer"] svg[data-elevation]');
-        const cap = document.querySelector('[data-testid="drawing-viewer-caption"]');
-        const r = (el: Element | null) => {
-          if (!el) return null;
-          const b = el.getBoundingClientRect();
-          return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
-        };
-        return { svg: r(svg), cap: r(cap), vw: window.innerWidth, vh: window.innerHeight };
-      });
+      const seen = await settled(() => readFence(page));
       if (!seen.svg || !seen.cap) throw new Error(`nothing measured at ${w}×${h} (${line})`);
       // A pixel of tolerance for sub-pixel layout, and no more.
       for (const [what, box] of [["drawing", seen.svg], ["caption", seen.cap]] as const) {
