@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonModal, IonTitle, IonToolbar,
   createAnimation,
@@ -111,11 +111,69 @@ export function SidePanel({
   children: ReactNode;
 }) {
   const wide = useRailWidth();
+  const back = useRef<HTMLIonButtonElement>(null);
   // The resolved form, which is what the remount guard has to key on: a window
   // crossing the change point while a FULL-SCREEN panel is open must not be
   // told it is still whatever it opened as.
   const form = wide ? "side" : phoneForm === "screen" ? "screen" : "sheet";
   const sheet = form === "sheet";
+
+  /**
+   * FOCUS MOVES INTO THE SCREEN, and it has to be asked for.
+   *
+   * MEASURED, twice. Opening this panel left focus on the control that opened
+   * it — a button in the page BEHIND — so Ionic's Escape handler, which
+   * dismisses the topmost overlay from a keydown on the document, never ran and
+   * Escape did nothing at all. A keyboard reader was stranded outside a screen
+   * they had just navigated to, and for a ROUTED caller that is worse than a
+   * dead key: back is the only way out and Escape is how most people reach it.
+   *
+   * The second measurement is why this is an effect rather than `onDidPresent`:
+   * that handler never fired here at all. And the SHADOW button is focused
+   * rather than the host, because `ion-button` is a custom element wrapping a
+   * real one and focusing the host is a no-op unless the browser forwards it —
+   * "unless" is not something an exit route may rest on.
+   *
+   * Only for the back form, so the Projects filter's approved behaviour is
+   * byte-identical (WHY-AC-7b): nothing in the queue holds focus the way a
+   * stretched door button does.
+   */
+  /**
+   * FOCUS MOVES INTO THE SCREEN, and it has to be asked for.
+   *
+   * MEASURED, and each measurement moved the mechanism. Opening this panel left
+   * focus on the control that opened it — a button in the page BEHIND — so
+   * Ionic's Escape handler, which dismisses the topmost overlay from a keydown
+   * on the document, never ran and Escape did nothing at all. A keyboard reader
+   * was stranded outside a screen they had just navigated to, and for a ROUTED
+   * caller that is worse than a dead key: back is the only way out and Escape is
+   * how most people reach for it.
+   *
+   * `onDidPresent` did not fire. Nor did a listener for `ionModalDidPresent` or
+   * `didPresent` on the element — instrumented, the host dispatched `ionMount`
+   * and nothing else. So the trigger is the CONTROL'S OWN MOUNT, which happens
+   * when the modal renders its content and depends on no lifecycle event at all.
+   *
+   * The SHADOW button is focused rather than the host: `ion-button` wraps a real
+   * one, and focusing the host is a no-op unless the browser forwards it —
+   * "unless" is not something an exit route may rest on.
+   *
+   * Only for the back form, so the Projects filter's approved behaviour is
+   * byte-identical (WHY-AC-7b): nothing in the queue holds focus the way a
+   * stretched door button does.
+   */
+  const routed = dismiss !== "done";
+  const live = useRef(open);
+  live.current = open;
+  const takeFocus = (el: HTMLIonButtonElement | null) => {
+    back.current = el;
+    if (!el || !routed) return;
+    requestAnimationFrame(() => {
+      if (!live.current) return;
+      (el.shadowRoot?.querySelector("button") ?? el).focus();
+    });
+  };
+
   return (
     <IonModal
       isOpen={open}
@@ -143,7 +201,7 @@ export function SidePanel({
               what makes the promise legible before anyone presses anything. */}
           {dismiss !== "done" && (
             <IonButtons slot="start">
-              <IonButton onClick={onClose} data-testid={`${testId}-back`} className="pq-sheet__back">
+              <IonButton ref={takeFocus} onClick={onClose} data-testid={`${testId}-back`} className="pq-sheet__back">
                 <span aria-hidden="true" className="pq-sheet__chev">‹</span>
                 {dismiss.back}
               </IonButton>

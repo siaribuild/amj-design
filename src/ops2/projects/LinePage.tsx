@@ -114,7 +114,13 @@ export function LinePage() {
   // reason the unit count does: `/why` is judged against whether this line HAS
   // a detail, and correcting a cold link while that is still loading would
   // throw away an address that turns out to be perfectly good.
-  const ready = load.status === "ready" && (isOrder || rationale.status !== "loading");
+  // …AND ONLY WHERE THERE IS A RATIONALE TO WAIT FOR. A line this project does
+  // not have never enables the fetch, so the hook stays at `loading` forever —
+  // and gating on it left `/line/l99/why` uncorrected in the address bar behind
+  // the not-found sentence. Found by the browser suite, which is the only place
+  // it is visible.
+  const ready = load.status === "ready"
+    && (!line || isOrder || rationale.status !== "loading");
   const stray = ready && !line && route.view !== "line";
   useEffect(() => {
     if (!ready) return;
