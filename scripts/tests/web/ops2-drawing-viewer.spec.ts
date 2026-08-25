@@ -828,6 +828,24 @@ test("a RELOADED canvas drawing still returns to the record, by all three exits"
         .toHaveURL(/\/projects\/p_rec$/);
       await expect(page.getByTestId("drawing-viewer")).toBeHidden();
       await expect(page.getByTestId("record-canvas")).toBeVisible();
+
+      // AND IT IS A REAL RECORD, not a husk left by an over-eager pop. A visible
+      // canvas is not the same as a canvas with a line in it.
+      //
+      // NOT "the row you had selected is still selected" — a reload wipes the
+      // SPA and the record's address carries no selection, so the canvas
+      // correctly falls back to the first line. Demanding the old selection here
+      // would be a test asking for the impossible; what VIEW-AC-16 forbids is
+      // showing NONE.
+      const canvas = await page.evaluate(() => ({
+        selected: [...document.querySelectorAll('[data-testid="record-line"]')]
+          .findIndex((r) => r.getAttribute("aria-current") === "true"),
+        hasReview: !!document.querySelector('[data-testid="line-review"]'),
+        hasEmpty: !!document.querySelector('[data-testid="record-canvas-empty"]'),
+      }));
+      expect(canvas.hasEmpty, `${exit}: the canvas came back empty`).toBe(false);
+      expect(canvas.hasReview, `${exit}: the canvas came back with no line body`).toBe(true);
+      expect(canvas.selected, `${exit}: no row is marked current`).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -870,7 +888,16 @@ test("a RELOADED line drawing returns to the line without eating the entry behin
 
       await expect(page, `${exit} after a reload did not land on the line`)
         .toHaveURL(/\/line\/l2$/);
-      await expect(page.getByTestId("line-review")).toBeVisible();
+      // POLLED FOR THE SETTLED STATE, not read mid-dismiss. Both pages are
+      // genuinely laid out during Ionic's leave animation — the test above at
+      // "the line page left behind by a canvas enlargement" measures exactly
+      // that and pins that it settles — so a strict locator here resolves to two
+      // line bodies for a few frames and fails on a build that is correct. This
+      // asserts what must be true when it stops moving, which is also stronger:
+      // one body VISIBLE, not merely one present.
+      await expect.poll(() => page.getByTestId("line-review").evaluateAll(
+        (els) => els.filter((el) => (el as HTMLElement).offsetParent !== null).length),
+      { message: `${exit}: the line body did not settle to exactly one` }).toBe(1);
 
       // AND THE RECORD IS STILL BEHIND IT. On the build this was written against,
       // the control and Escape left `[… , line page, line page]` here, so this
@@ -1129,4 +1156,182 @@ test("a UNIT opened from the canvas returns to the record by all three exits", a
       '[data-testid="record-line"]')].findIndex((r) => r.getAttribute("aria-current") === "true"));
     expect(selected, `${exit} lost the selection`).toBe(1);
   }
+});
+
+// ── Folded in from the tester's round-3 probes ──────────────────────────────
+//
+// Kept because each can still fail. Its diagnostics and its forward-navigation
+// reproducer are not here: the first were scaffolding for a hunt that is over,
+// and the second asserts behaviour no criterion in §8 or §8.1 describes, which
+// is going to its own ticket rather than into a suite as a silent expectation.
+
+test("the drawing is never distorted — the rendered box carries the viewBox's own proportion",
+  async ({ page }) => {
+    // WHAT A GROWTH SWEEP CANNOT SEE. The sweeps above compare the drawing to
+    // ITSELF at another viewport, so they catch a box that changes shape — but a
+    // drawing squashed by the SAME factor at every size would satisfy every one
+    // of them. This compares the rendered box to the drawing's own declared
+    // proportion, which is the only external truth available in the DOM.
+    //
+    // It is the assertion that was missing when `height: 62vh` plus a binding
+    // `max-width` rendered a 1.43 drawing at 1.20 on a tall narrow viewport —
+    // found by looking at it, which is not a thing a suite can be relied on to do.
+    await serveRecord(page);
+    for (const [w, h, line] of [
+      [1100, 1440, "l1"], [2560, 1080, "l1"], [375, 667, "l1"],
+      [2560, 1080, "l2"], [1280, 900, "l2"], [375, 667, "l2"],
+    ] as [number, number, string][]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(`${LINE(line)}/drawing`);
+      await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+      await expect(page.getByTestId("drawing-viewer-caption")).toBeVisible();
+
+      const m = await page.evaluate(() => {
+        const svg = document.querySelector(
+          '[data-testid="drawing-viewer"] svg[data-elevation]') as SVGSVGElement | null;
+        if (!svg) return null;
+        const b = svg.getBoundingClientRect();
+        const vb = svg.getAttribute("viewBox")!.split(/\s+/).map(Number);
+        return {
+          drawn: +(b.width / b.height).toFixed(3),
+          viewBox: +(vb[2] / vb[3]).toFixed(3),
+        };
+      });
+      if (!m) throw new Error(`no drawing at ${line} ${w}×${h}`);
+      expect(Math.abs(m.drawn - m.viewBox),
+        `distorted at ${line} ${w}×${h}: drawn ${m.drawn} against a viewBox of ${m.viewBox}`)
+        .toBeLessThan(0.05);
+    }
+  });
+
+test("a composite's units list is never clipped with nothing to scroll", async ({ page }) => {
+  // The fence pins the drawing and its caption; the units list sits under both
+  // and nothing pinned it. It was clipped mid-row on an ultrawide before the
+  // figure's flex basis was corrected — a row cut in half is a defect, a row
+  // below a list that CAN scroll is not.
+  await serveRecord(page);
+  for (const [w, h] of [[2560, 1080], [1280, 900], [375, 667]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(`${LINE("l2")}/drawing`);
+    await expect(page.getByTestId("drawing-viewer-units")).toBeVisible();
+
+    const m = await page.evaluate(() => {
+      const list = document.querySelector(
+        '[data-testid="drawing-viewer-units"]') as HTMLElement;
+      const lb = list.getBoundingClientRect();
+      return {
+        vh: window.innerHeight,
+        bottom: Math.round(lb.bottom),
+        rows: [...list.querySelectorAll("li")].map((li) => Math.round(
+          li.getBoundingClientRect().bottom)),
+        // `overflow-y: auto` means a row past the edge is REACHABLE rather than
+        // lost — but only if the list can actually scroll.
+        scrollable: list.scrollHeight > list.clientHeight + 1,
+      };
+    });
+    expect(m.bottom, `the units list runs past the fold at ${w}×${h}`)
+      .toBeLessThanOrEqual(m.vh + 1);
+    const past = m.rows.filter((bottom) => bottom > m.bottom + 1);
+    if (past.length) {
+      expect(m.scrollable,
+        `${past.length} unit row(s) hang past a list that cannot scroll at ${w}×${h}`).toBe(true);
+    }
+  }
+});
+
+test("`fluid` is the viewer's alone — every other drawing keeps its intrinsic size",
+  async ({ page }) => {
+    // THE BLAST RADIUS OF A SHARED COMPONENT, pinned at the DOM rather than at
+    // the call site. `Elevation` has eight callers; seven set no CSS size at all
+    // and would collapse without the `width`/`height` attributes. Exactly one
+    // asks for `fluid`, and it must, because an intrinsic size is a ceiling.
+    await serveRecord(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(LINE("l2"));
+    await expect(page.getByTestId("line-review")).toBeVisible();
+
+    const onPage = await page.evaluate(() => [...document.querySelectorAll(
+      "svg[data-elevation]")].map((s) => ({
+      w: s.getAttribute("width"), h: s.getAttribute("height"),
+      cls: s.getAttribute("class"),
+    })));
+    expect(onPage.length, "the line page draws a plate and its unit glyphs").toBeGreaterThan(1);
+    for (const s of onPage) {
+      expect(s.w, `a non-viewer drawing lost its intrinsic width: ${s.cls}`).not.toBeNull();
+      expect(s.h, `a non-viewer drawing lost its intrinsic height: ${s.cls}`).not.toBeNull();
+    }
+
+    // And the viewer's carries neither, while keeping the viewBox — without
+    // which it would have no aspect ratio for the browser to fit.
+    await page.getByTestId("line-plate-open").first().click();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    const inViewer = await page.evaluate(() => {
+      const s = document.querySelector('[data-testid="drawing-viewer"] svg[data-elevation]')!;
+      return {
+        w: s.getAttribute("width"), h: s.getAttribute("height"),
+        viewBox: s.getAttribute("viewBox"),
+      };
+    });
+    expect(inViewer.w, "the viewer's drawing carries an intrinsic width — that is a ceiling")
+      .toBeNull();
+    expect(inViewer.h).toBeNull();
+    expect(inViewer.viewBox, "and it must keep its viewBox, or it has no aspect ratio")
+      .not.toBeNull();
+  });
+
+test("the collateral cases still hold at an ultrawide", async ({ page }) => {
+  // The three most likely to be broken by the fit rules, re-run at the shape
+  // those rules changed most. They pass at 1280 above; this is the width where
+  // the drawing is now biggest and the layout least like the one they were
+  // written against.
+  await serveRecord(page);
+  await page.setViewportSize({ width: 2560, height: 1080 });
+
+  // A cold arrival on a composite unit: names the LINE, replaces to it.
+  await page.goto(`${LINE("l2")}/drawing/u2`);
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page.getByTestId("drawing-viewer").getByRole("heading", { name: "W07B" }))
+    .toBeVisible();
+  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
+  const before = await historyLength(page);
+  await page.getByTestId("drawing-viewer-back").click();
+  await expect(page).toHaveURL(/\/line\/l2$/);
+  expect(await historyLength(page), "a cold arrival replaced, it did not push").toBe(before);
+
+  // And cross-project and nonexistent still refuse in the same words.
+  const refusals: string[] = [];
+  for (const id of ["l_other", "l_nope"]) {
+    for (const suffix of ["/drawing", "/drawing/u1"]) {
+      await page.goto(`${LINE(id)}${suffix}`);
+      await expect(page).toHaveURL(new RegExp(`/line/${id}$`));
+      await expect(page.getByTestId("drawing-viewer")).toBeHidden();
+      refusals.push((await page.getByTestId("line-not-found").innerText()).trim());
+    }
+  }
+  expect(new Set(refusals).size, "the refusals differ, so a probe can tell them apart").toBe(1);
+});
+
+test("a long LINE CODE truncates on the line door too", async ({ page }) => {
+  // The other unbounded input to the back label's cap. `quote_line.external_ref`
+  // is plain TEXT parsed out of a builder's schedule, so a mis-mapped import
+  // column arrives here whole — and unlike the record's reference, it reaches
+  // the control at EVERY width, including the one where the bar has least room.
+  const LONG_CODE = "W07-KITCHEN-NORTH-ELEVATION-AWNING-OVER-BENCH";
+  await page.route(RECORD_URL, (route) => route.fulfill({
+    json: { ...record, lines: record.lines.map((l) => (l.id === "l2" ? { ...l, code: LONG_CODE } : l)) },
+  }));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${LINE("l2")}/drawing`);
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+
+  // The accessible name stays whole; only what is drawn is shortened.
+  await expect(page.getByTestId("drawing-viewer")
+    .getByRole("button", { name: LONG_CODE })).toBeVisible();
+  const label = page.locator(".ops2-viewer__back-label");
+  const m = await label.evaluate((el) => ({
+    clipped: el.scrollWidth > el.clientWidth,
+    width: Math.round(el.getBoundingClientRect().width),
+  }));
+  expect(m.clipped, "a 45-character line code is not shortened on a phone").toBe(true);
+  expect(m.width, "the label takes more than half the bar").toBeLessThan(375 * 0.5);
 });
