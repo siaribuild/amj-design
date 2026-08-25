@@ -18,6 +18,7 @@ import {
   type DeliveryZone,
 } from "../lib/delivery";
 import { logEvent } from "../lib/activity";
+import { lineRationale } from "../lib/estimator/rationale";
 import { applicationHistory, tradeStateOf } from "../lib/trade";
 import {
   splitLine, mergeComposite, recomputeComposite,
@@ -721,6 +722,23 @@ ops.get("/projects/:id", async (c) => {
     delivery: await buildDeliveryDto(c.env, p),
     payments,
   });
+});
+
+// GET /api/ops/projects/:id/lines/:lineId/rationale — "Why this product" (spec
+// §9). Read-only, staff-only, and the ONLY reader of a line's captured figures.
+//
+// Scoped through the project by the module's single entry SELECT, which is what
+// makes "this line is in another project" and "this line does not exist" one
+// answer rather than two (X-AC-4). Nothing here is added to the record read:
+// the panel fetches its own endpoint, so `opsLineDto` stays byte-identical.
+ops.get("/projects/:id/lines/:lineId/rationale", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const dto = await lineRationale(c.env, {
+    projectId: c.req.param("id"), lineId: c.req.param("lineId"),
+  });
+  return dto ? c.json(dto) : c.json({ error: "not_found" }, 404);
 });
 
 // PUT /api/ops/projects/:id/delivery { amount, postcode?, note? } — E7. Settles,
