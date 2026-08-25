@@ -831,28 +831,89 @@ test("a RELOADED canvas drawing still returns to the record, by all three exits"
     }
   });
 
-test("a RELOADED line drawing still names the line and replaces to it", async ({ page }) => {
-  // The control case, and the one most likely to break in fixing the above: a
-  // line-door drawing carries no state either way, so a reload must leave it
-  // behaving exactly as a cold link — names the line, REPLACES to the line path,
-  // grows no history. If this ever starts landing on the record, the fix has
-  // stopped reading the door and started guessing from the reload.
+test("a RELOADED line drawing returns to the line without eating the entry behind it",
+  async ({ page }) => {
+    // THE OTHER HALF OF THE SAME CONFLATION. Two questions were being answered by
+    // one fact: WHICH DOOR the viewer was opened through, and WHETHER IT WAS
+    // OPENED IN THIS SESSION at all. The record door answered the second one by
+    // accident — its door-marker happens to be per-entry state, which survives a
+    // reload — and the line door, which pushes no marker, could not answer it.
+    //
+    // So a reloaded line-door viewer took the cold path and REPLACED: the drawing
+    // entry became a second copy of the line page, and the reviewer's next back
+    // landed on a page identical to the one they were already looking at. Back
+    // appeared to do nothing.
+    //
+    // The assertion that sees it is the SECOND back, not the first: a replace and
+    // a pop both leave you on `/line/l2`, and `history.length` does not separate
+    // them either — the forward entry survives a pop, so the count is the same
+    // both ways. Only what is BEHIND the line page differs.
+    await serveRecord(page);
+
+    for (const exit of ["control", "escape", "gesture"] as const) {
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.goto(RECORD_PAGE);
+      await expect(page.getByTestId("record-line").first()).toBeVisible();
+      await page.getByTestId("record-line").nth(1).click();
+      await expect(page).toHaveURL(/\/line\/l2$/);
+      await page.getByTestId("line-plate-open").first().click();
+      await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+
+      await page.reload();
+      await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+      // The door still decides the label, and this door is the line's.
+      await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
+
+      if (exit === "control") await page.getByTestId("drawing-viewer-back").click();
+      else if (exit === "escape") await page.keyboard.press("Escape");
+      else await page.goBack();
+
+      await expect(page, `${exit} after a reload did not land on the line`)
+        .toHaveURL(/\/line\/l2$/);
+      await expect(page.getByTestId("line-review")).toBeVisible();
+
+      // AND THE RECORD IS STILL BEHIND IT. On the build this was written against,
+      // the control and Escape left `[… , line page, line page]` here, so this
+      // back landed on the line page again.
+      await page.goBack();
+      await expect(page, `${exit} left an orphan entry: back stayed on the line`)
+        .toHaveURL(/\/projects\/p_rec$/);
+    }
+  });
+
+test("a cold drawing link REPLACES even in a tab that already has history", async ({ page }) => {
+  // VIEW-AC-2b, at the arrival that separates the right mechanism from the
+  // tempting wrong one. "Was this viewer opened in this session" cannot be
+  // answered by `history.length > 1`, by `document.referrer`, or by the
+  // navigation type: a reviewer who types a drawing URL over a page they were
+  // already on has entries behind them, none of which are ours. Only per-entry
+  // state can answer it, because only per-entry state is attached to the entry
+  // a pop would return TO.
+  //
+  // If this ever starts popping, the fix has begun guessing from the tab's
+  // history instead of reading the door.
   await serveRecord(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(LINE("l2"));
-  await page.getByTestId("line-plate-open").first().click();
-  await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
-
-  await page.reload();
+  await page.goto(OPS2);
+  await expect(page.locator("ion-app")).toBeVisible();
+  await page.goto(`${LINE("l2")}/drawing`);
   await expect(page.getByTestId("drawing-viewer")).toBeVisible();
-  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
+  expect(await historyLength(page), "the tab has history behind the drawing")
+    .toBeGreaterThan(1);
   const before = await historyLength(page);
 
+  // No door was used, so the control names the line and replaces to it.
+  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
   await page.getByTestId("drawing-viewer-back").click();
   await expect(page).toHaveURL(/\/line\/l2$/);
   await expect(page.getByTestId("line-review")).toBeVisible();
-  expect(await historyLength(page), "a reloaded line door replaced, it did not push")
-    .toBe(before);
+  expect(await historyLength(page), "a cold arrival replaced, it did not push").toBe(before);
+
+  // The drawing entry is GONE rather than popped past: going back leaves the
+  // line page for whatever the reviewer was on before, and never returns to a
+  // viewer they already closed.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/drawing$/);
 });
 
 test("back from a canvas-opened drawing does not blank the canvas", async ({ page }) => {

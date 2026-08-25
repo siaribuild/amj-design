@@ -67,15 +67,41 @@ export function lineSuffixOf(pathname: string): string {
  * way (D9 — one grammar), so it cannot answer this, and the back control's
  * label depends on it (VIEW-AC-15).
  *
- * `history.push`'s per-entry state is where it lives, because that is the one
- * thing that travels with the entry a pop returns to and cannot be reconstructed
- * from the URL. A cold arrival has no state, so it reads as the line — which is
- * the right answer for a link with no record behind it (VIEW-AC-2b).
+ * ── AND WHETHER THERE WAS A DOOR AT ALL ─────────────────────────────────────
+ * EVERY open is marked, not only the canvas's, because the mark answers two
+ * separate questions and only one of them is about the door:
+ *
+ *   • its VALUE says which page to return to, and what the control may say;
+ *   • its PRESENCE says this viewer was opened from a page in this session — so
+ *     that page is the entry behind this one, and back is a real pop.
+ *
+ * Marking only the canvas made presence and door the same fact, and the record
+ * door then answered the second question by accident while the line door could
+ * not answer it at all. A reloaded line drawing took the cold path and REPLACED
+ * itself onto the line page it had been opened from, leaving two identical
+ * entries and a back control that appeared to do nothing.
+ *
+ * Per-entry state is the only thing that can answer the second question, and
+ * that is worth saying because three cheaper-looking sources cannot:
+ * `history.length` counts a tab's entries, not ours, so a URL typed over an
+ * existing page reads as warm; `document.referrer` is empty on a reload; and the
+ * Navigation Timing type says how THIS DOCUMENT was loaded, not what is behind
+ * it. State is attached to the entry a pop would return to, which is precisely
+ * the thing being asked about.
+ *
+ * A genuinely cold arrival — pasted, emailed, a new tab — carries no state,
+ * reads as the line, and replaces (VIEW-AC-2b).
  */
+export const VIEWER_FROM_LINE = { viewerFrom: "line" } as const;
 export const VIEWER_FROM_RECORD = { viewerFrom: "record" } as const;
 
-export function openedFromRecord(state: unknown): boolean {
-  return (state as { viewerFrom?: unknown } | null | undefined)?.viewerFrom === "record";
+export type ViewerDoor = "line" | "record";
+
+/** The door this viewer was opened through, or `null` for a cold arrival that
+ *  used no door at all. One reader, because it is one fact. */
+export function viewerDoor(state: unknown): ViewerDoor | null {
+  const from = (state as { viewerFrom?: unknown } | null | undefined)?.viewerFrom;
+  return from === "record" || from === "line" ? from : null;
 }
 
 /** The address an opener sends the reviewer to. The parser accepts what this

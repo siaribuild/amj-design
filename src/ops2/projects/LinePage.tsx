@@ -7,7 +7,9 @@ import { OpsPage } from "../chrome/OpsPage";
 import { DrawingViewer } from "../chrome/DrawingViewer";
 import { LineReview } from "./LineReview";
 import { drawingSubject, viewerUnitCount } from "./drawingSubject";
-import { drawingSuffix, lineSuffixOf, openedFromRecord, parseLineRoute } from "./lineRoute";
+import {
+  drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, VIEWER_FROM_LINE,
+} from "./lineRoute";
 import { useProjectRecord } from "./useProjectRecord";
 
 const PROJECTS = destination("projects");
@@ -98,7 +100,7 @@ export function LinePage() {
   // project's TITLE; the owner vetoed it (§13.17) rather than let one
   // destination carry two names in one console. The two must move together —
   // change one and change both.
-  const fromRecord = openedFromRecord(location.state);
+  const fromRecord = viewerDoor(location.state) === "record";
   const subject = line && !route.normalise
     ? drawingSubject(line, route, fromRecord && record ? record.ref : null)
     : null;
@@ -108,7 +110,10 @@ export function LinePage() {
   const opener = useRef<HTMLElement | null>(null);
   const openDrawing = useCallback((unitIndex: number | null) => {
     opener.current = document.activeElement as HTMLElement | null;
-    history.push(linePath + drawingSuffix(unitIndex));
+    // MARKED LIKE EVERY OTHER OPEN. The value says this door is the line's, and
+    // the mark's PRESENCE says the viewer was opened from a page in this session
+    // — which is what makes back a pop rather than a replace after a reload.
+    history.push(linePath + drawingSuffix(unitIndex), VIEWER_FROM_LINE);
   }, [history, linePath]);
 
   useEffect(() => {
@@ -143,14 +148,21 @@ export function LinePage() {
    * the record, and the label went on naming the record throughout, because the
    * label reads the entry's state and the state survives a reload.
    *
-   * So the door is asked, not the stack. An entry that says it was opened from
-   * the record HAS the record behind it in session history — the gesture landing
-   * there is the proof — so going back means the browser's own back, and all
-   * three exits become the one pop VIEW-AC-14 requires.
+   * So the ENTRY is asked, not the stack. A viewer opened through either door
+   * carries a mark (`./lineRoute.ts`), and that mark's presence says the page it
+   * was opened from is the entry behind this one — the platform's own back
+   * gesture landing there is the proof. So back is a real pop, and all three
+   * exits become the one pop VIEW-AC-14 requires.
    *
-   * The line door is untouched by any of it: no state, so a reloaded or pasted
-   * line drawing still replaces to the line path (VIEW-AC-2b), which is the case
-   * most easily broken by "fixing" the reload rather than the conflation.
+   * Reloaded and pasted are NOT the same thing, which is what the first version
+   * of this got wrong on the line door: it read "no mark" off a line drawing
+   * that had simply never been marked, took the cold path, and replaced the
+   * drawing entry onto the line page it had been opened from — two identical
+   * entries, and a back that appeared to do nothing.
+   *
+   * Only a genuinely cold arrival replaces, and it must: pasted, emailed or a
+   * new tab has nothing of ours behind it, and popping would take the reviewer
+   * out of the console (VIEW-AC-2b).
    *
    * Read off `history.location` rather than the render's `location` for the same
    * reason the pathname guard above is: what this control does is decided at the
@@ -159,7 +171,7 @@ export function LinePage() {
   const closeViewer = useCallback(() => {
     if (lineSuffixOf(history.location.pathname) === "") return;
     if (router.canGoBack()) { router.goBack(); return; }
-    if (openedFromRecord(history.location.state)) history.goBack();
+    if (viewerDoor(history.location.state)) history.goBack();
     else history.replace(linePath);
   }, [history, router, linePath]);
 

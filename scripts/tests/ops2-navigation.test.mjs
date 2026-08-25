@@ -26,7 +26,7 @@ await build({
   stdin: {
     contents: `
       export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
-      export { lineSuffixOf, parseLineRoute, drawingSuffix, openedFromRecord, VIEWER_FROM_RECORD } from ${p("src/ops2/projects/lineRoute.ts")};
+      export { lineSuffixOf, parseLineRoute, drawingSuffix, viewerDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD } from ${p("src/ops2/projects/lineRoute.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -272,29 +272,37 @@ test("a malformed or out-of-range suffix normalises by REPLACE, and grows no his
   }
 });
 
-test("which door the viewer was opened through, read off whatever the entry carries", () => {
-  // The other half of this module's round trip: `VIEWER_FROM_RECORD` is written
-  // onto the history entry by ProjectRecordPage and read back by LinePage, and
-  // the two ends must not drift — a renamed key would silently make every
-  // canvas-opened viewer behave like a line-opened one.
-  assert.equal(M.openedFromRecord(M.VIEWER_FROM_RECORD), true, "the round trip");
+test("which door the viewer was opened through — and whether there was one at all", () => {
+  // ONE FACT, TWO QUESTIONS, and separating them is the point. The VALUE says
+  // where back goes and what the control may say; the PRESENCE says the viewer
+  // was opened from a page in THIS SESSION, so that page is the entry behind it
+  // and back is a real pop.
+  //
+  // Marking only the canvas made those the same fact: the record door answered
+  // the second question by accident, and the line door — unmarked — could not
+  // answer it at all, so a reloaded line drawing replaced itself onto the page
+  // it came from and left two identical history entries.
+  //
+  // The round trip in both directions, because a renamed key on either end would
+  // silently turn every marked viewer into a cold one.
+  assert.equal(M.viewerDoor(M.VIEWER_FROM_RECORD), "record");
+  assert.equal(M.viewerDoor(M.VIEWER_FROM_LINE), "line");
 
-  // AND EVERYTHING ELSE IS THE LINE DOOR, because that is the safe answer: the
-  // line page's own behaviour, which is also what a cold link needs. This
-  // predicate now decides where BACK GOES and not merely what it says
-  // (LinePage's `closeViewer`), so what it does with a state it does not
-  // recognise is a navigation decision rather than a cosmetic one.
-  assert.equal(M.openedFromRecord(null), false, "a fresh entry carries no state");
-  assert.equal(M.openedFromRecord(undefined), false, "and a cold arrival carries none at all");
-  assert.equal(M.openedFromRecord({}), false);
-  assert.equal(M.openedFromRecord({ viewerFrom: "line" }), false);
-  assert.equal(M.openedFromRecord({ viewerFrom: null }), false);
-  // Foreign shapes — another surface's state on the same entry, or a value that
-  // is not an object at all. Neither may be read as "yes".
-  assert.equal(M.openedFromRecord("record"), false, "a bare string is not the state");
-  assert.equal(M.openedFromRecord({ from: "record" }), false, "nor a different key");
-  assert.equal(M.openedFromRecord({ viewerFrom: { toString: () => "record" } }), false);
-  assert.equal(M.openedFromRecord({ viewerFrom: "record", other: 1 }), true,
+  // NULL IS "NO DOOR", and it is a different answer from "the line door" even
+  // though both name the line page: a cold arrival REPLACES, a line-door
+  // arrival POPS. Reading an unrecognised state as the line door is exactly the
+  // defect above, one level down.
+  assert.equal(M.viewerDoor(null), null, "a cold arrival carries no state");
+  assert.equal(M.viewerDoor(undefined), null);
+  assert.equal(M.viewerDoor({}), null);
+  assert.equal(M.viewerDoor({ viewerFrom: null }), null);
+  // Foreign shapes — another surface's state on the same entry, a value that is
+  // not an object, a door nobody has built. None may be read as a door.
+  assert.equal(M.viewerDoor("record"), null, "a bare string is not the state");
+  assert.equal(M.viewerDoor({ from: "record" }), null, "nor a different key");
+  assert.equal(M.viewerDoor({ viewerFrom: "canvas" }), null, "nor a door that does not exist");
+  assert.equal(M.viewerDoor({ viewerFrom: { toString: () => "record" } }), null);
+  assert.equal(M.viewerDoor({ viewerFrom: "record", other: 1 }), "record",
     "but a state carrying someone else's keys too is still ours");
 });
 
