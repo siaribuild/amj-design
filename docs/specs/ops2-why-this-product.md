@@ -1,65 +1,54 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 20**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 21**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 20 records Phase 2's most transferable output as a rule rather than an anecdote**
-(§12, opening): **an assertion that cannot fail is worse than no assertion**, five of them
-were found in one day, and the only check that finds them is mechanical — break the thing on
-purpose and watch the test go red. §12 note 7 also records the one guarantee that is
-measured but only half-pinned.
+**Phase 2 is ACCEPTED and DEPLOYED** — owner sign-off 2026-08-25, production version
+`9285d642`, security sweep green on `a77c4108`. §13.18 confirmed as built: the drawing
+claims all leftover space and the caption never scrolls out of view.
 
-**Revision 19 corrects VIEW-AC-15**, which described a state its own subject cannot be in.
+**Revision 21 retracts a false justification the owner corrected.** The spec had hardened
+into *"every save between 3a and 3b is a line that will have something to show, and a
+missed one is unrecoverable"* — an urgency that does not exist. **The owner: there will be
+no saves between 3a and 3b; the phasing exists to make the change manageable, nothing
+more.** The sequencing is unchanged and the true reason is now written in its place (§4,
+§7's opening). **D5's accepted cost and SNAP-AC-10's no-backfill ruling are untouched** —
+they rest on principle, not on a production window, and the owner has not reversed
+anything. §12 note 10 gains it as an instance of a **new shape**: the first six were claims
+about the *codebase*, settleable with one command; this was a claim about the *world*, and
+only the person who owns the world could settle it.
+
+**Revision 20 recorded Phase 2's most transferable output as a rule** (§12, opening): **an
+assertion that cannot fail is worse than no assertion**, five were found in one day, and the
+only check that finds them is mechanical — break the thing on purpose and watch the test go
+red.
+
+**Revision 19 corrected VIEW-AC-15**, which described a state its own subject cannot be in.
 The criterion put the reference *"falling back to `Project` while the record has not
 loaded"* — but the viewer's back control never renders in that state: its subject is only
 built once the record has resolved a line. The developer implemented the fallback twice,
 deleted the unreachable copy, and **said so rather than descoping it silently**. Executed
 before ruling: `src/ops2/projects/LinePage.tsx:124` builds the subject only with a
 resolved `record`, and `LinePage.tsx:201` — the **page-level** control, where the pre-load
-state is real — keeps `Project` untouched. **The criterion now says what is true**, and
-names where the never-empty guarantee lives, because a fallback would have masked the pin
-and made it look optional. Two stale citations of `LinePage.tsx:136` are corrected to
-`:201` throughout; the file moved while the phase was being built.
+state is real — keeps `Project` untouched.
 
 **Revision 18 resolved a tension inside VIEW-AC-1 that the round-2 tester measured** — the
 criterion was requiring two things that cannot both hold on a short wide screen, so no
-implementation could satisfy it as written. Revision 16 required the drawing to grow with
-**width**; revision 17 required the **caption** to be readable at every width. On a 2560×1080
-ultrawide a landscape drawing grown to claim the width would stand taller than the screen,
-putting the caption — and most of the drawing — below the fold. **The ruling: there is one
-guarantee, not two — the whole drawing and its caption are visible together, and within that
-the drawing is as large as the viewport permits.** Which dimension governs is whichever one
-binds, and the `62vh` that governed it went the way the `720px` went in revision 16.
-`ASSUMED:` §13.18; §13.16 is RETIRED as the wrong question.
+implementation could satisfy it as written. **The ruling: there is one guarantee, not two —
+the whole drawing and its caption are visible together, and within that the drawing is as
+large as the viewport permits.** Which dimension governs is whichever one binds, and the
+`62vh` that governed it went the way the `720px` went in revision 16. §13.18 (confirmed by
+the owner at acceptance); §13.16 RETIRED as the wrong question.
 
 **Revision 17** carried the owner's **veto of §13.17** — the canvas back control's label —
-taken after the developer found a precedent nobody had checked: the line page's own back
-control already names that same destination by its **reference**
-(`src/ops2/projects/LinePage.tsx:201`, `label: record ? record.ref : "Project"`). The spec
-had assumed the project's *title*, which would have given one destination two names in one
-console. **VIEW-AC-15 requires the reference.**
-
-**Revision 16** carried **two owner decisions taken at the Phase 2 tester gate**, plus the
-tester's MINOR.
-
-- **D11 — the desk-canvas enlargement journey now has criteria** (§8.1, VIEW-AC-13…17). It
-  shipped in **no criterion and no interaction spec**: it was added at architect-conformance
-  time (design §11.5) to satisfy VIEW-AC-5's "exactly one viewer", *after* §8 was written,
-  and reached the tester unspecified and untested — the MAJOR. The owner's ruling: **back
-  returns to the record**, the control **stops naming the line**, and the blank canvas on
-  return is **fixed, not accepted**.
-- **D12 — VIEW-AC-12 is reversed**: `ElevationLegend` is **deleted**, together with the
-  assertion that pinned it. §13.13 becomes **VETOED**. The criterion is rewritten rather
-  than quietly dropped, and all three of its states are kept — it has now flipped twice, and
-  the record of *why* is worth more than a clean-looking criterion.
-- **VIEW-AC-1 is made unambiguous** that "the largest size the viewport allows" is a
-  **measurement**. The criterion was already correct in intent; the implementation capped the
-  drawing at a flat 720px at every desk width, a number lifted from the mock's *simulated
-  desk frame*. (Revision 18 finished the job: the replacement number is gone too.)
+after the developer found a precedent nobody had checked: the line page's own back control
+already names that destination by its **reference** (`src/ops2/projects/LinePage.tsx:201`).
+**Revision 16** carried **D11** (the desk-canvas journey gains criteria, §8.1) and **D12**
+(`ElevationLegend` is deleted), and made VIEW-AC-1's size rule a measurement.
 
 Revision 15 gave **every register entry a state** (§13) and discharged §13.14/§13.15;
 revision 14 corrected VIEW-AC-12's false premise; revision 13 amended the CERT-AC-10 fence;
@@ -69,9 +58,8 @@ revision 7 corrected a false claim about an existing legend test; revision 6 app
 closed UX mock gate; revision 5 repaired two architect findings; revisions 2–4 folded in the
 owner's decision rounds.
 
-**Decisions needed: one** (§14) — how much of the screen the drawing may claim, tagged
-`ASSUMED:` §13.18 and going to the owner at acceptance with the rest of Phase 2. Nothing is
-blocked on it.
+**Decisions needed: none** (§14). Phase 2's one live ruling was confirmed at acceptance;
+the remaining OPEN entries belong to Phase 3 and go to the owner at that phase's gate.
 
 ---
 
@@ -159,7 +147,7 @@ not record them, they are gone.
 | Any change to the learning corpus or the issue-time capture path | §7.6 — verified non-impact, deliberately untouched. |
 | Live re-pricing, price deltas, or any money on the surface | R10, R3. |
 | Excluded candidates, in any form — list, count, or reason | R9, verbatim owner ruling. |
-| Backfilling anything — statuses, or figures onto lines saved before Phase 3 | R18 *"leave history"*; a backfill would be a display-time catalogue read wearing a snapshot's clothes. The owner accepted this cost explicitly (D5). |
+| Backfilling anything — statuses, or figures onto lines saved before Phase 3 | R18 *"leave history"*; a backfill would be a display-time catalogue read wearing a snapshot's clothes. The owner accepted this cost explicitly (D5), and **revision 21's retraction does not touch it** — it is a ruling about history, not about a deployment window. |
 | Carrying the rationale past issue (`order_line` gains no candidate reference) | D2. Its own ticket if ever wanted. |
 | The staff role vocabulary (`estimator \| technical_reviewer \| manager \| admin`) | Conclusions §8: same defect class, own ticket, touches authorization. **Must not ride along.** |
 | A new RBAC role for the Estimator persona | Conclusions §1: persona ≠ role. R20 stands unchanged. |
@@ -331,15 +319,18 @@ stale branch fails at the point of harm rather than succeeding and expiring quie
 
 **Risk owned here:** an irreversible write against the live Sanity dataset.
 
-### Phase 2 — The shared drawing viewer, **and the line-route URL grammar** (R21, R25, R31)
+### Phase 2 — The shared drawing viewer, **and the line-route URL grammar** (R21, R25, R31) · **SHIPPED**
 
-**Delivers on its own:** the element the owner rates highest in the product is readable at
+**Accepted and deployed 2026-08-25** — owner sign-off on the stage-8 verdict, production
+version `9285d642`.
+
+**Delivered on its own:** the element the owner rates highest in the product is readable at
 full size from every ops2 surface that draws an opening as its subject; on a composite,
 a unit can be examined alone, addressably.
 
-**R31 changed what this phase is, and the architect's route ruling changed where its work
-sits.** The viewer is not an overlay that opens and dismisses — it is a **node in the
-navigation tree with a real route**. So this phase now owns:
+**R31 changed what this phase was, and the architect's route ruling changed where its work
+sat.** The viewer is not an overlay that opens and dismisses — it is a **node in the
+navigation tree with a real route**. So this phase owned:
 
 - the **`exact` drop on the line route** and the whole child-route grammar under it;
 - `/projects/:id/line/:lineId/drawing` and `/projects/:id/line/:lineId/drawing/u1`, `u2`, …;
@@ -349,12 +340,8 @@ navigation tree with a real route**. So this phase now owns:
 - **the `ElevationLegend` deletion** (VIEW-AC-12, D12 — added at the same gate).
 
 **Phase 3b then adds only the `why` child** to a grammar that already exists. That is the
-sequencing change: the routing work is Phase 2's, not Phase 3's, and a phase description
+sequencing change: the routing work was Phase 2's, not Phase 3's, and a phase description
 or test plan that still places it in Phase 3 is stale.
-
-**Why second:** still small, still client-only, still zero server surface — and now it also
-lays the routing foundation Phase 3b builds on, which is a further reason not to reorder it
-behind Phase 3.
 
 ### Phase 3 — the capture, the panel, the detail screen
 
@@ -386,18 +373,46 @@ is no backfill, so **every line saved before Phase 3 has no figures** and shows 
 absence (WHY-AC-9, WHY-AC-27). Lines saved after it do. Phase 1 stays clean in exchange.
 
 **Sequencing inside the phase:** 3a lands first and alone — red test, then the write, then
-its negative criteria green — before any read endpoint or UI work starts. Shipping the
-capture even a few days ahead of the surface is worth more than tidiness: every save in
-between is a line that will have something to show, and a save that is missed cannot be
-recovered.
+its negative criteria green — before any read endpoint or UI work starts.
+
+**Why, corrected 2026-08-25.** Because 3a is a **server write-path change touching every
+writer of a line's product** — fifteen verified sites, both consoles, and the customer's own
+save route — and a change with that blast radius can be verified on its own in a way it
+never can folded into a display feature. §7.2's negative criteria are the entire risk of
+this feature: *no save that succeeds today starts failing.* They are worth proving against
+a deployment in which nothing else moved.
+
+> **~~The reason this paragraph used to give:~~** *"Shipping the capture even a few days
+> ahead of the surface is worth more than tidiness: every save in between is a line that
+> will have something to show, and a save that is missed cannot be recovered."*
+>
+> **That is false, and it is retracted here rather than deleted.** The owner, 2026-08-25:
+> **there will be no saves between 3a and 3b. The phasing exists to make the change
+> manageable, nothing more.** No production window depends on the gap between the two
+> deployments, so **nobody may accept a schedule risk, a shortened review or a rushed deploy
+> on the strength of it** — which is exactly what an urgency claim is for, and why a false
+> one is worth retracting loudly.
+>
+> **It is the same defect class as the six in §12 note 10, in a new shape:** those were
+> claims about the **codebase**, each settleable with one command. This was a claim about
+> the **world** — what would happen in production between two deployments — and no grep
+> could have settled it. It survived a grill, thirty-one rulings and twenty revisions
+> because it sounded like diligence.
+>
+> **What this does NOT change.** D5's accepted cost and SNAP-AC-10's no-backfill ruling
+> stand exactly as written. Lines saved **before the capture existed** have no figures and
+> show the honest absence (WHY-AC-9, WHY-AC-27); that rests on R18 (*"leave history"*) and
+> on one-place-per-fact — a backfill would be a display-time catalogue read wearing a
+> snapshot's clothes, and *"saved before the capture existed"* must stay distinguishable
+> from *"captured, and the figure is unknown"* (SNAP-AC-8). **The owner has not reversed his
+> own ruling.** A false reason has been removed from beside a correct one.
 
 **Dependency check:** Phase 3 does not technically depend on Phase 1 — R5 keeps
-certification off the screen either way. **3b now does depend on Phase 2** for the route
-grammar; if the phases were ever reordered, that grammar travels with whichever ships
-first. 3b depends on 3a for anything a human selected to have figures at all. **The
-`SidePanel` changes (R26, R29) belong to whichever of Phase 2 or 3 ships first** — one
-component edit, and shipping the detail against the old presentation would ship something
-the gate did not approve.
+certification off the screen either way. **3b depends on Phase 2** for the route grammar,
+which has now shipped. 3b depends on 3a for anything a human selected to have figures at
+all — a display surface with nothing stored to display is the one ordering that would be
+wrong. The `SidePanel` changes (R26, R29) travelled with Phase 2, as the earlier
+"whichever ships first" rule intended.
 
 ### Wayfinder check
 
@@ -494,7 +509,10 @@ scope).
 Owner decisions: **D1** three phases, confirmed order · **D2** panel absent post-issue ·
 **D3** figures snapshotted at save, never read live · ~~**D4** placeholder~~ *(superseded
 by R28)* · **D5** the capture waits for Phase 3; Phase 1 stays strictly the `certified`
-removal, and the loss of figures for everything saved before Phase 3 is accepted ·
+removal, and the loss of figures for everything saved before Phase 3 is accepted —
+***the cost D5 records is about lines saved BEFORE THE CAPTURE EXISTED, which is history.
+It never rested on a gap between the 3a and 3b deployments; there is no such gap (§4's
+retraction, revision 21), and the ruling is unaffected by that correction*** ·
 **D6** a client/manual-picked line shows a thinner panel **with** its product's figures ·
 **D7** the capture extends to the customer save path · **D8** the detail screen gets its
 own URL, `/projects/:id/line/:lineId/why` — taken on the reasoning that without a route,
@@ -526,6 +544,17 @@ in its own words that deleting the export was *"a separate decision that nobody 
 taken"*. The owner has taken it, on evidence that arrived afterwards: the export has **zero
 callers repo-wide** and **no `.elev-legend` rule exists in any stylesheet**, so it could not
 render correctly even if something called it. §13.13 is VETOED.
+
+**Confirmed at Phase 2 acceptance, 2026-08-25:**
+
+**D13 — the drawing claims all the space left after the viewer's chrome and its caption, at
+every viewport shape, and the caption never scrolls out of view.** §13.18's assumption, put
+to the owner with its alternatives (a fixed share of the screen; or a caption that may
+scroll on an ultrawide) and **confirmed as built**.
+
+**D14 — the phasing is about manageability, not urgency.** *"There will be no saves between
+3a and 3b."* Retracts the urgency justification in §4 without touching the sequencing, D5's
+accepted cost, or SNAP-AC-10.
 
 ---
 
@@ -703,6 +732,13 @@ are what enforce the two preconditions rather than trusting the operator to reme
 
 ## 7. Acceptance criteria — Phase 3a: the universal capture (R22, D3, D6, D7)
 
+**Why this is its own phase.** **Not urgency** — see §4's retraction: there is no window of
+production saves between the 3a and 3b deployments, and no criterion here depends on one.
+It is separate because it is a **server write-path change with the widest blast radius in
+this feature** — every writer of a line's product, on both consoles and the customer's own
+save route — it falls under Probity so its failing test comes first, and §7.2's negative
+criteria are worth proving against a deployment in which nothing else moved.
+
 ### 7.1 One rule
 
 Owner, verbatim: *"every save should record thermal properties of selected at a time
@@ -729,7 +765,9 @@ the index it replaces:
 - **It cannot pass vacuously.** The scan asserts its own match set is non-empty and at
   least as large as the design's index — a pattern that silently stops matching (a
   reformatted statement, a new helper, a renamed column) must fail loudly rather than
-  report success over nothing.
+  report success over nothing. **And its file reach is whatever its list says** — see §12's
+  closing note; a scan that iterates a literal array of files does not extend itself to a
+  new one.
 
 **SNAP-AC-3 (R22 — one place per fact)** — *Given* the figures are captured, *When* the
 display surface states what the line's current product performs at, *Then* it reads the
@@ -775,6 +813,12 @@ do not change, and nothing recomputes them.
 
 **SNAP-AC-10 (no backfill — D5)** — *Given* lines saved before this phase, *When* it is
 deployed, *Then* no script and no migration writes figures onto them.
+
+*This criterion rests on R18 and on one-place-per-fact, never on a deployment window.*
+Revision 21's retraction of the urgency justification (§4) does not touch it: a backfill
+would be a display-time catalogue read wearing a snapshot's clothes, and *"saved before the
+capture existed"* must stay distinguishable from *"captured, and the figure is unknown"*
+(SNAP-AC-8).
 
 **SNAP-AC-11 (the platform's record is never overwritten)** — *Given* any capture on any
 path, *When* it writes, *Then* it writes only to the line's own configuration record; no
@@ -845,7 +889,12 @@ switching work inherits this unchanged — §2.1, point 5.)*
 
 ---
 
-## 8. Acceptance criteria — Phase 2: the shared drawing viewer (R21, R25, R31)
+## 8. Acceptance criteria — Phase 2: the shared drawing viewer (R21, R25, R31) · **ACCEPTED**
+
+> **Phase 2 was accepted at stage 8 on 2026-08-25 and deployed** (version `9285d642`).
+> Every criterion below was verified against executed evidence, including mutation checks
+> that reverted the fix to watch the criterion go red. The criteria stay exactly as written:
+> they are what the next reader must not break.
 
 **The URL grammar — owner-confirmed (D9, §13.14).** `/projects/:id/line/:lineId/drawing`
 for the opening; `/projects/:id/line/:lineId/drawing/u1`, `/u2`, … for a unit — **1-based
@@ -863,7 +912,7 @@ opening, *When* the reviewer activates the drawing, *Then* the viewer opens carr
 whole drawing and its caption visible together, the drawing as large as the viewport
 permits** — and nothing that explains the drawing's notation.
 
-> ### The size rule — resolved at the round-2 tester gate, revision 18
+> ### The size rule — resolved at the round-2 tester gate, revision 18; confirmed by the owner (D13)
 >
 > **The criterion was requiring two things that cannot both hold, so no implementation
 > could satisfy it.** Revision 16 required the drawing "strictly larger at 1920 than at
@@ -898,17 +947,15 @@ permits** — and nothing that explains the drawing's notation.
 > So an ultrawide **2560×1080** — a common ops shape — got precisely the drawing a
 > 1280×1080 window got. Width contributed nothing.
 >
-> **The magic number goes with it.** `62vh` was the sibling of the `720px` that caused
+> **The magic number went with it.** `62vh` was the sibling of the `720px` that caused
 > round 1's MINOR: a figure nobody had defended, silently deciding how much of the screen
 > the drawing may claim. Under this rule the budget is not chosen — **it is what is left**:
 > the viewer's own space after its chrome and its caption. Fitting a fixed-aspect drawing
 > into a box is something the platform already does for an SVG that carries its own aspect
 > ratio; no arithmetic about viewport percentages belongs in this component.
 >
-> **`ASSUMED:` §13.18** — the drawing may claim **all** of that remaining space rather than
-> a share of it, and the caption never scrolls out of view. That is the reading of R21 this
-> spec has worked to throughout, but *how much of an ultrawide the drawing should claim* is
-> the owner's call, and §13.18 is the assumption he would be vetoing.
+> **Confirmed by the owner at acceptance (D13, §13.18):** the drawing claims **all** of that
+> remaining space rather than a share of it, and the caption never scrolls out of view.
 >
 > #### How it is verified — and the shipped test is why this needs saying
 >
@@ -928,8 +975,8 @@ permits** — and nothing that explains the drawing's notation.
 >    box **and the whole caption** are inside the viewport, with no scrolling needed to read
 >    the size.
 >
-> A sweep that moves both dimensions cannot fail on the wrong governor. This criterion has
-> already been passed once by exactly that test, and the ultrawide is what it cost.
+> A sweep that moves both dimensions cannot fail on the wrong governor. This criterion was
+> passed once by exactly that test, and the ultrawide is what it cost.
 
 **VIEW-AC-1a (title names the subject — owner-confirmed, D10, §13.15)** — *Given* the
 viewer is showing a **unit**, *When* its title is read, *Then* it is that unit's code
@@ -1015,14 +1062,14 @@ proportional to unit sizes. Statements about the drawing's **authority** are una
 must remain — that mullion positions are confirmed at technical review, and that an
 unsized opening is a stand-in.
 
-*This assertion is new, and it is the first test this element has ever had.* The legend has
-been rendered by `Plate.tsx:104` since the record work shipped and is asserted by no suite
+*This assertion was new, and it is the first test this element has ever had.* The legend had
+been rendered by `Plate.tsx:104` since the record work shipped and was asserted by no suite
 anywhere — so nothing would have caught its removal, and nothing would catch its
 reinstatement either. A test that only searched for the word "legend" would pass a viewer
 that still explained panel proportions in a sentence; the assertion is against the class.
 
 **And after D12 it must not rest on the `.elev-legend` selector**, which can no longer
-match anything once the component is deleted — see §12 note 5. A criterion whose only
+match anything now the component is deleted — see §12 note 5. A criterion whose only
 check is a selector that cannot exist is a criterion nobody is testing.
 
 **VIEW-AC-11 (R25 — the older spec stops contradicting this one)** — *Given*
@@ -1051,10 +1098,10 @@ Phase 2 lands, *Then*:
   gone and why — the same discipline VIEW-AC-11 applies to the older spec;
 - the typecheck and the build are green, and no other export in that module changes.
 
-> **The three states of this criterion, kept rather than tidied.** It has now flipped
-> twice, and the record of *why* it kept flipping is worth more than a clean-looking
-> criterion — twice, the reason given for keeping the export turned out to be an
-> unexecuted claim about the repository.
+> **The three states of this criterion, kept rather than tidied.** It flipped twice, and the
+> record of *why* it kept flipping is worth more than a clean-looking criterion — twice, the
+> reason given for keeping the export turned out to be an unexecuted claim about the
+> repository.
 >
 > **~~Through revision 13:~~** *"…the export itself is not deleted… and the customer site's
 > use of it is unaffected… the other consumer's right to it is not this feature's to
@@ -1077,24 +1124,24 @@ Phase 2 lands, *Then*:
 >
 > **Revision 16 — the decision nobody had taken has been taken, by the owner (D12), on
 > evidence that did not exist when revision 14 was written.** From an independent
-> ponytail-review that executed its greps, re-run for this revision: the export has **zero
-> callers repo-wide**, **and no `.elev-legend` rule exists in any stylesheet.** The only
-> occurrences of that class name are the component's own markup, one comment, and a
-> Playwright assertion that it renders zero times. Its markup has therefore been **unstyled
-> since the plate stopped rendering it — it would not render correctly even if something
-> called it.**
+> ponytail-review that executed its greps, re-run for that revision: the export had **zero
+> callers repo-wide**, **and no `.elev-legend` rule existed in any stylesheet.** The only
+> occurrences of that class name were the component's own markup, one comment, and a
+> Playwright assertion that it rendered zero times. Its markup had therefore been **unstyled
+> since the plate stopped rendering it — it would not have rendered correctly even if
+> something had called it.**
 >
-> That is what changes the answer. "Removing a render, not an API" was the right
+> That is what changed the answer. "Removing a render, not an API" was the right
 > distinction while there was an API somebody could use. An export with no caller and no
 > styles is not an API being preserved for a future consumer; it is dead code with a door
-> painted on it, and the next reader who finds it will spend the same hour three readers
-> have already spent. Deletion is the smaller diff and the smaller future.
+> painted on it, and the next reader who found it would have spent the same hour three
+> readers already had. Deletion was the smaller diff and the smaller future.
 
 **What the test asserts, and what it must still not assert.** It asserts the **absence**:
 no `export function ElevationLegend` in `Elevation.tsx`, and no live-source reference to
 the identifier. It must **not** reintroduce a consumer count in either direction — that is
-exactly the claim class §12 note 10 exists to stop, and this criterion has now been wrong
-twice for that reason.
+exactly the claim class §12 note 10 exists to stop, and this criterion was wrong twice for
+that reason.
 
 ### 8.1 Opening a drawing from the project record's desk canvas (D11 — new, revision 16)
 
@@ -1104,7 +1151,7 @@ same `LineReview` body the line page does — so its plate and its unit rows are
 there too (`src/ops2/projects/ProjectRecordPage.tsx:190-203`). The journey was added at
 **architect-conformance time** (design §11.5) to satisfy VIEW-AC-5's "exactly one viewer",
 *after* §8 was written, and so it reached the tester with nothing to test it against. That
-is the tester's MAJOR, and the class of defect is recorded at §12 note 11.
+was the tester's MAJOR, and the class of defect is recorded at §12 note 11.
 
 **The journey itself is right and stays.** Opening a second, unrouted viewer over the
 record would have given it a back control that does not truly go back — the exact promise
@@ -1155,7 +1202,7 @@ subject is built only once the record has resolved a line
 (`src/ops2/projects/LinePage.tsx:124` passes the reference only when `record` exists), so
 there is no moment at which the viewer is on screen with nothing behind it. The developer
 implemented the fallback in both places, deleted the unreachable copy and said so rather
-than dropping it quietly; the criterion is corrected to match reality rather than the code
+than dropping it quietly; the criterion was corrected to match reality rather than the code
 kept unreachable to match a sentence.
 
 **What that clause was protecting still stands, in the two places it is real:**
@@ -1184,7 +1231,7 @@ vetoed, on exactly the records where the two controls would then disagree.
 The cost the owner accepted, stated to him: a reference is an identifier rather than a name
 — it says *which record*, not *which job*. **The general rule still governs and outranks the
 wording:** the control names **what it returns to**, and never the line when it did not come
-from one. The defect this replaces was exactly that mismatch — the control rendered `‹ W07`,
+from one. The defect this replaced was exactly that mismatch — the control rendered `‹ W07`,
 naming the line, and landed on the record. A back control that misnames its destination is
 worse than an unlabelled one, because the reviewer only learns it was wrong by arriving
 somewhere else.
@@ -1197,9 +1244,9 @@ shows that line's drawing **from the first frame after the pop**: no intermediat
 which it is empty, shows no selection, or shows a placeholder.
 
 **Measured, not eyeballed.** The tester's evidence for the defect was `selected row index
--1; canvas text starts ""`. The fix is proved by the same two observations, read immediately
-after the pop **with no waiting**: the selected row's identity is the line that was
-selected, and the canvas already carries that line's own content.
+-1; canvas text starts ""`. The fix was proved by the same two observations, read
+immediately after the pop **with no waiting**: the selected row's identity is the line that
+was selected, and the canvas already carries that line's own content.
 
 **VIEW-AC-17 (executed where only a browser can see it)** — *Given* Phase 2 is complete,
 *When* its test artifacts are enumerated, *Then* `scripts/tests/web/` carries **executed**
@@ -1585,10 +1632,10 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** *(From the canvas it is one back, to the record: only one entry was ever pushed.)* | R31, VIEW-AC-2d, VIEW-AC-14 |
 | **A pasted drawing or `why` link, cold** | Renders with the surface open, resolved through the record fetch; back **replaces** to the line path rather than leaving the console. | VIEW-AC-2b, WHY-AC-7c/7d |
 | **A malformed or out-of-range unit suffix** | Normalises by replace, growing no history. | VIEW-AC-2c |
-| **A short wide viewport — 2560×1080, a common ops shape** | **Height binds.** The drawing is as tall as the space left after the chrome and the caption, and no taller; it does not grow to claim the width, because a landscape drawing that did would stand ~1790px tall on a 1080px screen and push its own caption off the screen. | VIEW-AC-1 |
-| **A tall narrow viewport, and the phone** | **Width binds.** The drawing is as wide as the space allows and shrinks to fit; the caption stays visible with it. No fixed px or vh cap decides either case. `ASSUMED:` §13.18 | VIEW-AC-1 |
+| **A short wide viewport — 2560×1080, a common ops shape** | **Height binds.** The drawing is as tall as the space left after the chrome and the caption, and no taller; it does not grow to claim the width, because a landscape drawing that did would stand ~1790px tall on a 1080px screen and push its own caption off the screen. | VIEW-AC-1, D13 |
+| **A tall narrow viewport, and the phone** | **Width binds.** The drawing is as wide as the space allows and shrinks to fit; the caption stays visible with it. No fixed px or vh cap decides either case. | VIEW-AC-1, D13 |
 | **The drawing's own dimension leaders at the extremes** | They scale with the drawing — large on a big screen, a few px on a phone. **Indifferent to the criterion, because the caption states the size at every shape.** Their treatment is the design stage's. | VIEW-AC-1 |
-| **Everything saved before Phase 3** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost. | D5 |
+| **Everything saved before the capture exists** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost, and it is about **history** — not about any gap between the 3a and 3b deployments, of which there is none (§4's retraction). | D5, R18, SNAP-AC-10 |
 | **A customer-configured line saved after Phase 3** | Thinner panel: who chose it, and its figures. | D6, D7 |
 | **A customer overrides an AI-priced line** | The recommendation's snapshot is still cleared (it no longer describes the line); the customer's own figures replace it; the requirement does not move; the panel says a person chose it though `origin` still reads `'ai'`. | SNAP-AC-14, R23, R24 |
 | **A customer restores the AI proposal** | The line reads as platform-made again, by comparison rather than by a flag. | WHY-AC-30 |
@@ -1657,23 +1704,20 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
 4. **X-AC-1 must be executed for both callers separately** even though they receive the
    same refusal — X-AC-2 is precisely the assertion that they are indistinguishable, and
    it cannot be demonstrated by testing one of them.
-5. **VIEW-AC-10 is a new assertion over untested ground; VIEW-AC-11 is a document edit —
-   and after D12 the selector is a trap.** Searched 2026-08-24: **no suite anywhere asserts
-   the drawing legend** — the only hits for its text are two prose comments in
-   `scripts/tests/drawing.test.mjs` and an unrelated `legendText` fixture field. So the
-   tester must not go looking for an existing assertion to update; there is none.
-   VIEW-AC-10's scan is the element's **first** test, and it must be written against the
+5. **VIEW-AC-10 was a new assertion over untested ground; VIEW-AC-11 was a document edit —
+   and after D12 the selector is a trap.** Searched 2026-08-24: **no suite anywhere asserted
+   the drawing legend** — the only hits for its text were two prose comments in
+   `scripts/tests/drawing.test.mjs` and an unrelated `legendText` fixture field.
+   VIEW-AC-10's scan was the element's **first** test, and it had to be written against the
    *class* of copy — a check for the word "legend" alone would pass a viewer that still
-   explained panel proportions in a sentence. **And once `ElevationLegend` is deleted
-   (VIEW-AC-12), the `.elev-legend` locator can never match anything**, so a
-   `toHaveCount(0)` on it becomes true by construction: harmless to keep, worthless as
-   coverage, and fatal if it is the *only* thing standing behind VIEW-AC-10. The
-   class-of-copy assertion is the coverage. *(Executed: the developer removed that
-   count-zero assertion rather than leave a test that can never fail again, and replaced the
-   pinning assertion with an inverted one that fails if the identifier returns to
-   `Elevation.tsx` outside a comment — which is the right shape, because it fails on the
-   thing that could actually go wrong.)* VIEW-AC-11 is satisfied by an edit to
-   `ops2-record-correction.md`, not by a test run.
+   explained panel proportions in a sentence. **And once `ElevationLegend` was deleted
+   (VIEW-AC-12), the `.elev-legend` locator could never match anything**, so a
+   `toHaveCount(0)` on it became true by construction: harmless to keep, worthless as
+   coverage, and fatal if it were the *only* thing standing behind VIEW-AC-10. *(Executed:
+   the developer removed that count-zero assertion rather than leave a test that can never
+   fail again, and replaced the pinning assertion with an inverted one that fails if the
+   identifier returns to `Elevation.tsx` outside a comment — the right shape, because it
+   fails on the thing that could actually go wrong.)*
 6. **WHY-AC-39/40/41 assert absences, which is the easiest thing to test badly.** Enumerate
    the surface's interactive elements and assert the *set*, rather than searching for the
    string "Change the product" — a differently-worded button would pass a string search.
@@ -1690,10 +1734,9 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
    inventing a label, check whether the destination already has one somewhere in this
    console** — §13.17 was vetoed precisely because it did (`LinePage.tsx:201` names the
    record by its reference), and neither the spec nor the gate that approved it had looked.
-   A label is a convention, and a convention that already exists is not a decision to
-   re-take. **Two controls, two states:** the *page's* back control has a real pre-load
-   state and keeps `Project`; the *viewer's* has none, so it has no fallback (VIEW-AC-15,
-   revision 19). Do not test one against the other's expectations.
+   **Two controls, two states:** the *page's* back control has a real pre-load state and
+   keeps `Project`; the *viewer's* has none, so it has no fallback (VIEW-AC-15, revision
+   19). Do not test one against the other's expectations.
    **And the guarantee under that absence is only half pinned.**
    `scripts/tests/ops2-record.test.mjs:99-100` covers the **absent** `publicRef`; that an
    **empty or whitespace** one also falls back to the id rests on `str()`'s trim, which no
@@ -1717,46 +1760,59 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
    CERT-AC-13's directory to match the allowlist would point its gate at the wrong tree and
    make it vacuous. Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`;
    CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder.
-10. **THE RULE THIS FEATURE LEARNED SIX TIMES — a justification naming another consumer,
-    another surface or another convention is a claim about the codebase, and it must be
-    EXECUTED, not asserted.** Every instance took one grep to settle, and every one had
-    already been believed by two or more careful readers:
+10. **A JUSTIFICATION IS A CLAIM, AND IT MUST BE CHECKED — six times about the codebase,
+    once about the world.** A reason that names another consumer, another surface, another
+    convention or another future is a **statement of fact**, not an argument. Each of these
+    had already been believed by two or more careful readers:
+
+    **Claims about the codebase — one command settles each of them.**
     - **The writer index (§7.4).** A hand-maintained list of the sites writing a line's
       product: named 1, then 4, then 8, then verified at **15**.
     - **The `src/ops/api.ts:381` allowlist entry (§6).** Exempted as *"a legacy read
       surface this feature does not touch"*. Executed: both its producers had been removed,
       orphaning a live ops caption. The exemption is gone.
     - **VIEW-AC-12's premise (§8).** *"The customer site still uses it."* Executed:
-      `ElevationLegend` is defined once and **called from nowhere**; the export was added
-      **by ops2's own record work**. ops2 was the only consumer, and this phase removed it.
+      `ElevationLegend` was defined once and **called from nowhere**; the export had been
+      added **by ops2's own record work**.
     - **The correction's own first draft**, which said "exactly one reference repo-wide".
       The Codex stop-gate caught it: the identifier appears in an ADR, four documents, a
-      test and three source files. **A count is a claim too.** "No caller" is checkable
-      and stays true; "one hit" was neither.
+      test and three source files. **A count is a claim too.**
     - **The corrected criterion's own survival argument (revision 16).** Revision 14 kept
-      the export because *"this phase removes a render, not an API"* — a distinction that
-      silently assumed there was a working API to preserve. Nobody had checked the
-      stylesheets. **There is no `.elev-legend` rule anywhere**, so the retained export
-      could not have rendered correctly for any future consumer either.
+      the export because *"this phase removes a render, not an API"* — which silently
+      assumed there was a working API to preserve. Nobody had checked the stylesheets.
+      **There was no `.elev-legend` rule anywhere.**
     - **And the absence that is the same defect inverted (revision 17): §13.17's label.**
       The spec proposed a *new* convention for naming the project record without checking
-      whether the console already had one. It did — `LinePage.tsx:201` — and the owner
-      vetoed the invention. **"There is no precedent" is a claim too**, and it is the one
-      nobody thinks to grep, because an absence does not announce itself.
+      whether the console already had one. It did — `LinePage.tsx:201`. **"There is no
+      precedent" is a claim too**, and it is the one nobody thinks to grep, because an
+      absence does not announce itself.
 
-    **A seventh instance closed itself the right way (revision 19), and it is the model.**
-    VIEW-AC-15's *"falling back to `Project` while the record has not loaded"* was a claim
-    about a **state**, and the state does not exist on that control. The developer executed
-    it, deleted the unreachable branch, **and reported it as a spec defect instead of
-    quietly not building it.** That is the loop working: a criterion that cannot be
-    satisfied honestly is a defect in the criterion, and it comes back up the pipeline.
+    **A DIFFERENT SHAPE — a claim about the WORLD, which no grep can settle (revision 21).**
+    The spec justified 3a-before-3b partly on urgency: *"every save between 3a and 3b is a
+    line that will have something to show, and a save that is missed cannot be recovered."*
+    **The owner: there will be no saves between 3a and 3b.** The phasing is about
+    manageability, nothing more.
 
-    **The tell is a sentence that sounds like verification and contains none:** "another
-    consumer", "a legacy surface", "the customer site", "everywhere else", "somebody might
-    use it", "there is nothing like this yet", "while it is still loading". Each is a
-    testable statement about the repository dressed as a reason. When one appears in a
-    criterion, an allowlist, an exemption or a piece of new copy, **run the grep before
-    believing it** — and prefer a criterion that does not need the claim at all.
+    This one could not have been checked with a command — it was a claim about **what would
+    happen in production between two deployments**, and only the person who decides that
+    could settle it. **It survived a grill, thirty-one rulings and twenty revisions because
+    it sounded like diligence.** The tell was identical to the other six (a sentence that
+    sounds like a reason and was never verified); only the check differs:
+
+    > **A claim about the codebase is settled by running something. A claim about the world
+    > is settled by asking the person who owns it — at the grill, or at a decision gate, in
+    > the same breath as the decision it is being used to justify.**
+
+    And note *what* it was being used to justify: an **urgency**. A false urgency is the
+    most expensive kind of unchecked claim, because it is spent buying schedule risk —
+    shortened review, a rushed deploy, a phase shipped before it is ready. Nothing was spent
+    here, and nothing should be.
+
+    **The tell, either shape:** "another consumer", "a legacy surface", "the customer site",
+    "everywhere else", "somebody might use it", "there is nothing like this yet", "while it
+    is still loading", "every save in between". When one appears in a criterion, an
+    allowlist, an exemption or a piece of sequencing prose, **check it before believing it**
+    — and prefer a criterion that does not need the claim at all.
 11. **A journey that no criterion names will be tested by nobody — and it is a later stage
     that adds them.** The desk-canvas enlargement (§8.1) was introduced at
     **architect-conformance time**, to satisfy VIEW-AC-5, after §8 was written. It was a
@@ -1780,7 +1836,8 @@ two-file array** (`scripts/tests/ops2-navigation.test.mjs:329`: `LinePage.tsx`,
 `ProjectRecordPage.tsx`). That is true today — nothing else in the repo imports
 `drawingSuffix` — but it does not extend itself. **A third opener in a third file passes
 the suite by not being looked at.** Widen the array when a file joins, or widen the scan to
-the directory; either way, do not read the claim as stronger than the loop.
+the directory; either way, do not read the claim as stronger than the loop. **SNAP-AC-2's
+scan inherits this exactly.**
 
 ---
 
@@ -1800,7 +1857,7 @@ decision was still in play, and might have "resolved" it a second time, differen
 An `OPEN` entry that has already shipped says so, because vetoing it then costs rework
 rather than an edit, and the owner deserves to know which kind of veto he is being offered.
 **§13.13 and §13.17 are the worked examples**, and they cost differently: §13.13's veto
-deletes code that had shipped, §13.17's changes one label in a control that had shipped an
+deleted code that had shipped, §13.17's changed one label in a control that had shipped an
 hour earlier. Both were worth taking; neither would have been visible without the state.
 
 **States:** `OPEN` — still assumed, still vetoable · `DISCHARGED` — the owner or the
@@ -1814,66 +1871,51 @@ the assumption.
 | §7.1 | `withheldIncomplete[]` is **not** shown, following R9 | **OPEN** — Phase 3b, not yet built |
 | §7.2 | the `CandidateOutcome.dataSource` removal is the architect's to rule | **DISCHARGED** — ruled *remove*; ADR 0011; paid for with a `SELECTION_VERSION` bump; old `outcome_json` still parses (CERT-AC-9) |
 | §7.3 | "3–5 next best" implemented as **4** runners-up, five rows total | **OPEN** — Phase 3b, not yet built |
-| §7.4 | the `CONTEXT.md` corrections are the architect's to apply — Staff works for OpenFrame (a direct owner ruling), define "Manufacturer" (an inference, vetoable), plus the **Estimator** persona and the **human review gate** | **DISCHARGED — architect, verified applied 2026-08-25 (Phase 2 conformance review, design §11).** All four are live in `CONTEXT.md`: Staff works for OpenFrame, not AMJ (Actors → Staff); **Manufacturer partner** defined as an actor, `hasAssignedRole` the one predicate (Actors); **Estimator (persona)** defined, distinct from the subsystem and explicitly not an RBAC role (Actors); **Human review gate** defined as a stage between submission and issue (Language). The design §3 glossary additions (Captured figures, Selection attribution) are also in place ahead of Phase 3 |
+| §7.4 | the `CONTEXT.md` corrections are the architect's to apply — Staff works for OpenFrame (a direct owner ruling), define "Manufacturer" (an inference, vetoable), plus the **Estimator** persona and the **human review gate** | **DISCHARGED — architect, verified applied 2026-08-25 (Phase 2 conformance review, design §11).** All four are live in `CONTEXT.md`; the design §3 glossary additions (Captured figures, Selection attribution) are also in place ahead of Phase 3 |
 
 ### Registered by this spec
 
 | # | Entry | State |
 |---|---|---|
-| 1 | **VIEW-AC-9** — the record list's row glyph does not open the viewer; the row is already one navigation target (record spec P1-AC-24/35) | **OPEN — shipped in Phase 2.** A veto now costs rework |
+| 1 | **VIEW-AC-9** — the record list's row glyph does not open the viewer; the row is already one navigation target (record spec P1-AC-24/35) | **OPEN — shipped and deployed in Phase 2.** A veto now costs rework |
 | 2 | **WHY-AC-10** — a pre-0055 run says the reasoning was not recorded, rather than reconstructing from the deleted model's columns | **OPEN** — Phase 3b |
 | 3 | **§11, GST** — no money at all on this surface | **OPEN** — Phase 3b |
 | 4 | **§11, multiple runs** — the most recent run only; earlier runs are not listed | **OPEN** — Phase 3b |
 | 5 | **WHY-AC-9** — where figures were never captured, the panel says so rather than reading the catalogue at display time | **OPEN** — Phase 3b |
 | 6 | *(the capture's reach)* | **RETIRED** — D7 answered it: the capture extends to the customer save path |
 | 7 | *(where "Change the product" lives)* | **RETIRED** — R28 answered it: there is no such control |
-| 8 | **SNAP-AC-12** — figures live in the existing `configuration_snapshot_json` rather than new columns; the architect may rule otherwise | **OPEN** — Phase 3a |
-| 9 | **§7.4** — R22 applies to the estimator's own line-creating writers too; which files is the design's index | **OPEN** — Phase 3a |
+| 8 | **SNAP-AC-12** — figures live in the existing `configuration_snapshot_json` rather than new columns; the architect may rule otherwise | **OPEN** — Phase 3a, live now |
+| 9 | **§7.4** — R22 applies to the estimator's own line-creating writers too; which files is the design's index | **OPEN** — Phase 3a, live now |
 | 10 | **WHY-AC-28** — on an overridden line, R6's three labels are kept and only "Chosen" changes its sentence | **OPEN** — Phase 3b |
 | 11 | **§10** — the ops routes' existing uniform refusal is adopted as written rather than changed | **OPEN** — Phase 3b |
 | 12 | *"the drawing viewer is an overlay… it keeps a dismiss control"* | **VETOED by R31.** Kept visible because the way it was wrong is the useful part: it reasoned from *"is it an overlay?"* when the question is *"does it ask a question and return an answer?"* |
-| 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer** | **VETOED — owner, 2026-08-25 (D12).** The criterion's own reason was that deleting the export was *"a separate decision that nobody has taken"*; the owner has taken it. Decided by evidence that arrived after revision 14: **zero callers repo-wide, and no `.elev-legend` rule in any stylesheet**, so the export could not render correctly even if called. VIEW-AC-12 now **requires** the deletion, together with the assertion that pinned it |
-| 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address: the ordinal matches what the labels already imply, and does not couple the URL to a label that changes if units are reordered |
-| 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
-| 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** "Is there a ceiling?" dissolved once the round-2 measurement arrived: there is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` went now), but there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18, which asks the question that actually has an owner in it. What was measured under this assumption: `height: 62vh; width: auto`, ~1278×893 at 2560×1440, **and the same drawing at 2560×1080 as at 1280×1080** |
-| 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, truncated as `OpsPage` truncates, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. **The precedent nobody had checked:** the line page's back control already names this destination by its **reference** — `src/ops2/projects/LinePage.tsx:201`, `label: record ? record.ref : "Project"`. The owner ruled for the reference: **one console-wide convention**, matching the control a reviewer already uses daily. Cost he accepted: a reference says which record, not which job. **Rework: the label expression only** — destination, exits, focus and the canvas fix were untouched. *(Revision 19: the `Project` half of this entry was never the viewer's to carry — that control has no pre-load state. It stays on the page-level control where the state is real. VIEW-AC-15 says so now.)* |
-| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — shipped in Phase 2, and the live ruling at acceptance.** The two things the owner might prefer instead: hold the drawing to a *share* of the screen (the deleted `62vh` was one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — the same reasoning that produced revision 17's fence, applied to the drawing itself. **A veto costs one stylesheet rule** |
+| 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer** | **VETOED — owner, 2026-08-25 (D12).** Decided by evidence that arrived after revision 14: **zero callers repo-wide, and no `.elev-legend` rule in any stylesheet**, so the export could not render correctly even if called. VIEW-AC-12 now **requires** the deletion, together with the assertion that pinned it |
+| 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address |
+| 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10)** |
+| 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** There is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` in 18), and there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18 |
+| 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. The precedent nobody had checked: `src/ops2/projects/LinePage.tsx:201` already names this destination by its **reference**. **Rework: the label expression only.** *(Revision 19: the `Project` half was never the viewer's to carry — that control has no pre-load state.)* |
+| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **DISCHARGED — owner, at Phase 2 acceptance (D13).** Confirmed as built, with the alternatives named and declined: a fixed share of the screen, or a caption that may scroll on an ultrawide |
+| 19 | *(the 3a-before-3b urgency — "every save in between is a line that will have something to show")* | **VETOED — owner, 2026-08-25 (D14).** There will be no saves between 3a and 3b; the phasing is about manageability. **The sequencing stands on its true reason** (§4, §7's opening). It never was a tagged assumption, which is the point: it was asserted as fact in prose and inherited by every later reader. Registered retrospectively so the correction is visible where the states are read |
 
 ---
 
 ## 14. Decisions needed
 
-**One, and it is tagged rather than blocking.**
+**None.**
 
-**§13.18 — how much of the screen may the drawing claim?** The ruling in VIEW-AC-1 is that
-the whole drawing and its caption are visible together and the drawing takes everything
-left over, at every viewport shape. **Recommendation: as written** — R21 makes the drawing
-the element that matters most in the product, and a size the reviewer must scroll to read
-is not a size statement. The alternatives, if the owner wants one: hold the drawing to a
-share of the screen (the deleted `62vh` was one, chosen by nobody), or let the caption
-scroll off a very wide screen so the drawing can claim more. **Nothing is blocked** — the
-assumption is what was built, it is one stylesheet rule either way, and it goes to him at
-acceptance with the rest of Phase 2.
+Phase 2's one live ruling — §13.18, whether the drawing may claim all the leftover space
+and whether the caption may ever scroll — was **confirmed as built** at acceptance (D13).
+The urgency correction (D14) needed no decision from the owner beyond the correction
+itself: it removes a false reason and changes nothing that was built or ruled.
 
-**What closed in revision 19.** VIEW-AC-15's fallback clause described a state the viewer's
-control cannot be in, and it is corrected rather than left for the code to satisfy with an
-unreachable branch. The console's `Project` fallback stays where the state is real — the
-page-level control — and the never-empty guarantee behind it is named in the criterion
-(`record.ts:314`, `parseProjectRecord`, pinned in `scripts/tests/ops2-record.test.mjs`),
-because **a fallback would have masked that pin and made it look optional**. The pin covers
-the absent case; the empty/whitespace case is measured but not yet pinned (§12 note 7).
+**What the correction did NOT change, stated plainly because the retraction must not read as
+a reversal.** D5's accepted cost stands: lines saved **before the capture existed** have no
+figures and show the honest absence (WHY-AC-9, WHY-AC-27). SNAP-AC-10's no-backfill ruling
+stands: it rests on R18 (*"leave history"*) and on one-place-per-fact, never on a deployment
+window. The 3a-before-3b sequencing stands, on the reason that is true — 3a is the widest
+blast radius in the feature and is worth verifying alone.
 
-**What closed in revision 18.** §13.16 ("no ceiling on the growth") is **RETIRED** — the
-measurement showed it was the wrong question. VIEW-AC-1's internal contradiction is resolved
-into one guarantee rather than two requirements, and its verification is three
-single-dimension sweeps (§12 note 12) rather than the two-variable test that let a
-height-only implementation through.
-
-**One thing stays with the design stage**, fenced rather than left loose: the drawing's
-dimension leaders scale with it — large on a big screen, a few pixels on a phone. That is
-indifferent to VIEW-AC-1 **because the caption states the size at every shape**. If the
-ui-designer's answer ever needs the caption to move, change or disappear at some width, that
-comes back here as a VIEW-AC-1 change, not a styling decision.
-
-**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph) and §13.18.
-The remaining OPEN entries belong to Phase 3 and will be live at that phase's gate.
+**Live for Phase 3a, and going to the owner at that phase's gate:** §13.8 (figures live in
+the existing `configuration_snapshot_json` rather than new columns — the architect may rule
+otherwise) and §13.9 (R22 reaches the estimator's own line-creating writers; which files is
+the design's index). **Still OPEN and already shipped:** §13.1. The rest belong to Phase 3b.
