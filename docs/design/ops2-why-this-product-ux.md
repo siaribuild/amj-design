@@ -574,8 +574,9 @@ met the caps
 
 - **Name** — the recorded product name; a product that has since left the catalogue still
   renders from the recorded facts and is never blank or dropped (WHY-AC-19).
-- **Figures** — the recorded Uw and SHGC. A missing figure says `no Uw recorded`, never a
-  dash.
+- **Figures** — the recorded Uw and SHGC. A missing figure says `Uw not recorded` — the
+  one spelling of absence this document uses (§3.4), and the one that shipped
+  (`whyCopy.ts:113`) — never a dash.
 - **Verdict**, by tier (WHY-AC-17): `met the caps` · `within the 5% band` ·
   `missed the Uw cap` / `missed the SHGC cap` / `missed both caps` ·
   `no figure on the constrained axis` · `would not fit at this size`.

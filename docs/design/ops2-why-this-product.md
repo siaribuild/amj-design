@@ -702,88 +702,51 @@ nothing-selected run would have fallen through a vacuous all-NULL test into
 `unrecorded`), attribution moved to the pick (step 7 predated §7.0). Line references
 throughout §4.7–§4.9 are as of design time; the tests own exactness.
 
+**Build findings (2026-08-25, developer, each mutation-proved):** nine further
+corrections, absorbed below and in §4.8/§4.9/§6 — the inline contract copy had
+drifted again (findings 1–4; the block below is now a pointer), a paraphrased
+predicate (5 — now `pickMoved`), a hook-forcing prop (6 — now a rendered node), seed
+fixtures no suite reads from seed (7), a wrong caller count (8 — now uncounted), and
+a back control that could exist without naming its destination (9 — now
+`{ back: string }`).
+
 **Shared contract: `src/data/rationale.ts`** (new; imports only types from
 `src/data/recommendation.ts`; zero runtime imports — same discipline as the
 recommendation contract: facts only, the skin writes every sentence).
 
-```ts
-import type { RequirementBasis, Tier } from "./recommendation";
+**The contract IS `src/data/rationale.ts`** — one home, its comments normative.
+This design's inline copy of it drifted twice before 3b was even built (the
+3b-refresh divergences, then build findings 1–4), which is §4.2's lesson again: a
+copy rots, a pointer cannot. The design owns the union's kinds and what must be
+absent; the file owns the fields. The load-bearing shapes, as built and
+mutation-proved:
 
-export interface RationaleFigures { uValue: number | null; shgc: number | null }
-
-export interface RationaleCandidate {
-  productSlug: string;
-  productName: string;                 // display convention of the record endpoint:
-                                       // static getProductBySlug name, slug fallback
-                                       // (WHY-AC-19: a vanished product still renders)
-  variantId: string | null;
-  form: "single" | "split";
-  tier: Tier;
-  rank: number | null;
-  figures: RationaleFigures;           // the RECORDED thermal facts, from outcome_json
-  fits: boolean;
-}
-
-export interface RationaleUnit {
-  productSlug: string;
-  productName: string;
-  figures: RationaleFigures | null;    // null = never captured (pre-Phase-3 rows)
-  band: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null } | null;
-  basis: RequirementBasis | null;
-  reviewFlag: boolean;                 // segment_thermal_review
-}
-
-export type LineRationaleDto =
-  /** No selection run resolvable, or an ops-decided split (R13, R17, D6). */
-  | { kind: "human";
-      current: { productSlug: string; productName: string;
-                 figures: RationaleFigures | null };      // null = never captured
-      units: RationaleUnit[] | null }                      // composite only (WHY-AC-37)
-  /** A run exists but predates outcome_json (migration 0055). WHY-AC-10. */
-  | { kind: "unrecorded" }
-  /** A run exists and selected NOTHING — persist.ts:143 stores winner=null with
-   *  every candidate selected=0, and zero candidate rows is the
-   *  everything-withheld shape of the same fact. WHY-AC-9's second meaning:
-   *  "evaluated, nothing chosen" is not "this product has no published figure",
-   *  and the KIND — never the figures — is what lets the skin tell them apart.
-   *  Derived from the stored run, not from origin (WHY-AC-31). No detail opens
-   *  from it. */
-  | { kind: "unresolved";
-      current: { productSlug: string; productName: string;
-                 figures: RationaleFigures | null } }
-  | { kind: "recommendation";
-      requirement: { maxUValue: number | null; minShgc: number | null;
-                     maxShgc: number | null; basis: RequirementBasis | null;
-                     absent: boolean };                    // from the stored run ONLY
-      tolerance: number;                                   // stamped per run (WHY-AC-6)
-      competingTier: Tier | null;
-      recommended: RationaleCandidate;                     // the selected candidate
-      alternatives: RationaleCandidate[];                  // <= 4, ascending rank (D18: five rows total)
-      /** R24: derived by comparison, never from origin. */
-      selectionChanged: boolean;
-      /** NO variantId — D16: after a glazing-only customer change the row keeps
-       *  the estimator's `selected_variant_id` while the figures describe the
-       *  customer's glass, and WHY-AC-4 (load-bearing for D16) forbids captioning
-       *  the figures with that id. Omitting it from the contract makes the
-       *  forbidden caption impossible rather than merely forbidden — no skin can
-       *  attribute figures to an id it was never given. */
-      current: { productSlug: string; productName: string;
-                 figures: RationaleFigures | null };
-      composite: null | {
-        origin: "ai" | "ops";
-        beatenSingle: RationaleCandidate | null;           // best-ranked stored single (WHY-AC-33)
-        units: RationaleUnit[];
-      };
-      unsuppliedSplitNote: string | null;                  // review_json.composite (§2.3)
-    };
-```
-
-Deliberate absences, enforced at DTO construction (server-side, X-AC-5/7, R9, R10,
-D18, D19): no excluded candidate, no `exclusions[]`, no `withheldIncomplete` (D18 —
-withheld products live in the run's own `withheldIncomplete` list,
-`src/data/recommendation.ts:145`, which the builder never reads: they were never
-candidate rows, so nothing needs filtering out), no price field of any kind (D19), no
-`deltaToSelected`, no `learned`, no schedule prose, no certification vocabulary (R5).
+- **Kinds:** `human` (+ per-unit facts on a composite) · `unrecorded` — **with
+  `current`** (finding 1): the approved mock (B8) keeps "This one" on this state,
+  because the line's captured figures are a fact about the LINE and outlive the
+  model that recorded the run · `unresolved` (WHY-AC-9's second meaning) ·
+  `recommendation`.
+- **`RationaleCurrent` carries no `variantId`** (D16/WHY-AC-4): the forbidden
+  caption is impossible, not merely forbidden.
+- **`selectionChanged: { product: boolean; glazing: boolean } | null`**
+  (finding 2) — `null` = the pick has not moved; both-false = the variant alone
+  moved, a person having chosen one. A boolean could not satisfy R12/WHY-AC-23
+  (the panel names *frame or glazing*) and could not express both-false.
+- **`RationaleCandidate.units`** (finding 4) names a make-up's composition —
+  "Split: awning + fixed", "2 units" — neither derivable from the lead unit's
+  slug, the only identity `candidate_result` anchors a make-up row to.
+- **`RationaleUnit.basis` is `UnitBandBasis`** (finding 3, the dangerous shape):
+  `segment_requirement_basis`'s own vocabulary (0036, mirroring
+  `thermal/types.ts` BandBasis), deliberately not `RequirementBasis` — the wrong
+  type is structurally compatible, so fed to the opening's labels it silently
+  renders nothing: WHY-AC-34's origin label vanishes while the code looks
+  correct. `unitBasisLabel` in `whyCopy.ts` owns the words. `RationaleUnit` also
+  carries the unit's `code` for display.
+- **Deliberate absences, enforced by the contract's shape** (D18, D19, R9, R5,
+  X-AC-5/7): no price field, no exclusions, no `withheldIncomplete` (withheld
+  products were never candidate rows — `recommendation.ts:145`), no schedule
+  prose, no certification vocabulary. A skin cannot render a fact it was never
+  given.
 
 **Worker module: `worker/lib/estimator/rationale.ts`** (new — the read-side deep
 module; the route stays four lines).
@@ -825,10 +788,14 @@ Reads, in order (every query scoped through the project):
    `requirement`/`tolerance`/`competingTier` from `selection_run.selection_json`
    (falling back to the selected outcome's embedded requirement when selection_json
    predates 0055 but outcomes exist).
-7. Attribution (R24, WHY-AC-28/29/30): `selectionChanged` = the recorded
-   recommendation's **pick** vs the line's current **pick** — §7.0's terms: product,
-   glazing (`options_json.glazing` vs the recorded variant's `glazingOptionSlug`), and
-   the variant term only where both sides name one. For a split recommendation,
+7. Attribution (R24, WHY-AC-28/29/30): `selectionChanged` compares the recorded
+   recommendation's **pick** against the line's current **pick** with `pickMoved`
+   (`worker/lib/figures.ts`) — the predicate lives once (§1.4, finding 5); this
+   step's earlier paraphrase ("the variant term only where both sides name one")
+   differed from it exactly where the line names a variant the recommendation did
+   not, which is a person having chosen one. The result names WHICH terms moved —
+   `{ product, glazing } | null`, null = unmoved, both-false = the variant alone
+   (R12/WHY-AC-23: the panel says frame or glazing, which a boolean cannot). For a split recommendation,
    `outcome_json.units[]` vs the current segments' pick multiset. **Why the pick and
    not product+variant** (this step's pre-§7.0 wording): under D16 a glazing-only
    customer change keeps the estimator's `selected_variant_id`, so a product+variant
@@ -937,13 +904,17 @@ one function deriving one of `base | why | drawing | drawing/uN` from `useLocati
   against the routes that actually exist) is extended twice: Phase 2 (non-exact line
   route + `drawing` grammar) and Phase 3b (the `why` child).
 
-**`SidePanel` — one coherent change, not three patches, and still two callers.** The
-routed viewer does **not** become a third: it never was a `SidePanel` caller (it is its
-own full-viewport surface, §4.6), and routing it changes its host's wiring, not its
-component. The component owes R26 (phone form: full screen, not a 0.5-breakpoint
+**`SidePanel` — one coherent change, not three patches.** The
+routed viewer does **not** become a caller: it never was one (it is its own
+full-viewport surface, §4.6), and routing it changed its host's wiring, not its
+component. (The pre-3b text here counted "still two callers" — there are three: the
+Projects filter, the record's actions panel, and now the detail. A count, wrong, in
+the document that turned §4.2's cells into pointers for exactly this reason — finding
+8; the seam never depended on the number, only on the defaults preserving every
+existing caller byte-for-byte.) The component owes R26 (phone form: full screen, not a 0.5-breakpoint
 sheet), R27 (dismiss control: not the hard-coded "Done"), and now R29 (back semantics
-for a routed caller) — while its other caller, the Projects filter, must not move at
-all (WHY-AC-7b). The seam: **`SidePanel` stays a pure
+for a routed caller) — while the Projects filter must not move at
+all (WHY-AC-7b), and every other existing caller keeps the defaults untouched. The seam: **`SidePanel` stays a pure
 presentation adapter; navigation lives in the caller.** It gains two props whose defaults
 reproduce today's behaviour byte-for-byte, so `FilterSheet.tsx` is not edited.
 Re-verified against the shipped component 2026-08-25 — Phase 2 deliberately left it
@@ -965,14 +936,16 @@ export function SidePanel(props: {
    *  filter). "screen" = full screen, no breakpoints, no drag handle (R26). */
   phoneForm?: "sheet" | "screen";
   /** Dismiss control. "done" = today's Done button (default; the filter).
-   *  "back" = a back control with an accessible name carrying the return
-   *  destination (R29; supersedes R27's X for routed callers). */
-  dismiss?: "done" | "back";
+   *  `{ back: string }` = a back control whose accessible name carries its
+   *  return destination — required AT THE TYPE, so a back control cannot exist
+   *  without naming where it returns (Phase 2's own lesson; finding 9. R29,
+   *  superseding R27's X for routed callers). */
+  dismiss?: "done" | { back: string };
 }): JSX.Element;
 ```
 
-The Why detail passes `phoneForm="screen" dismiss="back"` with `onClose` wired to the
-router-back closure above. Implementation note for the developer: because `open` is
+The Why detail passes `phoneForm="screen"` and `dismiss={{ back: … }}` naming the
+line it returns to, with `onClose` wired to the router-back closure above. Implementation note for the developer: because `open` is
 derived from the URL, an IonModal self-dismiss (backdrop/Escape/hardware back) must call
 `onClose` and let the history pop drive `isOpen` — guard against the dismiss/pop double
 fire with the open-state check, and keep the `key` remount-on-form-change discipline the
@@ -988,8 +961,8 @@ component already documents.
 | `src/ops2/projects/WhyDetail.tsx` | **new** — `SidePanel` content (R19/WHY-AC-7, opened as the §4.8 tree node): chosen row marked, up to 4 runners-up (WHY-AC-12/13), human-selection comparison block (WHY-AC-22-27), composite split-reason + per-lite bands (WHY-AC-33-36), `unsuppliedSplitNote` (WHY-AC-38). **No action anywhere on it** (R28/WHY-AC-39): its only interactive element is the back control; the `footer` slot goes unused |
 | `src/ops2/chrome/SidePanel.tsx` | the §4.8 coherent change: `phoneForm` + `dismiss` props, defaults preserving today's behaviour exactly |
 | `src/ops2/projects/FilterSheet.tsx` | **zero edits** — WHY-AC-7b is proven by this file not appearing in the diff |
-| `src/ops2/projects/LineReview.tsx` | mount `WhyPanel` between the specification/units block and the Price panel (`:198-214`); **delete the superseded header sentences** (`:38-45` "absent entirely on a composite" — void per R14/WHY-AC-32) and the read-only note's "no Why this product" clause (`:44-47`); accepts a new `showWhy: boolean` prop |
-| `src/ops2/projects/LinePage.tsx` | passes `showWhy={record.orderNo == null}` (D2: order records never fetch or render the panel); extends the §4.8 URL grammar (already hosting `drawing…` since Phase 2) with the `why` child |
+| `src/ops2/projects/LineReview.tsx` | mount `WhyPanel` between the specification/units block and the Price panel (`:198-214`); **delete the superseded header sentences** (`:38-45` "absent entirely on a composite" — void per R14/WHY-AC-32) and the read-only note's "no Why this product" clause (`:44-47`); accepts the panel as a **rendered node** — a `showWhy: boolean` would force this file to import the hook and the panel, breaking its "ROUTER-FREE ON PURPOSE" contract (finding 6); the caller renders, the review only places |
+| `src/ops2/projects/LinePage.tsx` | renders `WhyPanel` and hands it down as the node only when `record.orderNo == null` (D2: order records never fetch or render it); extends the §4.8 URL grammar (already hosting `drawing…` since Phase 2) with the `why` child |
 | `src/ops2/projects/lineRoute.ts` | **extended** (Phase 2 built it — pure, router-free): `parseLineRoute` gains the `why` suffix (`view: "why"`, canonical `/why`, same one-suffix sibling rule, §4.8's normalisation for kinds with no detail), and a `why`-door history mark lands beside `VIEWER_FROM_*` (presence answers warm-vs-cold; §4.8). `scripts/tests/ops2-navigation.test.mjs` extends accordingly |
 | `src/ops2/Ops2App.tsx` | **no change in this phase** — the line Route went non-exact in Phase 2 (§4.6/§4.8); no route is added (R28 cut the `/edit` stub), so `NESTS_BELOW` and `scripts/tests/ops2-frame.test.mjs` stay untouched |
 | `src/ops2/styles/line.css` | panel/detail styles (FrameFlow tokens) |
@@ -1127,10 +1100,11 @@ basis of a customer's project — in scope and intended (R4).
    (panel states; the routed detail: open pushes `/why`, browser back closes, deep link
    lands, back control pops; WHY-AC-20 GET-only trace; WHY-AC-11 absence; WHY-AC-39/40/41
    negatives).
-4. Client (§4.8-§4.9); seed fixtures in `scripts/db/seed.sql` (selection_run +
-   candidate_result with outcome_json on the `p_rec` project; a pre-0055-style row; an
-   overridden AI line; staff identity `u_staff4` for the new spec file, `u_staff5` for
-   the viewer spec, allocations recorded beside the rows per the suite convention).
+4. Client (§4.8-§4.9). The browser suite **mocks both endpoints** (the Phase 2
+   viewer-spec pattern) — the server is `why-rationale-api.test.mjs`'s subject, and
+   it builds its fixtures inline as the 3a heavy suites do. `scripts/db/seed.sql`
+   gains only the `u_staff4` staff allocation (`u_staff5` shipped with Phase 2).
+   Finding 7: this step's earlier list seeded fixtures no suite reads from seed.
 
 ---
 
@@ -1147,7 +1121,7 @@ basis of a customer's project — in scope and intended (R4).
 | `scripts/tests/web/ops2-drawing-viewer.spec.ts` | **new** | Playwright dir glob (`test:web`) | VIEW-AC-1..10 (VIEW-AC-2 as amended, §2.5: push-on-open, one pop for control/Escape/system back, no remount, deep link, replace-normalisation); focus return; no-notation class assertion. (Rev 6: VIEW-AC-5/6/12 moved to a source-level test in `ops2-frame.test.mjs` — a browser proves a viewer opens, not that a second was never built; §11.4) |
 | `scripts/tests/ops2-navigation.test.mjs` | extended (Phase 2, then 3b) | existing `test:ops2` / `test:pure` | the line route's non-exact shape and its two children (`drawing…` then `why`); `NESTS_BELOW` unchanged. (Rev 6: `ops2-frame.test.mjs`'s existing tests are indeed unedited, but the file gained the relocated VIEW-AC-5/6/12 source scan — §11.4) |
 | `scripts/tests/web/ops2-line-why.spec.ts` | **new** | Playwright dir glob | WHY-AC-1/4/7/8/9/11 panel states; the routed detail (R29: open pushes `/why`, browser back closes, deep link lands, back control pops-or-replaces); WHY-AC-7 phone-full-screen + desk slide-out; WHY-AC-7b filter untouched; WHY-AC-20 network trace GET-only; WHY-AC-22/28 both-shown rendering; WHY-AC-39/40/41 negatives (no action controls anywhere; no `/edit` route in the enumerated route table) |
-| `scripts/db/seed.sql` | extended | web + heavy harnesses | the fixtures above; staff allocations `u_staff4`/`u_staff5` |
+| `scripts/db/seed.sql` | extended | web harness | the `u_staff4` staff allocation only (`u_staff5` shipped with Phase 2); the browser suite mocks both endpoints, and the heavy suites build fixtures inline (finding 7) |
 | `scripts/tests/api.test.mjs` | untouched | — | its existing DTO key-set assertions ARE the CERT-AC-11 / record-unchanged guard; if it stays green with zero edits, the blast radius claim holds |
 
 No test artifact was named solely for the R28 stub, so none is removed — the stub's
