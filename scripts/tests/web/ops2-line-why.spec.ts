@@ -577,6 +577,64 @@ test("WHY-AC-43 the record canvas shows no panel AND issues no rationale request
     "the counter is live — the line page issues the read").toBeGreaterThan(0);
 });
 
+test("WHY-AC-18 re-entering the line page re-reads the reasoning, not just the record", async ({ page }) => {
+  // IONIC KEEPS THE PAGE MOUNTED, so an effect keyed on the line id runs once
+  // per document and never again. `useProjectRecord` refreshes on a real
+  // departure for exactly this reason — a reviewer leaves, changes the line in
+  // the legacy console, and comes back.
+  //
+  // The rationale read had no such refresh, so the return showed REFRESHED
+  // RECORD DATA BESIDE STALE REASONING. Worse than ordinary staleness: this
+  // panel's whole claim is "this is what was recorded", and two panels on one
+  // screen disagreeing about one line is what D16's condition exists to
+  // prevent, arriving from the client side.
+  const calls = await serve(page);
+  // PHONE WIDTH, because that is where the record shows its LINE LIST — at the
+  // desk it shows the canvas, which has no panel by D21. This is the journey
+  // the shipped record test walks for the same reason.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const reads = () => calls.methods.filter((m) => m.includes("/rationale")).length;
+
+  await page.goto(`${OPS2}/projects/p_rec`);
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+  await page.getByTestId("record-line").first().click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await expect(page.getByTestId("line-why")).toBeVisible();
+  const afterFirst = reads();
+  expect(afterFirst, "the line page read the reasoning once").toBeGreaterThan(0);
+
+  // Leave the line for the record, IN-APP — a reload would refetch by itself
+  // and prove nothing about the mounted page.
+  await page.goBack();
+  await expect(page.getByTestId("record-line").first()).toBeVisible();
+
+  // WHY IT RE-READS TODAY, said out loud because it is not this hook's doing:
+  // Ionic re-uses the page you RETURN to, not the one you go to, so the record
+  // survives the round trip and the line page is built fresh. `useProjectRecord`
+  // needs an explicit refresh for exactly the opposite reason.
+  //
+  // That makes the invariant below true by an upstream policy rather than by
+  // anything this seam decides — so the seam holds it itself, and this asserts
+  // the property rather than the mechanism.
+  await page.getByTestId("record-line").first().click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await expect(page.getByTestId("line-why")).toBeVisible();
+  await expect.poll(reads, { timeout: 5_000 })
+    .toBeGreaterThan(afterFirst);
+  const mounted = await page.evaluate(() =>
+    document.querySelectorAll("[data-testid=line-review]").length);
+  expect(mounted, "one live line body, however Ionic got there").toBeGreaterThan(0);
+
+  // AND OPENING A CHILD IS NOT LEAVING. The same guard that arms the refresh
+  // must not fire on `/why` or `/drawing`, or every enlargement re-reads.
+  const afterReturn = reads();
+  await page.getByTestId("line-why-open").click();
+  await expect(page.getByTestId("line-why-detail")).toBeVisible();
+  await page.getByTestId("line-why-detail-back").click();
+  await expect(page.getByTestId("line-why-detail")).toBeHidden();
+  expect(reads(), "opening the detail is not leaving the line").toBe(afterReturn);
+});
+
 test("WHY-AC-11 an order record has no panel, and its /why address refuses", async ({ page }) => {
   // An order record serves `orderLines`, not `lines` (record.ts:338) — the
   // contract's own rows, which is what makes this D2's case rather than a

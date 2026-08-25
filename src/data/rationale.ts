@@ -42,13 +42,34 @@ export interface RationaleCandidate {
   units: { productSlug: string; productName: string; operationType: string | null }[] | null;
 }
 
-/** How a composite lite's own band was arrived at. This is `quote_line.
- *  segment_requirement_basis`'s OWN vocabulary (migration 0036, mirroring
- *  `thermal/types.ts` BandBasis) and deliberately not `RequirementBasis`: a
- *  lite's band is resolved by a different mechanism from an opening's
- *  requirement, and mapping one onto the other would state a provenance the row
- *  does not carry. */
-export type UnitBandBasis = "explicit_ref" | "shared_type" | "computed" | "none";
+/**
+ * HOW A COMPOSITE LITE'S BAND WAS ARRIVED AT — the vocabulary the column
+ * actually holds, declared ONCE and shared with the writer.
+ *
+ * It used to be `"explicit_ref" | "shared_type" | "computed" | "none"`, taken
+ * from migration 0036's comment ("mirrors thermal/types.ts BandBasis"). No
+ * writer has ever stored one of those. `splitCandidates.ts:374` stores
+ * `explicit_energy_report` when a lite has its own band, and the split
+ * proposal's own basis otherwise — so every AI-generated unit's provenance
+ * resolved to `null` and WHY-AC-34's origin label silently vanished.
+ *
+ * THREE SPELLINGS OF ONE FACT: the migration's comment, the writer's literals,
+ * and the reader's allow-list. The type was corrected once already, when the
+ * architect saw that a lite's basis is not an opening's `RequirementBasis`; it
+ * fixed the type and the VALUES still did not match. A type that is right and a
+ * vocabulary that is wrong fails identically and looks more correct.
+ *
+ * `worker/lib/composite.ts`'s `SegmentInput.requirementBasis` references this
+ * union instead of `string | null`, so a seventh spelling is a compile error
+ * rather than a label that quietly stops rendering.
+ */
+export type UnitRequirementBasis =
+  | "explicit_energy_report"   // this lite carried its own band in the report
+  | "energy_report"            // the opening's report decided the split
+  | "schedule_comment"         // the schedule asked for it in words
+  | "learned"                  // how this pairing has been reviewed before
+  | "default_pairing"          // the platform's own pairing rule
+  | "default_even";            // an even division, nothing better available
 
 export interface RationaleUnit {
   code: string;
@@ -57,7 +78,7 @@ export interface RationaleUnit {
   /** null = never captured (a segment written before Phase 3a). */
   figures: RationaleFigures | null;
   band: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null } | null;
-  basis: UnitBandBasis | null;
+  basis: UnitRequirementBasis | null;
   /** `quote_line.segment_thermal_review` — shown against THIS unit (WHY-AC-36). */
   reviewFlag: boolean;
 }

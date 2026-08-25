@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useIonViewDidLeave, useIonViewWillEnter } from "@ionic/react";
+import { useHistory } from "react-router-dom";
 import type { LineRationaleDto } from "../../data/rationale";
 
 /**
@@ -29,6 +31,7 @@ export type RationaleLoad =
 export function useLineRationale(
   projectId: string, lineId: string, enabled: boolean,
 ): { load: RationaleLoad; reload: () => void } {
+  const history = useHistory();
   const [load, setLoad] = useState<RationaleLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
@@ -62,6 +65,36 @@ export function useLineRationale(
 
     return () => { live = false; };
   }, [projectId, lineId, enabled, attempt]);
+
+  /**
+   * RE-ENTERING THE LINE RE-READS THE REASONING — held here rather than assumed.
+   *
+   * TODAY IT WOULD HOLD ANYWAY, and that is the problem. Ionic re-uses the page
+   * you RETURN to, not the one you go to, so a record → line → record → line
+   * trip builds a fresh line page and this effect runs on its mount. That is an
+   * upstream policy, not a promise this seam makes: if the outlet ever kept the
+   * line view the way it keeps the record's, the panel would go stale in
+   * silence — refreshed record data beside stale reasoning, on a surface whose
+   * whole claim is "this is what was recorded". Two panels disagreeing about one
+   * line is what D16's condition exists to prevent, arriving from the client.
+   *
+   * `useProjectRecord` needs the same refresh for the opposite reason, and its
+   * guard is the model: arm on an actual DEPARTURE, and going to a CHILD is not
+   * leaving. `…/why` and `…/drawing` are this page's own addresses, so an
+   * enlargement or a rationale must not re-read anything.
+   */
+  const departed = useRef(false);
+  useIonViewDidLeave(() => {
+    // STILL UNDER THIS LINE'S PATH IS NOT LEAVING — `…/why` and `…/drawing`
+    // are children of this page, and Ionic fires the lifecycle on a same-page
+    // URL change regardless.
+    departed.current = !history.location.pathname.includes(`/line/${encodeURIComponent(lineId)}`);
+  });
+  useIonViewWillEnter(() => {
+    if (!departed.current) return;
+    departed.current = false;
+    reload();
+  });
 
   return { load, reload };
 }

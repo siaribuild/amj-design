@@ -251,9 +251,15 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
     };
     // Two lites with DIFFERENT bands — R16's whole point: an awning at
     // 0.37-0.41 beside a fixed pane at 0.50-0.56 is two bands, not one.
+    // THE BASIS IS WHAT THE WRITER WRITES. `splitCandidates.ts:374` stores
+    // `explicit_energy_report` when the lite has its own band and the split
+    // proposal's own basis otherwise — never the `explicit_ref` this fixture
+    // used to carry, which is the READER's vocabulary. A fixture written in the
+    // reader's words cannot see a reader that speaks a different language from
+    // the writer, which is exactly what shipped.
     await segment("qs_a", "ql_comp", 0, "amj80-series-awning-window", {
       variantId: "v-u1", band: '{"maxUValue":3.9,"minShgc":0.37,"maxShgc":0.41}',
-      basis: "explicit_ref", figures: '{"uValue":3.72,"shgc":0.39}',
+      basis: "explicit_energy_report", figures: '{"uValue":3.72,"shgc":0.39}',
     });
     // …and the second carries no recorded band at all (WHY-AC-35: it says so,
     // and nothing is computed for it) plus the review flag (WHY-AC-36).
@@ -277,6 +283,42 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       runId: "sr_comp", slug: "amj150-series-sliding-door", variantId: "v-s", glazing: "double-clear",
       tier: "within_tolerance", rank: 2, uValue: 4.4, shgc: 0.5,
     });
+
+    // P2-1's shape: a symmetric split is stored as ONE row with
+    // `qty_per_parent = 2`, which is how the estimator represents two identical
+    // lites. `composite.ts` multiplies it into `qty`, and the record UI expands
+    // by that — so a reader that maps rows 1:1 reports one unit where there are
+    // two, and then reads the make-up as changed because the counts differ.
+    await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, line_kind, composite_origin, composite_axis, performance_figures_json)
+               VALUES ('ql_sym','p_rat','W30','Hall','amj80-series-awning-window','${OPTIONS("double-lowe")}','{"width":"2400","height":"1500"}',1,1400,'ready',8,'composite_parent','ai','vertical','{"uValue":null,"shgc":null}')`);
+    await sql(`INSERT INTO quote_line (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind, product_slug, options_json, dims_json, qty, line_total, status, position, selected_variant_id, segment_requirement_basis, segment_thermal_review, performance_figures_json)
+               VALUES ('qs_sym','p_rat','ql_sym',0,2,'segment','amj80-series-awning-window','${OPTIONS("double-lowe")}','{"width":"1200","height":"1500"}',2,700,'ready',0,'v-u1','energy_report',0,'{"uValue":3.72,"shgc":0.39}')`);
+    await sql(`INSERT INTO opening_instance (id, project_id, external_ref, width_mm, height_mm, quote_line_id, status)
+               VALUES ('op_sym','p_rat','W30',2400,1500,'ql_sym','ready')`);
+    await sql(`INSERT INTO selection_run (id, opening_id, project_id, ranker_version, selection_json, status)
+               VALUES ('sr_sym','op_sym','p_rat','ladder-v2','${selectionJson()}','completed')`);
+    await candidate("cr_sym", {
+      runId: "sr_sym", slug: "amj80-series-awning-window", variantId: "v-u1", glazing: "double-lowe",
+      tier: "meets", rank: 1, selected: true, form: "split", uValue: 3.72, shgc: 0.39,
+      units: [
+        { productSlug: "amj80-series-awning-window", variantId: "v-u1", widthMm: 1200, heightMm: 1500, operationType: "awning" },
+        { productSlug: "amj80-series-awning-window", variantId: "v-u1", widthMm: 1200, heightMm: 1500, operationType: "awning" },
+      ],
+    });
+
+    // ── P2-4: two runs on one opening, stamped in the SAME SECOND ──────────
+    await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, performance_figures_json)
+               VALUES ('ql_tie','p_rat','W31','Porch','amj80-series-awning-window','${OPTIONS("double-lowe")}','{"width":"1200","height":"900"}',1,600,'ready',9,'{"uValue":3.72,"shgc":0.41}')`);
+    await sql(`INSERT INTO opening_instance (id, project_id, external_ref, width_mm, height_mm, quote_line_id, status)
+               VALUES ('op_tie','p_rat','W31',1200,900,'ql_tie','ready')`);
+    await sql(`INSERT INTO selection_run (id, opening_id, project_id, ranker_version, selection_json, status, created_at)
+               VALUES ('sr_tie_a','op_tie','p_rat','ladder-v2','${selectionJson({ selectedProductSlug: "amj150-series-awning-window" })}','completed','2026-08-20 09:00:00')`);
+    await candidate("cr_tie_a", { runId: "sr_tie_a", slug: "amj150-series-awning-window", variantId: "v-t1", glazing: "single-clear", tier: "meets", rank: 1, selected: true, uValue: 5.0, shgc: 0.6 });
+    // Inserted second, stamped identically — `datetime('now')` has one-second
+    // resolution, so this is what a rapid retry or a concurrent estimate makes.
+    await sql(`INSERT INTO selection_run (id, opening_id, project_id, ranker_version, selection_json, status, created_at)
+               VALUES ('sr_tie_b','op_tie','p_rat','ladder-v2','${selectionJson()}','completed','2026-08-20 09:00:00')`);
+    await candidate("cr_tie_b", { runId: "sr_tie_b", slug: "amj80-series-awning-window", variantId: "v-dg-lowe", glazing: "double-lowe", tier: "meets", rank: 1, selected: true, uValue: 3.72, shgc: 0.41 });
 
     // R17/WHY-AC-37: the same shape, decided by a person.
     await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, line_kind, composite_origin, composite_axis, performance_figures_json)
@@ -488,7 +530,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.equal(a.code, "W07A", "the unit's own name, as every other ops2 surface spells it");
       assert.equal(b.code, "W07B");
       assert.deepEqual(a.band, { maxUValue: 3.9, minShgc: 0.37, maxShgc: 0.41 });
-      assert.equal(a.basis, "explicit_ref");
+      assert.equal(a.basis, "explicit_energy_report");
       assert.deepEqual(a.figures, { uValue: 3.72, shgc: 0.39 });
 
       // WHY-AC-35: a unit whose band was never recorded says so, and NOTHING is
@@ -505,6 +547,36 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.match(body.unsuppliedSplitNote, /no frame system could supply it/);
 
       assert.equal(body.selectionChanged, null, "the segments are the make-up that was recommended");
+    });
+
+    await t.test("R11/R16 a symmetric split is two units, not one row", async () => {
+      const { body } = await rationale("p_rat", "ql_sym");
+      assert.equal(body.composite.units.length, 2,
+        "one row with qty_per_parent=2 IS two lites — the shape the estimator uses for identical units");
+      assert.deepEqual(body.composite.units.map((u) => u.code), ["W30A", "W30B"],
+        "and they are named the way every other ops2 surface names them");
+
+      // THE SERIOUS HALF. The recorded make-up has two units; a reader that
+      // counted one would find the multisets unequal and report that a PERSON
+      // changed the platform's split. A false attribution on the surface whose
+      // whole job is telling a reviewer who chose what.
+      assert.equal(body.selectionChanged, null,
+        "nobody touched this line, and the panel must not say they did");
+    });
+
+    await t.test("D19 two runs stamped in the same second still have a latest", async () => {
+      // `datetime('now')` has one-second resolution, so a rapid retry or a
+      // concurrent estimate writes two runs sharing a timestamp. Ordering by
+      // that column alone leaves which is "most recent" undefined — and D19
+      // says the most recent only, which is a criterion and not a nicety.
+      const stamps = await sql("SELECT created_at AS c FROM selection_run WHERE opening_id='op_tie'");
+      assert.equal(new Set(stamps.map((r) => r.c)).size, 1,
+        "the fixture really is a tie — both runs carry one timestamp");
+      assert.equal(stamps.length, 2);
+
+      const { body } = await rationale("p_rat", "ql_tie");
+      assert.equal(body.recommended.productSlug, "amj80-series-awning-window",
+        "the run written SECOND is the later one, and a tie must resolve to it deterministically");
     });
 
     await t.test("WHY-AC-37 an ops-decided split has no machine rationale to open", async () => {

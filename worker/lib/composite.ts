@@ -25,6 +25,7 @@ import { uuid } from "./util";
 import { captureOne, fetchFigureCatalogue, figuresJson, resolveFigures, storedOptions, storedPickOf, type LineFigures } from "./figures";
 import { ensureCatalogue } from "./catalogue";
 import { getProductBySlug } from "../../src/data/catalogue";
+import type { UnitRequirementBasis } from "../../src/data/rationale";
 import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
 
 /**
@@ -90,7 +91,10 @@ export interface SegmentSpec {
   options?: Record<string, unknown>;
   selectedVariantId?: string | null;
   resolvedBand?: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null; shgcTarget?: number | null } | null;
-  requirementBasis?: string | null;
+  /** THE SHARED UNION, not `string`. `string | null` is what let two
+   *  vocabularies into one column and a third into its reader — see
+   *  `src/data/rationale.ts`. A new spelling is now a compile error. */
+  requirementBasis?: UnitRequirementBasis | null;
   thermalReview?: boolean;
   /** The machine's frozen account of what it chose for THIS unit. A unit never
    *  gets an ai_proposal_line — that table requires an opening_instance and a

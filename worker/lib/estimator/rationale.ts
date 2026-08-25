@@ -18,13 +18,18 @@
 import { getProductBySlug } from "../../../src/data/catalogue";
 import type {
   LineRationaleDto, RationaleCandidate, RationaleCurrent, RationaleFigures,
-  RationaleUnit, UnitBandBasis,
+  RationaleUnit, UnitRequirementBasis,
 } from "../../../src/data/rationale";
 import type { CandidateOutcome, SelectionOutcome } from "../../../src/data/recommendation";
 import { glazingOf, pickMoved, storedOptions, storedPickOf } from "../figures";
 import type { Env } from "../../types";
 
-const BAND_BASES: readonly UnitBandBasis[] = ["explicit_ref", "shared_type", "computed", "none"];
+/** The stored spellings, from the contract's own union — never a second list.
+ *  A basis this build does not know is `null` rather than a guess. */
+const UNIT_BASES: readonly UnitRequirementBasis[] = [
+  "explicit_energy_report", "energy_report", "schedule_comment",
+  "learned", "default_pairing", "default_even",
+];
 
 /** Unreadable JSON is no record, never a throw: this endpoint reports what a
  *  row carries, and a malformed blob is exactly the state a reviewer needs told
@@ -92,6 +97,8 @@ interface SegmentRow {
   segment_requirement_basis: string | null;
   segment_thermal_review: number | null;
   segment_seq: number | null;
+  /** How many lites this ONE row stands for (a symmetric split stores one). */
+  qty_per_parent: number | null;
 }
 
 const currentOf = (line: LineRow): RationaleCurrent => ({
@@ -115,7 +122,7 @@ const unitOf = (code: string, s: SegmentRow): RationaleUnit => {
           maxShgc: typeof band.maxShgc === "number" ? band.maxShgc : null,
         }
       : null,
-    basis: BAND_BASES.includes(basis as UnitBandBasis) ? basis as UnitBandBasis : null,
+    basis: UNIT_BASES.includes(basis as UnitRequirementBasis) ? basis as UnitRequirementBasis : null,
     reviewFlag: s.segment_thermal_review === 1,
   };
 };
@@ -170,9 +177,17 @@ export async function lineRationale(
 
   // THE MOST RECENT RUN ONLY (D19). An opening estimated twice is not two
   // rationales merged; earlier runs are not listed and not reconciled.
+  //
+  // AND `created_at` ALONE DOES NOT SAY WHICH IS MOST RECENT. `datetime('now')`
+  // has one-second resolution, so a rapid retry or a concurrent estimate writes
+  // two runs sharing a timestamp and the order between them is undefined — the
+  // reader could serve the OLDER rationale, which is a D19 breach rather than a
+  // nicety. `rowid` is monotonic per table and breaks the tie in insertion
+  // order, which for two runs written a moment apart is exactly the question
+  // being asked.
   const run = await env.DB.prepare(
     `SELECT id, selection_json FROM selection_run
-      WHERE opening_id = ? ORDER BY created_at DESC LIMIT 1`,
+      WHERE opening_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
   ).bind(opening.id).first<{ id: string; selection_json: string | null }>();
   if (!run) return { kind: "human", current: currentOf(line), units };
 
@@ -251,13 +266,30 @@ async function unitsOf(
   const code = line.external_ref ?? "";
   const segments = (await env.DB.prepare(
     `SELECT product_slug, options_json, selected_variant_id, performance_figures_json,
-            segment_requirements_json, segment_requirement_basis, segment_thermal_review, segment_seq
+            segment_requirements_json, segment_requirement_basis, segment_thermal_review,
+            segment_seq, qty_per_parent
        FROM quote_line
       WHERE parent_line_id = ? AND project_id = ?
       ORDER BY segment_seq`,
   ).bind(line.id, args.projectId).all<SegmentRow>()).results ?? [];
+  // A ROW IS NOT A UNIT. A symmetric split — two identical lites — is stored as
+  // ONE row with `qty_per_parent = 2`, which is how the estimator represents
+  // repeated units, and `composite.ts` multiplies it into `qty` on the way in.
+  // Mapping rows 1:1 reported one lite where there are two, and then the
+  // make-up comparison found unequal counts and said a PERSON had changed the
+  // platform's split — a false attribution on the surface whose whole job is
+  // saying who chose what.
+  //
+  // `qty_per_parent`, not `qty`: this describes the make-up of ONE opening,
+  // which is what `outcome_json.units[]` records and what the attribution
+  // compares against. `qty` folds in the parent's own quantity, so a line of
+  // three would report six lites in a two-lite make-up. (The record's own
+  // `unitsOf` expands by `qty`; that is a different question — how many frames
+  // this line orders — and is not this surface's.)
+  const lites = segments.flatMap((s) =>
+    Array.from({ length: Math.max(1, Math.floor(s.qty_per_parent ?? 1)) }, () => s));
   // The unit's own name, exactly as every other ops2 surface spells it.
-  return segments.map((s, i) => unitOf(`${code}${String.fromCharCode(65 + i)}`, s));
+  return lites.map((s, i) => unitOf(`${code}${String.fromCharCode(65 + i)}`, s));
 }
 
 /**

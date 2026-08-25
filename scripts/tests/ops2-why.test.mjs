@@ -327,25 +327,46 @@ test("WHY-AC-4 a composite parent has no figures of its own, so it states no abs
   );
 });
 
-test("WHY-AC-34 a lite's origin label is its OWN vocabulary, not the opening's", () => {
-  // `quote_line.segment_requirement_basis` (migration 0036) stores a BandBasis
-  // — explicit_ref | shared_type | computed | none — and NOT a RequirementBasis.
-  // Feeding it to `basisLabel` silently yields nothing, so a lite would carry
-  // caps with no provenance beside them while the code looked correct.
-  assert.equal(M.basisLabel("explicit_ref"), null, "the opening's labels do not know these tokens");
+test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () => {
+  // THREE SPELLINGS OF ONE FACT, and the reader had the one nobody writes.
+  // Migration 0036's comment says the column "mirrors thermal/types.ts
+  // BandBasis" — `explicit_ref | shared_type | computed | none` — and no writer
+  // has ever stored one of those. Every AI-generated unit's provenance came
+  // back null and WHY-AC-34's origin label silently vanished.
+  for (const stale of ["explicit_ref", "shared_type", "computed", "none"]) {
+    assert.equal(M.unitBasisLabel(stale), null, `${stale} is the comment's vocabulary, not the column's`);
+  }
 
+  // What `splitCandidates.ts:374` actually stores: its own literal when a lite
+  // carried its own band, and the split proposal's basis otherwise.
   assert.deepEqual(
-    ["explicit_ref", "shared_type", "computed"].map((b) => M.unitBasisLabel(b)),
+    ["explicit_energy_report", "energy_report", "schedule_comment", "learned", "default_pairing", "default_even"]
+      .map((b) => M.unitBasisLabel(b)),
     [
       "from this lite's own reference in the energy report",
-      "from the band shared by lites of this type",
-      "modelled by the platform for this lite",
+      "from the opening's energy report",
+      "from the schedule's own comment",
+      "from how this pairing has been reviewed before",
+      "a default pairing the platform applies",
+      "an even division the platform applied",
     ],
   );
-  // `none` is a recorded absence of provenance, not a label to print.
-  assert.equal(M.unitBasisLabel("none"), null);
-  assert.equal(M.unitBasisLabel(null), null);
-  assert.equal(M.unitBasisLabel("plan_derived"), null, "and the opening's vocabulary is not accepted here either");
+
+  // EVERY MEMBER OF THE SHARED UNION HAS A LABEL, read off the contract rather
+  // than listed here — a seventh spelling added to the union without a label
+  // fails this rather than rendering nothing.
+  const union = readFileSync(join(projectRoot, "src/data/rationale.ts"), "utf8")
+    .match(/export type UnitRequirementBasis =([\s\S]*?);/)[1]
+    .match(/"([a-z_]+)"/g).map((m) => m.replace(/"/g, ""));
+  assert.ok(union.length >= 6, `only ${union.length} spellings read from the contract`);
+  for (const basis of union) {
+    assert.ok(M.unitBasisLabel(basis), `the union declares "${basis}" and nothing labels it`);
+  }
+
+  // The two vocabularies stay apart: an opening's basis is not a lite's.
+  assert.equal(M.unitBasisLabel("plan_derived"), null, "the opening's vocabulary is not accepted here");
+  assert.equal(M.basisLabel("explicit_ref"), null, "nor the comment's, over there");
+  assert.equal(M.basisLabel("schedule_comment"), null, "nor a lite's, over there");
 });
 
 test("WHY-AC-12/13/33 the ladder names what it shows and counts nothing beyond it", () => {

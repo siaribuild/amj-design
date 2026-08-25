@@ -21,7 +21,7 @@
  */
 import type { RequirementBasis } from "../../data/recommendation";
 import type {
-  LineRationaleDto, RationaleCandidate, RationaleFigures, UnitBandBasis,
+  LineRationaleDto, RationaleCandidate, RationaleFigures, UnitRequirementBasis,
 } from "../../data/rationale";
 
 /** Two places on both axes, so 3.9 and 3.90 are one number on the screen as
@@ -46,22 +46,25 @@ export function basisLabel(basis: string | null | undefined): string | null {
 
 /** A LITE's own provenance vocabulary, which is NOT the opening's.
  *
- *  `quote_line.segment_requirement_basis` (migration 0036) stores a BandBasis —
- *  how a lite's band was resolved — while an opening's `requirement.basis` says
- *  where its caps came from. They are different mechanisms and mapping one onto
- *  the other would state a provenance the row does not carry, so each keeps its
- *  own labels and neither accepts the other's tokens.
- *
- *  `none` is a recorded absence of provenance, not a label to print. */
-const UNIT_BASIS_LABELS: Record<UnitBandBasis, string | null> = {
-  explicit_ref: "from this lite's own reference in the energy report",
-  shared_type: "from the band shared by lites of this type",
-  computed: "modelled by the platform for this lite",
-  none: null,
+ *  `quote_line.segment_requirement_basis` holds how a LITE's band was arrived
+ *  at; an opening's `requirement.basis` says where its caps came from. Different
+ *  mechanisms, and mapping one onto the other would state a provenance the row
+ *  does not carry — so each keeps its own labels and neither accepts the
+ *  other's tokens. The union itself is `src/data/rationale.ts`'s, shared with
+ *  the writer, so this table cannot fall out of step with what is stored. */
+const UNIT_BASIS_LABELS: Record<UnitRequirementBasis, string> = {
+  explicit_energy_report: "from this lite's own reference in the energy report",
+  energy_report: "from the opening's energy report",
+  schedule_comment: "from the schedule's own comment",
+  learned: "from how this pairing has been reviewed before",
+  default_pairing: "a default pairing the platform applies",
+  default_even: "an even division the platform applied",
 };
 
 export function unitBasisLabel(basis: string | null | undefined): string | null {
-  return basis && basis in UNIT_BASIS_LABELS ? UNIT_BASIS_LABELS[basis as UnitBandBasis] : null;
+  return basis && basis in UNIT_BASIS_LABELS
+    ? UNIT_BASIS_LABELS[basis as UnitRequirementBasis]
+    : null;
 }
 
 export interface Requirement {
