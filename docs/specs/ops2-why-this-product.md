@@ -1,18 +1,24 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 19**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 20**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
+**Revision 20 records Phase 2's most transferable output as a rule rather than an anecdote**
+(§12, opening): **an assertion that cannot fail is worse than no assertion**, five of them
+were found in one day, and the only check that finds them is mechanical — break the thing on
+purpose and watch the test go red. §12 note 7 also records the one guarantee that is
+measured but only half-pinned.
+
 **Revision 19 corrects VIEW-AC-15**, which described a state its own subject cannot be in.
 The criterion put the reference *"falling back to `Project` while the record has not
 loaded"* — but the viewer's back control never renders in that state: its subject is only
 built once the record has resolved a line. The developer implemented the fallback twice,
 deleted the unreachable copy, and **said so rather than descoping it silently**. Executed
-here before ruling: `src/ops2/projects/LinePage.tsx:124` builds the subject only with a
+before ruling: `src/ops2/projects/LinePage.tsx:124` builds the subject only with a
 resolved `record`, and `LinePage.tsx:201` — the **page-level** control, where the pre-load
 state is real — keeps `Project` untouched. **The criterion now says what is true**, and
 names where the never-empty guarantee lives, because a fallback would have masked the pin
@@ -1164,7 +1170,9 @@ kept unreachable to match a sentence.
   `parseProjectRecord` returns `null` without a non-empty trimmed id — asserted in
   `scripts/tests/ops2-record.test.mjs`. **A fallback here would have masked that pin and
   made it look optional**, which is why its absence is the safer shape: if the guarantee
-  ever breaks, a test fails loudly instead of a label quietly reading `Project`.
+  ever breaks, a test fails loudly instead of a label quietly reading `Project`. *(The
+  pinned case is the **absent** field; empty and whitespace rest on `str()`'s trim — see
+  §12 note 7.)*
 
 **It can be long, and that is not a reason to change the vocabulary.** `public_ref` is
 nullable (`migrations/0011_project_ref.sql`) and the id is a UUID, so a record served
@@ -1603,6 +1611,38 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 
 ## 12. Test-surface notes for the architect and tester
 
+> ### THE RULE THIS FEATURE PAID FOR — an assertion that cannot fail is worse than no assertion
+>
+> No assertion is an obvious hole. An assertion that cannot fail is a **hole with a green
+> light over it**, and every later reader takes it as coverage.
+>
+> **Five were found in a single day of Phase 2**, every one written while *adding* coverage,
+> every one by a competent author, and **not one of them looked wrong**:
+>
+> 1. a **self-comparing ternary** — compared a value with itself, so it passed on any value;
+> 2. a **container measured instead of its contents** — the box has the layout's size, not
+>    the thing's, so it reported a number that was never the subject's;
+> 3. a **two-variable sweep** that grew width and height together and passed on either
+>    governor (note 12 — it is why an ultrawide got no more drawing than a 1280 window);
+> 4. a **`.elev-legend` count-of-zero** that became true by construction the moment the
+>    component was deleted (note 5);
+> 5. a **tautology sitting directly beneath the assertion that subsumed it** — the real
+>    check was one line above, and the decoration read as a second one.
+>
+> Four were caught by reviewers; **one by the developer against its own work**, which is the
+> only one that scales.
+>
+> **The tell is never in the wording — it is in whether the assertion can be made to fail.**
+> So the check is mechanical, and it is the only one that has ever worked here:
+>
+> > **Break the thing on purpose and watch the test go red. Make the pattern match nothing
+> > and watch the scan complain.** If neither happens, the assertion was decoration.
+>
+> A green suite is evidence only of what it can *distinguish*. SNAP-AC-2's non-vacuity
+> clause is this rule written for one criterion; this is it written for all of them, and the
+> Phase 2 tester executed it — reverting the fix to see the red, then emptying the scan's
+> pattern to see it complain.
+
 Not a test plan — twelve places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
@@ -1654,6 +1694,12 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
    re-take. **Two controls, two states:** the *page's* back control has a real pre-load
    state and keeps `Project`; the *viewer's* has none, so it has no fallback (VIEW-AC-15,
    revision 19). Do not test one against the other's expectations.
+   **And the guarantee under that absence is only half pinned.**
+   `scripts/tests/ops2-record.test.mjs:99-100` covers the **absent** `publicRef`; that an
+   **empty or whitespace** one also falls back to the id rests on `str()`'s trim, which no
+   assertion exercises. Measured correct across eight shapes by the Phase 2 tester, but
+   measured is not pinned: if `str` were ever simplified, the viewer's back label would
+   render empty and nothing would fail. One line in the parser's own test closes it.
 8. **VIEW-AC-2's numbers are the assertions, and this criterion inverted between drafts.**
    Revision 9 asserted `history.length` is *unchanged*, because this spec then had the
    viewer as an overlay; R31 makes the opposite true, so anyone reusing an earlier draft's
@@ -1728,6 +1774,14 @@ Not a test plan — twelve places where the obvious test would pass a wrong impl
     with nothing behind it. The same trap is waiting in any "it gets bigger / smaller /
     responsive" assertion, which is most of what a viewport test contains.
 
+**A scan's reach is whatever its file list says, and no more.** The navigation scan behind
+the "a fourth opener fails the suite the moment it is written" claim iterates a **literal
+two-file array** (`scripts/tests/ops2-navigation.test.mjs:329`: `LinePage.tsx`,
+`ProjectRecordPage.tsx`). That is true today — nothing else in the repo imports
+`drawingSuffix` — but it does not extend itself. **A third opener in a third file passes
+the suite by not being looked at.** Widen the array when a file joins, or widen the scan to
+the directory; either way, do not read the claim as stronger than the loop.
+
 ---
 
 ## 13. `ASSUMED:` register — every entry carries a state
@@ -1783,7 +1837,7 @@ the assumption.
 | 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
 | 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** "Is there a ceiling?" dissolved once the round-2 measurement arrived: there is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` went now), but there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18, which asks the question that actually has an owner in it. What was measured under this assumption: `height: 62vh; width: auto`, ~1278×893 at 2560×1440, **and the same drawing at 2560×1080 as at 1280×1080** |
 | 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, truncated as `OpsPage` truncates, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. **The precedent nobody had checked:** the line page's back control already names this destination by its **reference** — `src/ops2/projects/LinePage.tsx:201`, `label: record ? record.ref : "Project"`. The owner ruled for the reference: **one console-wide convention**, matching the control a reviewer already uses daily. Cost he accepted: a reference says which record, not which job. **Rework: the label expression only** — destination, exits, focus and the canvas fix were untouched. *(Revision 19: the `Project` half of this entry was never the viewer's to carry — that control has no pre-load state. It stays on the page-level control where the state is real. VIEW-AC-15 says so now.)* |
-| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — goes to the owner at acceptance.** The two things he might prefer instead: hold the drawing to a *share* of the screen (the deleted `62vh` was one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — the same reasoning that produced revision 17's fence, applied to the drawing itself |
+| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — shipped in Phase 2, and the live ruling at acceptance.** The two things the owner might prefer instead: hold the drawing to a *share* of the screen (the deleted `62vh` was one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — the same reasoning that produced revision 17's fence, applied to the drawing itself. **A veto costs one stylesheet rule** |
 
 ---
 
@@ -1798,7 +1852,7 @@ the element that matters most in the product, and a size the reviewer must scrol
 is not a size statement. The alternatives, if the owner wants one: hold the drawing to a
 share of the screen (the deleted `62vh` was one, chosen by nobody), or let the caption
 scroll off a very wide screen so the drawing can claim more. **Nothing is blocked** — the
-assumption is what was built, it is one stylesheet rule either way, and he sees it at
+assumption is what was built, it is one stylesheet rule either way, and it goes to him at
 acceptance with the rest of Phase 2.
 
 **What closed in revision 19.** VIEW-AC-15's fallback clause described a state the viewer's
@@ -1806,7 +1860,8 @@ control cannot be in, and it is corrected rather than left for the code to satis
 unreachable branch. The console's `Project` fallback stays where the state is real — the
 page-level control — and the never-empty guarantee behind it is named in the criterion
 (`record.ts:314`, `parseProjectRecord`, pinned in `scripts/tests/ops2-record.test.mjs`),
-because **a fallback would have masked that pin and made it look optional**.
+because **a fallback would have masked that pin and made it look optional**. The pin covers
+the absent case; the empty/whitespace case is measured but not yet pinned (§12 note 7).
 
 **What closed in revision 18.** §13.16 ("no ceiling on the growth") is **RETIRED** — the
 measurement showed it was the wrong question. VIEW-AC-1's internal contradiction is resolved
