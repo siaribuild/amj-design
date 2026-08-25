@@ -393,6 +393,39 @@ test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () =
     assert.ok(M.unitBasisLabel(basis), `the union declares "${basis}" and nothing labels it`);
   }
 
+  // ── THE GUARD THAT ACTUALLY FIRES ────────────────────────────────────────
+  //
+  // `composite.ts` types `SegmentInput.requirementBasis` to this union, and the
+  // comment there once claimed a seventh spelling would be "a compile error".
+  // TRUE OF `tsc`, FALSE OF THE COMMAND `npm test` RUNS: the gate passes
+  // `--fatal-only` and TS2322 is not in its FATAL set (`scripts/typecheck.mjs`),
+  // so a mismatched writer builds clean and the only tell is a non-fatal count
+  // nobody asserts. A justification verified by running the wrong command —
+  // this feature's signature defect, found inside a comment written to prevent
+  // the next one.
+  //
+  // So the agreement is checked HERE, where node can see it without the
+  // typechecker: every value the writer can put in the column is read off the
+  // writer's own source and must be a member of the reader's union.
+  const writerUnion = readFileSync(join(projectRoot, "worker/lib/estimator/split.ts"), "utf8")
+    .match(/interface SplitProposal \{[\s\S]*?\n\s*basis:([^;]*);/)[1]
+    .match(/"([a-z_]+)"/g).map((m) => m.replace(/"/g, ""));
+  const writerLiteral = readFileSync(join(projectRoot, "worker/lib/estimator/splitCandidates.ts"), "utf8")
+    .match(/requirementBasis:[^,\n]*\n?[^,\n]*/)[0]
+    .match(/"([a-z_]+)"/g).map((m) => m.replace(/"/g, ""));
+
+  // NON-VACUITY FIRST. A regex that stopped matching would report perfect
+  // agreement over two empty sets, which is the assertion shape this feature
+  // has now caught twelve of.
+  assert.equal(writerUnion.length, 5, `SplitProposal["basis"] read as ${JSON.stringify(writerUnion)}`);
+  assert.ok(writerLiteral.length >= 1, "splitCandidates' own literal was not found");
+
+  for (const spelling of [...writerUnion, ...writerLiteral]) {
+    assert.ok(union.includes(spelling),
+      `the writer can store "${spelling}" and the reader's union does not admit it — `
+      + "that unit's provenance would silently vanish");
+  }
+
   // The two vocabularies stay apart: an opening's basis is not a lite's.
   assert.equal(M.unitBasisLabel("plan_derived"), null, "the opening's vocabulary is not accepted here");
   assert.equal(M.basisLabel("explicit_ref"), null, "nor the comment's, over there");

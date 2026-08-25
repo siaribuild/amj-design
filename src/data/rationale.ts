@@ -60,8 +60,12 @@ export interface RationaleCandidate {
  * vocabulary that is wrong fails identically and looks more correct.
  *
  * `worker/lib/composite.ts`'s `SegmentInput.requirementBasis` references this
- * union instead of `string | null`, so a seventh spelling is a compile error
- * rather than a label that quietly stops rendering.
+ * union instead of `string | null`, which is what let two vocabularies into one
+ * column. What CATCHES a seventh spelling is a test, not the build:
+ * `scripts/tests/ops2-why.test.mjs` reads this union and the writer's own
+ * literals and asserts the writer's values are all members. The type alone is
+ * not the guard — TS2322 is outside the typecheck gate's FATAL set, so a
+ * mismatched writer builds clean and only the non-fatal count moves.
  */
 export type UnitRequirementBasis =
   | "explicit_energy_report"   // this lite carried its own band in the report

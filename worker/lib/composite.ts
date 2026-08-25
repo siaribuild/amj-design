@@ -93,7 +93,15 @@ export interface SegmentSpec {
   resolvedBand?: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null; shgcTarget?: number | null } | null;
   /** THE SHARED UNION, not `string`. `string | null` is what let two
    *  vocabularies into one column and a third into its reader — see
-   *  `src/data/rationale.ts`. A new spelling is now a compile error. */
+   *  `src/data/rationale.ts`.
+   *
+   *  WHAT CATCHES A SEVENTH SPELLING, precisely: `scripts/tests/ops2-why.test.mjs`
+   *  reads this union and the writer's own literals and asserts every value the
+   *  column can take is a member. NOT the build — this comment used to say "a
+   *  compile error", which is true of `tsc` and false of the command `npm test`
+   *  runs: the gate passes `--fatal-only` and TS2322 is not in its FATAL set,
+   *  so a mismatched writer builds clean at exit 0 and the only tell is a
+   *  non-fatal count nobody asserts. Measured, with a seventh spelling. */
   requirementBasis?: UnitRequirementBasis | null;
   thermalReview?: boolean;
   /** The machine's frozen account of what it chose for THIS unit. A unit never

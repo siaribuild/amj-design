@@ -102,8 +102,20 @@ export function useLineRationale(
   const departed = useRef(false);
   useIonViewDidLeave(() => {
     // STILL UNDER THIS LINE'S PATH IS NOT LEAVING — `…/why` and `…/drawing`
-    // are children of this page, and Ionic fires the lifecycle on a same-page
-    // URL change regardless.
+    // are children of this page.
+    //
+    // AND THIS CLAUSE IS CURRENTLY UNEXERCISED, which is worth saying so the
+    // next reader is not misled by a green suite. Measured by the tester:
+    // `useIonViewWillEnter` DOES fire on returning from a child, but
+    // `useIonViewDidLeave` does NOT fire when a modal child opens — so on the
+    // child path the event this guards never arrives, and `departed` is false
+    // for a different reason than the one written here.
+    //
+    // It stays because the invariant is the seam's to hold, not Ionic's to be
+    // trusted with: the day a child stops presenting as a modal, or the outlet
+    // changes when it fires, this is what keeps an enlargement from re-reading.
+    // Correct for a reason nothing asserts directly is still correct — it is
+    // just not evidence, and the comment should not pretend otherwise.
     departed.current = !history.location.pathname.includes(`/line/${encodeURIComponent(lineId)}`);
   });
   useIonViewWillEnter(() => {
