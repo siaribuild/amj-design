@@ -1,0 +1,19 @@
+-- Captured figures (ops2 "Why this product", Phase 3a — spec §7, design §4.4).
+-- A line's own record of its product+variant's Uw and SHGC at the moment of the
+-- save that set them. A snapshot, never a lookup.
+--
+-- Additive only: one nullable column. No table rebuild, no DROP, no data write.
+-- Children of quote_line (all unaffected by ADD COLUMN):
+--   quote_line.parent_line_id            -> quote_line ON DELETE CASCADE  (0028:28)
+--   comment.line_id                      -> quote_line ON DELETE SET NULL (0003:17)
+--   parse_line.quote_line_id             -> quote_line ON DELETE SET NULL (0012:55)
+--   opening_instance.quote_line_id       -> quote_line ON DELETE SET NULL (0022:13)
+--   ai_proposal_line.quote_line_id       -> quote_line ON DELETE SET NULL (0022:49)
+--   recommendation_outcome.quote_line_id -> quote_line ON DELETE SET NULL (0047:108)
+-- children affected: none expected.
+--
+-- NULL means "saved before the capture shipped" (SNAP-AC-8/10): no backfill,
+-- ever. A captured unknown is a DIFFERENT fact and is stored as
+-- {"uValue":null,"shgc":null} — present-and-null — so a later reader can tell
+-- "no figure exists for this product" from "this line predates the capture".
+ALTER TABLE quote_line ADD COLUMN performance_figures_json TEXT;
