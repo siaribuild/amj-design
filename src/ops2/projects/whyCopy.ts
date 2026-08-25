@@ -342,3 +342,142 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
           : "what else was considered"}`,
   };
 }
+
+/**
+ * WHY-AC-27 — the line's OWN stored figures against the run's recorded caps.
+ *
+ * Deliberately in WHY-AC-17's vocabulary, which the criterion names: a reviewer
+ * comparing the two cards is reading one scale, not two. Within-band means
+ * over a cap by no more than the run's stored tolerance — the same figure the
+ * "Chosen" sentence prints, never a typed 5.
+ *
+ * `null` when the figures are not numbers: the verdict row is OMITTED rather
+ * than guessed (UX §4.5), because a comparison of an absence against a cap has
+ * no answer and rendering one would invent it.
+ */
+export function comparisonVerdict(
+  figures: RationaleFigures | null | undefined,
+  requirement: Requirement,
+  tolerance: number,
+): string | null {
+  if (requirement.absent) return null;
+  if (!figures || (figures.uValue == null && figures.shgc == null)) return null;
+
+  const { uValue, shgc } = figures;
+  const overU = requirement.maxUValue != null && uValue != null && uValue > requirement.maxUValue;
+  const overShgc = (requirement.maxShgc != null && shgc != null && shgc > requirement.maxShgc)
+    || (requirement.minShgc != null && shgc != null && shgc < requirement.minShgc);
+  if (!overU && !overShgc) return "met the caps";
+
+  const band = 1 + tolerance;
+  const uWithin = !overU
+    || (requirement.maxUValue != null && uValue != null && uValue <= requirement.maxUValue * band);
+  const shgcWithin = !overShgc || (
+    shgc != null
+    && (requirement.maxShgc == null || shgc <= requirement.maxShgc * band)
+    && (requirement.minShgc == null || shgc >= requirement.minShgc / band)
+  );
+  if (uWithin && shgcWithin) return `within the ${tolerancePercent(tolerance)} band`;
+
+  if (!uWithin && !shgcWithin) return "missed both caps";
+  return uWithin ? "missed the SHGC cap" : "missed the Uw cap";
+}
+
+// ── The detail screen's own words (mock section C) ──────────────────────────
+//
+// HERE RATHER THAN IN THE COMPONENT, for the same reason the panel's are: the
+// ban is a scan of this file, and a heading typed into JSX is a heading the ban
+// never looked at.
+export const DETAIL = {
+  title: "Why this product",
+  hadToMeet: "What it had to meet",
+  comparison: "The platform's pick, and this line's",
+  split: "Why it was split",
+  bands: "Each unit's own band",
+  ladder: "What else was considered",
+  ladderLabel: "What else was considered",
+  targetHeld:
+    "This is the target the platform recorded when it made its recommendation. "
+    + "A later change to the product does not move it.",
+  platformColumn: "Platform recommended",
+  currentColumn: "On this line now",
+  // R2, and the sentence the whole comparison block exists to carry.
+  comparisonNote:
+    "A product is changed for reasons the platform cannot see — availability, lead time, "
+    + "what the customer asked for. Both are shown so the difference is readable, "
+    + "not so one of them is right.",
+  splitMadeAs: "Made as",
+  splitBeaten: "Best single unit",
+  splitNote:
+    "A make-up of two units and a single window competed in the same ladder; "
+    + "this is the single unit the split beat.",
+  bandsNote:
+    "An awning lite and a fixed lite carry different bands. These have been recorded on "
+    + "every split since the split feature shipped and have never been shown.",
+  bandMissing: "Its band was not recorded.",
+  noRequirement: "This opening had no thermal requirement.",
+  // R28/WHY-AC-39 — stated positively, so a later reader does not mistake the
+  // absence of an action for an oversight and helpfully restore one.
+  closing: "Nothing on this screen changes the quote — it is read and closed.",
+} as const;
+
+/** The ladder's chosen row. On a line a person has changed it reads "the
+ *  platform's pick" instead: the row describes the recommendation, and the
+ *  line's current product is somebody else's (R24). */
+export const chosenRowMark = (changed: unknown): string =>
+  (changed ? "· the platform's pick" : "· chosen");
+
+const NUMBER_WORD = ["no", "One", "Two", "Three", "Four", "Five"];
+
+/** WHY-AC-13 — fewer than five is the list that exists, with no placeholder row
+ *  and NO COUNT OF ANYTHING BEYOND IT. The sentence counts what is on screen. */
+export function ladderNote(shown: number): string {
+  if (shown >= 5) {
+    return "The chosen product and the next four by rank. No price, nothing to price, "
+      + "and nothing here changes the line.";
+  }
+  const count = NUMBER_WORD[shown] ?? String(shown);
+  return `${count} candidate${shown === 1 ? " was" : "s were"} recorded for this opening — `
+    + "the list is what exists, with nothing padded and no remainder counted.";
+}
+
+/** A make-up's name in the ladder, from the units it is made of. A single names
+ *  its product. */
+export function candidateName(c: RationaleCandidate): string {
+  if (c.form !== "split" || !c.units || c.units.length === 0) return c.productName;
+  const parts = c.units.map((u) => u.operationType).filter(Boolean);
+  return parts.length > 0 ? `Split: ${parts.join(" + ")}` : `Split: ${c.units.length} units`;
+}
+
+/** A make-up has no single assembly figure, and inventing one would be a
+ *  number nobody recorded — so the cell says what it is instead. */
+export function candidateFigures(c: RationaleCandidate): string {
+  return c.form === "split" && c.units
+    ? `${c.units.length} units`
+    : figuresText(c.figures);
+}
+
+/** WHY-AC-34 — a lite's own band. `null` when none was recorded, and NOTHING is
+ *  computed for it (WHY-AC-35): not the parent's band, not the sibling's. */
+export function unitBandText(
+  band: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null } | null,
+): string | null {
+  if (!band) return null;
+  const parts: string[] = [];
+  if (band.maxUValue != null) parts.push(`Uw ≤ ${fig(band.maxUValue)}`);
+  if (band.minShgc != null && band.maxShgc != null) parts.push(`SHGC ${fig(band.minShgc)}–${fig(band.maxShgc)}`);
+  else if (band.maxShgc != null) parts.push(`SHGC ≤ ${fig(band.maxShgc)}`);
+  else if (band.minShgc != null) parts.push(`SHGC ≥ ${fig(band.minShgc)}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Where a candidate sat on the ladder. Ordinals, because "ranked 1st" reads as
+ *  a position and "rank 1" reads as a field name. */
+export function rankedText(rank: number | null): string | null {
+  if (rank == null) return null;
+  const tens = rank % 100;
+  const suffix = tens >= 11 && tens <= 13
+    ? "th"
+    : ["th", "st", "nd", "rd"][rank % 10] ?? "th";
+  return `ranked ${rank}${suffix}`;
+}

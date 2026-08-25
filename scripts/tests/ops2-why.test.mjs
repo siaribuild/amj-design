@@ -283,6 +283,85 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
     "Why this product — open why it was split and what else was considered");
 });
 
+test("WHY-AC-12/13/33 the ladder names what it shows and counts nothing beyond it", () => {
+  const candidate = (o) => ({
+    productSlug: "p", productName: "AMJ67 Awning", variantId: null, form: "single",
+    tier: "meets", rank: 2, figures: { uValue: 3.72, shgc: 0.41 }, fits: true, units: null, ...o,
+  });
+
+  assert.equal(M.candidateName(candidate()), "AMJ67 Awning");
+  assert.equal(M.candidateFigures(candidate()), "Uw 3.72 · SHGC 0.41");
+
+  // A MAKE-UP HAS NO SINGLE ASSEMBLY FIGURE. The cell says what it is rather
+  // than a number nobody recorded, and the name comes from the units.
+  const split = candidate({
+    form: "split",
+    units: [
+      { productSlug: "a", productName: "A", operationType: "awning" },
+      { productSlug: "b", productName: "B", operationType: "fixed" },
+    ],
+  });
+  assert.equal(M.candidateName(split), "Split: awning + fixed");
+  assert.equal(M.candidateFigures(split), "2 units");
+  // …and with no operation types recorded it still names itself honestly.
+  assert.equal(M.candidateName(candidate({ form: "split", units: [{ productSlug: "a", productName: "A", operationType: null }] })),
+    "Split: 1 units");
+
+  // R24: the chosen row must not claim to describe the current line.
+  assert.equal(M.chosenRowMark(null), "· chosen");
+  assert.equal(M.chosenRowMark({ product: false, glazing: true }), "· the platform's pick");
+
+  // WHY-AC-13: fewer than five states what exists and counts NOTHING beyond it.
+  assert.match(M.ladderNote(5), /the next four by rank/);
+  assert.match(M.ladderNote(3), /^Three candidates were recorded/);
+  assert.match(M.ladderNote(1), /^One candidate was recorded/);
+  for (const shown of [1, 2, 3, 4]) {
+    assert.equal(/remaining|other|not shown|more candidate/i.test(M.ladderNote(shown)), false,
+      `${shown} rows: no count of anything beyond the list`);
+  }
+
+  // WHY-AC-34/35: a lite's band, and NOTHING computed when none was recorded.
+  assert.equal(M.unitBandText({ maxUValue: 3.9, minShgc: 0.37, maxShgc: 0.41 }), "Uw ≤ 3.90 · SHGC 0.37–0.41");
+  assert.equal(M.unitBandText({ maxUValue: 3.9, minShgc: null, maxShgc: null }), "Uw ≤ 3.90");
+  assert.equal(M.unitBandText(null), null);
+  assert.equal(M.unitBandText({ maxUValue: null, minShgc: null, maxShgc: null }), null,
+    "a band recorded with no figures in it is no band");
+
+  assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21].map(M.rankedText),
+    ["ranked 1st", "ranked 2nd", "ranked 3rd", "ranked 4th",
+      "ranked 11th", "ranked 12th", "ranked 13th", "ranked 21st"]);
+  assert.equal(M.rankedText(null), null);
+});
+
+test("WHY-AC-27 the comparison verdict, in WHY-AC-17's vocabulary and never attempted without figures", () => {
+  const v = (figures, tolerance = 0.08, req = REQUIREMENT()) => M.comparisonVerdict(figures, req, tolerance);
+
+  assert.equal(v({ uValue: 3.7, shgc: 0.41 }), "met the caps");
+  // Uw ≤ 3.90 with an 8% band tops out at 4.212.
+  assert.equal(v({ uValue: 4.1, shgc: 0.41 }), "within the 8% band");
+  assert.equal(v({ uValue: 4.3, shgc: 0.41 }), "missed the Uw cap");
+  assert.equal(v({ uValue: 3.7, shgc: 0.52 }), "missed the SHGC cap");
+  assert.equal(v({ uValue: 4.3, shgc: 0.52 }), "missed both caps");
+
+  // THE BAND IS THE RUN'S HERE TOO. One variable moves — the tolerance — and
+  // the same figures change their verdict, which is what a hardcoded 5 could
+  // never do.
+  assert.equal(v({ uValue: 4.1, shgc: 0.41 }, 0.02), "missed the Uw cap");
+  assert.equal(v({ uValue: 4.1, shgc: 0.41 }, 0.2), "within the 8% band".replace("8", "20"));
+
+  // WHY-AC-27's second limb: the comparison is NOT ATTEMPTED when the figures
+  // are not numbers. The row is omitted rather than guessed — and both absences
+  // behave the same here, because neither is a number to compare.
+  assert.equal(v(null), null);
+  assert.equal(v({ uValue: null, shgc: null }), null);
+  // A requirement that was never set has nothing to compare against either.
+  assert.equal(v({ uValue: 3.7, shgc: 0.41 }, 0.08, REQUIREMENT({ absent: true })), null);
+
+  // One axis recorded, one not: still answerable on the axis that exists.
+  assert.equal(v({ uValue: 4.3, shgc: null }), "missed the Uw cap");
+  assert.equal(v({ uValue: null, shgc: 0.41 }), "met the caps");
+});
+
 test("WHY-AC-17 a ladder row's verdict is derived from its tier and its own figures", () => {
   const row = (o) => ({
     productSlug: "x", productName: "X", variantId: null, form: "single",
