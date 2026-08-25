@@ -98,7 +98,6 @@ test("the record reads the endpoint's own vocabulary, and absence stays absent",
   const refless = body({ lines: [line()] });
   delete refless.project.publicRef;
   assert.equal(M.parseProjectRecord(refless).ref, "p_1", "no publicRef falls back to the id");
-  assert.ok(M.parseProjectRecord(refless).ref, "and a reference is never empty");
   assert.equal(r.stateLabel, "Technical review");
   assert.equal(r.waitingOn, "Us");
   assert.equal(r.lines.length, 1);
@@ -1179,9 +1178,14 @@ test("the back control names WHERE IT GOES, and the two ways in answer different
   // not carry two names in one console. WHICH string appears is the whole of the
   // ruling, so the browser suite asserts the reference against the title.
   assert.equal(at(drawing, "OF-Q-10482").backLabel, "OF-Q-10482");
-  // Before the record has loaded, `Project` — the same word the precedent uses,
-  // not a second answer invented here.
-  assert.equal(at(drawing, "").backLabel, "Project");
+  // AND NOTHING IS INVENTED ON THE WAY THROUGH. This used to assert that an
+  // empty string became `Project` — the console's pre-load word. That branch is
+  // gone, because this function cannot reach the state the criterion describes:
+  // a subject only exists once the record has resolved a line, and `record.ref`
+  // is `str(publicRef) ?? id` on a parse that returns `null` without a non-empty
+  // id. The console's `Project` is on LinePage's page-level control, where the
+  // pre-load state is real. The guarantee that makes the branch unnecessary is
+  // pinned above, in the parser's own test.
 
   // ONE CONTROL, so the unit path answers the same way.
   const c = parse(composite());

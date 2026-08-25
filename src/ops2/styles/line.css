@@ -147,7 +147,6 @@
    §13.17. The bound survives that veto on the two inputs above, which are the
    ones the code can now receive.) */
 .ops2-viewer__back-label {
-  min-width: 0;
   max-width: min(28ch, 40vw);
   overflow: hidden;
   text-overflow: ellipsis;

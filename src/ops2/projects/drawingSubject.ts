@@ -80,15 +80,22 @@ export function drawingSubject(
    * The reference rather than the project's name because `LinePage`'s own back
    * control has always named this destination that way, and one destination may
    * not carry two vocabularies in one console (owner ruling, §13.17 VETOED).
-   * Empty falls back to `Project` — the same precedent's word, and the same rule
-   * `line.code` follows in falling back to `the line`: a control nobody can name
-   * aloud is not a control. `LinePage` owns the pair; if one changes, both do.
+   *
+   * NO `Project` FALLBACK HERE, and the console does not lose one. VIEW-AC-15
+   * puts it "while the record has not loaded" — a state this function cannot be
+   * in, because a subject is only built once the record has resolved a line. The
+   * console's `Project` IS reachable and stays exactly where it was, on
+   * `LinePage`'s own page-level back control. A copy here could only fire on an
+   * empty `record.ref`, which `parseProjectRecord` cannot produce: it returns
+   * `null` without a non-empty id, and `ref` is `str(publicRef) ?? id`. That
+   * guarantee is pinned in `scripts/tests/ops2-record.test.mjs` rather than
+   * papered over here — a test fails loudly where a fallback would mask.
    */
   backTo: string | null,
 ): ViewerSubject | null {
   if (route.view === "line") return null;
 
-  const backLabel = backTo === null ? (line.code || "the line") : (backTo || "Project");
+  const backLabel = backTo === null ? (line.code || "the line") : backTo;
   // THE OPENING, NAMED AS BEST WE CAN — one fallback, both paths. The parser
   // keeps a line whose code it could not read, so every sentence built here has
   // to survive an empty one; interpolating it raw ends a caption mid-air ("unit

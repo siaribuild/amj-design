@@ -75,12 +75,31 @@ export function LinePage() {
   // is still loading would throw away a link that turns out to be perfectly
   // good. Always by REPLACE: a correction that pushed would make back return to
   // the address just corrected.
+  //
+  // ── AND A CORRECTION CARRIES WHAT THE ENTRY CARRIED ─────────────────────────
+  // `history.replace(path)` with no second argument assigns `undefined` state
+  // (history v4), so correcting the address used to DELETE the door — and a
+  // canvas-opened viewer whose ordinal had gone stale then read as a cold
+  // arrival: the control named the line (VIEW-AC-15) and, after a reload, back
+  // left the record behind (VIEW-AC-14). VIEW-AC-2c asks for a replace that
+  // grows no history; discarding the entry's state was nobody's decision.
+  //
+  // The two replaces differ because the question differs — is this the same
+  // viewer continuing, or a different entry beginning?
+  //   • NORMALISE keeps the viewer open at a corrected address. Same viewer,
+  //     same journey, so the entry keeps its door.
+  //   • STRAY closes the viewer and lands on the line page's refusal. The door
+  //     is spent; marking that entry would be inventing state rather than
+  //     preserving it.
+  // `scripts/tests/ops2-navigation.test.mjs` holds the rule, because this is the
+  // third way the mark has gone missing and there is no structural fix — state
+  // is the only thing a `replace` can carry.
   const ready = load.status === "ready";
   const stray = ready && !line && route.view !== "line";
   useEffect(() => {
     if (!ready) return;
     if (stray) history.replace(linePath);
-    else if (route.normalise) history.replace(linePath + route.canonical);
+    else if (route.normalise) history.replace(linePath + route.canonical, history.location.state);
   }, [ready, stray, route.normalise, route.canonical, history, linePath]);
 
   // WHERE BACK GOES DECIDES WHAT IT SAYS (VIEW-AC-15). The reviewer who opened

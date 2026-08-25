@@ -306,6 +306,44 @@ test("which door the viewer was opened through — and whether there was one at 
     "but a state carrying someone else's keys too is still ours");
 });
 
+test("a navigation that keeps the viewer open carries the door with it", () => {
+  // THE MARK HAS NOW GONE MISSING THREE WAYS: never pushed on the line door,
+  // misread through `canGoBack()`, and dropped by a `replace` called with a path
+  // and no state — history v4 assigns `undefined` when the second argument is
+  // omitted, so canonicalising a stale unit ordinal silently made a
+  // canvas-opened viewer read as cold.
+  //
+  // There is no structural fix available: per-entry state is the ONLY store a
+  // `replace` can carry, and every alternative that would survive a reload
+  // (`history.length`, the referrer, the navigation type) answers a different
+  // question — see the note in lineRoute.ts. So the invariant is pinned here
+  // instead, where a fourth site fails the node suite the moment it is written
+  // rather than waiting for someone to walk the journey in a browser.
+  //
+  // THE RULE: a `push` or `replace` whose destination is a DRAWING address is
+  // the same viewer continuing, and must carry the entry's door. One that lands
+  // on the line page is a different entry beginning and must not.
+  const DOOR = /,\s*(VIEWER_FROM_LINE|VIEWER_FROM_RECORD|history\.location\.state)\s*$/;
+  const CARRIES_VIEWER = /drawingSuffix\(|route\.canonical/;
+  let checked = 0;
+  for (const file of ["src/ops2/projects/LinePage.tsx", "src/ops2/projects/ProjectRecordPage.tsx"]) {
+    const code = read(file)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const [, , args] of code.matchAll(/history\.(push|replace)\(([^\n]*)\)\s*;/g)) {
+      if (!CARRIES_VIEWER.test(args)) continue;
+      checked += 1;
+      assert.ok(DOOR.test(args),
+        `${file}: this navigation keeps the viewer open but drops its door — `
+        + `\`history.…(${args})\`. Pass the door, or the entry it lands on reads as a `
+        + `cold arrival: the control names the line and back leaves the record behind.`);
+    }
+  }
+  // AND THE SCAN ITSELF MUST HAVE FOUND SOMETHING. A regex that silently matches
+  // nothing is the shape of assertion this feature has now shipped four of.
+  assert.ok(checked >= 3, `only ${checked} viewer-bearing navigations found — the scan has drifted`);
+});
+
 test("the opener builds the address the parser accepts, and the two cannot drift", () => {
   // `null` is the opening's own drawing, and it is SAID: every caller has a
   // unit index to hand over — `null` when the subject is the whole opening — so

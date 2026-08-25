@@ -295,6 +295,13 @@ test("the back control, Escape and the system back gesture are one single pop", 
 });
 
 test("a page that really left still re-reads its record on the way back", async ({ page }) => {
+  // DELIBERATELY REDUNDANT, and kept on purpose — flagged once as subsumed by
+  // "a real visit to the line page still refreshes the record on the way back",
+  // which walks this same departure and adds a drawing round-trip on top. It is
+  // the only version with NO drawing anywhere in the journey, and the guard it
+  // fences was narrowed once already today to stop a drawing arming it. Three
+  // seconds to keep the plain case proved on its own terms.
+  //
   // THE GOOD CASE FOR THE GUARD THAT KEEPS THE VIEWER FROM RE-FETCHING.
   //
   // A viewer opening under the same route made Ionic fire an enter on a page
@@ -790,6 +797,29 @@ test("a long reference is shortened to fit the bar, and read out whole", async (
   expect(phone.width, "the cap does not tighten when the bar does").toBeLessThan(desk.width);
   // It must also leave room for the heading beside it rather than filling the bar.
   expect(phone.width).toBeLessThan(375 * 0.5);
+
+  // THE OTHER UNBOUNDED INPUT, on the same element and the same rule. A line
+  // code is `quote_line.external_ref` — plain TEXT parsed out of a builder's
+  // schedule, so a mis-mapped import column arrives whole — and it reaches this
+  // control through the LINE door, at every width. One more string rather than
+  // one more test: the cap is a single CSS rule, and which door supplied the
+  // label is pinned in four other places.
+  const LONG_CODE = "W07-KITCHEN-NORTH-ELEVATION-AWNING-OVER-BENCH";
+  await page.route(RECORD_URL, (route) => route.fulfill({
+    json: { ...record, lines: record.lines.map((l) => (l.id === "l2" ? { ...l, code: LONG_CODE } : l)) },
+  }));
+  // Through the LINE door, and reached by opening the plate rather than by
+  // navigating to the drawing address: `page.goto` to the address we are already
+  // on is a RELOAD, and a reload deliberately keeps its door — so it would have
+  // measured the reference again under a different name.
+  await page.goto(LINE("l2"));
+  await page.getByTestId("line-plate-open").first().click();
+  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+  await expect(page.getByTestId("drawing-viewer")
+    .getByRole("button", { name: LONG_CODE })).toBeVisible();
+  const code = await measure();
+  expect(code.clipped, "a 45-character line code is not shortened on a phone").toBe(true);
+  expect(code.width).toBeLessThan(375 * 0.5);
 });
 
 test("a RELOADED canvas drawing still returns to the record, by all three exits",
@@ -1229,6 +1259,8 @@ test("a composite's units list is never clipped with nothing to scroll", async (
         scrollable: list.scrollHeight > list.clientHeight + 1,
       };
     });
+    expect(m.rows.length, `no unit rows at ${w}×${h} — the fixture stopped `
+      + "producing units and the scroll check below would assert nothing").toBeGreaterThan(0);
     expect(m.bottom, `the units list runs past the fold at ${w}×${h}`)
       .toBeLessThanOrEqual(m.vh + 1);
     const past = m.rows.filter((bottom) => bottom > m.bottom + 1);
@@ -1279,59 +1311,78 @@ test("`fluid` is the viewer's alone — every other drawing keeps its intrinsic 
       .not.toBeNull();
   });
 
-test("the collateral cases still hold at an ultrawide", async ({ page }) => {
-  // The three most likely to be broken by the fit rules, re-run at the shape
-  // those rules changed most. They pass at 1280 above; this is the width where
-  // the drawing is now biggest and the layout least like the one they were
-  // written against.
+test("the widest shape did not break the way out", async ({ page }) => {
+  // The fit rules changed most at an ultrawide, so the question worth asking
+  // there is whether navigation still works — not whether the refusal copy still
+  // reads the same, which is a static literal, or whether a cold arrival still
+  // replaces, which is router state. Neither of those is viewport-sensitive, and
+  // re-running two whole tests at a second width to find out was measuring the
+  // same thing twice. One open, one exit, one address.
   await serveRecord(page);
   await page.setViewportSize({ width: 2560, height: 1080 });
-
-  // A cold arrival on a composite unit: names the LINE, replaces to it.
-  await page.goto(`${LINE("l2")}/drawing/u2`);
+  await page.goto(LINE("l2"));
+  await page.getByTestId("line-plate-open").first().click();
   await expect(page.getByTestId("drawing-viewer")).toBeVisible();
-  await expect(page.getByTestId("drawing-viewer").getByRole("heading", { name: "W07B" }))
-    .toBeVisible();
-  await expect(page.getByTestId("drawing-viewer-back")).toHaveText("W07");
-  const before = await historyLength(page);
+  await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
   await page.getByTestId("drawing-viewer-back").click();
   await expect(page).toHaveURL(/\/line\/l2$/);
-  expect(await historyLength(page), "a cold arrival replaced, it did not push").toBe(before);
-
-  // And cross-project and nonexistent still refuse in the same words.
-  const refusals: string[] = [];
-  for (const id of ["l_other", "l_nope"]) {
-    for (const suffix of ["/drawing", "/drawing/u1"]) {
-      await page.goto(`${LINE(id)}${suffix}`);
-      await expect(page).toHaveURL(new RegExp(`/line/${id}$`));
-      await expect(page.getByTestId("drawing-viewer")).toBeHidden();
-      refusals.push((await page.getByTestId("line-not-found").innerText()).trim());
-    }
-  }
-  expect(new Set(refusals).size, "the refusals differ, so a probe can tell them apart").toBe(1);
 });
 
-test("a long LINE CODE truncates on the line door too", async ({ page }) => {
-  // The other unbounded input to the back label's cap. `quote_line.external_ref`
-  // is plain TEXT parsed out of a builder's schedule, so a mis-mapped import
-  // column arrives here whole — and unlike the record's reference, it reaches
-  // the control at EVERY width, including the one where the bar has least room.
-  const LONG_CODE = "W07-KITCHEN-NORTH-ELEVATION-AWNING-OVER-BENCH";
-  await page.route(RECORD_URL, (route) => route.fulfill({
-    json: { ...record, lines: record.lines.map((l) => (l.id === "l2" ? { ...l, code: LONG_CODE } : l)) },
-  }));
-  await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto(`${LINE("l2")}/drawing`);
-  await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+test("a canvas-opened drawing whose ordinal goes stale keeps its door through the correction",
+  async ({ page }) => {
+    // VIEW-AC-2c says normalisation happens BY REPLACE and grows no history. It
+    // says nothing about discarding what the entry was already carrying — and
+    // `history.replace(path)` with no second argument assigns `undefined` state,
+    // so correcting the address quietly turned a canvas-opened viewer into a
+    // cold one. Two criteria break at once: the control then names the LINE
+    // (VIEW-AC-15) and, after a reload, back returns to the line instead of the
+    // record (VIEW-AC-14).
+    //
+    // Reached the way it is actually reached: the canvas offers three units, the
+    // reviewer opens the third, and the line page's own fetch comes back with a
+    // record in which that line now has two. Nothing contrived — the record is
+    // re-read on every page, and a line's units change when someone edits it.
+    const THREE = {
+      ...COMPOSITE,
+      segments: [...COMPOSITE.segments, {
+        id: "s3", productSlug: "amj67-fixed-window", productName: "AMJ67 Fixed",
+        width: "800", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 700, status: "ready",
+      }],
+    };
+    let units = 3;
+    await page.route(RECORD_URL, (route) => route.fulfill({
+      json: { ...record, lines: record.lines.map((l) => (l.id === "l2" ? (units === 3 ? THREE : l) : l)) },
+    }));
 
-  // The accessible name stays whole; only what is drawn is shortened.
-  await expect(page.getByTestId("drawing-viewer")
-    .getByRole("button", { name: LONG_CODE })).toBeVisible();
-  const label = page.locator(".ops2-viewer__back-label");
-  const m = await label.evaluate((el) => ({
-    clipped: el.scrollWidth > el.clientWidth,
-    width: Math.round(el.getBoundingClientRect().width),
-  }));
-  expect(m.clipped, "a 45-character line code is not shortened on a phone").toBe(true);
-  expect(m.width, "the label takes more than half the bar").toBeLessThan(375 * 0.5);
-});
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(RECORD_PAGE);
+    await expect(page.getByTestId("record-canvas")).toBeVisible();
+    await page.getByTestId("record-line").nth(1).click();
+    await expect(page.getByTestId("line-review")).toBeVisible();
+    await expect(canvasUnit(page, 2)).toBeVisible();
+
+    // The third unit is gone by the time the line page reads the record.
+    units = 2;
+    const before = await historyLength(page);
+    await canvasUnit(page, 2).click();
+    await expect(page).toHaveURL(/\/line\/l2\/drawing/);
+
+    // CORRECTED, BY REPLACE, TO THE OPENING'S OWN DRAWING (VIEW-AC-2c).
+    await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    expect(await historyLength(page), "the correction grew the history").toBe(before + 1);
+
+    // AND THE DOOR SURVIVED IT. Same viewer, same journey, corrected address —
+    // so the control still names the record it will return to.
+    await expect(page.getByTestId("drawing-viewer-back")).toHaveText(PROJECT_REF);
+
+    // The destination too, and after a reload, which is where a lost door stops
+    // being only a labelling defect: with no mark the entry reads as cold and
+    // back replaces to the line page instead of returning to the record.
+    await page.reload();
+    await expect(page.getByTestId("drawing-viewer")).toBeVisible();
+    await expect(page.getByTestId("drawing-viewer-back")).toHaveText(PROJECT_REF);
+    await page.getByTestId("drawing-viewer-back").click();
+    await expect(page, "a corrected canvas drawing lost its way back to the record")
+      .toHaveURL(/\/projects\/p_rec$/);
+  });

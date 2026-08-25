@@ -95,7 +95,7 @@ export function lineSuffixOf(pathname: string): string {
 export const VIEWER_FROM_LINE = { viewerFrom: "line" } as const;
 export const VIEWER_FROM_RECORD = { viewerFrom: "record" } as const;
 
-export type ViewerDoor = "line" | "record";
+type ViewerDoor = "line" | "record";
 
 /** The door this viewer was opened through, or `null` for a cold arrival that
  *  used no door at all. One reader, because it is one fact. */
