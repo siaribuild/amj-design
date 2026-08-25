@@ -11,7 +11,7 @@ import { claimAnonProjectForUser } from "../lib/access";
 import { updateAccountDetails } from "../lib/account";
 import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
-  findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
+  findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { recordReferral } from "../lib/referrals";
 import { tradeStateOf } from "../lib/trade";
@@ -61,9 +61,9 @@ auth.post("/challenge", async (c) => {
     if (!ok) return c.json({ error: "captcha" }, 400);
   }
 
-  if (isEmail(email) && (await challengeAllowed(c.env, email))) {
+  if (isEmail(email) && (await challengeAllowed(c.env, signinChallenge(email)))) {
     const code = sixDigit();
-    await storeChallenge(c.env, email, code);
+    await storeChallenge(c.env, signinChallenge(email), code);
     await notify(c.env, {
       recipient: email,
       eventType: "auth.code.requested",
@@ -88,7 +88,7 @@ auth.post("/verify", async (c) => {
   if (!isEmail(email) || !/^\d{6}$/.test(code)) {
     return c.json({ error: "invalid_code" }, 400);
   }
-  if (!(await consumeChallenge(c.env, email, code))) {
+  if (!(await consumeChallenge(c.env, signinChallenge(email), code))) {
     return c.json({ error: "invalid_code" }, 400);
   }
 

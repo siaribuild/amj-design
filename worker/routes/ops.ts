@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
-  isDevEnv, isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
+  isDevEnv, isEmail, normEmail, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
@@ -219,9 +219,9 @@ ops.post("/auth/challenge", async (c) => {
   }
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
-  if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, email))) {
+  if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, signinChallenge(email)))) {
     const code = sixDigit();
-    await storeChallenge(c.env, email, code);
+    await storeChallenge(c.env, signinChallenge(email), code);
     await notify(c.env, {
       recipient: email,
       eventType: "ops.code.requested",
@@ -243,7 +243,7 @@ ops.post("/auth/verify", async (c) => {
   if (!isEmail(email) || !isStaffEmail(c.env, email) || !/^\d{6}$/.test(code)) {
     return c.json({ error: "invalid_code" }, 400);
   }
-  if (!(await consumeChallenge(c.env, email, code))) return c.json({ error: "invalid_code" }, 400);
+  if (!(await consumeChallenge(c.env, signinChallenge(email), code))) return c.json({ error: "invalid_code" }, 400);
 
   const user = await findOrCreateInternalUser(c.env, email);
   const token = await createSession(c.env, user);

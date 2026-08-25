@@ -84,30 +84,57 @@ export async function sha256hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-const codeHash = (email: string, code: string) => sha256hex(`${email}:${code}`);
+const codeHash = (subject: string, code: string) => sha256hex(`${subject}:${code}`);
 
 export const sixDigit = () =>
   String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
 
+/** WHICH challenge — its KV key, and the subject mixed into the code hash.
+ *
+ *  The two travel together because they must never drift: a key that says one
+ *  thing and a hash salted with another is a challenge that can be satisfied by
+ *  a code issued for something else. Callers pick a constructor below rather
+ *  than building the pair themselves, so there is no call site that can get the
+ *  correspondence wrong.
+ *
+ *  Key PREFIXES must stay distinct per flow. `isEmail` permits a colon in the
+ *  local part, so a single shared prefix would let the address "a@b.co:OF-1"
+ *  and the guest pair (a@b.co, OF-1) collide onto one key AND one hash subject
+ *  — a code issued for one would verify the other. */
+export interface Challenge { key: string; subject: string }
+
+/** Customer + ops email sign-in. Subject is the address, key `otp:{email}` —
+ *  byte-identical to what these two flows have always stored. */
+export const signinChallenge = (email: string): Challenge => ({ key: `otp:${email}`, subject: email });
+
+/** Guest order tracking: the secret is scoped to one (address, reference) pair,
+ *  so both belong in the key and in the hash. */
+export const guestTrackChallenge = (email: string, ref: string): Challenge =>
+  ({ key: `gcode:${email}:${ref}`, subject: `${email}:${ref}` });
+
 interface OtpRecord { hash: string; attempts: number; at: number }
 
-export async function storeChallenge(env: Env, email: string, code: string) {
-  const rec: OtpRecord = { hash: await codeHash(email, code), attempts: 0, at: Date.now() };
-  await env.KV.put(`otp:${email}`, JSON.stringify(rec), { expirationTtl: OTP_TTL });
+export async function storeChallenge(env: Env, ch: Challenge, code: string) {
+  const rec: OtpRecord = { hash: await codeHash(ch.subject, code), attempts: 0, at: Date.now() };
+  await env.KV.put(ch.key, JSON.stringify(rec), { expirationTtl: OTP_TTL });
 }
 
 // Gate email-code issuance to stop enumeration/spam and prevent overwriting a
 // still-valid outstanding code. Returns false (→ caller responds neutrally and
 // sends nothing) when the address is in cooldown or over its per-window cap.
 // Applied identically to the customer and ops challenge routes.
-export async function challengeAllowed(env: Env, email: string): Promise<boolean> {
-  const raw = await env.KV.get(`otp:${email}`);
+export async function challengeAllowed(env: Env, ch: Challenge): Promise<boolean> {
+  const raw = await env.KV.get(ch.key);
   if (raw) {
     // A code is still live: only allow a resend after the cooldown, and never
     // silently overwrite one inside it (that would invalidate the real user's code).
     try { const rec = JSON.parse(raw) as OtpRecord; if (rec.at && Date.now() - rec.at < RESEND_COOLDOWN_MS) return false; } catch { /* reissue on corrupt record */ }
   }
-  const countKey = `otpc:${email}`;
+  // Keyed on the SUBJECT, not the key: for sign-in that is the address, which
+  // keeps `otpc:{email}` exactly as it has always been (no live counter resets
+  // on deploy), and for guest tracking it is the (address, reference) pair the
+  // budget actually belongs to.
+  const countKey = `otpc:${ch.subject}`;
   const count = parseInt((await env.KV.get(countKey)) ?? "0", 10) || 0;
   if (count >= MAX_CHALLENGES_PER_WINDOW) return false;
   await env.KV.put(countKey, String(count + 1), { expirationTtl: CHALLENGE_WINDOW });
@@ -151,20 +178,31 @@ export async function withinCap(env: Env, key: string, max: number, windowSecond
 
 // Returns true on a correct code (and consumes it). Counts attempts; burns the
 // challenge after too many tries.
-export async function consumeChallenge(env: Env, email: string, code: string): Promise<boolean> {
-  const raw = await env.KV.get(`otp:${email}`);
+//
+// THE one code verifier in this Worker — sign-in, ops and guest tracking all
+// route through here. Guest tracking used to hold a second, flattened copy: it
+// stored a bare hex hash, which left nowhere to record an attempt, and so had no
+// cap at all. That is how a 10^6 secret guarding order acceptance and drawing
+// sign-off became brute-forceable in hours. A copy of this function is a copy of
+// the bound it enforces, and the copy is where the bound goes missing.
+//
+// Every failure mode returns the same `false` — wrong code, no challenge stored,
+// and capped are indistinguishable to the caller, so no response can tell an
+// attacker which of the three they hit.
+export async function consumeChallenge(env: Env, ch: Challenge, code: string): Promise<boolean> {
+  const raw = await env.KV.get(ch.key);
   if (!raw) return false;
   const rec = JSON.parse(raw) as OtpRecord;
   if (rec.attempts >= MAX_OTP_ATTEMPTS) {
-    await env.KV.delete(`otp:${email}`);
+    await env.KV.delete(ch.key);
     return false;
   }
-  if ((await codeHash(email, code)) === rec.hash) {
-    await env.KV.delete(`otp:${email}`);
+  if ((await codeHash(ch.subject, code)) === rec.hash) {
+    await env.KV.delete(ch.key);
     return true;
   }
   rec.attempts += 1;
-  await env.KV.put(`otp:${email}`, JSON.stringify(rec), { expirationTtl: OTP_TTL });
+  await env.KV.put(ch.key, JSON.stringify(rec), { expirationTtl: OTP_TTL });
   return false;
 }
 

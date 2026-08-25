@@ -94,6 +94,33 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await requestJson(anon, "/api/guest/records/not-a-real-token", {}, 404);
     });
 
+    // The grant this code buys is owner-EQUIVALENT, not read-only: it reaches the
+    // customer's uploaded plans, /accept (which commits a real order) and
+    // confirm-drawings (which releases to manufacture). Both preconditions are
+    // non-secret by design — the customer's address, and a sequential reference
+    // the code itself calls the "phone-quotable anchor" — so the six digits are
+    // the ONLY secret, and an unbounded guess budget against 10^6 is hours of
+    // work. Distinct (email, ref) pair from the subtest above so neither one's
+    // issuance throttle or stored challenge disturbs the other.
+    await t.test("guest tracking: wrong codes burn the challenge", async () => {
+      const s = new Session(baseUrl);
+      const ref = "OF-Q-10001";
+      const issued = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref } });
+      const good = issued.body.devCode;
+      assert.match(good, /^\d{6}$/, "a matching email+ref must still issue a code");
+
+      for (let i = 0; i < 5; i++) {
+        await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref, code: "000000" } }, 400);
+      }
+      // The assertion that matters. Checking that wrong codes keep failing proves
+      // nothing — every unbounded endpoint passes that. The CORRECT code must
+      // stop working, which is only true if the attempts were counted and the
+      // challenge burned.
+      await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref, code: good } }, 400);
+      // …and no session was minted on the way past.
+      await requestJson(s, "/api/guest/record", {}, 404);
+    });
+
     await t.test("file upload: rejects empty and oversized; download is owner-only", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "files@example.com");
