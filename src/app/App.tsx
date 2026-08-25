@@ -1620,7 +1620,11 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     try {
       await guestTrackVerify(email.trim(), ref.trim(), code.trim());
       setRec(await guestRecord()); setStep("record");
-    } catch { setError("That code didn't match, or the details don't match a quote or order."); }
+      // Deliberately says nothing about WHY. A code stops working after a handful
+      // of wrong tries, and naming that would tell an attacker exactly where they
+      // are in their budget; pointing at "Start over" gives the real customer the
+      // way out without the oracle.
+    } catch { setError("That code didn't match, or the details don't match a quote or order. If you've tried a few times, start over to get a fresh code."); }
     finally { setBusy(false); }
   };
   const reset = () => {

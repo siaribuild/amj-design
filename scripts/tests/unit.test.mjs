@@ -23,7 +23,7 @@ await build({
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
-      export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
+      export { normEmail, isEmail, sixDigit, sha256hex, userDto, consumeChallenge, storeChallenge, signinChallenge, guestTrackChallenge } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { isValidAuPhone, normalizePhone as normalizePhoneShared } from ${p("src/data/phone.ts")};
       export { abnValid, normalizeAbn, formatAbn } from ${p("src/data/abn.ts")};
@@ -255,6 +255,67 @@ test("util.claimCookie: httpOnly SameSite Max-Age; Secure only in production", (
   assert.match(dev, /Max-Age=\d+/);
   assert.doesNotMatch(dev, /Secure/);
   assert.match(M.claimCookie("tok", { APP_ENV: "production" }), /Secure/);
+});
+
+// A stub KV — enough for the challenge helpers, which only get/put/delete strings.
+const fakeKv = (seed = {}) => {
+  const store = new Map(Object.entries(seed));
+  return {
+    store,
+    env: { KV: {
+      get: async (k) => (store.has(k) ? store.get(k) : null),
+      put: async (k, v) => { store.set(k, v); },
+      delete: async (k) => { store.delete(k); },
+    } },
+  };
+};
+
+test("auth: the code verifier counts attempts and burns the challenge", async () => {
+  const kv = fakeKv();
+  const ch = M.guestTrackChallenge("a@b.co", "OF-1");
+  await M.storeChallenge(kv.env, ch, "123456");
+  for (let i = 0; i < 5; i++) assert.equal(await M.consumeChallenge(kv.env, ch, "000000"), false);
+  // The sixth call sees the cap, and the RIGHT code no longer opens it.
+  assert.equal(await M.consumeChallenge(kv.env, ch, "123456"), false);
+  assert.equal(kv.store.has(ch.key), false, "the challenge is burned, not left to be retried");
+  // Sanity in the other direction: without the wrong attempts, that same code works.
+  const fresh = fakeKv();
+  await M.storeChallenge(fresh.env, ch, "123456");
+  assert.equal(await M.consumeChallenge(fresh.env, ch, "123456"), true);
+});
+
+test("auth: a code issued for one challenge cannot satisfy another", async () => {
+  const kv = fakeKv();
+  const guest = M.guestTrackChallenge("a@b.co", "OF-1");
+  await M.storeChallenge(kv.env, guest, "123456");
+  // Same address, different reference: a different key AND a different hash
+  // subject, so the stored code is worthless against it.
+  assert.equal(await M.consumeChallenge(kv.env, M.guestTrackChallenge("a@b.co", "OF-2"), "123456"), false);
+  // And the sign-in challenge for that address is a different challenge again.
+  assert.equal(await M.consumeChallenge(kv.env, M.signinChallenge("a@b.co"), "123456"), false);
+  // The real one still works — proving the three refusals above were about the
+  // challenge identity and not about the code being wrong all along.
+  assert.equal(await M.consumeChallenge(kv.env, guest, "123456"), true);
+});
+
+test("auth: a pre-upgrade OTP record is refused, not thrown on", async () => {
+  const ch = M.guestTrackChallenge("a@b.co", "OF-1");
+  // What guest tracking stored before it shared this verifier: a bare SHA-256
+  // hex string rather than an OtpRecord. Every code issued in the ten minutes
+  // before the deploy is still sitting in KV in exactly this shape, and
+  // JSON.parse turns it into a 500 — which is both a crash on a public endpoint
+  // and a signal that distinguishes "a record exists here" from "none does".
+  const kv = fakeKv({ [ch.key]: "a3f5b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3" });
+  assert.equal(await M.consumeChallenge(kv.env, ch, "123456"), false);
+  assert.equal(kv.store.has(ch.key), false, "an unreadable record is cleared so a fresh code can be issued");
+
+  // The nastier half of the same shape: a legacy hash that happens to be all
+  // digits PARSES — into a number. Nothing then has an `attempts` field to
+  // increment, so the record would sit there absorbing guesses forever, which is
+  // the very unbounded budget this whole change exists to remove.
+  const numeric = fakeKv({ [ch.key]: "1234567890123456789012345678901234567890123456789012345678901234" });
+  assert.equal(await M.consumeChallenge(numeric.env, ch, "123456"), false);
+  assert.equal(numeric.store.has(ch.key), false, "a record with no attempt counter is cleared, never retried against");
 });
 
 test("auth: normEmail, isEmail, sixDigit, sha256hex, userDto", async () => {

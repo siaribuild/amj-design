@@ -192,7 +192,19 @@ export async function withinCap(env: Env, key: string, max: number, windowSecond
 export async function consumeChallenge(env: Env, ch: Challenge, code: string): Promise<boolean> {
   const raw = await env.KV.get(ch.key);
   if (!raw) return false;
-  const rec = JSON.parse(raw) as OtpRecord;
+  // Tolerate a record this function cannot read, the way challengeAllowed
+  // already does. Guest tracking stored a BARE hex hash at this key until it
+  // started sharing this verifier, so every code issued in the ten minutes
+  // before that deploy is still sitting there in the old shape — and an
+  // unguarded parse turns a public endpoint into a 500, which is both a crash
+  // and a signal that a record exists. Dropping it costs that guest one "send a
+  // new code" and costs an attacker a challenge they could never satisfy.
+  let rec: OtpRecord;
+  try { rec = JSON.parse(raw) as OtpRecord; } catch { await env.KV.delete(ch.key); return false; }
+  if (!rec || typeof rec.attempts !== "number" || typeof rec.hash !== "string") {
+    await env.KV.delete(ch.key);
+    return false;
+  }
   if (rec.attempts >= MAX_OTP_ATTEMPTS) {
     await env.KV.delete(ch.key);
     return false;
