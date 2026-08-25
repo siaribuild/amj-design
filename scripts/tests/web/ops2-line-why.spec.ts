@@ -288,20 +288,51 @@ test("WHY-AC-10/41 a run from an earlier model says so, and offers no door", asy
     .locator("ion-button, button, a, [role=button]").count()).toBe(0);
 });
 
+/**
+ * THE ONE THING A REVIEWER IS TOLD about this line's reasoning, taken from
+ * whichever element the state puts it in.
+ *
+ * DELIBERATELY THE SENTENCE, NOT THE BLOCK IT SITS IN. The first version of the
+ * test below gathered the panel's text for two states and the whole line body
+ * for the third, then asserted the three were distinct — which they were, and
+ * would have been however identical their sentences got, because a page dump
+ * and two panel dumps are not the same kind of thing. The set was real and its
+ * members were not commensurable. Caught by the Codex stop-gate.
+ *
+ * `""` is a state of its own and the worst one: nothing said anywhere, which is
+ * a reviewer concluding there was no reasoning because the screen never told
+ * them otherwise.
+ */
+const REASONING_SENTENCE = [
+  "[data-testid=line-why] .lp-why__error",     // the read failed
+  "[data-testid=line-why] .lp-panel__more",    // an absence, explained
+  "[data-testid=line-why] dd",                 // whatever else the panel states
+  "[data-testid=line-not-found] strong",       // the page's own refusal
+];
+const reasoningSentence = (page: Page) =>
+  page.evaluate((selectors) => {
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (el) return (el.textContent ?? "").trim();
+    }
+    return "";
+  }, REASONING_SENTENCE);
+
 test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE different sentences", async ({ page }) => {
   // THE WHOLE DEFECT IS THE COLLAPSE. A reviewer told "not recorded" stops
   // looking — they conclude the platform never had a reason and move on,
   // possibly confirming a recommendation they could have audited. A reviewer
-  // told "could not be read" tries again. So the three are gathered here and
-  // asserted to be mutually distinct, rather than each checked alone where any
-  // two of them could quietly become one string.
+  // told "could not be read" tries again.
+  //
+  // So each state is WALKED for its live-DOM facts, its sentence is gathered,
+  // and the cross-state claims are made afterwards — distinctness FIRST, so a
+  // collapse trips the assertion that exists for it rather than a per-state
+  // negative that happens to sit earlier in the file.
   await serve(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   const said: Record<string, string> = {};
 
-  // 1. FAILED — a 5xx. The panel remains, offers a retry, and never states an
-  //    absence it did not establish: a false absence generated at display time
-  //    is exactly what the capture rules forbid the writers from producing.
+  // 1. FAILED — a 5xx. The panel remains and offers a retry.
   const fail = async (route: import("@playwright/test").Route) =>
     route.fulfill({ status: 500, json: { error: "boom" } });
   await page.route(RATIONALE_URL, fail);
@@ -309,14 +340,12 @@ test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE differ
   await expect(page.getByTestId("line-review")).toBeVisible();
   const panel = page.getByTestId("line-why");
   await expect(panel).toBeVisible();
-  said.failed = await panel.innerText();
-  expect(said.failed).toContain("The reasoning for this line could not be read just now.");
-  expect(said.failed).not.toMatch(/not recorded/i);
   await expect(page.getByTestId("line-why-retry")).toBeVisible();
   // THE REST OF THE PAGE IS UNAFFECTED — the two reads are independent, so a
   // rationale that cannot be read must not take the line's own facts with it.
   await expect(page.getByTestId("line-spec")).toBeVisible();
   await expect(page.getByTestId("line-price")).toBeVisible();
+  said.failed = await reasoningSentence(page);
 
   // …and the retry actually recovers, which is the only thing that makes
   // offering it honest.
@@ -325,33 +354,61 @@ test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE differ
   await expect(panel).toContainText("the cheapest of those that met the caps");
   await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
 
-  // 2. REFUSED — a 404, which is what "this line has no rationale" and "not a
-  //    parent of this project" both are. NOT a failure: no panel, and no retry
-  //    for something that will refuse identically next time.
+  // 2. REFUSED — and this is the refusal PRODUCTION can serve. A 404 from this
+  //    endpoint means the line is not a parent line of this project; a line
+  //    with no rationale gets a `human` DTO and a panel, not a refusal. So the
+  //    panel is silent BECAUSE THE PAGE ALREADY SAYS IT, which is the claim
+  //    this branch previously assumed and never checked.
+  await page.goto(`${LINE("l99")}/why`);
+  await expect(page.getByTestId("line-not-found")).toBeVisible();
+  await expect(page.getByTestId("line-why")).toHaveCount(0);
+  await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
+  said.refused = await reasoningSentence(page);
+
+  // …and the race that is not a design state: the record still has the line and
+  // the rationale 404s underneath it. No panel, no retry, no crash — and the
+  // line's own facts still render.
   const refuse = async (route: import("@playwright/test").Route) =>
     route.fulfill({ status: 404, json: { error: "not_found" } });
   await page.route(RATIONALE_URL, refuse);
   await page.goto(LINE("l1"));
-  await expect(page.getByTestId("line-review")).toBeVisible();
+  await expect(page.getByTestId("line-spec")).toBeVisible();
   await expect(page.getByTestId("line-why")).toHaveCount(0);
   await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
-  said.refused = await page.getByTestId("line-review").innerText();
-  expect(said.refused).not.toMatch(/could not be read|not recorded/i);
   await page.unroute(RATIONALE_URL, refuse);
 
   // 3. RECORDED ABSENCE — the read succeeded and the answer was "nothing was
-  //    kept". Says so, and offers no retry: there is nothing to try again for.
+  //    kept". No retry: there is nothing to try again for.
   await serve(page, { l4: humanPick(null) });
   await openLine(page, "l4");
-  said.absent = await page.getByTestId("line-why").innerText();
-  expect(said.absent).toMatch(/not recorded/);
-  expect(said.absent).not.toMatch(/could not be read/i);
+  await expect(page.getByTestId("line-why")).toContainText("not recorded");
   await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
+  said.absent = await reasoningSentence(page);
 
-  // THE THREE ARE THREE. Any two of them collapsing into one string is the
-  // defect this criterion exists for, and it would survive every assertion
-  // above taken separately.
-  expect(new Set([said.failed, said.refused, said.absent]).size).toBe(3);
+  // ── The cross-state claims, over three values of the same kind ───────────
+  //
+  // DISTINCTNESS FIRST. Every negative below would also catch a collapse, and
+  // each of them would catch it as "the wrong words appeared" rather than as
+  // "two states say one thing" — so the assertion that names the defect gets
+  // to be the one that fires.
+  expect(new Set([said.failed, said.refused, said.absent]).size,
+    `two states say the same thing: ${JSON.stringify(said)}`).toBe(3);
+
+  // AND NONE OF THEM IS SILENCE. A state that says nothing at all is the one
+  // WHY-AC-42 exists to prevent, and it would satisfy every "must not say X"
+  // assertion ever written.
+  for (const [state, sentence] of Object.entries(said)) {
+    expect(sentence, `the ${state} state says nothing at all`).not.toBe("");
+  }
+
+  expect(said.failed).toBe("The reasoning for this line could not be read just now.");
+  expect(said.failed).not.toMatch(/not recorded/i);
+  // THE POSITIVE ASSERTION THE REFUSAL BRANCH WAS MISSING: the panel is silent
+  // because the page owns the sentence, so the sentence has to be there.
+  expect(said.refused).toBe("This line is not on this project.");
+  expect(said.refused).not.toMatch(/could not be read|not recorded/i);
+  expect(said.absent).toMatch(/not recorded|saved before performance figures were kept/);
+  expect(said.absent).not.toMatch(/could not be read/i);
 });
 
 test("WHY-AC-42 the panel is present while the read is in flight, in the shape it is about to be", async ({ page }) => {
@@ -433,6 +490,12 @@ test("WHY-AC-7 opening the detail is a NAVIGATION — one entry, and back is a p
   await expect(page.getByTestId("line-why-detail")).toBeVisible();
   await expect(page).toHaveURL(/\/ops2\/projects\/p_rec\/line\/l1\/why$/);
   expect(await historyLength(page) - before).toBe(1);
+  // AND NOTHING ELSE OPENED. The line page hosts two children and the grammar
+  // admits one suffix, so a rationale must never arrive with a drawing viewer
+  // behind it — a screen nobody asked for, carrying its own back control to
+  // somewhere unexpected. Asserted on the CLICK path; the cold path is the
+  // other half and it is asserted there.
+  await expect(page.getByTestId("drawing-viewer")).toBeHidden();
   // The page beneath never remounted, so the record was not read again.
   expect(calls.record).toBe(fetches);
 
@@ -506,6 +569,8 @@ test("WHY-AC-7c a cold link lands with the detail OPEN, and its back REPLACES", 
 
   await expect(page.getByTestId("line-why-detail")).toBeVisible();
   await expect(page.getByTestId("line-review")).toBeVisible();
+  // The cold half of the same claim: a pasted `/why` opens ONE screen.
+  await expect(page.getByTestId("drawing-viewer")).toBeHidden();
   const length = await historyLength(page);
 
   // REPLACE, not pop: there is nothing of ours behind a pasted link, and popping
@@ -642,10 +707,19 @@ test("WHY-AC-7 the detail is a right-hand slide-out at the desk and FULL SCREEN 
   await page.getByTestId("line-why-open").click();
   await expect(page.getByTestId("line-why-body")).toBeVisible();
   const desk = await wrapperBox(page);
-  // A FLOOR AS WELL AS A CEILING. A wrapper measured before it is laid out
-  // reads 0×0, which satisfies "no wider than 520" and proves nothing.
-  expect(desk.width).toBeGreaterThan(300);
-  expect(desk.width).toBeLessThanOrEqual(520);
+  // PINNED AT 520, NOT CAPPED BY IT, and ±1px because that is the size of the
+  // error and no larger.
+  //
+  // `min(88vw, 520px)` measures 520.0000610351562 here — sub-pixel float in the
+  // layout, reproduced on a clean tree, and `toBeLessThanOrEqual(520)` failed on
+  // it. The lazy repair is a bigger ceiling; the honest one is a tolerance the
+  // size of the defect. ±1 absorbs the float and nothing else: a real 4px
+  // regression, or the widening this assertion exists to catch, still fails.
+  // A one-sided ceiling was also weaker than it read — it holds at 100px too,
+  // which is why the floor was there at all. One two-sided assertion replaces
+  // both and says the number out loud.
+  expect(Math.abs(desk.width - 520),
+    `the desk slide-out is ${desk.width}px, not 520`).toBeLessThan(1);
   // IN FROM THE RIGHT: its leading edge is past the middle of the window.
   expect(desk.x).toBeGreaterThan(1280 / 2);
 

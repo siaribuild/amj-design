@@ -1,5 +1,5 @@
 import type { ViewerSubject } from "../chrome/DrawingViewer";
-import type { LineRoute } from "./lineRoute";
+import type { LineRoute, LineView } from "./lineRoute";
 import {
   elevationPartsFor, joinedUnitCount, sizeText, unitLabel, unitsOf, type RecordLine,
 } from "./record";
@@ -65,6 +65,23 @@ function sharedUnitSize(line: RecordLine): string | null {
   return sizes.size === 1 ? [...sizes][0] : null;
 }
 
+/**
+ * THE VIEWS THAT ARE A DRAWING — an allow-list, and that is the whole point.
+ *
+ * This was `route.view === "line"`: a deny-list, exhaustive the day it was
+ * written, and silently not exhaustive the day `LineView` grew `"why"`. The
+ * rationale screen then built itself a subject and opened a drawing viewer
+ * BEHIND itself — `‹ W03  Drawing` filling the page under a 520px slide-out,
+ * with its own back control to somewhere the reviewer had not asked to go.
+ *
+ * An allow-list refuses a new view by default, so the next member of this union
+ * arrives closed rather than open. `lineRoute.ts` was right throughout — its
+ * grammar admits one suffix, so a drawing and a rationale are siblings by
+ * construction. A guard that outlives its own exhaustiveness is the failure,
+ * not the grammar.
+ */
+const DRAWING_VIEWS: readonly LineView[] = ["drawing", "unit"];
+
 export function drawingSubject(
   line: RecordLine,
   route: Pick<LineRoute, "view" | "unitIndex">,
@@ -93,7 +110,7 @@ export function drawingSubject(
    */
   backTo: string | null,
 ): ViewerSubject | null {
-  if (route.view === "line") return null;
+  if (!DRAWING_VIEWS.includes(route.view)) return null;
 
   const backLabel = backTo === null ? (line.code || "the line") : backTo;
   // THE OPENING, NAMED AS BEST WE CAN — one fallback, both paths. The parser

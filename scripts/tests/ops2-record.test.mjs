@@ -953,8 +953,20 @@ test("the line's own drawing is titled `Drawing`, and back names the line", () =
   assert.deepEqual(s.units, [], "and has none to list");
   assert.equal(s.basis, null, "no arrangement caveat where there is no arrangement");
 
-  // The line page never asks the viewer for a subject it is not showing.
-  assert.equal(M.drawingSubject(parse(line()), { view: "line", unitIndex: null }, null), null);
+  // The line page never asks the viewer for a subject it is not showing — and
+  // "not showing" is EVERY view that is not a drawing, not just the line's own.
+  //
+  // OBSERVED before this was widened: with `view: "why"` this returned a whole
+  // subject, `title: "Drawing"`, `backLabel: "W03"` — so the rationale screen
+  // opened a drawing viewer behind itself, a screen the reviewer never asked
+  // for carrying its own back control. The guard was a deny-list on `"line"`,
+  // exhaustive when written; `LineView` grew `"why"` and it silently was not.
+  // The grammar was right the whole time (`lineRoute.ts`: one suffix, so the
+  // two are siblings by construction); its consumer was not.
+  for (const view of ["line", "why"]) {
+    assert.equal(M.drawingSubject(parse(line()), { view, unitIndex: null }, null), null,
+      `view "${view}" is not a drawing and must not build one`);
+  }
 });
 
 test("a composite's caption reads its overall and what it is drawn from, and its units are listed", () => {
