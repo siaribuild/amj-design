@@ -339,6 +339,51 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
         "and a line that predates the capture is still NULL — a figure fetched now for a product chosen months ago is a display-time read wearing a snapshot's clothes");
     });
 
+    await t.test("SNAP-AC-16 restoring a proposal that matches the line leaves the figures alone", async () => {
+      // The restore path is the ONE writer §4.5 was not amended for by A4, and
+      // SNAP-AC-16 admits no exemption: "a save that did not move the pick".
+      // Restoring a line the customer never actually changed moves nothing — so
+      // during an outage it must not overwrite a good capture with "no figure
+      // exists". The API does not require the line to have been edited; only the
+      // browser does.
+      const restorer = new Session(baseUrl);
+      await login(restorer, "/api/auth", "restore-capture@example.com");
+      const made = await requestJson(restorer, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Restore project", items: [aLine({ code: "W01" })] },
+      });
+      const projectId = made.body.project.id;
+      const lineId = made.body.items[0].id;
+
+      // A published proposal whose recorded configuration IS what the line
+      // already carries: same product, same options, no variant named.
+      const options = JSON.stringify(aLine().options).replace(/'/g, "''");
+      await sql(`UPDATE project SET ai_generation=1 WHERE id='${projectId}'`);
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version, status)
+                 VALUES ('run_r', '${projectId}', 'v1', 'completed')`);
+      await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref)
+                 VALUES ('oi_r', '${projectId}', '${lineId}', 'W01')`);
+      await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation,
+                   source_manifest_hash, pipeline_version, status)
+                 VALUES ('ap_r', '${projectId}', 'run_r', 1, 'hash', 'v1', 'published')`);
+      await sql(`INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status)
+                 VALUES ('${projectId}', 1, 'tok', 'completed')`);
+      await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id,
+                   external_ref, quantity, dimensions_json, product_slug, performance_variant_id,
+                   configuration_json, ranking_context_json, price_snapshot_json,
+                   recommendation_basis, confidence_band, review_required, applied_to_cart)
+                 VALUES ('apl_r', 'ap_r', '${projectId}', 'oi_r', '${lineId}', 'W01', 1,
+                   '{"widthMm":1200,"heightMm":900}', 'amj80-series-sliding-window', NULL,
+                   '{"productSlug":"amj80-series-sliding-window","options":${options},"dimensions":{"widthMm":1200,"heightMm":900},"quantity":1}',
+                   '{}', '{"total":510}', 'thermal', 'high', 0, 1)`);
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='${lineId}'`);
+
+      const restored = await requestJson(
+        restorer, `/api/projects/current/lines/${lineId}/restore-ai`, { method: "POST" });
+      assert.equal(restored.response.status, 200, "the restore still succeeds");
+      assert.equal(await figuresOf(lineId), FIGURES_2_4,
+        "the proposal describes the configuration the line already had, so nothing about the pick moved and the capture stands");
+    });
+
     // ── SNAP-AC-9 / the composite parent ────────────────────────────────────
     await t.test("SNAP-AC-9 a save that chooses no product recomputes nothing; the units own the facts", async () => {
       const cust = new Session(baseUrl);

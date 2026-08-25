@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { itemToInsert, itemFields, itemProductSlug, itemOptions, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
-import { captureFigures, fetchFigureCatalogue, figuresJson, pickMoved, resolveFigures } from "../lib/figures";
+import { captureFigures, fetchFigureCatalogue, pickMoved } from "../lib/figures";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid, normNote } from "../lib/util";
@@ -638,7 +638,10 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
   const proposal = await c.env.DB.prepare(
     `SELECT pl.product_slug, pl.performance_variant_id, pl.configuration_json,
             pl.price_snapshot_json, pl.recommendation_basis, pl.confidence_band,
-            pl.review_required, pl.id AS proposal_line_id, q.edit_version
+            pl.review_required, pl.id AS proposal_line_id, q.edit_version,
+            q.product_slug AS line_product_slug, q.options_json AS line_options_json,
+            q.selected_variant_id AS line_variant_id,
+            q.performance_figures_json AS line_figures
        FROM quote_line q
        JOIN ai_proposal_line pl ON pl.quote_line_id=q.id
        JOIN ai_proposal p ON p.id=pl.proposal_id
@@ -658,6 +661,8 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
     configuration_json: string; price_snapshot_json: string;
     recommendation_basis: string; confidence_band: string;
     review_required: number; proposal_line_id: string; edit_version: number;
+    line_product_slug: string; line_options_json: string | null;
+    line_variant_id: string | null; line_figures: string | null;
   }>();
   if (!proposal) return c.json({ error: "restorable_ai_proposal_not_found" }, 409);
   const configuration = safeParse(proposal.configuration_json);
@@ -672,6 +677,31 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
   const review = proposal.review_required
     ? { thermalRecommendation: "We will confirm this AI-recommended thermal configuration during technical review." }
     : null;
+  // The restored configuration's OWN figures — so the line reads as
+  // platform-made again by comparison, exactly as it did before the customer
+  // edited it. §1.4 applies here as everywhere: a restore whose proposal
+  // describes the configuration the line ALREADY carries moves nothing, and
+  // must not recompute the capture (SNAP-AC-16 admits no exemption — the API
+  // does not require the line to have been edited, only the browser does).
+  // A restore that does move the pick resolves best-effort: a catalogue that
+  // will not answer stores present-and-null and the restore is unaffected.
+  const restorePick = {
+    productSlug: proposal.product_slug,
+    variantId: proposal.performance_variant_id,
+    options: options as Record<string, string>,
+  };
+  const restoreStored = {
+    productSlug: proposal.line_product_slug,
+    variantId: proposal.line_variant_id,
+    glazing: String(safeParse(proposal.line_options_json ?? "").glazing ?? "") || null,
+    figuresJson: proposal.line_figures,
+  };
+  const restoredFigures = captureFigures(
+    await fetchFigureCatalogue(
+      c.env, pickMoved(restorePick, restoreStored) ? [proposal.product_slug] : []),
+    restorePick, restoreStored,
+  );
+
   const restored = await c.env.DB.batch([
     c.env.DB.prepare(
     `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty=?,
@@ -706,18 +736,7 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
     review ? JSON.stringify(review) : null,
     proposal.proposal_line_id,
     proposal.performance_variant_id,
-    // The restored configuration's OWN figures — so the line reads as
-    // platform-made again by comparison, exactly as it did before the customer
-    // edited it. Best-effort: a catalogue that will not answer stores
-    // present-and-null and the restore is unaffected.
-    figuresJson(resolveFigures(
-      await fetchFigureCatalogue(c.env, [proposal.product_slug]),
-      {
-        productSlug: proposal.product_slug,
-        variantId: proposal.performance_variant_id,
-        options: options as Record<string, string>,
-      },
-    )),
+    restoredFigures,
     proposal.configuration_json,
     proposal.price_snapshot_json, proposal.recommendation_basis,
     proposal.confidence_band, c.req.param("id"), project.id,
