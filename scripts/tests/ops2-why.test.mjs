@@ -273,11 +273,20 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
     { code: "W12B", figures: "Uw 4.10 · SHGC 0.52" },
     { code: "W12C", figures: "not recorded" },
   ]);
-  assert.equal(split.more, "+2 more units", "the budget bit, and it says so");
+  // THE REMAINDER BELONGS TO THE LINE IT COUNTS, not to the panel beside it.
+  // Held as a sibling of `lines` it left the component deciding where to put it,
+  // and the component put it below an unrelated row, 108px into the label
+  // column's gutter — a floating number a reviewer has no reason to connect to
+  // the three units above it. On the line, there is nowhere else it can go.
+  assert.equal(split.lines[0].more, "+2 more units", "the budget bit, and it says so");
+  assert.equal("more" in split, false, "and the panel itself carries no remainder to misplace");
   assert.equal(split.lines[1].v, "a person decided this split");
   assert.equal(split.door, null, "R17: a person decided it, so there is no machine rationale to open");
-  // Three units exactly does not claim a remainder.
-  assert.equal(M.panelCopy({ ...opsSplit, units: opsSplit.units.slice(0, 3) }).more, null);
+  // Three units exactly does not claim a remainder — and the key is ABSENT
+  // rather than present-and-empty, so nothing can render an empty cutoff.
+  const exact = M.panelCopy({ ...opsSplit, units: opsSplit.units.slice(0, 3) }).lines[0];
+  assert.equal("more" in exact, false);
+  assert.equal(exact.units.length, 3, "all three shown, none cut");
 
   // S4: the machine-proposed composite. A parent has no product and no figures
   // of its own, so "This one" names the MAKE-UP — and the door is still there.

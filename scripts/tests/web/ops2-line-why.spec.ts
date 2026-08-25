@@ -97,6 +97,16 @@ const record = {
     line("l3", "W14"),                       // no run — a person picked it
     line("l4", "W16"),                       // no run, figures never captured
     line("l5", "W18"),                       // a run from an earlier model
+    // WHY-AC-37's overflow case: an OPS-decided split of FOUR units, one past
+    // the budget of three, so the panel has a remainder to place.
+    line("lc", "W20", {
+      lineKind: "composite_parent", compositeAxis: "vertical", width: "2400", height: "1500",
+      segments: [1, 2, 3, 4].map((i) => ({
+        id: `sc${i}`, productSlug: "amj80-series-fixed-window", productName: "AMJ80 Series Fixed Window",
+        width: "600", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 300, status: "ready",
+        options: {}, note: "",
+      })),
+    }),
   ],
   delivery: { amount: 420, settled: true, estimate: 400 },
   actions: [],
@@ -141,8 +151,21 @@ const humanPick = (figures: unknown) => ({
   units: null,
 });
 
+/** A lite of the ops split above, as the rationale records it. */
+const opsUnit = (i: number) => ({
+  code: `W20${String.fromCharCode(64 + i)}`,
+  productSlug: "amj80-series-fixed-window", productName: "AMJ80 Series Fixed Window",
+  figures: { uValue: 3.9, shgc: 0.42 }, band: null, basis: null, reviewFlag: false,
+});
+
 const RATIONALE: Record<string, unknown> = {
   l1: recommendation(),
+  // R17/WHY-AC-37 — a person decided this split, so there is no ladder to open.
+  lc: {
+    kind: "human",
+    current: { productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", figures: null },
+    units: [1, 2, 3, 4].map(opsUnit),
+  },
   l2: recommendation({
     selectionChanged: { product: false, glazing: true },
     current: { productSlug: "amj100l-series-awning-window", productName: "AMJ100L Series Awning Window", figures: { uValue: 4.1, shgc: 0.52 } },
@@ -446,6 +469,114 @@ test("WHY-AC-42 the panel is present while the read is in flight, in the shape i
   expect(Math.abs(settled - loading), `panel jumped ${loading} -> ${settled}`).toBeLessThan(24);
 });
 
+test("WHY-AC-37 the remainder is the last entry INSIDE the These-ones value", async ({ page }) => {
+  // FOLDED IN FROM THE TESTER'S PROBE, which found this MAJOR: the count
+  // rendered below the *Chosen* row, 108px into the label column's gutter, with
+  // an unrelated sentence physically between it and the units it counts.
+  //
+  // The node suite pins the STRING ("+1 more units"); the criterion is about
+  // WHERE it renders, which only a browser holds. Both halves are asserted,
+  // because a fix satisfying containment while leaving the text adrift, or
+  // adjacency without containment, would still break the rule.
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "lc");
+
+  const more = page.getByTestId("line-why-more");
+  await expect(more).toHaveText(/\+1 more units/);
+
+  // 1. CONTAINMENT — the criterion's own words: the last entry INSIDE the
+  //    "These ones" value.
+  const inside = await more.evaluate((el) => {
+    const dd = el.closest("dd");
+    if (!dd) return { insideValue: false, label: null as string | null };
+    const row = dd.closest(".lp-panel__line") ?? dd.parentElement;
+    return { insideValue: true, label: row?.querySelector("dt")?.textContent?.trim() ?? null };
+  });
+  expect(inside.insideValue, "the remainder sits inside a <dd> (the value column)").toBe(true);
+  expect(inside.label, "and that value is the units line's").toMatch(/These ones/i);
+
+  // 2. ASSOCIATION — nothing unrelated between the units and their count. This
+  //    is the fault the criterion names: a cutoff a reader cannot associate
+  //    with its list becomes a floating number.
+  const between = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=line-why-more]") as HTMLElement | null;
+    const units = [...document.querySelectorAll(".lp-why__unit")]
+      .filter((u) => u !== el) as HTMLElement[];
+    if (!el || !units.length) return null;
+    const last = units[units.length - 1].getBoundingClientRect();
+    const mine = el.getBoundingClientRect();
+    const rows = [...document.querySelectorAll(".lp-panel__lines dd")] as HTMLElement[];
+    return {
+      gap: Math.round(mine.top - last.bottom),
+      leftDelta: Math.round(mine.left - last.left),
+      interposed: rows.filter((r) => {
+        const b = r.getBoundingClientRect();
+        return b.top >= last.bottom && b.bottom <= mine.top && !r.contains(el);
+      }).map((r) => (r.textContent ?? "").trim().slice(0, 40)),
+    };
+  });
+  expect(between, "the units and the remainder both rendered").not.toBeNull();
+  expect(between!.interposed,
+    `unrelated rows sit between the unit list and its count: ${JSON.stringify(between)}`).toEqual([]);
+  // …and it starts in the same column as the units, not out in the label gutter.
+  expect(Math.abs(between!.leftDelta),
+    `the remainder starts ${between!.leftDelta}px from its list's edge`).toBeLessThanOrEqual(4);
+});
+
+test("WHY-AC-44 exactly one routed surface, on every address in the grammar", async ({ page }) => {
+  // §12 note 6 — the SET, not one member of it. The MAJOR this criterion was
+  // written for was a viewer opening BEHIND the rationale; the two assertions
+  // that caught it cover only the `/why` row. The bare address and the drawing
+  // address had never been asserted to exclude their sibling, and §2.1's
+  // switch panel will be the third surface at that address.
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const surfaces = async () => ({
+    detail: (await page.getByTestId("line-why-detail").count())
+      ? await page.getByTestId("line-why-detail").first().isVisible() : false,
+    viewer: (await page.getByTestId("drawing-viewer").count())
+      ? await page.getByTestId("drawing-viewer").first().isVisible() : false,
+  });
+
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  expect(await surfaces(), "…/line/:id shows neither").toEqual({ detail: false, viewer: false });
+
+  await page.goto(`${LINE("l1")}/why`);
+  await expect(page.getByTestId("line-why-detail")).toBeVisible();
+  expect(await surfaces(), "…/why shows the detail and NO viewer").toEqual({ detail: true, viewer: false });
+
+  await page.goto(`${LINE("l1")}/drawing`);
+  await expect(page.getByTestId("drawing-viewer").first()).toBeVisible();
+  expect(await surfaces(), "…/drawing shows the viewer and NO detail").toEqual({ detail: false, viewer: true });
+});
+
+test("WHY-AC-43 the record canvas shows no panel AND issues no rationale request", async ({ page }) => {
+  // D21, as a CHECKED absence rather than an accident of `why={null}`. §12
+  // note 6 is explicit: "no request issued", not merely "no panel visible" — a
+  // canvas that fetched a rationale and rendered nothing would satisfy the
+  // weaker claim while spending the read on every line a reviewer clicks.
+  const calls = await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${OPS2}/projects/p_rec`);
+  await page.waitForLoadState("networkidle");
+  await page.getByText("W03", { exact: false }).first().click({ timeout: 10_000 })
+    .catch(() => { /* the canvas may already have a line selected */ });
+  await page.waitForTimeout(1500);
+
+  await expect(page.getByTestId("line-why")).toHaveCount(0);
+  expect(calls.methods.filter((m) => m.includes("/rationale")),
+    "the canvas asked for a rationale it never shows").toEqual([]);
+
+  // THE CONTROL. The same counter on the LINE page does record a call, so the
+  // empty list above means "no request" rather than "the counter never worked".
+  await page.goto(LINE("l1"));
+  await expect(page.getByTestId("line-why")).toBeVisible();
+  expect(calls.methods.filter((m) => m.includes("/rationale")).length,
+    "the counter is live — the line page issues the read").toBeGreaterThan(0);
+});
+
 test("WHY-AC-11 an order record has no panel, and its /why address refuses", async ({ page }) => {
   // An order record serves `orderLines`, not `lines` (record.ts:338) — the
   // contract's own rows, which is what makes this D2's case rather than a
@@ -581,7 +712,7 @@ test("WHY-AC-7c a cold link lands with the detail OPEN, and its back REPLACES", 
   expect(await historyLength(page)).toBe(length);
 });
 
-test("a /why address on a line with no detail lands on the line, and grows no history", async ({ page }) => {
+test("WHY-AC-7d a /why address on a line with no detail lands on the line, and grows no history", async ({ page }) => {
   await serve(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   // l3 is a person's pick: there is no rationale to open, so the address is not

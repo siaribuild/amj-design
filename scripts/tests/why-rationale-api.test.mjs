@@ -555,6 +555,20 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       const text = await response.text();
       assert.equal(response.status, 403);
       assert.equal(/amj|tier|uValue|rank/i.test(text), false, "and learns nothing about the comparison");
+
+      // THE BODY STRING IS THE POINT, and it was never read. `resolveStaff`
+      // refuses a manufacturer before the role check, so this answer is
+      // byte-identical to an anonymous caller's — a partner cannot learn that
+      // the console recognises their session at all. The spec's own warning is
+      // "do not harmonise this to `forbidden_role` for consistency with other
+      // ops routes", and that is exactly the change a status-only assertion
+      // would wave through: it would trade a real non-disclosure for a tidier
+      // table, on the surface where the competitive leak is sharpest.
+      assert.equal(text, JSON.stringify({ error: "forbidden" }),
+        "the refusal says `forbidden`, not `forbidden_role`");
+      const anonymous = await new Session(baseUrl).request("/api/ops/projects/p_rat/lines/ql_rat/rationale");
+      assert.equal(await anonymous.text(), text,
+        "and it is the same answer a caller with no session gets — X-AC-2's indistinguishability, extended to the role");
     });
 
     await t.test("X-AC-4 a cross-project probe and a nonexistent line are one sentence", async () => {

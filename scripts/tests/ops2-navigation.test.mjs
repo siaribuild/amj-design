@@ -277,7 +277,7 @@ test("a malformed or out-of-range suffix normalises by REPLACE, and grows no his
 
 // ─── The `why` child (Phase 3b: the rationale screen) ───────────────────────
 
-test("the why screen is a sibling of the drawing, and cannot stack with it", () => {
+test("WHY-AC-44 the why screen is a sibling of the drawing, and cannot stack with it", () => {
   // ONE SUFFIX, so the two children are siblings by construction rather than by
   // a rule somebody has to keep obeying (design §4.8). There is no address on
   // which a rationale opens over an enlarged drawing.
@@ -318,7 +318,7 @@ test("the why screen is a sibling of the drawing, and cannot stack with it", () 
   assert.equal(M.parseLineRoute("/why", 2, false).view, "line");
 });
 
-test("the why screen's own history mark answers presence, and asks no door question", () => {
+test("WHY-AC-7c the why screen's own history mark answers presence, and asks no door question", () => {
   // The viewer has two doors and its mark's VALUE names which. The rationale has
   // exactly one — the panel on the line page — so only PRESENCE is asked: was
   // this opened from a page in this session, or pasted cold? A cold arrival

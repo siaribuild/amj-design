@@ -81,7 +81,6 @@ export function WhyPanel({ load, onOpen, reload }: {
           </div>
         ))}
       </dl>
-      {copy.more && <p className="lp-panel__more" data-testid="line-why-more">{copy.more}</p>}
       {copy.foot && <p className="lp-panel__more" data-testid="line-why-foot">{copy.foot}</p>}
     </>
   );
@@ -118,6 +117,12 @@ function Value({ line }: { line: PanelLine }) {
             </span>
           </span>
         ))}
+        {/* THE LAST ENTRY IN THIS VALUE, immediately beneath the units it
+            continues — it arrives on the line rather than beside it, so there
+            is nowhere else to put it (WHY-AC-37). */}
+        {line.more && (
+          <span className="lp-why__unit lp-why__more" data-testid="line-why-more">{line.more}</span>
+        )}
       </>
     );
   }

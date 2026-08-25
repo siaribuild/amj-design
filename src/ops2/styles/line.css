@@ -756,3 +756,12 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 /* The panel's back control: LEADING, and it names where it returns to. */
 .pq-sheet__back { text-transform: none; }
 .pq-sheet__chev { margin-right: 2px; }
+
+/* The units line's own cutoff, in the value column with the units it counts —
+   quiet, because it is a count and not a unit. Its placement is the DTO's
+   (`PanelLine.more`), not this rule's: a class cannot put it back beside the
+   list it belongs to. */
+.lp-why__more {
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}

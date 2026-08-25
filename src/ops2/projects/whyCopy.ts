@@ -253,14 +253,28 @@ export interface PanelLine {
   absent?: boolean;
   /** The ops-split state's per-unit figures (WHY-AC-37, "These ones"). */
   units?: { code: string; figures: string }[];
+  /**
+   * WHAT THE BUDGET CUT FROM *THIS LINE*, and it lives here because that is the
+   * only place it cannot be misplaced.
+   *
+   * It was a sibling of `lines` (`WhyPanelCopy.more`), which left the component
+   * deciding where the text goes — and it decided wrongly: rendered below an
+   * unrelated row, 108px into the label column's gutter, with the *Chosen*
+   * sentence physically between it and the units it counts. A cutoff a reader
+   * cannot associate with its list is worse than no cutoff; it becomes a
+   * floating number (WHY-AC-37).
+   *
+   * The old field carried a comment explaining what it was for. A comment
+   * explains an intention; the shape produced the defect. On the line there is
+   * nowhere else the remainder can render.
+   */
+  more?: string;
 }
 
 export interface WhyPanelCopy {
   lines: PanelLine[];
   /** WHY-AC-9's absence-1 sentence, or null. */
   foot: string | null;
-  /** The budget's own remainder, when the units line cuts. */
-  more: string | null;
   /** The accessible name of the door, or `null` when there is nothing behind
    *  it — WHY-AC-41: a panel with no detail has no control at all. */
   door: string | null;
@@ -301,7 +315,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         { k: "This one", v: "no selection was made on this line", absent: true },
         chosenRow(),
       ],
-      foot: null, more: null, door: null,
+      foot: null, door: null,
     };
   }
 
@@ -311,7 +325,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         { k: "This one", v: figuresText(dto.current.figures), absent: dto.current.figures === null },
         chosenRow(),
       ],
-      foot: foot(dto.current), more: null, door: null,
+      foot: foot(dto.current), door: null,
     };
   }
 
@@ -320,7 +334,12 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
     return {
       lines: [
         units
-          ? { k: "These ones", v: "", units: unitLines(units) }
+          ? {
+              k: "These ones",
+              v: "",
+              units: unitLines(units),
+              ...(unitRemainder(units) ? { more: unitRemainder(units)! } : {}),
+            }
           : {
               k: "This one",
               v: figuresText(dto.current.figures),
@@ -329,7 +348,6 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         chosenRow(),
       ],
       foot: units ? null : foot(dto.current),
-      more: units ? unitRemainder(units) : null,
       door: null,
     };
   }
@@ -361,7 +379,6 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
     // is what WHY-AC-42 forbids one state over and what the capture rules forbid
     // the writers; the route in is different and the lie is the same.
     foot: dto.composite ? null : foot(dto.current),
-    more: null,
     // UX §3.2 — the door names what is behind it, and there is always something
     // behind it on this kind.
     door: `Why this product — open ${
