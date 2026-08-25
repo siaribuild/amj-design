@@ -16,8 +16,13 @@ import {
  * ── THE CAPTION CARRIES THE SIZE; THE TITLE CARRIES THE SUBJECT ─────────────
  * The owner's ruling (VIEW-AC-1a): a unit shows its own code, the line's own
  * drawing is titled simply `Drawing`, and the size lives under the drawing. The
- * back control already names the line, so a title repeating the code would say
- * it twice.
+ * reason given was that the back control already names the line, so a title
+ * repeating the code would say it twice — which is now true only of the door
+ * from the line page; from the record's canvas that control names the record
+ * (VIEW-AC-15). The ruling is unchanged either way, and deliberately so: the
+ * title is a property of the SUBJECT, not of how the reviewer arrived, and a
+ * bar whose heading depended on the door would be a worse thing than a
+ * repetition.
  */
 
 /** The arrangement caveat. It states what the drawing is WORTH — not how to
@@ -68,11 +73,16 @@ export function drawingSubject(
    *
    * There are exactly two ways into this viewer, and they return to different
    * places. `null` is the line's own page — back names the line, as it always
-   * has. A string is the project's TITLE, which is what the record's desk canvas
-   * passes: from there back returns to the record, and a control naming the line
-   * would promise a page that journey never visits. Empty falls back to
-   * `Project` for the same reason `line.code` falls back to `the line` — a
-   * control nobody can name aloud is not a control.
+   * has. A string is the RECORD'S REFERENCE, which is what the record's desk
+   * canvas passes: from there back returns to the record, and a control naming
+   * the line would promise a page that journey never visits.
+   *
+   * The reference rather than the project's name because `LinePage`'s own back
+   * control has always named this destination that way, and one destination may
+   * not carry two vocabularies in one console (owner ruling, §13.17 VETOED).
+   * Empty falls back to `Project` — the same precedent's word, and the same rule
+   * `line.code` follows in falling back to `the line`: a control nobody can name
+   * aloud is not a control. `LinePage` owns the pair; if one changes, both do.
    */
   backTo: string | null,
 ): ViewerSubject | null {
