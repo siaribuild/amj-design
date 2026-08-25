@@ -861,7 +861,13 @@ So: `/projects/:id/line/:lineId/drawing` for the opening's own drawing,
 `unitLabel` already renders — the human's own numbering; `ASSUMED:` segment names and
 the ordinal scheme). An out-of-range ordinal normalises to `…/drawing`; the two
 children (`why`, `drawing…`) are siblings in a grammar that admits one suffix, so they
-cannot stack by construction.
+cannot stack by construction. **That promise has exactly one home — `parseLineRoute` —
+and no consumer may re-derive it** (WHY-AC-44, §13 F1): `drawingSubject.ts` held a
+second copy as a deny-list ("view `line` → nothing") and it silently opted `"why"` in
+the day `LineView` grew, opening the viewer behind the rationale on both entry paths.
+Every consumer of `LineView` derives by **allow-list on the views it serves**; §2.1's
+deferred switch panel is the union's next member and is governed by this rule before
+it exists.
 
 **The URL: `/projects/:id/line/:lineId/why`.** `ASSUMED:` the segment is `why`. A deep
 link to a rationale is real and useful (pasting a line's "why" into a chat is exactly the
@@ -892,8 +898,9 @@ one function deriving one of `base | why | drawing | drawing/uN` from `useLocati
   which. **The `why` child adopts the same mechanism with one door** — the panel's
   action on the line page (WHY-AC-7); only presence matters for it, so it carries a
   `why`-door mark beside the viewer's and asks no value question.
-- any suffix outside the grammar, a `/why` URL on a line with no detail (any kind but
-  `recommendation` — `human`, `unrecorded`, `unresolved` — or an order record,
+- any suffix outside the grammar, a `/why` URL on a line with no detail (**any kind
+  but `recommendation`** — the kind enumeration this clause once carried was §13 F1's
+  deny-list shape one rot away, and is deliberately gone — or an order record,
   WHY-AC-11), and an out-of-range `/drawing/u:N`, are
   normalised with `history.replace` — a mangled or stale link lands on the line page
   (or the parent drawing), never on a half state. `ASSUMED:` the normalisations.
@@ -955,7 +962,7 @@ component already documents.
 
 | File | Role |
 |---|---|
-| `src/ops2/projects/useLineRationale.ts` | **new** — fetch hook, the `useProjectRecord.ts` pattern (loading / ready / missing / error, stale-response guard, re-enter refresh). Never called when the record shows an order (D2/WHY-AC-11) |
+| `src/ops2/projects/useLineRationale.ts` | **new** — fetch hook, the `useProjectRecord.ts` pattern (loading / ready / missing / error, stale-response guard, re-enter refresh). The missing/error boundary is **WHY-AC-42's property, not a status list**: refusal = a final answer the reviewer's own navigation produced (404 on a bare line, a post-issue line); **everything else — including any status the criterion does not name — is a failure, panel stays, retry offered**, because wrongly saying "could not be read" costs a click and wrongly saying "not recorded" costs a reviewer who stops looking. Never called when the record shows an order (D2/WHY-AC-11), and never from the record page at all — the canvas passes `why={null}` and WHY-AC-43 (D21) asserts the absence |
 | `src/ops2/projects/whyCopy.ts` | **new, pure** — every sentence on the surface, derived from DTO facts: the per-tier "Chosen" sentences (WHY-AC-5), the tolerance sentence reading the run's stamped figure (WHY-AC-6: `8%` from `0.08`, never hardcoded), the basis labels (WHY-AC-2), requirement-absent phrasing (WHY-AC-3), the person-chose sentences (WHY-AC-8/28), not-recorded phrasings (WHY-AC-4/9/27 — including WHY-AC-9's **two present-and-null meanings**, told apart by DTO kind — `unresolved` vs the rest — never by inspecting the figures), verdict words per tier (WHY-AC-17); D20: an overridden line changes its sentence and never its structure. Node-testable; the R2 constraint (no "wrong/incorrect/mistake/error/correction") is asserted over this module's entire string table |
 | `src/ops2/projects/WhyPanel.tsx` | **new** — the three-line panel (R6) and the two-line thinner form (WHY-AC-8), rendered from the DTO + `whyCopy`; the panel's action opens the detail only when `kind === "recommendation"` |
 | `src/ops2/projects/WhyDetail.tsx` | **new** — `SidePanel` content (R19/WHY-AC-7, opened as the §4.8 tree node): chosen row marked, up to 4 runners-up (WHY-AC-12/13), human-selection comparison block (WHY-AC-22-27), composite split-reason + per-lite bands (WHY-AC-33-36), `unsuppliedSplitNote` (WHY-AC-38). **No action anywhere on it** (R28/WHY-AC-39): its only interactive element is the back control; the `footer` slot goes unused |
@@ -1025,7 +1032,7 @@ posture (no cache-control loosening).
 
 | Endpoint | Who | Scoping |
 |---|---|---|
-| `GET /api/ops/projects/:id/lines/:lineId/rationale` (**new**) | ops identity via `resolveStaff` (refuses manufacturer partners at `worker/lib/staff.ts:157`), plus explicit `hasAssignedRole` per the `ops.ts:994` convention — **the decisive control: a manufacturer partner never sees which products competed** (X-AC-3, R20) | Line resolution is the single entry point: `WHERE q.id = :lineId AND q.project_id = :projectId AND q.parent_line_id IS NULL`. Every subsequent read hangs off that row (opening via the `ops.ts:1046-1052` disjunction on `q`, run via `opening_id`, candidates via `selection_run_id`, segments via `parent_line_id = q.id AND project_id = :projectId`). A cross-project `lineId` and a nonexistent one both fall out of the same SELECT as the same `null` → `404 {"error":"not_found"}`, byte-identical (X-AC-4) |
+| `GET /api/ops/projects/:id/lines/:lineId/rationale` (**new**) | ops identity via `resolveStaff` (refuses manufacturer partners at `worker/lib/staff.ts:157`) — **the decisive control: a manufacturer partner never sees which products competed** (X-AC-3, R20). The explicit `hasAssignedRole` check that follows is a **backstop spelling the same predicate** (`staff.ts:150` — both encode `role !== "manufacturer"`), so `forbidden_role` is unreachable on this route today, and **X-AC-3's asserted `forbidden` body depends on `resolveStaff` firing first**. Named here because "an unreachable line stays unreachable" is a property nobody asserts directly (§13 F4; the recommended collapse — `resolveStaff` delegating to `hasAssignedRole`, one rule one spelling — is a post-freeze refactor for the developer, not this phase's) | Line resolution is the single entry point: `WHERE q.id = :lineId AND q.project_id = :projectId AND q.parent_line_id IS NULL`. Every subsequent read hangs off that row (opening via the `ops.ts:1046-1052` disjunction on `q`, run via `opening_id`, candidates via `selection_run_id`, segments via `parent_line_id = q.id AND project_id = :projectId`). A cross-project `lineId` and a nonexistent one both fall out of the same SELECT as the same `null` → `404 {"error":"not_found"}`, byte-identical (X-AC-4) |
 | Existing save routes (W1-W15 hosts) | unchanged callers, unchanged gates | The capture binds into the existing statements; **no new statement addresses a row by client-supplied id**, so every existing ownership WHERE clause (customer draft/mutation-token guard, ops edit_version/status guard) applies to the figures write verbatim (X-AC-10) |
 | Record read `GET /api/ops/projects/:id` | unchanged | not widened by this feature (the panel reads its own endpoint) |
 
@@ -1510,3 +1517,85 @@ a paraphrase of the rule; a pointer cannot rot when the ruling sharpens. The
 evidence stands as the priority order: SNAP-AC-2's scan has never been wrong, the
 criteria caught what the prose hid, and the hand-written index has now been wrong
 on completeness four times and on behaviour three.
+
+---
+
+## 13. Phase 3b conformance record (architect, 2026-08-26 — reviewed at `e5f51866`, frozen)
+
+Scope: `ce73f41a..e5f51866` against §4.7–§4.9 as amended by the 3b refresh and the
+nine build findings, plus revision-32 criteria (WHY-AC-42/43/44, WHY-AC-37's
+placement, §9.0). Code and docs read only; no suite run (tester owned the ports).
+**Verdict: CONFORMS** — no divergence requiring a developer round; four design
+amendments landed with this record (A1–A4 below), all of them the design catching up
+to lessons the phase proved, none of them changing built behaviour.
+
+### 13.1 Existence — every §7 Phase 3b artifact, checked on disk
+
+`src/data/rationale.ts` · `worker/lib/estimator/rationale.ts` (327 lines; the route
+is 8 lines at `ops.ts:734`) · `useLineRationale.ts` · `whyCopy.ts` · `WhyPanel.tsx` ·
+`WhyDetail.tsx` · `SidePanel.tsx` (props as §4.8: `phoneForm`, `dismiss: "done" |
+{ back: string }`) · `lineRoute.ts` extended (`why`, `WHY_FROM_LINE`/`whyDoor`) ·
+`LineReview.tsx` (rendered-node seam) · `LinePage.tsx` · `line.css` ·
+`ops2-why.test.mjs` (test:pure + test:ops2 + test:why — package.json verified) ·
+`why-rationale-api.test.mjs` (test:heavy + test:why) · `ops2-line-why.spec.ts` (895
+lines, Playwright) · `ops2-navigation.test.mjs` extended · seed carries `u_staff4`
+only, with the api-edge admin-count reasoning beside it (finding 7 honoured).
+**Proven by absence:** `FilterSheet.tsx`, `Ops2App.tsx` and `api.test.mjs` appear
+nowhere in the diff — exactly the three files §4.8/§4.9 required to stay untouched
+(WHY-AC-7b; "no change in this phase"; the record-DTO key-set guard).
+`figures.ts` changed by one line: `glazingOf` exported for the pick comparison — the
+attribution reads the predicate's own glass rule, one place per fact.
+
+### 13.2 New criteria vs the design
+
+WHY-AC-42: the design never enumerated status codes; §4.9's hook row now carries the
+property (A3). WHY-AC-43/D21: the canvas passes `why={null}`
+(`ProjectRecordPage.tsx:446`) and the absence is criterion-checked; §4.9 points at
+it. WHY-AC-44: grammar held, consumer's copy rotted — traced in F1. WHY-AC-37's
+placement: `more` is a field on the units line (`whyCopy.ts:260` records the defect);
+the design described copy *duties*, never the `WhyPanelCopy` shape, so it did not
+teach the sibling placement — and it deliberately still does not describe the shape,
+because a described shape is a second copy (F2). §9.0's three states: the contract
+file's `RationaleFigures` comment is the one home; §4.7 points at it.
+
+### 13.3 Findings traced (per the frozen build's four defects)
+
+- **F1 (WHY-AC-44, MAJOR, fixed in `35291855`/`7730cfae`):** `drawingSubject.ts`
+  guarded `view === "line" → null` — a deny-list copy of a promise whose one true
+  home (`parseLineRoute`) was correct throughout. `LineView` grew, the deny-list
+  opted `"why"` in, the viewer opened behind the rationale. Now an allow-list, and
+  A1/A2 put the one-home rule and the de-enumerated normalisation clause in §4.8.
+- **F2 (WHY-AC-37 placement, fixed in `e5f51866`):** `WhyPanelCopy.more` sat beside
+  `lines`, handing the component a decision the data owns. Now a field on the units
+  line. The design neither taught nor prevented it; disposition per 13.2.
+- **F3 (WHY-AC-42, spec rev 31/32):** the refusal/failure boundary generalised from
+  an enumeration to a property, and the layout promise rewritten to what the code
+  controls (minimum-never-maximum, never shrinks, unbounded growth deliberate).
+  Design carries the property as a pointer only (A3).
+- **F4 (recorded, not a defect):** `resolveStaff` and `hasAssignedRole` both encode
+  `role !== "manufacturer"` (`staff.ts:150`/`:157`), so `ops.ts:737`'s
+  `forbidden_role` is dead on this route and X-AC-3's asserted body depends on gate
+  order. Pre-existing, repo-wide pattern; §5.3 now names the dependency (A4) and the
+  one-spelling collapse is recommended as a post-freeze developer refactor.
+  `staff.ts`'s own header already warns that two spellings of one rule is how they
+  come to disagree — the warning described its own file.
+
+### 13.4 What the phase's defects say about the design itself
+
+Three of four findings trace to a **document**, not to code that misread one: a copy
+contract (§4.7's inline DTO block — pointered before build, and findings 1–4 still
+found the copy drifted in the sections built from it), a restated promise (F1's
+deny-list was a consumer's copy of the grammar's guarantee), and an enumeration
+(F3's status list; A2's kind list was the same shape one rot away, caught here).
+Across 3a and 3b that is **five instances of one-rule-in-two-places**, and every one
+was implemented faithfully — the copies did not fail, they *succeeded* at being
+wrong. The rule this record leaves behind, stated once: **a rule has one normative
+home; every other appearance is a pointer; and a consumer of a growing union
+derives by allow-list, because a deny-list opts the next member in silently.**
+§4.2's class cells, §4.7's contract pointer, §4.8's one-home sentence and A2 are the
+four applications of it now standing in this document.
+
+Rider noted: the pre-existing `.lp-panel__lines > div` grid defect (every second
+specification/price row landing in the value column) was measured on both panels and
+fixed inside this diff (`bf6055d5` test, fix in the CSS) — live before 3b, found by
+3b's browser suite, resolved with it.
