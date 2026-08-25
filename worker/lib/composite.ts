@@ -22,7 +22,7 @@
 import type { Env } from "../types";
 import { priceItem } from "./lines";
 import { uuid } from "./util";
-import { captureOne, fetchFigureCatalogue, figuresJson, resolveFigures, storedPickOf, type LineFigures } from "./figures";
+import { captureOne, fetchFigureCatalogue, figuresJson, resolveFigures, storedOptions, storedPickOf, type LineFigures } from "./figures";
 import { ensureCatalogue } from "./catalogue";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
@@ -171,18 +171,6 @@ function openingOf(parent: { dims_json: string }): { widthMm: number; heightMm: 
 }
 
 /** The opening's option selections, as a plain string map. */
-function parentOptions(optionsJson: string | null): Record<string, string> {
-  try {
-    const parsed = JSON.parse(optionsJson || "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [k, String(v ?? "")]),
-    );
-  } catch {
-    return {};
-  }
-}
-
 /** Recompute everything DERIVED about a parent from its segments. The single
  *  writer of segment.qty, and of parent.line_total / status / coverage_delta_mm. */
 export async function recomputeComposite(env: Env, parentId: string): Promise<void> {
@@ -276,7 +264,7 @@ export async function splitLine(env: Env, args: {
   //
   // An explicit object (including {}) is still honoured, so a caller that means
   // "no options" can say so, and per-unit overrides work normally.
-  const inherited = parentOptions(parent.options_json);
+  const inherited = storedOptions(parent.options_json);
   const segments = args.segments.map((s) => ({ ...s, options: s.options ?? inherited }));
 
   // Captured figures per unit. The machine's own frozen record already carries
@@ -431,7 +419,15 @@ export async function updateSegment(env: Env, args: {
   const dims = openingOf(segment);
 
   const productSlug = args.patch.productSlug ?? segment.product_slug;
-  const options = args.patch.options ?? parentOptions(segment.options_json);
+  // The unit's OWN options, read exactly as `storedPickOf` reads them below —
+  // one reader for both halves of the comparison. It used to be
+  // `parentOptions`, whose coercion turned a non-string glass into a chosen
+  // one on the pick side while the stored side read it as no glass at all:
+  // `pickMoved` true on an edit that touched neither product nor glass. The
+  // coercion also bought nothing here — pricing already skips non-string values
+  // (`lines.ts:141,164`) — while silently re-encoding a column this save was
+  // never asked to change.
+  const options = args.patch.options ?? storedOptions(segment.options_json);
   const qtyPerParent = Math.max(1, Math.floor(args.patch.qtyPerParent ?? segment.qty_per_parent));
   const along = args.patch.alongMm !== undefined
     ? Math.floor(args.patch.alongMm)
@@ -542,7 +538,13 @@ export async function addSegment(
 
   const widthMm = axis === "vertical" ? along : opening.widthMm;
   const heightMm = axis === "vertical" ? opening.heightMm : along;
-  const options = origin === "manual" ? (draft?.options ?? {}) : parentOptions(last.options_json);
+  // Inheriting from the last unit copies its options FAITHFULLY: coercing them
+  // would give the new unit a different glass from the sibling it was copied
+  // from, and — once it has a stored row to compare against — the same split
+  // reading that `updateSegment` just lost. No stored pick exists yet, so this
+  // is not a live defect; it is the same construction, and "safe because the
+  // other side is null" is the reasoning that failed here twice.
+  const options = origin === "manual" ? (draft?.options ?? {}) : storedOptions(last.options_json);
   const qty = Math.max(1, parent.qty);
   const total = await priceItem(env, {
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,

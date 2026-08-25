@@ -485,6 +485,99 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       });
       assert.equal(await figuresOf(units[0].id), FIGURES_2_4,
         "a note-only unit edit moves no pick, so it fetches nothing and writes the same bytes back");
+
+      // The OTHER half of the same defect, and the half no figures assertion
+      // reaches: a segment edit that sends no options must not rewrite the
+      // column either. It used to, through parentOptions' coercion — and that
+      // silent re-encoding is what let a note-only edit be read as a moved pick
+      // in the first place. (The figures half is covered standalone, above.)
+      await sql(`UPDATE quote_line SET options_json='{"colour":"Dover White","glazing":5}'
+                 WHERE id='${units[0].id}'`);
+      await requestJson(ops, `/api/ops/segments/${units[0].id}`, {
+        method: "PATCH", json: { note: "left unit, renamed" },
+      });
+      const [opts] = await sql(`SELECT options_json AS o FROM quote_line WHERE id='${units[0].id}'`);
+      assert.match(opts.o, /"glazing":5/,
+        "a save that sent no options changed none — the unit's own values are not re-encoded behind it");
+
+      // The third site of the same construction: applySplit inherits the
+      // PARENT's stored options when the caller supplies none per unit. No
+      // comparison happens there (the children are new rows), so it is not a
+      // live capture defect — but a coerced inheritance gives every unit a
+      // different glass from the opening it was split out of, which is the same
+      // fabrication with the symptom moved. Units must be faithful copies.
+      await sql(`UPDATE quote_line SET options_json='{"colour":"Dover White","glazing":5}'
+                 WHERE id='${parentId}'`);
+      await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          ],
+        },
+      });
+      const reborn = await sql(
+        `SELECT options_json AS o FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      assert.equal(reborn.length, 2, "the re-split landed");
+      for (const u of reborn) {
+        assert.match(u.o, /"glazing":5/,
+          "a unit inherits the opening's options as they are, not as a normaliser would rewrite them");
+      }
+    });
+
+    await t.test("SNAP-AC-16 a UNIT whose stored glazing is not a string survives a note-only edit", async () => {
+      // The same rule as the customer-path test above, at the writer where the
+      // two readings of `glazing` were NOT unified: updateSegment's stored side
+      // now goes through storedOptions (uncoerced), but its PICK side still
+      // falls back to parentOptions(segment.options_json), which String()s every
+      // value (composite.ts:434, :174-184). Two readings of one column, on the
+      // two sides of the comparison — the shape 97c5e427 exists to remove.
+      const owner = new Session(baseUrl);
+      await login(owner, "/api/auth", "unit-numeric-glazing@example.com");
+      const made = await requestJson(owner, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Unit glazing", items: [aLine({ code: "W20", width: "2400", height: "900" })] },
+      });
+      const projectId = made.body.project.id;
+      const parentId = made.body.items[0].id;
+      await completeAccount(owner, { name: "Unit Glazing Tester" });
+      await requestJson(owner, `/api/projects/${projectId}/submit`, {
+        method: "POST", json: { delivery: { suburb: "Rowville", postcode: "3178" } },
+      });
+
+      // REACHABILITY FIRST. The ops split route passes each segment's `options`
+      // through UNCOERCED (ops.ts:963-965) and splitLine JSON.stringifies it, so
+      // a number reaches the unit's options_json exactly as it does on the
+      // customer's own save path.
+      await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1,
+              options: { ...aLine().options, glazing: 5 } },
+            { widthMm: 1200, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1,
+              options: { ...aLine().options, glazing: 5 } },
+          ],
+        },
+      });
+      const units = await sql(
+        `SELECT id, options_json AS o FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      assert.equal(units.length, 2, "the split landed");
+      assert.match(units[0].o, /"glazing":5/,
+        "reachable: the unit's stored glazing is a number, uncoerced");
+
+      // Now the rule. A note is not the pick, and the catalogue is unreachable
+      // for this whole run, so a re-resolve can only produce present-and-null.
+      await sql(`UPDATE quote_line SET performance_figures_json='${FIGURES_2_4}' WHERE id='${units[0].id}'`);
+      const patched = await requestJson(ops, `/api/ops/segments/${units[0].id}`, {
+        method: "PATCH", json: { note: "renamed, nothing else" },
+      });
+      assert.equal(patched.response.status, 200, "the edit still succeeds — the capture is never a gate");
+      assert.equal(await figuresOf(units[0].id), FIGURES_2_4,
+        "the pick did not move, so the capture stands — the stored side and the pick side must read `glazing` through the same expression");
     });
 
     // ── SNAP-AC-11: the platform's own record is never edited ───────────────
