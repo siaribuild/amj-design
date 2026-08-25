@@ -140,6 +140,204 @@ test("SNAP-AC-2 every statement anywhere under worker/** that writes a line's pr
     `a save sets a line's product without recording its figures:\n${offenders.join("\n")}`);
 });
 
+// ── The bind-arity scan: the second list layer nobody was guarding ──────────
+//
+// SNAP-AC-2 asserts a property of COLUMN NAMES. It cannot see a bind. Adding
+// `performance_figures_json` to a statement means adding a `?` to its SQL AND an
+// argument to its `.bind(...)`, in the right position — two hand-maintained
+// lists per statement, in a phase whose entire history is hand-maintained lists
+// being wrong. A miscount does not fail to compile: D1 either throws at runtime
+// or, worse, silently shifts every later value by one.
+//
+// Written by the tester while verifying this phase and landed here, because a
+// scan that only ever runs once has verified one commit rather than the rule.
+
+/** SQLite parameters. `?N` is NUMBERED and may repeat — three `?2` are ONE bound
+ *  value, not three, which is the difference between a real arity defect and a
+ *  false alarm. Anonymous `?` are positional and each is its own. String
+ *  literals are data: `'?'` inside SQL is a question mark, not a parameter. */
+export function placeholders(sql) {
+  const code = sql.replace(/'[^']*'/g, "''");
+  const numbered = new Set();
+  let anon = 0;
+  for (const m of code.matchAll(/\?(\d*)/g)) { if (m[1]) numbered.add(m[1]); else anon++; }
+  return anon + numbered.size;
+}
+
+/** Blank out comments, preserving offsets and newlines, so every later scan can
+ *  treat the source as code only. Strings and templates are stepped over intact
+ *  — a `//` inside a URL is not a comment. */
+export function stripComments(src) {
+  const out = src.split("");
+  const blank = (a, b) => { for (let x = a; x < b && x < out.length; x++) if (out[x] !== "\n") out[x] = " "; };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i], two = src.slice(i, i + 2);
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c; i++;
+      for (; i < src.length; i++) { if (src[i] === "\\") { i++; continue; } if (src[i] === q) break; }
+      continue;
+    }
+    if (two === "//") { const e = src.indexOf("\n", i); const end = e < 0 ? src.length : e; blank(i, end); i = end; continue; }
+    if (two === "/*") { const e = src.indexOf("*/", i); const end = e < 0 ? src.length : e + 2; blank(i, end); i = end; continue; }
+  }
+  return out.join("");
+}
+
+/** Top-level argument count of the call whose "(" is at `open`. */
+export function argCount(src, open) {
+  let depth = 0, seg = open + 1, count = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c; i++;
+      for (; i < src.length; i++) {
+        if (src[i] === "\\") { i++; continue; }
+        if (q === "`" && src.slice(i, i + 2) === "${") {
+          let d = 1; i += 2;
+          for (; i < src.length && d; i++) { if (src[i] === "{") d++; else if (src[i] === "}") d--; }
+          i--; continue;
+        }
+        if (src[i] === q) break;
+      }
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") { depth++; if (depth === 1) seg = i + 1; continue; }
+    if (c === ")" || c === "]" || c === "}") {
+      depth--;
+      if (depth === 0) return { count: count + (src.slice(seg, i).trim() ? 1 : 0), end: i };
+      continue;
+    }
+    if (depth === 1 && c === ",") { count++; seg = i + 1; }
+  }
+  return { count: -1, end: -1 };
+}
+
+/** `const NAME = `…`;` in the same file — enough to resolve the SQL fragments
+ *  this codebase interpolates (the mutation guards). Anything else stays
+ *  UNRESOLVED and is REPORTED, never quietly counted as zero. */
+function localConsts(src) {
+  const map = new Map();
+  for (const m of src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*`([^`]*)`/g)) map.set(m[1], m[2]);
+  return map;
+}
+
+/** Every `DB.prepare(<literal>).bind(...)` pair in one file. */
+export function preparedBinds(raw, rel) {
+  const src = stripComments(raw);
+  const consts = localConsts(raw);
+  const out = [];
+  for (const m of src.matchAll(/\.prepare\(/g)) {
+    let i = m.index + m[0].length;
+    while (/\s/.test(src[i])) i++;
+    const q = src[i];
+    if (q !== '"' && q !== "'" && q !== "`") continue;
+    let j = i + 1, interpolated = false;
+    for (; j < src.length; j++) {
+      if (src[j] === "\\") { j++; continue; }
+      if (q === "`" && src.slice(j, j + 2) === "${") interpolated = true;
+      if (src[j] === q) break;
+    }
+    let sql = raw.slice(i + 1, j);
+    let unresolved = false;
+    if (interpolated) {
+      sql = sql.replace(/\$\{([A-Za-z_$][\w$]*)\}/g, (whole, name) => {
+        if (consts.has(name)) return consts.get(name);
+        unresolved = true; return whole;
+      });
+      if (/\$\{/.test(sql)) unresolved = true;
+    }
+    let k = j + 1;
+    while (/\s/.test(src[k])) k++;
+    if (src[k] === ",") { k++; while (/\s/.test(src[k])) k++; }
+    if (src[k] !== ")") continue;
+    k++;
+    while (/\s/.test(src[k])) k++;
+    if (src.slice(k, k + 5) !== ".bind") continue;
+    k += 5;
+    while (/\s/.test(src[k])) k++;
+    if (src[k] !== "(") continue;
+    const { count, end } = argCount(src, k);
+    out.push({
+      rel, line: src.slice(0, m.index).split("\n").length, sql, binds: count,
+      // Carried onto the record, not merely computed. It was computed and
+      // dropped in the first draft, so `checkable` filtered on `undefined` and
+      // an unresolved statement was silently counted as if it were readable —
+      // the same list-layer failure this scan exists to catch, inside the scan.
+      unresolved, spread: /\.\.\./.test(src.slice(k, end)),
+    });
+  }
+  return out;
+}
+
+const uncheckable = (s) => s.unresolved || s.spread || s.binds < 0;
+
+test("bind-arity the scanner detects a miscount, and the things that are not one (non-vacuity)", () => {
+  assert.equal(placeholders("SELECT 1 WHERE a=? AND b=?"), 2);
+  assert.equal(placeholders("SELECT 1 WHERE a=?1 AND b=?1 AND c=?2"), 2,
+    "a repeated numbered parameter is ONE bound value");
+  assert.equal(placeholders("UPDATE t SET note='is it? yes' WHERE id=?"), 1,
+    "a question mark inside a SQL string is punctuation, not a parameter");
+
+  const good = `db.prepare("UPDATE t SET a=?, b=? WHERE id=?").bind(1, 2, 3);`;
+  const bad = `db.prepare("UPDATE t SET a=?, b=? WHERE id=?").bind(1, 2);`;
+  const [g] = preparedBinds(good, "g.ts");
+  const [b] = preparedBinds(bad, "b.ts");
+  assert.equal(placeholders(g.sql), g.binds, "the balanced pair reads as balanced");
+  assert.notEqual(placeholders(b.sql), b.binds, "and the miscount is caught");
+
+  // A statement it CANNOT read must say so rather than be counted as zero.
+  const [u] = preparedBinds("db.prepare(`SELECT ${cols} WHERE id=?`).bind(x);", "u.ts");
+  assert.equal(u.unresolved, true, "an unresolvable interpolation is flagged on the record itself");
+  assert.equal(uncheckable(u), true, "and therefore excluded rather than judged");
+  const [sp] = preparedBinds(`db.prepare("SELECT 1 WHERE a IN (?,?)").bind(...list);`, "s.ts");
+  assert.equal(sp.spread, true, "a spread argument is not statically countable");
+
+  // Comments are not code: SQL inside one must not be scanned.
+  assert.equal(preparedBinds('// db.prepare("UPDATE t SET a=?").bind()\n', "c.ts").length, 0);
+});
+
+test("bind-arity every statically checkable prepare/bind pair under worker/** balances", async () => {
+  const files = await tsFilesUnder("worker");
+  const all = [];
+  for (const rel of files) all.push(...preparedBinds(await readFile(join(projectRoot, rel), "utf8"), rel));
+
+  const checkable = all.filter((s) => !uncheckable(s));
+  assert.ok(all.length > 300, `the walk found the statements, not a corner (${all.length} pairs)`);
+  assert.ok(checkable.length > 300, `and most are readable (${checkable.length} checkable)`);
+
+  const bad = checkable
+    .filter((s) => placeholders(s.sql) !== s.binds)
+    .map((s) => `${s.rel}:${s.line} ${placeholders(s.sql)}? vs ${s.binds} binds :: ${s.sql.slice(0, 80).replace(/\s+/g, " ")}`);
+  assert.deepEqual(bad, [], `a prepared statement's parameters and bound arguments disagree:\n${bad.join("\n")}`);
+});
+
+test("bind-arity every figures-writing statement is checked, and the one that cannot be is named", async () => {
+  // The capture's own statements are the reason this scan exists, so they are
+  // enumerated rather than left to the aggregate above.
+  const files = await tsFilesUnder("worker");
+  const writers = [];
+  for (const rel of files) {
+    for (const st of preparedBinds(await readFile(join(projectRoot, rel), "utf8"), rel)) {
+      if (/performance_figures_json/.test(st.sql)) writers.push(st);
+    }
+  }
+  assert.ok(writers.length >= INDEXED_PRODUCT_WRITERS,
+    `every W1-W15 statement names the column (${writers.length} found)`);
+
+  const skipped = writers.filter(uncheckable);
+  // W1's ops UPDATE ends in `...mutableStates`, so its bind count is not a
+  // static fact. It is covered behaviourally instead — six executed ops PATCHes
+  // in why-capture-api.test.mjs bind it for real. Named here so a SECOND
+  // uncheckable statement appearing is a failure rather than a silent skip.
+  assert.deepEqual(skipped.map((s) => `${s.rel} (${s.spread ? "spread" : "unresolved"})`),
+    ["worker/routes/ops.ts (spread)"],
+    "exactly one figures writer is not statically checkable, and it is the known one");
+
+  const bad = writers.filter((s) => !uncheckable(s) && placeholders(s.sql) !== s.binds)
+    .map((s) => `${s.rel}:${s.line} ${placeholders(s.sql)}? vs ${s.binds} binds`);
+  assert.deepEqual(bad, [], `a figures writer's binds do not match its parameters:\n${bad.join("\n")}`);
+});
+
 // ── The resolver (design §4.3) ──────────────────────────────────────────────
 
 const runDir = await makeRunDir("figure-capture");
@@ -415,16 +613,13 @@ test("W14 direction 1 — a LOCKED product with moved glazing keeps the product 
     { productSlug: "amj-awning", variantId: null, options: { glazing: "double-clear" } },
     "the row keeps its product and takes the parsed glass — that pair is what it will carry");
 
-  const stored = {
-    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
-    figuresJson: '{"uValue":2.4,"shgc":0.32}',
-  };
-  assert.equal(pickMoved(effective, stored), true, "the glass moved, so the pick moved");
+  const storedRow = stored();
+  assert.equal(pickMoved(effective, storedRow), true, "the glass moved, so the pick moved");
   assert.equal(
     captureFigures(catalogue("amj-awning", [
       variant("lowe", "double-lowe", 2.4, 0.32),
       variant("clear", "double-clear", 3.9, 0.61),
-    ]), effective, stored),
+    ]), effective, storedRow),
     '{"uValue":3.9,"shgc":0.61}',
     "and the figures describe the glass the row now carries, not the one it lost");
 });
@@ -437,37 +632,31 @@ test("W14 direction 2 — a LOCKED glazing with a moved product resolves against
     { productSlug: "amj-slider", variantId: null, options: { glazing: "double-lowe" } },
     "the row takes the parsed product and keeps its own glass");
 
-  const stored = {
-    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
-    figuresJson: '{"uValue":2.4,"shgc":0.32}',
-  };
-  assert.equal(pickMoved(effective, stored), true, "the product moved");
+  const storedRow = stored();
+  assert.equal(pickMoved(effective, storedRow), true, "the product moved");
   assert.equal(
     captureFigures(catalogue("amj-slider", [
       variant("lowe", "double-lowe", 5.1, 0.55),
       variant("clear", "double-clear", 6.2, 0.7),
-    ]), effective, stored),
+    ]), effective, storedRow),
     '{"uValue":5.1,"shgc":0.55}',
     "resolved against the LOCKED glass, because that is the glass the row still has");
 });
 
 test("W14 an identical re-upload moves nothing, whatever is locked", () => {
-  const stored = {
-    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
-    figuresJson: '{"uValue":2.4,"shgc":0.32}',
-  };
+  const storedRow = stored();
   const same = parsed({ productSlug: "amj-awning", options: { glazing: "double-lowe" } });
   for (const locks of [[], ["product_slug"], ["options_json"], ["product_slug", "options_json"]]) {
     const effective = effectiveParsePick(same, draft(), locks);
-    assert.equal(pickMoved(effective, stored), false, `unmoved with locks ${JSON.stringify(locks)}`);
-    assert.equal(captureFigures(new Map(), effective, stored), '{"uValue":2.4,"shgc":0.32}',
+    assert.equal(pickMoved(effective, storedRow), false, `unmoved with locks ${JSON.stringify(locks)}`);
+    assert.equal(captureFigures(new Map(), effective, storedRow), '{"uValue":2.4,"shgc":0.32}',
       "so the capture stands, and no catalogue is consulted");
   }
 
   // Both locked and the parse disagreeing about everything is STILL unmoved:
   // the row carries what it carried.
   const effective = effectiveParsePick(parsed(), draft(), ["product_slug", "options_json"]);
-  assert.equal(pickMoved(effective, stored), false,
+  assert.equal(pickMoved(effective, storedRow), false,
     "a fully locked row is the definition of a pick that did not move");
 });
 
