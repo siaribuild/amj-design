@@ -83,9 +83,13 @@ export function LinePage() {
 
   // WHERE BACK GOES DECIDES WHAT IT SAYS (VIEW-AC-15). The reviewer who opened
   // this drawing from the record's desk canvas never visited this page, and one
-  // pop returns them to the record — so the control names the project, not the
-  // line. Read off the history entry rather than the address, because the two
-  // doors share one address by design; `openedFromRecord` is in `./lineRoute.ts`
+  // pop returns them to the record — so the control names the record, not the
+  // line. THE RECORD, NOT THE PROJECT: this sentence said "the project" until
+  // the stop-gate caught it contradicting the paragraph below, which is the
+  // veto's whole point — "the project" is what a reader hears as its title.
+  //
+  // Read off the history entry rather than the address, because the two doors
+  // share one address by design; `openedFromRecord` is in `./lineRoute.ts`
   // beside the grammar it belongs to.
   //
   // AND IT NAMES IT THE WAY THIS PAGE ALREADY DOES: `record.ref`, the same
