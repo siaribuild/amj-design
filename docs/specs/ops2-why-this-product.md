@@ -1,6 +1,6 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 31**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 32**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a **ruling** contradicts the mock, the ruling wins. **Where the mock shows a state and no
 ruling covers it, the mock wins** — §12 note 17.
@@ -9,39 +9,35 @@ ruling covers it, the mock wins** — §12 note 17.
 
 **Phase 2 ACCEPTED and DEPLOYED** (`9285d642`). **Phase 3a ACCEPTED** (D15), certified at
 `72d6b28b`; **not deployed, by the owner's choice** (D17). **Phase 3b gate closed** (D18–D21);
-**3b is built**; ui-designer, tester, conformance and reviews still to run.
+**built, ui-designer pass done** (`15550527`); tester, conformance and reviews still to run.
 
-**Revision 31 rules two wording calls the developer reported rather than coded around, and records
-the owner's canvas ruling — against my recommendation.**
+**Revision 32 rules two criteria the ui-designer reported rather than took, and adds the one whose
+absence let a MAJOR through.**
 
-- **WHY-AC-42's refusal/failure boundary is now a property, not a list.** The developer routes a
-  `403` to *"could not be read"*, and it is right: **a refusal the reviewer could not have reached is
-  not a refusal, it is a failure.** The criterion enumerated two 404s; **enumerations in this feature
-  have been wrong repeatedly**, so it now states the test instead — with **the asymmetry that
-  decides the default**: a needless retry costs a click, **a false absence costs a reviewer who stops
-  looking**.
-- **WHY-AC-5 carried an example its neighbour bans.** It wrote *"within 5% of the closest"* while
-  **WHY-AC-6 forbids hardcoding the band**, and left `misses`'s band unnamed when **R7 wants it
-  named**. Both fixed, and the rule made explicit: **no percentage in that criterion is a literal to
-  copy.** §12 note 13's sixth instance — **the criteria-in-tension shape at its smallest scale, where
-  a prose example became a requirement.**
-- **D21 — the panel appears on the line page only.** The owner's ruling, taken with my
-  recommendation in front of him twice. **WHY-AC-43 makes the absence checkable** rather than
-  incidental, and my dissent is preserved with it.
+- **WHY-AC-42 promised something the layout cannot give.** *"So the page does not jump"* is not
+  achievable by a panel whose height depends on a product name — measured **+16 to +66px** across
+  states, and **reserving the worst case would make the common case shrink by 50px**, which is the
+  worse fault. **The criterion now states what the code controls** — the skeleton is the panel's
+  **minimum, never its maximum**, it **never shrinks on load**, and it carries **the same structure**
+  — with a number the tester can measure and **a deliberate refusal to bound the growth**.
+- **WHY-AC-37 said the units line cuts, and never said where the count goes.** It renders orphaned
+  in the label column below an unrelated row. **The criterion now places it**: the last entry
+  **inside** the *These ones* value, because **a cutoff a reader cannot associate with its list is
+  worse than no cutoff**.
+- **WHY-AC-44 is new: one routed surface per address.** The drawing viewer was opening **behind** the
+  rationale on `/why`, on both entry paths — Phase 2 has VIEW-AC-5's *"exactly one viewer"* and
+  **nothing said two routed surfaces may not occupy one URL**. That absence is what let it through.
 
-**Revision 30's walk against the approved mock found six disagreements**, five of them unfound, and
-added **WHY-AC-42**. *(Since confirmed: the developer had built all five correctly from the mock —
-**correct and unverified**, exactly as called. **WHY-AC-4's new composite clause then caught a live
-defect**: a composite parent with a `NULL` figures column was printing an absence sentence for a
-parent where nothing is missing.)*
-
-**Revision 29** amended WHY-AC-29 to compare **the pick**. **Revision 28** closed the 3b gate and
-repaired WHY-AC-27 and WHY-AC-4. **Revision 27** recorded D15–D17. **Revision 26** recorded the
-phase's lesson (note 15). **Revision 25** folded in three tester observations. **Revision 24** scoped
-SNAP-AC-16 (A6). **Revision 23** repaired SNAP-AC-1 vs SNAP-AC-9 (A4). **Revision 22** reconciled the
-register against the design. **Revision 21** retracted a false urgency. **Revision 20** recorded the
-assertion-that-cannot-fail rule; **19** corrected VIEW-AC-15; **18** resolved VIEW-AC-1's internal
-contradiction; **17** carried the veto of §13.17; **16** carried D11 and D12.
+**Revision 31** ruled WHY-AC-42's refusal/failure boundary as a **property**, fixed WHY-AC-5's band
+literal, and recorded **D21** (line page only) with **WHY-AC-43** to make the absence checked.
+**Revision 30's walk** against the approved mock found six disagreements. **Revision 29** amended
+WHY-AC-29 to compare **the pick**. **Revision 28** closed the 3b gate. **Revision 27** recorded
+D15–D17. **Revision 26** recorded the phase's lesson. **Revision 25** folded in three tester
+observations. **Revision 24** scoped SNAP-AC-16 (A6). **Revision 23** repaired SNAP-AC-1 vs
+SNAP-AC-9 (A4). **Revision 22** reconciled the register against the design. **Revision 21** retracted
+a false urgency. **Revision 20** recorded the assertion-that-cannot-fail rule; **19** corrected
+VIEW-AC-15; **18** resolved VIEW-AC-1's internal contradiction; **17** carried the veto of §13.17;
+**16** carried D11 and D12.
 
 Revision 15 gave every register entry a state; revision 14 corrected VIEW-AC-12's false premise;
 revision 13 amended the CERT-AC-10 fence; revision 12 folded in the importers; revision 11 closed
@@ -92,14 +88,15 @@ that uses it. Under R3/D3 nothing may look it up at display time to recover it.
 3. **The universal performance-figure capture (R22, D3, D6, D7)** — **shipped in Phase 3a.**
 4. **A shared drawing viewer** for ops2 (R21, R25, R31) — **shipped in Phase 2.**
 5. **Two changes to the shared `SidePanel`** (R26, R29) — shipped with Phase 2.
-6. **The line-route URL grammar** — shipped in Phase 2. **Phase 3b adds only the `why` child.**
+6. **The line-route URL grammar** — shipped in Phase 2. **Phase 3b adds only the `why` child** —
+   **and WHY-AC-44 requires it to be alone there.**
 7. **Deleting the shared `ElevationLegend` export** (D12, VIEW-AC-12) — shipped.
 
 ### Out of scope — and why
 
 | Not built | Because |
 |---|---|
-| **The panel on the record's desk canvas** | **D21 — the owner's ruling.** The canvas keeps rendering `LineReview` **without** the panel, and **WHY-AC-43 makes that checkable** rather than incidental. My recommendation was the other way; the reasoning is preserved at D21 in case the question returns. |
+| **The panel on the record's desk canvas** | **D21 — the owner's ruling.** **WHY-AC-43 makes that checkable** rather than incidental. My recommendation was the other way; the reasoning is preserved at D21. |
 | **"Change the product" — the control, and any placeholder for it** | **R28, deferred rather than declined.** Supersedes D4. See §2.1. |
 | **Re-classifying the Projects filter panel** | R26/R27's approval explicitly excluded moving it (WHY-AC-7b); **its own future ticket**. |
 | **Renaming the dimension-rule `dataSource`** | `types.ts:77` uses the same token for a **different, live, correct** concept. |
@@ -107,8 +104,9 @@ that uses it. Under R3/D3 nothing may look it up at display time to recover it.
 | **Opportunistic backfill of pre-capture lines on touch** | Same ruling, and **D19 confirms it on the read side**. |
 | **Filling a missing figure from today's catalogue at display time** | **D19**; it would have reversed **D3 and D5**. |
 | **Showing withheld products, or any money, on the surface** | **D18.** Money would have re-opened **R10**. |
-| **Re-resolving a `selected_variant_id` to match the figures on a glazing-only change** | **D16.** The id stays **stable** — and **nothing downstream reads it as the answer** (WHY-AC-4, WHY-AC-29, and the DTO's omission). |
-| **Rendering a failed read as an absence** | **WHY-AC-42.** *A missing fact and an unreachable one are different things, and only one of them is worth retrying.* |
+| **Re-resolving a `selected_variant_id` to match the figures on a glazing-only change** | **D16.** **Nothing downstream reads that id as the answer** (WHY-AC-4, WHY-AC-29, the DTO's omission). |
+| **Rendering a failed read as an absence** | **WHY-AC-42.** *A missing fact and an unreachable one are different things.* |
+| **Reserving the panel's worst-case height while it loads** | **WHY-AC-42.** It would make the common case **shrink** on load — trading a rare small growth for a frequent large one, in the direction a reviewer reads as a fault. |
 | Any line editor in ops2, stub or real | Follows R28. |
 | Explanatory notation of any kind on a drawing surface | R25. |
 | Switching the line's product from the "Why" surface | R1: read-only. |
@@ -117,7 +115,7 @@ that uses it. Under R3/D3 nothing may look it up at display time to recover it.
 | Re-deriving a thermal **requirement** anywhere | R23. |
 | Any change to `quote_line.origin`, `ai_proposal_line_id`, or `aiManaged` routing | R24. |
 | Any new validation, eligibility check or refusal on any save path | D6's hard constraint — §7.2. |
-| **Any change to the ops routes' authentication or refusal convention** | §10. **X-AC-3's correction describes what already fires; it changes nothing.** |
+| **Any change to the ops routes' authentication or refusal convention** | §10. **X-AC-3's correction describes what already fires.** |
 | Any change to the learning corpus or the issue-time capture path | §7.6. |
 | Excluded candidates, in any form | R9. |
 | Backfilling anything | R18; accepted explicitly (D5). |
@@ -142,6 +140,9 @@ The owner's sketch, verbatim:
 4. **The confirmation screen has four things to show, each a reason to abort.**
 5. **The learning path already handles it** — §7.6.
 6. **This is the decision surface the owner declined at grill Q1**, returning properly separated.
+
+**And it will be a third routed surface under the line address** — **WHY-AC-44 governs it before it
+is written**: whatever it is, it may not share an address with the detail or the viewer.
 
 ## 3. Actors and needs
 
@@ -170,6 +171,10 @@ both**; **D19** applies it to gaps; **WHY-AC-42** applies it to failure.
 
 > **A reviewer told "not recorded" stops looking. A reviewer told "could not be read" tries again.**
 > **The two errors are not symmetric**, and every ruling on this surface has resolved that way.
+
+**And a reviewer reads a panel as one object.** A count that cannot be tied to the list it counts
+(WHY-AC-37), or a surface with another surface behind it (WHY-AC-44), breaks that reading before any
+sentence is parsed.
 
 ### Customer (existing — newly relevant, via D6/D7)
 
@@ -206,21 +211,18 @@ final.** **Risk owned here:** an irreversible write against the live Sanity data
 ### Phase 3 — the capture, the panel, the detail screen
 
 - **Phase 3a — a server write-path change (§7)** · **ACCEPTED (D15)**, certified at `72d6b28b`.
-- **Phase 3b — a read-only display surface (§9)** · **built**; ui-designer, tester, conformance and
-  reviews still to run.
+- **Phase 3b — a read-only display surface (§9)** · **built; ui-designer pass done**; tester,
+  conformance and reviews still to run.
 
 **Deploy sequencing — D17: 3a and 3b deploy together.** Migration `0058` reaches production **with
 3b**, and remote apply has not happened.
-
-> **This is the opposite of the retracted urgency, not its return.** **There are no saves in between**
-> — which is what makes one deploy event safer than two.
 
 **The cost the owner accepted (D5):** no backfill, so **every line saved before Phase 3 has no
 figures** (WHY-AC-9, WHY-AC-27).
 
 > **~~The reason the sequencing paragraph used to give:~~** *"…every save in between is a line that
 > will have something to show, and a save that is missed cannot be recovered."* **False, and retracted
-> rather than deleted.**
+> rather than deleted.** **There are no saves in between.**
 
 ### Wayfinder check
 
@@ -265,8 +267,7 @@ record · **D12** `ElevationLegend` is deleted · **D13** the drawing claims all
 
 > **If any one is weakened, D16 re-opens.**
 > 1. **WHY-AC-4** — never **captions the figures** with that id.
-> 2. **WHY-AC-29** — never **decides the attribution** on it. **Mutation-proved: reverting to
->    product+variant goes red on the D16 case alone.**
+> 2. **WHY-AC-29** — never **decides the attribution** on it. **Mutation-proved.**
 > 3. **The DTO omits `current.variantId` entirely** (§12 note 16).
 
 **D18 — panel scope.** Four alternatives, five rows; withheld hidden; **no money anywhere**.
@@ -275,24 +276,20 @@ record · **D12** `ElevationLegend` is deleted · **D13** the drawing claims all
 
 **D21 — the panel appears on the line page only, not on the record's desk canvas.**
 
-The owner's ruling, taken with the recommendation and its cost in front of him **twice**. The canvas
-keeps rendering `LineReview` without the panel; **WHY-AC-43 makes that a checked absence rather than
-an accident of `why={null}`.**
+The owner's ruling, taken with the recommendation and its cost in front of him **twice**.
+**WHY-AC-43 makes that a checked absence rather than an accident of `why={null}`.**
 
 > **My recommendation was the other way, and it is recorded because the question will return.** The
-> reviewer's job is identical on both surfaces; the canvas exists so a line can be read without
-> leaving the record; **a panel that vanishes on the faster surface teaches a reviewer to distrust the
-> faster surface.** Phase 2 settled the analogous question the other way — VIEW-AC-5's *"every
-> enlargeable drawing"* forced the canvas to open the viewer.
+> reviewer's job is identical on both surfaces; **a panel that vanishes on the faster surface teaches
+> a reviewer to distrust the faster surface.** Phase 2 settled the analogous question the other way.
 >
-> **What is on the owner's side of it, and why the ruling is defensible:** the detail's route is a
-> **line** address, so opening it from the canvas would push the reviewer onto a line URL and
-> re-open D11's *where does back go?*; and the canvas would fetch per selection on a surface built
-> for glancing down a list. **Leaving it off keeps the record a list and the line page the place you
+> **What is on the owner's side of it:** the detail's route is a **line** address, so opening it from
+> the canvas re-opens D11's *where does back go?*; and the canvas would fetch per selection on a
+> surface built for glancing. **Leaving it off keeps the record a list and the line page the place you
 > audit.**
 >
-> **If it is ever revisited, it needs a criterion before it is built** — the canvas enlargement is
-> this feature's own worked example of what happens otherwise (§8.1, §12 note 11).
+> **If it is ever revisited, it needs a criterion before it is built** — and **WHY-AC-43 is the thing
+> that must be replaced, not quietly deleted.**
 
 ### Architect rulings — delegated by this spec, taken in `docs/design/ops2-why-this-product.md` §1
 
@@ -380,9 +377,6 @@ export → dry-run → `--apply`.
 
 ## 7. Acceptance criteria — Phase 3a: the universal capture · **ACCEPTED (D15)**
 
-**Why this is its own phase.** **Not urgency.** It is a **server write-path change with the widest
-blast radius in this feature**.
-
 **Where the figures live: A1** — `quote_line.performance_figures_json`, migration `0058`
 **(local-only; production with 3b, D17)**.
 
@@ -407,19 +401,16 @@ hardware, the room label, dimensions cannot move the figures.** **The predicate 
 
 **Membership is a property, not a list.** **Verified at 3a: attacked as a property, not sampled.**
 
-> **The invariant has a read-side twin: WHY-AC-42.** A writer must not record an absence it did not
-> establish; **a reader must not display one either.** **Two live defects have now come from the same
-> root** — the capture's re-resolve on an unmoved pick (A4), and the panel printing an absence
-> sentence for a composite parent where nothing is missing (WHY-AC-4).
+> **The invariant has a read-side twin: WHY-AC-42.** **Two live defects have come from the same root**
+> — the capture's re-resolve on an unmoved pick (A4), and the panel printing an absence sentence for a
+> composite parent where nothing is missing (WHY-AC-4).
 
 ### 7.1 One rule
 
 **SNAP-AC-1 (R22 + A4 + A6)** — a save whose **stored pick actually differs after the save**, or a
 **validated re-derivation by a derivation writer**, records **the Uw and SHGC of the configuration that
-save established**.
-
-*And the other half, scoped by A6:* a **best-effort** writer's save that **leaves the pick untouched**
-carries the figures **forward verbatim** and **reads no catalogue at all**.
+save established**. *And:* a **best-effort** writer's save that **leaves the pick untouched** carries
+the figures **forward verbatim** and **reads no catalogue at all**.
 
 **SNAP-AC-2 (R22 — structural)** — every statement under `worker/**` that writes
 `quote_line.product_slug` or `quote_line.selected_variant_id` also writes `performance_figures_json`.
@@ -439,13 +430,13 @@ catalogue cannot answer for completes, stores **present-and-null**, tells nobody
 
 ### 7.3 What is stored
 
-**SNAP-AC-8 (absence is recorded as absence)** — *three states, structural under A1:* `NULL` = never
-captured; `{"uValue":null,"shgc":null}` = captured, no figure exists; numbers = captured.
+**SNAP-AC-8** — *three states, structural under A1:* `NULL` = never captured;
+`{"uValue":null,"shgc":null}` = captured, no figure exists; numbers = captured.
 
 **SNAP-AC-16 (A4 + A6 — negative)** — a present-and-null was written by **one of three honest
 authors**. **A best-effort save that did not move the pick leaves the figures byte-identical.**
 
-**SNAP-AC-9 (it is a snapshot)** — **nothing recomputes stored figures outside a capture moment**.
+**SNAP-AC-9** — **nothing recomputes stored figures outside a capture moment**.
 
 **SNAP-AC-10 (no backfill — D5)** — no script and no migration writes figures onto older lines.
 
@@ -503,6 +494,9 @@ enlarging takes **two backs** — **agreed cost, not to be collapsed**.
 
 **VIEW-AC-5 (R21)** — exactly one viewer component, and **every** enlargeable drawing opens it.
 
+> **VIEW-AC-5 says there is one viewer. It never said the viewer is alone on its address** — see
+> **WHY-AC-44**, and §12 note 18.
+
 **VIEW-AC-6** — the previous `SidePanel` enlargement no longer appears anywhere.
 
 **VIEW-AC-7 (keyboard)** — Enter/Space opens it; back returns focus to the drawing that opened it.
@@ -537,234 +531,250 @@ selected**.
 
 ## 9. Acceptance criteria — Phase 3b: "Why this product"
 
-> **Gate closed (D18–D21).** **Six criteria have been repaired since they were written** — WHY-AC-27
-> and WHY-AC-4 (rev 28), WHY-AC-29 (rev 29), WHY-AC-4/5/10/28/37 in revision 30's walk against the
-> approved mock, and **WHY-AC-5 and WHY-AC-42 again in revision 31**. §12 notes 13 and 17 carry the
-> classes.
+> **Gate closed (D18–D21).** **Criteria repaired since they were written:** WHY-AC-27 and WHY-AC-4
+> (rev 28), WHY-AC-29 (rev 29), five in revision 30's mock walk, WHY-AC-5 and WHY-AC-42 (rev 31), and
+> **WHY-AC-42 and WHY-AC-37 again in revision 32**. §12 notes 13 and 17 carry the classes.
 
 ### 9.0 The three figure states, and the three sentences (A1, SNAP-AC-8)
 
 | State | What it means | What the panel says |
 |---|---|---|
-| **Column `NULL`** | Saved **before the capture existed**. Nobody ever asked. | *"not recorded"* — WHY-AC-9 |
+| **Column `NULL`** | Saved **before the capture existed**. | *"not recorded"* — WHY-AC-9 |
 | **`{"uValue":null,"shgc":null}`** | **Captured**, and the answer was **"no figure exists"** — *or* a derivation writer's *"evaluated, nothing chosen"* | Two causes, **distinguished from the row** — WHY-AC-9 |
 | **Numbers** | Captured, with figures | The figures — WHY-AC-4 |
 
-**These are states of a fact that was read.** **A read that did not complete is not among them** —
-WHY-AC-42. **And a subject that has no figures of its own is not among them either** — a composite
-parent takes WHY-AC-4's make-up sentence, **not an absence**.
+**These are states of a fact that was read.** **A read that did not complete is not among them**
+(WHY-AC-42), **and a subject with no figures of its own is not among them either** — a composite parent
+takes WHY-AC-4's make-up sentence.
 
 ### 9.1 The panel on the line detail (R6, D21)
 
-**WHY-AC-1 (R6, D19)** — *Given* a line whose opening resolves to a **most recent** selection run with
-recorded candidate outcomes, and whose product is still the one the platform selected, *Then* a panel
-appears between the specification (or units block) and the price, carrying exactly three lines: **Had
-to meet**, **This one**, **Chosen**.
+**WHY-AC-1 (R6, D19)** — a panel appears between the specification (or units block) and the price,
+carrying exactly three lines: **Had to meet**, **This one**, **Chosen**.
 
-**WHY-AC-2 (R4)** — `default_envelope` states the caps as figures **and** an origin label naming them a
-platform default; equivalently `explicit_energy_report`, `plan_derived`, `human_override`.
+**WHY-AC-2 (R4)** — `default_envelope` states the caps as figures **and** an origin label; equivalently
+`explicit_energy_report`, `plan_derived`, `human_override`.
 
-**WHY-AC-3 (R4, absent)** — "Had to meet" says this opening had no thermal requirement, and no cap
-figure is shown.
+**WHY-AC-3 (R4, absent)** — "Had to meet" says this opening had no thermal requirement.
 
-**WHY-AC-4 (R6, SNAP-AC-3, §9.0 — what "This one" shows and what it is attributed to; D16's first
-dependency)** — *Given* a line whose stored figures **are numbers**, *Then* "This one" shows the Uw and
-SHGC **from the line's own record**, attributed to **the product and the glass they describe** — never
-to the row's `selected_variant_id`, and never phrased as *"this variant performs at X"*.
+**WHY-AC-4 (R6, SNAP-AC-3, §9.0 — D16's first dependency)** — *Given* figures that **are numbers**,
+"This one" shows them **from the line's own record**, attributed to **the product and the glass they
+describe** — never to the row's `selected_variant_id`.
 
-*Given* a figure is **not a number**, *Then* it is **never rendered as a number, a zero or a dash**, and
-which sentence it gets is **§9.0's, by state**.
+*Given* a figure is **not a number**, it is **never rendered as a number, a zero or a dash**, and which
+sentence it gets is **§9.0's, by state**.
 
-*Given* a **composite parent**, which has no product and no figures of its own (§7.4), *Then* "This one"
-**names the make-up** — *"made as 2 units — an awning beside a fixed pane"* — and **no absence sentence
-is shown, whatever the figures column holds**, because nothing about the parent is missing. *(Mock B4.)*
+*Given* a **composite parent**, "This one" **names the make-up** and **no absence sentence is shown,
+whatever the figures column holds**. *(Mock B4.)*
 
-> **The composite clause caught a live defect within hours of being written.** A composite parent whose
-> figures column was `NULL` printed *"This line was saved before performance figures were kept on a
-> line."* — **an absence asserted about a subject that has no figures to be absent.** Same false
-> absence at display time as WHY-AC-42's collapse, reached by a different route.
+> **This clause caught a live defect within hours of being written** — a parent with a `NULL` column
+> printing *"saved before performance figures were kept"*, **an absence asserted about a subject that
+> has no figures to be absent.**
 
-**WHY-AC-5 (R6, R7; band naming corrected revision 31)** — *Given* the run's `competingTier`, *Then*
-"Chosen" states the winning rule in one sentence per tier:
+**WHY-AC-5 (R6, R7)** — "Chosen" states the winning rule in one sentence per tier: `meets`;
+`within_tolerance` → the cheapest **within the run's tolerance band, named as a percentage**; `misses`
+→ nothing came **within that same named band**; `thermal_unknown`; `does_not_fit`. *Given* the
+requirement was **absent**, the sentence is **about fit and price only** and **claims no thermal
+victory**.
 
-- `meets` → the cheapest of those that met the caps;
-- `within_tolerance` → nothing met the caps, so the cheapest **within the run's tolerance band, named
-  as a percentage**;
-- `misses` → nothing came **within that same named band**, so the closest was taken;
-- `thermal_unknown` → no figure existed on the constrained axis;
-- `does_not_fit` → nothing fitted, so the best fit was taken.
-
-*Given* the requirement was **absent**, *Then* the sentence is **about fit and price only** — *"the
-cheapest that fitted the opening"* — and **claims no thermal victory**. *(Mock B11.)*
-
-> **No percentage in this criterion is a literal to copy.** **Every band figure is read from the run**
-> (WHY-AC-6, R7). Through revision 30 this criterion wrote *"within **5%** of the closest"* — **an
-> example its own neighbour forbids** — and left `misses`'s band unnamed while R7 requires it named.
-> **The developer reported it rather than coding around it, and shipped the superset**: both sentences
-> name the band, both read the figure.
->
-> **§12 note 13's sixth instance, and the smallest.** *An example inside a criterion is read as
-> normative by whoever implements it.* A literal in illustrative prose is a requirement with no author.
+> **No percentage in this criterion is a literal to copy.** Through revision 30 it wrote *"within 5% of
+> the closest"* — **an example its own neighbour forbids** (WHY-AC-6).
 
 **WHY-AC-6 (R7)** — a run stored with `tolerance` 0.08 says 8% — **read from the run, never
-hardcoded**, and the band is **named** rather than paraphrased as "closest available".
+hardcoded**.
 
 **WHY-AC-7 / 7a / 7b / 7c / 7d (R19, R26, R29, D8)** — activating the panel's action **navigates to
 `/projects/:id/line/:lineId/why`**, presented as a right-hand slide-out at desk width and full screen
 on the phone; the way out is a **back** control, **no "Done" and no X**; a cold arrival renders the
-rationale with the line page's not-found and refusal sentences and back **replaces** to the line page;
-the Projects filter panel is unchanged.
+rationale with the line page's not-found and refusal sentences; the Projects filter panel is unchanged.
 
-**WHY-AC-8 (R13, D6, §9.0 — the thinner panel)** — *Given* a line with **no selection run** whose stored
-figures **are numbers**, *Then* the panel shows **two** lines: that a person chose this product, and
-that product's own Uw and SHGC. **No alternatives action.**
+**WHY-AC-8 (R13, D6, §9.0 — the thinner panel)** — a line with **no selection run** whose figures **are
+numbers** shows **two** lines. **No alternatives action.**
 
-**WHY-AC-9 (D5, D19, §9.0 — the honest gap, and which absence it is)** — *Given* stored figures of
-**`NULL`**, *Then* the panel states that a person chose this product and that **its figures were not
-recorded**, and **no catalogue lookup fills the gap**.
-
-*Given* **present-and-null**, *Then* the panel distinguishes the two causes **from the row**.
+**WHY-AC-9 (D5, D19, §9.0)** — `NULL` → the panel states that a person chose this product and that its
+figures **were not recorded**, with **no catalogue lookup**. Present-and-null → the panel distinguishes
+the two causes **from the row**.
 
 > **The mapping must not decide this with a universal quantifier over a possibly-empty set.** A run can
-> be stored with **zero candidate rows** when everything was withheld, and a vacuous `every()` over
-> that empty set is **true** — sending the line to the wrong sentence. **§12's opening rule.**
+> be stored with **zero candidate rows**, and a vacuous `every()` over that empty set is **true**.
 
-**WHY-AC-10 (R3, D19, pre-0055 rows)** — the "Chosen" line states that this recommendation was
-**recorded by an earlier model whose reasoning was not kept**; **no reconstruction**, no alternatives
-action. **"This one" still renders from the line's own record** *(Mock B8)* — **the age of the run has
-nothing to do with the figures.**
+**WHY-AC-10 (R3, D19)** — the "Chosen" line states the recommendation was **recorded by an earlier
+model whose reasoning was not kept**; **"This one" still renders from the line's own record**.
 
-**WHY-AC-11 (D2, post-issue)** — **no panel at all**, and **the `why` route renders the same refusal as
-a line that has none**.
+**WHY-AC-11 (D2, post-issue)** — **no panel at all**, and the `why` route renders the same refusal as a
+line that has none.
 
 ### 9.2 The detail screen (R8, R9, R10, R19, R29, D8)
 
-**WHY-AC-12 (R8, D18)** — the chosen product first, then **the next four** by ascending ladder rank —
-**five rows, no more**.
+**WHY-AC-12 (R8, D18)** — the chosen product first, then **the next four** — **five rows, no more**.
 
 **WHY-AC-13 (R8)** — fewer than five: the ones that exist, **no count of anything beyond the list**.
 
-**WHY-AC-14 (R9 — negative)** — no excluded candidate, no count, no exclusion reason text.
-
-**WHY-AC-15 (R9, D18 — negative)** — **nothing about withheld products appears.**
+**WHY-AC-14 / 15 (R9, D18 — negative)** — no excluded candidate, no count, no exclusion reason text;
+**nothing about withheld products**.
 
 **WHY-AC-16 (R10, D18 — negative, whole surface)** — **no price, no delta, no currency symbol and no
 control that prices anything.**
 
-**WHY-AC-17 (R6, R7)** — an alternative row states the product's name, its recorded Uw and SHGC, and its
-verdict in words derived from its tier.
+**WHY-AC-17 (R6, R7)** — an alternative row states the product's name, its recorded Uw and SHGC, and
+its verdict in words derived from its tier.
 
 **WHY-AC-18 (R3, D3, D19)** — every figure shown is a stored one; **no request to recompute anything**.
 
 **WHY-AC-19 (R3)** — a recorded candidate whose product no longer exists is still shown from the
 recorded facts.
 
-**WHY-AC-20 (R1 — negative)** — no control changes the line, the quote or any stored value; a network
-trace contains only GETs. *(WHY-AC-42's retry re-issues the same GET.)*
+**WHY-AC-20 (R1 — negative)** — no control changes any stored value; a network trace contains only
+GETs. *(WHY-AC-42's retry re-issues the same GET.)*
 
-**WHY-AC-21 (R2 — negative)** — no wording describes a human's product change as wrong, incorrect, a
-mistake, an error or a correction of the platform.
+**WHY-AC-21 (R2 — negative)** — no wording describes a human's product change as wrong, a mistake or a
+correction of the platform.
 
 ### 9.3 When a human changed the make-up (R11, R12, R23, R24)
 
-**WHY-AC-22 / 23 (R11, R12)** — the platform's original recommendation shown **unchanged**, with a
-comparison against the **same** requirement beside it; variant **or** glazing differing counts.
+**WHY-AC-22 / 23** — the platform's original recommendation shown **unchanged**, with a comparison
+against the **same** requirement beside it.
 
-**WHY-AC-24 (R11 — negative)** — neither changed: no human-selection block at all.
+**WHY-AC-24 (negative)** — neither changed: no human-selection block at all.
 
-**WHY-AC-25 / 26 (R23)** — the requirement shown is exactly the one recorded at selection time; **no
-code path re-resolves or re-derives a requirement**.
+**WHY-AC-25 / 26 (R23)** — the requirement shown is exactly the one recorded at selection time.
 
-**WHY-AC-27 (D3, D5, §9.0 — repaired revision 28)** — *Given* figures that **are numbers**, the
-comparison uses them against the run's recorded caps. *Given* they are **not numbers**, the comparison
-is **not attempted**, the panel says which absence it is **in §9.0's terms**, and it still shows the
-requirement and the recommendation unchanged, with **no live lookup**.
+**WHY-AC-27 (D3, D5, §9.0)** — figures that **are numbers** are compared against the recorded caps;
+**not numbers** → the comparison is **not attempted** and the panel says which absence it is.
 
-**WHY-AC-28 (R24, D20 — attribution, the sentence)** — **R6's three labels are kept** and the
-**"Chosen"** sentence carries the attribution. **And "This one" carries a qualifier naming *what*
-changed** — *"glazing changed"*, *"frame and glazing changed"*. *(Mock B3, B12; R12 makes the
-distinction meaningful.)*
+**WHY-AC-28 (R24, D20)** — **R6's three labels are kept** and the **"Chosen"** sentence carries the
+attribution. **And "This one" carries a qualifier naming *what* changed.** *(Mock B3, B12.)*
 
-**WHY-AC-29 (R24, §7.0, D16 — attribution, the MECHANISM; amended revision 29)** — the attribution is
-derived by comparing **THE PICK** (§7.0) — **the product**, **the glazing**, and **the variant term
-only where both sides name one**. Never from `origin`, never from `ai_proposal_line_id`, **never from
-`selected_variant_id` alone**.
+**WHY-AC-29 (R24, §7.0, D16 — the MECHANISM)** — the attribution is derived by comparing **THE PICK** —
+**the product**, **the glazing**, and **the variant term only where both sides name one**. **Never from
+`selected_variant_id` alone.**
 
 **Two fixtures, and the criterion is not met by one of them:** the product changed; and **only the
-glass changed** — where **a product+variant comparison concludes *platform-made***.
-
-> **Mutation-proved:** reverting to product+variant goes red **on the D16 case alone**.
+glass changed**, where **a product+variant comparison concludes *platform-made***. **Mutation-proved.**
 
 **WHY-AC-30 / 31 (R24)** — a restore reads as platform-made once more by the same comparison.
 
 ### 9.4 Composites (R14–R17)
 
-**WHY-AC-32 (R14)** — a composite parent whose `composite_origin` is `'ai'` **shows** the panel; its
-"This one" names the make-up (WHY-AC-4).
+**WHY-AC-32 (R14)** — a composite parent whose `composite_origin` is `'ai'` **shows** the panel.
 
 **WHY-AC-33 (R15)** — the detail shows the split reason first, then each lite's own band.
 
 **WHY-AC-34 / 35 / 36 (R16)** — each unit states its own caps and origin label; a unit with no recorded
 band says so; a recorded `segment_thermal_review` flag is shown against that unit.
 
-**WHY-AC-37 (R17, D6; shape corrected revision 30)** — *Given* `composite_origin = 'ops'`, *Then* the
-panel shows **two lines and no alternatives action**: **"These ones"** — each unit's code with its own
-Uw and SHGC — and **"Chosen": a person decided this split**. **Above three units the figures line cuts
-and says so** — *"+2 more units"*. *(Mock B5.)*
+**WHY-AC-37 (R17, D6; shape corrected rev 30, placement ruled rev 32)** — *Given* `composite_origin =
+'ops'`, *Then* the panel shows **two lines and no alternatives action**: **"These ones"** — each unit's
+code with its own Uw and SHGC — and **"Chosen": a person decided this split**.
+
+**Above three units the list cuts and states the remainder** — *"+2 more units"* — **and that text is
+the last entry inside the "These ones" value, immediately beneath the units it continues.** It is
+**never** rendered outside the line it belongs to: not in the label column, not after the list, and not
+below an unrelated row.
+
+> **A cutoff a reader cannot associate with its list is worse than no cutoff** — it becomes a floating
+> number, and a reviewer scanning three unit rows has no reason to connect it to them. **Revision 30
+> took the overflow rule from the mock and never said where the text lives**; it shipped bottom-left,
+> below the *Chosen* row, separated from its list by a whole row of unrelated content.
+>
+> **This is a criterion about association, not position** — the requirement is that the count reads as
+> the continuation of the list it counts. **The copy module's shape follows from that**: an overflow
+> string held as a **sibling of the lines** (`whyCopy.ts:263`, `WhyPanelCopy.more`) is what put the
+> component in the position of deciding where it goes, and it decided wrongly. **The remainder belongs
+> to the units line, not beside it.**
+>
+> **And the comment defending the separate field is not evidence the field is right.** A comment
+> explains an intention; **this defect is what the shape actually produced.** Whoever changes it should
+> replace the comment, not preserve it.
 
 **WHY-AC-38 (R14, `splitNote`)** — a recorded "no frame system could supply it" is stated.
 
 ### 9.5 No action, anywhere on this surface (R28, R1, R29)
 
 **WHY-AC-39** — the detail's only interactive element is the back control. **WHY-AC-40** — no
-line-editor route exists. **WHY-AC-41** — the panel's only interactive element is the one that opens
-the detail **(and, in the failure state only, the retry — WHY-AC-42)**.
+line-editor route exists. **WHY-AC-41** — the panel's only interactive element is the one that opens the
+detail **(and, in the failure state only, the retry — WHY-AC-42)**.
 
-### 9.6 The read's own states (revision 30; boundary ruled revision 31)
+### 9.6 The read's own states (rev 30; boundary ruled rev 31; the skeleton ruled rev 32)
 
 **WHY-AC-42 (A6's invariant on the read side)** —
 
-*Given* the rationale read is **in flight**, *Then* the panel is present and shows **skeleton lines in
-the shape it is about to be**, so the page does not jump.
-
 *Given* the read **completes with a final answer the reviewer's own navigation produced** — a line with
-no rationale, or a post-issue line (D2, WHY-AC-11) — *Then* the panel takes **the refusal sentence**,
-and **no retry is offered**: retrying would return the same answer forever.
+no rationale, or a post-issue line — *Then* the panel takes **the refusal sentence**, and **no retry is
+offered**.
 
 *Given* **anything else** — a network error, a timeout, a 5xx, **a `403`**, or any status this criterion
 does not name — *Then* the panel **remains**, says **the reasoning for this line could not be read just
 now**, and offers a **retry**. It **never renders as "not recorded"**, never as an empty panel, and
-**never disappears**. **The rest of the line page is unaffected.**
+**never disappears**.
 
-> **The boundary is a property, not a list, and the list is what was wrong.** Through revision 30 this
-> criterion enumerated the refusals as two `404`s. **A `403` fits neither, and the developer routed it
-> to failure — correctly.**
+> **The boundary is a property, not a list.** **A refusal the reviewer could not have reached is not a
+> refusal; it is a failure.** A `403` here can only mean a role lost mid-session — the record read would
+> already have refused and the panel would never have rendered.
 >
-> > **A refusal the reviewer could not have reached is not a refusal; it is a failure.**
+> **And the default is failure, because the two errors are not symmetric.** **Wrongly saying "could not
+> be read" costs a click. Wrongly saying "not recorded" costs a reviewer who stops looking.** **A status
+> code this criterion does not name takes the failure path.**
+
+*Given* the read is **in flight**, *Then* the panel is present and shows **the same panel chrome it will
+have when loaded — its title, and three animated bars in the proportions of the three lines**. And:
+
+1. **The skeleton is the panel's minimum, never its maximum.** Its height is **less than or equal to**
+   the loaded panel's in **every** state.
+2. **The panel never shrinks on load.** Whatever it reserves, the answer is at least that tall.
+3. **The growth is deliberately unbounded**, and no tolerance is specified.
+
+> **The old wording promised something the layout cannot give.** *"So the page does not jump"* names an
+> **outcome**, and the outcome depends on a product name nobody controls: the "Chosen" sentence runs one
+> to three lines. Measured on the shipped build — **+16px (desk), +33px (phone), +66px (a glazing
+> change on the phone), +30px (error)**.
 >
-> On this surface a `403` can only mean **a role lost mid-session**: the record read would already have
-> refused, and the panel would never have rendered. **The reviewer did not cause it and cannot
-> interpret it**, so *"could not be read"* is the honest sentence and silence is not.
+> **Reserving the worst case would make the common case shrink by ~50px**, and **shrinking is the fault
+> a reviewer feels**: content below jumps *up*, under a cursor that may already be moving. Growth pushes
+> the page down in the direction a reader expects. **The criterion therefore forbids the shrink and
+> accepts the growth**, rather than asking for a stillness that would have to be bought with a worse
+> behaviour.
 >
-> **And the default is failure, because the two errors are not symmetric.** **Wrongly saying "could
-> not be read" costs a click. Wrongly saying "not recorded" costs a reviewer who stops looking** — they
-> conclude the platform never had a reason and move on, possibly confirming a recommendation they could
-> have audited. **A false absence generated at display time is exactly what SNAP-AC-16 forbids the
-> writers from producing**, and the reader is held to the same standard.
+> **No bound is set on purpose.** Any number would be arbitrary, would encode today's longest product
+> name, and would fail the day the catalogue gains a longer one — **a tolerance chosen by whoever
+> writes the test is a criterion set by the test**, and a tolerance chosen by me here would be the same
+> thing one step earlier. **What the code controls is the structure and the direction; those are what is
+> specified.**
 >
-> **So a status code this criterion does not name takes the failure path.** No fourth amendment is
-> needed for a fourth code — **enumerations in this feature have been wrong repeatedly** (§7.4's writer
-> index, A6's writer class, this).
+> **What this criterion is actually for** — and the ui-designer confirmed it holds at both widths — is
+> that the state reads as **a panel thinking, not a panel broken**: same title, same object, three bars
+> where three lines will be. **That is checkable without a stopwatch.**
 
 **WHY-AC-43 (D21 — negative; the canvas has no panel, and that is checked)** — *Given* the project
-record at desk width with a line selected in the canvas, *When* the canvas renders `LineReview`, *Then*
-**no "Why this product" panel appears there**, no rationale request is issued for the selected line,
-and the line page's panel is unaffected.
+record at desk width with a line selected in the canvas, *Then* **no "Why this product" panel appears
+there**, **no rationale request is issued** for the selected line, and the line page's panel is
+unaffected.
 
-> **The owner ruled the panel is line-page-only (D21), and a ruling with no criterion is an absence
-> nobody verifies.** This feature has the worked example: the canvas *enlargement* arrived with no
-> criterion and reached the tester untested (§8.1, §12 note 11). **If the ruling is ever reversed, this
-> criterion is the thing that must be replaced — not quietly deleted.**
+**WHY-AC-44 (new revision 32 — one routed surface per address)** — *Given* any address in the
+line-route grammar, *When* it is rendered by any entry path — a click, a back, a reload, a pasted link
+— *Then* **exactly one routed surface is present**:
+
+- `…/line/:lineId` → **neither** the detail nor the viewer;
+- `…/line/:lineId/why` → **the detail, and no drawing viewer**;
+- `…/line/:lineId/drawing[/u<N>]` → **the viewer, and no detail**.
+
+**No address ever shows two, and none shows one behind the other.**
+
+> **This criterion exists because its absence let a MAJOR through.** The drawing viewer was opening
+> **behind** the rationale on `/why`, on **both** entry paths, and **nothing tested it** — Phase 2 has
+> VIEW-AC-5's *"exactly one viewer"*, which says how many viewers exist, **not that a viewer is alone
+> where it appears**. Two different questions, and only one had a criterion.
+>
+> **The grammar was never wrong.** `lineRoute.ts` is correct and its own header promises the two
+> suffixes cannot stack. **The consumer had a second copy of that promise and got it wrong**:
+> `drawingSubject.ts:96` guarded with a **deny-list** — *"if the view is `line`, show nothing"* — which
+> stopped being exhaustive the moment `LineView` gained `"why"`. **§12 note 15's shape** — one rule in
+> two places — **and §12 note 18's**: a deny-list over a growing union silently opts the new member
+> **in**.
+>
+> **It generalises past this feature**, which is why it is written as a property of the grammar rather
+> than a fix for one file: **§2.1's deferred switch panel will be a third routed surface under this
+> same address**, and this criterion governs it before a line of it is written.
 
 ---
 
@@ -774,13 +784,12 @@ and the line page's panel is unaffected.
 carries no product slug, tier, thermal figure or candidate, and the anonymous and signed-in-customer
 refusals are **identical in status and body**.
 
-**X-AC-3 (the control that matters most; gate corrected revision 30)** — a signed-in user whose staff
-role is `manufacturer` is **refused**, and the raw body contains no competing product slug, tier,
-figure or count. **The gate that fires is `resolveStaff`, and the body is `forbidden`.**
+**X-AC-3 (gate corrected revision 30)** — a `manufacturer` staff role is **refused**, and the raw body
+contains no competing product slug, tier, figure or count. **The gate that fires is `resolveStaff`, and
+the body is `forbidden`.**
 
-> **The behaviour is better than the criterion described.** A manufacturer never reaches the role check
-> here, so **their refusal is byte-identical to an anonymous caller's** — **X-AC-2's
-> indistinguishability extends to the role**. **Do not "harmonise" this to `forbidden_role`.**
+> **Their refusal is byte-identical to an anonymous caller's** — **X-AC-2's indistinguishability extends
+> to the role**. **Do not "harmonise" this to `forbidden_role`.**
 
 **X-AC-4 (cross-project probe)** — the refusal for a line in another project is byte-identical to the
 refusal for a line that does not exist, **both by navigating and by visiting the URL directly**.
@@ -811,19 +820,22 @@ accepted set are **ignored entirely**. **Mutation-proven at 3a.**
 | **GST inc/ex** | **No money appears anywhere on this surface.** | **D18**, WHY-AC-16 |
 | **Post-issue** | Panel absent; the `why` URL refuses. **Not a failure** — no retry. | D2, WHY-AC-42 |
 | **The read fails — network, timeout, 5xx, or a `403`** | Panel **stays**, says **it could not be read**, offers **retry**. **Never "not recorded".** | **WHY-AC-42** |
-| **A status code the criterion does not name** | **Failure path**, by default. A needless retry costs a click; a false absence costs a reviewer. | **WHY-AC-42** |
-| **The read is in flight** | Skeleton lines in the shape the panel is about to be. | **WHY-AC-42** |
+| **A status code the criterion does not name** | **Failure path**, by default. | **WHY-AC-42** |
+| **The read is in flight** | Same title, three bars. **Skeleton ≤ loaded, always; the panel never shrinks.** **Growth is unbounded on purpose.** | **WHY-AC-42** |
+| **A product name long enough to run "Chosen" to three lines** | The panel grows on load. **Not a defect** — reserving for it would shrink the common case. | **WHY-AC-42** |
+| **An ops split with more than three units** | *"+N more units"* is **the last entry inside the "These ones" value**, never outside the line it continues. | **WHY-AC-37** |
+| **The `/why` address** | **The detail, and no drawing viewer.** One routed surface per address, on every entry path. | **WHY-AC-44** |
+| **A future third surface under the line address** (§2.1's switch panel) | Governed by WHY-AC-44 **before it is written**. | **WHY-AC-44** |
 | **The record's desk canvas** | **No panel, and no rationale request.** Checked, not incidental. | **D21**, WHY-AC-43 |
-| **A composite parent whose figures column is `NULL`** | **"This one" names the make-up.** **No absence sentence** — nothing about a parent is missing. | WHY-AC-4 |
-| **An ops-created split** | **"These ones"** with per-unit figures; **"+N more units"** above three. | WHY-AC-37 |
+| **A composite parent whose figures column is `NULL`** | **"This one" names the make-up.** **No absence sentence.** | WHY-AC-4 |
 | **An opening with no thermal requirement** | "Had to meet" says so; **"Chosen" claims no thermal victory**. | WHY-AC-3, WHY-AC-5 |
 | **The band in any "Chosen" sentence** | **Named, and read from the run.** Never a literal copied from this spec. | WHY-AC-5, WHY-AC-6 |
 | **A run from an earlier model** | **"This one" still shows the figures**; only the reasoning is unavailable. | WHY-AC-10 |
 | **A line saved before the capture existed** | `NULL` → **"not recorded"**, and **nothing is looked up**. | **D19**, §9.0 |
 | **A run stored with zero candidate rows** | **Not "reasoning not recorded".** A universal quantifier over the empty set is true. | WHY-AC-9, §12 |
-| **A customer changes only the glass** | Figures from the glass; the row keeps its old id; **nothing downstream reads that id as the answer**. | **D16** |
+| **A customer changes only the glass** | Figures from the glass; **nothing downstream reads the stale id as the answer**. | **D16** |
 | **The panel's verdict on that same line** | **"A person chose this product."** The **glazing term** decides it. | **WHY-AC-29** |
-| **A manufacturer partner requests the rationale** | Refused by **`resolveStaff`**, body **`forbidden`** — byte-identical to an anonymous caller's. | **X-AC-3** |
+| **A manufacturer partner requests the rationale** | Refused by **`resolveStaff`**, body **`forbidden`**. | **X-AC-3** |
 | **Certification** | Never appears on this screen in any phase. | R5 |
 
 ---
@@ -836,9 +848,7 @@ accepted set are **ignored entirely**. **Mutation-proven at 3a.**
 > one of them looked wrong**.
 >
 > **AND IT IS NOT ONLY TESTS — THE EMPTY CASE SATISFIES THE CHECK.** *A universal claim over an empty
-> set is true and proves nothing.* **In a test** that is a green light with nothing behind it; **in
-> production it is a branch nobody takes** — WHY-AC-9's second sentence would have been decided by a
-> vacuous `every()` over a run with **zero candidate rows**.
+> set is true and proves nothing.* **In production it is a branch nobody takes.**
 >
 > **TWO DETECTORS, AND THEY CATCH DIFFERENT THINGS:**
 >
@@ -846,83 +856,88 @@ accepted set are **ignored entirely**. **Mutation-proven at 3a.**
 > > names.**
 >
 > **The eighth instance is why both are needed.** WHY-AC-4's composite test **passed vacuously on its
-> first run** — the fixture helper's `current` was not overridable, so the `NULL` column never reached
-> the code under test. **A mutation would not have caught it**: the test could fail, just never for the
-> reason it claimed. What caught it was a **control** — a *simple* line carrying the same `NULL` column
-> that **must still say "not recorded"**. When the control passed and the subject passed for different
-> reasons, the fixture was the suspect.
+> first run** — the fixture's `current` was not overridable, so the `NULL` column never reached the code
+> under test. **A mutation would not have caught it.** A **control** did — a *simple* line with the same
+> `NULL` column that **must still say "not recorded"**.
 >
-> **So: mutate to prove it can go red; add a control to prove it is watching the right thing.** A
-> control is a sibling case that **must behave differently**; if both cases pass with the same
-> implementation, one of them is not being tested.
+> **And a number in a report is not automatically the shipped number.** The `70.4 → 105` measurement
+> quoted for the skeleton was **the deliberately-broken shape**, not the shipped one — an honest
+> mutation, a misleading citation. **Say which build a measurement came from** (§12 note 10's fourth
+> shape, one step closer to home).
 
-Not a test plan — seventeen places where the obvious test would pass a wrong implementation:
+Not a test plan — eighteen places where the obvious test would pass a wrong implementation:
 
-1. **WHY-AC-29's fixtures — two, and one of them is the whole point.** A glazing-only override is
-   caught **only** by comparing the pick. *(Proved by reverting: red on that case alone.)*
+1. **WHY-AC-29's fixtures — two, and one of them is the whole point.** A glazing-only override is caught
+   **only** by comparing the pick.
 2. **SNAP-AC-2 is a source-level scan.** Property of every match, never a count.
 3. **SNAP-AC-5 and SNAP-AC-15 need a customer-path test.**
 4. **X-AC-1 must be executed for both callers separately.** **X-AC-13 must be an executed attempt.**
    **X-AC-3 must assert the body it actually gets** — `forbidden`, not `forbidden_role`.
 5. **VIEW-AC-10, and the selector that became a trap.**
-6. **WHY-AC-39/40/41 assert absences.** Enumerate and assert the *set* — **and it is not empty in the
-   failure state** (WHY-AC-42's retry). **WHY-AC-43 is an absence too**, and it needs the same
-   treatment: assert that no rationale request is issued, not merely that no panel is visible.
+6. **WHY-AC-39/40/41/43/44 assert absences.** Enumerate and assert the *set*. **WHY-AC-43 needs "no
+   request issued", not merely "no panel visible"; WHY-AC-44 needs the viewer asserted ABSENT on
+   `/why`** — a test that only checks the detail is present passes with the viewer behind it, which is
+   exactly how this shipped.
 7. **WHY-AC-7a must assert where back GOES**; **VIEW-AC-15 adds the other half.**
 8. **VIEW-AC-2's numbers are the assertions.**
 9. **CERT-AC-3's predicate is narrow on purpose.**
-10. **A JUSTIFICATION IS A CLAIM, AND IT MUST BE CHECKED — six times about the codebase, once about the
-    world, once about this spec's own register, and once about which code path a measurement came
-    from.**
+10. **A JUSTIFICATION IS A CLAIM, AND IT MUST BE CHECKED.**
 
     > **A claim about the codebase is settled by running something. A claim about the world is settled
     > by asking the person who owns it.** **A measurement is evidence for the thing measured** —
-    > generalising it to a sibling path is an unexecuted claim wearing a result.
+    > generalising it to a sibling path, **or quoting it from a build that no longer exists**, is an
+    > unexecuted claim wearing a result.
 
 11. **A journey that no criterion names will be tested by nobody.**
 12. **A two-variable measurement proves nothing about which variable did the work.**
-13. **A CRITERION IS CHECKED AGAINST THE OTHER CRITERIA IT CONSTRAINS — six instances, none found by
-    reading it alone.**
+13. **A CRITERION IS CHECKED AGAINST THE OTHER CRITERIA IT CONSTRAINS — six instances.** VIEW-AC-1;
+    SNAP-AC-1 vs SNAP-AC-9; SNAP-AC-1 vs SNAP-AC-14; WHY-AC-27/WHY-AC-4 vs SNAP-AC-8; WHY-AC-29 vs
+    §7.0 and D16; WHY-AC-5 vs WHY-AC-6.
 
-    VIEW-AC-1; SNAP-AC-1 vs SNAP-AC-9; SNAP-AC-1 vs SNAP-AC-14; WHY-AC-27/WHY-AC-4 vs SNAP-AC-8;
-    WHY-AC-29 vs §7.0 and D16; **and WHY-AC-5 vs WHY-AC-6 — the smallest of them, and instructive
-    because of it.**
+    **And a criterion can be unsatisfiable on its own** — WHY-AC-42's *"so the page does not jump"*
+    asked for an outcome no variable-height panel can give. **The tell is that it named an outcome the
+    code does not control** (the height of a sentence about a product nobody named yet) **rather than
+    the behaviour it does** (what the skeleton reserves, and in which direction the panel may move).
 
-    **The sixth was a prose example, not a rule.** WHY-AC-5 illustrated a sentence with *"within 5% of
-    the closest"* while WHY-AC-6 forbade hardcoding the band. **An example inside a criterion is read
-    as normative by whoever implements it** — it is a requirement with no author, and it sat next to
-    the criterion that bans it for fifteen revisions.
+    > **When an outcome depends on an input nobody controls, specify the invariant the code can hold,
+    > not the outcome it cannot guarantee** — and **never leave the tolerance to the test**, because a
+    > tolerance chosen by whoever writes the test is a criterion set by the test.
 
-    **The trigger: when a phase establishes a new distinction, walk the criteria written before it —
-    and the walk must enumerate EVERY distinction, not only the one that prompted it.** *A partial walk
-    reads exactly like a complete one afterwards.*
+14. **A CRITERION GENERALISED FROM ONE INSTANCE MUST NAME THE PROPERTY THAT MADE THAT INSTANCE WRONG.**
+    **And a criterion that enumerates cases will be wrong about the case nobody listed** — WHY-AC-42's
+    `403` is the third enumeration in this feature to fail that way.
+15. **ONE RULE IN TWO PLACES — the defect Phase 3a produced four times, and Phase 3b produced once
+    more.** `lineRoute.ts` promised in its header that the two suffixes cannot stack; `drawingSubject.ts`
+    kept its own copy of that promise and got it wrong. **The remedy is not vigilance; it is a single
+    home.**
 
-14. **A CRITERION GENERALISED FROM ONE INSTANCE MUST NAME THE PROPERTY THAT MADE THAT INSTANCE WRONG,
-    NOT THE BEHAVIOUR IT EXHIBITED.** **And a criterion that enumerates cases will be wrong about the
-    case nobody listed** — WHY-AC-42's `403` is the third enumeration in this feature to fail that way.
-15. **ONE RULE IN TWO PLACES — the defect Phase 3a produced four times.** **The remedy is not
-    vigilance; it is a single home.**
-
-    > **Coercing a caller's input is normalisation; coercing a stored value to stand in for an input
-    > the caller never sent is fabrication.**
+    > **Coercing a caller's input is normalisation; coercing a stored value to stand in for an input the
+    > caller never sent is fabrication.**
 
 16. **PREFER A SHAPE THAT MAKES THE ERROR IMPOSSIBLE OVER A RULE THAT FORBIDS IT — a rule needs a
-    reader; a shape does not.** The DTO's omission of `current.variantId`; A1's dedicated column;
-    D12's deletion of `ElevationLegend`.
-17. **A CRITERION, A TYPE AND A MOCK CAN EACH BE INTERNALLY CONSISTENT AND STILL DISAGREE — AND ONLY
-    ONE OF THE THREE HAS THE OWNER'S SIGNATURE.**
+    reader; a shape does not.** The DTO's omission of `current.variantId`; A1's dedicated column; D12's
+    deletion of `ElevationLegend`.
+17. **A CRITERION, A TYPE AND A MOCK CAN EACH BE INTERNALLY CONSISTENT AND STILL DISAGREE — AND ONLY ONE
+    OF THE THREE HAS THE OWNER'S SIGNATURE.** **Rulings beat pictures; pictures beat unwritten
+    criteria.** **Walk every state the mock draws and find the criterion that governs it.**
+18. **A DENY-LIST OVER A GROWING UNION IS A DEFECT WAITING FOR THE NEXT MEMBER (new, revision 32).**
 
-    §9's criteria, the design's DTO union, and the approved mock disagreed in **six** places, and
-    nobody had compared them. **Rulings beat pictures; pictures beat unwritten criteria.**
+    `drawingSubject.ts:96` asked *"is this the `line` view? then show nothing"* — correct until
+    `LineView` gained `"why"`, at which point **the new member was silently opted IN** and the viewer
+    rendered behind the rationale.
 
-    **The check nobody had run:** *walk every state the mock draws and find the criterion that governs
-    it.* **Five of the six shipped correct and unverified** — the developer built the mock's behaviour
-    and was right to; **the tester walks the criteria**, so a state with no criterion is a state nobody
-    checks.
+    > **When a type gains a member, a deny-list opts it in and an allow-list opts it out. The safe
+    > default is out.** Ask *"which views does this belong on?"*, never *"which views does it not
+    > belong on?"* — the first question has an answer that stays true when the union grows.
+
+    **This is note 16's family**: the allow-list is a *shape* that makes the error impossible, where the
+    deny-list is a rule that must be remembered every time the union changes. **And it is why WHY-AC-44
+    is written against the grammar rather than against the file** — a criterion naming one consumer
+    would have to be re-written for the next one.
 
 **THE ESCALATION IS THE MODEL.** **A criterion that cannot be satisfied honestly is a defect in the
-criterion, and it goes back up the pipeline.** *(Revision 31 is two more instances: the developer
-reported the `403` boundary and the band literal rather than coding around either.)*
+criterion, and it goes back up the pipeline.** *(Revision 32 is two more: the ui-designer reported the
+skeleton and the orphaned count rather than editing copy it does not own.)*
 
 ---
 
@@ -957,18 +972,18 @@ note 17).
 | # | Entry | State |
 |---|---|---|
 | 1 | **VIEW-AC-9** — the record row's glyph does not open the viewer | **OPEN — shipped and deployed.** A veto now costs rework. **The only open entry of this spec's own** |
-| 2 | **WHY-AC-10** — a pre-0055 run says the reasoning was not recorded | **DISCHARGED — owner (D19)** |
-| 3 | **§11, GST** — no money at all | **DISCHARGED — owner (D18)** |
-| 4 | **§11, multiple runs** — the most recent only | **DISCHARGED — owner (D19)** |
-| 5 | **WHY-AC-9** — the panel says so rather than looking up | **DISCHARGED — owner (D19)** |
+| 2 | **WHY-AC-10** | **DISCHARGED — owner (D19)** |
+| 3 | **§11, GST** | **DISCHARGED — owner (D18)** |
+| 4 | **§11, multiple runs** | **DISCHARGED — owner (D19)** |
+| 5 | **WHY-AC-9** | **DISCHARGED — owner (D19)** |
 | 6 | *(the capture's reach)* | **RETIRED** — D7 |
 | 7 | *(where "Change the product" lives)* | **RETIRED** — R28 |
-| 8 | **SNAP-AC-12** — figures in `configuration_snapshot_json` | **DISCHARGED — architect (A1): OVERRIDDEN** |
-| 9 | **§7.4** — R22 reaches the estimator's own writers | **DISCHARGED — architect (A2)** |
-| 10 | **WHY-AC-28** — three labels kept | **DISCHARGED — owner (D20)** |
-| 11 | **§10** — the uniform refusal adopted as written | **RETIRED** |
+| 8 | **SNAP-AC-12** | **DISCHARGED — architect (A1): OVERRIDDEN** |
+| 9 | **§7.4** | **DISCHARGED — architect (A2)** |
+| 10 | **WHY-AC-28** | **DISCHARGED — owner (D20)** |
+| 11 | **§10** | **RETIRED** |
 | 12 | *"the drawing viewer is an overlay"* | **VETOED by R31** |
-| 13 | **VIEW-AC-12** — the export is retained | **VETOED — owner (D12)** |
+| 13 | **VIEW-AC-12** | **VETOED — owner (D12)** |
 | 14 | **The URL grammar** | **DISCHARGED — owner (D9)** |
 | 15 | **The viewer's title** | **DISCHARGED — owner (D10)** |
 | 16 | **VIEW-AC-1** — no fixed ceiling | **RETIRED — the wrong question** |
@@ -979,8 +994,10 @@ note 17).
 | 21 | *(SNAP-AC-16's "exactly one author")* | **VETOED — architect (A6).** **Too strong** |
 | 22 | *(SNAP-AC-1's "that product+variant's figures")* | **DISCHARGED — owner (D16)** |
 | 23 | *(WHY-AC-29's "product+variant" comparison after D16)* | **VETOED — architect's 3b design refresh.** **D16's second dependency** |
-| 24 | *(that §9 described every state the approved mock draws)* | **VETOED — revision 30's walk.** **An unexamined belief that the criteria and the signed artifact agreed.** Six disagreements; **§9 had no criterion at all for the read's failure state** |
-| 25 | *(that the panel would appear wherever `LineReview` renders)* | **VETOED — owner (D21): line page only.** Never a tagged assumption — **an inference from the shared component**, which is exactly how the canvas enlargement entered Phase 2 unspecified. **WHY-AC-43 makes the absence checked**; the recommendation against it is preserved at D21 |
+| 24 | *(that §9 described every state the approved mock draws)* | **VETOED — revision 30's walk.** Six disagreements |
+| 25 | *(that the panel would appear wherever `LineReview` renders)* | **VETOED — owner (D21): line page only.** **WHY-AC-43 makes the absence checked** |
+| 26 | *(that "the page does not jump" was achievable)* | **VETOED — the ui-designer's measurement, revision 32.** Never a tagged assumption: **a criterion asking for an outcome no variable-height panel can give.** Replaced with what the code controls — **skeleton ≤ loaded, never shrink, same structure — and no bound on growth, on purpose** |
+| 27 | *(that VIEW-AC-5's "exactly one viewer" meant the viewer was alone on its address)* | **VETOED — the ui-designer's MAJOR, revision 32.** **How many exist and where they appear are different questions**, and only the first had a criterion. **WHY-AC-44** answers the second, for the grammar rather than for one consumer |
 
 ---
 
@@ -988,22 +1005,21 @@ note 17).
 
 **None.**
 
-**The Phase 3b gate is closed (D18–D21)** and every wording call reported this round is ruled:
-WHY-AC-42's refusal/failure boundary is a **property** rather than a list, and WHY-AC-5 **names the
-band and copies no literal**.
+Both ui-designer reports are ruled — **WHY-AC-42's skeleton now states what the code controls, with no
+tolerance left to the test**, and **WHY-AC-37 places the overflow count inside the list it counts**. The
+MAJOR it found is covered going forward by **WHY-AC-44**, written against the grammar so it governs
+§2.1's future switch panel too.
 
 **Two things remain open, and neither blocks 3b:**
 
 - **§13.1 (VIEW-AC-9)** — **OPEN and already shipped**; a veto now costs rework, not an edit.
-- **A5** (a singleton answer set is not ambiguity) — the **architect's**, and **vetoable as one pair
-  with the design's ambiguity rule** at Phase 3 acceptance.
+- **A5** (a singleton answer set is not ambiguity) — the **architect's**, **vetoable as one pair with
+  the design's ambiguity rule** at Phase 3 acceptance.
 
 **To restate at acceptance, because their cost has grown since they were taken:**
 
 - **D16's condition is now three criteria wide** — WHY-AC-4, WHY-AC-29 and the DTO's omission.
-  **Weakening any of them re-opens a decision he has already made.**
-- **D21 is enforced by WHY-AC-43**, so reversing it later means replacing a criterion rather than
-  flipping a prop.
+- **D21 is enforced by WHY-AC-43**, so reversing it means replacing a criterion, not flipping a prop.
 
 **Still to happen, and it is the owner's:** the deploy. `0058` is **local-only**; it reaches production
 **with 3b** (D17), under the deploy protocol — full gates green, security sweep green on the deployed
