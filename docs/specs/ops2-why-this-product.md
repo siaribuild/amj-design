@@ -1,21 +1,30 @@
 # ops2 "Why this product" — SPEC
 
-**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 17**
+**Date:** 2026-08-25 · **Stage:** pipeline stage 1 (product-manager) · **Revision 18**
 **Grill:** COMPLETE — `docs/specs/ops2-why-this-product-grill-conclusions.md` (R1–R21 **binding**).
 Where a ruling contradicts the mock, the ruling wins.
 **Grill input / code facts:** `docs/specs/ops2-why-this-product-grill-input.md`
 **Prior art this extends:** `docs/specs/ops2-record-correction.md` + `docs/specs/ops2-record-design.md`
 (the line page, `Plate`, `SidePanel`, `Elevation` all exist and are reused, never rebuilt).
 
-**Revision 17** carries the owner's **veto of §13.17** — the canvas back control's label —
+**Revision 18 resolves a tension inside VIEW-AC-1 that the round-2 tester measured** — the
+criterion was requiring two things that cannot both hold on a short wide screen, so no
+implementation could satisfy it as written. Revision 16 required the drawing to grow with
+**width**; revision 17 required the **caption** to be readable at every width. On a 2560×1080
+ultrawide a landscape drawing grown to claim the width would stand taller than the screen,
+putting the caption — and most of the drawing — below the fold. **The ruling: there is one
+guarantee, not two — the whole drawing and its caption are visible together, and within that
+the drawing is as large as the viewport permits.** Which dimension governs is whichever one
+binds, and the `62vh` that governs it today goes the same way the `720px` went in revision
+16. `ASSUMED:` §13.18; §13.16 is RETIRED as the wrong question.
+
+**Revision 17** carried the owner's **veto of §13.17** — the canvas back control's label —
 taken after the developer found a precedent nobody had checked: the line page's own back
 control already names that same destination by its **reference**
 (`src/ops2/projects/LinePage.tsx:136`, `label: record ? record.ref : "Project"`). The spec
 had assumed the project's *title*, which would have given one destination two names in one
-console. **VIEW-AC-15 now requires the reference**, and the pre-load fallback is no longer an
-assumption at all: `Project` is what the precedent already uses. Revision 17 also records
-that VIEW-AC-1's caption is the **size statement at every width**, so how the drawing's own
-dimension leaders scale is the design stage's to settle rather than a criterion.
+console. **VIEW-AC-15 requires the reference**, and the pre-load fallback is not an
+assumption at all: `Project` is what the precedent already uses.
 
 **Revision 16** carried **two owner decisions taken at the Phase 2 tester gate**, plus the
 tester's MINOR.
@@ -31,9 +40,9 @@ tester's MINOR.
   than quietly dropped, and all three of its states are kept — it has now flipped twice, and
   the record of *why* is worth more than a clean-looking criterion.
 - **VIEW-AC-1 is made unambiguous** that "the largest size the viewport allows" is a
-  **measurement at more than one width**. The criterion was already correct; the
-  implementation capped the drawing at a flat 720px at every desk width, a number lifted from
-  the mock's *simulated desk frame*.
+  **measurement**. The criterion was already correct in intent; the implementation capped the
+  drawing at a flat 720px at every desk width, a number lifted from the mock's *simulated
+  desk frame*. (Revision 18 finishes the job: the replacement number is gone too.)
 
 Revision 15 gave **every register entry a state** (§13) and discharged §13.14/§13.15;
 revision 14 corrected VIEW-AC-12's false premise; revision 13 amended the CERT-AC-10 fence;
@@ -43,9 +52,9 @@ revision 7 corrected a false claim about an existing legend test; revision 6 app
 closed UX mock gate; revision 5 repaired two architect findings; revisions 2–4 folded in the
 owner's decision rounds.
 
-**Decisions needed: none** (§14). One entry — §13.16, no ceiling on the drawing's growth —
-is **OPEN and already shipped**, and goes to the owner at acceptance with the rest; it is a
-ruling awaiting sign-off, not a question this spec is still asking.
+**Decisions needed: one** (§14) — how much of the screen the drawing may claim, tagged
+`ASSUMED:` §13.18 and going to the owner at acceptance with the rest of Phase 2. Nothing is
+blocked on it.
 
 ---
 
@@ -231,7 +240,8 @@ sentence applied to the one journey nobody had specified (§8.1).
 
 **And they already know how to read a drawing.** R25 is a fact about this persona, not a
 styling preference: an elevation's notation is customer-facing explanation, and explaining
-it to an estimator costs space and says the reader is a novice.
+it to an estimator costs space and says the reader is a novice. **What they do need is to
+see the whole of it at once** — which is what VIEW-AC-1's one guarantee protects.
 
 ### Customer (existing — newly relevant, via D6/D7)
 
@@ -833,39 +843,76 @@ layer down.
 
 **VIEW-AC-1 (R21, R25 — what the viewer carries)** — *Given* the line page for a simple
 opening, *When* the reviewer activates the drawing, *Then* the viewer opens carrying **the
-drawing at the largest size the viewport allows, and its dimensions in the caption beneath
-it** — and nothing that explains the drawing's notation.
+whole drawing and its caption visible together, the drawing as large as the viewport
+permits** — and nothing that explains the drawing's notation.
 
-> **"The largest size the viewport allows" is a measurement, not a phrase — clarified
-> revision 16, after the tester's MINOR.** The criterion was already correct; the
-> implementation did not meet it, and the wording is sharpened here so it cannot be read
-> as satisfied by a drawing that is merely large.
+> ### The size rule — resolved at the round-2 tester gate, revision 18
 >
-> **What is required:** the rendered drawing's size **responds to the viewport**. It is
-> **strictly larger at 1920 than at 1280** for the same drawing, and larger again at 2560.
+> **The criterion was requiring two things that cannot both hold, so no implementation
+> could satisfy it.** Revision 16 required the drawing "strictly larger at 1920 than at
+> 1280, and larger again at 2560". Revision 17 required the **caption** — the drawing's
+> size in words — to be readable at every width, as the fence that made the scaling of the
+> drawing's own dimension leaders a design matter rather than a criterion. On a short wide
+> viewport those two are incompatible, and the numbers say so: the drawing is landscape,
+> about **1.4 : 1** in the shape the tester measured, so a copy grown to claim 2560px of
+> width stands roughly **1790px** tall on a **1080px** screen. The caption would sit below
+> the fold — and so would a third of the drawing.
 >
-> **What was measured before the fix:** identical at **1280, 1600, 1920 and 2560** — a flat
-> 720px cap. The 720 came from `docs/mocks/ops2-why-this-product.html:103`,
-> `.desk{width:720px}`, which is the mock's **simulated desk frame — the whole screen, not a
-> column inside it.** A dimension lifted out of a mock's chrome is not a design token; it is
-> the picture frame mistaken for the picture.
+> **A drawing you have to scroll to see is not "the largest size the viewport allows". It
+> is larger than the viewport allows.** That is the resolution, and it collapses two
+> requirements into one.
 >
-> **How it is verified:** by **measurement at more than one desk width** in
-> `scripts/tests/web/`, comparing the rendered drawing's own box between widths — never by
-> reading a stylesheet, which is how a cap this size survived review in the first place.
-> `ASSUMED:` §13.16 — no fixed ceiling at any width; the drawing scales with the viewport
-> and the caption carries the dimensions.
+> #### The guarantee
 >
-> **The caption is the size statement at every width, and that is what makes the rest a
-> visual matter (revision 17).** Because the drawing scales, the dimension leaders drawn on
-> it scale with it — roughly 1.8× their 1280 size at 2560, and around 6–7px at 375. **This
-> criterion is indifferent to that, on one condition: the caption is not optional and does
-> not scale away at any width.** A reviewer must be able to read the opening's size from the
-> caption whether the leaders are large, small or illegible. Given that, how the leaders are
-> treated at the two extremes is the ui-designer's to settle, not a criterion here. A
-> treatment that made the caption conditional — hidden when the leaders are big enough,
-> say — would breach VIEW-AC-1, because it would move the guarantee onto the thing that
-> stops being readable first.
+> > **The whole drawing and its caption are visible together, and within that the drawing
+> > is as large as the viewport permits.**
+>
+> **Which dimension governs: whichever one binds.** On a tall narrow viewport the available
+> width binds; on a short wide one the available height binds. Neither is *the* governor,
+> and a rule naming one is wrong on the other shape — which is exactly what shipped.
+> `.ops2-viewer__svg` is governed by height alone (`height: 62vh; width: auto`), measured by
+> the tester with each dimension moved separately:
+>
+> ```
+> WIDTH-ONLY    1280 → 887×620    1920 → 887×620    2560 → 887×620
+> HEIGHT-ONLY    900 → 799×558    1400 → 1242×868
+> ```
+>
+> So an ultrawide **2560×1080** — a common ops shape — gets precisely the drawing a
+> 1280×1080 window gets. Width contributes nothing.
+>
+> **The magic number goes with it.** `62vh` is the sibling of the `720px` that caused round
+> 1's MINOR: a figure nobody has defended, silently deciding how much of the screen the
+> drawing may claim. Under this rule the budget is not chosen — **it is what is left**: the
+> viewer's own space after its chrome and its caption. Fitting a fixed-aspect drawing into a
+> box is something the platform already does for an SVG that carries its own aspect ratio;
+> no arithmetic about viewport percentages belongs in this component.
+>
+> **`ASSUMED:` §13.18** — the drawing may claim **all** of that remaining space rather than
+> a share of it, and the caption never scrolls out of view. That is the reading of R21 this
+> spec has worked to throughout, but *how much of an ultrawide the drawing should claim* is
+> the owner's call, and §13.18 is the assumption he would be vetoing.
+>
+> #### How it is verified — and the shipped test is why this needs saying
+>
+> The round-1 test measured (1280,900), (1920,1080), (2560,1440) — **both dimensions growing
+> together** — and asserted the drawing got bigger. It passes whichever dimension is doing
+> the work, so it proved nothing about which one was, and a height-governed implementation
+> sailed through it. **That is SNAP-AC-2's non-vacuity lesson in a browser** (§12 note 12).
+>
+> The check is **three shapes, each with exactly one thing to say, and each moving one
+> dimension**:
+>
+> 1. **Width binds — tall and narrow** (e.g. 1100×1440 against 1500×1440, viewport height
+>    held constant): the drawing is **strictly wider** on the wider viewport.
+> 2. **Height binds — short and wide** (e.g. 2560×1080 against 2560×1440, viewport width
+>    held constant): the drawing is **strictly taller** on the taller viewport.
+> 3. **The fence, at every shape tested — 2560×1080 and 375×667 among them:** the drawing's
+>    box **and the whole caption** are inside the viewport, with no scrolling needed to read
+>    the size.
+>
+> A sweep that moves both dimensions cannot fail on the wrong governor. This criterion has
+> already been passed once by exactly that test, and the ultrawide is what it cost.
 
 **VIEW-AC-1a (title names the subject — owner-confirmed, D10, §13.15)** — *Given* the
 viewer is showing a **unit**, *When* its title is read, *Then* it is that unit's code
@@ -1489,7 +1536,9 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 | **Leaving a line after enlarging a drawing** | **Two backs** — one closes the viewer, one leaves the line. Agreed cost of R31, named and accepted. **Not a bug; not to be collapsed.** *(From the canvas it is one back, to the record: only one entry was ever pushed.)* | R31, VIEW-AC-2d, VIEW-AC-14 |
 | **A pasted drawing or `why` link, cold** | Renders with the surface open, resolved through the record fetch; back **replaces** to the line path rather than leaving the console. | VIEW-AC-2b, WHY-AC-7c/7d |
 | **A malformed or out-of-range unit suffix** | Normalises by replace, growing no history. | VIEW-AC-2c |
-| **The viewer at either extreme of width** | The drawing keeps growing with the viewport — no fixed cap, and certainly not one lifted from the mock's simulated desk frame. Its dimension leaders scale with it (larger at 2560, small at 375); **the caption carries the size at every width**, so legibility never depends on the leaders. How the leaders themselves are treated is the design stage's. `ASSUMED:` §13.16 | VIEW-AC-1 |
+| **A short wide viewport — 2560×1080, a common ops shape** | **Height binds.** The drawing is as tall as the space left after the chrome and the caption, and no taller; it does not grow to claim the width, because a landscape drawing that did would stand ~1790px tall on a 1080px screen and push its own caption off the screen. | VIEW-AC-1 |
+| **A tall narrow viewport, and the phone** | **Width binds.** The drawing is as wide as the space allows and shrinks to fit; the caption stays visible with it. No fixed px or vh cap decides either case. `ASSUMED:` §13.18 | VIEW-AC-1 |
+| **The drawing's own dimension leaders at the extremes** | They scale with the drawing — large on a big screen, a few px on a phone. **Indifferent to the criterion, because the caption states the size at every shape.** Their treatment is the design stage's. | VIEW-AC-1 |
 | **Everything saved before Phase 3** | No figures, and no backfill: the honest absence (WHY-AC-9, WHY-AC-27). Accepted cost. | D5 |
 | **A customer-configured line saved after Phase 3** | Thinner panel: who chose it, and its figures. | D6, D7 |
 | **A customer overrides an AI-priced line** | The recommendation's snapshot is still cleared (it no longer describes the line); the customer's own figures replace it; the requirement does not move; the panel says a person chose it though `origin` still reads `'ai'`. | SNAP-AC-14, R23, R24 |
@@ -1513,7 +1562,7 @@ strip. Both refuse and write nothing; both are executed as real attempts.
 
 ## 12. Test-surface notes for the architect and tester
 
-Not a test plan — eleven places where the obvious test would pass a wrong implementation:
+Not a test plan — twelve places where the obvious test would pass a wrong implementation:
 
 1. **WHY-AC-29's fixture** must be an AI-originated line the customer has since
    overridden, with `origin` still `'ai'`. A fixture built from a manual line proves
@@ -1579,7 +1628,7 @@ Not a test plan — eleven places where the obvious test would pass a wrong impl
    CERT-AC-13's directory to match the allowlist would point its gate at the wrong tree and
    make it vacuous. Anchor non-vacuity on `catalogue.ts` **and** `import-wers.mjs`;
    CERT-AC-12's behavioural half runs against the pure `derive-estimator-fields` builder.
-10. **THE RULE THIS FEATURE LEARNED FIVE TIMES — a justification naming another consumer,
+10. **THE RULE THIS FEATURE LEARNED SIX TIMES — a justification naming another consumer,
     another surface or another convention is a claim about the codebase, and it must be
     EXECUTED, not asserted.** Every instance took one grep to settle, and every one had
     already been believed by two or more careful readers:
@@ -1619,6 +1668,15 @@ Not a test plan — eleven places where the obvious test would pass a wrong impl
     reviewer stage. Nothing downstream noticed, because the tester walks *the criteria*, and
     there were none to walk. **When a review stage adds behaviour, the criterion is part of
     the fix** — and if it adds UI, so is the `scripts/tests/web/` coverage (VIEW-AC-17).
+12. **A two-variable measurement proves nothing about which variable did the work.**
+    VIEW-AC-1's round-1 test grew viewport width and height together — (1280,900),
+    (1920,1080), (2560,1440) — and asserted the drawing got bigger. It passed a drawing
+    governed **entirely by height**, which is why an ultrawide 2560×1080 gets exactly what a
+    1280×1080 window gets. **Move one dimension per sweep, and assert the dimension that
+    should have moved.** This is SNAP-AC-2's non-vacuity rule in a browser: a check that
+    cannot fail for the reason the criterion exists is not coverage, it is a green light
+    with nothing behind it. The same trap is waiting in any "it gets bigger / smaller /
+    responsive" assertion, which is most of what a viewport test contains.
 
 ---
 
@@ -1673,31 +1731,39 @@ the assumption.
 | 13 | **VIEW-AC-12** — the `ElevationLegend` export is retained though it currently has **no consumer** | **VETOED — owner, 2026-08-25 (D12).** The criterion's own reason was that deleting the export was *"a separate decision that nobody has taken"*; the owner has taken it. Decided by evidence that arrived after revision 14: **zero callers repo-wide, and no `.elev-legend` rule in any stylesheet**, so the export could not render correctly even if called. VIEW-AC-12 now **requires** the deletion, together with the assertion that pinned it |
 | 14 | **The URL grammar** — `/…/drawing`, `/…/drawing/u1`, `/u2`, … 1-based ordinals; `/…/why` for the detail | **DISCHARGED — owner, at Phase 1 sign-off (D9).** Chosen over putting the unit's own code in the address: the ordinal matches what the labels already imply, and does not couple the URL to a label that changes if units are reordered |
 | 15 | **The viewer's title** — a unit shows its code (`W07A`); the line's own drawing is titled `Drawing`; the size sits in the caption | **DISCHARGED — owner, at Phase 1 sign-off (D10).** The title names the subject; the back control already names the line, and repeating it says the code twice |
-| 16 | **VIEW-AC-1** — the viewer's drawing scales with the viewport at **every** desk width, with no fixed ceiling above any width | **OPEN — shipped in Phase 2.** Built as `height: 62vh; width: auto`, so the viewport binds; at 2560 the drawing renders about 1278×893. Goes to the owner at acceptance: a ceiling remains his to add, and the recommendation is none — the drawing is the element he rates highest, and the caption carries the dimensions at any size |
+| 16 | **VIEW-AC-1** — no fixed ceiling on the drawing's growth | **RETIRED — the wrong question, revision 18.** "Is there a ceiling?" dissolved once the round-2 measurement arrived: there is no *fixed* ceiling (the `720px` went in revision 16 and the `62vh` goes now), but there is a real one — **the viewport itself, once the caption must stay visible.** Superseded by §13.18, which asks the question that actually has an owner in it. What was measured under this assumption: `height: 62vh; width: auto`, ~1278×893 at 2560×1440, **and the same drawing at 2560×1080 as at 1280×1080** |
 | 17 | **VIEW-AC-15** — the canvas-opened back control is labelled with the **project's title**, truncated as `OpsPage` truncates, falling back to `Project` | **VETOED — owner, 2026-08-25.** Built as assumed, then vetoed within the same phase. **The precedent nobody had checked:** the line page's back control already names this destination by its **reference** — `src/ops2/projects/LinePage.tsx:136`, `label: record ? record.ref : "Project"`. The owner ruled for the reference: **one console-wide convention**, matching the control a reviewer already uses daily. Cost he accepted: a reference says which record, not which job. **Rework: the label expression only** — destination, exits, focus and the canvas fix are untouched, and the pre-load fallback `Project` was already the precedent's, so it stops being an assumption at all. VIEW-AC-15 carries the ruling; §12 note 7 carries the lesson |
+| 18 | **VIEW-AC-1** — the drawing claims **all** the space left after the viewer's chrome and its caption, at every viewport shape, and **the caption never scrolls out of view** | **OPEN — goes to the owner at acceptance.** The two things he might prefer instead: hold the drawing to a *share* of the screen (today's undefended `62vh` is one such share), or let the caption scroll off an ultrawide so the drawing can claim more. **Recommendation: as written.** R21 makes the drawing the element that matters most, and a size you have to scroll to read is not a size statement — which is the same reasoning that produced revision 17's fence, now applied to the drawing itself |
 
 ---
 
 ## 14. Decisions needed
 
-**None.**
+**One, and it is tagged rather than blocking.**
 
-Both of revision 16's questions are closed. **§13.17 (the back control's label) was
-answered against this spec's recommendation** and is now VETOED, with the ruling, the
-precedent and the accepted cost recorded there and in VIEW-AC-15. **§13.16 (no ceiling on
-the drawing's growth)** is not an open question but a ruling awaiting sign-off: it is built
-(`height: 62vh; width: auto`; ~1278×893 at 2560) and goes to the owner at acceptance with
-the rest of Phase 2, still vetoable there for the cost of one stylesheet line.
+**§13.18 — how much of the screen may the drawing claim?** The ruling in VIEW-AC-1 is that
+the whole drawing and its caption are visible together and the drawing takes everything
+left over, at every viewport shape. **Recommendation: as written** — R21 makes the drawing
+the element that matters most in the product, and a size the reviewer must scroll to read
+is not a size statement. The alternatives, if the owner wants one: hold the drawing to a
+share of the screen (`62vh` today, a figure nobody chose deliberately), or let the caption
+scroll off a very wide screen so the drawing can claim more. **Nothing is blocked** — the
+assumption is what is being built, it is one stylesheet rule either way, and he sees it at
+acceptance with the rest of Phase 2.
 
-**One thing deliberately left to the design stage, and recorded so it is not mistaken for a
-gap.** Because the drawing scales, its dimension leaders scale with it — noticeably large at
-2560, around 6–7px at 375. VIEW-AC-1 is indifferent to that **on one condition, now written
-into it**: the caption states the opening's size at every width, so a reviewer never depends
-on the leaders to read it. Within that fence, the leaders' treatment is the ui-designer's
-call, not a criterion. If the ui-designer's answer turns out to need the caption to move,
-change or disappear at some width, that comes **back to this spec** — it would be a change
-to VIEW-AC-1, not a styling decision.
+**What closed this round.** §13.16 ("no ceiling on the growth") is **RETIRED** — the
+measurement showed it was the wrong question; there is no *fixed* ceiling, and there is a
+real one, the viewport. VIEW-AC-1's internal contradiction is resolved into one guarantee
+rather than two requirements, and its verification is now three single-dimension sweeps
+(§12 note 12) rather than the two-variable test that let a height-only implementation
+through.
 
-**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph) and §13.16.
-Vetoing either now costs rework rather than an edit, which is what their state is there to
-say. The remaining OPEN entries belong to Phase 3 and will be live at that phase's gate.
+**One thing stays with the design stage**, and is fenced rather than left loose: the
+drawing's dimension leaders scale with it — large on a big screen, a few pixels on a phone.
+That is indifferent to VIEW-AC-1 **because the caption states the size at every shape**. If
+the ui-designer's answer ever needs the caption to move, change or disappear at some width,
+that comes back here as a VIEW-AC-1 change, not a styling decision.
+
+**Still OPEN and already shipped:** §13.1 (VIEW-AC-9, the record row's glyph). §13.18 is
+OPEN and *being* built, which is the cheaper end of the same state. The remaining OPEN
+entries belong to Phase 3 and will be live at that phase's gate.
