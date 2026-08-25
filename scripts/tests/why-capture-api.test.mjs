@@ -508,6 +508,10 @@ test("the universal capture, over a real Worker and D1", { timeout: 300_000 }, a
       // fabrication with the symptom moved. Units must be faithful copies.
       await sql(`UPDATE quote_line SET options_json='{"colour":"Dover White","glazing":5}'
                  WHERE id='${parentId}'`);
+      // The opening is already planned as units, and split refuses to re-plan
+      // one (409 already_composite). Merge it back first, so this is a genuine
+      // first split of an opening whose options carry a non-string value.
+      await requestJson(ops, `/api/ops/lines/${parentId}/merge`, { method: "POST" });
       await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
         method: "POST",
         json: {
