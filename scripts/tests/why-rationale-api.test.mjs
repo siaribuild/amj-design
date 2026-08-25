@@ -242,6 +242,47 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
     await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, selected_variant_id, options_json, dims_json, qty, line_total, status, position, origin, ai_proposal_line_id, performance_figures_json)
                VALUES ('ql_over','p_rat','W05','Bed 2','amj100l-series-awning-window','v-b','${OPTIONS("double-lowe")}','{"width":"1200","height":"900"}',1,705,'ready',5,'ai','apl_1','{"uValue":3.8,"shgc":0.4}')`);
 
+    // ── A machine-proposed composite (R14-R16, WHY-AC-32..38) ──────────────
+    await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, line_kind, composite_origin, composite_axis, review_json, performance_figures_json)
+               VALUES ('ql_comp','p_rat','W07','Lounge','amj80-series-awning-window','${OPTIONS("double-lowe")}','{"width":"2400","height":"1500"}',1,1400,'technical_review',6,'composite_parent','ai','vertical','{"composite":"W09: a three-unit make-up was tried and no frame system could supply it."}','{"uValue":null,"shgc":null}')`);
+    const segment = async (id, parent, seq, slug, extra) => {
+      await sql(`INSERT INTO quote_line (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind, product_slug, options_json, dims_json, qty, line_total, status, position, selected_variant_id, segment_requirements_json, segment_requirement_basis, segment_thermal_review, performance_figures_json)
+                 VALUES ('${id}','p_rat','${parent}',${seq},1,'segment','${slug}','${OPTIONS("double-lowe")}','{"width":"1200","height":"1500"}',1,700,'ready',${seq},${extra.variantId ? `'${extra.variantId}'` : "NULL"},${extra.band ? `'${extra.band}'` : "NULL"},${extra.basis ? `'${extra.basis}'` : "NULL"},${extra.review ? 1 : 0},${extra.figures ? `'${extra.figures}'` : "NULL"})`);
+    };
+    // Two lites with DIFFERENT bands — R16's whole point: an awning at
+    // 0.37-0.41 beside a fixed pane at 0.50-0.56 is two bands, not one.
+    await segment("qs_a", "ql_comp", 0, "amj80-series-awning-window", {
+      variantId: "v-u1", band: '{"maxUValue":3.9,"minShgc":0.37,"maxShgc":0.41}',
+      basis: "explicit_ref", figures: '{"uValue":3.72,"shgc":0.39}',
+    });
+    // …and the second carries no recorded band at all (WHY-AC-35: it says so,
+    // and nothing is computed for it) plus the review flag (WHY-AC-36).
+    await segment("qs_b", "ql_comp", 1, "amj100l-series-awning-window", {
+      variantId: "v-u2", review: true, figures: '{"uValue":4.2,"shgc":0.55}',
+    });
+    await sql(`INSERT INTO opening_instance (id, project_id, external_ref, width_mm, height_mm, quote_line_id, status)
+               VALUES ('op_comp','p_rat','W07',2400,1500,'ql_comp','needs_manual_review')`);
+    await sql(`INSERT INTO selection_run (id, opening_id, project_id, ranker_version, selection_json, status)
+               VALUES ('sr_comp','op_comp','p_rat','ladder-v2','${selectionJson({ competingTier: "meets" })}','completed')`);
+    await candidate("cr_split", {
+      runId: "sr_comp", slug: "amj80-series-awning-window", variantId: "v-u1", glazing: "double-lowe",
+      tier: "meets", rank: 1, selected: true, form: "split", uValue: 3.72, shgc: 0.39,
+      units: [
+        { productSlug: "amj80-series-awning-window", variantId: "v-u1", widthMm: 1200, heightMm: 1500, operationType: "awning" },
+        { productSlug: "amj100l-series-awning-window", variantId: "v-u2", widthMm: 1200, heightMm: 1500, operationType: "awning" },
+      ],
+    });
+    // The single unit the make-up beat (WHY-AC-33) — recorded, and ranked below it.
+    await candidate("cr_single", {
+      runId: "sr_comp", slug: "amj150-series-sliding-door", variantId: "v-s", glazing: "double-clear",
+      tier: "within_tolerance", rank: 2, uValue: 4.4, shgc: 0.5,
+    });
+
+    // R17/WHY-AC-37: the same shape, decided by a person.
+    await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, line_kind, composite_origin, composite_axis, performance_figures_json)
+               VALUES ('ql_ops','p_rat','W08','Study','amj80-series-awning-window','${OPTIONS("double-clear")}','{"width":"2400","height":"1500"}',1,1200,'ready',7,'composite_parent','ops','vertical','{"uValue":3.9,"shgc":0.44}')`);
+    await segment("qs_o", "ql_ops", 0, "amj80-series-awning-window", { figures: '{"uValue":3.9,"shgc":0.44}' });
+
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     server = start(process.execPath, [
@@ -408,6 +449,126 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       await rationale("p_rat", "ql_rat");
       const after = await sql("SELECT origin, ai_proposal_line_id AS apl, product_slug AS p FROM quote_line WHERE id='ql_over'");
       assert.deepEqual(after, before, "reading a rationale changed no stored value");
+    });
+
+    // ── R14-R16: composites ────────────────────────────────────────────────
+    await t.test("WHY-AC-32/33/34/35/36/38 a machine-proposed composite", async () => {
+      const { body } = await rationale("p_rat", "ql_comp");
+      assert.equal(body.kind, "recommendation", "R14: a composite parent whose origin is 'ai' HAS a panel");
+      assert.equal(body.composite.origin, "ai");
+
+      // WHY-AC-33: the make-up that won, and the single unit it beat.
+      assert.equal(body.recommended.form, "split");
+      assert.equal(body.composite.beatenSingle.productSlug, "amj150-series-sliding-door");
+      assert.equal(body.composite.beatenSingle.rank, 2);
+
+      // WHY-AC-34: per-lite bands, and they are DIFFERENT bands.
+      const [a, b] = body.composite.units;
+      assert.equal(a.code, "W07A", "the unit's own name, as every other ops2 surface spells it");
+      assert.equal(b.code, "W07B");
+      assert.deepEqual(a.band, { maxUValue: 3.9, minShgc: 0.37, maxShgc: 0.41 });
+      assert.equal(a.basis, "explicit_ref");
+      assert.deepEqual(a.figures, { uValue: 3.72, shgc: 0.39 });
+
+      // WHY-AC-35: a unit whose band was never recorded says so, and NOTHING is
+      // computed for it — not the parent's band, not the sibling's.
+      assert.equal(b.band, null);
+      assert.equal(b.basis, null);
+      assert.deepEqual(b.figures, { uValue: 4.2, shgc: 0.55 });
+
+      // WHY-AC-36: the review flag belongs to the unit that carries it.
+      assert.equal(a.reviewFlag, false);
+      assert.equal(b.reviewFlag, true, "and it is shown against THAT unit, not the parent");
+
+      // WHY-AC-38: the recorded sentence, from its one stored home.
+      assert.match(body.unsuppliedSplitNote, /no frame system could supply it/);
+
+      assert.equal(body.selectionChanged, false, "the segments are the make-up that was recommended");
+    });
+
+    await t.test("WHY-AC-37 an ops-decided split has no machine rationale to open", async () => {
+      const { body } = await rationale("p_rat", "ql_ops");
+      assert.equal(body.kind, "human", "R17: a person decided it");
+      assert.equal(body.units.length, 1, "and its units still carry their own record");
+      assert.deepEqual(body.units[0].figures, { uValue: 3.9, shgc: 0.44 });
+      assert.equal("alternatives" in body, false, "no ladder, because there was no ladder");
+    });
+
+    await t.test("R11/R12 a person swapping one lite of a composite is a change", async () => {
+      await sql(`UPDATE quote_line SET product_slug='amj100t-awning-window' WHERE id='qs_b'`);
+      const { body } = await rationale("p_rat", "ql_comp");
+      assert.equal(body.selectionChanged, true, "the make-up on the line is no longer the one recorded");
+      await sql(`UPDATE quote_line SET product_slug='amj100l-series-awning-window' WHERE id='qs_b'`);
+      assert.equal((await rationale("p_rat", "ql_comp")).body.selectionChanged, false);
+    });
+
+    // ── §10: the abuse cases, attempted for real ───────────────────────────
+    await t.test("X-AC-1/2 anonymous and a signed-in customer are refused identically", async () => {
+      const path = "/api/ops/projects/p_rat/lines/ql_rat/rationale";
+      const anonymous = new Session(baseUrl);
+      const refusals = [];
+      for (const [who, session] of [["anonymous", anonymous], ["a signed-in customer", new Session(baseUrl)]]) {
+        if (who !== "anonymous") await login(session, "/api/auth", "sarah@northsidebuild.com.au");
+        const response = await session.request(path);
+        const text = await response.text();
+        assert.equal(response.status, 403, `${who} is refused`);
+        assert.equal(/amj|tier|uValue|shgc|rank|meets/i.test(text), false,
+          `${who}'s refusal carries no product slug, tier, thermal figure or candidate`);
+        refusals.push(`${response.status} ${text}`);
+      }
+      assert.equal(refusals[0], refusals[1],
+        "and the two are byte-identical — an ops route cannot tell a customer session from no session, and must not appear to");
+    });
+
+    await t.test("X-AC-3 a manufacturer partner never sees which products competed", async () => {
+      await sql(`INSERT INTO user (id, email, name, type, role, last_verified_at)
+                 VALUES ('u_mfr','fab@openframe.com.au','AMJ Fabrication','internal','manufacturer', datetime('now'))`);
+      const partner = new Session(baseUrl);
+      await login(partner, "/api/ops/auth", "fab@openframe.com.au");
+      // The session IS valid on the console — the refusal is about the role.
+      const identity = await partner.request("/api/ops/me");
+      assert.equal(identity.status, 200, "authenticated, so this is a refusal and not a sign-in failure");
+
+      const response = await partner.request("/api/ops/projects/p_rat/lines/ql_rat/rationale");
+      const text = await response.text();
+      assert.equal(response.status, 403);
+      assert.equal(/amj|tier|uValue|rank/i.test(text), false, "and learns nothing about the comparison");
+    });
+
+    await t.test("X-AC-4 a cross-project probe and a nonexistent line are one sentence", async () => {
+      const other = await ops.request("/api/ops/projects/p_draft/lines/ql_rat/rationale");
+      const missing = await ops.request("/api/ops/projects/p_draft/lines/ql_nothing_at_all/rationale");
+      assert.equal(other.status, 404);
+      assert.equal(await other.clone().text(), await missing.text(),
+        "byte-identical: a probe cannot learn from the difference whether a line exists");
+
+      // And a SEGMENT is not a parent line — the endpoint serves openings.
+      const seg = await ops.request("/api/ops/projects/p_rat/lines/qs_a/rationale");
+      assert.equal(seg.status, 404, "a unit's facts arrive inside its parent's rationale, not from its own address");
+    });
+
+    await t.test("X-AC-6 the feature adds no way to write anything", async () => {
+      const path = "/api/ops/projects/p_rat/lines/ql_rat/rationale";
+      for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
+        const response = await ops.request(path, { method, json: { selectionChanged: false } });
+        // NOT SERVED, rather than merely refused: a 403 would mean a writing
+        // route exists and is gated, which is a different fact from R1's.
+        assert.equal([404, 405].includes(response.status), true,
+          `${method} ${path} is not a route at all (got ${response.status})`);
+      }
+      // WHY-AC-20's server half: the read really is a read.
+      const before = await sql("SELECT * FROM quote_line WHERE id='ql_rat'");
+      await rationale("p_rat", "ql_rat");
+      assert.deepEqual(await sql("SELECT * FROM quote_line WHERE id='ql_rat'"), before);
+    });
+
+    await t.test("X-AC-7 no other opening's data, and no schedule prose", async () => {
+      const raw = await (await ops.request("/api/ops/projects/p_rat/lines/ql_rat/rationale")).text();
+      // The composite's recorded review sentence belongs to ANOTHER line, and
+      // the seeded project belongs to another account entirely.
+      assert.equal(/no frame system could supply it/.test(raw), false, "W07's note stays on W07");
+      assert.equal(/Fitzroy|Northside|sarah@|Coburg/i.test(raw), false, "nothing from any other project or account");
+      assert.equal(/Bed 2|Lounge|Study/.test(raw), false, "and no room label — this surface is about products, not schedules");
     });
   } finally {
     await stop(server);
