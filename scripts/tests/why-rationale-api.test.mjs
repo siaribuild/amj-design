@@ -458,6 +458,10 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
 
     await t.test("WHY-AC-31 nothing on this path writes origin or ai_proposal_line_id", async () => {
       const before = await sql("SELECT origin, ai_proposal_line_id AS apl, product_slug AS p FROM quote_line WHERE id='ql_over'");
+      // THE ROW EXISTS, said before the two snapshots are compared. Two empty
+      // result sets are deep-equal, so a mistyped id would report that nothing
+      // changed about a line that was never read.
+      assert.equal(before.length, 1, "the fixture row is there to be compared");
       await rationale("p_rat", "ql_over");
       await rationale("p_rat", "ql_rat");
       const after = await sql("SELECT origin, ai_proposal_line_id AS apl, product_slug AS p FROM quote_line WHERE id='ql_over'");
@@ -574,8 +578,11 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
         assert.equal([404, 405].includes(response.status), true,
           `${method} ${path} is not a route at all (got ${response.status})`);
       }
-      // WHY-AC-20's server half: the read really is a read.
+      // WHY-AC-20's server half: the read really is a read. The row is asserted
+      // present first — two empty sets are deep-equal, and "nothing changed"
+      // about a row that was never selected is not the claim being made.
       const before = await sql("SELECT * FROM quote_line WHERE id='ql_rat'");
+      assert.equal(before.length, 1, "the line is there to be left alone");
       await rationale("p_rat", "ql_rat");
       assert.deepEqual(await sql("SELECT * FROM quote_line WHERE id='ql_rat'"), before);
     });

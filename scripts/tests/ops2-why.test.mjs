@@ -234,8 +234,13 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
   // told the two apart.
   const unresolved = { kind: "unresolved", current: { ...human.current, figures: { uValue: null, shgc: null } } };
   assert.deepEqual(labels(unresolved), ["This one", "Chosen"]);
-  assert.equal(M.panelCopy(unresolved).lines[0].v, "no selection was made on this line");
-  assert.notEqual(M.panelCopy(unresolved).lines[0].v, M.panelCopy(noFigure).lines[0].v,
+  // BY LABEL, NOT BY INDEX. These are two different DTO kinds, and comparing
+  // `lines[0]` against `lines[0]` assumes they hold the same ROLE — the moment
+  // one of them grows a "Had to meet" the comparison silently becomes a
+  // requirement against a figure, and still passes, because those differ too.
+  const thisOne = (dto) => M.panelCopy(dto).lines.find((l) => l.k === "This one").v;
+  assert.equal(thisOne(unresolved), "no selection was made on this line");
+  assert.notEqual(thisOne(unresolved), thisOne(noFigure),
     "and it must NOT read as 'this product has no published figure'");
   assert.equal(M.panelCopy(unresolved).door, null);
 
