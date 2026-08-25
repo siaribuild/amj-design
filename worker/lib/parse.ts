@@ -16,6 +16,43 @@ import { priceItem } from "./lines";
 import { captureFigures, fetchFigureCatalogue, pickMoved } from "./figures";
 import type { ProjectRow } from "./access";
 
+/** Options as stored on a draft row. Unreadable JSON is no glass on record —
+ *  never a throw, because nothing in the capture may fail a save. */
+const storedOptions = (optionsJson: string | null | undefined): Record<string, string> => {
+  try {
+    const parsedOptions = JSON.parse(optionsJson || "{}") as unknown;
+    return parsedOptions && typeof parsedOptions === "object" && !Array.isArray(parsedOptions)
+      ? parsedOptions as Record<string, string>
+      : {};
+  } catch { return {}; }
+};
+
+/** The pick this row will actually CARRY once the upsert's COALESCEs land.
+ *
+ *  The human-edit guard (0019) locks field GROUPS independently, so
+ *  `product_slug` and `options_json` can be locked separately — and the figures
+ *  used to follow the product's lock alone. That was right while "the pick"
+ *  meant the product, and wrong the moment §7.0 defined it as product + variant
+ *  + glazing: a locked product with a re-parsed glass kept figures describing
+ *  the glass the row had just lost, and a locked glass with a re-parsed product
+ *  refreshed them from options the row was not keeping.
+ *
+ *  A LOCK IS NOT AN EXEMPTION FROM THE RULE — it is an input to what the pick
+ *  becomes. Ask what survives the save, then let `captureFigures` decide. */
+export function effectiveParsePick(
+  parsed: { productSlug: string; options: Record<string, string> },
+  stored: { product_slug: string | null; options_json: string | null } | null,
+  locks: string[],
+): { productSlug: string; variantId: string | null; options: Record<string, string> } {
+  const kept = (field: string) => !!stored && locks.includes(field);
+  return {
+    productSlug: kept("product_slug") ? (stored!.product_slug ?? "") : parsed.productSlug,
+    // The schedule never names a variant; the glass drives the resolution.
+    variantId: null,
+    options: kept("options_json") ? storedOptions(stored!.options_json) : parsed.options,
+  };
+}
+
 export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
 
 // "upsert" (default since the multi-file UX rework) matches parsed lines to
@@ -314,22 +351,29 @@ export async function runScheduleParse(
   // picks only, so an identical re-upload carries every matched row's record
   // forward and asks the catalogue nothing (the existing "no changes"
   // discipline, extended to figures).
-  const pickOf = (l: ParsedLine) => ({ productSlug: l.productSlug, variantId: null, options: l.options });
+  const matchOf = (l: ParsedLine) => (mode === "upsert" && l.code ? byTag.get(l.code) : undefined);
+  const locksOf = (match?: DraftRow) => {
+    try {
+      const v = JSON.parse(match?.edited_fields || "[]");
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch { return []; }
+  };
+  const pickOf = (l: ParsedLine) => effectiveParsePick(l, matchOf(l) ?? null, locksOf(matchOf(l)));
   const storedOf = (l: ParsedLine) => {
-    const match = mode === "upsert" && l.code ? byTag.get(l.code) : undefined;
+    const match = matchOf(l);
     if (!match) return null;
-    let glazing: string | null = null;
-    try { glazing = String((JSON.parse(match.options_json || "{}") as Record<string, unknown>).glazing ?? "") || null; }
-    catch { /* unreadable options ⇒ no glass on record */ }
     return {
       productSlug: match.product_slug,
       variantId: null,
-      glazing,
+      glazing: String(storedOptions(match.options_json).glazing ?? "") || null,
       figuresJson: match.performance_figures_json,
     };
   };
+  // The slug asked for is the one the row will END UP with — a locked product
+  // that the parse tried to change must be resolved as itself, not as the
+  // product it refused.
   const figureCatalogue = await fetchFigureCatalogue(
-    env, lines.flatMap((l) => (pickMoved(pickOf(l), storedOf(l)) ? [l.productSlug] : [])));
+    env, lines.flatMap((l) => { const p = pickOf(l); return pickMoved(p, storedOf(l)) ? [p.productSlug] : []; }));
   const figuresFor = (l: ParsedLine) => captureFigures(figureCatalogue, pickOf(l), storedOf(l));
   lines.forEach((l, idx) => {
     const priced = { ok: lineTotals[idx] != null };
@@ -359,8 +403,7 @@ export async function runScheduleParse(
       // HUMAN-EDIT GUARD (0019): fields a customer changed are never overwritten
       // by a re-parse — and when any priced-relevant field is locked, the row's
       // price/status stand too (repricing from parsed values would betray the guard).
-      let locked: string[] = [];
-      try { const v = JSON.parse(match.edited_fields || "[]"); if (Array.isArray(v)) locked = v; } catch { /* no locks */ }
+      const locked = locksOf(match);
       const keep = (f: string, v: unknown) => (locked.includes(f) ? null : v);
       recordChanges(l.code as string, match, l, locked);
       // An identical re-upload must read as "no changes", not "N updated" — a
@@ -380,10 +423,10 @@ export async function runScheduleParse(
           project.id, nextQuoteVersion, mutationToken));
       } else {
         stmts.push(env.DB.prepare(
-          // The figures follow the PRODUCT's own lock, on the same keep()
-          // discipline: kept when product_slug is kept, refreshed when it moves.
-          // Re-resolving them under a locked product would describe a product
-          // this row is not carrying.
+          // The figures are NOT bound through keep(): they follow the pick the
+          // row ends up with, which effectiveParsePick has already computed from
+          // both locks. An unmoved pick binds the row's own stored value, so the
+          // COALESCE leaves it byte-identical.
           `UPDATE quote_line SET room_label = COALESCE(?, room_label),
              product_slug = COALESCE(?, product_slug), options_json = COALESCE(?, options_json),
              dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty),
@@ -392,7 +435,7 @@ export async function runScheduleParse(
         ).bind(l.location || null, keep("product_slug", l.productSlug),
           keep("options_json", JSON.stringify(l.options)),
           keep("dims_json", JSON.stringify({ width: l.width, height: l.height })),
-          keep("qty", l.qty), keep("product_slug", figuresFor(l)),
+          keep("qty", l.qty), figuresFor(l),
           qlId, project.id, nextQuoteVersion, mutationToken));
       }
     } else {

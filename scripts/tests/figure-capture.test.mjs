@@ -146,14 +146,17 @@ const runDir = await makeRunDir("figure-capture");
 const bundle = join(runDir, "figures.mjs");
 await build({
   stdin: {
-    contents: `export * from ${JSON.stringify(join(projectRoot, "worker/lib/figures.ts"))};`,
+    contents: `
+      export * from ${JSON.stringify(join(projectRoot, "worker/lib/figures.ts"))};
+      export { effectiveParsePick } from ${JSON.stringify(join(projectRoot, "worker/lib/parse.ts"))};
+    `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile: bundle, logLevel: "silent",
 });
 const {
   NULL_FIGURES, figuresJson, figuresFromVariant, resolveFigures, fetchFigureCatalogue,
-  captureFigures, pickMoved,
+  captureFigures, pickMoved, effectiveParsePick,
 } = await import(pathToFileURL(bundle).href);
 
 /** A captured unknown, as stored. Distinct from SQL NULL (SNAP-AC-8). */
@@ -377,4 +380,99 @@ test("SNAP-AC-16 / §7.0 the pick is exactly the resolver's inputs — nothing e
     stored({ variantId: "dg-lowe" })), true, "naming a different one is");
 
   assert.equal(pickMoved(glazed("double-lowe"), null), true, "and a row with no stored pick always resolves");
+});
+
+// ── W14: a lock is an input to the pick, not an exemption from the rule ─────
+//
+// The schedule upsert's human-edit guard (0019) locks field GROUPS
+// independently: product_slug and options_json each have their own. The
+// figures used to follow product_slug's lock alone, which was correct when
+// "the pick" meant the product — and wrong the moment §7.0 defined the pick as
+// product + variant + glazing. The two then came apart in BOTH directions, and
+// only one of them is the case anyone pictures.
+//
+// The fix is to ask what the row will actually CARRY once the COALESCEs land,
+// and hand that to the same predicate everything else uses.
+
+const parsed = (over = {}) => ({ productSlug: "amj-slider", options: { glazing: "double-clear" }, ...over });
+const draft = (over = {}) => ({
+  product_slug: "amj-awning", options_json: '{"glazing":"double-lowe"}', ...over,
+});
+
+test("W14 with nothing locked the effective pick is simply what was parsed", () => {
+  assert.deepEqual(effectiveParsePick(parsed(), draft(), []),
+    { productSlug: "amj-slider", variantId: null, options: { glazing: "double-clear" } });
+  assert.deepEqual(effectiveParsePick(parsed(), null, ["product_slug", "options_json"]),
+    { productSlug: "amj-slider", variantId: null, options: { glazing: "double-clear" } },
+    "an INSERT has no stored row, so a lock cannot mean anything");
+});
+
+test("W14 direction 1 — a LOCKED product with moved glazing keeps the product and takes the new glass", () => {
+  // The old rule kept the figures because product_slug was locked, leaving them
+  // describing the glazing the parse had just overwritten.
+  const effective = effectiveParsePick(parsed(), draft(), ["product_slug"]);
+  assert.deepEqual(effective,
+    { productSlug: "amj-awning", variantId: null, options: { glazing: "double-clear" } },
+    "the row keeps its product and takes the parsed glass — that pair is what it will carry");
+
+  const stored = {
+    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
+    figuresJson: '{"uValue":2.4,"shgc":0.32}',
+  };
+  assert.equal(pickMoved(effective, stored), true, "the glass moved, so the pick moved");
+  assert.equal(
+    captureFigures(catalogue("amj-awning", [
+      variant("lowe", "double-lowe", 2.4, 0.32),
+      variant("clear", "double-clear", 3.9, 0.61),
+    ]), effective, stored),
+    '{"uValue":3.9,"shgc":0.61}',
+    "and the figures describe the glass the row now carries, not the one it lost");
+});
+
+test("W14 direction 2 — a LOCKED glazing with a moved product resolves against the glass the row keeps", () => {
+  // The mirror, and the one nobody pictured: the figures refreshed from the
+  // PARSED options while the row kept its locked ones.
+  const effective = effectiveParsePick(parsed(), draft(), ["options_json"]);
+  assert.deepEqual(effective,
+    { productSlug: "amj-slider", variantId: null, options: { glazing: "double-lowe" } },
+    "the row takes the parsed product and keeps its own glass");
+
+  const stored = {
+    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
+    figuresJson: '{"uValue":2.4,"shgc":0.32}',
+  };
+  assert.equal(pickMoved(effective, stored), true, "the product moved");
+  assert.equal(
+    captureFigures(catalogue("amj-slider", [
+      variant("lowe", "double-lowe", 5.1, 0.55),
+      variant("clear", "double-clear", 6.2, 0.7),
+    ]), effective, stored),
+    '{"uValue":5.1,"shgc":0.55}',
+    "resolved against the LOCKED glass, because that is the glass the row still has");
+});
+
+test("W14 an identical re-upload moves nothing, whatever is locked", () => {
+  const stored = {
+    productSlug: "amj-awning", variantId: null, glazing: "double-lowe",
+    figuresJson: '{"uValue":2.4,"shgc":0.32}',
+  };
+  const same = parsed({ productSlug: "amj-awning", options: { glazing: "double-lowe" } });
+  for (const locks of [[], ["product_slug"], ["options_json"], ["product_slug", "options_json"]]) {
+    const effective = effectiveParsePick(same, draft(), locks);
+    assert.equal(pickMoved(effective, stored), false, `unmoved with locks ${JSON.stringify(locks)}`);
+    assert.equal(captureFigures(new Map(), effective, stored), '{"uValue":2.4,"shgc":0.32}',
+      "so the capture stands, and no catalogue is consulted");
+  }
+
+  // Both locked and the parse disagreeing about everything is STILL unmoved:
+  // the row carries what it carried.
+  const effective = effectiveParsePick(parsed(), draft(), ["product_slug", "options_json"]);
+  assert.equal(pickMoved(effective, stored), false,
+    "a fully locked row is the definition of a pick that did not move");
+});
+
+test("W14 unreadable stored options are treated as no glass on record, never as a crash", () => {
+  assert.deepEqual(
+    effectiveParsePick(parsed(), draft({ options_json: "{not json" }), ["options_json"]),
+    { productSlug: "amj-slider", variantId: null, options: {} });
 });
