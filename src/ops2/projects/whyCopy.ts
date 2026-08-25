@@ -354,7 +354,13 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
       thisOne,
       chosenRow(),
     ],
-    foot: foot(dto.current),
+    // A COMPOSITE PARENT HAS NOTHING TO BE MISSING. It carries no product and
+    // no figures of its own (§7.4) — its units own those facts — so the
+    // pre-capture sentence would state an absence about a row nobody ever asked
+    // the question of. That is a false absence generated at display time, which
+    // is what WHY-AC-42 forbids one state over and what the capture rules forbid
+    // the writers; the route in is different and the lie is the same.
+    foot: dto.composite ? null : foot(dto.current),
     more: null,
     // UX §3.2 — the door names what is behind it, and there is always something
     // behind it on this kind.

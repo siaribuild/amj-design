@@ -152,7 +152,10 @@ const recommendation = (o = {}) => ({
   },
   alternatives: [],
   selectionChanged: o.selectionChanged ?? null,
-  current: { productSlug: "amj67-awning", productName: "AMJ67 Awning", figures: { uValue: 3.72, shgc: 0.41 } },
+  // OVERRIDABLE, and it was not until the composite case needed it — which is
+  // how an assertion about a NULL column passed against a fixture carrying
+  // figures. The control assertion beside it is what caught that.
+  current: o.current ?? { productSlug: "amj67-awning", productName: "AMJ67 Awning", figures: { uValue: 3.72, shgc: 0.41 } },
   composite: o.composite ?? null,
   unsuppliedSplitNote: null,
 });
@@ -281,6 +284,33 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
   assert.equal(M.panelCopy(composite).lines[1].v, "made as 2 units");
   assert.equal(M.panelCopy(composite).door,
     "Why this product — open why it was split and what else was considered");
+});
+
+test("WHY-AC-4 a composite parent has no figures of its own, so it states no absence", () => {
+  // OBSERVED before this was written: a composite parent whose column is NULL
+  // printed "This line was saved before performance figures were kept on a
+  // line." Nothing about the parent is missing — it has no product and no
+  // figures to miss (§7.4) — so that sentence is a FALSE ABSENCE about a row
+  // nobody ever asked the question of. Same defect as WHY-AC-42's collapse, by
+  // a different route: an absence stated at display time that no writer
+  // established.
+  const unit = (code) => ({ code, productSlug: "u", productName: "U", figures: null, band: null, basis: null, reviewFlag: false });
+  const copy = M.panelCopy(recommendation({
+    form: "split",
+    composite: { origin: "ai", beatenSingle: null, units: [unit("W07A"), unit("W07B")] },
+    current: { productSlug: "", productName: "—", figures: null },
+  }));
+  assert.equal(copy.lines[1].v, "made as 2 units");
+  assert.equal(copy.foot, null, "a parent whose column is NULL is not a parent whose figures went missing");
+  assert.notEqual(copy.lines[1].absent, true, "and the make-up line is a fact, not an absence");
+
+  // THE CONTROL, on the same run: a SIMPLE line with the same NULL column does
+  // mean a figure nobody recorded, and it still says so. Without this the fix
+  // could be "never show the foot sentence", which would lose WHY-AC-9's half.
+  assert.equal(
+    M.panelCopy(recommendation({ current: { productSlug: "p", productName: "P", figures: null } })).foot,
+    "This line was saved before performance figures were kept on a line.",
+  );
 });
 
 test("WHY-AC-34 a lite's origin label is its OWN vocabulary, not the opening's", () => {
