@@ -20,7 +20,7 @@
  *  • WHY-AC-6 — the tolerance is read from the run and formatted. Never `5`.
  */
 import type { RequirementBasis } from "../../data/recommendation";
-import type { LineRationaleDto, RationaleFigures } from "../../data/rationale";
+import type { LineRationaleDto, RationaleCandidate, RationaleFigures } from "../../data/rationale";
 
 /** Two places on both axes, so 3.9 and 3.90 are one number on the screen as
  *  well as in the row. */
@@ -162,5 +162,183 @@ export function chosenLine(dto: LineRationaleDto): ChosenLine {
       ? "the cheapest that fitted the opening"
       : TIER_SENTENCE(tier, tolerancePercent(dto.tolerance)),
     tone: !dto.requirement.absent && tier !== "meets" ? "warn" : "plain",
+  };
+}
+
+/**
+ * WHY-AC-17 — a ladder row's verdict, in words derived from its tier.
+ *
+ * `misses` names WHICH cap, because "missed a cap" without saying which is the
+ * one thing a reviewer opened the ladder to find out. It is arithmetic against
+ * the recorded caps and nothing more: R2 bans framing it as anyone's fault, and
+ * an axis with no recorded figure is not named rather than assumed missed.
+ */
+export function verdictWord(
+  candidate: RationaleCandidate, requirement: Requirement, tolerance: number,
+): string {
+  switch (candidate.tier) {
+    case "meets": return "met the caps";
+    case "within_tolerance": return `within the ${tolerancePercent(tolerance)} band`;
+    case "thermal_unknown": return "no figure on the constrained axis";
+    case "does_not_fit": return "would not fit at this size";
+    case "misses": {
+      const { uValue, shgc } = candidate.figures;
+      const overU = requirement.maxUValue != null && uValue != null && uValue > requirement.maxUValue;
+      const overShgc = (requirement.maxShgc != null && shgc != null && shgc > requirement.maxShgc)
+        || (requirement.minShgc != null && shgc != null && shgc < requirement.minShgc);
+      if (overU && overShgc) return "missed both caps";
+      if (overU) return "missed the Uw cap";
+      if (overShgc) return "missed the SHGC cap";
+      return "missed the caps";
+    }
+    default: return "recorded without a verdict";
+  }
+}
+
+/** R12/WHY-AC-23 — WHICH of the frame or the glass moved, as a quiet qualifier
+ *  on the figures line it explains. It is never a fourth line and never a badge:
+ *  D20 keeps the panel's three labels exactly as they are.
+ *
+ *  Neither term moving is a real state — the variant alone differs — and it
+ *  gets no qualifier rather than an invented one, because neither of the two
+ *  things this surface shows is what changed. */
+export function changeQualifier(
+  changed: { product: boolean; glazing: boolean } | null,
+): string | null {
+  if (!changed) return null;
+  if (changed.product && changed.glazing) return "frame and glazing changed";
+  if (changed.product) return "frame changed";
+  if (changed.glazing) return "glazing changed";
+  return null;
+}
+
+/** WHY-AC-9, absence 1. The one sentence that tells a NULL column apart from a
+ *  captured absence — the figures read identically in both, so without it the
+ *  panel would state one fact for two. */
+export const PRE_CAPTURE_FOOT =
+  "This line was saved before performance figures were kept on a line.";
+
+export interface PanelLine {
+  k: "Had to meet" | "This one" | "These ones" | "Chosen";
+  v: string;
+  /** The muted second line under the caps (R4). */
+  origin?: string | null;
+  /** R12's quiet qualifier, on the figures line it explains. */
+  qualifier?: string | null;
+  tone?: ChosenLine["tone"];
+  /** The value is an absence and is styled as one — muted, italic, never a
+   *  dash and never a zero. */
+  absent?: boolean;
+  /** The ops-split state's per-unit figures (WHY-AC-37, "These ones"). */
+  units?: { code: string; figures: string }[];
+}
+
+export interface WhyPanelCopy {
+  lines: PanelLine[];
+  /** WHY-AC-9's absence-1 sentence, or null. */
+  foot: string | null;
+  /** The budget's own remainder, when the units line cuts. */
+  more: string | null;
+  /** The accessible name of the door, or `null` when there is nothing behind
+   *  it — WHY-AC-41: a panel with no detail has no control at all. */
+  door: string | null;
+}
+
+/** UX §3.5 — an ops split shows at most three units and STATES the remainder.
+ *  There is no detail behind this panel, so the units beyond the third have
+ *  nowhere else to live, which is exactly why the count is said rather than
+ *  silently dropped. */
+const UNIT_BUDGET = 3;
+
+const unitLines = (units: { code: string; figures: RationaleFigures | null }[]) =>
+  units.slice(0, UNIT_BUDGET).map((u) => ({ code: u.code, figures: figuresText(u.figures) }));
+
+const unitRemainder = (units: unknown[]): string | null =>
+  units.length > UNIT_BUDGET ? `+${units.length - UNIT_BUDGET} more units` : null;
+
+/**
+ * THE WHOLE PANEL, as facts a component renders — labels, values, and the two
+ * things that are not lines (the foot sentence and the door's accessible name).
+ *
+ * Assembled here rather than in JSX so R6's line budget, D20's structural
+ * invariant and WHY-AC-41's no-door rule are all one function that a node test
+ * can walk state by state.
+ */
+export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
+  const foot = (c: { figures: RationaleFigures | null }) => (c.figures === null ? PRE_CAPTURE_FOOT : null);
+  const chosen = chosenLine(dto);
+  const chosenRow = (): PanelLine => ({ k: "Chosen", v: chosen.text, tone: chosen.tone });
+
+  if (dto.kind === "unresolved") {
+    return {
+      lines: [
+        // NOT "not recorded". The row shows a run that established there was
+        // nothing to select, which is a different fact from a product with no
+        // published figure — and the figures, present-and-null in both, cannot
+        // tell them apart (spec §9.0).
+        { k: "This one", v: "no selection was made on this line", absent: true },
+        chosenRow(),
+      ],
+      foot: null, more: null, door: null,
+    };
+  }
+
+  if (dto.kind === "unrecorded") {
+    return {
+      lines: [
+        { k: "This one", v: figuresText(dto.current.figures), absent: dto.current.figures === null },
+        chosenRow(),
+      ],
+      foot: foot(dto.current), more: null, door: null,
+    };
+  }
+
+  if (dto.kind === "human") {
+    const units = dto.units;
+    return {
+      lines: [
+        units
+          ? { k: "These ones", v: "", units: unitLines(units) }
+          : {
+              k: "This one",
+              v: figuresText(dto.current.figures),
+              absent: dto.current.figures == null || dto.current.figures.uValue == null,
+            },
+        chosenRow(),
+      ],
+      foot: units ? null : foot(dto.current),
+      more: units ? unitRemainder(units) : null,
+      door: null,
+    };
+  }
+
+  const thisOne: PanelLine = dto.composite
+    ? { k: "This one", v: `made as ${dto.composite.units.length} units` }
+    : {
+        k: "This one",
+        v: figuresText(dto.current.figures),
+        qualifier: changeQualifier(dto.selectionChanged),
+        absent: dto.current.figures == null || dto.current.figures.uValue == null,
+      };
+  if (dto.composite) thisOne.qualifier = changeQualifier(dto.selectionChanged);
+
+  return {
+    lines: [
+      {
+        k: "Had to meet",
+        v: requirementText(dto.requirement),
+        origin: dto.requirement.absent ? null : basisLabel(dto.requirement.basis),
+      },
+      thisOne,
+      chosenRow(),
+    ],
+    foot: foot(dto.current),
+    more: null,
+    // UX §3.2 — the door names what is behind it, and there is always something
+    // behind it on this kind.
+    door: `Why this product — open ${
+      dto.selectionChanged ? "the comparison and what else was considered"
+        : dto.composite ? "why it was split and what else was considered"
+          : "what else was considered"}`,
   };
 }
