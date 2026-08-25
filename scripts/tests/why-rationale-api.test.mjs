@@ -314,6 +314,11 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       );
       assert.equal(body.alternatives.length, 4);
 
+      // A SPLIT ROW NAMES ITS UNITS. The approved mock's ladder renders a
+      // make-up as "Split: awning + fixed" with "2 units" where the figures
+      // would be, and neither is derivable from the lead unit's slug alone.
+      assert.equal(body.recommended.units, null, "a single candidate has no units to name");
+
       // WHY-AC-19: recorded facts survive the product leaving the catalogue.
       const gone = body.alternatives[2];
       assert.equal(gone.productName, "amj-discontinued-awning", "the slug stands in, and the row is neither blank nor dropped");
@@ -378,8 +383,14 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
     await t.test("WHY-AC-10 a run that predates outcome_json says so, and reconstructs nothing", async () => {
       const { body } = await rationale("p_rat", "ql_pre55");
       assert.equal(body.kind, "unrecorded");
-      assert.deepEqual(Object.keys(body), ["kind"],
-        "nothing is rebuilt from the deleted model's columns — rank and selected are in those rows and stay there");
+      // The approved mock (B8) keeps "This one" on this state: the line's own
+      // captured figures are a fact about the LINE and survive the model that
+      // recorded the run — so the panel is still two lines, not one.
+      assert.equal(body.current.productSlug, "amj80-series-sliding-window");
+      assert.equal(body.current.figures, null, "and this line predates the capture, so it says so");
+      // Nothing is rebuilt from the deleted model's columns — `rank` and
+      // `selected` are in those rows and stay there.
+      assert.deepEqual(Object.keys(body).sort(), ["current", "kind"]);
     });
 
     await t.test("WHY-AC-9 second meaning: a run that selected NOTHING is not a run with no reasoning", async () => {
@@ -463,6 +474,10 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.equal(body.recommended.form, "split");
       assert.equal(body.composite.beatenSingle.productSlug, "amj150-series-sliding-door");
       assert.equal(body.composite.beatenSingle.rank, 2);
+      assert.deepEqual(body.recommended.units, [
+        { productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", operationType: "awning" },
+        { productSlug: "amj100l-series-awning-window", productName: "AMJ100L Series Awning Window", operationType: "awning" },
+      ], "the make-up names what it is made of, so the ladder row can say so");
 
       // WHY-AC-34: per-lite bands, and they are DIFFERENT bands.
       const [a, b] = body.composite.units;

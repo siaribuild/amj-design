@@ -61,6 +61,13 @@ const candidateOf = (o: CandidateOutcome): RationaleCandidate => ({
   rank: o.rank ?? null,
   figures: { uValue: o.thermal?.uValue ?? null, shgc: o.thermal?.shgc ?? null },
   fits: !!o.fit?.fits,
+  units: o.form === "split" && o.units
+    ? o.units.map((u) => ({
+        productSlug: u.productSlug,
+        productName: productName(u.productSlug),
+        operationType: u.operationType ?? null,
+      }))
+    : null,
 });
 
 interface LineRow {
@@ -188,7 +195,7 @@ export async function lineRationale(
   // report an earlier model for a run this platform completed last week
   // (`persist.ts:143` writes exactly this shape). The row count is what
   // separates them, so it is asked first and out loud.
-  if (rows.length > 0 && recorded.length === 0) return { kind: "unrecorded" };
+  if (rows.length > 0 && recorded.length === 0) return { kind: "unrecorded", current: currentOf(line) };
 
   const chosen = recorded.find((r) => r.outcome.selected);
   // WHY-AC-9's SECOND meaning: the run ran and selected nothing. Told apart

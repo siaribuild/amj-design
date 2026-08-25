@@ -35,6 +35,11 @@ export interface RationaleCandidate {
   /** The RECORDED thermal facts, out of `outcome_json`. Never a live lookup. */
   figures: RationaleFigures;
   fits: boolean;
+  /** What a MAKE-UP is made of; `null` on a single. The ladder names a split by
+   *  its units ("Split: awning + fixed") and puts "2 units" where the figures
+   *  would be — neither of which is derivable from the lead unit's slug, which
+   *  is the only identity `candidate_result` anchors a make-up row to. */
+  units: { productSlug: string; productName: string; operationType: string | null }[] | null;
 }
 
 /** How a composite lite's own band was arrived at. This is `quote_line.
@@ -77,8 +82,13 @@ export type LineRationaleDto =
       units: RationaleUnit[] | null;
     }
   /** A run exists but predates `outcome_json` (migration 0055). WHY-AC-10 —
-   *  and nothing is reconstructed from the deleted model's columns (D19). */
-  | { kind: "unrecorded" }
+   *  and nothing is reconstructed from the deleted model's columns (D19).
+   *
+   *  It still carries `current`, because the approved mock (B8) keeps "This
+   *  one" on this state: the line's own captured figures are a fact about the
+   *  LINE and outlive the model that recorded the run. The design's block
+   *  omitted it; the mock is the contract. */
+  | { kind: "unrecorded"; current: RationaleCurrent }
   /** A run exists and selected NOTHING. `persist.ts:143` stores a run whose
    *  every candidate is `selected=0`, and a run with zero candidate rows is the
    *  everything-withheld shape of the same fact. This is WHY-AC-9's SECOND
