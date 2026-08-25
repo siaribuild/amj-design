@@ -689,6 +689,19 @@ is built by a pure module, `src/ops2/projects/drawingSubject.ts`. Rev 6, §11.1.
 
 ### 4.7 Phase 3b — the read seam
 
+**Refreshed 2026-08-25 against A1–A6, D11–D20 and spec revision 27.** This section and
+§4.8/§4.9 predate everything from A1 onward and sat through eleven spec revisions — the
+exact shape that produced W1-manual, W5 and W14 (§12.6). The walk was executed against
+the code, not re-derived from the spec: `persist.ts:143` (a run persists with
+`winner=null` and every candidate `selected=0`), `src/data/recommendation.ts:145`
+(withheld products live in the run's own `withheldIncomplete` list, never as candidate
+rows), and `lineRoute.ts`/`Ops2App.tsx`/`SidePanel.tsx` for what Phase 2 actually
+shipped. Divergences found and amended below: `current.variantId` deleted (D16), the
+`unresolved` kind added (WHY-AC-9's second meaning had no kind to map to — a
+nothing-selected run would have fallen through a vacuous all-NULL test into
+`unrecorded`), attribution moved to the pick (step 7 predated §7.0). Line references
+throughout §4.7–§4.9 are as of design time; the tests own exactness.
+
 **Shared contract: `src/data/rationale.ts`** (new; imports only types from
 `src/data/recommendation.ts`; zero runtime imports — same discipline as the
 recommendation contract: facts only, the skin writes every sentence).
@@ -728,6 +741,16 @@ export type LineRationaleDto =
       units: RationaleUnit[] | null }                      // composite only (WHY-AC-37)
   /** A run exists but predates outcome_json (migration 0055). WHY-AC-10. */
   | { kind: "unrecorded" }
+  /** A run exists and selected NOTHING — persist.ts:143 stores winner=null with
+   *  every candidate selected=0, and zero candidate rows is the
+   *  everything-withheld shape of the same fact. WHY-AC-9's second meaning:
+   *  "evaluated, nothing chosen" is not "this product has no published figure",
+   *  and the KIND — never the figures — is what lets the skin tell them apart.
+   *  Derived from the stored run, not from origin (WHY-AC-31). No detail opens
+   *  from it. */
+  | { kind: "unresolved";
+      current: { productSlug: string; productName: string;
+                 figures: RationaleFigures | null } }
   | { kind: "recommendation";
       requirement: { maxUValue: number | null; minShgc: number | null;
                      maxShgc: number | null; basis: RequirementBasis | null;
@@ -735,10 +758,16 @@ export type LineRationaleDto =
       tolerance: number;                                   // stamped per run (WHY-AC-6)
       competingTier: Tier | null;
       recommended: RationaleCandidate;                     // the selected candidate
-      alternatives: RationaleCandidate[];                  // <= 4, ascending rank (R8)
+      alternatives: RationaleCandidate[];                  // <= 4, ascending rank (D18: five rows total)
       /** R24: derived by comparison, never from origin. */
       selectionChanged: boolean;
-      current: { productSlug: string; productName: string; variantId: string | null;
+      /** NO variantId — D16: after a glazing-only customer change the row keeps
+       *  the estimator's `selected_variant_id` while the figures describe the
+       *  customer's glass, and WHY-AC-4 (load-bearing for D16) forbids captioning
+       *  the figures with that id. Omitting it from the contract makes the
+       *  forbidden caption impossible rather than merely forbidden — no skin can
+       *  attribute figures to an id it was never given. */
+      current: { productSlug: string; productName: string;
                  figures: RationaleFigures | null };
       composite: null | {
         origin: "ai" | "ops";
@@ -749,8 +778,11 @@ export type LineRationaleDto =
     };
 ```
 
-Deliberate absences, enforced at DTO construction (server-side, X-AC-5/7, R9, R10):
-no excluded candidate, no `exclusions[]`, no `withheldIncomplete`, no price, no
+Deliberate absences, enforced at DTO construction (server-side, X-AC-5/7, R9, R10,
+D18, D19): no excluded candidate, no `exclusions[]`, no `withheldIncomplete` (D18 —
+withheld products live in the run's own `withheldIncomplete` list,
+`src/data/recommendation.ts:145`, which the builder never reads: they were never
+candidate rows, so nothing needs filtering out), no price field of any kind (D19), no
 `deltaToSelected`, no `learned`, no schedule prose, no certification vocabulary (R5).
 
 **Worker module: `worker/lib/estimator/rationale.ts`** (new — the read-side deep
@@ -776,23 +808,38 @@ Reads, in order (every query scoped through the project):
    ai_proposal_line WHERE id=q.ai_proposal_line_id)`, `ORDER BY created_at DESC LIMIT 1`.
    No opening → `kind:"human"` (R13; WHY-AC-8/9 need only the line's own record).
 4. Run: `SELECT ... FROM selection_run WHERE opening_id=? ORDER BY created_at DESC
-   LIMIT 1` (ASSUMED §13.4: latest only). No run → `kind:"human"`.
+   LIMIT 1` (D19: the most recent by `created_at` — decided; was ASSUMED §13.4). No run
+   → `kind:"human"`.
 5. Candidates: `SELECT outcome_json FROM candidate_result WHERE selection_run_id=?`.
-   All `outcome_json` NULL (pre-0055) → `kind:"unrecorded"` (WHY-AC-10). Row count is
-   bounded by the catalogue (~35 products + make-ups); read-all-then-map is fine.
-6. Map: selected candidate; runners-up = non-excluded, `rank != null`, not selected,
-   ascending rank, sliced to 4 (R8, ASSUMED §7.3); `beatenSingle` = best-ranked stored
+   All `outcome_json` NULL (pre-0055) → `kind:"unrecorded"` (WHY-AC-10, D19) — over a
+   **non-empty** row set only: zero candidate rows is the everything-withheld shape of
+   `unresolved`, not "an earlier model", and an empty set must not pass an `every()`
+   vacuously. Row count is bounded by the catalogue (~35 products + make-ups);
+   read-all-then-map is fine.
+6. Map: **no candidate selected** (every row `selected=0`, or zero rows) →
+   `kind:"unresolved"` with the line's own record. Otherwise: selected candidate;
+   runners-up = non-excluded, `rank != null`, not selected,
+   ascending rank, sliced to 4 (D18 — decided; was R8's range, ASSUMED §7.3); `beatenSingle` = best-ranked stored
    `form:"single"` outcome when the winner is a split (the stored-facts equivalent of
    `select.ts parentRepresentative()` — never a live call);
    `requirement`/`tolerance`/`competingTier` from `selection_run.selection_json`
    (falling back to the selected outcome's embedded requirement when selection_json
    predates 0055 but outcomes exist).
-7. Attribution (R24, WHY-AC-28/29/30): `selectionChanged` = recorded recommendation's
-   product+variant vs the line's current `product_slug`+`selected_variant_id` — for a
-   split recommendation, `outcome_json.units[]` vs the current segments' product+variant
-   multiset. **Never reads `origin`, never `ai_proposal_line_id`** (WHY-AC-26/31: the
-   module imports nothing from `worker/lib/estimator/thermal/`, `rules.ts`,
-   `select.ts`, or any requirement resolver — pinned by a source-scan test).
+7. Attribution (R24, WHY-AC-28/29/30): `selectionChanged` = the recorded
+   recommendation's **pick** vs the line's current **pick** — §7.0's terms: product,
+   glazing (`options_json.glazing` vs the recorded variant's `glazingOptionSlug`), and
+   the variant term only where both sides name one. For a split recommendation,
+   `outcome_json.units[]` vs the current segments' pick multiset. **Why the pick and
+   not product+variant** (this step's pre-§7.0 wording): under D16 a glazing-only
+   customer change keeps the estimator's `selected_variant_id`, so a product+variant
+   comparison would read exactly those overridden lines — the ones the reviewer is
+   auditing — as platform-made. The glazing term dominates precisely where D16 leaves
+   the stored id stale, so the stale id can never decide the comparison. `ASSUMED:`
+   pending the WHY-AC-29 wording fix routed in §9 (the criterion still says
+   "product+variant"; it predates §7.0 and D16). **Never reads `origin`, never
+   `ai_proposal_line_id`** (WHY-AC-26/31: the module imports nothing from
+   `worker/lib/estimator/thermal/`, `rules.ts`, `select.ts`, or any requirement
+   resolver — pinned by a source-scan test).
 
 **Route: `GET /api/ops/projects/:id/lines/:lineId/rationale`** in
 `worker/routes/ops.ts` (beside the record read at `:501`):
@@ -867,10 +914,20 @@ one function deriving one of `base | why | drawing | drawing/uN` from `useLocati
 - open = `history.push(linePath + "/why")` (or `+ "/drawing"`, `+ "/drawing/u2"`) —
   one history entry, so **browser back, hardware back and the back control are the same
   act**: a pop, which flips the derived state off and the surface animates away.
-- the back control follows `OpsPage`'s existing discipline: pop when there is history to
-  pop, `history.replace(linePath)` when there is not (the cold-deep-link case).
-- any suffix outside the grammar, a `/why` URL on a line with no detail (kinds
-  `human`/`unrecorded`, or an order record), and an out-of-range `/drawing/u:N`, are
+- the back control follows the discipline **Phase 2 actually shipped**, which is finer
+  than the OpsPage rule this bullet carried before that code existed: warm-vs-cold is
+  answered by a **per-entry history mark** (`lineRoute.ts` —
+  `VIEWER_FROM_LINE`/`VIEWER_FROM_RECORD`, read by `viewerDoor()`; the file's comment
+  records why `history.length`, `document.referrer` and Navigation Timing each answer
+  the wrong question). Mark present → a real pop; absent → cold arrival →
+  `history.replace(linePath)`. The mark's *value* names the door, because D11 gave the
+  viewer a second one (the record's desk canvas) and VIEW-AC-15's back label depends on
+  which. **The `why` child adopts the same mechanism with one door** — the panel's
+  action on the line page (WHY-AC-7); only presence matters for it, so it carries a
+  `why`-door mark beside the viewer's and asks no value question.
+- any suffix outside the grammar, a `/why` URL on a line with no detail (any kind but
+  `recommendation` — `human`, `unrecorded`, `unresolved` — or an order record,
+  WHY-AC-11), and an out-of-range `/drawing/u:N`, are
   normalised with `history.replace` — a mangled or stale link lands on the line page
   (or the parent drawing), never on a half state. `ASSUMED:` the normalisations.
 - `NESTS_BELOW` is **unchanged in both phases**: it is a set of destinations, `projects`
@@ -888,7 +945,11 @@ sheet), R27 (dismiss control: not the hard-coded "Done"), and now R29 (back sema
 for a routed caller) — while its other caller, the Projects filter, must not move at
 all (WHY-AC-7b). The seam: **`SidePanel` stays a pure
 presentation adapter; navigation lives in the caller.** It gains two props whose defaults
-reproduce today's behaviour byte-for-byte, so `FilterSheet.tsx` is not edited:
+reproduce today's behaviour byte-for-byte, so `FilterSheet.tsx` is not edited.
+Re-verified against the shipped component 2026-08-25 — Phase 2 deliberately left it
+untouched, and the three seams the props parameterise are exactly where they were: one
+`onClose` funnel via `onDidDismiss`, wide-conditional `[0, 0.5]` breakpoints, the
+hard-coded Done control (`SidePanel.tsx:73-108`):
 
 ```ts
 export function SidePanel(props: {
@@ -922,13 +983,14 @@ component already documents.
 | File | Role |
 |---|---|
 | `src/ops2/projects/useLineRationale.ts` | **new** — fetch hook, the `useProjectRecord.ts` pattern (loading / ready / missing / error, stale-response guard, re-enter refresh). Never called when the record shows an order (D2/WHY-AC-11) |
-| `src/ops2/projects/whyCopy.ts` | **new, pure** — every sentence on the surface, derived from DTO facts: the per-tier "Chosen" sentences (WHY-AC-5), the tolerance sentence reading the run's stamped figure (WHY-AC-6: `8%` from `0.08`, never hardcoded), the basis labels (WHY-AC-2), requirement-absent phrasing (WHY-AC-3), the person-chose sentences (WHY-AC-8/28), not-recorded phrasings (WHY-AC-4/9/27), verdict words per tier (WHY-AC-17). Node-testable; the R2 constraint (no "wrong/incorrect/mistake/error/correction") is asserted over this module's entire string table |
+| `src/ops2/projects/whyCopy.ts` | **new, pure** — every sentence on the surface, derived from DTO facts: the per-tier "Chosen" sentences (WHY-AC-5), the tolerance sentence reading the run's stamped figure (WHY-AC-6: `8%` from `0.08`, never hardcoded), the basis labels (WHY-AC-2), requirement-absent phrasing (WHY-AC-3), the person-chose sentences (WHY-AC-8/28), not-recorded phrasings (WHY-AC-4/9/27 — including WHY-AC-9's **two present-and-null meanings**, told apart by DTO kind — `unresolved` vs the rest — never by inspecting the figures), verdict words per tier (WHY-AC-17); D20: an overridden line changes its sentence and never its structure. Node-testable; the R2 constraint (no "wrong/incorrect/mistake/error/correction") is asserted over this module's entire string table |
 | `src/ops2/projects/WhyPanel.tsx` | **new** — the three-line panel (R6) and the two-line thinner form (WHY-AC-8), rendered from the DTO + `whyCopy`; the panel's action opens the detail only when `kind === "recommendation"` |
 | `src/ops2/projects/WhyDetail.tsx` | **new** — `SidePanel` content (R19/WHY-AC-7, opened as the §4.8 tree node): chosen row marked, up to 4 runners-up (WHY-AC-12/13), human-selection comparison block (WHY-AC-22-27), composite split-reason + per-lite bands (WHY-AC-33-36), `unsuppliedSplitNote` (WHY-AC-38). **No action anywhere on it** (R28/WHY-AC-39): its only interactive element is the back control; the `footer` slot goes unused |
 | `src/ops2/chrome/SidePanel.tsx` | the §4.8 coherent change: `phoneForm` + `dismiss` props, defaults preserving today's behaviour exactly |
 | `src/ops2/projects/FilterSheet.tsx` | **zero edits** — WHY-AC-7b is proven by this file not appearing in the diff |
 | `src/ops2/projects/LineReview.tsx` | mount `WhyPanel` between the specification/units block and the Price panel (`:198-214`); **delete the superseded header sentences** (`:38-45` "absent entirely on a composite" — void per R14/WHY-AC-32) and the read-only note's "no Why this product" clause (`:44-47`); accepts a new `showWhy: boolean` prop |
 | `src/ops2/projects/LinePage.tsx` | passes `showWhy={record.orderNo == null}` (D2: order records never fetch or render the panel); extends the §4.8 URL grammar (already hosting `drawing…` since Phase 2) with the `why` child |
+| `src/ops2/projects/lineRoute.ts` | **extended** (Phase 2 built it — pure, router-free): `parseLineRoute` gains the `why` suffix (`view: "why"`, canonical `/why`, same one-suffix sibling rule, §4.8's normalisation for kinds with no detail), and a `why`-door history mark lands beside `VIEWER_FROM_*` (presence answers warm-vs-cold; §4.8). `scripts/tests/ops2-navigation.test.mjs` extends accordingly |
 | `src/ops2/Ops2App.tsx` | **no change in this phase** — the line Route went non-exact in Phase 2 (§4.6/§4.8); no route is added (R28 cut the `/edit` stub), so `NESTS_BELOW` and `scripts/tests/ops2-frame.test.mjs` stay untouched |
 | `src/ops2/styles/line.css` | panel/detail styles (FrameFlow tokens) |
 
@@ -1142,7 +1204,14 @@ together with SNAP-AC-16**; and scope SNAP-AC-16 (with SNAP-AC-9's application) 
 §1.6's derivation writers — its second sentence admits no exemption as written, yet
 W1-aiManaged, W7 and W9 legitimately re-derive at a validated save, and its first
 sentence's "failed to resolve" under-counts present-and-null's honest authors
-(wording proposed in §1.6). `ASSUMED:` tags registered by this design, vetoable at acceptance:
+(wording proposed in §1.6). Two more route with the 3b refresh (2026-08-25):
+**index today's Q1–Q3 answers as D18–D20** — the design now cites them and the spec's
+decision index stops at D17; and **amend WHY-AC-29's comparison term from
+"product+variant" to the pick (§7.0)** — the criterion predates §7.0 and D16, and as
+written it reads a glazing-only customer override as platform-made on exactly the
+lines the reviewer audits (mechanism specified in §4.7 step 7; the design proceeds on
+the pick, tagged `ASSUMED:` until the criterion is amended).
+`ASSUMED:` tags registered by this design, vetoable at acceptance:
 
 - §4.3/§1.5 — an ambiguous resolution (two or more surviving variants) stores null,
   never a guess; a singleton answer set is not ambiguity and resolves to its one
@@ -1151,7 +1220,12 @@ sentence's "failed to resolve" under-counts present-and-null's honest authors
 - §2.3 — WHY-AC-38 renders from `review_json.composite` and is silent once that
   flag is resolved.
 - §4.7 — the rationale endpoint serves parent lines only; a unit's facts arrive
-  inside its parent's DTO.
+  inside its parent's DTO. (Re-affirmed 2026-08-25: Phase 2 gave units drawing
+  *addresses*, not pages — `drawing/u:N` renders inside the parent's one mounted
+  `LinePage`, and `parseLineRoute`'s `unitCount` comes from the parent's own display —
+  so no unit has anywhere of its own to fetch from.)
+- §4.7 step 7 — attribution compares the pick (§7.0), pending the WHY-AC-29 wording
+  amendment routed above.
 - §4.8 — the detail's URL segment is `why`; the viewer's is `drawing`, with
   `drawing/u:N` naming a unit by 1-based display order; suffixes outside the grammar,
   `/why` on a line with no detail, and out-of-range unit ordinals are normalised away
