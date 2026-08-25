@@ -170,7 +170,7 @@ The minimum breadth below which calibration's report-demand axis is labelled ina
 The structured facts the estimator emits per candidate — tier, rank, per-axis deviation, price delta against the pick, exclusion constraints. Facts only, never sentences: each surface composes its own wording. This is the contract the ops derivation surface reads.
 
 **Captured figures**:
-A line's own record of its product's Uw and SHGC, written at the moment of every save that sets or changes the product or variant — a snapshot, never a lookup, on every save path alike (ops, customer, estimator). Absence is recorded as absence: a captured unknown is a different fact from "saved before capture existed", and neither is ever filled by a display-time catalogue read. Distinct from the candidate outcome, which records what the recommendation was judged on.
+A line's own record of its product's Uw and SHGC, written at the moment of every save that sets or changes the product or variant — a snapshot, never a lookup, on every save path alike (ops, customer, estimator). Figures move when and only when the pick — product, variant, glazing — moves: a save that leaves the pick untouched carries the record forward verbatim, so a captured unknown always dates from a save that actually moved the pick. Absence is recorded as absence: a captured unknown is a different fact from "saved before capture existed", and neither is ever filled by a display-time catalogue read. Distinct from the candidate outcome, which records what the recommendation was judged on.
 _Avoid_: live figures, current performance (implies recomputation)
 
 **Selection attribution**:

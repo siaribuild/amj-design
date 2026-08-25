@@ -102,6 +102,71 @@ Nothing keys on the version string except storage (`selection_run.ranker_version
 it; `persist.ts:59` documents the column-name history). WHY-AC-10 keys on `outcome_json`
 presence, never on version. Verified: no reader compares against the literal `"ladder-v1"`.
 
+### 1.4 The capture fires when the pick moves — never on a save that leaves it untouched (ruled 2026-08-25)
+
+Raised by the developer mid-Phase-3a and, independently, by the Codex review ("label-only
+ops edits can erase a valid thermal snapshot during a catalogue outage"). §4.2's original
+W1 note — "Manual: best-effort resolver", unconditionally — was wrong, and not merely
+ugly: **re-resolving on a save that did not move the pick breaches SNAP-AC-9.** A
+room-label edit that re-resolves against today's catalogue recomputes a captured
+snapshot whenever the catalogue has moved since capture; the same edit during an outage
+overwrites a good capture with present-and-null — asserting "the catalogue has no figure
+for this product" on a save that never successfully asked. The blast radius was wider
+than the reported ops branch: the customer save loop (W3) rewrites every ordinary line
+on every project save, and the aiManaged material branch (W2) re-resolves on dims-only
+edits — one autosave during an outage would have nulled a whole project's captures.
+
+**The rule, one sentence: figures move when and only when the pick moves.**
+
+- **The pick** is exactly the resolver's inputs: `product_slug`, `selected_variant_id`
+  and `options.glazing` — the glass identity every pricing path already reads
+  (`lib/lines.ts:164`). An option the resolver never consults (colour, hardware)
+  cannot move the figures, and a pick that names no variant does not move the variant
+  term — only an explicit, different `variantId` does (restore).
+- **Pick unmoved** → the save carries `performance_figures_json` forward **verbatim**:
+  figures stay figures, present-and-null stays present-and-null, and a pre-capture
+  `NULL` stays `NULL`. No catalogue read for that line — and **no opportunistic
+  backfill** of pre-capture lines on touch: figures fetched at edit time for a product
+  selected months earlier are a display-time catalogue read wearing a snapshot's
+  clothes (the same reasoning as SNAP-AC-10), and they would blur the three states.
+- **Pick moved** → resolve fresh, best-effort. A failed resolution stores
+  present-and-null — here, and only here, that is the honest fact: the stored figures
+  describe a configuration the row no longer has, and a stale figure a reviewer trusts
+  is exactly what the ambiguity rule exists to prevent. This is the half that
+  "never overwrite a good value with null" gets wrong, and why that shape is rejected
+  (§8).
+- **The predicate lives once**, in `worker/lib/figures.ts` (`captureFigures`, §4.3),
+  never re-derived at the call sites that have a stored row in hand.
+
+What this sharpens rather than weakens: present-and-null now always means "at the
+moment this pick landed, no figure could be established" — a cleaner fact than the
+as-built "at the row's most recent touch, possibly of an unrelated field, the catalogue
+happened to be unreachable". The three states stay distinguishable; the write stays
+incapable of failing a save; every SNAP-AC-2-scanned statement still names the column —
+only the derivation of the bound value changes.
+
+Spec ripple (routed via §9 to the product-manager, not edited here): SNAP-AC-1's "sets
+or changes" sharpened to "the stored pick actually differs after the save"; SNAP-AC-6's
+"stored as null" scoped to saves that moved the pick; optionally one new negative
+criterion — present-and-null is only ever written by a save that moved the pick.
+
+### 1.5 A singleton answer set is not ambiguity (ruled 2026-08-25)
+
+With no variant named and no glazing chosen, a product offering **exactly one**
+published variant resolves to that variant — upheld as the developer built and pinned
+it. §4.3's `ASSUMED:` (an ambiguous resolution stores null rather than a guess) governs
+a *choice among alternatives*; a singleton set involves no choice: every completion of
+the underspecified pick lands on the same variant, so the stored figure is a fact of
+the catalogue, not a guess about the pick. It is the same logic as "glazing chosen,
+exactly one match survives" with a coarser filter — what decides is the size of the
+surviving set, never the specificity of the question. **Ambiguity, and its null, begin
+at two surviving variants.** Ruling the other way would null figures on precisely the
+products where the catalogue's answer is most certain (single-variant products are
+common in both the thermal-profile and legacy shapes). If the product later gains a
+second variant, earlier captures remain correct as of their moment — that is what a
+snapshot is (SNAP-AC-9). Vetoable at acceptance together with the ambiguity rule, as
+one pair (§9).
+
 ---
 
 ## 2. Spec corrections routed back (not designed around)
@@ -199,8 +264,9 @@ Owner-ruled corrections and additions, applied directly to `CONTEXT.md`:
 4. **Human review gate** added as a stage term: between submission and issue, where the
    platform's recommendation is confirmed or overridden.
 5. **Captured figures** added: a line's own record of its product's Uw and SHGC at the
-   moment of save — a snapshot, never a lookup; distinct from the recommendation's
-   record (the candidate outcome).
+   moment of save — a snapshot, never a lookup; figures move when and only when the
+   pick moves (§1.4); distinct from the recommendation's record (the candidate
+   outcome).
 6. **Selection attribution** added: whether a line's current selection reads as
    platform-made or person-chosen — derived by comparing the recorded recommendation
    against the line's current product+variant, never stored, never read from `origin`.
@@ -298,9 +364,9 @@ fields only).
 
 | # | Site | Save | Figures source |
 |---|---|---|---|
-| W1 | `worker/routes/ops.ts:1143` (one statement; branches at `:1041` aiManaged, `:1100` composite parent, `:1113` manual) | ops PATCH /lines/:id | aiManaged: from the validated catalogue `variant` already in scope (`:1066-1068`). Manual: best-effort resolver. Composite parent: carry the existing column value unchanged (rule vacuous — units own the facts) |
-| W2 | `worker/routes/projects.ts:507` | customer edit of AI-priced line | best-effort resolver for the customer's own choice; `configuration_snapshot_json=NULL` stays exactly as is (SNAP-AC-14) |
-| W3 | `worker/routes/projects.ts:540` | customer ordinary edit | best-effort resolver (refresh to the product now saved) |
+| W1 | `worker/routes/ops.ts:1143` (one statement; branches at `:1041` aiManaged, `:1100` composite parent, `:1113` manual) | ops PATCH /lines/:id | aiManaged: from the validated catalogue `variant` already in scope (`:1066-1068`). Manual: §1.4 — carry the column when the pick is unmoved; best-effort resolver only when it moved. Composite parent: carry the existing column value unchanged (rule vacuous — units own the facts) |
+| W2 | `worker/routes/projects.ts:507` | customer edit of AI-priced line | §1.4 — a dims/qty-only edit carries the column; a moved pick resolves best-effort with `variantId: null` (§4.3 — a retained variant id never drives a fresh resolution); `configuration_snapshot_json=NULL` stays exactly as is (SNAP-AC-14) |
+| W3 | `worker/routes/projects.ts:540` | customer ordinary edit | §1.4 — the batch rewrites every ordinary line, so untouched lines carry the column verbatim; only moved picks resolve (one outage must not null a whole project's captures) |
 | W4 | `worker/routes/projects.ts:551` | customer insert | best-effort resolver (SNAP-AC-13) |
 | W5 | `worker/routes/projects.ts:637` | customer restore-ai | figures of the restored variant, resolved through the same one-per-request catalogue read |
 | W6 | `worker/lib/ai/proposal.ts:198` | estimator: no-product line INSERT (empty `product_slug`) | present-and-null — evaluated, nothing chosen |
@@ -308,10 +374,10 @@ fields only).
 | W8 | `worker/lib/ai/proposal.ts:299` | estimator: resolved line INSERT | from `variant` in scope (in-memory; no fetch) |
 | W9 | `worker/lib/ai/proposal.ts:441` | estimator: resolved line UPDATE | from `variant` in scope |
 | W10 | `worker/lib/composite.ts:295` | split apply: segment INSERTs | from each unit's `configurationSnapshot.uw/.shgc` (already in memory, `splitCandidates.ts:355-358`) when present; else best-effort; else present-and-null |
-| W11 | `worker/lib/composite.ts:457` | segment edit (ops PATCH /segments/:id) | best-effort resolver |
+| W11 | `worker/lib/composite.ts:457` | segment edit (ops PATCH /segments/:id) | §1.4 — a note/size-only edit carries the column (and skips the fetch); a moved pick resolves best-effort |
 | W12 | `worker/lib/composite.ts:524` | append unit | best-effort resolver |
-| W13 | `worker/lib/parse.ts:350` | schedule re-upload, unlocked update | best-effort resolver, one catalogue read per parse request |
-| W14 | `worker/lib/parse.ts:359` | schedule re-upload, locked COALESCE update | figures follow the product's own lock: kept when `product_slug` is kept, fresh when it moves (same `keep()` discipline) |
+| W13 | `worker/lib/parse.ts:350` | schedule re-upload, unlocked update | §1.4 — an identical re-uploaded row carries the column (the existing "no changes" discipline extended to figures); moved picks resolve, one catalogue read per parse request |
+| W14 | `worker/lib/parse.ts:359` | schedule re-upload, locked COALESCE update | figures follow the product's own lock: kept when `product_slug` is kept, fresh when it moves (same `keep()` discipline); an unlocked-but-unmoved product also keeps, via the same NULL-into-COALESCE mechanism (§1.4) |
 | W15 | `worker/lib/parse.ts:372` | schedule parse INSERT | best-effort resolver |
 
 **Structural guard (SNAP-AC-2):** a source-level test walks `worker/**/*.ts`, extracts
@@ -347,15 +413,39 @@ export function resolveFigures(
  *  absent SANITY_PROJECT_ID yields an empty catalogue, which resolves
  *  everything to NULL_FIGURES (SNAP-AC-6). */
 export async function fetchFigureCatalogue(env: Env, slugs: string[]): Promise<FigureCatalogue>;
+
+/** §1.4 — THE write-time rule, in one place. `stored` null = a new row (always
+ *  resolve). Unmoved pick — productSlug, options.glazing and any *named*
+ *  variantId all match `stored` — returns `stored.figuresJson` verbatim: NULL
+ *  stays NULL, no opportunistic backfill. Moved pick: fresh best-effort
+ *  resolution; failure stores present-and-null. Pure; never throws. */
+export function captureFigures(
+  catalogue: FigureCatalogue,
+  pick: { productSlug: string; variantId: string | null; options: Record<string, string> },
+  stored: { productSlug: string | null; variantId: string | null;
+            glazing: string | null; figuresJson: string | null } | null,
+): string | null;
 ```
 
 **Matching rule (deterministic, no guessing):** `variantId` set and found — that
 variant's figures. Otherwise filter the product's published variants by the glazing
 option named in the pick's options (`glazingOptionSlug`); if **exactly one** variant
-remains, its figures; otherwise `NULL_FIGURES`. `ASSUMED:` **an ambiguous resolution
-stores null rather than a guess** — a fabricated figure a reviewer trusts is worse than
-a stated absence; consistent with R6's "never rendered as a number" and the honest-gap
-rulings. Vetoable at acceptance.
+remains, its figures; otherwise `NULL_FIGURES`. **§1.5: with no glazing the filter is
+the identity, so a product offering exactly one published variant resolves to it — a
+singleton answer set is not ambiguity, because every completion of the pick lands on
+the same variant. Ambiguity, and its null, begin at two surviving variants.**
+`ASSUMED:` **an ambiguous resolution — two or more surviving variants — stores null
+rather than a guess** — a fabricated figure a reviewer trusts is worse than a stated
+absence; consistent with R6's "never rendered as a number" and the honest-gap rulings.
+Vetoable at acceptance, together with §1.5's singleton reading, as one pair.
+
+**Who passes a `variantId`:** only a caller holding one that describes the saved
+configuration by construction — the W1 aiManaged branch (in-memory, no resolver) and
+W5's restore. The customer path never does: under §1.4 an unmoved pick carries forward
+without resolving, and a moved pick (product or glazing changed) makes the retained
+`selected_variant_id` stale as a figures key — so fresh customer-path resolutions pass
+`variantId: null` and let the glazing drive. SNAP-AC-14 records what the customer
+*chose*, not the variant the estimator once named.
 
 Properties the tests pin:
 
@@ -370,6 +460,13 @@ Properties the tests pin:
   (`project_id` + `status_customer='draft'` + `quote_edit_version` +
   `quote_mutation_token`), the ops guard (`id` + `edit_version` + project
   `status_internal` list), the segment path's parent resolution.
+- §1.4 direction: present-and-null is only ever written by a save that moved the pick;
+  an unmoved-pick save during an outage leaves the column byte-identical (SNAP-AC-9
+  holds across unrelated edits); a pre-capture NULL survives untouched saves.
+- The fetch is skipped entirely when nothing moved: slug sets are built from moved
+  picks only, and `fetchFigureCatalogue([])` returns the empty catalogue without a
+  network call — which also removes the +1.5 s worst case from note/size-only segment
+  and ops edits (§4.5).
 
 ### 4.4 Phase 3a — migration
 
@@ -396,15 +493,19 @@ procedure.
 ### 4.5 Phase 3a — how each writer wires in (hand-off notes)
 
 - **W1 (`ops.ts`)**: a `nextFigures: string | null` local beside `nextPricingSnapshot`
-  (`:1037-1039`); aiManaged branch sets it from `figuresFromVariant(variant)` at
-  `:1066-1068`; manual branch sets it from one `fetchFigureCatalogue` +
-  `resolveFigures`; composite-parent branch carries `line.performance_figures_json`.
-  Bound into the UPDATE at `:1143-1146`.
-- **W2-W4 (`projects.ts` save loop, `:411` onward)**: before building `stmts`, collect
-  the distinct product slugs of the resolved items; one `fetchFigureCatalogue`; each
-  item's figures resolved with its own variantId (W2: the retained
-  `stored.selected_variant_id` when the product is unchanged, else null) and bound into
-  the three statements. The batch stays one batch; no per-line fetch (SNAP-AC-7).
+  (`:1037-1039`), defaulted to `line.performance_figures_json` — which is already the
+  §1.4 carry-forward, and what the composite-parent branch wants; aiManaged branch sets
+  it from `figuresFromVariant(variant)` at `:1066-1068` (the variant was just validated
+  for pricing; an unreachable catalogue 409s there before any write, pre-existing);
+  manual branch applies §1.4 — only a moved pick (product or `options.glazing` differs
+  from `line`) fetches and resolves, via `captureFigures` with `stored` built from
+  `line`. Bound into the UPDATE at `:1143-1146`.
+- **W2-W4 (`projects.ts` save loop, `:411` onward)**: the `storedRows` SELECT (`:372`)
+  gains `performance_figures_json`; the slug set is built from **moved picks only**
+  (`fetchFigureCatalogue([])` already skips the network); each item goes through
+  `captureFigures` — W2/W3 pass `stored` from the matched row, inserts (W4) pass
+  `stored: null`. Fresh customer-path resolutions pass `variantId: null` (§4.3). The
+  batch stays one batch; no per-line fetch (SNAP-AC-7).
 - **W5 (restore-ai, `:637`)**: the restored `performance_variant_id` is known; resolve
   through the same helper (single-slug catalogue read) and bind. If the read fails:
   present-and-null, restore unaffected.
@@ -412,11 +513,17 @@ procedure.
   present-and-null literals; the INSERT column lists at `:200-207` and `:299-301` and
   the UPDATE SET lists at `:258-261` and `:442-446` each gain the column. No fetch.
 - **W10-W12 (`composite.ts`)**: split-apply INSERT (`:293-315`) takes
-  `s.configurationSnapshot`'s `uw`/`shgc` when present; `updateSegment` (`:457`) and
-  `appendSegment` (`:524`) resolve best-effort (their existing `priceItem` call is
-  already async; the catalogue read joins it).
-- **W13-W15 (`lib/parse.ts`)**: the import loop builds one slug set, one fetch; W14
-  follows the `keep()` lock discipline.
+  `s.configurationSnapshot`'s `uw`/`shgc` when present; `updateSegment` (`:457`) applies §1.4 —
+  `loadSegment`'s SELECT and `SegmentRow` gain `performance_figures_json`, and a
+  note/size-only edit carries the column with **no** catalogue read, so the sequential
+  await lands only on saves that actually move the pick; `appendSegment` (`:524`) is a
+  new row and always resolves best-effort.
+- **W13-W15 (`lib/parse.ts`)**: the draft-rows SELECT (`:269`) gains `options_json,
+  performance_figures_json`; the import loop builds its slug set from moved picks, one
+  fetch; W13 applies §1.4 against `match` (an identical re-uploaded row carries the
+  column — the existing "no changes" discipline extended to figures); W14's
+  unlocked-but-unmoved product binds NULL into the existing COALESCE (the `keep()`
+  mechanism, unchanged); W15 inserts pass `stored: null`.
 
 ### 4.6 Phase 2 — the shared full-screen drawing viewer (R21)
 
@@ -881,8 +988,8 @@ basis of a customer's project — in scope and intended (R4).
 |---|---|---|---|
 | `scripts/tests/certified-removal.test.mjs` | **new**; extended in rev 4 | `test:pure` list + new `test:certified` script in `package.json` | CERT-AC-1, 2, 3 (source scan — **widened per §2.6** to all live source with the refined `dataSource` predicate and the named allowlist; non-vacuity anchored by asserting the walk reached `worker/lib/estimator/catalogue.ts` and `scripts/catalogue/import-wers.mjs`), 5, 6 (schema source scan), 8 (export-gate refusal), 9 (old-JSON fixture parses; no renderer references the field), 12 (derive builder emits no `certified`/`dataSource`; re-population-gate refusal) |
 | `scripts/tests/thermal-selection.test.mjs` | extended | existing `test:thermal` | CERT-AC-5 downgrade-cause coherence beside its existing status cases |
-| `scripts/tests/figure-capture.test.mjs` | **new** | `test:pure` list + `test:why` script | resolver matching rules (variantId hit, glazing-unique hit, ambiguity→null), `figuresJson` shapes, **SNAP-AC-2 structural scan** |
-| `scripts/tests/why-capture-api.test.mjs` | **new** | `test:heavy` list + `test:why` | SNAP-AC-1, 4, 5, 6, 8, 9, 11, 13, 14, 15; X-AC-8, 9, 10 (real attempts, denial recorded) |
+| `scripts/tests/figure-capture.test.mjs` | **new** | `test:pure` list + `test:why` script | resolver matching rules (variantId hit, glazing-unique hit, ambiguity→null), `figuresJson` shapes, **SNAP-AC-2 structural scan**, **§1.4 `captureFigures` direction** (unmoved pick returns the stored value verbatim, NULL included; moved pick + empty catalogue → present-and-null; moved pick resolvable → fresh figures), §1.5 singleton-variant resolution |
+| `scripts/tests/why-capture-api.test.mjs` | **new** | `test:heavy` list + `test:why` | SNAP-AC-1, 4, 5, 6, 8, 9, 11, 13, 14, 15; X-AC-8, 9, 10 (real attempts, denial recorded); **§1.4 outage triad** (label-only save + empty catalogue leaves the column byte-identical; product-change save + empty catalogue writes present-and-null; a pre-capture NULL survives an untouched save) |
 | `scripts/tests/why-rationale-api.test.mjs` | **new** | `test:heavy` list + `test:why` | DTO kinds incl. WHY-AC-10; WHY-AC-12/13 cap; WHY-AC-25 (requirement from run only); WHY-AC-29 fixture (§12.1: origin-reading implementations fail); WHY-AC-30; X-AC-1..7 raw-body |
 | `scripts/tests/ops2-why.test.mjs` | **new** | `test:pure` + `test:ops2` | whyCopy: WHY-AC-2/3/5/6/17 sentence facts; WHY-AC-21 vocabulary ban over the string table |
 | `scripts/tests/web/ops2-drawing-viewer.spec.ts` | **new** | Playwright dir glob (`test:web`) | VIEW-AC-1..10 (VIEW-AC-2 as amended, §2.5: push-on-open, one pop for control/Escape/system back, no remount, deep link, replace-normalisation); focus return; no-notation class assertion. (Rev 6: VIEW-AC-5/6/12 moved to a source-level test in `ops2-frame.test.mjs` — a browser proves a viewer opens, not that a second was never built; §11.4) |
@@ -920,6 +1027,8 @@ customer save route in `why-capture-api.test.mjs`, not through ops.
 | A state-only history push for the viewer (no URL change) | back would pop honestly, but the address bar lies, reload/shared links silently lose the viewer, and the route table shows nothing for tests to find — the same broken promise in a different place |
 | Keeping the viewer a dismiss-in-place modal | this design's own first call, overturned by the owner: only a Confirm/Cancel decision dialog is a modal; the two-backs cost was named to him and accepted |
 | Backfilling figures for pre-Phase-3 lines | D5/R18 explicit; a backfill is a display-time catalogue read wearing a snapshot's clothes |
+| Capture unconditionally on every save (this design's own first W1 note) | breaches SNAP-AC-9 — an unrelated edit recomputes a snapshot — and erases good captures during outages; the defect the developer and the Codex review independently named (§1.4) |
+| "Never overwrite a good value with null" as the fix | only safe when the pick is unmoved; after a product change a failed resolution would pin the old product's figures on the new configuration — worse than an honest null (§1.4) |
 
 ---
 
@@ -929,13 +1038,18 @@ customer save route in `why-capture-api.test.mjs`, not through ops.
 extends to estimator writers; `dataSource` removed with a version bump + ADR 0011), and
 the R29 navigation model is ruled in §4.8 (a routed screen presented as the approved
 panel — the owner's own words already place the surface in the tree, so the remaining
-choices were architectural). Three items route to the **product-manager**: fold R29 into the spec (§2.4 — the
+choices were architectural). Four items route to the **product-manager**: fold R29 into the spec (§2.4 — the
 WHY-AC-7a/WHY-AC-39 "X" wording, plus criteria for the URL, back and deep link);
-amend VIEW-AC-2 to the routed-viewer assertions specified in §2.5; and apply the
+amend VIEW-AC-2 to the routed-viewer assertions specified in §2.5; apply the
 Phase 1 criteria changes in §2.6 (CERT-AC-3 scope, new CERT-AC-12, CERT-AC-10
-untouched). `ASSUMED:` tags registered by this design, vetoable at acceptance:
+untouched); and sharpen SNAP-AC-1 and SNAP-AC-6 per §1.4's spec ripple ("sets or
+changes" means the stored pick actually differs after the save; "stored as null"
+applies to saves that moved the pick; optionally one new negative criterion —
+present-and-null is only ever written by a save that moved the pick). `ASSUMED:` tags registered by this design, vetoable at acceptance:
 
-- §4.3 — an ambiguous variant resolution stores null, never a guess.
+- §4.3/§1.5 — an ambiguous resolution (two or more surviving variants) stores null,
+  never a guess; a singleton answer set is not ambiguity and resolves to its one
+  variant. One pair, vetoable together.
 - §4.3 — the capture's catalogue budget is 1500 ms inside the executor's 4 s cap.
 - §2.3 — WHY-AC-38 renders from `review_json.composite` and is silent once that
   flag is resolved.
