@@ -171,7 +171,6 @@ function openingOf(parent: { dims_json: string }): { widthMm: number; heightMm: 
   };
 }
 
-/** The opening's option selections, as a plain string map. */
 /** Recompute everything DERIVED about a parent from its segments. The single
  *  writer of segment.qty, and of parent.line_total / status / coverage_delta_mm. */
 export async function recomputeComposite(env: Env, parentId: string): Promise<void> {

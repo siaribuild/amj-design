@@ -921,9 +921,70 @@ function scriptedDb(reads = {}) {
       return null;
     },
     async run() { writes.push({ sql, args: this.args }); return { success: true }; },
+    async all() { return { results: [] }; },
   });
   return { writes, DB: { prepare, async batch(stmts) { writes.push(...stmts.map((s) => ({ sql: s.sql, args: s.args }))); return []; } } };
 }
+
+test("a unit inherits the opening's options AS THEY ARE, on the estimator's split path too", async () => {
+  // The mirror of the ops-path assertion in why-capture-api.test.mjs. Both
+  // split routes build a unit's options from the PARENT'S STORED options_json,
+  // and that column is written uncoerced — a customer's save puts whatever it
+  // sent in there. Re-encoding a stored value on the way into a child row is
+  // the fabrication this phase has now been bitten by three times.
+  //
+  // SCOPE, measured rather than assumed: `glazing` is NOT the probe here.
+  // splitCandidates.ts:344-347 deliberately overwrites glassDescription,
+  // performanceVariantId, frameTechnology and glazing with the unit's OWN
+  // chosen variant — a split picks glass per unit. So this site cannot produce
+  // a glass divergence, and cannot reach the figures at all (`glazingOf` reads
+  // only `glazing`). What it corrupts is every OTHER inherited option: the
+  // unit's colour, hardware, flyscreen and installation stop matching the
+  // opening they were split out of.
+  //
+  // What hid it: `splitSegmentSpecs`' parameter said Record<string,string>
+  // while the value it receives comes straight off a row. The type said
+  // strings, so nobody looked.
+  const products = [
+    splitProduct("awn-36", { operation: "awning", maxWidthMm: 1200, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("fix-44", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg", 4.4, 0.45)] }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, requirements: { maxUValue: 4.0 }, externalRef: "W21" },
+    parseSplitHint("AWNING + FIXED"),
+    splitCtx(products, { perM2: { "awn-36": 700, "fix-44": 500 } }),
+  );
+  assert.ok(r.selectedSplit, "a split won, so there is something to materialise");
+
+  const env = scriptedDb({
+    // The parent's own spec, with a non-string glass exactly as a client save
+    // stores it. Two reads answer from here: materialiseSelectedSplit's own,
+    // and applySplit's parent lookup.
+    "SELECT options_json FROM quote_line": { options_json: '{"colour":5,"flyscreen":false}' },
+    "parent_line_id IS NULL": {
+      id: "ql1", project_id: "p1", qty: 1, line_kind: "simple", composite_axis: null,
+      dims_json: '{"width":"2000","height":"1000"}',
+      options_json: '{"colour":5,"flyscreen":false}',
+    },
+    "FROM composite_policy": { tolerance_mm: 5, default_joiner_mm: 0, max_segments: 6 },
+  });
+  await materialiseSelectedSplit(env, {
+    openingId: "o1", quoteLineId: "ql1", externalRef: "W21",
+    opening: { widthMm: 2000 }, result: r,
+  });
+
+  const inserts = env.writes.filter((w) => /INSERT INTO quote_line/.test(w.sql));
+  assert.equal(inserts.length, 2, "both units were written");
+  for (const unit of inserts) {
+    const stored = unit.args.find((a) => typeof a === "string" && a.includes("colour"));
+    assert.ok(stored, "the unit carries the opening's options");
+    assert.match(stored, /"colour":5/,
+      "inherited as stored, not re-encoded as the string \"5\" — a unit must be a faithful copy of the opening it came from");
+    assert.match(stored, /"flyscreen":false/, "and a boolean stays a boolean");
+    // The four keys the split OWNS are still the unit's own, not the opening's.
+    assert.match(stored, /"glazing":"dg"/, "the unit's glass is its own chosen variant, as it should be");
+  }
+});
 
 test("only a WINNING split is materialised — a losing one writes nothing", async () => {
   // The whole of D7 in one assertion. The old post-pass ran after publication

@@ -320,7 +320,9 @@ function toCandidate(
  *  must never be half-written. */
 export function splitSegmentSpecs(
   split: SplitCandidate,
-  args: { inheritedOptions?: Record<string, string> },
+  /** The opening's stored options, uncoerced — `options_json` may hold
+   *  non-string values and a unit must inherit them as they are. */
+  args: { inheritedOptions?: Record<string, unknown> },
 ): SegmentSpec[] {
   const specs: SegmentSpec[] = [];
   for (const unit of split.units) {

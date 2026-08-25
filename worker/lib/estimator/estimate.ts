@@ -7,6 +7,7 @@
 // make-up that won; it no longer re-decides anything.
 import type { Env } from "../../types";
 import { createCatalogueRepository, sanityExecutor } from "./catalogue";
+import { storedOptions } from "../figures";
 import { resolvePairing, selectWithSplits, splitSegmentSpecs } from "./splitCandidates";
 import { persistSelection } from "./persist";
 import { buildApprovedThermalModel, buildShadowModel } from "./learning";
@@ -382,13 +383,11 @@ export async function materialiseSelectedSplit(env: Env, pl: ProposalSelection):
 
   const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
     .bind(quoteLineId).first<{ options_json: string | null }>();
-  let inheritedOptions: Record<string, string> = {};
-  try {
-    const parsed = JSON.parse(parentRow?.options_json ?? "{}");
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      inheritedOptions = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? "")]));
-    }
-  } catch { /* unreadable options are absent */ }
+  // The opening's own options, unchanged. This used to re-encode every value on
+  // the way into the child rows, which gave each unit a different glass from
+  // the opening it was split out of — `parentOptions` under another name, on
+  // the estimator's split path rather than ops'.
+  const inheritedOptions = storedOptions(parentRow?.options_json);
 
   const specs = splitSegmentSpecs(split, { inheritedOptions });
   if (specs.length !== split.plan.length) return [];
