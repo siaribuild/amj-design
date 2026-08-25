@@ -83,6 +83,22 @@ const line = (over = {}) => ({
 test("the record reads the endpoint's own vocabulary, and absence stays absent", () => {
   const r = M.parseProjectRecord(body({ lines: [line()] }));
   assert.equal(r.ref, "OF-Q-10482");
+
+  // AND A REFERENCE IS NOT ALWAYS `OF-Q-10482` SHAPED. `public_ref` is a
+  // NULLABLE column (migrations/0011_project_ref.sql adds it without NOT NULL)
+  // and `worker/routes/ops.ts` serves `p.public_ref ?? null`, so the parser's
+  // `?? id` fallback is a live path — and a project id is `crypto.randomUUID()`
+  // (worker/lib/util.ts), which is 36 characters.
+  //
+  // Pinned because something downstream DEPENDS on it: the viewer's back control
+  // names the record by this string (VIEW-AC-15) and truncates it, and the cap
+  // is only worth having while a reference can be longer than a label. A future
+  // parser that dropped the fallback would make that truncation dead code, and
+  // the next reader would delete it without knowing what it was for.
+  const refless = body({ lines: [line()] });
+  delete refless.project.publicRef;
+  assert.equal(M.parseProjectRecord(refless).ref, "p_1", "no publicRef falls back to the id");
+  assert.ok(M.parseProjectRecord(refless).ref, "and a reference is never empty");
   assert.equal(r.stateLabel, "Technical review");
   assert.equal(r.waitingOn, "Us");
   assert.equal(r.lines.length, 1);
@@ -1157,21 +1173,25 @@ test("the back control names WHERE IT GOES, and the two ways in answer different
   const at = (route, backTo) => M.drawingSubject(l, route, backTo);
   const drawing = { view: "drawing", unitIndex: null };
   assert.equal(at(drawing, null).backLabel, "W03", "from the line page, the line");
-  assert.equal(at(drawing, "Wattle Grove - Lot 14").backLabel, "Wattle Grove - Lot 14",
-    "from the record's canvas, the project (ASSUMED: §13.17)");
-  // A project with no title still leaves a control someone can name aloud —
-  // the same rule `line.code || "the line"` states one level down.
+  // The record's REFERENCE, which is the vocabulary the line page's own back
+  // control already uses for this same destination. The spec first assumed the
+  // project's title; the owner vetoed it (§13.17) because one destination must
+  // not carry two names in one console. WHICH string appears is the whole of the
+  // ruling, so the browser suite asserts the reference against the title.
+  assert.equal(at(drawing, "OF-Q-10482").backLabel, "OF-Q-10482");
+  // Before the record has loaded, `Project` — the same word the precedent uses,
+  // not a second answer invented here.
   assert.equal(at(drawing, "").backLabel, "Project");
 
   // ONE CONTROL, so the unit path answers the same way.
   const c = parse(composite());
   const unit = { view: "unit", unitIndex: 1 };
   assert.equal(M.drawingSubject(c, unit, null).backLabel, "W07");
-  assert.equal(M.drawingSubject(c, unit, "Wattle Grove").backLabel, "Wattle Grove");
+  assert.equal(M.drawingSubject(c, unit, "OF-Q-10482").backLabel, "OF-Q-10482");
 
   // AND VIEW-AC-1a IS UNTOUCHED. Only the destination's name moves; the title
   // still carries the SUBJECT, by whichever door the reviewer came in.
-  assert.equal(M.drawingSubject(c, unit, "Wattle Grove").title, "W07A");
-  assert.equal(at(drawing, "Wattle Grove").title, "Drawing");
-  assert.equal(at(drawing, "Wattle Grove").code, "W03");
+  assert.equal(M.drawingSubject(c, unit, "OF-Q-10482").title, "W07A");
+  assert.equal(at(drawing, "OF-Q-10482").title, "Drawing");
+  assert.equal(at(drawing, "OF-Q-10482").code, "W03");
 });

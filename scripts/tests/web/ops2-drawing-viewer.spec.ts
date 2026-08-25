@@ -567,6 +567,10 @@ test("a drawing URL for a line this project does not have refuses exactly as a m
 // same bytes whether it works or not (VIEW-AC-17).
 
 const RECORD_PAGE = `${OPS_HOST}/ops2/projects/p_rec`;
+/** WHICH OF TWO CORRECT-LOOKING STRINGS. The record carries both a title and a
+ *  reference, and the whole of the owner's ruling is which one this control
+ *  shows — so the fixture keeps both and the assertions name both. */
+const PROJECT_REF = record.project.publicRef;
 const PROJECT_TITLE = record.project.title;
 
 /** The canvas's own copy of a control. A popped LinePage stays in Ionic's view
@@ -666,12 +670,18 @@ test("from the canvas the control names the RECORD, and all three exits land the
       await expect(page.getByTestId("drawing-viewer")).toBeVisible();
       await expect(page).toHaveURL(/\/line\/l2\/drawing$/);
 
-      // THE VISIBLE LABEL and THE ACCESSIBLE NAME, and neither names the line.
+      // THE VISIBLE LABEL and THE ACCESSIBLE NAME. Both are the record's
+      // REFERENCE — the vocabulary the line page's own back control already uses
+      // for this same destination (LinePage.tsx, `label: record.ref`), so one
+      // place does not end up with two names in one console. Asserted against
+      // the title as well as the line, because a control showing the title would
+      // pass every "names the record" check while breaking the ruling.
       const back = page.getByTestId("drawing-viewer-back");
-      await expect(back).toHaveText(PROJECT_TITLE);
+      await expect(back).toHaveText(PROJECT_REF);
       await expect(back).not.toHaveText(/W07/);
+      await expect(back).not.toHaveText(new RegExp(PROJECT_TITLE));
       await expect(page.getByTestId("drawing-viewer")
-        .getByRole("button", { name: PROJECT_TITLE })).toBeVisible();
+        .getByRole("button", { name: PROJECT_REF })).toBeVisible();
       // VIEW-AC-1a is untouched: the bar still titles the SUBJECT.
       await expect(page.getByTestId("drawing-viewer")
         .getByRole("heading", { name: "Drawing" })).toBeVisible();
@@ -687,6 +697,45 @@ test("from the canvas the control names the RECORD, and all three exits land the
       await expect(page.getByTestId("record-canvas")).toBeVisible();
     }
   });
+
+test("a long reference is shortened to fit the bar, and read out whole", async ({ page }) => {
+  // THE CAP HAS REACHABLE INPUT, which is the only reason it exists. A record
+  // served without a `public_ref` is labelled with its project id — a 36-char
+  // UUID (see scripts/tests/ops2-record.test.mjs for the parser half) — so this
+  // is what the control gets, not the tidy `OF-Q-10482` everyone pictures.
+  const LONG_REF = "0f6d5b2e-9c14-4a7b-8f30-1e2d3c4b5a69";
+  await page.route(RECORD_URL, (route) => route.fulfill({
+    json: { ...record, project: { ...record.project, publicRef: LONG_REF } },
+  }));
+  await canvasWithComposite(page);
+  await canvasPlate(page).click();
+  const back = page.getByTestId("drawing-viewer-back");
+  await expect(back).toBeVisible();
+
+  // THE ACCESSIBLE NAME IS WHOLE. Truncation is a drawing decision; a screen
+  // reader must still hear which record it is going back to.
+  await expect(page.getByTestId("drawing-viewer")
+    .getByRole("button", { name: LONG_REF })).toBeVisible();
+
+  const label = page.locator(".ops2-viewer__back-label");
+  const measure = () => label.evaluate((el) => ({
+    clipped: el.scrollWidth > el.clientWidth,
+    width: Math.round(el.getBoundingClientRect().width),
+  }));
+  const desk = await measure();
+  expect(desk.clipped, "a 36-character reference is not shortened at the desk").toBe(true);
+
+  // AND THE BOUND IS PROPORTIONAL WHERE THE BAR IS TIGHT. A `ch` measure alone
+  // resolves against the label's own font-size, so it is the same ~200px at
+  // every width — wider on a phone than the viewport share it replaced. The two
+  // numbers being DIFFERENT is the assertion: a flat cap gives one number twice.
+  await page.setViewportSize({ width: 375, height: 812 });
+  const phone = await measure();
+  expect(phone.clipped).toBe(true);
+  expect(phone.width, "the cap does not tighten when the bar does").toBeLessThan(desk.width);
+  // It must also leave room for the heading beside it rather than filling the bar.
+  expect(phone.width).toBeLessThan(375 * 0.5);
+});
 
 test("back from a canvas-opened drawing does not blank the canvas", async ({ page }) => {
   // VIEW-AC-16, proved by the tester's own two measurements — `selected row

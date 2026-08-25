@@ -114,26 +114,41 @@
 @media (hover: hover) {
   .ops2-viewer__back:hover { color: var(--ds-text-link-hover); }
 }
-/* THE DESTINATION'S NAME, SHORTENED TO A NAME. From the record's desk canvas
-   this is the project's own title (VIEW-AC-15), which is as long as someone
-   typed it, so it truncates rather than pushing the bar's heading off the
-   screen. The accessible name is the element's text and is never shortened.
+/* THE DESTINATION'S NAME, SHORTENED TO A NAME. The accessible name is the
+   element's text and is never shortened; only what is drawn is.
 
-   THE CAP IS A TEXT MEASURE, NOT A SHARE OF THE VIEWPORT. `40vw` was neither of
-   the things its own comment claimed: `.ops2-topbar__title` carries no
-   max-width at all (nav.css) — it truncates under flex pressure from the rest
-   of its bar — and a viewport share does not keep the heading readable, it just
-   moves where it starts. Measured with a 108-character title: 410px of back
-   label at 1024 and 512px at 1280, putting "Drawing" 42% of the way across its
-   own bar; and at 1920, where the cap is 768px, nothing truncated at all and
-   the control ran to its full 625px. The cap grew exactly where it was least
-   needed. A `ch` measure resolves against this label's own font-size, so the
-   control is the same width on every monitor and the heading starts in the
-   same place. A back control owes a name recognisable, not a title complete:
-   the record's own top bar showed it in full one navigation ago. */
+   WHAT CAN ACTUALLY ARRIVE HERE — checked rather than assumed, because the cap's
+   whole justification is whether anything can reach it, and the label's content
+   has just changed. Two inputs, both unbounded:
+
+     • THE RECORD'S REFERENCE, from the desk canvas (VIEW-AC-15). Usually
+       `OF-Q-10482` and ten characters — but `record.ref` is
+       `str(publicRef) ?? id`, `public_ref` is a NULLABLE column
+       (migrations/0011_project_ref.sql), and a project id is
+       `crypto.randomUUID()`. A record served without a reference labels this
+       control with 36 characters. Pinned in scripts/tests/ops2-record.test.mjs.
+     • THE LINE'S CODE, from the line page, at EVERY width. `quote_line.
+       external_ref` is unbounded TEXT parsed out of a builder's schedule
+       (migrations/0012_schedule_parse.sql) with no length validation anywhere,
+       so a mis-mapped import column arrives here whole.
+
+   So the cap stays. It is not protecting against input that cannot arrive.
+
+   AND IT NEEDS BOTH BOUNDS, because each is wrong alone. `40vw` grew where it
+   was least needed — 512px at 1280 and no truncation at all at 1920. A flat
+   `28ch` resolves against this label's own font-size, so it is the same ~200px
+   at every width: right at the desk, but WIDER at 375 than the 150px `40vw` gave
+   there, which is the one width where the bar has nothing to spare and the line
+   code is reachable. `min()` takes whichever is tighter — a text measure at the
+   desk, a proportional guard when the bar is tight.
+
+   (The 108-character project TITLE the `28ch` measurement was taken with is no
+   longer an input at all: the owner vetoed the title in favour of the reference,
+   §13.17. The bound survives that veto on the two inputs above, which are the
+   ones the code can now receive.) */
 .ops2-viewer__back-label {
   min-width: 0;
-  max-width: 28ch;
+  max-width: min(28ch, 40vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

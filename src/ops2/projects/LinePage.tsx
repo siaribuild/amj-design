@@ -87,9 +87,16 @@ export function LinePage() {
   // line. Read off the history entry rather than the address, because the two
   // doors share one address by design; `openedFromRecord` is in `./lineRoute.ts`
   // beside the grammar it belongs to.
+  //
+  // AND IT NAMES IT THE WAY THIS PAGE ALREADY DOES: `record.ref`, the same
+  // vocabulary as the `backTo` below, which has named this destination by its
+  // reference since the record work shipped. The spec first assumed the
+  // project's TITLE; the owner vetoed it (§13.17) rather than let one
+  // destination carry two names in one console. The two must move together —
+  // change one and change both.
   const fromRecord = openedFromRecord(location.state);
   const subject = line && !route.normalise
-    ? drawingSubject(line, route, fromRecord && record ? record.title : null)
+    ? drawingSubject(line, route, fromRecord && record ? record.ref : null)
     : null;
 
   // WHERE THE FOCUS CAME FROM. The page never remounts, so the control that
