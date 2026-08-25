@@ -21,7 +21,7 @@ import type {
   RationaleUnit, UnitBandBasis,
 } from "../../../src/data/rationale";
 import type { CandidateOutcome, SelectionOutcome } from "../../../src/data/recommendation";
-import { pickMoved, storedOptions, storedPickOf } from "../figures";
+import { glazingOf, pickMoved, storedOptions, storedPickOf } from "../figures";
 import type { Env } from "../../types";
 
 const BAND_BASES: readonly UnitBandBasis[] = ["explicit_ref", "shared_type", "computed", "none"];
@@ -284,17 +284,17 @@ function selectionChanged(
   line: LineRow,
   chosen: { outcome: CandidateOutcome; snapshot: string | null },
   units: RationaleUnit[] | null,
-): boolean {
+): { product: boolean; glazing: boolean } | null {
   if (chosen.outcome.form === "split") {
-    const recommended = (chosen.outcome.units ?? [])
-      .map((u) => `${u.productSlug}|${u.variantId ?? ""}`).sort();
-    const current = (units ?? [])
-      .map((u) => `${u.productSlug}|`).sort();
-    // Units carry no recorded glass identity, so the make-up is compared on the
-    // products it is made of — and only on the variant where the current
-    // segments name one, which they do not here.
-    return recommended.length !== current.length
-      || recommended.some((r, i) => r.split("|")[0] !== current[i].split("|")[0]);
+    // A make-up is compared on the products it is made of. Its recorded units
+    // carry no glass identity of their own, so there is no glazing term to
+    // report — and inventing one from the parent's options would describe the
+    // opening rather than the lite that moved.
+    const recommended = (chosen.outcome.units ?? []).map((u) => u.productSlug).sort();
+    const current = (units ?? []).map((u) => u.productSlug).sort();
+    const moved = recommended.length !== current.length
+      || recommended.some((slug, i) => slug !== current[i]);
+    return moved ? { product: true, glazing: false } : null;
   }
 
   const glazing = parse<{ glazingOptionSlug?: string | null }>(chosen.snapshot)?.glazingOptionSlug ?? null;
@@ -303,12 +303,18 @@ function selectionChanged(
     selected_variant_id: chosen.outcome.variantId ?? null,
     options_json: JSON.stringify({ glazing }),
   });
-  return pickMoved(
-    {
-      productSlug: line.product_slug ?? "",
-      variantId: line.selected_variant_id ?? null,
-      options: storedOptions(line.options_json),
-    },
-    recommendedPick,
-  );
+  const pick = {
+    productSlug: line.product_slug ?? "",
+    variantId: line.selected_variant_id ?? null,
+    options: storedOptions(line.options_json),
+  };
+  // `pickMoved` decides WHETHER anything moved — one home for that, §7.0's.
+  // These two name WHICH, over the same glass expression it uses, so the
+  // qualifier the panel prints cannot describe a different glass from the one
+  // that decided the change.
+  if (!pickMoved(pick, recommendedPick)) return null;
+  return {
+    product: pick.productSlug !== (recommendedPick!.productSlug ?? ""),
+    glazing: glazingOf(pick.options) !== (recommendedPick!.glazing ?? ""),
+  };
 }

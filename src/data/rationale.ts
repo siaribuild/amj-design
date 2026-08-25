@@ -101,8 +101,14 @@ export type LineRationaleDto =
       alternatives: RationaleCandidate[];
       /** R24: derived by comparing the recorded recommendation's PICK against
        *  the line's current pick (§7.0). Never read from `origin`, which a
-       *  customer override does not move. */
-      selectionChanged: boolean;
+       *  customer override does not move.
+       *
+       *  `null` is "the pick has not moved". Anything else is a change, and it
+       *  names WHICH term moved because R12/WHY-AC-23 requires the panel to say
+       *  frame or glazing rather than merely "changed". Both terms false is a
+       *  real state and an honest one: the variant alone differs, so something
+       *  moved and neither the frame nor the glass is what did. */
+      selectionChanged: { product: boolean; glazing: boolean } | null;
       current: RationaleCurrent;
       composite: null | {
         origin: "ai" | "ops";

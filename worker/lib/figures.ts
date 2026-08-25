@@ -87,7 +87,7 @@ export function resolveFigures(
  *  compare `"5"` against `""` and report a move on a pick that never moved,
  *  re-resolving a snapshot §1.4 forbids. A non-string glass is no glass chosen —
  *  which is also exactly what pricing does with it. */
-const glazingOf = (options: Record<string, unknown> | null | undefined): string =>
+export const glazingOf = (options: Record<string, unknown> | null | undefined): string =>
   typeof options?.glazing === "string" ? options.glazing : "";
 
 /** Options as stored on a row, exactly as stored.

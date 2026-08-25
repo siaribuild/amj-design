@@ -407,20 +407,22 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.equal(body.kind, "recommendation");
       assert.equal(body.recommended.productSlug, "amj80-series-awning-window", "the platform's pick, unchanged");
       assert.equal(body.current.productSlug, "amj100l-series-awning-window", "and what is on the line now");
-      assert.equal(body.selectionChanged, true,
-        "derived by comparing the picks — an implementation reading `origin` or `ai_proposal_line_id` answers 'platform' here");
+      assert.deepEqual(body.selectionChanged, { product: true, glazing: false },
+        "derived by comparing the picks — an implementation reading `origin` or `ai_proposal_line_id` answers 'platform' here — "
+        + "and it says WHICH term moved, because R12 requires the panel to name frame or glazing");
     });
 
     await t.test("WHY-AC-22/28/30 the glass alone moves it, and moving it back unwinds nothing", async () => {
       const unchanged = await rationale("p_rat", "ql_rat");
-      assert.equal(unchanged.body.selectionChanged, false, "the line still carries what was recommended");
+      assert.equal(unchanged.body.selectionChanged, null, "the line still carries what was recommended");
 
       // ONE VARIABLE: the glass, and nothing else. The row deliberately KEEPS
       // the estimator's `selected_variant_id` (D16), so a product+variant
       // comparison would call this line platform-made.
       await sql(`UPDATE quote_line SET options_json='${OPTIONS("single-clear")}' WHERE id='ql_rat'`);
       const glazed = await rationale("p_rat", "ql_rat");
-      assert.equal(glazed.body.selectionChanged, true, "R12: glazing differing is a change");
+      assert.deepEqual(glazed.body.selectionChanged, { product: false, glazing: true },
+        "R12: glazing differing is a change, and the GLASS is what moved");
       const stale = await sql("SELECT selected_variant_id AS v FROM quote_line WHERE id='ql_rat'");
       assert.equal(stale[0].v, "v-dg-lowe",
         "and the row still names the estimator's variant — which is exactly why the comparison must not use it as the answer");
@@ -431,16 +433,16 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       // unwind because nothing was ever stored.
       await sql(`UPDATE quote_line SET options_json='${OPTIONS("double-lowe")}' WHERE id='ql_rat'`);
       const restored = await rationale("p_rat", "ql_rat");
-      assert.equal(restored.body.selectionChanged, false, "it reads as platform-made once more, by the same comparison");
+      assert.equal(restored.body.selectionChanged, null, "it reads as platform-made once more, by the same comparison");
     });
 
     await t.test("WHY-AC-23 the frame alone moves it too", async () => {
       await sql(`UPDATE quote_line SET product_slug='amj100t-awning-window' WHERE id='ql_rat'`);
       const { body } = await rationale("p_rat", "ql_rat");
-      assert.equal(body.selectionChanged, true);
+      assert.deepEqual(body.selectionChanged, { product: true, glazing: false }, "the FRAME is what moved");
       assert.equal(body.current.productName, "AMJ100T Awning Window", "'This one' follows the line");
       await sql(`UPDATE quote_line SET product_slug='amj80-series-awning-window' WHERE id='ql_rat'`);
-      assert.equal((await rationale("p_rat", "ql_rat")).body.selectionChanged, false);
+      assert.equal((await rationale("p_rat", "ql_rat")).body.selectionChanged, null);
     });
 
     await t.test("WHY-AC-31 nothing on this path writes origin or ai_proposal_line_id", async () => {
@@ -483,7 +485,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       // WHY-AC-38: the recorded sentence, from its one stored home.
       assert.match(body.unsuppliedSplitNote, /no frame system could supply it/);
 
-      assert.equal(body.selectionChanged, false, "the segments are the make-up that was recommended");
+      assert.equal(body.selectionChanged, null, "the segments are the make-up that was recommended");
     });
 
     await t.test("WHY-AC-37 an ops-decided split has no machine rationale to open", async () => {
@@ -497,9 +499,10 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
     await t.test("R11/R12 a person swapping one lite of a composite is a change", async () => {
       await sql(`UPDATE quote_line SET product_slug='amj100t-awning-window' WHERE id='qs_b'`);
       const { body } = await rationale("p_rat", "ql_comp");
-      assert.equal(body.selectionChanged, true, "the make-up on the line is no longer the one recorded");
+      assert.deepEqual(body.selectionChanged, { product: true, glazing: false },
+        "the make-up on the line is no longer the one recorded, and it is the FRAME of a lite that moved");
       await sql(`UPDATE quote_line SET product_slug='amj100l-series-awning-window' WHERE id='qs_b'`);
-      assert.equal((await rationale("p_rat", "ql_comp")).body.selectionChanged, false);
+      assert.equal((await rationale("p_rat", "ql_comp")).body.selectionChanged, null);
     });
 
     // ── §10: the abuse cases, attempted for real ───────────────────────────
