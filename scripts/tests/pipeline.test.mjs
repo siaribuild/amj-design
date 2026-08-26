@@ -1025,3 +1025,82 @@ test('a role gets ONE pane, reused - a run must not end with a dozen idle shells
   assert.equal(said(s.log, 'agent', 'start').length, 2,
     'reuse is the PANE, never the agent: each stage boots its own claude and its own session')
 })
+
+// --- the review fan-out ------------------------------------------------------
+
+/**
+ * A run parked at the review stage with all four reviewers able to really
+ * start: the herdr stub for the two pane agents, a real node for the headless
+ * security child (it rejects --output-format, which is exactly the proof that
+ * the headless argv reached it), and a fake codex companion that appends to the
+ * SAME log as herdr - so one ordered timeline covers the whole fan-out.
+ */
+function reviewRepo(name, extra = {}, codexExit = 0) {
+  const s = paneRepo(name, 'sess-review', extra)
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '04-build.md'), '# build' + NL)
+  const cx = join(s.root, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6', 'scripts')
+  mkdirSync(cx, { recursive: true })
+  writeFileSync(join(cx, 'codex-companion.mjs'), [
+    'import { appendFileSync } from "node:fs"',
+    'appendFileSync(process.env.HERDR_STUB_LOG,',
+    '  JSON.stringify({ argv: ["codex", ...process.argv.slice(2)] }) + String.fromCharCode(10))',
+    'console.log("codex reviewed the diff")',
+    'process.exit(' + codexExit + ')',
+  ].join(NL) + NL)
+  s.env.USERPROFILE = s.root
+  s.env.HOME = s.root
+  s.env.CONDUCT_CLAUDE_BIN = process.execPath
+  return s
+}
+
+/** The conductor announces every stage it starts, and every one it finishes. */
+const startLine = (out, label) => out.split(NL).findIndex((l) => l.trim() === '> ' + label)
+const firstFinish = (out) =>
+  out.split(NL).findIndex((l) => /^\s+(ok \S|== HELD WARM)/.test(l))
+
+test('the review fan-out starts all four reviewers before it consumes any completion', () => {
+  const s = reviewRepo('review-fanout')
+
+  const out = paned(s, 'run', 'review')
+
+  // Two pane agents, and only two. /security-review is compiled into the CLI -
+  // no file on disk, unreachable by the Skill tool - so nothing typed into a
+  // pane fires it. That is a property of the tool, not a preference.
+  assert.deepEqual(said(s.log, 'agent', 'start').map((a) => a[2]).sort(),
+    ['review-conformance', 'review-ponytail'])
+  const prompts = join(s.root, 'docs', 'runs', 'demo', 'prompts')
+  assert.equal(existsSync(join(prompts, 'review-security.txt')), false,
+    'security got a pane prompt file - it must stay a headless -p child')
+  assert.match(readFileSync(join(prompts, 'review-ponytail.txt'), 'utf8'), /ponytail-review/)
+
+  // A fan-out that starts reviewer 2 only once reviewer 1 has finished is
+  // sequential wearing a costume. The order is what is asserted, not the count.
+  const done = firstFinish(out)
+  assert.ok(done > 0, 'no reviewer ever finished: ' + out)
+  for (const id of ['conformance', 'ponytail', 'security', 'codex']) {
+    const at = startLine(out, 'review-' + id)
+    assert.ok(at >= 0, 'review-' + id + ' never started: ' + out)
+    assert.ok(at < done, 'review-' + id + ' started only after another reviewer finished')
+  }
+  // The same ordering in herdr's own timeline, which the codex child joins.
+  const seq = calls(s.log)
+  const idx = (f) => seq.findIndex(f)
+  const exited = idx((a) => a[1] === 'prompt' && a[3] === '/exit')
+  assert.ok(exited > 0, 'no pane reviewer was ever freed')
+  for (const label of ['review-conformance', 'review-ponytail'])
+    assert.ok(idx((a) => a[1] === 'start' && a[2] === label) < exited,
+      label + ' was started only after another reviewer was finished with')
+  assert.ok(idx((a) => a[0] === 'codex') < exited, 'codex was started after a reviewer finished')
+
+  const st = runJson(s).stages
+  assert.equal(st['review-conformance'].mode, 'pane')
+  assert.equal(st['review-conformance'].status, 'done')
+  assert.equal(st['review-ponytail'].mode, 'pane')
+  assert.equal(st['review-ponytail'].status, 'done')
+  assert.equal(st['review-security'].mode, undefined, 'security must stay a headless child')
+  assert.ok('code' in st['review-security'], 'security was never actually run')
+  // codex is another vendor's model: measured zero Claude tokens, unchanged.
+  assert.equal(st['review-codex'].source, 'codex')
+  assert.equal(st['review-codex'].code, 0)
+  assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
+})

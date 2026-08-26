@@ -226,7 +226,11 @@ diff-reading review always misses. Check every path in 02-tasks.json exists.
 WRITE ${r.dir}/07-review-conformance.md.`,
   },
   {
-    id: 'security', slash: '/security-review', compact: 100000,
+    // Headless in EVERY mode, and not by preference: /security-review is
+    // compiled into the CLI. There is no file on disk for it, the Skill tool
+    // cannot reach it, and nothing typed into a pane fires a built-in slash
+    // command reliably. It is a property of the tool.
+    id: 'security', slash: '/security-review', compact: 100000, headless: true,
   },
   {
     id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
@@ -534,6 +538,10 @@ async function settleStage(run, label, started) {
  */
 async function runPaneStage(spec, promptText, run, label) {
   const started = Date.now()
+  // Announced BEFORE the pane is found, not after: this line is how a fan-out
+  // is read as a fan-out, and a stage that cannot get a pane still has to say
+  // whose failure the next line belongs to.
+  console.log('\n  > ' + label)
   const advisory = resetAdvisory(latestRateLimitAnchor(RUNS))
   if (advisory) console.log('\n  ' + advisory)
   const mcpOk = browserMcp()
@@ -550,7 +558,7 @@ async function runPaneStage(spec, promptText, run, label) {
 
   const sessionId = randomUUID()
   const promptPath = writePrompt(ROOT, run.slug, label, promptText)
-  console.log('\n  > ' + label + '  pane ' + paneId)
+  console.log('    pane ' + paneId)
   const boot = await launchStage({
     paneId, label, sessionId, argv: paneArgs(spec, sessionId, mcpOk), promptPath,
     onSession: (session) => {
@@ -647,7 +655,13 @@ function runCodex(run) {
   })
 }
 
-async function runReviews(run) {
+// The one place in the pipeline where concurrency is free: the four reviewers
+// are read-only and independent, so running them at once costs the same tokens
+// and divides that stage's wall clock. Every reviewer is STARTED before any
+// completion is awaited - a fan-out that starts the second only once the first
+// has finished is a sequential loop wearing a costume - and one reviewer
+// holding on a question does not stall the other three.
+async function runReviews(run, panes) {
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
     const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
     const text = rv.slash
@@ -655,7 +669,9 @@ async function runReviews(run) {
         '. Write your findings to ' + run.dir + '/07-review-' + rv.id +
         '.md and reply with only that path.'
       : rv.prompt(run)
-    return runClaude(spec, text, run, 'review-' + rv.id)
+    const label = 'review-' + rv.id
+    if (!panes || rv.headless) return runClaude(spec, text, run, label)
+    return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
   await Promise.all([...jobs, runCodex(run)])
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
@@ -790,8 +806,18 @@ const cmds = {
         die('stage "' + id + '" needs ' + run.dir + '/' + n + ', which does not exist yet')
     }
     if (spec.ui) mkdirSync(join(ROOT, 'docs', 'mocks'), { recursive: true })
-    if (spec.sliced) { await runBuild(run, spec); return afterStage(run, spec) }
-    if (spec.parallel) { await runReviews(run); return afterStage(run, spec) }
+    // Decided once, above every stage shape: the sliced build and the parallel
+    // review each run panes of their own, so neither can be reached through the
+    // single-stage branch below.
+    let panes = await paneMode(flags)
+    // A run started headless (or before herdr was up) has no cockpit yet.
+    if (panes && !run.herdr) {
+      try { run.herdr = await ensureCockpit({ slug: run.slug, base: run.base, root: ROOT }); saveRun(run) }
+      catch (e) { console.log('\n  could not build the cockpit (' + e.message + ') - running headless.') }
+    }
+    panes = panes && !!run.herdr
+    if (spec.sliced) { await runBuild(run, spec, panes); return afterStage(run, spec) }
+    if (spec.parallel) { await runReviews(run, panes); return afterStage(run, spec) }
     if (spec.worktree) {
       // A tester mutating beside a developer makes red tests nobody can attribute.
       const wt = join(ROOT, '..', checkSlug(run.slug) + '-verify')
@@ -801,13 +827,8 @@ const cmds = {
       spec.cwd = wt
       console.log('  verifying in an isolated worktree: ' + wt)
     }
-    if (await paneMode(flags)) {
-      // A run started headless (or before herdr was up) has no cockpit yet.
-      if (!run.herdr) {
-        try { run.herdr = await ensureCockpit({ slug: run.slug, base: run.base, root: ROOT }); saveRun(run) }
-        catch (e) { console.log('\n  could not build the cockpit (' + e.message + ') - running headless.') }
-      }
-      const s = run.herdr && await runPaneStage(spec, spec.prompt(run), run, spec.id)
+    if (panes) {
+      const s = await runPaneStage(spec, spec.prompt(run), run, spec.id)
       // A held stage has not produced anything yet, so the produces check would
       // only ever be wrong about it. The decision gate still gets printed.
       if (s?.status === 'held') return s.holdReason === 'decisions' ? afterStage(run, spec) : undefined
