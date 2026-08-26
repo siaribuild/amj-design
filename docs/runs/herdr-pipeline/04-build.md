@@ -131,10 +131,11 @@ Files: `scripts/pipeline/herd.mjs`, `scripts/pipeline/conduct.mjs`,
   `timeout` = expired slice), `HERDR_STUB_SNAPSHOT` (copies a file aside on the
   first call of each subcommand — used to prove run.json holds the session
   BEFORE `agent prompt`); `pane split` now returns a fresh pane id each time.
-- 5 tests: full lifecycle + `unknown` is not settled + pane left open + produces
+- 6 tests: full lifecycle + `unknown` is not settled + pane left open + produces
   warning; decisions hold → `answer` → exactly one `agent start` and one session
   id; blocked-ui hold with no produces warning; watch-loop bounds/no-sleep/no-
-  ceiling (source-read of the loop body); headless gate still spawns claude.
+  ceiling (source-read of the loop body); headless gate still spawns claude;
+  role-pane reuse. Each was mutation-checked.
 
 For t6/t7: a **held** stage has no `code`, so `cmds.next` would relaunch it into
 a live agent name — t7's reattach must key off `status` in (`running`,`held`),
