@@ -132,19 +132,42 @@ the calibration alone would pass one that lost half of them.
 **Which verticals bound a leaf — the rule, replacing a tolerance.** A frame elevation draws
 three concentric bands, and only one is the sash:
 
-| band | fraction of the opening | W1 |
-|---|---|---|
-| outer frame | ~100% | 0, 2048.9 |
-| **sash** | **~97%** | **25.4, 723.9, 740.8, 2027.8** |
-| glass line | ~95% | 50.8, 698.5 |
+| band | fraction of the opening | W1 | W2 | D2 |
+|---|---|---|---|---|
+| outer frame | 99–100% | 0, 2048.9 | 0, 3501.0 | 0, 965.2 |
+| **sash** | **93–98%** | **25.4, 723.9, 740.8, 2027.8** | **25.4, 3475.6** | **25.4, 944.0** |
+| glass line | ~95% | 50.8, 698.5 | — | — |
 
-The leaves are bounded by the **sash** band and nothing else — that is what yields 698.5/1287.0
-on W1 and 596.9/601.1 on W4. The band is chosen as the *modal* internal length rather than a
-fixed percentage, because how thick a practice draws its sections is a property of the practice,
-not a constant. This was originally an inset tolerance that happened to drop the glass line, and
-an accident that produces the right answer is not a rule: tightened slightly it lost the sash
-band instead. Stating it explicitly also fixed a real misreading — **D3**, a 3000 mm slider,
-read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
+The fractions overlap between openings, which is the point: no single cutoff separates them.
+
+The leaves are bounded by the **sash** band and nothing else. W4 settles it, being the one
+opening whose make-up its drafter also wrote in words — `2x 600mm WIDE AWNINGS`:
+
+| band | W4 leaves | error against the stated 600 |
+|---|---|---|
+| **sash, 97.6%** | **596.9 \| 1913.5 \| 601.1** | **3.1 mm and 1.1 mm** |
+| glass, 95.0% | 546.1 \| 2006.6 \| 546.1 | 54 mm |
+
+**The sash is the outermost band that is not the frame itself** — outermost rather than
+most-populous, because the sash sits outside the glass by construction whereas line counts
+depend on the drawing. D3's glass band carries four lines to its sash band's three, so choosing
+by count reads that slider through its glazing.
+
+**And the frame is identified by what it is, not by a threshold.** A band whose every line lies
+on the frame's own edges *is* the rectangle the lookup matched, so it is discarded; a band that
+merely reaches an edge is kept, because D3's sash band starts at the jamb and discarding it by
+position would lose a real panel boundary.
+
+Two rules were tried here and both were tolerances wearing a rule's clothes. An inset tolerance
+happened to drop the glass line and, tightened slightly, dropped the sash band instead. A
+`frac < 0.995` cutoff for "this band is the frame" held only because W1's outer band is drawn at
+exactly 100% — **W2's is at 99.4% and D2's at 99.1%**, so both slipped through and were then
+chosen, making the entire frame a single "leaf" (W2 read 3501.0 for a 3450.2 sash). That failure
+is invisible in a one-unit opening, where the ratio is 1.000 either way and only the width
+betrays it, which is why single-unit openings are now where it is pinned.
+
+Stating the rule properly also fixed a real misreading it had been hiding: **D3**, a 3000 mm
+slider, read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
 
 **The four are `not read`, which is not the same as `not drawn`** — and the distinction is the
 output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is

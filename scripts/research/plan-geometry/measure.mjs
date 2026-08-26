@@ -168,9 +168,27 @@ const near = (a, b, tol = 0.5) => Math.abs(a - b) <= tol;
 const ok = w1?.length === 2 && near(w1[0].w, 698.5) && near(w1[1].w, 1286.9)
   && near(w1[0].ratio, 0.352, 0.001) && near(w1[1].ratio, 0.648, 0.001)
   && w4?.length === 3 && near(w4[0].w, 596.9) && near(w4[2].w, 601.1);
+
+// A LEAF IS NEVER THE WHOLE FRAME. Choosing the frame's own band as the leaf
+// bounds is silent when the opening has one unit — the ratio is 1.000 either
+// way and only the width betrays it — so it slipped all three gates above while
+// W2 read 3501.0 for a 3450.2 sash and D2 read 965.2 for 918.6. Single-unit
+// openings are where this hides, so they are where it is pinned.
+const singles = [["W2", 3500, 700, 3450.2], ["D2", 965, 2405, 918.6], ["D4", 865, 2405, 821.3]];
+let framesOk = true;
+for (const [tag, w, h, sash] of singles) {
+  const got = at(w, h);
+  const bad = !got || got.length !== 1 || !near(got[0].w, sash);
+  if (bad) {
+    framesOk = false;
+    console.log(`  ${tag}: expected one leaf of ${sash}mm (the sash), got `
+      + `${got ? got.map((l) => l.w.toFixed(1)).join("|") : "nothing"}`);
+  }
+}
+console.log(`single-unit leaves are the sash, not the frame: ${framesOk ? "MATCH" : "DRIFTED"}`);
 console.log(`calibration W1+W4 vs the design's recorded figures: ${ok ? "MATCH" : "DRIFTED"}`);
 
 // Both gates, or the run failed. The table without the calibration would pass a
 // decoder that found the right eleven windows and measured them all wrongly;
 // the calibration without the table would pass one that lost half of them.
-if (!ok || !tableOk || !vsOk) process.exitCode = 1;
+if (!ok || !tableOk || !vsOk || !framesOk) process.exitCode = 1;

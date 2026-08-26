@@ -111,25 +111,43 @@ export function frameVerticals(segs, f) {
 
 /** Of those, the ones that bound a leaf.
  *
- *  A frame elevation draws three concentric bands and only one of them is the
- *  sash: the OUTER frame at ~100% of the opening, the SASH at ~97%, and the
- *  GLASS line at ~95%. For W1 those are {0, 2048.9}, {25.4, 723.9, 740.8,
- *  2027.8} and {50.8, 698.5} — and it is the sash band, and only the sash band,
- *  that yields the 698.5/1287.0 leaves the design records and the 596.9/601.1
- *  that land within 3.1mm of a figure W4's drafter wrote by hand.
+ *  A frame elevation draws concentric bands and only one is the SASH. For W1
+ *  they are the outer frame at 100% of the opening, the sash at 97.4% and the
+ *  glass line at 95.0%. Calibrated on W4, the one opening whose make-up its
+ *  drafter also wrote in words — `2x 600mm WIDE AWNINGS`:
  *
- *  Picked as the MODAL length rather than a fixed percentage: the bands are a
- *  property of how thick this practice draws its sections, not a constant, and
- *  the sash band is the one that recurs once per leaf edge. A tolerance dressed
- *  up as a rule is how the glass line got silently dropped the first time. */
+ *      sash  band 97.6%   596.9 | 1913.5 | 601.1     3.1mm and 1.1mm out
+ *      glass band 95.0%   546.1 | 2006.6 |  546.1     54mm out
+ *
+ *  So: the sash, and it is the OUTERMOST band that is not the frame itself.
+ *  Outermost rather than most-populous — the sash sits outside the glass by
+ *  construction, whereas which band has more lines depends on the drawing (D3's
+ *  glass band carries four lines to its sash band's three, and picking by count
+ *  reads that slider through its glazing).
+ *
+ *  IDENTIFYING THE FRAME, without a magic number. A band whose every line sits
+ *  on the frame's own edges IS the rectangle findFrames matched, so it is
+ *  discarded. This replaces a `frac < 0.995` threshold that worked only because
+ *  W1's outer band happens to be drawn at exactly 100%: W2's is at 99.4% and
+ *  D2's at 99.1%, both of which slipped through and were then chosen, making the
+ *  whole frame a single "leaf". A band that merely REACHES an edge is kept —
+ *  D3's sash band starts at the jamb, and discarding it by position would lose a
+ *  real panel boundary. */
 export function leafBounds(segs, f) {
-  const all = frameVerticals(segs, f).filter((r) => r.frac < 0.995);
+  const all = frameVerticals(segs, f);
   if (!all.length) return [];
+  const atEdge = (r) => r.mm < 2 || r.mm > f.wMm - 2;
   const bucket = (r) => Math.round(r.frac * 200);          // 0.5% bands
-  const tally = new Map();
-  for (const r of all) tally.set(bucket(r), (tally.get(bucket(r)) ?? 0) + 1);
-  const modal = [...tally.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
-  return all.filter((r) => bucket(r) === modal).map((r) => r.mm);
+  const bands = new Map();
+  for (const r of all) {
+    const k = bucket(r);
+    if (!bands.has(k)) bands.set(k, []);
+    bands.get(k).push(r);
+  }
+  const usable = [...bands.entries()]
+    .filter(([, rs]) => rs.some((r) => !atEdge(r)))
+    .sort((a, b) => b[0] - a[0]);
+  return usable.length ? usable[0][1].map((r) => r.mm) : [];
 }
 
 /** Diagonals whose whole extent sits inside the box — the operation symbol. */
