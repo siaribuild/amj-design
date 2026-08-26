@@ -168,20 +168,33 @@ console.log(`  sweep ${sweepMs}ms`);
 // nothing about the other seventeen, so a regression that halved the read count
 // would still have exited 0 and the document's headline table would have gone
 // stale silently. A result a document states is a result the harness enforces.
-const EXPECTED = { read: DOC.read.tags, ambiguous: DOC.ambiguous.tags, notRead: DOC.notRead.tags };
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 const claims = [
-  ["read", read, EXPECTED.read],
-  ["ambiguous", ambiguous, EXPECTED.ambiguous],
-  ["not read", absent.map((o) => o.tag), EXPECTED.notRead],
+  ["read", read, DOC.read],
+  ["ambiguous", ambiguous, DOC.ambiguous],
+  ["not read", absent.map((o) => o.tag), DOC.notRead],
 ];
 let tableOk = true;
-for (const [name, got, want] of claims) {
-  if (sameSet(got, want)) continue;
+for (const [name, got, claim] of claims) {
+  // The n column is a claim in its own right and was previously parsed, printed
+  // and never checked — so the table could have said 12 above a list of eleven
+  // tags and passed. A reader takes the number at face value; so does this.
+  if (claim.count !== claim.tags.length) {
+    tableOk = false;
+    console.log(`\n  §2a INCONSISTENT — ${name}: the table says ${claim.count} `
+      + `but lists ${claim.tags.length} [${claim.tags.join(" ")}]`);
+  }
+  if (sameSet(got, claim.tags)) continue;
   tableOk = false;
-  console.log(`
-  §2a MISMATCH — ${name}: expected ${want.length} [${want.join(" ")}]`);
-  console.log(`                        got      ${got.length} [${got.join(" ")}]`);
+  console.log(`\n  §2a MISMATCH — ${name}: document says ${claim.tags.length} [${claim.tags.join(" ")}]`);
+  console.log(`                    measured ${got.length} [${got.join(" ")}]`);
+}
+// The three outcomes must also account for every opening, exactly once.
+const claimedTotal = claims.reduce((n, [, , c]) => n + c.count, 0);
+if (claimedTotal !== openings.length) {
+  tableOk = false;
+  console.log(`\n  §2a INCOMPLETE — the table's counts sum to ${claimedTotal}, `
+    + `but the schedule has ${openings.length} openings`);
 }
 console.log(`
 §2a table (${DOC.read.count} read / ${DOC.ambiguous.count} ambiguous / ${DOC.notRead.count} not read, as the document states them): ${tableOk ? "MATCH" : "DRIFTED"}`);

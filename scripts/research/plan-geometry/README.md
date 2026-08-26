@@ -40,7 +40,8 @@ not only a demo:
 
 | gate | catches |
 |---|---|
-| §2a's table — which 11 read, which 4 ambiguous, which 4 not read | a decoder that loses windows |
+| §2a's table — the tags in each row | a decoder that loses windows |
+| §2a's table — the n column, against its own row and against 19 | a document whose count and list disagree |
 | §2's eight verticals for W1, and their bands | one that stops resolving the glass or sash lines |
 | single-unit leaves are the sash, not the frame (W2, D2, D4) | one that picks the frame band — invisible in the ratio, which is 1.000 either way |
 | §2's quoted heights at a 2050mm width | prose drifting from measurement |
