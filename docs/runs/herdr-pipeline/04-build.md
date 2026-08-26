@@ -171,3 +171,37 @@ For t7: **no reviewer tab** — design §4 wants one, but `herdr tab create`
 is a usable headless-claude stub — node rejects `--output-format` loudly, which
 is itself the proof the headless argv was spawned; a `.cmd`/`.bat` stub is not
 an option (Node ≥20 `spawn` EINVAL without a shell).
+
+## t7 — Durability
+
+Files: `scripts/pipeline/conduct.mjs`, `scripts/pipeline/herd.mjs`,
+`scripts/tests/pipeline.test.mjs`, `scripts/tests/fixtures/herdr-stub.mjs`.
+
+- `herd.mjs`: `agentInfo(label)` — only an ABSENT record means gone; `unknown`
+  is unsettled, never a licence to relaunch. `launchStage` takes an optional
+  `line` (the typed line) so a restore says "you were interrupted".
+- `conduct.mjs`: `cmds.resume(label)`, reached automatically by `next`, which
+  scans for `status` in (`running`,`held`) before any unstarted stage (t5's
+  handoff). Three outcomes: **reattach** (agent alive → `settleStage`, no
+  boot), **restore** (`runPaneStage(..., resume)` → `resumeArgs` = `--resume
+  <sid>`), **re-run** when `sessionTotals(sid).turns === 0` — nothing on disk
+  to resume, so it says UNRECOVERABLE + "FROM THE START" in plain words, pushes
+  the id to `previousSessions` and starts over. New `stageSum(s)` totals
+  session + `previousSessions`, used by `finalizePane`, `refreshRun` and
+  `runClaude`'s close handler; `runPaneStage`/`runClaude` carry
+  `previousSessions` across the record rebuild. `stageSpec(label)` maps a
+  run.json key back to its spec for the relaunch argv.
+- Stub knob: `HERDR_STUB_NOAGENT` — `agent get` answers `agent_not_found`
+  until an `agent start` is recorded (the world a reboot leaves).
+- 6 tests: reattach (0 `agent start`, same session, only `/exit` typed);
+  restore (`-- --resume <sid>`, no `--session-id`, prompt path re-handed);
+  unrecoverable (says so, `previousSessions`, `--session-id` not `--resume`);
+  finalize sums 2+3 sessions = 5 calls; `report` heals to the sum; a resumed
+  `build-<id>` lands in `tasksDone`. The worktree-metering test was GREEN ON
+  ARRIVAL (t1's session-addressed metering) — mutation-checked two ways.
+
+For t8/t9: a restore needs `docs/runs/<slug>/prompts/<label>.txt`, which is
+gitignored — a stage interrupted before it was written cannot be resumed and
+says so. Restore is pane-only: with herdr down, `resume` exits and points at
+`conduct run <label>`. **Not done: `plan` does not show a running stage** —
+design §5 wants it there too; it is display-only and no criterion asked for it.
