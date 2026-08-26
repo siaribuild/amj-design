@@ -113,6 +113,14 @@ test("a wrong code is refused and the record never appears", async ({ page }) =>
 
   await expect(page.getByText(/didn't match/i)).toBeVisible();
   await expect(page.getByText(/Quote → order journey/i)).toHaveCount(0);
+
+  // A code now stops working after a handful of wrong tries, so the refusal has
+  // to point at the way out. It must NOT say a cap was hit — that would tell an
+  // attacker exactly where they are in their budget — which is why this asserts
+  // the recovery instruction and not a lockout message. Asserted separately from
+  // /didn't match/ above because that prefix is unchanged: deleting the whole
+  // sentence still satisfies it, so it proves nothing about this copy.
+  await expect(page.getByText(/start over to get a fresh code/i)).toBeVisible();
 });
 
 test("an unknown reference reveals nothing about whether it exists", async ({ page }) => {

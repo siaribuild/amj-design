@@ -23,7 +23,7 @@ await build({
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
-      export { normEmail, isEmail, sixDigit, sha256hex, userDto, consumeChallenge, storeChallenge, signinChallenge, guestTrackChallenge } from ${p("worker/lib/auth.ts")};
+      export { normEmail, isEmail, sixDigit, sha256hex, userDto, consumeChallenge, storeChallenge, challengeAllowed, signinChallenge, guestTrackChallenge } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { isValidAuPhone, normalizePhone as normalizePhoneShared } from ${p("src/data/phone.ts")};
       export { abnValid, normalizeAbn, formatAbn } from ${p("src/data/abn.ts")};
@@ -272,7 +272,7 @@ const fakeKv = (seed = {}) => {
 
 test("auth: the code verifier counts attempts and burns the challenge", async () => {
   const kv = fakeKv();
-  const ch = M.guestTrackChallenge("a@b.co", "OF-1");
+  const ch = M.guestTrackChallenge("a@b.co", "p_1");
   await M.storeChallenge(kv.env, ch, "123456");
   for (let i = 0; i < 5; i++) assert.equal(await M.consumeChallenge(kv.env, ch, "000000"), false);
   // The sixth call sees the cap, and the RIGHT code no longer opens it.
@@ -286,11 +286,11 @@ test("auth: the code verifier counts attempts and burns the challenge", async ()
 
 test("auth: a code issued for one challenge cannot satisfy another", async () => {
   const kv = fakeKv();
-  const guest = M.guestTrackChallenge("a@b.co", "OF-1");
+  const guest = M.guestTrackChallenge("a@b.co", "p_1");
   await M.storeChallenge(kv.env, guest, "123456");
-  // Same address, different reference: a different key AND a different hash
+  // Same address, different RECORD: a different key AND a different hash
   // subject, so the stored code is worthless against it.
-  assert.equal(await M.consumeChallenge(kv.env, M.guestTrackChallenge("a@b.co", "OF-2"), "123456"), false);
+  assert.equal(await M.consumeChallenge(kv.env, M.guestTrackChallenge("a@b.co", "p_2"), "123456"), false);
   // And the sign-in challenge for that address is a different challenge again.
   assert.equal(await M.consumeChallenge(kv.env, M.signinChallenge("a@b.co"), "123456"), false);
   // The real one still works — proving the three refusals above were about the
@@ -298,8 +298,36 @@ test("auth: a code issued for one challenge cannot satisfy another", async () =>
   assert.equal(await M.consumeChallenge(kv.env, guest, "123456"), true);
 });
 
+// These key names are a deployed data format, not an implementation detail.
+// Sign-in's two keys have to stay byte-identical or a deploy silently resets
+// every live customer's issuance counter and invalidates outstanding codes —
+// the exact regression that switching the counter to `otpc:${ch.key}` would
+// cause, and which nothing else in the suite can see.
+test("auth: the challenge KV keys are the ones already deployed", async () => {
+  const signin = M.signinChallenge("jason@example.com");
+  assert.deepEqual(signin, { key: "otp:jason@example.com", subject: "jason@example.com" });
+
+  const touched = [];
+  const env = { KV: {
+    get: async (k) => { touched.push(`get ${k}`); return null; },
+    put: async (k) => { touched.push(`put ${k}`); },
+    delete: async (k) => { touched.push(`del ${k}`); },
+  } };
+  await M.challengeAllowed(env, signin);
+  assert.deepEqual(touched, [
+    "get otp:jason@example.com",      // the outstanding-code cooldown
+    "get otpc:jason@example.com",     // the per-window issuance counter
+    "put otpc:jason@example.com",
+  ]);
+
+  // Guest tracking is keyed on the resolved project, so both of a record's
+  // references land on one challenge and one attempt counter.
+  assert.deepEqual(M.guestTrackChallenge("a@b.co", "p_order"),
+    { key: "gcode:a@b.co:p_order", subject: "a@b.co:p_order" });
+});
+
 test("auth: a pre-upgrade OTP record is refused, not thrown on", async () => {
-  const ch = M.guestTrackChallenge("a@b.co", "OF-1");
+  const ch = M.guestTrackChallenge("a@b.co", "p_1");
   // What guest tracking stored before it shared this verifier: a bare SHA-256
   // hex string rather than an OtpRecord. Every code issued in the ten minutes
   // before the deploy is still sitting in KV in exactly this shape, and

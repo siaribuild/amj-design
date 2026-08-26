@@ -94,6 +94,29 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await requestJson(anon, "/api/guest/records/not-a-real-token", {}, 404);
     });
 
+    // The budget has to belong to the RECORD, not to the string the customer
+    // typed. matchRecord deliberately resolves two references to one row — a
+    // project that has become an order answers to both its OF-Q- quote reference
+    // and its OF- order number — and both grant the identical thing. Keyed per
+    // reference, one order carries two independent guess budgets of equal power,
+    // which is exactly double the bound the cap is supposed to impose.
+    await t.test("guest tracking: both references to one record share one budget", async () => {
+      const s = new Session(baseUrl);
+      const headers = { "X-Forwarded-For": "198.51.100.25" };
+      const req = (ref) => requestJson(s, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref }, headers });
+      // Clear whatever the subtest above left live on this record.
+      for (let i = 0; i < 6; i++) {
+        await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref: "OF-58001", code: "000000" }, headers }, 400);
+      }
+      // OF-Q-10002 and OF-58001 are the quote reference and the order number of
+      // the SAME seeded record (project p_order / order o_1).
+      const viaQuote = await req("OF-Q-10002");
+      assert.match(viaQuote.body.devCode, /^\d{6}$/, "the quote reference must still issue, or the next line proves nothing");
+      const viaOrder = await req("OF-58001");
+      assert.equal(viaOrder.body.devCode, undefined,
+        "the order number is the same record — it must meet the cooldown already running, not open a second budget");
+    });
+
     // The grant this code buys is owner-EQUIVALENT, not read-only: it reaches the
     // customer's uploaded plans, /accept (which commits a real order) and
     // confirm-drawings (which releases to manufacture). Both preconditions are
@@ -129,20 +152,28 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     // cap is the only thing left holding the line.
     await t.test("guest tracking: re-issuing does not refill the guess budget", async () => {
       const s = new Session(baseUrl);
-      const ref = "OF-Q-10002";
+      // Sarah's submitted quote: one reference, one record, and no other subtest
+      // issues against it — so the five codes counted below are all its own.
+      const ref = "OF-Q-10003";
+      const email = "sarah@northsidebuild.com.au";
       const headers = { "X-Forwarded-For": "198.51.100.21" }; // TEST-NET-2; isolates this from the per-IP cap
       let issued = 0;
       for (let round = 0; round < 8; round++) {
-        const req = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref }, headers });
+        const req = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref }, headers });
         if (!req.body.devCode) continue;   // refused: cooldown or window cap
         issued++;
         for (let i = 0; i < 6; i++) {
-          await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref, code: "000000" }, headers }, 400);
+          await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: "000000" }, headers }, 400);
         }
       }
       // Five codes per window, five counted guesses each: 25 guesses per 15
       // minutes against a 10^6 space, and every one of those five costs the
       // customer an email they can see. Unbounded is what this replaced.
+      //
+      // 25 is the ceiling for a SERIAL attacker. The attempt cap is a
+      // read-modify-write over KV with no atomic increment, so overlapping
+      // requests can share one increment (see MAX_OTP_ATTEMPTS in lib/auth.ts);
+      // this test issues sequentially and so measures the serial bound only.
       assert.equal(issued, 5, "issuance must stop at the per-window cap however often the challenge is burned");
     });
 
@@ -151,10 +182,10 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     // whether they are mid-attack. Three different internal states, one reply.
     await t.test("guest tracking: wrong, absent and capped are indistinguishable", async () => {
       const s = new Session(baseUrl);
-      // Sarah's submitted quote — a pair no other subtest in this file tracks, so
-      // it arrives with a clean issuance cooldown and window budget.
-      const ref = "OF-Q-10003";
-      const email = "sarah@northsidebuild.com.au";
+      // The draft quote. The burn subtest above is the only other user of this
+      // record and it ends by burning the challenge, so issuance is open again.
+      const ref = "OF-Q-10001";
+      const email = demoEmail;
       const headers = { "X-Forwarded-For": "198.51.100.22" };
       const verify = (who, code) =>
         requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email: who, ref, code }, headers }, 400);

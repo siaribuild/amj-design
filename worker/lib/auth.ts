@@ -9,6 +9,24 @@ import { newToken, parseCookies, uuid } from "./util";
 export const SESSION_COOKIE = "apertly_session";
 const OTP_TTL = 60 * 10; // 10 minutes
 const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
+// ponytail: SERIAL ceiling, not a hard cap — a compare-and-swap counter (D1
+// `UPDATE … SET attempts = attempts + 1 WHERE key = ? AND attempts < ?`, checked
+// via changes()) is the upgrade path if concurrent guessing matters.
+//
+// consumeChallenge below is read → check → write over KV, which offers no atomic
+// increment. Requests that overlap between the read and the write all see the
+// same `attempts` and all write the same value + 1, so N concurrent guesses cost
+// the attacker ONE increment. Every budget quoted anywhere in this codebase —
+// 5 per code, 25 per 15-minute window per record — therefore bounds a SERIAL
+// attacker only, and the true bound under concurrency is not 25.
+//
+// Measured 2026-08-26 on the local runtime: 20 rounds of 5 genuinely overlapping
+// requests (a 5-request burst completed in 70ms against a 48ms single-request
+// latency) recorded 5 of 5 attempts every time — no lost updates. That is NOT
+// evidence the cap holds in production: local KV is in-process and strongly
+// consistent, whereas Workers KV is a distributed cache whose reads may be up to
+// 60s stale, which widens the read→write window from microseconds to the round
+// trip. The race is unreproducible here and undeniable in the code.
 const MAX_OTP_ATTEMPTS = 5;
 // Abuse controls for email-code issuance (shared by customer + ops challenge).
 const RESEND_COOLDOWN_MS = 60 * 1000;   // don't re-issue while a fresh code is outstanding
@@ -107,10 +125,21 @@ export interface Challenge { key: string; subject: string }
  *  byte-identical to what these two flows have always stored. */
 export const signinChallenge = (email: string): Challenge => ({ key: `otp:${email}`, subject: email });
 
-/** Guest order tracking: the secret is scoped to one (address, reference) pair,
- *  so both belong in the key and in the hash. */
-export const guestTrackChallenge = (email: string, ref: string): Challenge =>
-  ({ key: `gcode:${email}:${ref}`, subject: `${email}:${ref}` });
+/** Guest order tracking, keyed on the RESOLVED RECORD rather than on the string
+ *  the customer typed.
+ *
+ *  matchRecord answers two references for one row — a project that has become an
+ *  order is reachable by both its OF-Q- quote reference and its OF- order number
+ *  — and both buy the identical grant. Keyed per reference, that record would
+ *  carry two independent guess budgets of equal power, i.e. exactly double the
+ *  bound this cap exists to impose.
+ *
+ *  The PROJECT id, not the order id: matchRecord prefers the order once one
+ *  exists, so keying on whatever it returned would silently change the key the
+ *  moment a quote is accepted — invalidating a code already in a customer's
+ *  inbox. The project id is the same before and after that transition. */
+export const guestTrackChallenge = (email: string, projectId: string): Challenge =>
+  ({ key: `gcode:${email}:${projectId}`, subject: `${email}:${projectId}` });
 
 interface OtpRecord { hash: string; attempts: number; at: number }
 

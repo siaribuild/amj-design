@@ -19,18 +19,27 @@ import { loadLines, loadProjectFiles } from "./projects";
 
 export const guest = new Hono<{ Bindings: Env }>();
 
-// Clipped for the same reason normEmail is (see lib/auth.ts): both halves become
-// a KV key. Workers KV rejects a key over 512 bytes by THROWING, which would turn
-// this deliberately neutral endpoint's 200 into a 500 — itself an oracle. No real
-// reference comes close to 64 characters.
-const normRef = (r: unknown) => String(r ?? "").trim().toUpperCase().slice(0, 64);
+// Not length-clipped, deliberately. An earlier revision clipped it because the
+// reference was part of a KV key and Workers KV throws above 512 bytes, turning
+// this neutral endpoint's 200 into a 500. The challenge is now keyed on the
+// resolved project (see guestTrackChallenge), so the reference reaches only a D1
+// bind parameter, and the outbound email only ever quotes a reference that
+// matched a row exactly — which is a database value, not an attacker's string.
+// A clip here would now guard nothing and no test could tell if it were removed.
+const normRef = (r: unknown) => String(r ?? "").trim().toUpperCase();
 
 // Per-SOURCE ceiling on code guessing, the same division of labour the sign-in
 // path already draws (lib/auth.ts): this bounds one client grinding across MANY
 // targets, while the attempt cap inside consumeChallenge bounds guesses against
-// any ONE target and is the control that actually protects the secret. Neither
-// substitutes for the other. Generous, because CGNAT puts many real people
-// behind one address and a locked-out customer is worse than a slowed bot.
+// any ONE target. Neither substitutes for the other. Generous, because CGNAT
+// puts many real people behind one address and a locked-out customer is worse
+// than a slowed bot.
+//
+// Note this cap is the ONLY one of the two that a concurrent attacker cannot
+// slip: it is checked per request, whereas the attempt cap is a read-modify-write
+// over KV and bounds a serial attacker only (see MAX_OTP_ATTEMPTS). Against a
+// single host, therefore, 60/hour is the real bound rather than the 25 the
+// attempt cap nominally imposes; across many hosts, neither number holds.
 const MAX_GUEST_VERIFY_PER_IP = 60;
 const GUEST_VERIFY_IP_WINDOW = 60 * 60; // seconds
 
@@ -74,6 +83,13 @@ guest.post("/track/request", async (c) => {
   const neutral = { ok: true } as const;
   if (!isEmail(email) || !ref) return c.json(neutral);
 
+  // Resolve the record BEFORE the issuance gate, so the budget belongs to the
+  // record rather than to the string that was typed at it (see
+  // guestTrackChallenge). A miss stops here: it writes nothing, which also means
+  // an unauthenticated probe can no longer make this endpoint store KV state.
+  const match = await matchRecord(c.env, ref, email);
+  if (!match) return c.json(neutral);
+
   // Issuance limits, shared with the sign-in path rather than hand-rolled here.
   // This replaces a bespoke `grl:` key that enforced only a 60s cooldown, and it
   // tightens the flow in two ways that matter: the per-window cap bounds how fast
@@ -81,27 +97,22 @@ guest.post("/track/request", async (c) => {
   // budget was unbounded — see the attempt cap in consumeChallenge), and the
   // cooldown now refuses to overwrite a code that is still live, so an attacker
   // requesting a code can no longer invalidate the real customer's.
-  const ch = guestTrackChallenge(email, ref);
+  const ch = guestTrackChallenge(email, match.projectId);
   if (!(await challengeAllowed(c.env, ch))) return c.json(neutral);
 
-  const match = await matchRecord(c.env, ref, email);
-  let devCode: string | undefined;
-  if (match) {
-    const code = sixDigit();
-    await storeChallenge(c.env, ch, code);
-    // "quote" or "order" — the customer entered one of two reference formats and
-    // the copy should match what they typed.
-    const noun = match.kind === "order" ? "order" : "quote";
-    await notify(c.env, {
-      recipient: email,
-      eventType: "guest.track.requested",
-      templateKey: "guest_track_code",
-      vars: { type: noun, ref, code },
-      email: { to: email, subject: `Tracking code for ${ref}`, text: `Your tracking code for ${noun} ${ref} is ${code}. It expires in 10 minutes.` },
-    });
-    if (isDevEnv(c.env)) devCode = code;
-  }
-  return c.json(devCode ? { ok: true, devCode } : neutral);
+  const code = sixDigit();
+  await storeChallenge(c.env, ch, code);
+  // "quote" or "order" — the customer entered one of two reference formats and
+  // the copy should match what they typed.
+  const noun = match.kind === "order" ? "order" : "quote";
+  await notify(c.env, {
+    recipient: email,
+    eventType: "guest.track.requested",
+    templateKey: "guest_track_code",
+    vars: { type: noun, ref, code },
+    email: { to: email, subject: `Tracking code for ${ref}`, text: `Your tracking code for ${noun} ${ref} is ${code}. It expires in 10 minutes.` },
+  });
+  return c.json(isDevEnv(c.env) ? { ok: true, devCode: code } : neutral);
 });
 
 // POST /api/guest/track/verify { email, ref, code } — returns a scoped token.
@@ -120,15 +131,18 @@ guest.post("/track/verify", async (c) => {
     return c.json({ error: "rate_limited" }, 429);
   }
 
+  // Resolve first, for the same reason as issuance: the challenge belongs to the
+  // record, so both of its references have to reach the one challenge and the
+  // one attempt counter. A miss and a wrong code are the same neutral 400.
+  const match = await matchRecord(c.env, ref, email);
+  if (!match) return c.json({ error: "invalid" }, 400);
+
   // Counts the attempt and burns the challenge at the cap. Every failure — wrong
   // code, no code stored, already capped — comes back as one indistinguishable
   // 400, which is what keeps this from telling an attacker where they are.
-  if (!(await consumeChallenge(c.env, guestTrackChallenge(email, ref), code))) {
+  if (!(await consumeChallenge(c.env, guestTrackChallenge(email, match.projectId), code))) {
     return c.json({ error: "invalid" }, 400);
   }
-
-  const match = await matchRecord(c.env, ref, email);
-  if (!match) return c.json({ error: "invalid" }, 400);
 
   const token = newToken();
   await c.env.DB.prepare(
