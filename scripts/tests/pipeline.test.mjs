@@ -15,7 +15,7 @@ import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from 
 import {
   STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, browserMcp, mcpAdvisory,
 } from '../pipeline/conduct.mjs'
-import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage } from '../pipeline/herd.mjs'
+import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
 const CONDUCT = resolve('scripts/pipeline/conduct.mjs')
 
@@ -903,4 +903,111 @@ test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pan
   // out of the pane, so a missing artifact can only be noticed on disk.
   assert.match(out, /did not write docs\/runs\/demo\/01-spec\.md/)
   assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
+})
+
+test('a settled stage with open DECISIONS holds warm, and answer costs no second boot', () => {
+  const s = paneRepo('pane-hold', 'sess-hold', { HERDR_STUB_STATES: 'idle' })
+  const decisions = join(s.root, 'docs', 'runs', 'demo', 'DECISIONS.md')
+  writeFileSync(decisions, '1. Which way round?' + NL + '   Recommendation: this way.' + NL)
+
+  const held = paned(s, 'run', 'spec')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'held')
+  assert.equal(st.holdReason, 'decisions')
+  assert.equal(st.code, undefined, 'a held stage is not done - conduct next must not skip it')
+  assert.equal(runJson(s).gateStage, 'spec')
+  assert.match(held, /HELD WARM/)
+  assert.match(held, /DECISION GATE/, 'the questions themselves must still be put in front of the operator')
+
+  // The agent is ALIVE: nothing exited it, and the operator was told where it is.
+  assert.equal(said(s.log, 'agent', 'prompt').length, 1,
+    'a held stage must not be /exited - the whole saving is that it stays warm')
+  const note = said(s.log, 'notification', 'show')
+  assert.equal(note.length, 1, 'a hold nobody is told about is a stall')
+  assert.match(note[0].join(' '), /w9\b/, 'the notification must name the workspace to attach to')
+  assert.match(note[0].join(' '), /spec/, 'the notification must name the agent to attach to')
+
+  // The operator answers in the file, then nudges the agent that is still there.
+  writeFileSync(decisions, '1. Which way round?' + NL + 'A: this way.' + NL)
+  const answered = paned(s, 'answer')
+
+  assert.equal(said(s.log, 'agent', 'start').length, 1,
+    'the block-and-answer cycle re-booted a session - that ~30k is the cost this feature exists to avoid')
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.equal(typed.length, 3, 'answer -> one nudge, then /exit once it finishes: ' + typed.join(' | '))
+  assert.match(typed[1], /DECISIONS\.md/)
+  assert.ok(!typed[1].includes(NL), 'a newline in typed text submits it early')
+  assert.equal(typed[2], '/exit')
+
+  const after = runJson(s)
+  assert.equal(after.stages.spec.session, 'sess-hold', 'exactly one session id across the whole cycle')
+  assert.equal(after.stages.spec.status, 'done')
+  assert.equal(after.stages.spec.holdReason, undefined)
+  assert.equal(after.gateStage, null)
+  assert.match(answered, /same session/i)
+})
+
+test('a herdr-blocked stage holds warm too - nothing was written, and the agent lives', () => {
+  // herdr recognised a permission or question UI. There is no DECISIONS.md and
+  // no artifact; killing the agent here would re-boot it to ask the same thing.
+  const s = paneRepo('pane-blocked', 'sess-blocked', { HERDR_STUB_STATES: 'working;blocked' })
+
+  const out = paned(s, 'run', 'spec')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'held')
+  assert.equal(st.holdReason, 'blocked-ui')
+  assert.equal(st.code, undefined)
+  assert.equal(runJson(s).gateStage, 'spec')
+  assert.equal(said(s.log, 'notification', 'show').length, 1)
+  assert.equal(said(s.log, 'agent', 'prompt').length, 1, 'a blocked agent must not be /exited')
+  assert.match(out, /HELD WARM \(blocked-ui\)/)
+  // The stage has not finished, so it has not failed to write anything yet.
+  assert.ok(!out.includes('did not write'),
+    'a produces warning against a stage still waiting on a human is simply wrong')
+})
+
+test('the watch loop asks herdr repeatedly, bounded, and never sleeps or applies a ceiling', async () => {
+  const s = stubbed('watch-loop', { HERDR_STUB_STATES: 'timeout;working;unknown;done' })
+
+  const r = await watch('spec', { sliceMs: 1000 })
+
+  assert.deepEqual(r, { state: 'settled', status: 'done' })
+  assert.equal(said(s.log, 'agent', 'wait').length, 4,
+    'an expired slice, `working` and `unknown` are all "ask again" - only a settled state ends it')
+  for (const w of said(s.log, 'agent', 'wait'))
+    assert.equal(w[w.indexOf('--timeout') + 1], '1000')
+
+  const dead = stubbed('watch-lost', { HERDR_STUB_FAIL: 'agent wait', HERDR_STUB_ERRCODE: 'not_found' })
+  assert.equal((await watch('spec')).state, 'lost', 'a herdr that cannot answer is an interruption')
+
+  // No sleep, and no threshold: owner ruling is that no runaway number is
+  // defensible and the pane in front of you is the guard. Reintroducing one
+  // under any name - tokens, turns, dollars, wall clock - fails here.
+  const body = readFileSync(resolve('scripts/pipeline/herd.mjs'), 'utf8')
+    .split('export async function watch(')[1].split(NL + '}')[0]
+  for (const banned of ['sleep', 'setTimeout', 'Date.now', 'budget', 'max', 'ceiling', 'limit'])
+    assert.ok(!body.includes(banned), 'the watch loop grew a ' + banned)
+  assert.equal(existsSync(dead.log + '.readcalled'), false)
+})
+
+test('a headless gate still answers headless, even with herdr up', () => {
+  // Pane mode adds a cheaper path; it must not capture the fallback one. A
+  // stage recorded without mode:'pane' has no live agent to nudge, so `answer`
+  // must resume its session as a child process exactly as it always has.
+  const s = paneRepo('headless-answer', 'sess-headless')
+  const run = runJson(s)
+  run.stages.spec = { code: 0, session: 'sess-headless', contextTokens: 1, turns: 1, source: 'transcript' }
+  run.gateStage = 'spec'
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), JSON.stringify(run, null, 2))
+  const before = calls(s.log).length
+
+  let failed = null
+  try { paned(s, 'answer') } catch (e) { failed = (e.stdout || '') + (e.stderr || '') }
+
+  // CONDUCT_CLAUDE_BIN points at nothing, so a spawn of it is loud and provable.
+  assert.ok(failed, 'the headless branch did not spawn a claude at all')
+  assert.match(failed, /no-such-claude/, 'answer resumed something other than the claude binary')
+  assert.equal(calls(s.log).length, before, 'a headless gate must not talk to herdr')
 })
