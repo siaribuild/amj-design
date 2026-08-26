@@ -1011,3 +1011,17 @@ test('a headless gate still answers headless, even with herdr up', () => {
   assert.match(failed, /no-such-claude/, 'answer resumed something other than the claude binary')
   assert.equal(calls(s.log).length, before, 'a headless gate must not talk to herdr')
 })
+
+test('a role gets ONE pane, reused - a run must not end with a dozen idle shells', () => {
+  const s = paneRepo('pane-reuse', 'sess-reuse')
+
+  paned(s, 'run', 'spec')
+  const afterFirst = said(s.log, 'pane', 'split').length
+  paned(s, 'run', 'spec')
+
+  assert.equal(afterFirst, 2, 'cockpit diff pane + one pane for the product-manager role')
+  assert.equal(said(s.log, 'pane', 'split').length, afterFirst,
+    'the role pane was back at a shell after /exit and must be reused, not re-split')
+  assert.equal(said(s.log, 'agent', 'start').length, 2,
+    'reuse is the PANE, never the agent: each stage boots its own claude and its own session')
+})
