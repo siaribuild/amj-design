@@ -1,5 +1,11 @@
 # plan-geometry — the Stage 0 proof, kept this time
 
+> **The owner ruled on 2026-08-27 that the model reads the drawings.** This
+> directory is now the *corroborating* route, not the primary one — free and
+> exact where it works, and a cheap second opinion on what the model says. See
+> the ROUTE DECISION section of the design. `render.mjs` here produces the
+> model's input and is part of the primary path.
+
 This is the harness behind [`docs/estimator/drawing-parse-design.md`](../../../docs/estimator/drawing-parse-design.md).
 It reads how an opening **divides** out of a plan set's vector line-work, with no
 rasteriser, no model call and no new dependency — `unpdf` is already a runtime
@@ -63,6 +69,7 @@ matcher tolerance, band threshold, frame-band rule and page scale in turn.
 |---|---|---|
 | `decode.mjs` | A | page → line segments. Composes the CTM through save/restore/transform/form-XObject and decodes `constructPath`. Also `elevationPages()`, which finds the sheets by their callouts. |
 | `frames.mjs` | C | given a KNOWN opening size, finds that rectangle; then its mullions and symbols. |
+| `render.mjs` | 4+5 | page → PNG, and PNG → one opening's crop. The vision model's input. Needs `@napi-rs/canvas` resolvable from unpdf; not a repo dependency. |
 | `measure.mjs` | — | drives A+C over the whole schedule, accounts for **every** opening in one of three outcomes, and checks the two calibration points. |
 
 ## Two traps this cost real time to find, both load-bearing

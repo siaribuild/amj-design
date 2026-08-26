@@ -31,6 +31,51 @@ It is worth recording, because the errors were confident and they were mine.
 
 ---
 
+## ROUTE DECISION — the model reads the drawings. Owner, 2026-08-27.
+
+**Binding, and it reverses this document's headline.** The primary path is the method that was
+proven manually with Fable and written down as `containers/plan-parse/` on branch
+`feat/drawing-extraction`: render the sheet, crop to one opening, and ask a vision model, with
+the schedule row as context. The vector-geometry route below is **demoted to a corroborating
+check** — useful because it is free and exact where it works, never the thing the answer depends
+on.
+
+**The owner's reasoning, which the session's own evidence supports.** Plans differ. A window tag
+is sometimes beside its diagram and sometimes far from it on a leader line; a stile is sometimes
+its own segment and sometimes part of a wall line; a frame band is sometimes at 100% of the
+opening and sometimes at 99.1%. Each is an edge case, each needs a new geometric rule, and this
+session found **three of them in a single document** — every one of which produced a confident
+wrong answer until it was caught. Re-deriving that ruleset for every drafter is the work the
+owner declined, and the bar he set makes the trade explicit: *the fallback already works
+ok-ish, so anything short of 100% is not worth the complexity.*
+
+**Two things the geometry could not do at all**, both verified by looking at the rendered sheets:
+
+- **The tag→wall→elevation chain.** `docs`' floor plan carries octagon tags (`W14/S08`) whose
+  legend reads *"denotes the window & door number, and sheet number"*, with elevation markers
+  A/B/C/D on the four walls. Reading a tag, associating it with a wall through a leader line,
+  and mapping that wall to an elevation letter is the join this whole pass needs, and it is
+  text-and-symbol work, not line-work.
+- **Disambiguation.** W9 and W11 are both 1810 × 1027 and the geometry reports "2 candidates,
+  not stated" for each. On Elevation C both are visible and the plan states their order along
+  the wall. The model resolves what the matcher can only decline.
+
+**The one thing the geometry has that the model does not, and it is not nothing.** Geometry
+fails *loudly* — no frame resolves, so the row says `not read` and the fallback takes over
+visibly. A vision model fails *silently*: it returns a plausible composition for an opening it
+could not actually see, indistinguishable from a real one. So the model route needs what this
+document's §4 three-state rule already demands, enforced at the boundary: every reading carries
+its crop as evidence, disagreements with the schedule's type are surfaced rather than resolved,
+and "could not read this" must be an answer the prompt makes easy to give. **The geometric
+decoder becomes the cheap second opinion** — where both agree, confidence is high; where they
+disagree, a human looks.
+
+*Everything below §0 is retained as written. It is the record of the demoted route and of what
+it cost to learn, and its output contract, precedence rules and §6 family ruling are unchanged
+and still bind the model route.*
+
+---
+
 ## 0. What this pass is, and what it is not
 
 **The openings list already works and is authoritative.** Extraction returns every opening with
@@ -189,14 +234,16 @@ betrays it, which is why single-unit openings are now where it is pinned.
 Stating the rule properly also fixed a real misreading it had been hiding: **D3**, a 3000 mm
 slider, read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
 
-**`not read` is not the same as `not drawn`** — and the distinction is the
-output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is
-drawn at that width on either elevation, so no frame of that size is there. **W15 is different
-and worth stating against my own first reading of it:** a 1380 × ~1975 rectangle does sit on
-page 6, inside 2% on both dimensions, but its right-hand stile is a 2718 mm building line
-rather than a jamb, so no single frame resolves. Whether W15 is drawn is **undetermined**. It
-would have been easy, and wrong, to write "not drawn in the set" — which is the same overclaim
-this section was opened to correct.
+**`not read` is not the same as `not drawn`, and this section is the proof of it.** The
+distinction is the output spec's §4 and it is not pedantry. Four openings were recorded here as
+`not read`. Three of them — W14, W15, W16 — were then found, once the matcher stopped requiring
+a stile to be its own segment. Had they been recorded as `not drawn`, this document would have
+carried a false statement about the building, and the correction would have been an
+embarrassment rather than an edit.
+
+D1 alone remains, and the weaker claim is all that is being made about it: no frame within 2% of
+its stated size resolves on either elevation, at its 1380 mm or at the 1200 the energy report
+gives it. Whether it is drawn is not established.
 
 The output is identical either way, and correct either way: the row keeps everything the
 schedule gave it. **Nothing was read wrongly**, which is the property that matters — a wrong
@@ -221,8 +268,10 @@ figure, not the schedule's 2410 × 1800. `conf_energy_2` on this project has bee
 review since July with no tiebreaker. The line-work is one, and it sides with the report. This
 is the first case of the drawings arbitrating a conflict rather than creating one.
 
-**Cost, re-measured:** both elevation sheets decoded in **276 ms**, peak heap **36 MB**, whole
-19-opening sweep **409 ms**. Zero tokens, zero model calls, no new dependency.
+**Cost, re-measured:** both elevation sheets decoded in **~660 ms**, peak heap **48 MB**, whole
+19-opening sweep **~930 ms**. Zero tokens, zero model calls, no new dependency. The sweep was
+409 ms before the rail-driven fallback; it runs only where the strict pass finds nothing, and
+three openings were worth the difference.
 
 ---
 ## 3. The cheap route is dead — proven, not assumed
