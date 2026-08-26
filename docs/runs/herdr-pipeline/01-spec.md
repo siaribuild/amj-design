@@ -1,3 +1,26 @@
+> **STALE — WRITTEN BEFORE THE GRILL. DO NOT BUILD FROM THIS.**
+>
+> This spec was written against a brief whose "Grill conclusions" section read
+> "not run". That was the orchestrator waiving stage 0 on its own judgement,
+> which CLAUDE.md forbids. The grill has since been run with the owner and
+> several decisions here are directly overruled — see
+> `docs/runs/herdr-pipeline/00-ask.md`.
+>
+> Known contradictions, pending revision:
+>
+> - **Criterion 26 and decision 2 spec a dollar column and a budget ceiling.**
+>   Both are deleted. The owner is on a subscription; dollar figures are
+>   irrelevant. Metering becomes window-aware instead (5-hour window usage,
+>   reset time, rolling 7-day total) and must never display a
+>   percentage-of-quota, which is not reported and would be invented.
+> - **The framing is wrong.** This feature exists for cost-effectiveness and
+>   speed. Not visibility, not durability.
+> - **Parallel build tasks** must be spec'd as explicitly rejected, on token
+>   cost.
+>
+> A revision is in flight with the product-manager. Until it lands, `00-ask.md`
+> is authoritative wherever the two disagree.
+
 # Spec — run the pipeline natively on herdr
 
 Run: `herdr-pipeline`. Source of truth for the ask: `docs/runs/herdr-pipeline/00-ask.md`.
