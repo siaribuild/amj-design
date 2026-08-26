@@ -23,17 +23,24 @@
 // Records with no requestId (rare - local/synthetic turns) are counted once each,
 // keyed by uuid, rather than collapsed together.
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HOME = process.env.USERPROFILE || process.env.HOME
-const PROJECTS = join(HOME, '.claude', 'projects')
+// Read at call time, not at import: the tests point this at a seeded fixture dir
+// so nothing here ever touches the developer's real transcripts.
+const PROJECTS = () => process.env.CLAUDE_PROJECTS_DIR || join(HOME, '.claude', 'projects')
 // A/B arms run in git worktrees, which Claude Code files under their own project
 // directory. Scan them all and filter by the record's own cwd instead.
-const DIRS = () => readdirSync(PROJECTS).map((d) => join(PROJECTS, d)).filter((d) => {
-  try { return statSync(d).isDirectory() } catch { return false }
-})
+const DIRS = () => {
+  const root = PROJECTS()
+  let entries
+  try { entries = readdirSync(root) } catch { return [] }
+  return entries.map((d) => join(root, d)).filter((d) => {
+    try { return statSync(d).isDirectory() } catch { return false }
+  })
+}
 const NL = String.fromCharCode(10)
 const SEP = String.fromCharCode(92) // backslash, for normalising Windows cwd paths
 
@@ -60,20 +67,66 @@ function* records(sinceMs, cwdFilter) {
   }
 }
 
+/**
+ * Every transcript file belonging to one session. A session is ADDRESSABLE:
+ * its main transcript is `<proj>/<sessionId>.jsonl` and its subagent turns are
+ * `<proj>/<sessionId>/subagents/*.jsonl` (those records carry full usage and the
+ * parent's sessionId). Addressing beats scanning: with concurrent sessions on
+ * the machine, a scan-and-filter over every transcript costs a full-machine read
+ * per stage and can only ever guess at ownership.
+ */
+function sessionFiles(sessionId) {
+  const out = []
+  for (const dir of DIRS()) {
+    const main = join(dir, sessionId + '.jsonl')
+    if (existsSync(main)) out.push(main)
+    const subs = join(dir, sessionId, 'subagents')
+    try {
+      for (const f of readdirSync(subs)) if (f.endsWith('.jsonl')) out.push(join(subs, f))
+    } catch { /* no subagent turns */ }
+  }
+  return out
+}
+
 /** Sum one session's API responses, each counted once. Used by `conduct report`. */
 export function sessionTotals(sessionId) {
   const b = zero()
+  if (!sessionId) return b
   const seen = new Set()
-  for (const d of records(0)) {
-    if (d.sessionId !== sessionId) continue
-    const key = d.requestId || ('uuid:' + d.uuid)
-    if (seen.has(key)) continue
-    seen.add(key)
-    b.ctx += ctxOf(d.message.usage)
-    b.out += d.message.usage.output_tokens || 0
-    b.turns++
+  for (const file of sessionFiles(sessionId)) {
+    for (const line of readFileSync(file, 'utf8').split(NL)) {
+      if (!line.trim()) continue
+      let d
+      try { d = JSON.parse(line) } catch { continue }
+      if (d.type !== 'assistant' || !d.message?.usage) continue
+      const key = d.requestId || ('uuid:' + d.uuid)
+      if (seen.has(key)) continue
+      seen.add(key)
+      b.ctx += ctxOf(d.message.usage)
+      b.out += d.message.usage.output_tokens || 0
+      b.turns++
+    }
   }
   return b
+}
+
+/**
+ * One stage's figures, and where they came from.
+ *
+ * The transcript is the authority (it yields the API-call count, which tells you
+ * whether a stage was exploring or working). But a stage's child process exits
+ * before Claude Code has flushed that session's transcript, so a close-time read
+ * can legitimately find nothing yet — hence the fallback to the `result` object
+ * the stage itself streamed into logs/<label>.jsonl. `source` is recorded so
+ * `conduct report` can recompute the fallback rows later, once, from the
+ * transcript that has since landed.
+ */
+export function stageTotals(sessionId, logPath) {
+  const t = sessionTotals(sessionId)
+  if (t.turns > 0) return { ctx: t.ctx, out: t.out, turns: t.turns, source: 'transcript' }
+  const s = logPath ? streamTotals(logPath) : null
+  if (s && (s.turns > 0 || s.ctx > 0)) return { ctx: s.ctx, out: s.out, turns: s.turns, source: 'result' }
+  return { ctx: 0, out: 0, turns: 0, source: 'none' }
 }
 
 /**

@@ -24,7 +24,8 @@
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { sessionTotals } from './measure.mjs'
+import { fileURLToPath } from 'node:url'
+import { sessionTotals, stageTotals } from './measure.mjs'
 
 const ROOT = resolve(process.cwd())
 const RUNS = join(ROOT, 'docs', 'runs')
@@ -43,19 +44,30 @@ const CLAUDE = (() => {
 const die = (m) => { console.error('\n  ' + m + '\n'); process.exit(1) }
 const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n)
 const sh = (c) => execSync(c, { cwd: ROOT, encoding: 'utf8' }).trim()
+// A row whose figures are real. A stage that was never metered prints "unknown",
+// never 0 - a zero has to mean measured zero, or the instrument lies quietly.
+// Records written before `source` existed are judged by their own numbers.
+const metered = (s) => s.source
+  ? s.source !== 'none'
+  : ((s.contextTokens || 0) + (s.outputTokens || 0) + (s.turns || 0)) > 0
 // Slugs become filesystem paths and git worktree names. Constrain them at the
 // boundary rather than trusting every later interpolation.
 const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/
 const checkSlug = (s) => SLUG.test(s) ? s : die('slug must match ' + SLUG + ' - got "' + s + '"')
 
 // --- stage table -----------------------------------------------------------
-// budget: hard ceiling in USD (--max-budget-usd) - a RUNAWAY GUARD, set well
-// above expected spend, not a target. For 'build' it applies per task session.
-// A stage that hits it stops and says so. compact: context window cap, in tokens.
+// compact: context window cap, in tokens.
+//
+// There is deliberately NO runaway guard here - no dollar ceiling, no token
+// ceiling, no turn ceiling. Owner ruling: no threshold is defensible, the
+// subscription's 5-hour window is the only externally-enforced ceiling there is,
+// and a stage running in front of you is the guard. Do not reintroduce one.
+// Dollars are not the measure either: the owner is on a subscription, so this
+// conductor prints tokens and time and never a currency figure.
 
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', budget: 8, compact: 120000,
+    id: 'spec', agent: 'product-manager', compact: 120000,
     needs: ['00-ask.md'], produces: ['01-spec.md'],
     prompt: (r) => `Write the spec for this feature.
 
@@ -82,7 +94,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', budget: 15, compact: 120000,
+    id: 'design', agent: 'architect', compact: 120000,
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -120,7 +132,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', budget: 12, compact: 100000, mcp: true,
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 100000, mcp: true,
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -139,11 +151,11 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, budget: 25, compact: 120000,
+    id: 'build', agent: 'developer', sliced: true, compact: 120000,
     needs: ['02-tasks.json'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, budget: 8, compact: 100000, mcp: true,
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true,
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -154,7 +166,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', worktree: true, budget: 18, compact: 120000,
+    id: 'verify', agent: 'tester', worktree: true, compact: 120000,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => `Independently verify this feature. Assume nothing reported is true.
 
@@ -177,7 +189,7 @@ Findings go back to a developer, not to you - do not fix code.`,
     id: 'review', parallel: true, needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', budget: 6, compact: 100000,
+    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000,
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -195,7 +207,7 @@ reference, anything descoped, and an ACCEPT / REJECT verdict.`,
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', budget: 8, compact: 100000,
+    id: 'conformance', agent: 'architect', compact: 100000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the branch diff:
@@ -209,10 +221,10 @@ diff-reading review always misses. Check every path in 02-tasks.json exists.
 WRITE ${r.dir}/07-review-conformance.md.`,
   },
   {
-    id: 'security', slash: '/security-review', budget: 8, compact: 100000,
+    id: 'security', slash: '/security-review', compact: 100000,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', budget: 6, compact: 100000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
   },
   { id: 'codex', codex: true },
 ]
@@ -233,6 +245,27 @@ function saveRun(r) {
   writeFileSync(join(RUNS, r.slug, 'run.json'), JSON.stringify(copy, null, 2))
 }
 
+/**
+ * Heal stage figures that were taken before the transcript had flushed.
+ *
+ * Recompute any stage that has a session id but was not metered from its
+ * transcript, and persist the result so a row heals exactly once. Old run.jsons
+ * carrying `contextTokens: 0` from before the fallback existed heal on the next
+ * `report` or `plan`.
+ */
+function refreshRun(r) {
+  let changed = false
+  for (const s of Object.values(r.stages || {})) {
+    if (!s.session || (s.source === 'transcript' && s.turns > 0)) continue
+    const t = sessionTotals(s.session)
+    if (!t.turns) continue
+    Object.assign(s, { contextTokens: t.ctx, outputTokens: t.out, turns: t.turns, source: 'transcript' })
+    changed = true
+  }
+  if (changed) saveRun(r)
+  return r
+}
+
 function activeSlug() {
   const p = join(RUNS, '.active')
   if (!existsSync(p)) die('no active run - start one with:  conduct start <slug> "<ask>"')
@@ -248,7 +281,6 @@ function claudeArgs(spec, promptText) {
   // Lever 1. Context tokens are the sum of context re-sent per turn; an
   // uncapped 1M window is what turns a long run into 182M.
   a.push('--autocompact', String(spec.compact || 120000))
-  if (spec.budget) a.push('--max-budget-usd', String(spec.budget))
   a.push('--permission-mode', spec.readonly ? 'plan' : 'bypassPermissions')
   // The Sanity/Chrome MCP tool definitions are dead weight in every stage that
   // does not touch the CMS, and they are paid for on every single turn.
@@ -286,29 +318,29 @@ function runClaude(spec, promptText, run, label) {
     })
     cp.stderr.on('data', (d) => process.stderr.write('    ! ' + d))
     cp.on('close', (code) => {
-      // Read the transcript rather than result.usage - not because result.usage
-      // is wrong (it is right; the deduped transcript matches it exactly) but
-      // because the transcript also yields the API-call count, which is the
-      // number that tells you whether a stage is exploring or working.
-      const t = result?.session_id ? sessionTotals(result.session_id) : { ctx: 0, out: 0, turns: 0 }
+      // Prefer the transcript - not because result.usage is wrong (it is right;
+      // the deduped transcript matches it exactly) but because the transcript
+      // also yields the API-call count, which is the number that tells you
+      // whether a stage is exploring or working. The child exits before Claude
+      // Code has flushed that session's transcript, though, so a close-time read
+      // often finds nothing yet: hence the fallback to the result object this
+      // stage just streamed into its own log, and `source`, which lets `report`
+      // recompute from the transcript later, once (refreshRun).
+      const t = stageTotals(result?.session_id, logPath)
       const s = {
         code,
-        cost: result?.total_cost_usd ?? 0,
         contextTokens: t.ctx,
         outputTokens: t.out,
         turns: t.turns,
+        source: t.source,
         session: result?.session_id,
         seconds: Math.round((Date.now() - started) / 1000),
-        overBudget: /budget/i.test(String(result?.terminal_reason || result?.stop_reason || '')),
       }
       run.stages[label] = s
       saveRun(run)
-      process.stdout.write('  ok ' + label + '  $' + s.cost.toFixed(2) +
-        '  ctx ' + fmt(s.contextTokens) + '  out ' + fmt(s.outputTokens) +
-        '  ' + s.turns + ' calls  ' + s.seconds + 's\n')
-      if (s.overBudget)
-        process.stdout.write('  !! ' + label + ' hit its $' + spec.budget +
-          ' ceiling - raise it in STAGES, or the work needs splitting\n')
+      process.stdout.write('  ok ' + label + '  ' + (metered(s)
+        ? 'ctx ' + fmt(s.contextTokens) + '  out ' + fmt(s.outputTokens) + '  ' + s.turns + ' calls'
+        : 'metering unknown') + '  ' + s.seconds + 's\n')
       res(s)
     })
   })
@@ -359,7 +391,7 @@ Stop when this task is done. Do not start the next one.`
     run.tasksDone = [...done]
     saveRun(run)
   }
-  run.stages['build'] = { code: 0, cost: 0, contextTokens: 0, outputTokens: 0, rollup: true }
+  run.stages['build'] = { code: 0, contextTokens: 0, outputTokens: 0, rollup: true }
   saveRun(run)
   process.stdout.write('\n  build complete: ' + tasks.length + ' task(s)\n')
 }
@@ -384,7 +416,8 @@ function runCodex(run) {
     cp.stderr.on('data', (d) => { out += d })
     cp.on('close', (code) => {
       writeFileSync(join(RUNS, run.slug, '07-review-codex.md'), out)
-      run.stages['review-codex'] = { code, cost: 0, contextTokens: 0, outputTokens: 0 }
+      // Measured zero Claude tokens, not unmeasured: codex is another vendor's model.
+      run.stages['review-codex'] = { code, contextTokens: 0, outputTokens: 0, turns: 0, source: 'codex' }
       saveRun(run)
       process.stdout.write('  ok review-codex (exit ' + code + ', 0 Claude tokens)\n')
       if (code !== 0)
@@ -397,7 +430,7 @@ function runCodex(run) {
 
 async function runReviews(run) {
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
-    const spec = { agent: rv.agent, budget: rv.budget, compact: rv.compact, readonly: true }
+    const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
     const text = rv.slash
       ? rv.slash + '\n\nReview the branch diff against ' + run.base +
         '. Write your findings to ' + run.dir + '/07-review-' + rv.id +
@@ -564,7 +597,7 @@ ${run.dir}/06-verify.md - read only the one this finding came from.
 If it is a code defect: write the failing test that captures it FIRST, watch it
 fail, then fix. Commit. Append what you did to ${run.dir}/04-build.md.
 If you believe the finding is wrong, say so and change nothing.`
-    await runClaude({ agent: 'developer', budget: 4, compact: 120000 }, prompt, run,
+    await runClaude({ agent: 'developer', compact: 120000 }, prompt, run,
       'fix-' + Object.keys(run.stages).filter((k) => k.startsWith('fix-')).length)
     console.log('\n  re-verify before accepting:  conduct run verify\n')
   },
@@ -572,7 +605,7 @@ If you believe the finding is wrong, say so and change nothing.`
   // A glanceable tree of what is done, running, and still to come. Built for a
   // watch loop in its own pane, so keep it short enough to fit one screen.
   async plan() {
-    const run = loadRun(activeSlug())
+    const run = refreshRun(loadRun(activeSlug()))
     const mark = (state) => state === 'done' ? '[x]' : state === 'run' ? '[>]' : '[ ]'
     console.log('\n  ' + run.slug + '   base ' + run.base + ' on ' + run.branch +
       (run.ui ? '   (UI feature)' : ''))
@@ -582,7 +615,8 @@ If you believe the finding is wrong, say so and change nothing.`
       const s = run.stages[spec.id]
       const done = s?.code === 0
       const detail = done
-        ? '$' + (s.cost || 0).toFixed(2) + '  ' + (s.seconds || 0) + 's'
+        ? (metered(s) ? 'ctx ' + fmt(s.contextTokens || 0) + '  ' + (s.turns || 0) + ' calls' : 'metering unknown') +
+          '  ' + (s.seconds || 0) + 's'
         : spec.gate ? 'gate: ' + spec.gate : ''
       console.log('  ' + mark(done ? 'done' : 'todo') + ' ' + spec.id.padEnd(9) + detail)
     }
@@ -608,35 +642,41 @@ If you believe the finding is wrong, say so and change nothing.`
       const t = readFileSync(join(RUNS, run.slug, 'DECISIONS.md'), 'utf8')
       console.log('\n  ' + (/^\s*A:\s*\S/m.test(t) ? 'DECISIONS answered' : '*** DECISION GATE OPEN ***'))
     }
-    const spent = Object.values(run.stages).reduce((a, s) => a + (s.cost || 0), 0)
-    console.log('\n  spent so far: $' + spent.toFixed(2) + '\n')
+    const spent = Object.values(run.stages).reduce(
+      (a, s) => a + (metered(s) ? (s.contextTokens || 0) : 0), 0)
+    console.log('\n  context so far: ' + fmt(spent) + '\n')
   },
 
   async report() {
-    const run = loadRun(activeSlug())
+    const run = refreshRun(loadRun(activeSlug()))
     const rows = Object.entries(run.stages).filter(([, s]) => !s.rollup)
-    const tc = rows.reduce((a, [, s]) => a + (s.cost || 0), 0)
-    const tk = rows.reduce((a, [, s]) => a + (s.contextTokens || 0), 0)
-    const to = rows.reduce((a, [, s]) => a + (s.outputTokens || 0), 0)
+    const tk = rows.reduce((a, [, s]) => a + (metered(s) ? (s.contextTokens || 0) : 0), 0)
+    const to = rows.reduce((a, [, s]) => a + (metered(s) ? (s.outputTokens || 0) : 0), 0)
     console.log('\n  ' + run.slug + ' - ' + rows.length + ' stage runs\n')
-    console.log('  ' + 'stage'.padEnd(20) + 'cost'.padStart(9) + 'context'.padStart(11) +
+    console.log('  ' + 'stage'.padEnd(20) + 'context'.padStart(11) +
       'output'.padStart(9) + 'turns'.padStart(7) + 'time'.padStart(8))
-    console.log('  ' + '-'.repeat(57))
+    console.log('  ' + '-'.repeat(55))
     for (const [k, s] of rows)
-      console.log('  ' + k.padEnd(20) + ('$' + (s.cost || 0).toFixed(2)).padStart(9) +
-        fmt(s.contextTokens || 0).padStart(11) + fmt(s.outputTokens || 0).padStart(9) +
-        String(s.turns || 0).padStart(7) + ((s.seconds || 0) + 's').padStart(8))
-    console.log('  ' + '-'.repeat(57))
-    console.log('  ' + 'TOTAL'.padEnd(20) + ('$' + tc.toFixed(2)).padStart(9) +
-      fmt(tk).padStart(11) + fmt(to).padStart(9))
+      console.log('  ' + k.padEnd(20) + (metered(s)
+        ? fmt(s.contextTokens || 0).padStart(11) + fmt(s.outputTokens || 0).padStart(9) +
+          String(s.turns || 0).padStart(7)
+        : 'unknown'.padStart(11) + 'unknown'.padStart(9) + 'unknown'.padStart(7)) +
+        ((s.seconds || 0) + 's').padStart(8))
+    console.log('  ' + '-'.repeat(55))
+    console.log('  ' + 'TOTAL'.padEnd(20) + fmt(tk).padStart(11) + fmt(to).padStart(9))
     console.log('\n  conductor overhead: 0 tokens - this script is not a model.\n')
   },
 }
 cmds.status = cmds.report
 
-const [cmd, ...rest] = process.argv.slice(2)
-if (!cmd || !cmds[cmd]) {
-  console.log(`
+export { STAGES, REVIEWERS, cmds }
+
+// Importing this file must not run it: the test suite reads the tables and calls
+// the commands directly, and main() ends in process.exit.
+function main() {
+  const [cmd, ...rest] = process.argv.slice(2)
+  if (!cmd || !cmds[cmd]) {
+    console.log(`
   pipeline v2 conductor - same agents, same gates, no orchestrator
 
     conduct start <slug> "<ask>"   begin a run
@@ -645,10 +685,13 @@ if (!cmd || !cmds[cmd]) {
     conduct run <stage>            run or re-run one stage
     conduct answer                 after filling in DECISIONS.md
     conduct fix "<finding>"        route a review finding to a developer
-    conduct report                 cost and token split per stage
+    conduct report                 token and time split per stage
 
   stages: ` + STAGES.map((s) => s.id).join(' -> ') + `
 `)
-  process.exit(cmd ? 1 : 0)
+    process.exit(cmd ? 1 : 0)
+  }
+  cmds[cmd](...rest).catch((e) => die(e.stack || e.message))
 }
-cmds[cmd](...rest).catch((e) => die(e.stack || e.message))
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

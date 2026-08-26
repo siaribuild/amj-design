@@ -12,7 +12,8 @@
       "session": "a3caa593-a5e3-4bd4-8a4a-22268eab078f",
       "seconds": 67,
       "overBudget": false,
-      "turns": 3
+      "turns": 3,
+      "source": "transcript"
     },
     "design": {
       "code": 0,
@@ -22,7 +23,8 @@
       "session": "378e86ec-6368-466e-8a8a-fb99948c21c6",
       "seconds": 368,
       "overBudget": false,
-      "turns": 10
+      "turns": 10,
+      "source": "transcript"
     }
   },
   "tasksDone": [],
