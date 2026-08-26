@@ -587,11 +587,45 @@ wrong page pays for the render, pays for the tokens, and returns nothing.
 Steps 4 and 5 of the method, already working locally. What remains is the host — see §7 — and
 the two questions it leaves open.
 
-### Stage 3 — Locate each schedule row on the sheets.
+### Stage 3 — Locate each schedule row on the sheets. **Two passes, because one cannot work.**
 
-The join this pass actually needs, and the one the geometry could not do: tag → wall →
-elevation letter → sheet. Octagon tags on leader lines, `A`/`B`/`C`/`D` markers on the four
-walls. Driven by the schedule, one row at a time; a row that cannot be located is `not read`.
+This is the join the whole pass needs and the one the geometry could not do. It is also the
+stage that was hand-waved when this plan was first written: "tag → wall → elevation letter →
+sheet" names the *evidence* and not the *mechanism*, and the mechanism has to end at a **pixel
+box**, because a crop is what Stage 4 reads.
+
+You cannot go straight from a schedule row to a box. The row states a size, not a position; the
+tag states a position on the **plan**, not on the elevation. So:
+
+**Pass A — inventory the elevation, no schedule involved.** Split the sheet by its `ELEVATION x`
+labels, whose positions the text layer gives for free (page 6 carries A and B, page 7 C and D).
+Ask the model, per elevation, for every window-like object it can see: a normalised bounding
+box, the drawn width:height proportion, the panel count, and whether each panel carries a
+symbol. It is not asked to name anything — nothing is matched yet, so nothing can be matched
+wrongly.
+
+**The demoted decoder earns its keep here.** `findFrames` + `findFramesV2` produce candidate
+rectangles for free and exactly, and Pass A only needs them as a **superset** — it does not need
+them to be right, which is the entire difference between this use and the one the owner
+declined. On the reference set they cover every opening that is drawn, including all six the
+matcher could only call ambiguous. Where a geometric candidate and a model box coincide, the box
+is exact and free; where only one exists, it is still a candidate.
+
+**Pass B — assign schedule rows to boxes**, on three independent signals:
+
+| signal | source | settles |
+|---|---|---|
+| which elevation | the tag's wall on the floor plan → the `A`–`D` marker on that wall | which sheet and which half of it |
+| drawn size vs stated size | Pass A's proportion against the schedule's W×H | which box, when sizes differ |
+| order along the wall | the tag order on the floor plan vs left-to-right on the elevation | same-size pairs — W5/W6, W9/W11, W14/W16 |
+
+**A row that two signals disagree about is `not read`, and so is a box two rows both fit.** The
+second is not hypothetical: W14 and W16 are both 2050 × 2000 and the elevations yield **one**
+frame of that size, so either the second is drawn where this pass does not look or one row is
+not drawn. Assigning that one frame to both is the confident wrong answer this reader fails by,
+and the harness did it silently until a check was written for it.
+
+Only after a row owns a box is it cropped and read. **Nothing reaches Stage 4 unlocated.**
 
 ### Stage 4 — Read the composition, one vision call per opening, against its own crop.
 
@@ -601,10 +635,15 @@ model, the drawing claims operable-or-not and the schedule names the family.
 
 ### Stage 5 — Verification, which is what makes the bar checkable.
 
-**The model fails silently, so this stage is not optional.** Each reading carries its crop.
-Disagreement with the schedule's type is surfaced, never resolved. The demoted geometric decoder
-runs as the cheap second opinion: agreement raises confidence, disagreement sends it to a human.
-"Could not read this" must be an easy answer to give.
+**The model fails silently, so this stage is not optional** — a geometric miss says `not read`
+and hands over visibly, where a model's miss is a plausible composition for an opening it never
+saw. Two properties belong to this stage and nothing else: every reading **carries its crop**,
+so a human can check it without reopening the PDF, and **"could not read this" is made an easy
+answer to give** in the prompt, because a model that is never offered the option will invent
+rather than decline.
+
+The three checks a reading must pass are defined once, in **THE RELEASE GATE** below, because
+they are the same checks that decide whether the thing may ship.
 
 ### Stage 6 — Into the estimator. Unchanged by the route.
 
@@ -619,6 +658,57 @@ writer passing `null`. The crop's page and box fill all three. A drawing-derived
 plan → outward normal — is unchanged and unaffected. It serves a different consumer (the thermal
 band's SHGC cap) and ships on its own schedule. Under the model route the middle two steps get
 easier, not harder.
+
+### THE RELEASE GATE — what "100%" has to mean before anything ships
+
+*(Added 2026-08-27. Withdrawing Stages 1a and 1b removed the only two gates this plan had and
+put nothing in their place, which left a route with no definition of done and an owner's bar of
+100% with nothing to measure it against.)*
+
+**The bar has to be split in two, because one half is achievable and the other is not.**
+
+| | bar | why |
+|---|---|---|
+| **A reading that is WRONG** | **zero. A release blocker.** | A wrong composition is a priced window nobody drew. It reaches a customer as a quote and a factory as a cut list. |
+| A reading that is ABSENT | measured and reported, not gated | `not read` hands the opening to the fallback **visibly**. The fallback already works ok-ish; a visible handover is the status quo, not a regression. |
+
+So *100% correct* is the gate and *100% covered* is the target. Conflating them is what would
+make this project unshippable forever: a set whose drawings genuinely do not state a
+composition cannot be read by any method, and the output spec's §4 already says `not stated` is
+a correct answer.
+
+**Ground truth, which does not exist yet and is the long pole.** No gate is measurable without a
+labelled set, and nobody has labelled one. Cheapest honest route: run the pipeline over N real
+sets and have the owner confirm or correct each opening **once**, in the ops surface, against
+the crop the reading carries. That is review work he would do anyway on the first jobs, and it
+produces the fixture as a by-product. **N is a decision for him**, and it is the real successor
+to Stage 1b: the second plan set stopped being a route gate and became the first row of this.
+
+**The three checks that have to run before a reading counts as correct**, all of which exist
+independently of any label:
+
+1. **Schedule cross-check.** The drawing's panel count and operable/passive pattern against the
+   schedule's type text. `OFFSET AWNING` with two panels and one symbol agrees; `FIXED` with a
+   symbol does not. Disagreement is surfaced, never resolved — §6 and the output spec §6 both
+   already bind this.
+2. **The geometric second opinion.** Free, exact, and wrong in *different* ways than a model is.
+   Agreement across two methods that fail differently is the strongest evidence available here,
+   and it is the only check that costs nothing per job.
+3. **Dimension agreement.** The drawn frame against the schedule's W×H, which §1.2 of the output
+   spec already defines and which caught W4's 3200 × 2100 siding with the energy report against
+   the schedule.
+
+**Staged release, so the gate can be met before the fixture is large.** Drawing-derived splits
+already land behind "confirm the configuration at review". Ship there first: every reading is
+seen by a human before it prices anything, wrong readings are caught as review corrections
+rather than as customer-visible errors, and each correction is a labelled row. **Removing the
+review gate is a separate decision with its own evidence bar** — see §9.4 — and must not be
+taken as implied by shipping.
+
+**What gets reported per run**, so the numbers exist from day one rather than being
+reconstructed later: read / located-but-unread / unlocated, per opening; which of the three
+checks fired; and the crop key for every reading. `measure.mjs` already reports the first of
+these for the geometric route and is the shape to copy.
 
 ### Withdrawn by the ROUTE DECISION
 
