@@ -109,3 +109,94 @@ because loud-and-IP-priced is strictly better than quiet-and-free at every N —
 but "expensive" is the attacker's choice, not this design's property, and the
 follow-up (apertly #12) is priced accordingly: **next scheduled security work,
 not backlog**.
+
+## The class, generalised — absence must mean deny
+
+Added 2026-08-26 after a third instance was found on the same branch. The first
+two were counters (the attempt cap, the per-IP cap). The third was not a counter
+at all, which is why the pattern is worth naming rather than the instances.
+
+P3 burns the challenge on the fifth failure so that "start over" can issue a
+fresh code immediately. `challengeAllowed` decides from `KV.get(ch.key)`:
+**absence** means "no live code, allow the resend". So the fix depended on a
+delete being visible to the very next read — and KV does not offer that.
+
+**The proposed repair does not work, and the reason is worth recording.** The
+suggestion was to derive the answer from something *present* — mark the record
+spent rather than delete it, so a stale read still says "spent". It fails
+because `at` is written once at issuance and never updated (measured: `at`
+before a failed attempt equals `at` after), so **every version of the record
+carries the same `at` and therefore the same cooldown answer**. The alternative
+to seeing the newest write is not "seeing nothing", it is seeing
+`{attempts: 4}` — the previous version, which is not spent. A spent marker is
+itself the newest write and carries exactly the same propagation delay as the
+delete. The two are equally reliable; the marker relocates the dependency
+instead of removing it.
+
+Generalised, the unimplementable requirement is: **a control whose answer must
+flip from deny to allow because of a write made by a different, immediately
+preceding request.** That needs read-your-writes. It belongs in the follow-up
+(apertly #12) with the attempt counter, not in a third KV workaround.
+
+The discriminator that separates the safe sites from the unsafe ones:
+
+> **Absence must mean deny.** Every unsafe instance is one where a missing key
+> grants something.
+
+Applied to `worker/lib/auth.ts`:
+
+| Site | Absence means | Safe? |
+|---|---|---|
+| `challengeAllowed` cooldown read | allow issuance | **no** — the P3 instance |
+| `challengeAllowed` issuance counter | count 0 → allow | **no** — a stale absence grants extra codes |
+| `withinCap` (per-IP verify, trade caps) | count 0 → allow | **no** — same class |
+| `consumeChallenge` `if (!raw)` | refuse the code | yes — fails closed |
+
+The verify path is clean throughout: absent, unparseable, wrong-shape, expired
+and capped all deny. **Every unsafe site is on the issuance path.** Outside this
+file, same class and out of scope here: `destroySession` makes single-session
+logout depend on a delete propagating (sign-out-all is safe, because
+`resolveUser` also checks `session_epoch` from D1); `parse.ts`'s lock,
+`enquiries.ts` and `files.ts` all grant on absence. `staff.ts` and `ops.ts` read
+caches where absence triggers recompute — safe.
+
+**What shipped instead.** The burn stays: it removes a distinguishable state and
+frees the key, and it does clear the cooldown in the common same-colo case. It
+is simply not depended upon. The customer-facing promise moved to the client,
+which knows when it last asked for a code and can count down from that without
+any server round trip and without revealing whether a record exists. It clocks
+from response receipt, one network hop later than the server's own issue time,
+so it always over-estimates rather than races. Exact for the single-user flow
+that produced the bug; an over-estimate if a code was issued in another tab.
+
+## Deploy-window effects
+
+Two, both benign, both customer-visible, neither previously written down.
+
+1. **Guest codes in flight will not verify.** The guest key namespace moved from
+   `gcode:{email}:{ref}` to `gcode:{email}:{projectId}`, so a code emailed
+   before the deploy looks up a key that does not exist. It answers the ordinary
+   neutral 400 — no crash, no oracle — and the customer asks for another. Bounded
+   by the 10-minute TTL.
+2. **Pre-upgrade records parse as garbage.** Guest tracking stored a bare hex
+   hash where an `OtpRecord` now lives; `consumeChallenge` treats an unreadable
+   record as absent and clears it rather than throwing a 500.
+
+Sign-in and ops are unaffected in both cases: their keys, hashes and counter keys
+are byte-identical to `main`, verified by bundling both revisions against one KV
+— an old-issued code verifies under new, and a new-issued code verifies under
+old, so the rollback is as safe as the deploy.
+
+## Known, not defects
+
+- **The `/track/request` timing gap widened.** Resolving the record before the
+  issuance gate means a miss returns before any KV work. Measured 1.29× (15.9ms
+  vs 20.5ms) against 1.15× before the reorder, with a no-op mail transport —
+  production will be wider, because only the hit path awaits a real send. The
+  neutrality of this endpoint was always a property of the response body, never
+  of its timing.
+- **Unconfirmed, offered as a hypothesis.** The same reordering means a matching
+  pair does one extra KV get before its 400 on `/track/verify` where a
+  non-matching pair does not, which could in principle distinguish "this pair
+  names a real record". Measured 1.00× locally, which means nothing: local KV is
+  in-process, and on production KV that get is a network round trip.

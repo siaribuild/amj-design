@@ -88,6 +88,15 @@ guest.post("/track/request", async (c) => {
   // record rather than to the string that was typed at it (see
   // guestTrackChallenge). A miss stops here: it writes nothing, which also means
   // an unauthenticated probe can no longer make this endpoint store KV state.
+  //
+  // ACCEPTED COST, and it grew: this widens the timing difference between a hit
+  // and a miss, because a miss now returns before any KV work where the issuance
+  // gate used to run on both paths. Measured locally 2026-08-26 at 1.29× (15.9ms
+  // vs 20.5ms), against 1.15× before the reorder — and that is with a no-op mail
+  // transport, so production is larger still, since only the hit path awaits an
+  // actual send. The endpoint's neutrality was always a response-content
+  // property rather than a constant-time one; this makes the existing gap wider,
+  // not new. Closing it means not awaiting the send, which is a different change.
   const match = await matchRecord(c.env, ref, email);
   if (!match) return c.json(neutral);
 
