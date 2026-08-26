@@ -1266,3 +1266,42 @@ test('an unrecoverable session is said out loud, kept in previousSessions, and r
     'the dead session was dropped, and everything it spent dropped with it')
   assert.equal(st.session, 'sess-new', 'the re-run is a new session, recorded as such')
 })
+
+test('a restored stage totals the sessions the interruption killed as well as its own', () => {
+  // Tokens a dead session burned still happened. Counting only the surviving
+  // session makes a run that crashed look cheaper than one that did not, which
+  // is the instrument lying - the one failure this project has already hit twice.
+  const s = paneRepo('durable-sum', 'sess-gone2', { HERDR_STUB_NOAGENT: '1' })
+  seedTranscript(s.env.CLAUDE_PROJECTS_DIR, 'proj-pane', 'sess-earlier', ['e1', 'e2', 'e3'], 2)
+  interrupted(s, 'spec', { session: 'sess-gone2', previousSessions: ['sess-earlier'] })
+
+  paned(s, 'next')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'done')
+  assert.deepEqual(st.previousSessions, ['sess-earlier'],
+    'the record of what was already spent must survive the relaunch')
+  assert.equal(st.turns, 5, 'API calls before the interruption were dropped')
+  assert.equal(st.contextTokens, 5000, 'context spent before the interruption was dropped')
+  assert.equal(st.outputTokens, 50)
+})
+
+test('report heals an interrupted stage to the sum of every session it burned', () => {
+  const projects = tmp('sum-report')
+  seedTranscript(projects, 'p', 'sess-a', ['a1', 'a2', 'a3'], 2)
+  seedTranscript(projects, 'p', 'sess-b', ['b1', 'b2'], 2)
+  const { root, runJson: saved } = seedRun('sum-report-run', {
+    spec: {
+      code: 0, session: 'sess-b', previousSessions: ['sess-a'],
+      contextTokens: 0, outputTokens: 0, turns: 0, source: 'none', seconds: 12,
+    },
+  })
+
+  const out = conduct(root, projects, 'report')
+
+  assert.match(out, /5k/, 'the healed row shows only the surviving session')
+  const st = JSON.parse(readFileSync(saved, 'utf8')).stages.spec
+  assert.equal(st.contextTokens, 5000)
+  assert.equal(st.outputTokens, 50)
+  assert.equal(st.turns, 5)
+})

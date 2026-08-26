@@ -255,6 +255,21 @@ function saveRun(r) {
 }
 
 /**
+ * Everything a stage has burned, across every session it has had.
+ *
+ * A stage that was interrupted and re-run from scratch has spent tokens in a
+ * session nobody can resume any more - but it spent them. Counting only the
+ * surviving session would make a crashed run look cheaper than a clean one,
+ * and a metering instrument that under-reports after a restart is worse than
+ * no instrument at all.
+ */
+const stageSum = (s, base = sessionTotals(s.session)) =>
+  (s.previousSessions || []).reduce((a, id) => {
+    const t = sessionTotals(id)
+    return { ...a, ctx: a.ctx + t.ctx, out: a.out + t.out, turns: a.turns + t.turns }
+  }, { ctx: base.ctx, out: base.out, turns: base.turns, source: base.source })
+
+/**
  * Heal stage figures that were taken before the transcript had flushed.
  *
  * Recompute any stage that has a session id but was not metered from its
@@ -266,7 +281,7 @@ function refreshRun(r) {
   let changed = false
   for (const s of Object.values(r.stages || {})) {
     if (!s.session || (s.source === 'transcript' && s.turns > 0)) continue
-    const t = sessionTotals(s.session)
+    const t = stageSum(s)
     if (!t.turns) continue
     Object.assign(s, { contextTokens: t.ctx, outputTokens: t.out, turns: t.turns, source: 'transcript' })
     changed = true
@@ -436,7 +451,11 @@ function runClaude(spec, promptText, run, label) {
       // often finds nothing yet: hence the fallback to the result object this
       // stage just streamed into its own log, and `source`, which lets `report`
       // recompute from the transcript later, once (refreshRun).
-      const t = stageTotals(result?.session_id, logPath)
+      // Sessions an earlier interruption killed still count, and this record is
+      // rebuilt from scratch - so they are carried across it explicitly.
+      const previousSessions = run.stages[label]?.previousSessions
+      const t = stageSum({ session: result?.session_id, previousSessions },
+        stageTotals(result?.session_id, logPath))
       const s = {
         code,
         contextTokens: t.ctx,
@@ -445,6 +464,7 @@ function runClaude(spec, promptText, run, label) {
         source: t.source,
         session: result?.session_id,
         seconds: Math.round((Date.now() - started) / 1000),
+        ...(previousSessions && { previousSessions }),
       }
       run.stages[label] = s
       saveRun(run)
@@ -506,7 +526,7 @@ async function finalizePane(run, label, started) {
   const s = run.stages[label]
   // Pane transcripts are written live, so there is no flush race to sleep
   // through here; anything still missing heals on the next report (refreshRun).
-  const t = sessionTotals(s.session)
+  const t = stageSum(s)
   Object.assign(s, {
     code: 0, status: 'done',
     contextTokens: t.ctx, outputTokens: t.out, turns: t.turns,
