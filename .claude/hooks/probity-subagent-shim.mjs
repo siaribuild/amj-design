@@ -6,7 +6,7 @@
 // from a subagent. A subagent's own events (its red test run) live in a
 // separate file: <session-dir>/subagents/agent-<agent_id>.jsonl. Probity reads
 // transcript_path, so from inside a subagent it sees the main thread's history,
-// never the failing test the subagent just wrote — and denies every
+// never the failing test the subagent just wrote â€” and denies every
 // implementation write. That forces implementation onto the main thread.
 //
 // The fix: when `agent_id` is present (documented as "present only when the
@@ -68,12 +68,18 @@ function main() {
     if (sub) forward = JSON.stringify({ ...payload, transcript_path: sub })
   }
 
-  const cwd = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd()
-  const bin = probityBin(cwd)
+  // Try every plausible repo root, not just payload.cwd. After a `cd` inside a
+  // Bash call, Claude Code reports cwd as a POSIX path ("/e/Projects/x"), which
+  // path.join cannot resolve on Windows - probityBin then returns null and this
+  // shim denied EVERY Bash/Write/Edit in the session, including the edits needed
+  // to fix it. Fail-closed is preserved: we still deny once no candidate has a
+  // local @nizos/probity.
+  const candidates = [payload?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]
+  const bin = candidates.filter(Boolean).map(probityBin).find(Boolean) || null
   if (!bin) {
     // Fail closed, like Probity itself: no local @nizos/probity means the TDD
     // gate cannot run, so block rather than silently skip. (No shell fallback
-    // on purpose — a shell-spawned npx is needless attack surface.)
+    // on purpose â€” a shell-spawned npx is needless attack surface.)
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
