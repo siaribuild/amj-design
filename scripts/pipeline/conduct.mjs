@@ -248,10 +248,35 @@ function loadRun(slug) {
   return withDir(JSON.parse(readFileSync(p, 'utf8')))
 }
 
+/**
+ * The review fan-out is four completions landing whenever their reviewer
+ * finishes, and every one of them writes run.json. Anything else holding the
+ * file open at that instant - the herdr snapshot, another conduct, a virus
+ * scanner - makes the write throw EBUSY on Windows, out of a child's `close`
+ * handler where nothing catches it. The conductor dies mid-fan-out and every
+ * reviewer that had not saved yet loses its stage record, which is this
+ * feature's own token metering.
+ *
+ * The contention is microseconds long, so retrying IS the fix. The write is
+ * one small file, the pause is synchronous on purpose (a stage record must
+ * reach the disk before the next one is built on top of it), and one second is
+ * far past any real hold.
+ *
+ * ponytail: a fixed retry budget, not a lock file. A lock would need its own
+ * stale-lock recovery, and nothing here writes run.json from two processes by
+ * design - move to one only if that stops being true.
+ */
 function saveRun(r) {
   const copy = { ...r }
   delete copy.dir
-  writeFileSync(join(RUNS, r.slug, 'run.json'), JSON.stringify(copy, null, 2))
+  const p = join(RUNS, r.slug, 'run.json')
+  const body = JSON.stringify(copy, null, 2)
+  for (let attempt = 0; ; attempt++) {
+    try { return writeFileSync(p, body) } catch (e) {
+      if (attempt >= 100 || (e.code !== 'EBUSY' && e.code !== 'EPERM')) throw e
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+    }
+  }
 }
 
 /**

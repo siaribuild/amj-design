@@ -281,3 +281,18 @@ Files: `scripts/pipeline/conduct.mjs`, `scripts/pipeline/herd.mjs`,
 Pre-existing flake, NOT from these fixes — see the note under F5 in the handoff:
 `one reviewer holding does not stall the other three` fails intermittently with
 `EBUSY` on `run.json`; reproduced on the pre-fix sources (833 tests) too.
+
+## fix — concurrent run.json writes
+
+The review fan-out's four completions each write `run.json` whenever their
+reviewer settles. A reader holding the file open at that instant makes the write
+throw `EBUSY` on Windows — `copyFileSync` shares reads but not writes, and the
+herdr stub snapshots `run.json` with exactly that call — out of a child's
+`close` handler, where nothing catches it. The conductor died mid-fan-out and
+every reviewer that had not saved yet lost its stage record.
+
+`saveRun` now retries a busy write (100 × 10ms, `EBUSY`/`EPERM` only) — the
+contention is microseconds long, so retrying is the fix; the reviewers stay
+concurrent and `runBuild` stays sequential. Asserts: with a separate process
+holding `run.json` in a `copyFileSync` loop for the whole fan-out, all four
+`review-*` stage records survive. Red run recorded `stages: {}`.

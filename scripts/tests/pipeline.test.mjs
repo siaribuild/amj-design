@@ -7,7 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -1223,6 +1223,37 @@ test('one reviewer holding does not stall the other three', () => {
   // An infrastructure failure is not a review. Saying otherwise is the one
   // thing this gate must never do.
   assert.match(out, /UNREVIEWED|NOT[\s\S]{0,40}a clean review/)
+})
+
+test('every reviewer is still recorded when another process is holding run.json', () => {
+  // The fan-out's four completions all write run.json, and they land whenever
+  // their reviewer happens to finish. Measured on Windows: a reader holding the
+  // file open makes that write throw EBUSY - `copyFileSync` shares reads but
+  // not writes, and the herdr stub snapshots run.json with exactly that call,
+  // which is how `npm test` at 12-way concurrency kills the fan-out mid-flight.
+  // The reviewers that had not saved yet then have no stage record at all, and
+  // a stage record IS this feature's token metering: the instrument loses its
+  // own readings in the one code path meant to show it off.
+  //
+  // What is asserted is the four records, not the absence of an exception. A
+  // fix that merely swallowed the error would still leave rows missing.
+  const s = reviewRepo('review-contention', {}, 3)
+  const runPath = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const holder = spawn(process.execPath, ['-e',
+    'const{copyFileSync}=require("fs");const t=Date.now();' +
+    'while(Date.now()-t<20000){try{copyFileSync(process.argv[1],process.argv[1]+".held")}catch{}}',
+    runPath], { stdio: 'ignore' })
+
+  // A crashed conductor is one way to lose the records, not the claim itself.
+  try { paned(s, 'run', 'review') } catch { /* assert on what survived */ }
+  finally { holder.kill() }
+
+  const st = runJson(s).stages
+  for (const id of ['conformance', 'ponytail', 'security', 'codex'])
+    assert.ok(st['review-' + id],
+      'review-' + id + ' ran but has no stage record: ' + JSON.stringify(st))
+  assert.equal(st['review-codex'].code, 3)
+  assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
 })
 
 test('build tasks run strictly sequentially, and a concurrent one fails here', () => {
