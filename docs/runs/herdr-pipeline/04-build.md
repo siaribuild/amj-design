@@ -230,3 +230,24 @@ Files: `docs/pipeline/PIPELINE-V2.md` (only).
   snapshot (commit 3e210dcf, the cwd-resolution fix) — restoring that copy would
   reintroduce the bug. Recorded in the Rollback section. **t9 shrinks that same
   shim: re-check this before touching it.**
+
+## t9 — Probity shim shrunk, ADR recorded
+
+Files: `scripts/tests/pipeline.test.mjs`, `docs/adr/0013-probity-direct-shim-not-plugin.md`
+(new), `.claude/hooks/probity-subagent-shim.mjs`.
+
+- Shim: header rewritten, `findSubagentTranscript` and the subagent-id branch
+  deleted, `forward` folded into `raw`. Kept verbatim: direct
+  `node node_modules/@nizos/probity/dist/bin.js`, the fail-closed deny, and the
+  `payload.cwd` → `CLAUDE_PROJECT_DIR` → `process.cwd()` candidates (t8's
+  warning re-checked: the v1-backup copy is still the pre-fix snapshot).
+- 4 tests run the shim as a child process against a **stub** `@nizos/probity`
+  that records its stdin: payload forwarded byte-identical (odd whitespace is
+  the discriminator, so a re-serialise fails it); no probity anywhere ⇒
+  `permissionDecision: 'deny'`; a POSIX `payload.cwd` still resolves via
+  `CLAUDE_PROJECT_DIR`; plus a source read that fails if the subagent rewrite,
+  an npx invocation, or a dropped root candidate returns.
+- `probity@probity` untouched — still `false`, and in the USER's global
+  settings, not this repo, so no test can assert it; the ADR carries it.
+- Order executed, as §9.5 requires: tests green → ADR → commit → shim edit →
+  suite re-run. `npm run test:pipeline`: 57/57.
