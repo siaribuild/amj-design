@@ -1166,3 +1166,44 @@ test('build tasks run strictly sequentially, and a concurrent one fails here', (
   for (const banned of ['Promise.all', 'Promise.allSettled', 'Promise.race', 'Promise.any'])
     assert.ok(!body.includes(banned), 'runBuild grew a ' + banned + ' - build tasks are sequential')
 })
+
+// --- durability: reattach, restore, re-run -----------------------------------
+//
+// A machine restart destroyed a 44-minute run and every token it had spent.
+// That 100% waste is the cost argument for this whole feature, so these are the
+// tests that matter most: an interrupted stage is picked up rather than
+// silently begun again, and whatever it already burned is still counted.
+
+/** Park a stage in run.json exactly as an interruption would leave it. */
+function interrupted(s, label, stage) {
+  const p = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(p, 'utf8'))
+  run.stages[label] = {
+    status: 'running', mode: 'pane', pane: 'w9:p3', source: 'none',
+    startedAt: new Date(Date.now() - 60000).toISOString(), ...stage,
+  }
+  writeFileSync(p, JSON.stringify(run, null, 2))
+  return run
+}
+
+test('conduct next reattaches to a stage still in progress - same session, no second boot', () => {
+  const s = paneRepo('durable-reattach', 'sess-live')
+  interrupted(s, 'spec', { session: 'sess-live' })
+
+  const out = paned(s, 'next')
+
+  assert.equal(said(s.log, 'agent', 'start').length, 0,
+    'a live agent was relaunched under its own name - that is the ~30k boot this avoids')
+  assert.ok(said(s.log, 'agent', 'get').length >= 1,
+    'nothing asked herdr whether the agent was still there')
+  assert.match(out, /still in progress/i, 'the operator was not told the stage was picked up')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.session, 'sess-live', 'the session id changed across a reattach')
+  assert.equal(st.status, 'done')
+  assert.equal(st.code, 0)
+  assert.equal(st.contextTokens, 2000, 'the reattached stage was metered from its own transcript')
+
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.deepEqual(typed, ['/exit'], 'a reattached agent must not be re-prompted: ' + typed.join(' | '))
+})

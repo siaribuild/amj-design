@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
 import {
   available as herdrAvailable, ensureCockpit, launchStage, writePrompt, watch, notify,
-  agentPrompt, splitPane, paneReady,
+  agentPrompt, splitPane, paneReady, agentInfo,
 } from './herd.mjs'
 
 const ROOT = resolve(process.cwd())
@@ -689,6 +689,35 @@ async function runReviews(run, panes) {
     '     conduct fix "<finding>"\n')
 }
 
+// --- durability -------------------------------------------------------------
+//
+// A reboot killed a 44-minute run and every token it had spent: 100% waste, and
+// the reason this feature exists. State is written BEFORE the agent is prompted
+// (runPaneStage's onSession), so an interruption can never orphan a stage
+// invisibly - and this is the other half, which picks it back up.
+//
+// Three outcomes, in descending order of how much they save:
+//   reattach  - herdr still has the agent. Same session, nothing re-booted.
+//   restore   - the agent is gone but its transcript is on disk: relaunch the
+//               same session with `--resume`, and the work it did still stands.
+//   re-run    - the session cannot be recovered. SAY SO, keep what it spent in
+//               previousSessions, and start over. Silently starting over looks
+//               exactly like normal operation, which is how the cost hides.
+
+/**
+ * The spec a label was launched under. run.json keys are a stage id, a
+ * `build-<task>` or a `review-<reviewer>`; `fix-<n>` is the developer shape
+ * cmds.fix uses. Needed on a relaunch, which has to rebuild the same argv.
+ */
+export function stageSpec(label) {
+  const stage = STAGES.find((s) => s.id === label)
+  if (stage) return stage
+  if (label.startsWith('build-')) return STAGES.find((s) => s.id === 'build')
+  const rv = REVIEWERS.find((r) => 'review-' + r.id === label)
+  if (rv) return { agent: rv.agent, compact: rv.compact, readonly: true }
+  return { agent: 'developer', compact: 120000 }
+}
+
 // --- gates -----------------------------------------------------------------
 
 // Asked twice per stage in pane mode - once to decide whether to hold the agent
@@ -800,6 +829,12 @@ const cmds = {
   async next(...flags) {
     const run = loadRun(activeSlug())
     if (decisionsOpen(run)) return
+    // An interrupted stage is picked up BEFORE anything new is started. A held
+    // or running stage has no `code`, so the scan below would otherwise start a
+    // second claude under a name herdr may still be holding.
+    const live = Object.entries(run.stages)
+      .find(([, s]) => s.status === 'running' || s.status === 'held')
+    if (live) return cmds.resume(live[0], ...flags)
     for (const spec of STAGES) {
       if (spec.ui && !run.ui) continue
       if (run.stages[spec.id]?.code === 0) continue
@@ -847,6 +882,28 @@ const cmds = {
     }
     await runClaude(spec, spec.prompt(run), run, spec.id)
     afterStage(run, spec)
+  },
+
+  /**
+   * Pick a stage back up after an interruption. See the durability section
+   * above for the three outcomes and why they are worth this much code.
+   */
+  async resume(label, ...flags) {
+    const run = loadRun(activeSlug())
+    const st = run.stages[label]
+    if (!st) die('no stage "' + label + '" in this run')
+    const spec = stageSpec(label)
+    const started = Date.parse(st.startedAt) || Date.now()
+    const panes = await paneMode(flags)
+
+    if (panes && st.mode === 'pane' && await agentInfo(label)) {
+      console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
+        st.session + '. Nothing re-booted.')
+      const s = await settleStage(run, label, started)
+      if (s?.status !== 'held') afterStage(run, spec)
+      return
+    }
+    die('cannot pick up ' + label + ' - re-run it with:  conduct run ' + label)
   },
 
   async answer(...flags) {

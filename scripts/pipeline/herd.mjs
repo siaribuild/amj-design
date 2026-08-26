@@ -234,6 +234,22 @@ export async function watch(label, { sliceMs = 60000 } = {}) {
   }
 }
 
+/**
+ * The agent herdr currently has under this name, or null if it has none.
+ *
+ * Only the absence of a record means "gone". An agent reporting `unknown` is
+ * herdr not knowing what its agent is doing - never proof that it died - and
+ * relaunching on that would boot a second claude into a live name and pay the
+ * boot this whole feature exists to avoid.
+ */
+export async function agentInfo(label) {
+  try {
+    return (await herd('agent', 'get', checkLabel(label))).agent || null
+  } catch {
+    return null
+  }
+}
+
 /** Type one fixed line at a live agent. The caller owns the template (10). */
 export const agentPrompt = (label, line) => herd('agent', 'prompt', checkLabel(label), line)
 
