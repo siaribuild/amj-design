@@ -44,6 +44,12 @@ not only a demo:
 | §2's eight verticals for W1, and their bands | one that stops resolving the glass or sash lines |
 | single-unit leaves are the sash, not the frame (W2, D2, D4) | one that picks the frame band — invisible in the ratio, which is 1.000 either way |
 | §2's quoted heights at a 2050mm width | prose drifting from measurement |
+
+The gates do not hold their own copy of these numbers. They **parse them out of
+`docs/estimator/drawing-parse-design.md`** and assert the measurement against what
+the document says — so editing the prose fails the run, which a copied constant
+never would. A missing anchor throws rather than skipping, because a gate that
+quietly stops finding its claim reports MATCH forever.
 | W1 and W4's leaf widths and ratios | one that finds the right windows and measures them wrongly |
 
 None is sufficient alone, and each was added because something got past the ones

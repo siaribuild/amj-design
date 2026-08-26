@@ -15,6 +15,51 @@ import { findFrames, frameVerticals, leafBounds, diagonals, MM_PER_PT } from "./
 // scripts and the documented command runs from the repo root.
 const here = dirname(fileURLToPath(import.meta.url));
 const PDF = join(here, "plans.pdf");
+const DESIGN = join(here, "..", "..", "..", "docs", "estimator", "drawing-parse-design.md");
+
+/** The claims the design document MAKES, read out of the document itself.
+ *
+ *  The gates below assert against THESE rather than against constants copied
+ *  from the prose. A constant copied from prose is not a check on the prose: it
+ *  passes happily while the document says something else, which is exactly the
+ *  state the first version of this gate shipped in.
+ *
+ *  A missing anchor THROWS rather than skipping. A gate that quietly stops
+ *  finding its claim is worse than no gate, because it reports MATCH forever. */
+function designClaims(md) {
+  const grab = (re, what) => {
+    const m = md.match(re);
+    if (!m) {
+      throw new Error(`design doc: cannot find ${what}. The wording changed — update `
+        + `the anchor in measure.mjs so the claim stays checked, rather than leaving `
+        + `a gate that can only ever pass.`);
+    }
+    return m[1];
+  };
+  const nums = (t) => t.split(/[|,]/).map((x) => parseFloat(x)).filter(Number.isFinite);
+  const tags = (t) => t.split(/[^A-Z0-9]+/).filter((x) => /^[WD]\d+$/.test(x));
+  // A §2a row: | label | count | tags |. Regex LITERALS, one per row, rather
+  // than a pattern built from a string: the escaping in a built pattern turned
+  // the leading \| into an alternation and \d into a literal "d", which matched
+  // the empty string at position 0 and reported every claim as absent.
+  const row = (re, label) => {
+    const m = md.match(re);
+    if (!m) {
+      throw new Error(`design doc: cannot find the "${label}" row of §2a. The table `
+        + `changed shape — update the anchor in measure.mjs rather than leaving a `
+        + `gate that can only ever pass.`);
+    }
+    return { count: Number(m[1]), tags: tags(m[2]) };
+  };
+  return {
+    verticals: nums(grab(/verticals, mm from left:([^\n]+)/, "§2's verticals line")),
+    heights2050: nums(grab(/across both elevation sheets is `([^`]+)`/, "§2's quoted heights")),
+    read: row(/\|[^|\n]*Read, with composition[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Read"),
+    ambiguous: row(/\|[^|\n]*Ambiguous[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Ambiguous"),
+    notRead: row(/\|[^|\n]*Not read[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Not read"),
+  };
+}
+const DOC = designClaims(await readFile(DESIGN, "utf8"));
 
 /** Verticals cluster into MEMBERS — a jamb or a mullion is several lines, not
  *  one — for W1 the left jamb is three sash-band lines at 0/25.4/50.8. A leaf
@@ -123,11 +168,7 @@ console.log(`  sweep ${sweepMs}ms`);
 // nothing about the other seventeen, so a regression that halved the read count
 // would still have exited 0 and the document's headline table would have gone
 // stale silently. A result a document states is a result the harness enforces.
-const EXPECTED = {
-  read: ["D2", "D3", "D4", "W1", "W2", "W3", "W4", "W7", "W8", "W10", "W12"],
-  ambiguous: ["W5", "W6", "W9", "W11"],
-  notRead: ["D1", "W14", "W15", "W16"],
-};
+const EXPECTED = { read: DOC.read.tags, ambiguous: DOC.ambiguous.tags, notRead: DOC.notRead.tags };
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 const claims = [
   ["read", read, EXPECTED.read],
@@ -143,11 +184,11 @@ for (const [name, got, want] of claims) {
   console.log(`                        got      ${got.length} [${got.join(" ")}]`);
 }
 console.log(`
-§2a table (11 read / 4 ambiguous / 4 not read): ${tableOk ? "MATCH" : "DRIFTED"}`);
+§2a table (${DOC.read.count} read / ${DOC.ambiguous.count} ambiguous / ${DOC.notRead.count} not read, as the document states them): ${tableOk ? "MATCH" : "DRIFTED"}`);
 
 // The eight verticals §2 records for W1, and which band each belongs to. The
 // design's figure is reproduced in full here rather than implied by the leaves.
-const W1_VERTICALS = [0, 25.4, 50.8, 698.5, 723.9, 740.8, 2027.8, 2048.9];
+const W1_VERTICALS = DOC.verticals;
 const w1f = findFrames(sheets[ELEVATIONS[0]], 2050, 2100)[0];
 const vs = w1f ? frameVerticals(sheets[ELEVATIONS[0]], w1f) : [];
 const band = (f) => (f > 0.995 ? "frame" : f > 0.965 ? "SASH" : "glass");
@@ -192,7 +233,7 @@ console.log(`single-unit leaves are the sash, not the frame: ${framesOk ? "MATCH
 // actually escaped: three times now a claim outran its measurement, survived
 // review, and had to be retracted. Numbers a document quotes are numbers the
 // harness owns.
-const W14_HEIGHTS = [368, 758, 830, 1748, 2049, 2074, 2104, 2718];
+const W14_HEIGHTS = DOC.heights2050;
 const got14 = (await heightsAtWidth(sheets, 2050)).map((k) => Math.round(k.h));
 const quotedOk = got14.length === W14_HEIGHTS.length
   && got14.every((h, i) => Math.abs(h - W14_HEIGHTS[i]) <= 1);
