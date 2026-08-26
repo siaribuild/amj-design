@@ -303,16 +303,28 @@ export async function consumeChallenge(env: Env, ch: Challenge, code: string): P
     return true;
   }
   rec.attempts += 1;
-  // The LAST failure burns the challenge rather than storing it spent. Leaving a
-  // spent record behind kept the resend cooldown running against it, so a
-  // customer who mistyped five times was told to start over and then got no
-  // email — the refusal copy promised a fresh code the server would not send.
+  // The LAST failure burns the challenge rather than storing it spent, for two
+  // reasons that hold regardless of KV's consistency:
   //
-  // It also removes a state rather than adding one: "spent" and "never existed"
-  // now look identical from outside instead of merely answering identically, so
-  // this narrows what an attacker can distinguish rather than widening it. Their
-  // allowance is unchanged — five guesses, then re-issue against the record's
-  // own budget, which is what bounds the total.
+  //  • it removes a state rather than adding one — "spent" and "never existed"
+  //    become identical rather than merely answering identically, narrowing what
+  //    an attacker can distinguish;
+  //  • it stops a dead record occupying the key for the rest of its TTL.
+  //
+  // It ALSO clears the resend cooldown, which is what lets "start over" send a
+  // fresh code — but that consequence is NOT relied upon, and the UI must not be
+  // written as though it were. challengeAllowed decides from the key's ABSENCE,
+  // and a delete is not immediately visible everywhere; a stale read returns an
+  // earlier version of this same record, whose `at` is the issue time in every
+  // version, so the cooldown refuses. Marking the record spent instead of
+  // deleting would not help: the marker is itself the newest write and carries
+  // exactly the same propagation delay. The customer-facing promise is therefore
+  // made on the client, from the request time the client already knows — see the
+  // tracking page. Absence must mean deny; here it means allow, which is why
+  // this cannot be load-bearing. (ADR 0012.)
+  //
+  // The attacker's allowance is unchanged either way — five guesses, then
+  // re-issue against the record's own budget, which is what bounds the total.
   if (rec.attempts >= MAX_OTP_ATTEMPTS) {
     await env.KV.delete(ch.key);
     return false;

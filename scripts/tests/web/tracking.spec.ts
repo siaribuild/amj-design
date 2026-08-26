@@ -120,7 +120,32 @@ test("a wrong code is refused and the record never appears", async ({ page }) =>
   // the recovery instruction and not a lockout message. Asserted separately from
   // /didn't match/ above because that prefix is unchanged: deleting the whole
   // sentence still satisfies it, so it proves nothing about this copy.
-  await expect(page.getByText(/start over to get a fresh code/i)).toBeVisible();
+  //
+  // It ASKS rather than promises: inside the resend window the server sends
+  // nothing and answers neutrally, so a guarantee here would be a lie the server
+  // cannot honour. The next test covers what replaces the guarantee.
+  await expect(page.getByText(/start over and ask for a new one/i)).toBeVisible();
+});
+
+// The other half of that copy change. The server cannot say when the next code
+// can be sent — its answer is deliberately neutral, and saying would reveal
+// whether a record exists — but the browser knows when IT last asked, so the
+// countdown is computed locally and is true regardless of what the server does.
+test("after asking for a code, the page says when another can be asked for", async ({ page }) => {
+  await page.goto("/track-order");
+  await page.getByPlaceholder(refField).fill(REF);
+  await page.getByPlaceholder(emailField).fill("someone.else@example.com");
+  await page.getByRole("button", { name: /send code/i }).click();
+  await expect(page.getByPlaceholder("••••••")).toBeVisible();
+
+  // Exactly what a customer who has run out of attempts does next.
+  await page.getByRole("button", { name: /start over/i }).click();
+  await expect(page.getByPlaceholder(refField)).toBeVisible();
+
+  // A real remaining time, not a fixed string — and the button is held until it
+  // elapses rather than posting a request that would be silently refused.
+  await expect(page.getByTestId("resend-wait")).toContainText(/ask for another in \d+s/i);
+  await expect(page.getByRole("button", { name: /send code/i })).toHaveClass(/pointer-events-none/);
 });
 
 test("an unknown reference reveals nothing about whether it exists", async ({ page }) => {

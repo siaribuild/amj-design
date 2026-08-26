@@ -1587,6 +1587,30 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const [ref, setRef] = useState(""); const [email, setEmail] = useState(""); const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | undefined>();
+  // When THIS browser last asked for a code, and a local countdown derived from
+  // it. The server refuses a resend for RESEND_COOLDOWN_MS after issuing one and
+  // answers neutrally either way, so it cannot tell us when the next one will
+  // actually be sent — and it must not, because that answer would reveal whether
+  // a code exists. The browser already knows when it asked, so the honest
+  // countdown is computed here and costs no request.
+  //
+  // Erring safe by construction: this clocks from when the RESPONSE arrived,
+  // which is later than the server's own issue time by one network hop, so the
+  // server's window has always closed by the time this reaches zero. If a request
+  // was silently refused (already inside the window) this simply restarts the
+  // minute — an over-estimate, never an under-estimate.
+  const RESEND_COOLDOWN_MS = 60_000;    // mirrors RESEND_COOLDOWN_MS, worker/lib/auth.ts
+  const [requestedAt, setRequestedAt] = useState(0);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const resendWait = requestedAt
+    ? Math.max(0, Math.ceil((requestedAt + RESEND_COOLDOWN_MS - nowTick) / 1000))
+    : 0;
+  const cooling = resendWait > 0;
+  useEffect(() => {
+    if (!cooling) return;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [cooling]);
   // WHICH record this session covers. The record itself is rendered by the same
   // components the account area uses, fetching through the same endpoints.
   const [rec, setRec] = useState<{ kind: "project" | "order"; id: string; status?: string } | null>(null);
@@ -1610,6 +1634,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     setBusy(true); setError("");
     try {
       const r = await guestTrackRequest(email.trim(), ref.trim());
+      setRequestedAt(Date.now());
       setDevCode(r.devCode); setStep("code");
     } catch { setError("Something went wrong. Try again."); }
     finally { setBusy(false); }
@@ -1623,8 +1648,10 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
       // Deliberately says nothing about WHY. A code stops working after a handful
       // of wrong tries, and naming that would tell an attacker exactly where they
       // are in their budget; pointing at "Start over" gives the real customer the
-      // way out without the oracle.
-    } catch { setError("That code didn't match, or the details don't match a quote or order. If you've tried a few times, start over to get a fresh code."); }
+      // way out without the oracle. It asks rather than PROMISES — the earlier
+      // wording guaranteed a fresh code, and inside the resend window the server
+      // sends none; the lookup step now says when it can.
+    } catch { setError("That code didn't match, or the details don't match a quote or order. If you've tried a few times, start over and ask for a new one."); }
     finally { setBusy(false); }
   };
   const reset = () => {
@@ -1652,7 +1679,15 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
             <div><FieldLabel>Quote or order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-Q-10001 or OF-58001" className="font-mono tracking-wide" /></div>
             <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the quote" /></div>
             {error && <p className="text-red-600 t-cap">{error}</p>}
-            <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy ? "opacity-50 pointer-events-none" : ""}`}>
+            {/* True for everyone regardless of whether the reference matches, so
+                it stays neutral — it reports this browser's own last request, not
+                anything the server knows about the record. */}
+            {cooling && (
+              <p className="text-body t-cap" data-testid="resend-wait">
+                You asked for a code a moment ago. You can ask for another in {resendWait}s — check your inbox first.
+              </p>
+            )}
+            <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy || cooling ? "opacity-50 pointer-events-none" : ""}`}>
               {busy ? "Sending…" : <>Send code <Search className="w-4 h-4" /></>}
             </Btn>
             <p className="text-body text-center t-cap">
