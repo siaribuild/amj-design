@@ -99,14 +99,60 @@ whose make-up appears both in words and in line-work. Its comment says `2x 600mm
 the decode measures leaves of **596.9** and **601.1**. The drawing agrees with the human to
 within 3 mm, without being told the answer.
 
-W14 and W16 reproduce W1's internal structure exactly — same eight verticals, same two
-diagonals.
+**W14 and W16 do NOT reproduce W1's structure — that claim was wrong.** *(corrected
+2026-08-27, on re-measurement.)* Nothing 2050 × 2000 is drawn anywhere in the 14-page set:
+searching page 6 for a 2050 mm width at any height returns one 2104 mm-tall rectangle (W1)
+and one 2049 mm square (the title-block logo), and nothing else. The original reading almost
+certainly matched **W1's own frame**, because W14, W16 and W1 share a 2050 width — the
+same-dimension trap, sprung in the direction nobody was watching. See §2a.
 
 **Cost:** page 6 is 31,082 operators → 5,928 segments in 110 ms; page 7 is 36,415 → 8,924 in
 70 ms. Peak heap for the whole job, text plus both elevations: **34 MB** in node.
 
+
 ---
 
+## 2a. The whole set, measured — 2026-08-27
+
+§2 was calibrated on two openings. This is all nineteen, decoded by
+`scripts/research/plan-geometry/` against the same document.
+
+| outcome | n | which |
+|---|---|---|
+| **Read, with composition** | **11** | W1 W2 W3 W4 W7 W8 W10 W12 D2 D3 D4 |
+| Ambiguous — two rows share a size | 4 | W5/W6 (850 × 2057), W9/W11 (1810 × 1027) |
+| **Not drawn in the set at all** | 4 | D1, W14, W15, W16 |
+
+**The four misses are not parse failures.** They are openings the drawings do not show, and
+`not stated` is the correct and useful output for them — it is the schedule-family fallback
+doing its job, visibly. Confirmed by searching every one of the 14 pages at 2% for each
+stated size, and then by width alone at any height.
+
+**So the denominator is 15, not 19**, and 11 of those 15 are read outright with the other 4
+falling to the disambiguation stage §6 already specifies. Nothing was read *wrongly*.
+
+**Both calibration points reproduce exactly**, which is what licenses the rest:
+
+```
+W1   OP 698.5mm r=0.352  |  fx 1286.9mm r=0.648      §2 says 698.5 / 1287.0 / 0.352 / 0.648
+W4   OP 596.9  |  fx 1913.5  |  OP 601.1             the drafter wrote "2x 600mm WIDE AWNINGS"
+```
+
+W4 lands 3.1 mm and 1.1 mm from a figure a human typed, without being told it.
+
+**The ambiguity is twice what §6 assumed.** It named W14/W16 as the only same-size pair; the
+real pairs are W5/W6 and W9/W11, and W14/W16 are not drawn. Disambiguation therefore buys 4
+openings, not 2 — still late-ordered, still not a prerequisite.
+
+**A conflict the drawing settles.** W4's drawn frame is **3200 × 2100** — the energy report's
+figure, not the schedule's 2410 × 1800. `conf_energy_2` on this project has been flagged for
+review since July with no tiebreaker. The line-work is one, and it sides with the report. This
+is the first case of the drawings arbitrating a conflict rather than creating one.
+
+**Cost, re-measured:** both elevation sheets decoded in **276 ms**, peak heap **36 MB**, whole
+19-opening sweep **409 ms**. Zero tokens, zero model calls, no new dependency.
+
+---
 ## 3. The cheap route is dead — proven, not assumed
 
 The printed schedule has eight columns and the shipped parser already reads all eight:
@@ -350,11 +396,16 @@ trigger. Until it fires, ship nothing.
 
 ## 8. Plan
 
-### Stage 0 — The proof. **Done, in this session. It passed.**
+### Stage 0 — The proof. **Done, and this time it is on disk.**
 
 Read W1's composition from the real document with no pipeline: 110 ms, 34 MB, eight
 coordinates, reproduced independently three times, and calibrated against W4 where the drafter
 stated the answer.
+
+**The code for it was never committed and was gone by 2026-08-27**, when rebuilding it cost a
+session. It now lives at `scripts/research/plan-geometry/`, with the two traps that cost the
+most time written down beside it. The numbers above are reproduced exactly by that harness,
+and §2a extends them from two openings to all nineteen.
 
 ### Stage 1 — Complete the proof. The only thing to do next.
 
@@ -366,7 +417,9 @@ explicit heap cap in node.
 
 **1b. Does it generalise to a second, unrelated plan set?** Everything above is calibrated on
 n=1: one drafter, one CAD chain ("Microsoft: Print To PDF"). Deliverable: the hit rate and
-false-positive count over one more real builder's set.
+false-positive count over one more real builder's set. *(2026-08-27: the owner has a second
+set to supply. Until it is measured, every generalisation claim here stays unproven — the
+within-document result in §2a says nothing about a different drafter.)*
 
 If 1a fails, the host changes to a container. If 1b comes back low, the primary path becomes
 model-assisted rather than geometric. **Both rewrite everything after, which is why nothing
