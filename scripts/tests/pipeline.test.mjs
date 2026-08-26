@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, browserMcp, mcpAdvisory,
+  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, browserMcp, mcpAdvisory,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -614,12 +614,45 @@ test('the pane boot carries the same native args as the headless one, plus the s
   // Lever 1 and the agent identity are not headless-only, and must survive.
   assert.equal(a[a.indexOf('--agent') + 1], 'ux-designer')
   assert.equal(a[a.indexOf('--autocompact') + 1], String(ux.compact))
-  assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions')
   assert.equal(a[a.indexOf('--mcp-config') + 1], '.mcp.json')
   assert.ok(a.includes('--strict-mcp-config'))
   const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
   assert.equal(paneArgs(reviewer, 'sid', true)[paneArgs(reviewer, 'sid', true)
     .indexOf('--permission-mode') + 1], 'plan', 'a read-only reviewer must boot in plan mode')
+})
+
+test('a pane stage never boots with bypassPermissions - headless still does', () => {
+  // Measured live 2026-08-27, herdr 0.8.2 + a real claude: headless `-p` accepts
+  // bypass silently, but an INTERACTIVE pane raises the Bypass Permissions
+  // consent dialog ("1. No, exit  2. Yes, I accept"). Nothing persists an
+  // acceptance - ~/.claude.json carries only hasTrustDialogAccepted, which is the
+  // separate workspace-trust dialog - so it fired on EVERY pane stage of EVERY
+  // run and blocked each one before it did a byte of work. Owner ruling: pane
+  // stages use a non-bypass mode.
+  //
+  // acceptEdits is the most restrictive mode that still lets a stage work, and it
+  // was chosen by probing a real claude in a real pane, not by reading the flag
+  // list: it boots straight to `idle`/interactive_ready with no dialog, and a
+  // Write and a Bash both went through unprompted. `plan` is read-only and
+  // `manual` prompts on every edit; neither can carry a build slice.
+  for (const spec of [...STAGES, ...REVIEWERS]) {
+    const pane = paneArgs(spec, 'sid', true)
+    const mode = pane[pane.indexOf('--permission-mode') + 1]
+    assert.notEqual(mode, 'bypassPermissions',
+      spec.id + ' boots a pane into the consent dialog that blocks every run')
+    assert.equal(mode, spec.readonly ? 'plan' : 'acceptEdits', spec.id + ' booted a pane as ' + mode)
+    // A resumed stage is the same boot pointed at an existing session, so it
+    // must not quietly re-acquire the mode that blocks.
+    const res = resumeArgs(spec, 'sid', true)
+    assert.equal(res[res.indexOf('--permission-mode') + 1], mode, spec.id + ' resumes in a different mode')
+  }
+
+  // Headless is unchanged: no TTY, no dialog, and the ruling was about panes.
+  const headless = claudeArgs(STAGES.find((s) => s.id === 'spec'), 'prompt', false)
+  assert.equal(headless[headless.indexOf('--permission-mode') + 1], 'bypassPermissions')
+  const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
+  const ro = claudeArgs(reviewer, 'prompt', false)
+  assert.equal(ro[ro.indexOf('--permission-mode') + 1], 'plan', 'a read-only reviewer stays read-only')
 })
 
 /** A temp root that is a real git repo, so `conduct start` can read a base sha. */

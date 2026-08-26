@@ -407,16 +407,30 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
   ? 'browser MCP unavailable (node_modules/@playwright/mcp not installed) - running the stage without it'
   : null
 
+// Headless `-p` accepts bypassPermissions silently. An INTERACTIVE pane does
+// not: it raises the Bypass Permissions consent dialog, nothing persists an
+// acceptance of it, and so it blocked EVERY pane stage of EVERY run before the
+// stage did a byte of work (measured live, herdr 0.8.2, 2026-08-27).
+//
+// acceptEdits is the most restrictive mode that still lets a stage work, probed
+// against a real claude in a real pane rather than picked off the flag list: it
+// boots straight to idle with no dialog, and a Write and a Bash both went
+// through unprompted against this repo's allowlist. `plan` is read-only and
+// `manual` prompts on every edit. A stage that does block mid-run is no longer
+// fatal - it holds warm in its pane, which is what pane mode is for.
+const PANE_PERMISSION = 'acceptEdits'
+
 // The flags that define the session itself, and so are the same whether the
-// stage is a headless child or an interactive claude booted in a pane.
-function sessionArgs(spec, mcpOk) {
+// stage is a headless child or an interactive claude booted in a pane - except
+// the permission mode, which is exactly where the two differ.
+function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
   if (spec.model) a.push('--model', spec.model)
   // Lever 1. Context tokens are the sum of context re-sent per turn; an
   // uncapped 1M window is what turns a long run into 182M.
   a.push('--autocompact', String(spec.compact || 120000))
-  a.push('--permission-mode', spec.readonly ? 'plan' : 'bypassPermissions')
+  a.push('--permission-mode', spec.readonly ? 'plan' : mode)
   if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
   // Always strict: an inherited user or global config drags its tool
   // definitions - Sanity's are large - into every turn of every stage.
@@ -425,19 +439,20 @@ function sessionArgs(spec, mcpOk) {
 }
 
 export const claudeArgs = (spec, promptText, mcpOk = browserMcp()) =>
-  ['-p', promptText, '--output-format', 'stream-json', '--verbose', ...sessionArgs(spec, mcpOk)]
+  ['-p', promptText, '--output-format', 'stream-json', '--verbose',
+    ...sessionArgs(spec, mcpOk, 'bypassPermissions')]
 
 // A pane boot is interactive: no -p, no stream-json. The session id is passed
 // in so the conductor can meter and resume the stage by an id it chose itself,
 // rather than waiting to learn one (herd.mjs cross-checks what herdr reports).
 export const paneArgs = (spec, sessionId, mcpOk = browserMcp()) =>
-  ['--session-id', sessionId, ...sessionArgs(spec, mcpOk)]
+  ['--session-id', sessionId, ...sessionArgs(spec, mcpOk, PANE_PERMISSION)]
 
 // The same boot, pointed at a session that already exists. `--resume` and
 // `--session-id` are mutually exclusive by meaning: one claims a new id, the
 // other adopts one, and passing both would make the record a guess.
 export const resumeArgs = (spec, sessionId, mcpOk = browserMcp()) =>
-  ['--resume', sessionId, ...sessionArgs(spec, mcpOk)]
+  ['--resume', sessionId, ...sessionArgs(spec, mcpOk, PANE_PERMISSION)]
 
 function runClaude(spec, promptText, run, label) {
   return new Promise((res) => {
