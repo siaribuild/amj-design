@@ -25,7 +25,7 @@ import { spawn, execSync, execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { sessionTotals, stageTotals } from './measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
 
 const ROOT = resolve(process.cwd())
 const RUNS = join(ROOT, 'docs', 'runs')
@@ -42,7 +42,6 @@ const CLAUDE = (() => {
 })()
 
 const die = (m) => { console.error('\n  ' + m + '\n'); process.exit(1) }
-const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n)
 const sh = (c) => execSync(c, { cwd: ROOT, encoding: 'utf8' }).trim()
 // A row whose figures are real. A stage that was never metered prints "unknown",
 // never 0 - a zero has to mean measured zero, or the instrument lies quietly.
@@ -266,6 +265,52 @@ function refreshRun(r) {
   return r
 }
 
+// --- the window you are actually spending against ---------------------------
+//
+// The subscription's 5-hour window is the only ceiling that exists (owner ruling,
+// round 3), so it is what `report` shows: burn in the current window and over the
+// trailing week, across EVERY Claude session on this machine, not just this run.
+//
+// What it deliberately does NOT show: a percentage, a remaining, a headroom. The
+// rate_limit_event carries a reset time and no quota whatsoever, so every one of
+// those would be invented, and an invented number on a gauge is worse than a
+// blank one. Do not add one by inferring a quota from observed maxima either.
+
+const RESET_ADVISORY_MIN = 15
+
+const hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5)
+const hm = (ms) => {
+  const m = Math.max(0, Math.round(ms / 60000))
+  return m >= 60 ? Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm' : m + 'm'
+}
+
+/**
+ * The advisory printed when a stage starts near a reset. It is ADVISORY: the
+ * stage starts regardless. Nothing here may ever defer, refuse or halt a run on
+ * window state - the operator watching the stage decides, not this script.
+ */
+export const resetAdvisory = (anchor, now = Date.now()) => {
+  const at = anchor?.resetsAtMs
+  if (!at || at <= now || at - now > RESET_ADVISORY_MIN * 60 * 1000) return null
+  return 'window resets at ' + hhmm(at) + ' (in ' + hm(at - now) + ') - starting anyway'
+}
+
+function printWindow() {
+  const now = Date.now()
+  const anchor = latestRateLimitAnchor(RUNS)
+  const { window, week } = windowTotals({ anchorResetMs: anchor?.resetsAtMs || null, now })
+  const label = window.anchored
+    ? '5h window (anchored, resets ' + hhmm(window.resetsAtMs) + ' in ' + hm(window.resetsAtMs - now) + ')'
+    : '5h window (trailing - no reset seen)'
+  // A week's context total reaches billions here, so the columns are sized for
+  // "ctx 4.16B", not for the largest figure a smoke test happens to produce.
+  const row = (l, b) => '  ' + l.padEnd(38) + ('ctx ' + fmt(b.ctx)).padEnd(13) +
+    ('out ' + fmt(b.out)).padEnd(13) + b.turns + ' calls'
+  console.log('\n  machine-wide, all Claude sessions:')
+  console.log(row(label, window))
+  console.log(row('7-day rolling', week))
+}
+
 function activeSlug() {
   const p = join(RUNS, '.active')
   if (!existsSync(p)) die('no active run - start one with:  conduct start <slug> "<ask>"')
@@ -293,6 +338,10 @@ function runClaude(spec, promptText, run, label) {
     const started = Date.now()
     mkdirSync(join(RUNS, run.slug, 'logs'), { recursive: true })
     const logPath = join(RUNS, run.slug, 'logs', label + '.jsonl')
+    // Advisory only, by criterion 25: say the window is about to reset and start
+    // the stage regardless. Never a gate.
+    const advisory = resetAdvisory(latestRateLimitAnchor(RUNS))
+    if (advisory) process.stdout.write('\n  ' + advisory + '\n')
     const cp = spawn(CLAUDE, claudeArgs(spec, promptText),
       { cwd: spec.cwd || ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
     let buf = ''
@@ -664,6 +713,7 @@ If you believe the finding is wrong, say so and change nothing.`
         ((s.seconds || 0) + 's').padStart(8))
     console.log('  ' + '-'.repeat(55))
     console.log('  ' + 'TOTAL'.padEnd(20) + fmt(tk).padStart(11) + fmt(to).padStart(9))
+    printWindow()
     console.log('\n  conductor overhead: 0 tokens - this script is not a model.\n')
   },
 }

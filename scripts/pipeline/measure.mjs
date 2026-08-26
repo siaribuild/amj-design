@@ -49,20 +49,42 @@ const zero = () => ({ ctx: 0, out: 0, turns: 0 })
 const ctxOf = (u) =>
   (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0)
 
-function* records(sinceMs, cwdFilter) {
+/** The .jsonl files in one directory, skipping any untouched since `sinceMs`. */
+function* jsonlIn(dir, sinceMs) {
+  let names
+  try { names = readdirSync(dir) } catch { return }
+  for (const f of names) {
+    if (!f.endsWith('.jsonl')) continue
+    const p = join(dir, f)
+    // Cheap prefilter: a file untouched since the window opened holds nothing new.
+    try { if (sinceMs && statSync(p).mtimeMs < sinceMs) continue } catch { continue }
+    yield p
+  }
+}
+
+/**
+ * Every transcript file on the machine: the top-level `<sessionId>.jsonl` files
+ * plus the second tier, `<sessionId>/subagents/*.jsonl`, whose records carry
+ * full usage and are real spend against the same rate-limit window.
+ */
+function* transcriptFiles(sinceMs) {
   for (const dir of DIRS()) {
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith('.jsonl')) continue
-      // Cheap prefilter: a file untouched since the window opened holds nothing new.
-      if (sinceMs && statSync(join(dir, f)).mtimeMs < sinceMs) continue
-      for (const line of readFileSync(join(dir, f), 'utf8').split(NL)) {
-        if (!line.trim()) continue
-        let d
-        try { d = JSON.parse(line) } catch { continue }
-        if (d.type !== 'assistant' || !d.message?.usage) continue
-        if (cwdFilter && !String(d.cwd || '').split(SEP).join('/').includes(cwdFilter)) continue
-        yield d
-      }
+    yield* jsonlIn(dir, sinceMs)
+    let entries
+    try { entries = readdirSync(dir) } catch { continue }
+    for (const e of entries) yield* jsonlIn(join(dir, e, 'subagents'), sinceMs)
+  }
+}
+
+function* records(sinceMs, cwdFilter) {
+  for (const file of transcriptFiles(sinceMs)) {
+    for (const line of readFileSync(file, 'utf8').split(NL)) {
+      if (!line.trim()) continue
+      let d
+      try { d = JSON.parse(line) } catch { continue }
+      if (d.type !== 'assistant' || !d.message?.usage) continue
+      if (cwdFilter && !String(d.cwd || '').split(SEP).join('/').includes(cwdFilter)) continue
+      yield d
     }
   }
 }
@@ -176,6 +198,103 @@ export function runDirTotals(logsDir) {
   }
   b.models = [...b.models]
   return b
+}
+
+const FIVE_HOURS = 5 * 3600 * 1000
+const SEVEN_DAYS = 7 * 24 * 3600 * 1000
+
+/**
+ * Machine-wide spend in the current 5-hour window and over the trailing 7 days.
+ *
+ * MACHINE-WIDE means this reads other projects' transcripts, so it is a trust
+ * boundary: those files contain whatever those sessions read. Only `usage`,
+ * `timestamp`, `requestId`/`uuid` and `sessionId` are ever touched, `sessionId`
+ * only to be counted, and the return value is numbers and one boolean. No
+ * session id, path, file name or message content can leave this function.
+ *
+ * The window is ANCHORED when a `rate_limit_event` reset time still lies in the
+ * future - then the window began five hours before it. With no such anchor the
+ * figure is a TRAILING five hours, which is an approximation and is labelled as
+ * one. There is no third possibility to compute: the event carries no quota, so
+ * a percentage, a remaining or a headroom cannot be derived from anything here.
+ */
+export function windowTotals({ anchorResetMs = null, now = Date.now() } = {}) {
+  const anchored = !!anchorResetMs && anchorResetMs > now
+  const windowStart = (anchored ? anchorResetMs : now) - FIVE_HOURS
+  const weekStart = now - SEVEN_DAYS
+  const window = { ctx: 0, out: 0, turns: 0, sessions: 0, anchored, resetsAtMs: anchored ? anchorResetMs : null }
+  const week = { ctx: 0, out: 0, turns: 0, sessions: 0 }
+  const seen = new Set()
+  const windowSessions = new Set(), weekSessions = new Set()
+
+  for (const file of transcriptFiles(weekStart)) {
+    let text
+    try { text = readFileSync(file, 'utf8') } catch { continue }
+    for (const line of text.split(NL)) {
+      if (!line.trim()) continue
+      let d
+      try { d = JSON.parse(line) } catch { continue }
+      if (d.type !== 'assistant' || !d.message?.usage) continue
+      const t = Date.parse(d.timestamp || '')
+      if (!(t >= weekStart)) continue
+      const key = d.requestId || ('uuid:' + d.uuid)
+      if (seen.has(key)) continue
+      seen.add(key)
+      const ctx = ctxOf(d.message.usage)
+      const out = d.message.usage.output_tokens || 0
+      week.ctx += ctx; week.out += out; week.turns++
+      weekSessions.add(d.sessionId || '?')
+      if (t >= windowStart) {
+        window.ctx += ctx; window.out += out; window.turns++
+        windowSessions.add(d.sessionId || '?')
+      }
+    }
+  }
+  window.sessions = windowSessions.size
+  week.sessions = weekSessions.size
+  return { window, week }
+}
+
+/**
+ * The last rate-limit reset time this repo's stage logs know about.
+ *
+ * `rate_limit_event` is streamed into `docs/runs/<slug>/logs/<label>.jsonl` and
+ * exists NOWHERE ELSE - not in transcripts, not in the result object. It carries
+ * `resetsAt` (UNIX **seconds**) and `rateLimitType` and NO QUOTA FIGURE of any
+ * kind, which is why nothing downstream may render a percentage or a remaining.
+ *
+ * Only the two window fields are returned: the event also carries a `session_id`
+ * and a `uuid`, and neither is anyone's business outside this function.
+ */
+export function latestRateLimitAnchor(runsDir) {
+  const files = []
+  let slugs
+  try { slugs = readdirSync(runsDir) } catch { return null }
+  for (const slug of slugs) {
+    const logs = join(runsDir, slug, 'logs')
+    let names
+    try { names = readdirSync(logs) } catch { continue }
+    for (const f of names) {
+      if (!f.endsWith('.jsonl')) continue
+      const p = join(logs, f)
+      try { files.push([statSync(p).mtimeMs, p]) } catch { /* vanished */ }
+    }
+  }
+  files.sort((a, b) => b[0] - a[0]) // newest log first; within a log, the last event wins
+  for (const [, p] of files) {
+    let found = null
+    let text
+    try { text = readFileSync(p, 'utf8') } catch { continue }
+    for (const line of text.split(NL)) {
+      if (!line.includes('rate_limit_event')) continue
+      let d
+      try { d = JSON.parse(line) } catch { continue }
+      const i = d.type === 'rate_limit_event' ? d.rate_limit_info : null
+      if (i && i.resetsAt) found = { resetsAtMs: i.resetsAt * 1000, rateLimitType: i.rateLimitType || null }
+    }
+    if (found) return found
+  }
+  return null
 }
 
 export const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B'
