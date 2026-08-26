@@ -35,11 +35,12 @@ const normRef = (r: unknown) => String(r ?? "").trim().toUpperCase();
 // puts many real people behind one address and a locked-out customer is worse
 // than a slowed bot.
 //
-// Note this cap is the ONLY one of the two that a concurrent attacker cannot
-// slip: it is checked per request, whereas the attempt cap is a read-modify-write
-// over KV and bounds a serial attacker only (see MAX_OTP_ATTEMPTS). Against a
-// single host, therefore, 60/hour is the real bound rather than the 25 the
-// attempt cap nominally imposes; across many hosts, neither number holds.
+// This cap is NOT a backstop for the attempt cap's concurrency weakness. It is
+// the same read-modify-write over KV (see withinCap, whose own comment calls it
+// "a ceiling on sustained abuse, not a mutex"), so overlapping requests can slip
+// it in exactly the same way. Both numbers here — 60/hour per source, 25 per
+// window per record — bound a SERIAL attacker only. Nothing on this path is
+// concurrency-safe; see MAX_OTP_ATTEMPTS for the shape that would be.
 const MAX_GUEST_VERIFY_PER_IP = 60;
 const GUEST_VERIFY_IP_WINDOW = 60 * 60; // seconds
 

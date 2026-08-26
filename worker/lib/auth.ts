@@ -161,8 +161,10 @@ export async function challengeAllowed(env: Env, ch: Challenge): Promise<boolean
   }
   // Keyed on the SUBJECT, not the key: for sign-in that is the address, which
   // keeps `otpc:{email}` exactly as it has always been (no live counter resets
-  // on deploy), and for guest tracking it is the (address, reference) pair the
+  // on deploy), and for guest tracking it is the (address, project) pair the
   // budget actually belongs to.
+  //
+  // Read-modify-write, so the same serial-only ceiling as MAX_OTP_ATTEMPTS.
   const countKey = `otpc:${ch.subject}`;
   const count = parseInt((await env.KV.get(countKey)) ?? "0", 10) || 0;
   if (count >= MAX_CHALLENGES_PER_WINDOW) return false;
