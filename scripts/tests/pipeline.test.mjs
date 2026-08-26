@@ -1059,6 +1059,48 @@ test('a headless gate still answers headless, even with herdr up', () => {
   assert.equal(calls(s.log).length, before, 'a headless gate must not talk to herdr')
 })
 
+test('an answer is metered in both modes, and the two modes agree on what a stage cost', () => {
+  // Criterion 29. The stage was already metered from its transcript when it
+  // held; the answer then spends more API calls in the SAME session. Pane mode
+  // re-summed in finalizePane, headless recorded nothing at all, and refreshRun
+  // refused to re-read any stage already sourced 'transcript' - so the totals
+  // froze at the pre-answer figures and the two modes disagreed about one
+  // stage's cost. An instrument that under-reports after every interaction is
+  // the failure this feature exists to prevent.
+  const totals = {}
+  for (const mode of ['pane', 'headless']) {
+    const session = 'sess-answer-' + mode
+    const s = paneRepo('answer-meter-' + mode, session, { HERDR_STUB_STATES: 'idle' })
+    // A headless answer really spawns a claude, so it needs one that exists.
+    if (mode === 'headless') s.env.CONDUCT_CLAUDE_BIN = process.execPath
+    const dir = join(s.root, 'docs', 'runs', 'demo')
+    const run = runJson(s)
+    run.stages.spec = {
+      session, status: 'held', holdReason: 'decisions', pane: 'w9:p3',
+      ...(mode === 'pane' && { mode: 'pane' }),
+      contextTokens: 2000, outputTokens: 20, turns: 2, source: 'transcript', seconds: 5,
+    }
+    run.gateStage = 'spec'
+    writeFileSync(join(dir, 'run.json'), JSON.stringify(run, null, 2))
+    // The answer spends three more API calls in the session that asked.
+    seedTranscript(s.env.CLAUDE_PROJECTS_DIR, 'proj-pane', session,
+      ['req-1', 'req-2', 'req-3', 'req-4', 'req-5'], 2)
+    writeFileSync(join(dir, 'DECISIONS.md'), '1. Which way round?' + NL + 'A: this way.' + NL)
+
+    paned(s, 'answer')
+
+    const st = runJson(s).stages.spec
+    assert.equal(st.turns, 5, mode + ' answer left the stage on its pre-answer call count')
+    assert.equal(st.contextTokens, 5000, mode + ' answer left the stage on its pre-answer context')
+    assert.equal(st.outputTokens, 50)
+    assert.equal(st.source, 'transcript')
+    assert.match(paned(s, 'report'), /5k/, mode + ' report still prints the pre-answer total')
+    totals[mode] = { ctx: st.contextTokens, out: st.outputTokens, turns: st.turns }
+  }
+  assert.deepEqual(totals.pane, totals.headless,
+    'the two modes disagree about what the same stage cost: ' + JSON.stringify(totals))
+})
+
 test('a role gets ONE pane, reused - a run must not end with a dozen idle shells', () => {
   const s = paneRepo('pane-reuse', 'sess-reuse')
 

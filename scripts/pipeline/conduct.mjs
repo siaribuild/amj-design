@@ -272,17 +272,25 @@ const stageSum = (s, base = sessionTotals(s.session)) =>
 /**
  * Heal stage figures that were taken before the transcript had flushed.
  *
- * Recompute any stage that has a session id but was not metered from its
- * transcript, and persist the result so a row heals exactly once. Old run.jsons
- * carrying `contextTokens: 0` from before the fallback existed heal on the next
- * `report` or `plan`.
+ * Recompute every stage that has a session id, and persist the result. Old
+ * run.jsons carrying `contextTokens: 0` from before the fallback existed heal
+ * on the next `report` or `plan`.
+ *
+ * It re-reads a stage already sourced 'transcript' as well, because a session
+ * does not stop spending when it is first metered: `answer` types into the very
+ * session that held, adding API calls to a stage whose row was already written.
+ * Skipping those froze the figures at their pre-answer values while pane mode
+ * re-summed in finalizePane - so the two modes disagreed about one stage's cost.
+ * Re-reading is idempotent; the write below happens only when a figure moved.
  */
 function refreshRun(r) {
   let changed = false
   for (const s of Object.values(r.stages || {})) {
-    if (!s.session || (s.source === 'transcript' && s.turns > 0)) continue
+    if (!s.session) continue
     const t = stageSum(s)
     if (!t.turns) continue
+    if (s.source === 'transcript' && s.turns === t.turns &&
+      s.contextTokens === t.ctx && s.outputTokens === t.out) continue
     Object.assign(s, { contextTokens: t.ctx, outputTokens: t.out, turns: t.turns, source: 'transcript' })
     changed = true
   }
@@ -1017,7 +1025,8 @@ const cmds = {
       return
     }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
-    await new Promise((res) => {
+    const started = Date.now()
+    const code = await new Promise((res) => {
       const p = `The owner has answered the questions in ${run.dir}/DECISIONS.md - read it now.
 Revise your artifact accordingly. If the answers raised NEW owner-only questions,
 append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
@@ -1027,8 +1036,25 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
         { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'] })
       cp.on('close', res)
     })
+    // The answer just spent turns in this stage's own session, and recording
+    // nothing left the row on its pre-answer figures - while pane mode re-summed
+    // in finalizePane. Meter it the same way that path does, or the two modes
+    // disagree about what one stage cost.
+    const t = stageSum(st)
+    Object.assign(st, {
+      code, status: 'done',
+      contextTokens: t.ctx, outputTokens: t.out, turns: t.turns,
+      source: t.turns ? 'transcript' : (st.source || 'none'),
+      seconds: (st.seconds || 0) + Math.round((Date.now() - started) / 1000),
+    })
+    delete st.holdReason
+    run.stages[id] = st
     run.gateStage = null
     saveRun(run)
+    console.log('  ok ' + id + '  ' + (metered(st)
+      ? 'ctx ' + fmt(st.contextTokens) + '  out ' + fmt(st.outputTokens) + '  ' + st.turns + ' calls'
+      : 'metering unknown'))
+    finished(run, id, spec, st)
   },
 
   async fix(...finding) {
