@@ -575,7 +575,12 @@ async function runPaneStage(spec, promptText, run, label) {
 
 // --- sliced build: one short session per task -------------------------------
 
-async function runBuild(run, spec) {
+// STRICTLY SEQUENTIAL, in both modes, and deliberately so: parallel tasks were
+// rejected on token cost. A task started beside its predecessor never sees the
+// 04-build.md the predecessor writes, so it re-discovers what was already
+// established - which is the re-read cost this pipeline exists to remove. This
+// is the one loop in the file that must never become a fan-out.
+async function runBuild(run, spec, panes) {
   const tp = join(RUNS, run.slug, '02-tasks.json')
   if (!existsSync(tp)) die('design produced no 02-tasks.json - re-run:  conduct run design')
   const tasks = JSON.parse(readFileSync(tp, 'utf8'))
@@ -611,9 +616,15 @@ Then APPEND to ${run.dir}/04-build.md:
   Under 15 lines. It is the only thing the next session will be told.
 
 Stop when this task is done. Do not start the next one.`
-    const s = await runClaude({ ...spec }, prompt, run, 'build-' + t.id)
+    const label = 'build-' + t.id
+    const s = (panes && await runPaneStage({ ...spec }, prompt, run, label)) ||
+      await runClaude({ ...spec }, prompt, run, label)
+    // A task that stopped to ask something is not a failed task. Its agent is
+    // alive in its pane and the gate has already been printed; the remaining
+    // tasks wait, because each one is written against the last one's handoff.
+    if (s.status === 'held') return
     if (s.code !== 0)
-      die('task ' + t.id + ' failed (exit ' + s.code + ') - see ' + run.dir + '/logs/build-' + t.id + '.jsonl')
+      die('task ' + t.id + ' failed (exit ' + s.code + ') - see ' + run.dir + '/logs/' + label + '.jsonl')
     done.add(t.id)
     run.tasksDone = [...done]
     saveRun(run)

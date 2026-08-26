@@ -1135,3 +1135,34 @@ test('one reviewer holding does not stall the other three', () => {
   // thing this gate must never do.
   assert.match(out, /UNREVIEWED|NOT[\s\S]{0,40}a clean review/)
 })
+
+test('build tasks run strictly sequentially, and a concurrent one fails here', () => {
+  // Parallel build tasks were REJECTED on token cost: a task started beside
+  // its predecessor loses the accumulated 04-build.md handoff and re-discovers
+  // what the earlier one had already established - the exact re-read cost this
+  // pipeline exists to remove. The rejection is enforced here, not remembered.
+  const s = paneRepo('build-serial', 'sess-build', { HERDR_STUB_STATES: 'idle' })
+  const dir = join(s.root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'first', done_when: 'done', files: ['a.js'], tests: ['a.test.mjs'] },
+    { id: 't2', title: 'second', done_when: 'done', files: ['b.js'], tests: ['b.test.mjs'], after: ['t1'] },
+  ]))
+
+  paned(s, 'run', 'build')
+
+  const seq = calls(s.log)
+  const at = (f) => seq.findIndex(f)
+  const freed = (id) => at((a) => a[1] === 'prompt' && a[2] === 'build-' + id && a[3] === '/exit')
+  const begun = (id) => at((a) => a[1] === 'start' && a[2] === 'build-' + id)
+  assert.ok(begun('t1') >= 0 && freed('t1') > begun('t1'), 't1 never ran to completion in its pane')
+  assert.ok(begun('t2') > freed('t1'),
+    't2 started before t1 was finished with - build tasks were made concurrent')
+  assert.deepEqual(runJson(s).tasksDone, ['t1', 't2'])
+
+  // Headless is the same loop. Its serialism is structural: no combinator can
+  // be introduced without one of these appearing in the function.
+  const body = readFileSync(resolve('scripts/pipeline/conduct.mjs'), 'utf8')
+    .split('async function runBuild(')[1].split(NL + '}')[0]
+  for (const banned of ['Promise.all', 'Promise.allSettled', 'Promise.race', 'Promise.any'])
+    assert.ok(!body.includes(banned), 'runBuild grew a ' + banned + ' - build tasks are sequential')
+})
