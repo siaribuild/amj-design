@@ -514,7 +514,7 @@ function stubbed(name, extra = {}) {
   const log = join(root, 'herdr-calls.jsonl')
   const env = {
     HERDR_BIN: STUB, HERDR_STUB_LOG: log, HERDR_STUB_FAIL: '', HERDR_STUB_FAIL_ONCE: '',
-    HERDR_STUB_ERR: '', HERDR_STUB_BUSY: '', HERDR_STUB_SESSION: '', ...extra,
+    HERDR_STUB_ERR: '', HERDR_STUB_BUSY: '', HERDR_STUB_SESSION: '', HERDR_STUB_NOAGENT: '', ...extra,
   }
   Object.assign(process.env, env)
   return { root, log, env: { ...process.env, ...env } }
@@ -1178,6 +1178,8 @@ test('build tasks run strictly sequentially, and a concurrent one fails here', (
 function interrupted(s, label, stage) {
   const p = join(s.root, 'docs', 'runs', 'demo', 'run.json')
   const run = JSON.parse(readFileSync(p, 'utf8'))
+  // A stage that reached `running` always left its prompt on disk first.
+  writePrompt(s.root, 'demo', label, 'Do the ' + label + ' stage.' + NL)
   run.stages[label] = {
     status: 'running', mode: 'pane', pane: 'w9:p3', source: 'none',
     startedAt: new Date(Date.now() - 60000).toISOString(), ...stage,
@@ -1206,4 +1208,34 @@ test('conduct next reattaches to a stage still in progress - same session, no se
 
   const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
   assert.deepEqual(typed, ['/exit'], 'a reattached agent must not be re-prompted: ' + typed.join(' | '))
+})
+
+test('a stage whose agent is gone is relaunched with --resume, on the SAME session', () => {
+  // The pane and its agent died with the machine, but the session herdr booted
+  // is on disk and `claude --resume <id>` restores it. Everything that session
+  // already did - and already paid for - still stands.
+  const s = paneRepo('durable-restore', 'sess-gone', { HERDR_STUB_NOAGENT: '1' })
+  interrupted(s, 'spec', { session: 'sess-gone' })
+
+  const out = paned(s, 'next')
+
+  const start = said(s.log, 'agent', 'start')
+  assert.equal(start.length, 1, 'the stage was not relaunched exactly once: ' + start.length)
+  const native = start[0].slice(start[0].indexOf('--') + 1)
+  assert.equal(native[0], '--resume', 'the relaunch did not resume: ' + native.join(' '))
+  assert.equal(native[1], 'sess-gone')
+  assert.ok(!native.includes('--session-id'),
+    'a resume must not also claim a fresh session id - one of them would be a lie')
+  assert.equal(native[native.indexOf('--autocompact') + 1], '120000',
+    'the restored boot dropped lever 1')
+
+  assert.equal(runJson(s).stages.spec.session, 'sess-gone', 'the session id changed across a restore')
+  assert.equal(runJson(s).stages.spec.previousSessions, undefined,
+    'nothing was lost, so nothing belongs in previousSessions')
+  assert.match(out, /interrupted|resum/i, 'the operator was not told the stage was restored')
+
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.match(typed[0], /docs\/runs\/demo\/prompts\/spec\.txt/,
+    'a restored agent must be pointed back at its prompt file, not re-fed the prompt')
+  assert.ok(!typed[0].includes(NL), 'a newline in typed text submits it early')
 })

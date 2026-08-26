@@ -385,6 +385,12 @@ export const claudeArgs = (spec, promptText, mcpOk = browserMcp()) =>
 export const paneArgs = (spec, sessionId, mcpOk = browserMcp()) =>
   ['--session-id', sessionId, ...sessionArgs(spec, mcpOk)]
 
+// The same boot, pointed at a session that already exists. `--resume` and
+// `--session-id` are mutually exclusive by meaning: one claims a new id, the
+// other adopts one, and passing both would make the record a guess.
+export const resumeArgs = (spec, sessionId, mcpOk = browserMcp()) =>
+  ['--resume', sessionId, ...sessionArgs(spec, mcpOk)]
+
 function runClaude(spec, promptText, run, label) {
   return new Promise((res) => {
     const started = Date.now()
@@ -535,8 +541,13 @@ async function settleStage(run, label, started) {
 /**
  * Run one stage as a herdr agent. Returns the stage record, or null when herdr
  * could not give it a pane or an agent - the caller then runs it headless.
+ *
+ * `resume` is a session id to pick back up instead of starting a fresh one: the
+ * boot becomes `--resume <id>` and the agent is told it was interrupted rather
+ * than told to begin. Everything else - pane, argv, watch, metering - is the
+ * same code, because a restored stage is not a different kind of stage.
  */
-async function runPaneStage(spec, promptText, run, label) {
+async function runPaneStage(spec, promptText, run, label, resume = null) {
   const started = Date.now()
   // Announced BEFORE the pane is found, not after: this line is how a fan-out
   // is read as a fan-out, and a stage that cannot get a pane still has to say
@@ -556,15 +567,22 @@ async function runPaneStage(spec, promptText, run, label) {
     return null
   }
 
-  const sessionId = randomUUID()
+  const sessionId = resume || randomUUID()
   const promptPath = writePrompt(ROOT, run.slug, label, promptText)
   console.log('    pane ' + paneId)
+  // Sessions an interruption killed still spent what they spent. The record is
+  // rebuilt from scratch here, so this is the one field that has to survive it.
+  const previousSessions = run.stages[label]?.previousSessions
   const boot = await launchStage({
-    paneId, label, sessionId, argv: paneArgs(spec, sessionId, mcpOk), promptPath,
+    paneId, label, sessionId, promptPath,
+    argv: resume ? resumeArgs(spec, resume, mcpOk) : paneArgs(spec, sessionId, mcpOk),
+    line: resume && 'You were interrupted. Re-read ' + promptPath +
+      ' and continue - the work already on disk stands.',
     onSession: (session) => {
       run.stages[label] = {
         status: 'running', mode: 'pane', session, pane: paneId,
         source: 'none', startedAt: new Date().toISOString(),
+        ...(previousSessions && { previousSessions }),
       }
       saveRun(run)
     },
@@ -903,7 +921,18 @@ const cmds = {
       if (s?.status !== 'held') afterStage(run, spec)
       return
     }
-    die('cannot pick up ' + label + ' - re-run it with:  conduct run ' + label)
+    if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
+      '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
+
+    const promptPath = join(RUNS, run.slug, 'prompts', label + '.txt')
+    if (!existsSync(promptPath))
+      die(label + ' has no prompt on disk to hand back to it - re-run it with:  conduct run ' + label)
+    const promptText = readFileSync(promptPath, 'utf8')
+
+    console.log('\n  ' + label + ': its agent is gone - herdr no longer has it.')
+    console.log('  resuming session ' + st.session + ' in a new pane; its work on disk stands.')
+    const s = await runPaneStage(spec, promptText, run, label, st.session)
+    if (s && s.status !== 'held') afterStage(run, spec)
   },
 
   async answer(...flags) {

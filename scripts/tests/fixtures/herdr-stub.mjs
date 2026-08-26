@@ -18,6 +18,9 @@
 //                        `agent wait` calls, e.g. "working;unknown;blocked".
 //                        "timeout" makes that call fail the way a bounded wait
 //                        does when the agent is still going. Default: "idle".
+//   HERDR_STUB_NOAGENT   `agent get` answers agent_not_found until an
+//                        `agent start` has been recorded - the world as a
+//                        reboot leaves it, with the pane's agent gone.
 //   HERDR_STUB_SNAPSHOT  a file to copy aside on the FIRST call of each
 //                        subcommand, so a test can see the world as it was at
 //                        that moment (e.g. run.json when the agent is prompted)
@@ -112,6 +115,8 @@ switch (sub) {
       agent_status: 'idle', interactive_ready: true,
     })
   case 'agent get':
+    if (process.env.HERDR_STUB_NOAGENT && priorCalls('agent', 'start') === 0)
+      err('agent_not_found', 'no agent named ' + argv[2])
     ok({
       type: 'agent_info',
       agent: {

@@ -155,7 +155,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * the agent twice running - the caller then falls back to headless for this
  * stage (criterion 36: never abort, never skip).
  */
-export async function launchStage({ paneId, label, sessionId, argv, promptPath, settleMs = 2000, onSession }) {
+export async function launchStage({ paneId, label, sessionId, argv, promptPath, settleMs = 2000, onSession, line }) {
   checkLabel(label)
   let last
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -192,7 +192,7 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
     if (onSession) await onSession(reported || sessionId, { adopted })
     // The ONLY thing typed into the pane. The prompt itself never transits a
     // TTY or a shell - it is on disk, and this is the path to it.
-    await herd('agent', 'prompt', label, 'Read ' + promptPath + ' and do exactly what it says.')
+    await herd('agent', 'prompt', label, line || 'Read ' + promptPath + ' and do exactly what it says.')
     return { session: reported || sessionId, adopted }
   }
   return null
