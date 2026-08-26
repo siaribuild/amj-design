@@ -25,7 +25,7 @@ ARM="${1:?usage: ab-test.sh v1|v2}"
 ROOT=/e/Projects
 WT="$ROOT/ab-$ARM-gst"
 OUT="$ROOT/amj-website-design/docs/pipeline/ab-results"
-CAP=30
+CAP=50
 BASE=$(cd "$ROOT/ab-$ARM-gst" && git rev-parse HEAD | cut -c1-8)
 
 mkdir -p "$OUT"
@@ -65,10 +65,22 @@ re-verified - do not patch them inline yourself.
 I am not available: skip the grill (stage 0), and wherever the pipeline says to
 put a decision or a mock to me, record an explicit ASSUMED: choice and continue
 rather than waiting. Do not ask me anything." \
-    --output-format json --verbose \
+    --output-format stream-json --verbose \
     --permission-mode bypassPermissions \
     --max-budget-usd "$CAP" \
-    > "$OUT/$ARM.result.json" 2> "$OUT/$ARM.err"
+    > "$OUT/$ARM.stream.jsonl" 2> "$OUT/$ARM.err"
+  # Attempt 1 was OOM-killed at 44 min and took its entire buffered result JSON
+  # with it: empty stdout, empty stderr, nothing to measure. Streaming to disk
+  # means a killed arm still leaves everything it managed to do.
+  node -e '
+    const fs = require("fs")
+    let last = null
+    for (const l of fs.readFileSync(process.argv[1], "utf8").split("\n")) {
+      if (!l.trim()) continue
+      try { const d = JSON.parse(l); if (d.type === "result") last = d } catch {}
+    }
+    fs.writeFileSync(process.argv[2], last ? JSON.stringify(last) : "")
+  ' "$OUT/$ARM.stream.jsonl" "$OUT/$ARM.result.json"
 else
   # v2: the conductor drives; each stage is its own short-lived session.
   node scripts/pipeline/conduct.mjs start gst-calc "$ASK" > "$OUT/$ARM.log" 2>&1
