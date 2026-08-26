@@ -84,13 +84,20 @@ strictly worse than the one it duplicates, because the plugin's half is the
   reads the shim source and fails if the subagent rewrite or an `npx` call
   returns.
 
-## Trap: the v1 backup copy is a pre-fix snapshot
+## Trap: two other copies of this file are pre-fix snapshots
 
-`docs/pipeline/v1-backup/hooks/probity-subagent-shim.mjs` predates the
-cwd-resolution fix (commit `3e210dcf`). **Restoring it reintroduces the bug
-described above** — a session that denies every write and misreports why.
-`docs/pipeline/v1-backup/RESTORE.md`'s one-`cp` rollback covers `.claude/agents/`
-only; it was never a licence to restore this file.
+`docs/pipeline/v1-backup/hooks/probity-subagent-shim.mjs` and
+`docs/pipeline-template/hooks/probity-subagent-shim.mjs` are byte-identical to
+each other and both predate the cwd-resolution fix (commit `3e210dcf`). They
+carry `const cwd = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd()`
+— which falls back only when `payload.cwd` is *falsy*, never when it is present
+but unresolvable, and that is precisely the failing case.
+
+**Copying either one over the live hook reintroduces the outage** — a session
+that denies every write and misreports why. `docs/pipeline/v1-backup/RESTORE.md`'s
+one-`cp` rollback covers `.claude/agents/` only; it was never a licence to
+restore this file. The template copy is worse in kind, because it seeds *other*
+repos with the bug; it is out of this change's scope and left as found.
 
 ## Do not "fix" this back
 
