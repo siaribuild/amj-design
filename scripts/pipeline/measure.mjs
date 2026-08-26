@@ -76,6 +76,55 @@ export function sessionTotals(sessionId) {
   return b
 }
 
+/**
+ * Totals for one run, taken from a stream-json log's final `result` object.
+ *
+ * THIS IS THE ONLY METRIC THAT IS FAIR ACROSS THE TWO PIPELINES. Subagent turns
+ * are never written to the transcript, so transcript-summing measures only the
+ * top-level session. v1 is almost entirely subagents; v2 has none, because every
+ * stage IS a top-level session. Comparing transcript totals would therefore
+ * divide v1's orchestrator-only figure by v2's complete figure and call it a
+ * ratio — and would additionally report v1's orchestrator as ~100% of v1's
+ * spend, which is the exact opposite of the truth.
+ *
+ * `modelUsage` in the result object aggregates the whole session, subagents
+ * included; its per-model breakdown is what exposes them (a v1 run shows the
+ * agents' own models, e.g. fable for the architect, alongside the orchestrator's).
+ */
+export function streamTotals(file) {
+  let last = null
+  let text
+  try { text = readFileSync(file, 'utf8') } catch { return null }
+  for (const line of text.split(NL)) {
+    if (!line.trim()) continue
+    try { const d = JSON.parse(line); if (d.type === 'result') last = d } catch { /* partial line */ }
+  }
+  if (!last) return null
+  const mu = last.modelUsage || {}
+  const b = { ctx: 0, out: 0, cost: last.total_cost_usd || 0, models: Object.keys(mu), turns: last.num_turns || 0 }
+  for (const v of Object.values(mu)) {
+    b.ctx += (v.inputTokens || 0) + (v.cacheReadInputTokens || 0) + (v.cacheCreationInputTokens || 0)
+    b.out += v.outputTokens || 0
+  }
+  return b
+}
+
+/** Sum streamTotals over every stage log in a v2 run directory. */
+export function runDirTotals(logsDir) {
+  const b = { ctx: 0, out: 0, cost: 0, models: new Set(), turns: 0, stages: {} }
+  let files
+  try { files = readdirSync(logsDir) } catch { return b }
+  for (const f of files.filter((f) => f.endsWith('.jsonl'))) {
+    const t = streamTotals(join(logsDir, f))
+    if (!t) continue
+    b.ctx += t.ctx; b.out += t.out; b.cost += t.cost; b.turns += t.turns
+    t.models.forEach((m) => b.models.add(m))
+    b.stages[f.replace(/\.jsonl$/, '')] = t
+  }
+  b.models = [...b.models]
+  return b
+}
+
 export const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B'
   : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M'
   : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n)
