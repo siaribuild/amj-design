@@ -143,3 +143,31 @@ not just `running`. `runPaneStage(spec, promptText, run, label)` takes an
 explicit label, so reviewers and `build-<id>` reuse it as-is; `settleStage` is
 the tail to reuse after any relaunch. `previousSessions` is deliberately NOT
 folded into `finalizePane` yet — t7 owns it.
+
+## t6 — Review fan-out
+
+Files: `scripts/pipeline/conduct.mjs`, `scripts/tests/pipeline.test.mjs`.
+
+- `cmds.run` decides pane mode and builds the cockpit ONCE, above the stage
+  shapes; `runBuild(run, spec, panes)` and `runReviews(run, panes)` take that
+  boolean. Neither could reach pane mode before — the branch sat below them.
+- `runReviews`: `conformance`/`ponytail` → `runPaneStage`, falling back to
+  `runClaude` per reviewer; `security` carries `headless: true` in `REVIEWERS`
+  and stays a `-p` child in every mode; `codex` untouched. Still one `.map` +
+  `Promise.all`, so all four are started before any is awaited.
+- `runPaneStage` announces `> <label>` BEFORE it looks for a pane (the pane id
+  follows on its own line). That stdout line is the fan-out's timeline.
+- `runBuild` runs each task as a pane agent, sequentially; a `held` task now
+  stops the loop instead of being read as an exit-code failure.
+- 3 tests: fan-out order (stdout + herdr timeline, codex joins it via a fake
+  companion); one reviewer `blocked` while the other three finish, with codex
+  exiting 3 to prove the "not a clean review" line survives; build `t2`'s
+  `agent start` must follow `t1`'s `/exit`. All three mutation-checked.
+
+For t7: **no reviewer tab** — design §4 wants one, but `herdr tab create`
+(probed: `--workspace --cwd --label --no-focus` → `{tab, root_pane}`) needs
+`herd.mjs` + the stub, neither of which t6 may touch. Reviewer panes split off
+`planPane` like any role. Test seam note: `CONDUCT_CLAUDE_BIN=process.execPath`
+is a usable headless-claude stub — node rejects `--output-format` loudly, which
+is itself the proof the headless argv was spawned; a `.cmd`/`.bat` stub is not
+an option (Node ≥20 `spawn` EINVAL without a shell).
