@@ -322,6 +322,35 @@ test('plan heals the same way and reports tokens, not money', () => {
   assert.equal(JSON.parse(readFileSync(runJson, 'utf8')).stages.spec.turns, 2)
 })
 
+test('plan shows an interrupted stage as in progress, never as not-started', () => {
+  // Criterion 1. This is the pane the cockpit re-runs every 5 seconds, so it is
+  // the one surface the owner actually reads. A stage that is running, or held
+  // warm waiting for him, rendered identically to one that had never started.
+  const projects = tmp('plan-live-projects')
+  const { root } = seedRun('plan-live-run', {
+    spec: { code: 0, contextTokens: 1000, outputTokens: 10, turns: 1, source: 'transcript', seconds: 3 },
+    design: { status: 'running', mode: 'pane', pane: 'w9:p3', source: 'none' },
+    'build-t1': { status: 'held', holdReason: 'blocked-ui', mode: 'pane', source: 'none' },
+  })
+  writeFileSync(join(root, 'docs', 'runs', 'demo', '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'first', done_when: 'done', files: ['a.js'] },
+    { id: 't2', title: 'second', done_when: 'done', files: ['b.js'], after: ['t1'] },
+  ]))
+
+  const out = conduct(root, projects, 'plan')
+  const row = (label) => out.split(NL).find((l) => l.includes(label)) || ''
+
+  assert.match(row('spec'), /\[x\]/, 'a finished stage stopped reading as finished')
+  assert.match(row('design'), /\[>\]/, 'a running stage reads as not-started: ' + row('design'))
+  assert.match(row('t1  '), /\[>\]/, 'a held build task reads as not-started: ' + row('t1  '))
+  assert.match(row('verify'), /\[ \]/, 'a stage that really has not started must stay [ ]')
+  assert.match(row('t2  '), /\[ \]/, 'a task that really has not started must stay [ ]')
+  // A mark on its own does not say which; the operator has to know whether the
+  // agent is working or waiting on him.
+  assert.match(row('design'), /running/i)
+  assert.match(row('t1  '), /held|blocked/i)
+})
+
 test('report prints machine-wide window totals, anchored when a future reset is known', () => {
   const projects = tmp('report-window-projects')
   const now = Date.now()

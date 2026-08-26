@@ -1053,7 +1053,13 @@ If you believe the finding is wrong, say so and change nothing.`
   // watch loop in its own pane, so keep it short enough to fit one screen.
   async plan() {
     const run = refreshRun(loadRun(activeSlug()))
-    const mark = (state) => state === 'done' ? '[x]' : state === 'run' ? '[>]' : '[ ]'
+    // Three states, not two. A stage that is working, or held warm waiting for
+    // the owner, must never render as one that has not started - this pane is
+    // re-run every 5 seconds and it is the only thing he is actually watching.
+    const mark = (s, done) => done ? '[x]'
+      : (s?.status === 'running' || s?.status === 'held') ? '[>]' : '[ ]'
+    const live = (s) => s?.status === 'held' ? 'held: ' + (s.holdReason || 'gate')
+      : s?.status === 'running' ? 'running' : null
     console.log('\n  ' + run.slug + '   base ' + run.base + ' on ' + run.branch +
       (run.ui ? '   (UI feature)' : ''))
     console.log('\n  STAGES')
@@ -1064,8 +1070,8 @@ If you believe the finding is wrong, say so and change nothing.`
       const detail = done
         ? (metered(s) ? 'ctx ' + fmt(s.contextTokens || 0) + '  ' + (s.turns || 0) + ' calls' : 'metering unknown') +
           '  ' + (s.seconds || 0) + 's'
-        : spec.gate ? 'gate: ' + spec.gate : ''
-      console.log('  ' + mark(done ? 'done' : 'todo') + ' ' + spec.id.padEnd(9) + detail)
+        : live(s) || (spec.gate ? 'gate: ' + spec.gate : '')
+      console.log('  ' + mark(s, done) + ' ' + spec.id.padEnd(9) + detail)
     }
 
     const tp = join(RUNS, run.slug, '02-tasks.json')
@@ -1074,9 +1080,14 @@ If you believe the finding is wrong, say so and change nothing.`
       const done = new Set(run.tasksDone || [])
       console.log('\n  BUILD TASKS')
       for (const t of tasks) {
+        // A build task IS a stage - `build-<id>` - so an interrupted one is
+        // read off its own record, not off tasksDone, which only ever knows
+        // about tasks that finished.
+        const st = run.stages['build-' + t.id]
         const blocked = (t.after || []).filter((d) => !done.has(d))
-        console.log('  ' + mark(done.has(t.id) ? 'done' : 'todo') + ' ' + t.id + '  ' +
-          t.title.slice(0, 52) + (blocked.length ? '   (waits on ' + blocked.join(',') + ')' : ''))
+        const note = live(st) || (blocked.length ? 'waits on ' + blocked.join(',') : null)
+        console.log('  ' + mark(st, done.has(t.id)) + ' ' + t.id + '  ' +
+          t.title.slice(0, 52) + (note ? '   (' + note + ')' : ''))
       }
       const files = [...new Set(tasks.flatMap((t) => t.files || []))]
       console.log('\n  FILES THIS FEATURE TOUCHES (' + files.length + ')')
