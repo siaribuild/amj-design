@@ -933,13 +933,23 @@ const cmds = {
     const spec = stageSpec(label)
     const started = Date.parse(st.startedAt) || Date.now()
     const panes = await paneMode(flags)
+    // runBuild is what normally records a finished task. A task finished by a
+    // resume never goes through that loop, so it is recorded here instead - or
+    // the next `conduct run build` starts over work that is already on disk.
+    const finished = (s) => {
+      if (!s || s.status === 'held') return
+      if (!label.startsWith('build-')) return afterStage(run, spec)
+      if (s.code === 0) {
+        run.tasksDone = [...new Set([...(run.tasksDone || []), label.slice('build-'.length)])]
+        saveRun(run)
+      }
+      console.log('\n     next:  node scripts/pipeline/conduct.mjs next\n')
+    }
 
     if (panes && st.mode === 'pane' && await agentInfo(label)) {
       console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
         st.session + '. Nothing re-booted.')
-      const s = await settleStage(run, label, started)
-      if (s?.status !== 'held') afterStage(run, spec)
-      return
+      return finished(await settleStage(run, label, started))
     }
     if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
       '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
@@ -966,8 +976,7 @@ const cmds = {
       delete st.session
       saveRun(run)
     }
-    const s = await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null)
-    if (s && s.status !== 'held') afterStage(run, spec)
+    finished(await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null))
   },
 
   async answer(...flags) {
@@ -1110,6 +1119,7 @@ function main() {
     conduct next                   run the next stage
     conduct run <stage>            run or re-run one stage
     conduct answer                 after filling in DECISIONS.md
+    conduct resume <stage>         pick a stage back up after an interruption
     conduct fix "<finding>"        route a review finding to a developer
     conduct report                 token and time split per stage
 

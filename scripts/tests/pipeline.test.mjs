@@ -1331,3 +1331,23 @@ test('a tester session in the verify worktree is metered by its recorded id, whe
   assert.ok(!out.includes('unknown'),
     'a verify stage metered "unknown" is a whole stage of spend lost to a cwd')
 })
+
+test('a resumed build task is marked done, so the build does not start it over', () => {
+  // `next` now picks up `build-<id>` labels too. runBuild is what normally
+  // records a finished task, so a task finished by a resume has to be recorded
+  // where runBuild would have - or the next `conduct run build` re-runs work
+  // that is already on disk, which is the waste this whole task exists to stop.
+  const s = paneRepo('durable-build', 'sess-bt1')
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'first', done_when: 'done', files: ['a.js'], tests: ['a.test.mjs'] },
+    { id: 't2', title: 'second', done_when: 'done', files: ['b.js'], tests: ['b.test.mjs'], after: ['t1'] },
+  ]))
+  interrupted(s, 'build-t1', { session: 'sess-bt1' })
+
+  paned(s, 'next')
+
+  assert.equal(said(s.log, 'agent', 'start').length, 0, 'a live build agent was re-booted')
+  assert.equal(runJson(s).stages['build-t1'].code, 0)
+  assert.deepEqual(runJson(s).tasksDone, ['t1'],
+    'the resumed task was not recorded as done - the build will run it again')
+})
