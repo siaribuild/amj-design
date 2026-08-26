@@ -35,8 +35,17 @@ Then, from the repo root (or any worktree with `node_modules` present):
 node scripts/research/plan-geometry/measure.mjs
 ```
 
-It exits non-zero if either calibration point drifts from the figures §2a
-records, so it is a regression check and not only a demo.
+It exits non-zero if any of three gates drift, so it is a regression check and
+not only a demo:
+
+| gate | catches |
+|---|---|
+| §2a's table — which 11 read, which 4 ambiguous, which 4 not read | a decoder that loses windows |
+| §2's eight verticals for W1, and their bands | a decoder that stops resolving the glass or sash lines |
+| W1 and W4's leaf widths and ratios | a decoder that finds the right windows and measures them wrongly |
+
+None is sufficient alone. All three were verified to fail by perturbing the
+matcher tolerance, the band threshold and the page scale in turn.
 
 ## What each file is
 

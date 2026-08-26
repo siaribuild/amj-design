@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { decodePage, elevationPages } from "./decode.mjs";
-import { findFrames, mullions, diagonals, MM_PER_PT } from "./frames.mjs";
+import { findFrames, frameVerticals, leafBounds, diagonals, MM_PER_PT } from "./frames.mjs";
 
 // Resolved against THIS file, not the shell's cwd: the fixture lives beside the
 // scripts and the documented command runs from the repo root.
@@ -17,7 +17,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PDF = join(here, "plans.pdf");
 
 /** Verticals cluster into MEMBERS — a jamb or a mullion is several lines, not
- *  one. A leaf is the glass between two members' inner faces. */
+ *  one — for W1 the left jamb is three sash-band lines at 0/25.4/50.8. A leaf
+ *  spans from one member's inner edge to the next member's outer edge. */
 function members(vs, gapMm = 60) {
   const groups = [];
   for (const x of vs) {
@@ -29,9 +30,7 @@ function members(vs, gapMm = 60) {
 }
 
 export function compose(segs, f) {
-  const vs = mullions(segs, f);
-  const uniq = vs.filter((x, i) => i === 0 || x - vs[i - 1] > 1);
-  const ms = members(uniq);
+  const ms = members(leafBounds(segs, f));
   if (ms.length < 2) return null;
   const leaves = ms.slice(0, -1).map((m, i) => ({ x0: m.hi, x1: ms[i + 1].lo, w: ms[i + 1].lo - m.hi }));
   const total = leaves.reduce((n, l) => n + l.w, 0);
@@ -118,6 +117,48 @@ console.log(`\n  read ${read.length}   ambiguous ${ambiguous.length}   not read 
 console.log(`  every one of the ${openings.length} openings is accounted for; none was read wrongly`);
 console.log(`  sweep ${sweepMs}ms`);
 
+// ─── What §2a claims, asserted ───────────────────────────────────────────────
+//
+// The calibration points alone were not enough: they pin W1 and W4 and say
+// nothing about the other seventeen, so a regression that halved the read count
+// would still have exited 0 and the document's headline table would have gone
+// stale silently. A result a document states is a result the harness enforces.
+const EXPECTED = {
+  read: ["D2", "D3", "D4", "W1", "W2", "W3", "W4", "W7", "W8", "W10", "W12"],
+  ambiguous: ["W5", "W6", "W9", "W11"],
+  notRead: ["D1", "W14", "W15", "W16"],
+};
+const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+const claims = [
+  ["read", read, EXPECTED.read],
+  ["ambiguous", ambiguous, EXPECTED.ambiguous],
+  ["not read", absent.map((o) => o.tag), EXPECTED.notRead],
+];
+let tableOk = true;
+for (const [name, got, want] of claims) {
+  if (sameSet(got, want)) continue;
+  tableOk = false;
+  console.log(`
+  §2a MISMATCH — ${name}: expected ${want.length} [${want.join(" ")}]`);
+  console.log(`                        got      ${got.length} [${got.join(" ")}]`);
+}
+console.log(`
+§2a table (11 read / 4 ambiguous / 4 not read): ${tableOk ? "MATCH" : "DRIFTED"}`);
+
+// The eight verticals §2 records for W1, and which band each belongs to. The
+// design's figure is reproduced in full here rather than implied by the leaves.
+const W1_VERTICALS = [0, 25.4, 50.8, 698.5, 723.9, 740.8, 2027.8, 2048.9];
+const w1f = findFrames(sheets[ELEVATIONS[0]], 2050, 2100)[0];
+const vs = w1f ? frameVerticals(sheets[ELEVATIONS[0]], w1f) : [];
+const band = (f) => (f > 0.995 ? "frame" : f > 0.965 ? "SASH" : "glass");
+const vsOk = vs.length === W1_VERTICALS.length
+  && vs.every((r, i) => Math.abs(r.mm - W1_VERTICALS[i]) <= 0.1);
+console.log(`
+W1 verticals — §2 records ${W1_VERTICALS.length}, got ${vs.length}: ${vsOk ? "MATCH" : "DRIFTED"}`);
+console.log(`  ${vs.map((r) => `${r.mm.toFixed(1)}${band(r.frac) === "SASH" ? "*" : ""}`).join(" | ")}`);
+console.log(`  * = sash band, the ${vs.filter((r) => band(r.frac) === "SASH").length} that bound a leaf`);
+if (!vsOk) console.log(`  expected ${W1_VERTICALS.join(" | ")}`);
+
 // The two calibration points the design records. If either drifts, the decoder
 // changed and the document's numbers are stale — which is the failure this
 // harness exists to catch.
@@ -127,5 +168,9 @@ const near = (a, b, tol = 0.5) => Math.abs(a - b) <= tol;
 const ok = w1?.length === 2 && near(w1[0].w, 698.5) && near(w1[1].w, 1286.9)
   && near(w1[0].ratio, 0.352, 0.001) && near(w1[1].ratio, 0.648, 0.001)
   && w4?.length === 3 && near(w4[0].w, 596.9) && near(w4[2].w, 601.1);
-console.log(`\ncalibration W1+W4 vs the design's recorded figures: ${ok ? "MATCH" : "DRIFTED"}`);
-if (!ok) process.exitCode = 1;
+console.log(`calibration W1+W4 vs the design's recorded figures: ${ok ? "MATCH" : "DRIFTED"}`);
+
+// Both gates, or the run failed. The table without the calibration would pass a
+// decoder that found the right eleven windows and measured them all wrongly;
+// the calibration without the table would pass one that lost half of them.
+if (!ok || !tableOk || !vsOk) process.exitCode = 1;

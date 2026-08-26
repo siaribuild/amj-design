@@ -91,16 +91,45 @@ export function findFrames(segs, widthMm, heightMm, tolPct = 2) {
   return kept;
 }
 
-/** The verticals inside a frame that run its full height: the mullions.
- *  Returned in mm from the frame's left edge, in drawn order. */
-export function mullions(segs, f) {
+/** Every vertical inside the frame that runs essentially its full height,
+ *  in mm from the left edge, with its length as a fraction of the frame.
+ *
+ *  This is the raw reading — the design's "eight verticals" for W1 — and it is
+ *  deliberately unfiltered, because which of these bound a LEAF is a separate
+ *  judgement made below and worth being able to check separately. */
+export function frameVerticals(segs, f) {
   const { v } = rawMembers(segs);
-  const full = (f.y1 - f.y0) * 0.9;
-  return v
+  const h = f.y1 - f.y0;
+  const out = v
     .filter((r) => r.at >= f.x0 - 0.4 && r.at <= f.x1 + 0.4
-      && r.lo <= f.y0 + 1.0 && r.hi >= f.y1 - 1.0 && r.hi - r.lo >= full)
-    .map((r) => (r.at - f.x0) * MM_PER_PT)
-    .sort((a, b) => a - b);
+      && r.lo >= f.y0 - 1.5 && r.hi <= f.y1 + 1.5 && (r.hi - r.lo) / h >= 0.9)
+    .map((r) => ({ mm: (r.at - f.x0) * MM_PER_PT, frac: (r.hi - r.lo) / h }))
+    .sort((a, b) => a.mm - b.mm);
+  // The same line drawn twice is one line.
+  return out.filter((r, i) => i === 0 || r.mm - out[i - 1].mm > 1);
+}
+
+/** Of those, the ones that bound a leaf.
+ *
+ *  A frame elevation draws three concentric bands and only one of them is the
+ *  sash: the OUTER frame at ~100% of the opening, the SASH at ~97%, and the
+ *  GLASS line at ~95%. For W1 those are {0, 2048.9}, {25.4, 723.9, 740.8,
+ *  2027.8} and {50.8, 698.5} — and it is the sash band, and only the sash band,
+ *  that yields the 698.5/1287.0 leaves the design records and the 596.9/601.1
+ *  that land within 3.1mm of a figure W4's drafter wrote by hand.
+ *
+ *  Picked as the MODAL length rather than a fixed percentage: the bands are a
+ *  property of how thick this practice draws its sections, not a constant, and
+ *  the sash band is the one that recurs once per leaf edge. A tolerance dressed
+ *  up as a rule is how the glass line got silently dropped the first time. */
+export function leafBounds(segs, f) {
+  const all = frameVerticals(segs, f).filter((r) => r.frac < 0.995);
+  if (!all.length) return [];
+  const bucket = (r) => Math.round(r.frac * 200);          // 0.5% bands
+  const tally = new Map();
+  for (const r of all) tally.set(bucket(r), (tally.get(bucket(r)) ?? 0) + 1);
+  const modal = [...tally.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+  return all.filter((r) => bucket(r) === modal).map((r) => r.mm);
 }
 
 /** Diagonals whose whole extent sits inside the box — the operation symbol. */

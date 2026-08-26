@@ -123,8 +123,28 @@ same-dimension trap, sprung in the direction nobody was watching. See §2a.
 | Ambiguous — two rows share a size | 4 | W5/W6 (850 × 2057), W9/W11 (1810 × 1027) |
 | **Not read** | 4 | D1, W14, W15, W16 |
 
-Reproduce with `node scripts/research/plan-geometry/measure.mjs`, which accounts for every one
-of the nineteen and fails loudly if either calibration point drifts.
+Reproduce with `node scripts/research/plan-geometry/measure.mjs`. It accounts for every one of
+the nineteen and **exits non-zero** if this table, the eight verticals of §2, or either
+calibration point drifts. Both gates are needed and neither is sufficient: the table alone
+would pass a decoder that found the right eleven windows and measured them all wrongly, and
+the calibration alone would pass one that lost half of them.
+
+**Which verticals bound a leaf — the rule, replacing a tolerance.** A frame elevation draws
+three concentric bands, and only one is the sash:
+
+| band | fraction of the opening | W1 |
+|---|---|---|
+| outer frame | ~100% | 0, 2048.9 |
+| **sash** | **~97%** | **25.4, 723.9, 740.8, 2027.8** |
+| glass line | ~95% | 50.8, 698.5 |
+
+The leaves are bounded by the **sash** band and nothing else — that is what yields 698.5/1287.0
+on W1 and 596.9/601.1 on W4. The band is chosen as the *modal* internal length rather than a
+fixed percentage, because how thick a practice draws its sections is a property of the practice,
+not a constant. This was originally an inset tolerance that happened to drop the glass line, and
+an accident that produces the right answer is not a rule: tightened slightly it lost the sash
+band instead. Stating it explicitly also fixed a real misreading — **D3**, a 3000 mm slider,
+read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
 
 **The four are `not read`, which is not the same as `not drawn`** — and the distinction is the
 output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is
@@ -417,8 +437,10 @@ stated the answer.
 
 **The code for it was never committed and was gone by 2026-08-27**, when rebuilding it cost a
 session. It now lives at `scripts/research/plan-geometry/`, with the two traps that cost the
-most time written down beside it. The numbers above are reproduced exactly by that harness,
-and §2a extends them from two openings to all nineteen.
+most time written down beside it. `measure.mjs` reproduces the eight verticals above and both
+calibration points, and **fails the run** if either they or §2a's table drift — a result this
+document states is a result the harness enforces. §2a extends them from two openings to all
+nineteen.
 
 ### Stage 1 — Complete the proof. The only thing to do next.
 
