@@ -14,8 +14,15 @@
 //   HERDR_STUB_ERRCODE   the error code to fail with (default: timeout)
 //   HERDR_STUB_BUSY      a pane id to report as busy (not at a shell prompt)
 //   HERDR_STUB_SESSION   agent_session.value (default: echo back --session-id)
+//   HERDR_STUB_STATES    ";"-separated lifecycle states handed to successive
+//                        `agent wait` calls, e.g. "working;unknown;blocked".
+//                        "timeout" makes that call fail the way a bounded wait
+//                        does when the agent is still going. Default: "idle".
+//   HERDR_STUB_SNAPSHOT  a file to copy aside on the FIRST call of each
+//                        subcommand, so a test can see the world as it was at
+//                        that moment (e.g. run.json when the agent is prompted)
 
-import { appendFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { appendFileSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 
 const argv = process.argv.slice(2)
 const log = process.env.HERDR_STUB_LOG
@@ -24,6 +31,17 @@ if (log) appendFileSync(log, JSON.stringify({ argv, cwd: process.cwd() }) + '\n'
 
 const sub = argv.slice(0, 2).join(' ')
 const flag = (name) => { const i = argv.indexOf(name); return i < 0 ? null : argv[i + 1] }
+
+/** How many times this subcommand was called BEFORE this one. */
+const priorCalls = (a, b) => before.split('\n').filter(Boolean).filter((l) => {
+  try { const v = JSON.parse(l).argv; return v[0] === a && v[1] === b } catch { return false }
+}).length
+
+const snap = process.env.HERDR_STUB_SNAPSHOT
+if (log && snap && existsSync(snap)) {
+  const dest = log + '.snap.' + sub.replace(' ', '-')
+  if (!existsSync(dest)) copyFileSync(snap, dest)
+}
 
 const ok = (result) => {
   process.stdout.write(JSON.stringify({ id: 'cli:' + sub.replace(' ', ':'), result }) + '\n')
@@ -68,7 +86,8 @@ switch (sub) {
       workspace: { workspace_id: 'w9', label: flag('--label'), active_tab_id: 'w9:t1' },
     })
   case 'pane split':
-    ok({ type: 'pane_info', pane: pane('w9:p2') })
+    // Fresh id per split: the cockpit's diff pane is p2, role panes follow.
+    ok({ type: 'pane_info', pane: pane('w9:p' + (2 + priorCalls('pane', 'split'))) })
   case 'pane run':
     ok({ type: 'ok' })
   case 'pane process-info': {
@@ -107,6 +126,16 @@ switch (sub) {
       },
     })
   case 'agent prompt':
+    ok({ type: 'ok' })
+  case 'agent wait': {
+    // A bounded wait: it returns the state it settled in, or reports that it
+    // is still going. `unknown` is herdr not knowing - never proof of finish.
+    const states = (process.env.HERDR_STUB_STATES || 'idle').split(';').filter(Boolean)
+    const state = states[Math.min(priorCalls('agent', 'wait'), states.length - 1)]
+    if (state === 'timeout') err('timeout', 'timed out waiting for agent ' + argv[2])
+    ok({ type: 'agent_status', name: argv[2], agent_status: state })
+  }
+  case 'notification show':
     ok({ type: 'ok' })
   default:
     process.stderr.write('HERDR STUB: unhandled `' + argv.join(' ') + '`\n')

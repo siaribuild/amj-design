@@ -832,3 +832,75 @@ test('agent_not_ready is a live agent on a dialog, not a failed launch', async (
   assert.equal(bad, null, 'a real failure was let through because its wording resembled another code')
   assert.equal(said(t.log, 'agent', 'prompt').length, 0)
 })
+
+// --- pane-mode stage execution ----------------------------------------------
+
+/**
+ * A repo with a cockpit already built, a seeded transcript for the session the
+ * stub will report, and a CLAUDE that does not exist: any headless fallback then
+ * dies loudly instead of quietly booting the developer's real claude.
+ */
+function paneRepo(name, session, extra = {}) {
+  const projects = tmp(name + '-projects')
+  const s = stubbedRepo(name, { HERDR_STUB_SESSION: session, ...extra })
+  seedTranscript(projects, 'proj-pane', session, ['req-1', 'req-2'], 2)
+  s.env.CLAUDE_PROJECTS_DIR = projects
+  s.env.CONDUCT_CLAUDE_BIN = join(s.root, 'no-such-claude')
+  s.env.HERDR_STUB_SNAPSHOT = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  paned(s, 'start', 'demo', 'an ask')
+  return s
+}
+
+const paned = (s, ...args) =>
+  execFileSync(process.execPath, [CONDUCT, ...args],
+    { cwd: s.root, encoding: 'utf8', env: s.env, stdio: 'pipe' })
+
+const runJson = (s) =>
+  JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
+
+test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pane open', () => {
+  // `unknown` is herdr saying it does not know, not herdr saying "finished" -
+  // treating it as settled would finalize a stage that is still working.
+  const s = paneRepo('pane-stage', 'sess-pane-1', { HERDR_STUB_STATES: 'working;unknown;idle' })
+
+  const out = paned(s, 'run', 'spec')
+
+  const seq = calls(s.log).map((a) => a.slice(0, 2).join(' '))
+  assert.deepEqual(seq.slice(seq.indexOf('agent start')),
+    ['agent start', 'agent get', 'agent prompt',
+      'agent wait', 'agent wait', 'agent wait', 'agent prompt'],
+    'the stage lifecycle is start -> prompt -> watch -> /exit: ' + seq.join(' | '))
+
+  // Completion comes from herdr settling, asked for in bounded slices.
+  for (const w of said(s.log, 'agent', 'wait'))
+    assert.ok(w.includes('--timeout'), 'an unbounded wait cannot notice a dead server: ' + w.join(' '))
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'done')
+  assert.equal(st.mode, 'pane')
+  assert.equal(st.session, 'sess-pane-1')
+  assert.equal(st.code, 0, 'code 0 is what conduct next scans for; a pane stage must set it')
+  assert.match(String(st.pane), /^w9:p\d+$/)
+  // Metered from the transcript by recorded id - 2 requestIds x (100 + 900).
+  assert.equal(st.source, 'transcript')
+  assert.equal(st.contextTokens, 2000)
+  assert.equal(st.turns, 2)
+
+  // run.json knows the session BEFORE the agent is prompted: a reboot one
+  // second later must find a stage it can resume, not an invisible orphan.
+  const atPrompt = JSON.parse(readFileSync(s.log + '.snap.agent-prompt', 'utf8')).stages.spec
+  assert.equal(atPrompt.session, 'sess-pane-1')
+  assert.equal(atPrompt.status, 'running')
+  assert.equal(atPrompt.mode, 'pane')
+  assert.ok('source' in atPrompt, 'a running stage still declares how it was metered')
+
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.equal(typed[1], '/exit', 'the claude must be freed; the PANE is what stays')
+  for (const closer of ['close', 'kill', 'stop'])
+    assert.equal(said(s.log, 'pane', closer).length, 0, 'the pane and its scrollback must survive')
+
+  // The produced files ARE the stage's output channel - nothing is read back
+  // out of the pane, so a missing artifact can only be noticed on disk.
+  assert.match(out, /did not write docs\/runs\/demo\/01-spec\.md/)
+  assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
+})

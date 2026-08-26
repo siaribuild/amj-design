@@ -22,11 +22,15 @@
 // this process, so the conductor's cost does not grow with the feature.
 
 import { spawn, execSync, execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
-import { available as herdrAvailable, ensureCockpit } from './herd.mjs'
+import {
+  available as herdrAvailable, ensureCockpit, launchStage, writePrompt, watch, notify,
+  agentPrompt, splitPane, paneReady,
+} from './herd.mjs'
 
 const ROOT = resolve(process.cwd())
 const RUNS = join(ROOT, 'docs', 'runs')
@@ -36,6 +40,7 @@ const WIN = process.platform === 'win32'
 // with an argv array and no shell: prompts containing quotes, backticks or
 // newlines are then passed verbatim instead of being re-parsed by cmd.exe.
 const CLAUDE = (() => {
+  if (process.env.CONDUCT_CLAUDE_BIN) return process.env.CONDUCT_CLAUDE_BIN
   const home = process.env.APPDATA || process.env.HOME
   const local = home && join(home, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin',
     WIN ? 'claude.exe' : 'claude')
@@ -441,6 +446,125 @@ function runClaude(spec, promptText, run, label) {
   })
 }
 
+// --- running a stage in a pane ----------------------------------------------
+//
+// The shape is start -> prompt -> watch -> finalize, and the reason it is worth
+// the extra code is the middle: a stage that needs the owner HOLDS WARM in its
+// pane instead of writing DECISIONS.md and exiting. Resuming an exited stage
+// pays a full boot - measured at 26-33k tokens - for an answer the operator
+// could have typed into a live agent. Holding costs nothing.
+//
+// Nothing here reads a pane. Completion comes from herdr settling, results from
+// the files the stage wrote, and the numbers from its transcript.
+
+/**
+ * A pane for this role, reused. Reuse means a NEW claude and a new session -
+ * a role's next stage never re-prompts the previous agent - but the same pane,
+ * so the run does not end with a dozen shells open.
+ */
+async function rolePane(run, role, cwd) {
+  const panes = run.herdr.rolePanes || (run.herdr.rolePanes = {})
+  // A finished stage left its pane at a shell (/exit). One still working has
+  // not, and must not be handed a second agent.
+  if (panes[role] && await paneReady(panes[role]).catch(() => false)) return panes[role]
+  panes[role] = await splitPane(run.herdr.planPane, cwd)
+  saveRun(run)
+  return panes[role]
+}
+
+/** Hold the agent alive and tell the operator where it is. No /exit, no re-boot. */
+async function holdWarm(run, label, reason, started) {
+  const s = run.stages[label]
+  Object.assign(s, {
+    status: 'held', holdReason: reason, seconds: Math.round((Date.now() - started) / 1000),
+  })
+  run.gateStage = label
+  saveRun(run)
+  const where = 'workspace ' + (run.herdr?.workspace || '?') + '  pane ' + s.pane + '  agent ' + label
+  console.log('\n  == HELD WARM (' + reason + ') - ' + label + ' is alive in its pane.')
+  console.log('     attach:  ' + where)
+  console.log('     then:    node scripts/pipeline/conduct.mjs answer\n')
+  await notify('pipeline: ' + label + ' needs you', where)
+  return s
+}
+
+/**
+ * The stage is done. Meter it from its own transcript by the id we recorded,
+ * free the claude, and leave the pane and its scrollback exactly where they are.
+ */
+async function finalizePane(run, label, started) {
+  const s = run.stages[label]
+  // Pane transcripts are written live, so there is no flush race to sleep
+  // through here; anything still missing heals on the next report (refreshRun).
+  const t = sessionTotals(s.session)
+  Object.assign(s, {
+    code: 0, status: 'done',
+    contextTokens: t.ctx, outputTokens: t.out, turns: t.turns,
+    source: t.turns ? 'transcript' : 'none',
+    seconds: Math.round((Date.now() - started) / 1000),
+  })
+  delete s.holdReason
+  saveRun(run)
+  // Free the process, keep the evidence.
+  await agentPrompt(label, '/exit').catch((e) => console.log('  .. ' + label + ' would not /exit (' + e.message + ')'))
+  console.log('  ok ' + label + '  ' + (metered(s)
+    ? 'ctx ' + fmt(s.contextTokens) + '  out ' + fmt(s.outputTokens) + '  ' + s.turns + ' calls'
+    : 'metering unknown') + '  ' + s.seconds + 's')
+  return s
+}
+
+/** Wait for the agent to settle, then hold it warm or finish it off. */
+async function settleStage(run, label, started) {
+  const r = await watch(label)
+  if (r.state === 'lost') {
+    console.log('  !! lost track of ' + label + ' (' + r.error + ') - it stays "running";' +
+      ' pick it up with:  node scripts/pipeline/conduct.mjs next')
+    return run.stages[label]
+  }
+  // herdr saw a permission or question UI. Nothing was written; the agent is
+  // waiting on a human, and killing it here is precisely the cost this avoids.
+  if (r.state === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
+  if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
+  return finalizePane(run, label, started)
+}
+
+/**
+ * Run one stage as a herdr agent. Returns the stage record, or null when herdr
+ * could not give it a pane or an agent - the caller then runs it headless.
+ */
+async function runPaneStage(spec, promptText, run, label) {
+  const started = Date.now()
+  const advisory = resetAdvisory(latestRateLimitAnchor(RUNS))
+  if (advisory) console.log('\n  ' + advisory)
+  const mcpOk = browserMcp()
+  const mcpWarning = mcpAdvisory(spec, mcpOk)
+  if (mcpWarning) console.log('\n  ' + mcpWarning)
+
+  let paneId
+  try {
+    paneId = await rolePane(run, spec.agent || label, spec.cwd || ROOT)
+  } catch (e) {
+    console.log('\n  !! no pane for ' + label + ' (' + e.message + ') - running headless.')
+    return null
+  }
+
+  const sessionId = randomUUID()
+  const promptPath = writePrompt(ROOT, run.slug, label, promptText)
+  console.log('\n  > ' + label + '  pane ' + paneId)
+  const boot = await launchStage({
+    paneId, label, sessionId, argv: paneArgs(spec, sessionId, mcpOk), promptPath,
+    onSession: (session) => {
+      run.stages[label] = {
+        status: 'running', mode: 'pane', session, pane: paneId,
+        source: 'none', startedAt: new Date().toISOString(),
+      }
+      saveRun(run)
+    },
+  })
+  if (!boot) return null
+  return settleStage(run, label, started)
+}
+
 // --- sliced build: one short session per task -------------------------------
 
 async function runBuild(run, spec) {
@@ -540,11 +664,18 @@ async function runReviews(run) {
 
 // --- gates -----------------------------------------------------------------
 
+// Asked twice per stage in pane mode - once to decide whether to hold the agent
+// warm, once by afterStage to print the gate - so the question and the printing
+// are separate. Printing it twice would read as two different gates.
+function decisionsPending(run) {
+  const p = join(RUNS, run.slug, 'DECISIONS.md')
+  return existsSync(p) && !/^\s*A:\s*\S/m.test(readFileSync(p, 'utf8'))
+}
+
 function decisionsOpen(run) {
   const p = join(RUNS, run.slug, 'DECISIONS.md')
-  if (!existsSync(p)) return false
+  if (!decisionsPending(run)) return false
   const txt = readFileSync(p, 'utf8')
-  if (/^\s*A:\s*\S/m.test(txt)) return false
   console.log('\n  == DECISION GATE - the stage stopped with questions.\n')
   console.log(txt.split('\n').map((l) => '     ' + l).join('\n'))
   console.log('\n  Answer inline in ' + run.dir + '/DECISIONS.md - put "A: ..." under each question.')
@@ -639,18 +770,18 @@ const cmds = {
     console.log('  ui stages ' + (run.ui ? 'ENABLED' : 'disabled') + ' for ' + run.slug)
   },
 
-  async next() {
+  async next(...flags) {
     const run = loadRun(activeSlug())
     if (decisionsOpen(run)) return
     for (const spec of STAGES) {
       if (spec.ui && !run.ui) continue
       if (run.stages[spec.id]?.code === 0) continue
-      return cmds.run(spec.id)
+      return cmds.run(spec.id, ...flags)
     }
     console.log('\n  all stages complete -  node scripts/pipeline/conduct.mjs report\n')
   },
 
-  async run(id) {
+  async run(id, ...flags) {
     const run = loadRun(activeSlug())
     const spec = STAGES.find((s) => s.id === id)
     if (!spec) die('unknown stage "' + id + '" - one of: ' + STAGES.map((s) => s.id).join(', '))
@@ -670,17 +801,46 @@ const cmds = {
       spec.cwd = wt
       console.log('  verifying in an isolated worktree: ' + wt)
     }
+    if (await paneMode(flags)) {
+      // A run started headless (or before herdr was up) has no cockpit yet.
+      if (!run.herdr) {
+        try { run.herdr = await ensureCockpit({ slug: run.slug, base: run.base, root: ROOT }); saveRun(run) }
+        catch (e) { console.log('\n  could not build the cockpit (' + e.message + ') - running headless.') }
+      }
+      const s = run.herdr && await runPaneStage(spec, spec.prompt(run), run, spec.id)
+      // A held stage has not produced anything yet, so the produces check would
+      // only ever be wrong about it. The decision gate still gets printed.
+      if (s?.status === 'held') return s.holdReason === 'decisions' ? afterStage(run, spec) : undefined
+      if (s) return afterStage(run, spec)
+    }
     await runClaude(spec, spec.prompt(run), run, spec.id)
     afterStage(run, spec)
   },
 
-  async answer() {
+  async answer(...flags) {
     const run = loadRun(activeSlug())
     const id = run.gateStage
     if (!id) die('no stage is waiting on a decision')
     const spec = STAGES.find((s) => s.id === id)
-    const sid = run.stages[id]?.session
+    const st = run.stages[id] || {}
+    const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
+    // The whole point of holding warm: the agent is still sitting there, so the
+    // answer is one typed line into the session that asked the question. No
+    // --resume, no second boot, one session id across the entire cycle.
+    if (st.status === 'held' && st.mode === 'pane' && await paneMode(flags)) {
+      console.log('  answering ' + id + ' in its pane - same session, nothing re-booted')
+      await agentPrompt(id, 'The owner has answered the questions in ' + run.dir +
+        '/DECISIONS.md - read it now, revise your artifact, and delete DECISIONS.md ' +
+        'once nothing in it is still open.')
+      st.status = 'running'
+      delete st.holdReason
+      run.gateStage = null
+      saveRun(run)
+      const s = await settleStage(run, id, Date.parse(st.startedAt) || Date.now())
+      if (s?.status !== 'held') afterStage(run, spec)
+      return
+    }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
     await new Promise((res) => {
       const p = `The owner has answered the questions in ${run.dir}/DECISIONS.md - read it now.

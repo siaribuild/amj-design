@@ -155,7 +155,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * the agent twice running - the caller then falls back to headless for this
  * stage (criterion 36: never abort, never skip).
  */
-export async function launchStage({ paneId, label, sessionId, argv, promptPath, settleMs = 2000 }) {
+export async function launchStage({ paneId, label, sessionId, argv, promptPath, settleMs = 2000, onSession }) {
   checkLabel(label)
   let last
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -186,10 +186,72 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
     const adopted = !!reported && reported !== sessionId
     if (adopted)
       console.log('  .. ' + label + ' booted as session ' + reported + ' (adopted from herdr)')
+    // Between the identity and the prompt is where the caller records the
+    // stage: after this line an agent is working, and a reboot a second later
+    // must find a stage run.json can resume rather than an invisible orphan.
+    if (onSession) await onSession(reported || sessionId, { adopted })
     // The ONLY thing typed into the pane. The prompt itself never transits a
     // TTY or a shell - it is on disk, and this is the path to it.
     await herd('agent', 'prompt', label, 'Read ' + promptPath + ' and do exactly what it says.')
     return { session: reported || sessionId, adopted }
   }
   return null
+}
+
+// --- watching a stage --------------------------------------------------------
+
+/**
+ * Wait for a stage's agent to settle. Herdr's own settle logic is the completion
+ * authority; this asks it, over and over, in bounded slices.
+ *
+ * Two things it deliberately is not:
+ *
+ * - It is not a poll. There is no sleep here. `agent wait` blocks inside herdr
+ *   until the agent settles or the slice expires; the slice exists only so the
+ *   conductor notices a dead server or a Ctrl+C, never as a completion guess.
+ * - It is not a runaway guard. No token, turn, dollar or wall-clock ceiling
+ *   gets to end a stage - owner ruling, and the pane in front of you is the
+ *   guard. A stage that wants six hours gets six hours.
+ *
+ * `unknown` is herdr saying it does not know. It is not a settled state, and
+ * finalizing on it would meter a stage that is still working.
+ */
+export async function watch(label, { sliceMs = 60000 } = {}) {
+  checkLabel(label)
+  for (;;) {
+    let r
+    try {
+      r = await herd('agent', 'wait', label, '--timeout', String(sliceMs))
+    } catch (e) {
+      // The slice expiring is the loop working as intended; anything else means
+      // herdr can no longer tell us, and the caller owns that as an interruption.
+      if (e.code === 'timeout') continue
+      return { state: 'lost', error: e.message }
+    }
+    const status = r.agent_status || r.agent?.agent_status
+    if (status === 'idle' || status === 'done') return { state: 'settled', status }
+    if (status === 'blocked') return { state: 'blocked' }
+  }
+}
+
+/** Type one fixed line at a live agent. The caller owns the template (10). */
+export const agentPrompt = (label, line) => herd('agent', 'prompt', checkLabel(label), line)
+
+/** A pane for a stage to run in. The caller owns which role it belongs to. */
+export async function splitPane(fromPane, cwd) {
+  const r = await herd('pane', 'split', '--pane', checkPane(fromPane), '--direction', 'down',
+    '--cwd', cwd, '--no-focus')
+  return r.pane.pane_id
+}
+
+/**
+ * Tell the operator a stage wants them. Best-effort by design: a run must not
+ * end because a notification daemon was not listening.
+ */
+export async function notify(title, body) {
+  try {
+    await herd('notification', 'show', title, '--body', body, '--sound', 'request')
+  } catch (e) {
+    console.log('  .. could not raise a notification (' + e.message + ')')
+  }
 }
