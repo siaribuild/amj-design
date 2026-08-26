@@ -91,7 +91,21 @@ export const userDto = (u: UserRow) => ({
 // an over-long address used to throw inside KV.get and turn the challenge route's
 // deliberately neutral 200 into a 500 — which is itself an enumeration signal.
 export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase().slice(0, 254);
-export const isEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+
+/** Shape, and a length bound measured the way KV measures it.
+ *
+ *  normEmail's clip counts UTF-16 UNITS; KV's 512-byte key ceiling counts BYTES,
+ *  and a key built from a multi-byte address can clear the first and blow the
+ *  second — which makes KV throw and turns a deliberately neutral endpoint into
+ *  a 500. Bounding it here rather than at each key site fixes every caller at
+ *  once: every route that builds an OTP or tracking key already gates on this
+ *  predicate first.
+ *
+ *  254 OCTETS is also what RFC 5321 actually specifies, so this is the more
+ *  correct test, not merely the safer one. ASCII addresses are unaffected — a
+ *  unit is a byte — so nothing that works today stops working. */
+export const isEmail = (e: string) =>
+  /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && new TextEncoder().encode(e).length <= 254;
 
 // Dev-only affordances (surfacing OTP `devCode`, verbose email logging) are gated
 // on this. Fail closed: ONLY an explicit "development" env qualifies, so a missing

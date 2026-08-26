@@ -368,6 +368,26 @@ test("auth: a code past its ten minutes is refused however few attempts it has",
   assert.equal(await M.consumeChallenge(live.env, ch, "123456"), true);
 });
 
+// normEmail clips at 254 UTF-16 UNITS, but every key built from an address is
+// measured by KV in BYTES, and KV throws above 512 — turning a deliberately
+// neutral endpoint into a 500. Reachable rather than theoretical: sign-in accepts
+// such an address, and quote.ts writes the account's email into
+// project.contact_email at submission, so a customer could permanently break
+// tracking for their own job. RFC 5321 counts octets too, so bounding bytes makes
+// this predicate more correct, not merely safer.
+test("auth: an address that would overflow a KV key is not a valid address", () => {
+  // One code point, two UTF-16 units, four UTF-8 bytes.
+  const astral = "\u{1D306}".repeat(120) + "@a.co";
+  assert.ok(M.normEmail(astral).length <= 254, "the unit clip lets it through untouched");
+  assert.ok(new TextEncoder().encode(astral).length > 254, "…while being oversized in bytes");
+  assert.equal(M.isEmail(astral), false, "so it must be refused as an address rather than become a key");
+
+  // Ordinary addresses are untouched: for ASCII a unit IS a byte, so nothing
+  // that works today stops working.
+  assert.equal(M.isEmail("a".repeat(240) + "@b.co"), true);
+  assert.equal(M.isEmail("jason@example.com"), true);
+});
+
 test("auth: a pre-upgrade OTP record is refused, not thrown on", async () => {
   const ch = M.guestTrackChallenge("a@b.co", "p_1");
   // What guest tracking stored before it shared this verifier: a bare SHA-256
@@ -386,6 +406,19 @@ test("auth: a pre-upgrade OTP record is refused, not thrown on", async () => {
   const numeric = fakeKv({ [ch.key]: "1234567890123456789012345678901234567890123456789012345678901234" });
   assert.equal(await M.consumeChallenge(numeric.env, ch, "123456"), false);
   assert.equal(numeric.store.has(ch.key), false, "a record with no attempt counter is cleared, never retried against");
+
+  // A record with no `at` is the third shape, and the one that matters most now
+  // that expiry is enforced from that field: `Date.now() - undefined` is NaN and
+  // every comparison against NaN is false, so an undated record never expires
+  // AND still verifies. Measured with the guard removed: the correct code
+  // returned true against a record that should have been unusable.
+  const undated = fakeKv();
+  await M.storeChallenge(undated.env, ch, "123456");
+  const rec = JSON.parse(undated.store.get(ch.key));
+  delete rec.at;
+  undated.store.set(ch.key, JSON.stringify(rec));
+  assert.equal(await M.consumeChallenge(undated.env, ch, "123456"), false, "an undated record cannot be trusted to expire");
+  assert.equal(undated.store.has(ch.key), false, "and is cleared so a fresh code can be issued");
 });
 
 test("auth: normEmail, isEmail, sixDigit, sha256hex, userDto", async () => {
