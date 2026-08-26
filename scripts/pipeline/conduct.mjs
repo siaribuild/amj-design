@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } fr
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
+import { available as herdrAvailable, ensureCockpit } from './herd.mjs'
 
 const ROOT = resolve(process.cwd())
 const RUNS = join(ROOT, 'docs', 'runs')
@@ -311,6 +312,23 @@ function printWindow() {
   console.log(row('7-day rolling', week))
 }
 
+// --- pane mode --------------------------------------------------------------
+//
+// Panes engage by themselves when herdr answers - there is no opt-in step, or
+// the durability that justifies this feature would depend on remembering a
+// flag. `--no-panes` is the per-invocation opt-out and is deliberately NOT
+// persisted: the next command decides again, from the same evidence.
+
+export const noPanes = (args) => args.includes('--no-panes')
+
+export async function paneMode(args) {
+  if (noPanes(args)) return false
+  const why = await herdrAvailable()
+  if (why === true) return true
+  console.log('\n  herdr unavailable (' + why + ') - running headless.\n')
+  return false
+}
+
 function activeSlug() {
   const p = join(RUNS, '.active')
   if (!existsSync(p)) die('no active run - start one with:  conduct start <slug> "<ask>"')
@@ -563,6 +581,12 @@ function afterStage(run, spec) {
 const cmds = {
   async start(slug, ...ask) {
     if (!slug) die('usage: conduct start <slug> "<one-line ask>"')
+    // FIRST statement, before a directory, a .active, or a git call: the slug
+    // becomes a filesystem path, a git worktree name and a herdr label, and a
+    // rejected one must leave the disk exactly as it found it.
+    checkSlug(slug)
+    const panes = await paneMode(ask)
+    ask = ask.filter((a) => a !== '--no-panes')
     const dir = join(RUNS, slug)
     mkdirSync(dir, { recursive: true })
     const run = {
@@ -580,6 +604,17 @@ const cmds = {
         '\n\n## Actors and needs\n\n(from the grill - who this is for, and what they need in their own terms)\n' +
         '\n## Grill conclusions\n\n(paste them here, or delete this section if no grill was run)\n')
     writeFileSync(join(RUNS, '.active'), slug)
+    // The skeleton only: a plan pane and a diff pane. Stage panes are split on
+    // demand, so a run never opens a shell for a stage that may never run.
+    if (panes) {
+      try {
+        run.herdr = await ensureCockpit({ slug, base: run.base, root: ROOT })
+        console.log('\n  cockpit: workspace ' + run.herdr.workspace + '  plan ' +
+          run.herdr.planPane + '  diff ' + run.herdr.diffPane)
+      } catch (e) {
+        console.log('\n  could not build the cockpit (' + e.message + ') - running headless.')
+      }
+    }
     saveRun(run)
     console.log('\n  run started: ' + slug + '   base ' + run.base + ' on ' + run.branch + `
 

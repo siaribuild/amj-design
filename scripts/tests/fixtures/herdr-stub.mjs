@@ -11,6 +11,7 @@
 //   HERDR_STUB_FAIL      ";"-separated subcommands to fail, e.g. "agent start"
 //   HERDR_STUB_FAIL_ONCE one subcommand to fail on its FIRST call only
 //   HERDR_STUB_ERR       the error message to fail with
+//   HERDR_STUB_ERRCODE   the error code to fail with (default: timeout)
 //   HERDR_STUB_BUSY      a pane id to report as busy (not at a shell prompt)
 //   HERDR_STUB_SESSION   agent_session.value (default: echo back --session-id)
 
@@ -45,10 +46,11 @@ if (argv[1] === 'read' && (argv[0] === 'agent' || argv[0] === 'pane')) {
 }
 
 const ERR = process.env.HERDR_STUB_ERR || 'timed out waiting for agent startup'
+const CODE = process.env.HERDR_STUB_ERRCODE || 'timeout'
 for (const f of (process.env.HERDR_STUB_FAIL || '').split(';').filter(Boolean))
-  if (sub === f) err('timeout', ERR)
+  if (sub === f) err(CODE, ERR)
 if (process.env.HERDR_STUB_FAIL_ONCE === sub && !before.includes('"' + argv[0] + '","' + argv[1] + '"'))
-  err('timeout', ERR)
+  err(CODE, ERR)
 
 const pane = (id, tab = 'w9:t1') => ({
   agent_status: 'unknown', cwd: process.cwd(), focused: false, pane_id: id,

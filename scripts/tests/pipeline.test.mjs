@@ -6,7 +6,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -504,15 +504,20 @@ test('an uninstalled browser server warns and degrades the stage, never fails it
 
 const STUB = resolve('scripts/tests/fixtures/herdr-stub.mjs')
 
-/** A temp repo root wired to the stub. Returns the env every call needs. */
+/**
+ * A temp repo root wired to the stub, for both in-process calls into herd.mjs
+ * and child `conduct` processes. Every knob is reset on every call so one
+ * test's failure injection cannot leak into the next.
+ */
 function stubbed(name, extra = {}) {
   const root = tmp(name)
   const log = join(root, 'herdr-calls.jsonl')
-  return {
-    root,
-    log,
-    env: { ...process.env, HERDR_BIN: STUB, HERDR_STUB_LOG: log, ...extra },
+  const env = {
+    HERDR_BIN: STUB, HERDR_STUB_LOG: log, HERDR_STUB_FAIL: '', HERDR_STUB_FAIL_ONCE: '',
+    HERDR_STUB_ERR: '', HERDR_STUB_BUSY: '', HERDR_STUB_SESSION: '', ...extra,
   }
+  Object.assign(process.env, env)
+  return { root, log, env: { ...process.env, ...env } }
 }
 
 /** Every herdr invocation the stub recorded, as argv arrays. */
@@ -564,4 +569,266 @@ test('the pane boot carries the same native args as the headless one, plus the s
   const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
   assert.equal(paneArgs(reviewer, 'sid', true)[paneArgs(reviewer, 'sid', true)
     .indexOf('--permission-mode') + 1], 'plan', 'a read-only reviewer must boot in plan mode')
+})
+
+/** A temp root that is a real git repo, so `conduct start` can read a base sha. */
+function stubbedRepo(name, extra = {}) {
+  const s = stubbed(name, extra)
+  const git = (...a) => execFileSync('git', a, { cwd: s.root, encoding: 'utf8', stdio: 'pipe' })
+  git('init', '-q', '-b', 'work')
+  git('config', 'user.email', 't@example.com')
+  git('config', 'user.name', 'T')
+  writeFileSync(join(s.root, 'seed.txt'), 'seed')
+  git('add', '-A')
+  git('commit', '-qm', 'seed')
+  return s
+}
+
+const startFails = (s, ...args) => {
+  try {
+    execFileSync(process.execPath, [CONDUCT, 'start', ...args],
+      { cwd: s.root, encoding: 'utf8', env: s.env, stdio: 'pipe' })
+    return null
+  } catch (e) {
+    return { status: e.status, out: (e.stdout || '') + (e.stderr || '') }
+  }
+}
+
+test('conduct start validates the slug BEFORE it creates anything', () => {
+  const s = stubbedRepo('bad-slug')
+  const before = readdirSync(s.root).sort()
+
+  for (const bad of ['../escape', 'Bad Slug', 'evil;rm', '$(id)', 'x'.repeat(60)]) {
+    const r = startFails(s, bad, 'an ask')
+    assert.ok(r, 'start accepted the slug ' + JSON.stringify(bad))
+    assert.notEqual(r.status, 0, 'a rejected slug must exit non-zero')
+    assert.match(r.out, /slug must match/, 'the failure must name the slug, not something downstream')
+    // Nothing anywhere: not under docs/runs, not beside it, not above it.
+    assert.deepEqual(readdirSync(s.root).sort(), before,
+      'start created something for the slug ' + JSON.stringify(bad))
+    assert.equal(existsSync(join(s.root, 'docs')), false, 'start created docs/ for a bad slug')
+    // checkSlug must precede the git call and the herdr call, not follow them.
+    assert.equal(existsSync(s.log), false, 'start called herdr before validating the slug')
+  }
+})
+
+test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane, and nothing else', () => {
+  const s = stubbedRepo('cockpit')
+
+  const out = execFileSync(process.execPath, [CONDUCT, 'start', 'demo', 'an ask'],
+    { cwd: s.root, encoding: 'utf8', env: s.env })
+
+  const argvs = calls(s.log)
+  assert.equal(said(s.log, 'workspace', 'create').length, 1, 'no workspace for the run')
+  assert.equal(said(s.log, 'pane', 'split').length, 1,
+    'the skeleton is plan + diff; stage panes are split on demand, not at start')
+  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both cockpit panes must be given their watch loop')
+  assert.equal(said(s.log, 'agent', 'start').length, 0, 'start must boot no agent - no stage has run yet')
+
+  const ws = said(s.log, 'workspace', 'create')[0]
+  assert.equal(ws[ws.indexOf('--label') + 1], 'demo')
+  assert.ok(ws.includes('--no-focus'), 'a cockpit pane must never steal focus')
+  for (const split of said(s.log, 'pane', 'split'))
+    assert.ok(split.includes('--no-focus'), 'a split must never steal focus')
+
+  const run = JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
+  assert.equal(run.herdr.planPane, 'w9:p1')
+  assert.equal(run.herdr.diffPane, 'w9:p2')
+  assert.equal(run.herdr.workspace, 'w9')
+
+  // The diff loop is the one command string with a variable in it. It carries
+  // the base sha and nothing else that could have come from a run field.
+  const diff = said(s.log, 'pane', 'run').find((a) => a.join(' ').includes('git'))
+  assert.match(diff[3], new RegExp('diff --stat [0-9a-f]{7,40}\.\.\.HEAD'), 'diff loop: ' + diff[3])
+  assert.match(said(s.log, 'pane', 'run')[0][3], /conduct\.mjs plan/, 'no plan watch loop')
+  assert.match(out, /run started: demo/)
+  assert.equal(existsSync(s.log + '.readcalled'), false, 'start read a pane')
+})
+
+test('conduct start says why when herdr is not there, and starts the run anyway', () => {
+  const s = stubbedRepo('herdr-down', { HERDR_STUB_FAIL: 'workspace list' })
+
+  const out = execFileSync(process.execPath, [CONDUCT, 'start', 'demo', 'an ask'],
+    { cwd: s.root, encoding: 'utf8', env: s.env })
+
+  assert.match(out, /run started: demo/, 'a missing herdr must never fail a run')
+  assert.match(out, /headless/i, 'the operator must be told the mode dropped, and why')
+  assert.equal(said(s.log, 'workspace', 'create').length, 0, 'built a cockpit against a dead server')
+  assert.equal(JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8')).herdr,
+    undefined)
+})
+
+test('--no-panes keeps conduct start on the headless path without touching herdr', () => {
+  const s = stubbedRepo('no-panes')
+
+  execFileSync(process.execPath, [CONDUCT, 'start', 'demo', '--no-panes'],
+    { cwd: s.root, encoding: 'utf8', env: s.env })
+
+  assert.equal(existsSync(s.log), false, '--no-panes still called herdr')
+  const run = JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
+  assert.equal(run.herdr, undefined)
+  assert.equal(run.noPanes, undefined, '--no-panes is per-invocation and must not be persisted')
+})
+
+test('the cockpit accepts every slug conduct itself accepts', async () => {
+  const s = stubbed('long-slug')
+  const long = 'a'.repeat(49)                     // the longest slug checkSlug allows
+
+  const c = await ensureCockpit({ slug: long, base: 'abc1234', root: s.root })
+
+  assert.equal(c.planPane, 'w9:p1')
+  await assert.rejects(() => ensureCockpit({ slug: 'Bad Slug', base: 'abc1234', root: s.root }),
+    /slug/i, 'herd.mjs is the herdr boundary and must validate there too')
+  await assert.rejects(() => ensureCockpit({ slug: 'demo', base: 'HEAD; rm -rf /', root: s.root }),
+    /base commit/i, 'a commit sha is the only variable in a command STRING - it must be allowlisted')
+})
+
+test('launchStage checks the pane is at a shell, then boots claude with native args', async () => {
+  const s = stubbed('launch')
+  const argv = paneArgs(STAGES.find((st) => st.id === 'spec'), 'sess-uuid', false)
+
+  const r = await launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sess-uuid', argv,
+    promptPath: 'docs/runs/demo/prompts/spec.txt',
+  })
+
+  const seq = calls(s.log).map((a) => a.slice(0, 2).join(' '))
+  assert.deepEqual(seq, ['pane process-info', 'agent start', 'agent get', 'agent prompt'],
+    'the launch sequence is readiness -> start -> identity cross-check -> prompt: ' + seq)
+
+  const start = said(s.log, 'agent', 'start')[0]
+  assert.deepEqual(start.slice(0, 8),
+    ['agent', 'start', 'spec', '--kind', 'claude', '--pane', 'w9:p3', '--timeout'])
+  assert.deepEqual(start.slice(start.indexOf('--')), ['--', ...argv],
+    'native claude args must follow -- verbatim: ' + start.join(' '))
+
+  assert.equal(r.session, 'sess-uuid', 'herdr reported the id it was given; nothing to adopt')
+  assert.equal(r.adopted, false)
+  assert.equal(existsSync(s.log + '.readcalled'), false, 'the launch path read a pane')
+})
+
+test('launchStage types ONE line - the path - and never a byte of the prompt', async () => {
+  const s = stubbed('prompt-inert')
+  // A prompt that would create a marker file if anything ever handed it to a
+  // shell: command substitution, backticks, a separator, a newline.
+  const marker = join(s.root, 'PWNED')
+  const q = String.fromCharCode(96)
+  const body = 'Do the task. $(node -e "require(' + q + 'fs' + q + ').writeFileSync(' +
+    JSON.stringify(marker) + ', ' + q + 'x' + q + ')")' + NL +
+    q + 'touch ' + marker + q + '; echo "done"' + NL
+  const rel = writePrompt(s.root, 'demo', 'build-t1', body)
+
+  await launchStage({
+    paneId: 'w9:p3', label: 'build-t1', sessionId: 'sess-uuid',
+    argv: ['--session-id', 'sess-uuid'], promptPath: rel,
+  })
+
+  assert.equal(existsSync(marker), false, 'a prompt was evaluated by a shell somewhere')
+  const prompt = said(s.log, 'agent', 'prompt')[0]
+  assert.equal(prompt.length, 4, 'more than one line was typed into the pane: ' + prompt.join(' | '))
+  assert.equal(prompt[3], 'Read ' + rel + ' and do exactly what it says.')
+  assert.ok(!prompt[3].includes(NL), 'a newline in typed text submits it early')
+  // Criterion 38: no fragment of the prompt body reached any argv at all.
+  const dump = JSON.stringify(calls(s.log))
+  for (const frag of ['PWNED', '$(', 'touch ', 'done'])
+    assert.ok(!dump.includes(frag), 'prompt content reached a herdr argv: ' + frag)
+})
+
+test('launchStage adopts the session id herdr reports when the boot did not take ours', async () => {
+  const s = stubbed('adopt', { HERDR_STUB_SESSION: 'herdr-chosen-uuid' })
+
+  const r = await launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'ours-uuid',
+    argv: ['--session-id', 'ours-uuid'], promptPath: 'docs/runs/demo/prompts/spec.txt',
+  })
+
+  assert.equal(r.session, 'herdr-chosen-uuid',
+    'attribution follows the session herdr will resume, not the one we asked for')
+  assert.equal(r.adopted, true)
+  assert.ok(said(s.log, 'agent', 'get').length >= 1, 'the reported identity was never cross-checked')
+})
+
+/** Run fn with console.log captured; returns [result, lines]. */
+async function quiet(fn) {
+  const lines = []
+  const real = console.log
+  console.log = (...a) => lines.push(a.join(' '))
+  try { return [await fn(), lines] } finally { console.log = real }
+}
+
+test('launchStage retries once, then falls back headless printing herdr error verbatim', async () => {
+  const err = 'timed out waiting for agent startup'
+
+  const once = stubbed('launch-retry', { HERDR_STUB_FAIL_ONCE: 'agent start', HERDR_STUB_ERR: err })
+  const [ok] = await quiet(() => launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sid', argv: [], promptPath: 'p.txt', settleMs: 0,
+  }))
+  assert.ok(ok, 'one bounded retry must be made before giving up')
+  assert.equal(said(once.log, 'agent', 'start').length, 2)
+  assert.equal(said(once.log, 'pane', 'process-info').length, 2,
+    'readiness must be re-checked before the retry, not assumed')
+
+  const dead = stubbed('launch-fail', { HERDR_STUB_FAIL: 'agent start', HERDR_STUB_ERR: err })
+  const [r, log] = await quiet(() => launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sid', argv: [], promptPath: 'p.txt', settleMs: 0,
+  }))
+
+  assert.equal(r, null, 'two failures must hand the stage back for a headless run, not throw')
+  assert.equal(said(dead.log, 'agent', 'start').length, 2, 'exactly one retry, bounded')
+  assert.equal(said(dead.log, 'agent', 'prompt').length, 0, 'prompted an agent that never started')
+  assert.ok(log.join(NL).includes(err), 'herdr own error must be printed verbatim:' + NL + log.join(NL))
+  assert.match(log.join(NL), /headless/i, 'the operator must be told the stage dropped to headless')
+})
+
+test('a pane that is not at a shell prompt is never handed an agent', async () => {
+  const s = stubbed('busy-pane', { HERDR_STUB_BUSY: 'w9:p3' })
+
+  const [r] = await quiet(() => launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sid', argv: [], promptPath: 'p.txt', settleMs: 0,
+  }))
+
+  assert.equal(r, null)
+  assert.equal(said(s.log, 'agent', 'start').length, 0,
+    'agent start against a busy pane is the measured timeout this check exists to pre-empt')
+})
+
+test('no herd.mjs path reads a pane', () => {
+  const src = readFileSync(resolve('scripts/pipeline/herd.mjs'), 'utf8')
+  const code = src.split(NL).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join(NL)
+  assert.ok(!/'(agent|pane)',\s*'read'/.test(code),
+    'agent read answers agent_not_idle while working, and the alternate screen loses ' +
+    'scrolled-off rows for good. Results come from files.')
+})
+
+test('agent_not_ready is a live agent on a dialog, not a failed launch', async () => {
+  // herdr answers this when the agent booted but is blocked on a startup UI -
+  // the first-run bypassPermissions acknowledgement, or an MCP trust prompt
+  // (both seen live). The name IS registered, so retrying would collide; the
+  // stage is handed on to the watch loop, which surfaces `blocked` and holds.
+  const s = stubbed('not-ready', {
+    HERDR_STUB_FAIL: 'agent start',
+    HERDR_STUB_ERRCODE: 'agent_not_ready',
+    HERDR_STUB_ERR: 'agent spec is blocked during startup and is not ready for prompts',
+  })
+
+  const [r] = await quiet(() => launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sid', argv: [], promptPath: 'p.txt', settleMs: 0,
+  }))
+
+  assert.ok(r, 'a blocked-on-startup agent must not be treated as a failed launch')
+  assert.equal(said(s.log, 'agent', 'start').length, 1, 'a live agent name must not be re-started')
+  assert.equal(said(s.log, 'agent', 'prompt').length, 1)
+
+  // The same message under a different code IS a failure: the branch must key
+  // off herdr's code, not off words that happen to appear in its prose.
+  const t = stubbed('not-ready-lookalike', {
+    HERDR_STUB_FAIL: 'agent start',
+    HERDR_STUB_ERRCODE: 'pane_busy',
+    HERDR_STUB_ERR: 'pane w9:p3 is not ready',
+  })
+  const [bad] = await quiet(() => launchStage({
+    paneId: 'w9:p3', label: 'spec', sessionId: 'sid', argv: [], promptPath: 'p.txt', settleMs: 0,
+  }))
+  assert.equal(bad, null, 'a real failure was let through because its wording resembled another code')
+  assert.equal(said(t.log, 'agent', 'prompt').length, 0)
 })

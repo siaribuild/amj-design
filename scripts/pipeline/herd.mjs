@@ -41,14 +41,28 @@ export const checkLabel = (s) => {
     throw new Error('herdr label must match ' + LABEL + ' - got ' + JSON.stringify(s))
   return s
 }
+
 // A commit sha is the only variable in the diff pane's watch loop, and that
 // loop IS a shell string. Nothing else may ever be interpolated into one.
 const SHA = /^[0-9a-f]{7,40}$/
-const checkSha = (s) => {
-  if (typeof s !== 'string' || !SHA.test(s))
-    throw new Error('base commit must match ' + SHA + ' - got ' + JSON.stringify(s))
+// The conductor validates the slug too. This is the herdr boundary, so it
+// validates again rather than trusting a caller - or a hand-edited run.json.
+const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/
+const PANE = /^[a-z0-9]+:[a-z0-9]+$/
+const check = (what, re) => (s) => {
+  if (typeof s !== 'string' || !re.test(s))
+    throw new Error(what + ' must match ' + re + ' - got ' + JSON.stringify(s))
   return s
 }
+const checkSha = check('base commit', SHA)
+const checkSlug = check('slug', SLUG)
+const checkPane = check('pane id', PANE)
+
+// herdr's message is what the operator needs to see (criterion 36 says
+// verbatim); its CODE is what this module branches on, because prose changes
+// between releases and `agent_not_ready` means something quite specific.
+const herdrError = (body, fallback) => Object.assign(
+  new Error(body?.message || fallback), { code: body?.code })
 
 /**
  * One herdr call. Returns the parsed `.result`; throws with herdr's own error
@@ -62,13 +76,13 @@ export async function herd(...args) {
     out = (await run(cmd, argv, { encoding: 'utf8' })).stdout
   } catch (e) {
     const text = (e.stderr || '').trim() || e.message
-    let msg = text
-    try { msg = JSON.parse(text).error?.message || text } catch { /* not JSON */ }
-    throw new Error(msg)
+    let body = null
+    try { body = JSON.parse(text).error } catch { /* not JSON: a crash, not a refusal */ }
+    throw herdrError(body, text)
   }
   const parsed = JSON.parse(out)
   // Exit 0 with an error body: `agent start` reports its own timeout this way.
-  if (parsed.error) throw new Error(parsed.error.message || parsed.error.code)
+  if (parsed.error) throw herdrError(parsed.error, parsed.error.code)
   return parsed.result
 }
 
@@ -98,8 +112,8 @@ const watchLoop = (cmd) => 'while ($true) { cls; ' + cmd + '; Start-Sleep 5 }'
  * for stages that may never run.
  */
 export async function ensureCockpit({ slug, base, root }) {
-  checkLabel(slug.replace(/^[0-9]/, 'x'))     // slugs allow digits first; herdr labels do not
-  const ws = await herd('workspace', 'create', '--cwd', root, '--label', slug, '--no-focus')
+  checkSha(base)                                // both before anything exists
+  const ws = await herd('workspace', 'create', '--cwd', root, '--label', checkSlug(slug), '--no-focus')
   const planPane = ws.root_pane.pane_id
   await herd('pane', 'run', planPane, watchLoop('node scripts/pipeline/conduct.mjs plan'))
   const split = await herd('pane', 'split', '--pane', planPane, '--direction', 'down',
@@ -127,7 +141,7 @@ export function writePrompt(root, slug, label, text) {
  * against it - which is the failure this check exists to pre-empt.
  */
 export async function paneReady(paneId) {
-  const { process_info: p } = await herd('pane', 'process-info', '--pane', paneId)
+  const { process_info: p } = await herd('pane', 'process-info', '--pane', checkPane(paneId))
   const fg = p.foreground_processes || []
   return fg.length === 1 && fg[0].pid === p.shell_pid
 }
@@ -154,8 +168,9 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
         '--timeout', '60000', '--', ...argv)
     } catch (e) {
       // `agent_not_ready` is not a failed launch: the agent exists and is
-      // blocked on a startup dialog. The watch loop surfaces that and holds.
-      if (!/not ready/i.test(e.message)) {
+      // blocked on a startup dialog. Retrying would collide with a live name;
+      // fall through, and let the watch loop surface `blocked` and hold.
+      if (e.code !== 'agent_not_ready') {
         last = e
         if (attempt === 0) { await sleep(settleMs); continue }
         console.log('  !! herdr could not start ' + label + ': ' + last.message)
