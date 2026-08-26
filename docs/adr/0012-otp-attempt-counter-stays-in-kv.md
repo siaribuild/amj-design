@@ -1,6 +1,9 @@
 # 0012 — OTP attempt counter stays in KV; the atomic counter is its own change
 
 Status: accepted — architect ruling, 2026-08-26, on hotfix `fix/guest-otp-attempt-cap`.
+Corrected 2026-08-26: the first version of "Residual risk" called the residual
+"bounded, noisy and expensive"; a Codex review of this document showed two of
+those three words were wrong, and the section now carries the arithmetic.
 
 ## Context
 
@@ -69,8 +72,40 @@ additional guarantee this counter needs.
 
 ## Residual risk accepted until the follow-up lands
 
-Beating the serial cap requires distributed, multi-colo concurrent guessing
-racing a 10-minute code TTL, against issuance capped at 5 codes per record per
-15 minutes — and every issued code emails the real customer. Bounded, noisy and
-expensive; a different threat class from the silent single-machine brute force
-this branch removes.
+The design imposes **no total bound** on a concurrent attacker. Under the race,
+a round of N overlapping wrong guesses costs ONE increment, so every per-record
+counter dilutes by the concurrency it faces and the numbers work out as:
+
+    serial attacker   5 attempts × 5 codes = 25 guesses / record / 15 min
+                      ≈ 2,400/day → even odds on a 10^6 code in ~10 months
+    concurrent        per-record caps dilute ×N; the only remaining brake is
+                      the per-IP verify cap: 60/hr ≈ 15 guesses / IP / 15 min
+                      ≈ 1,440 / IP / day
+    even odds         ≈ 0.7M guesses (each code is freshly random, so guesses
+                      are with-replacement trials) ≈ 480 IP-days:
+                      100 IPs ≈ 5 days · 1,000 IPs ≈ half a day
+
+The IP count is an attacker-chosen input, and a thousand source addresses is a
+cloud account, not a botnet. Every counter on this path — attempts, issuance,
+per-IP — is the same get-compare-put over KV, so all figures above are serial
+floors, not ceilings.
+
+What actually protects the surface today, in order of how well it survives a
+distributed attacker:
+
+1. **The victim's inbox.** Sustaining the attack requires issuing ~20 codes an
+   hour (~480 emails/day) to the real customer — the one control concurrency
+   cannot dilute. It is a detection channel, not a prevention.
+2. **The issuance cap** (5 codes/record/15 min) — the fixed ×25 in the serial
+   figure; itself racy.
+3. **The per-IP verify cap** — a price in rented IPs, not a bound.
+4. **The attempt cap** — the ×5; a serial bound only. Against a distributed
+   attacker it is close to last, not first.
+
+What the branch removes is the **silent single-machine attack**: on `main`, one
+machine grinds an uncapped code at line rate with a handful of emails to the
+victim in total — even odds in hours, quietly. The deploy conclusion stands,
+because loud-and-IP-priced is strictly better than quiet-and-free at every N —
+but "expensive" is the attacker's choice, not this design's property, and the
+follow-up (apertly #12) is priced accordingly: **next scheduled security work,
+not backlog**.
