@@ -56,3 +56,6 @@ sanity/backups/
 
 # pipeline v2 raw stage transcripts (large, reproducible)
 docs/runs/*/logs/
+
+# pipeline v2 stage prompts (written per stage, reproducible from the run)
+docs/runs/*/prompts/

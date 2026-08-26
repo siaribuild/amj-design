@@ -12,7 +12,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
-import { STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, browserMcp, mcpAdvisory } from '../pipeline/conduct.mjs'
+import {
+  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, browserMcp, mcpAdvisory,
+} from '../pipeline/conduct.mjs'
+import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage } from '../pipeline/herd.mjs'
 
 const CONDUCT = resolve('scripts/pipeline/conduct.mjs')
 
@@ -489,4 +492,76 @@ test('an uninstalled browser server warns and degrades the stage, never fails it
     'the warning must print before the stage is spawned')
   assert.ok(!/(return|process\.exit|throw)[^\n]*mcp/i.test(runClaude),
     'a missing browser must not abort the stage')
+})
+
+// --- the herdr adapter -------------------------------------------------------
+//
+// Every test below drives the real herd.mjs against `scripts/tests/fixtures/
+// herdr-stub.mjs` through HERDR_BIN. No herdr server, no pane, no claude - and
+// the stub hard-fails if a data path ever calls `agent read`, which the design
+// forbids (a working agent answers `agent_not_idle`, and Claude's alternate
+// screen loses scrolled-off rows for good).
+
+const STUB = resolve('scripts/tests/fixtures/herdr-stub.mjs')
+
+/** A temp repo root wired to the stub. Returns the env every call needs. */
+function stubbed(name, extra = {}) {
+  const root = tmp(name)
+  const log = join(root, 'herdr-calls.jsonl')
+  return {
+    root,
+    log,
+    env: { ...process.env, HERDR_BIN: STUB, HERDR_STUB_LOG: log, ...extra },
+  }
+}
+
+/** Every herdr invocation the stub recorded, as argv arrays. */
+const calls = (log) => existsSync(log)
+  ? readFileSync(log, 'utf8').trim().split(NL).filter(Boolean).map((l) => JSON.parse(l).argv)
+  : []
+
+const said = (log, ...words) => calls(log).filter((a) => words.every((w, i) => a[i] === w))
+
+test('herdr identifiers are allowlisted before they ever reach a command', () => {
+  for (const ok of ['build-t1', 'review-security', 'spec', 'a', 'x'.repeat(32)])
+    assert.equal(checkLabel(ok), ok, ok + ' is a legal herdr agent name and was rejected')
+  for (const bad of ['Build-T1', '1build', 'build t1', 'build;rm', 'build$(id)', '../evil',
+    'x'.repeat(33), '', 'build.t1'])
+    assert.throws(() => checkLabel(bad), /label/, 'checkLabel accepted ' + JSON.stringify(bad))
+  assert.ok(LABEL.source.startsWith('^') && LABEL.source.endsWith('$'),
+    'an unanchored allowlist matches a substring of anything: ' + LABEL)
+})
+
+test('a stage prompt is delivered as a FILE, byte-exact, and the file is gitignored', () => {
+  const { root } = stubbed('prompt-file')
+  // Everything a TTY would mangle: 2KB+, newlines, quotes, backticks.
+  const body = 'Read "docs/x.md" and `do` it.' + NL + 'x'.repeat(2048) + NL + "end's"
+  const rel = writePrompt(root, 'demo', 'build-t1', body)
+
+  assert.equal(rel, 'docs/runs/demo/prompts/build-t1.txt', 'prompt path is not the designed one')
+  assert.equal(readFileSync(join(root, rel), 'utf8'), body, 'prompt file is not byte-exact')
+
+  const ignore = readFileSync(resolve('.gitignore'), 'utf8')
+  assert.match(ignore, /docs\/runs\/\*\/prompts\//,
+    'prompt files are stage scratch and must be ignored beside docs/runs/*/logs/')
+})
+
+test('the pane boot carries the same native args as the headless one, plus the session id', () => {
+  const ux = STAGES.find((s) => s.id === 'ux')
+  const a = paneArgs(ux, 'sess-uuid', true)
+
+  assert.equal(a[0], '--session-id')
+  assert.equal(a[1], 'sess-uuid')
+  // An interactive boot must not be handed the headless-only flags.
+  for (const flag of ['-p', '--output-format', '--verbose'])
+    assert.ok(!a.includes(flag), 'pane boot passed the headless flag ' + flag)
+  // Lever 1 and the agent identity are not headless-only, and must survive.
+  assert.equal(a[a.indexOf('--agent') + 1], 'ux-designer')
+  assert.equal(a[a.indexOf('--autocompact') + 1], String(ux.compact))
+  assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions')
+  assert.equal(a[a.indexOf('--mcp-config') + 1], '.mcp.json')
+  assert.ok(a.includes('--strict-mcp-config'))
+  const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
+  assert.equal(paneArgs(reviewer, 'sid', true)[paneArgs(reviewer, 'sid', true)
+    .indexOf('--permission-mode') + 1], 'plan', 'a read-only reviewer must boot in plan mode')
 })

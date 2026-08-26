@@ -332,8 +332,10 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
   ? 'browser MCP unavailable (node_modules/@playwright/mcp not installed) - running the stage without it'
   : null
 
-export function claudeArgs(spec, promptText, mcpOk = browserMcp()) {
-  const a = ['-p', promptText, '--output-format', 'stream-json', '--verbose']
+// The flags that define the session itself, and so are the same whether the
+// stage is a headless child or an interactive claude booted in a pane.
+function sessionArgs(spec, mcpOk) {
+  const a = []
   if (spec.agent) a.push('--agent', spec.agent)
   if (spec.model) a.push('--model', spec.model)
   // Lever 1. Context tokens are the sum of context re-sent per turn; an
@@ -346,6 +348,15 @@ export function claudeArgs(spec, promptText, mcpOk = browserMcp()) {
   a.push('--strict-mcp-config')
   return a
 }
+
+export const claudeArgs = (spec, promptText, mcpOk = browserMcp()) =>
+  ['-p', promptText, '--output-format', 'stream-json', '--verbose', ...sessionArgs(spec, mcpOk)]
+
+// A pane boot is interactive: no -p, no stream-json. The session id is passed
+// in so the conductor can meter and resume the stage by an id it chose itself,
+// rather than waiting to learn one (herd.mjs cross-checks what herdr reports).
+export const paneArgs = (spec, sessionId, mcpOk = browserMcp()) =>
+  ['--session-id', sessionId, ...sessionArgs(spec, mcpOk)]
 
 function runClaude(spec, promptText, run, label) {
   return new Promise((res) => {
