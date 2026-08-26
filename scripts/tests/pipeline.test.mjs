@@ -1352,6 +1352,38 @@ test('a resumed build task is marked done, so the build does not start it over',
     'the resumed task was not recorded as done - the build will run it again')
 })
 
+test('answer resolves a held build-<task> label, and records the task it finishes', () => {
+  // run.json keys are stage ids, `build-<task>` and `review-<reviewer>`, so
+  // STAGES.find could only ever resolve the first kind - and `answer` crashed on
+  // the other two (spec.gate / spec.compact on undefined). The quiet half is
+  // worse: the task finishes on disk while tasksDone stays empty, so the next
+  // `conduct run build` pays a whole developer session to redo it.
+  const s = paneRepo('answer-build-task', 'sess-bt', { HERDR_STUB_STATES: 'idle' })
+  const dir = join(s.root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'first', done_when: 'done', files: ['a.js'], tests: ['a.test.mjs'] },
+    { id: 't2', title: 'second', done_when: 'done', files: ['b.js'], tests: ['b.test.mjs'], after: ['t1'] },
+  ]))
+  writeFileSync(join(dir, 'DECISIONS.md'), '1. Which way round?' + NL + '   Recommendation: this way.' + NL)
+
+  paned(s, 'run', 'build')
+
+  assert.equal(runJson(s).stages['build-t1'].status, 'held')
+  assert.equal(runJson(s).gateStage, 'build-t1',
+    'the gate belongs to the agent that is actually held warm, not to the stage that ran it')
+
+  writeFileSync(join(dir, 'DECISIONS.md'), '1. Which way round?' + NL + 'A: this way.' + NL)
+  paned(s, 'answer')
+
+  const st = runJson(s).stages['build-t1']
+  assert.equal(st.status, 'done')
+  assert.equal(st.code, 0)
+  assert.deepEqual(runJson(s).tasksDone, ['t1'],
+    'the task finished on disk but was never recorded - conduct run build will redo it')
+  assert.equal(said(s.log, 'agent', 'start').length, 1,
+    'the answer re-booted a session that was already warm')
+})
+
 // --- the Probity shim (design 9.5) -----------------------------------------
 //
 // The shim is the TDD gate's entry point, so these run it as a child process

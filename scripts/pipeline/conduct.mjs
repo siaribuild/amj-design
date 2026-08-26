@@ -780,7 +780,11 @@ function decisionsOpen(run) {
 function afterStage(run, spec) {
   const r = loadRun(run.slug)
   if (spec.gate || decisionsOpen(r)) {
-    if (decisionsOpen(r)) { r.gateStage = spec.id; saveRun(r); return }
+    // Never over-write a gate an agent already claimed. A sliced or parallel
+    // stage reaches here AFTER one of its own agents held warm under a
+    // `build-<task>` / `review-<id>` label, and naming the wrapper instead
+    // points `answer` at a stage that has no session and no agent.
+    if (decisionsOpen(r)) { r.gateStage = r.gateStage || spec.id; saveRun(r); return }
   }
   for (const f of spec.produces || []) {
     if (!existsSync(join(RUNS, r.slug, f)))
@@ -799,6 +803,24 @@ function afterStage(run, spec) {
     return
   }
   console.log('     next:  node scripts/pipeline/conduct.mjs next\n')
+}
+
+/**
+ * A stage that came back from a warm resume or a warm answer rather than from
+ * the loop that owns it.
+ *
+ * runBuild is what normally records a finished task. One finished any other way
+ * has to be recorded where runBuild would have, or the next `conduct run build`
+ * pays a whole developer session to redo work that is already on disk.
+ */
+function finished(run, label, spec, s) {
+  if (!s || s.status === 'held') return
+  if (!label.startsWith('build-')) return afterStage(run, spec)
+  if (s.code === 0) {
+    run.tasksDone = [...new Set([...(run.tasksDone || []), label.slice('build-'.length)])]
+    saveRun(run)
+  }
+  console.log('\n     next:  node scripts/pipeline/conduct.mjs next\n')
 }
 
 // --- commands --------------------------------------------------------------
@@ -933,23 +955,11 @@ const cmds = {
     const spec = stageSpec(label)
     const started = Date.parse(st.startedAt) || Date.now()
     const panes = await paneMode(flags)
-    // runBuild is what normally records a finished task. A task finished by a
-    // resume never goes through that loop, so it is recorded here instead - or
-    // the next `conduct run build` starts over work that is already on disk.
-    const finished = (s) => {
-      if (!s || s.status === 'held') return
-      if (!label.startsWith('build-')) return afterStage(run, spec)
-      if (s.code === 0) {
-        run.tasksDone = [...new Set([...(run.tasksDone || []), label.slice('build-'.length)])]
-        saveRun(run)
-      }
-      console.log('\n     next:  node scripts/pipeline/conduct.mjs next\n')
-    }
 
     if (panes && st.mode === 'pane' && await agentInfo(label)) {
       console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
         st.session + '. Nothing re-booted.')
-      return finished(await settleStage(run, label, started))
+      return finished(run, label, spec, await settleStage(run, label, started))
     }
     if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
       '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
@@ -976,14 +986,18 @@ const cmds = {
       delete st.session
       saveRun(run)
     }
-    finished(await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null))
+    finished(run, label, spec,
+      await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null))
   },
 
   async answer(...flags) {
     const run = loadRun(activeSlug())
     const id = run.gateStage
     if (!id) die('no stage is waiting on a decision')
-    const spec = STAGES.find((s) => s.id === id)
+    // A gate is held by an AGENT, and its label may be `build-<task>` or
+    // `review-<id>` as readily as a stage id. STAGES.find resolves only the
+    // last kind; stageSpec resolves all three, which is what it exists for.
+    const spec = stageSpec(id)
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
@@ -999,8 +1013,7 @@ const cmds = {
       delete st.holdReason
       run.gateStage = null
       saveRun(run)
-      const s = await settleStage(run, id, Date.parse(st.startedAt) || Date.now())
-      if (s?.status !== 'held') afterStage(run, spec)
+      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now()))
       return
     }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
