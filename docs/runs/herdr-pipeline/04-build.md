@@ -205,3 +205,28 @@ gitignored — a stage interrupted before it was written cannot be resumed and
 says so. Restore is pane-only: with herdr down, `resume` exits and points at
 `conduct run <label>`. **Not done: `plan` does not show a running stage** —
 design §5 wants it there too; it is display-only and no criterion asked for it.
+
+## t8 — Docs for pane mode
+
+Files: `docs/pipeline/PIPELINE-V2.md` (only).
+
+- New/rewritten in "Running it with herdr": auto-detect via `herdr workspace
+  list` + `--no-panes` (per-invocation), the cockpit skeleton and role-pane
+  reuse, hold-warm on `decisions`/`blocked-ui`, prompt files, "no result is ever
+  read out of a pane" with the alternate-screen reason, and reattach/restore/
+  re-run. Gaps recorded, not hidden: no reviewer tab, `plan` shows no running
+  stage, restore needs the gitignored prompt file.
+- Two machine-level hazards written down because they live nowhere in the repo:
+  the 2.1.232-containerised vs 2.1.246-real-prefix drift (Probity's validator
+  needs the pane-side login), and herdr 0.8.2's `Start-Process -FilePath claude`
+  bug plus the `%LOCALAPPDATA%\Programs\claude-shim` forwarder that works around
+  it (needs a herdr **server** restart).
+- Upper half made honest: every `$`, `budget` and `--max-budget-usd` gone,
+  replaced by the owner's no-runaway-guard ruling; new "Where the numbers come
+  from" (requestId dedupe, 2.6x naive overcount, `unknown` != 0, window figures).
+- **Rollback claim verified, not repeated:** `git diff --stat 6a5668d2..HEAD --
+  .claude/agents/` is empty, so the one-`cp` claim holds. But
+  `.claude/hooks/probity-subagent-shim.mjs` already differs from the v1-backup
+  snapshot (commit 3e210dcf, the cwd-resolution fix) — restoring that copy would
+  reintroduce the bug. Recorded in the Rollback section. **t9 shrinks that same
+  shim: re-check this before touching it.**

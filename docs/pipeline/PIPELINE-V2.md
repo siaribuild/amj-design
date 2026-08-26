@@ -49,15 +49,21 @@ So v2 pulls three levers, in measured order of impact:
    task is handed exact file paths, so the developer never searches — which is
    what the "94% re-read context" figure actually was.
 
-Plus a hard `--max-budget-usd` ceiling per stage, so a runaway stops and says so
-instead of quietly spending 182M tokens.
+**There is no runaway guard, and that is a ruling, not an omission.** An early
+version had a per-stage `--max-budget-usd` ceiling; the owner deleted the concept
+outright. No threshold is defensible — a large feature's build stage legitimately
+outspends a small feature's entire run, so any number either fires on healthy
+work or never fires at all. The subscription's 5-hour window is the only
+externally-enforced ceiling that exists, and a stage running in a pane in front
+of you is the guard. Dollars are gone with it: the conductor prints tokens and
+time, never currency. Do not reintroduce a ceiling under another name.
 
 ### Measured on the smoke test
 
-| stage | cost | context | output | time |
-|---|---|---|---|---|
-| spec (product-manager) | $0.54 | 110k | 4k | 67s |
-| design (architect) | $4.11 | 556k | 17k | 368s |
+| stage | context | output | time |
+|---|---|---|---|
+| spec (product-manager) | 110k | 4k | 67s |
+| design (architect) | 556k | 17k | 368s |
 
 For comparison, v1's per-run averages were 28M (product-manager) and 18M
 (architect). The smoke-test feature was simpler than a real one, so treat the
@@ -84,16 +90,16 @@ end-of-feature review still runs as the `review` stage regardless.
 Each stage runs as `claude -p --agent <role>` against the **unmodified**
 `.claude/agents/*.md` definitions — v2 does not fork the agents.
 
-| stage | agent | writes | ceiling |
-|---|---|---|---|
-| spec | product-manager | `01-spec.md` | $4 |
-| design | architect | `02-design.md`, `02-tasks.json` | $5 |
-| ux | ux-designer | `03-ux.md`, `docs/mocks/<slug>.html` | $4 |
-| build | developer × N tasks | `04-build.md` | $8 |
-| polish | ui-designer | `05-polish.md` | $3 |
-| verify | tester (own worktree) | `06-verify.md` | $6 |
-| review | architect + security + ponytail + codex, **in parallel** | `07-review-*.md` | $10 |
-| accept | product-manager | `08-accept.md` | $3 |
+| stage | agent | writes |
+|---|---|---|
+| spec | product-manager | `01-spec.md` |
+| design | architect | `02-design.md`, `02-tasks.json` |
+| ux | ux-designer | `03-ux.md`, `docs/mocks/<slug>.html` |
+| build | developer × N tasks | `04-build.md` |
+| polish | ui-designer | `05-polish.md` |
+| verify | tester (own worktree) | `06-verify.md` |
+| review | architect + security + ponytail + codex, **in parallel** | `07-review-*.md` |
+| accept | product-manager | `08-accept.md` |
 
 **Grill (stage 0) is not conducted.** It is the only stage that talks to you, so
 you run it yourself in a herdr pane and paste its conclusions into `00-ask.md`.
@@ -130,9 +136,16 @@ session in this directory. The developer stage is still held to red-green.
 
 ## Rollback
 
-`docs/pipeline/v1-backup/RESTORE.md`. v2 touched no agent, hook, setting or
-probity config — only `CLAUDE.md` — so rollback is one `cp`. Git tag:
-`pipeline-v1`.
+`docs/pipeline/v1-backup/RESTORE.md`. v2 drives the same agent definitions from
+the outside, so rollback is one `cp` of `CLAUDE.md`. Git tag: `pipeline-v1`.
+
+Still true after pane mode: `git diff --stat <branch-point>..HEAD -- .claude/agents/`
+is **empty** — pane mode changed nothing about how an agent is defined, only where
+its process runs. One caveat the snapshot cannot express: `.claude/hooks/probity-subagent-shim.mjs`
+*has* moved since the backup was taken (a separate fix — resolving `node_modules`
+from a single cwd bricked sessions), so restoring the hooks copy would reintroduce
+that bug. Restore `CLAUDE.md`; leave the hook alone unless you know why you are
+reverting it.
 
 ## Tuning
 
@@ -141,7 +154,6 @@ Everything worth turning is in the `STAGES` table at the top of
 
 - `compact` — the context cap. Lower is cheaper and more forgetful. If a stage
   starts losing the thread mid-run, raise it before blaming the prompt.
-- `budget` — the hard dollar ceiling. A stage that hits it says so.
 - `model` — unset means the agent's own frontmatter model. Set it to force a
   cheaper tier for a mechanical stage.
 - `mcp` — off by default; the Sanity/Chrome tool definitions are paid for on
@@ -150,6 +162,32 @@ Everything worth turning is in the `STAGES` table at the top of
 After each run, `conduct report` prints the split. If a role is disproportionate,
 that is the next thing to slice.
 
+## Where the numbers come from
+
+`measure.mjs` is the only accounting mechanism, in both modes. Three things about
+it are easy to get wrong and expensive to get wrong:
+
+- **Each API response is counted once, keyed by `requestId`.** A transcript
+  writes one assistant record per *content block*, and every block of one
+  response repeats the same `usage`. Summing records naively overcounted by
+  **2.6×** in practice — which is also why a stage's own result JSON understates
+  a run: it reports the last message, not the run.
+- **A stage is metered by its recorded session id**, reading
+  `<projectsDir>/<proj>/<sid>.jsonl` plus `<sid>/subagents/*.jsonl` — never by
+  scanning for the newest transcript, which is unattributable the moment two
+  sessions run at once. Interruption does not lose spend: a stage totals its
+  current session plus every id in `previousSessions`.
+- **`unknown` is not `0`.** A row prints `unknown` when nothing on disk can
+  account for it; a printed zero means measured zero.
+
+`conduct report` also prints machine-wide **window** figures — the 5-hour window
+and the trailing 7 days — anchored on the last `rate_limit_event` found in this
+repo's own stage logs (the event exists only in stream-json logs, never in
+transcripts, and carries a reset time but **no quota figure**). So there is no
+percentage, no "remaining", no headroom, and there cannot be one; unanchored, the
+window is labelled trailing. Within 15 minutes of a reset a stage start prints an
+advisory and starts anyway — it never gates.
+
 ---
 
 # Running it with herdr
@@ -157,6 +195,14 @@ that is the next thing to slice.
 Herdr is a terminal workspace manager: persistent panes that survive closing the
 terminal. That last property is the one that matters here — a build stage can run
 40 minutes, and v1 lost two ~100-minute agent runs to a machine restart.
+
+**Pane mode is built, and it is the default.** Detection is a fast
+`herdr workspace list` — a real call to the server, not an env-var check, because
+the conductor also runs from *outside* a pane where `HERDR_ENV` is unset. Herdr
+answering ⇒ every stage launches as a pane agent; herdr absent, down, or
+`--no-panes` ⇒ one line naming the reason and today's headless `-p` path, whose
+artifacts are byte-identical. Everything below describes what the conductor
+actually does now, not a way of working you assemble by hand.
 
 ## One-time setup
 
@@ -177,32 +223,127 @@ holding the old environment block. Restart it rather than editing PATH.
 > $p = [Environment]::GetEnvironmentVariable('Path','User')
 > ```
 
-## The layout
+## Two machine-level hazards, neither of them in this repo
 
-```bash
-herdr
-```
+**1. There are now two Claude Code installs, and they are already drifting.**
+This session's own Claude runs inside the packaged MSIX desktop app, which
+redirects `%APPDATA%` into
+`AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming` — so an
+`npm install -g` from there lands *inside the container*. Panes are ordinary
+unpackaged processes reading the real `Roaming`, and use the real npm prefix.
+Measured 2026-08-26: **2.1.232 containerised, 2.1.246 in the real prefix.** They
+are separate installs with separate auth. Pane auth works today; keep it that
+way, because **Probity's validator shells out to the CLI** — if the pane-side
+login lapses, the TDD gate errors instead of gating, which is a failure mode that
+looks like a broken build rather than a missing guardrail.
 
-That launches or re-attaches the persistent session. Split it into three panes —
-the split keys are in herdr's own help, or from inside a pane:
+**2. herdr 0.8.2 cannot launch `claude` with native args on Windows.**
+`herdr agent start <label> --kind claude --pane <p> -- <native args>` launches via
+`Start-Process -FilePath claude`, which resolves the extensionless npm **bash**
+shim before honouring `PATHEXT`, and dies with `%1 is not a valid Win32
+application` → `{"error":{"code":"timeout"}}`. Verified directly: `-FilePath
+claude` fails, `-FilePath claude.cmd` prints the version. With **no** `--` args
+herdr types `claude` at the prompt instead, which works — which is exactly why the
+bug only shows up once you pass native args, i.e. `--session-id`, `--agent` and
+`--autocompact`, i.e. everything pane mode depends on.
 
-```bash
-herdr pane split --current --direction right --cwd "$PWD" --no-focus
-```
+Worked around **outside the codebase**, so nothing in the repo will remind you:
+a `claude.cmd` forwarder in `%LOCALAPPDATA%\Programs\claude-shim`, placed earlier
+on the **User** PATH than the npm prefix. It takes effect only after the herdr
+**server** restarts — a new pane inherits the old server's environment. If every
+stage is silently falling back to headless, check this first.
 
-| pane | what runs there | why |
-|---|---|---|
-| **conductor** | `node scripts/pipeline/conduct.mjs ...` | stages stream their tool calls here; this is where you work |
-| **grill** | `claude` → `/grilling` | stage 0 is the one stage that talks to you |
-| **scratch** | `npm run dev`, `git log`, opening the mock | so you never interrupt the conductor to look at something |
+## The cockpit
 
-Nothing about the pipeline *requires* herdr — the conductor is a plain Node
-script. Herdr buys persistence, and somewhere to put the grill and the dev server
-that isn't the pane the pipeline is streaming into.
+`conduct start` builds a skeleton workspace and nothing more (panes cost RAM; a
+pane per stage would leave ~13 idle claude processes alive by the end of a run):
+
+| pane | what runs there |
+|---|---|
+| **plan** | `conduct plan` on a 5-second loop — the run's state |
+| **diff** | `git --no-pager diff --stat <base>...HEAD` on the same loop |
+| **role panes** | created on demand, **one per agent role**, reused |
+
+A role pane is reused, never re-prompted: the next stage for that role always
+boots a *new* claude with a *new* session id, so context stays isolated and
+metering stays per-stage. When a stage finishes the conductor types `/exit` and
+leaves the pane open — scrollback intact, no idle process holding memory. Nothing
+ever steals focus (`--no-focus` on every create and split).
+
+The conformance and ponytail reviewers get panes, split off the plan pane. The
+design asked for them in a second tab so the main tab keeps a readable geometry;
+**that was not built** — the tab helper belongs in `herd.mjs`, which was outside
+the reviewer task's file list. Reviewer panes in one tab is cramped, not wrong.
+`/security-review` stays a headless `-p` child in *every* mode (it is compiled
+into the CLI, so no pane-safe delivery fires it reliably), and codex is a child
+process as before. All four are still started before any is awaited.
+
+You still want a spare pane of your own for the grill (stage 0 is the one stage
+that talks to you) and for `npm run dev` — the conductor will not create those.
+
+## Two rules that are load-bearing, not stylistic
+
+**Prompts go through files; only one line is ever typed.** A stage's prompt is
+written to `docs/runs/<slug>/prompts/<label>.txt` (gitignored, beside `logs/`) and
+the pane is sent `Read <path> and do exactly what it says.` This is cheaper than
+pasting kilobytes through a TTY, it matches the pipeline's paths-never-contents
+rule, and it makes prompt content structurally incapable of reaching a shell — a
+prompt full of `$(...)` is inert because no byte of it goes anywhere near one.
+
+**No result is ever read back out of a pane.** `herdr agent read` returns
+`agent_not_idle` while an agent is working, and Claude draws on the terminal's
+*alternate screen*, so scrolled-off rows never enter herdr's scrollback and no
+`--lines` value recovers them; even an idle read truncates. So: completion comes
+from `agent wait`/`agent get`, results from the files the stage `produces`, and
+numbers from transcripts. `agent read` is a diagnostic for a human looking at a
+stuck pane, and the test suite fails if any code path calls it. Do not try to
+scrape a pane — it is lossy in a way that only shows up on long stages.
+
+## Gates hold the agent warm
+
+In headless mode a gate meant the stage exited and `conduct answer` paid to boot
+it again. In pane mode the agent is left **alive** and the stage is marked `held`:
+
+- **decisions** — the stage wrote `DECISIONS.md`. Answer inline and run
+  `conduct answer`; it nudges the same live agent in the same session. No boot,
+  no `--resume`, no lost context.
+- **blocked-ui** — herdr saw a permission or question dialog the agent is sitting
+  on. Same hold, and the conductor tells you the workspace, pane and agent name so
+  you can attach and answer it yourself.
+
+Either way you get a desktop notification. A held reviewer does not stall the
+other three; the review stage simply stays incomplete until it finishes.
+
+## If it dies — reattach, restore, or start over
+
+State is written to `run.json` **before** the prompt is sent, so a reboot can
+never orphan a running stage invisibly. `conduct next` scans for `running` and
+`held` stages before it looks for the next unstarted one, and does one of three
+things:
+
+- **reattach** — the agent is still there. Re-enter the watch loop on the same
+  session. Nothing reboots. (This is also how a stage you answered by hand in its
+  own pane gets its bookkeeping finished.)
+- **restore** — the agent is gone but the session id is recorded: relaunch with
+  `--resume <sid>` and re-hand the prompt path. Same session id before and after,
+  so the numbers stay attributed.
+- **re-run** — the session has nothing on disk to resume. It says so in plain
+  words, pushes the dead id onto `previousSessions` (so its spend is still
+  counted) and starts the stage over. Partial work is never presented as
+  complete.
+
+Two edges worth knowing. Restore needs `docs/runs/<slug>/prompts/<label>.txt`,
+which is gitignored — a stage interrupted *before* that file was written cannot
+be restored, and the conductor tells you so rather than guessing. And restore is
+pane-only: with herdr down, `resume` exits and points you at
+`conduct run <label>`.
+
+`conduct plan` does **not** yet show a stage that is currently running. It is
+display-only and no criterion asked for it; the pane itself is the live view.
 
 ## A full feature, start to finish
 
-**1. Grill it** — in the grill pane:
+**1. Grill it** — in a pane of your own:
 
 ```bash
 claude
@@ -220,7 +361,8 @@ node scripts/pipeline/conduct.mjs ui on
 ```
 
 `ui on` only if the feature adds or changes UI; it enables the ux and polish
-stages and the mock gate.
+stages and the mock gate. `start` also builds the cockpit — unless herdr is down,
+or you pass `--no-panes`.
 
 **3. Drive it.** Repeat until it tells you otherwise:
 
@@ -230,12 +372,16 @@ node scripts/pipeline/conduct.mjs next
 
 Each call runs one stage and stops. You will be stopped at three kinds of gate:
 
-- **A decision.** The stage wrote `DECISIONS.md` and stopped. Answer inline —
-  put `A: ...` under each question — then `conduct answer`, which resumes that
-  same stage warm rather than paying to boot a new one.
-- **The mock.** Open `docs/mocks/<slug>.html` in the scratch pane. Not happy?
-  Write what you want into `03-ux.md` and `conduct run ux`. Happy? `conduct next`.
+- **A decision.** The stage wrote `DECISIONS.md`. Answer inline — put `A: ...`
+  under each question — then `conduct answer`. In pane mode the agent is still
+  alive and just gets nudged; headless, it resumes warm via `--resume`.
+- **The mock.** Open `docs/mocks/<slug>.html`. Not happy? Write what you want
+  into `03-ux.md` and `conduct run ux`. Happy? `conduct next`.
 - **Sign-off.** `08-accept.md` is a recommendation, not a decision.
+
+`--no-panes` is accepted by `start`, `next`, `run`, `answer` and `fix`, and is
+**per-invocation** — it is never persisted, so it cannot silently turn pane mode
+off for the rest of a run.
 
 **4. Route any findings.** Reviewers report; only the developer fixes:
 
@@ -244,7 +390,7 @@ node scripts/pipeline/conduct.mjs fix "the finding, or the review file path"
 node scripts/pipeline/conduct.mjs run verify
 ```
 
-**5. See what it cost:**
+**5. See what it took** — tokens and time, per stage, plus the window figures:
 
 ```bash
 node scripts/pipeline/conduct.mjs report
@@ -252,8 +398,12 @@ node scripts/pipeline/conduct.mjs report
 
 ## If a stage goes wrong
 
-- **It stopped on its budget ceiling.** The line says so. Either the work needs
-  splitting into more tasks, or raise that stage's `budget` in `STAGES`.
+- **Every stage ran headless when herdr was up.** Almost certainly hazard 2
+  above: the launcher cannot pass native args, so each launch fails twice and
+  falls back. The conductor prints herdr's error verbatim — read it rather than
+  assuming.
+- **A stage is `held` and you don't know why.** `holdReason` in `run.json` says
+  `decisions` or `blocked-ui`; the second means go and look at the pane.
 - **It didn't write what it promised.** The conductor says which file is missing.
   Just `conduct run <stage>` again — stages are re-runnable.
 - **A build task failed.** `docs/runs/<slug>/logs/build-<task>.jsonl` is the full
