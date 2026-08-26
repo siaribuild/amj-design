@@ -4,11 +4,16 @@
 **Output contract:** [plan-parse-output-spec.md](plan-parse-output-spec.md). Settled; conformed
 to, not redesigned.
 
-**Headline.** W1's composition is in the document's **vector line-work**, and it reads out in
-110 ms using `unpdf` — the dependency the Worker already has. No rasteriser, no canvas, no
-WASM, no container, no model call. Three independently written decoders returned the same eight
-coordinates. **Rasterisation is not on the critical path.** It is the fallback for a document we
-have not yet received.
+**Headline — SUPERSEDED 2026-08-27 by the ROUTE DECISION below. Read that first.** A vision
+model reads the drawings; rasterisation is the critical path, and the container is the host.
+
+*The original headline, kept because its measurements are sound and only its conclusion was:*
+W1's composition is in the document's **vector line-work**, and it reads out in 110 ms using
+`unpdf` — the dependency the Worker already has. No rasteriser, no canvas, no WASM, no
+container, no model call. Three independently written decoders returned the same eight
+coordinates. *It then concluded "rasterisation is not on the critical path", which was the
+wrong lesson from a right measurement: reading the line-work precisely was never the hard part,
+and finding out which window the line-work belongs to is.*
 
 ---
 
@@ -113,11 +118,19 @@ SKILL.md's six steps, unchanged: inventory cheaply → choose a strategy → tex
 data → **rasterise only what matters and look at it** → do both when precision matters → manage
 tokens explicitly.
 
-Five of the six map onto `unpdf` in the Worker. Only step 4 changes, and the reason is not that
-we cannot rasterise — the investigation proved we can, three separate ways. It is that **for a
-vector drawing, the geometry is more precise than any image of it.** A mullion position to the
-millimetre is the entire deliverable; a model reading a 150-DPI raster estimates it, while the
-path operators state it.
+**All six now run as written, step 4 included.** *(Rewritten 2026-08-27 by the ROUTE DECISION.)*
+
+This section previously argued that only step 4 changed, on the grounds that **for a vector
+drawing the geometry is more precise than any image of it** — a mullion position to the
+millimetre is the entire deliverable, and the path operators state what a raster only estimates.
+
+*That is still true, and it is still not the point.* Precision was never the binding constraint;
+**locating the opening was**, and that is a tag on a leader line, an octagon carrying two lines
+of text, and an elevation letter on a wall — none of which is line-work, and all of which step 4
+handles by looking. A decoder that measures a mullion to 0.1 mm and cannot tell you which window
+it belongs to has answered the easy half. The geometry keeps its precision advantage in the role
+it now has: the second opinion of §7's verification stage, where being exact and free is exactly
+what a cross-check should be.
 
 The platform has no step 2 at all today. It runs one path for everything, and that path is text.
 
@@ -321,7 +334,9 @@ zero openings and zero rooms. Worth fixing whether or not the drawing reader is 
 
 ---
 
-## 5. Design
+## 5. Design — of the DEMOTED geometric route
+
+*Retained as written. Its output contract, its precedence rules and its Stage 8 landing zone still bind the model route; its Stages 4–6 describe the second opinion, not the answer. See the ROUTE DECISION.*
 
 **Stage 1 — Inventory** *(extend existing)*. `ingest.ts:287` already opens the document and
 reads the text layer. On the same proxy add: page count, per-page size and rotation, text-item
@@ -467,10 +482,11 @@ comment anticipates this. Evidence columns (`page_no`, `sheet_ref`, `region_json
 in migration 0016 and every writer passes `null` today — the frame's bounding box fills all
 three with no schema work.
 
-**No model call on the primary path.** The geometry produces exact numbers, costs no tokens and
-fits well inside the job deadline. The model earns its place at escalation only: when Stage 5
-rejects every candidate or Stage 6 cannot disambiguate, rasterise **that frame's region** and
-ask. `frame_decomposition_uncertain` already exists for it.
+**~~No model call on the primary path.~~ INVERTED by the ROUTE DECISION.** The geometry does
+produce exact numbers at no token cost, and that is why it survives as the second opinion — but
+the model call *is* the primary path now, and the escalation runs the other way: where the
+decoder and the model disagree, or the model declines, a human looks.
+`frame_decomposition_uncertain` still exists and is still the right code for it.
 
 ---
 
@@ -511,17 +527,36 @@ guess.
 
 ---
 
-## 7. Where a container still earns its place
+## 7. The container is the host — from day one, not on a trigger
 
-Cloudflare Containers are GA, run the literal SKILL.md toolchain, and cost roughly $0.00016 per
-job beyond an allowance of ~4,500. **They are the right answer to a question this document does
-not ask.** What they buy that the isolate cannot: **OCR for genuinely scanned sets** — and that
-is the only one. PDFium WASM was also proven to work in workerd (+2.51 MB gzip), but it gives
-pixels without OCR, which is the wrong half.
+*(Rewritten 2026-08-27 by the ROUTE DECISION. This section previously said "provision a
+container when a document reports a gap the isolate cannot close, and not before — until it
+fires, ship nothing." That was correct for a route where the geometry was the answer and pixels
+were the exception. It is exactly wrong for a route whose answer IS the pixels.)*
 
-So: **provision a container when a document reports a gap the isolate cannot close, and not
-before.** `GeometryGap = "raster_page"` already exists in `worker/lib/drawing/types.ts` as the
-trigger. Until it fires, ship nothing.
+The model route needs an image of each opening, so something must rasterise on every job. The
+isolate cannot: `wrangler.jsonc` has no Browser Rendering binding and workerd has no canvas.
+Cloudflare Containers are GA and cost roughly $0.00016 per job beyond an allowance of ~4,500.
+
+**But the image is leaner than the scaffold assumes.** `containers/plan-parse/` is built around
+poppler and PIL because that is the toolchain the method was proven with. `render.mjs` in
+`scripts/research/plan-geometry/` does the same two steps — page → PNG, PNG → one opening's crop
+— in **Node**, on the `unpdf` already in the Worker's bundle plus a canvas. So the container is
+needed for **pixels, not for Python**, and image size is what sets the 1–3 s cold start.
+
+Two consequences worth settling before the image is built:
+
+- **Node or Python?** Node reuses the extractor the Worker already trusts and keeps one PDF
+  library across the codebase; Python is what the proof ran on and what the scaffold's step
+  functions are written in. This is a real choice and it is not made here.
+- **Where does the model call live?** In the container is the faithful reproduction and is what
+  the scaffold assumes. In the Worker is cheaper — a container waiting on a vision call bills a
+  GiB-second every second at zero CPU. It is an optimisation, not a correction, and per the
+  scaffold's own README it should not be done before the pipeline is known to work.
+
+**OCR for genuinely scanned sets** remains the container's other job, and `GeometryGap =
+"raster_page"` remains its trigger — but it is no longer the thing that decides whether a
+container exists.
 
 ---
 
@@ -540,44 +575,62 @@ calibration points, and **fails the run** if either they or §2a's table drift �
 document states is a result the harness enforces. §2a extends them from two openings to all
 nineteen.
 
-### Stage 1 — Complete the proof. The only thing to do next.
+### Stage 1 — Fix page selection. Unchanged by the route, and shippable today.
 
-**1a. Does it run inside workerd, in 128 MB?** The same script as a temporary route or a
-miniflare test at production compat settings, reporting identical coordinates and peak memory.
-**Miniflare does not enforce the 128 MB cap** — it allowed a 1600 MB allocation without
-complaint — so a green miniflare run is not proof. Needs a real deploy behind a flag, or an
-explicit heap cap in node.
+The one item that survives the ROUTE DECISION untouched, because **every** route has to be
+pointed at the right sheets. §4's defect is live: the plan skill reads a stair detail on every
+architectural upload. It is also worth more now than it was — a model route that renders the
+wrong page pays for the render, pays for the tokens, and returns nothing.
 
-**1b. Does it generalise to a second, unrelated plan set?** Everything above is calibrated on
-n=1: one drafter, one CAD chain ("Microsoft: Print To PDF"). Deliverable: the hit rate and
-false-positive count over one more real builder's set. *(2026-08-27: the owner has a second
-set to supply. Until it is measured, every generalisation claim here stays unproven — the
-within-document result in §2a says nothing about a different drafter.)*
+### Stage 2 — Render and crop, hosted. *(`render.mjs` exists; it needs somewhere to run.)*
 
-If 1a fails, the host changes to a container. If 1b comes back low, the primary path becomes
-model-assisted rather than geometric. **Both rewrite everything after, which is why nothing
-past here is planned in detail.**
+Steps 4 and 5 of the method, already working locally. What remains is the host — see §7 — and
+the two questions it leaves open.
 
-### Stage 2 — Fix page selection. Independently shippable, valuable today.
+### Stage 3 — Locate each schedule row on the sheets.
 
-Unaffected by Stage 1's outcome. Right now the plan skill reads a stair detail on every
-architectural upload.
+The join this pass actually needs, and the one the geometry could not do: tag → wall →
+elevation letter → sheet. Octagon tags on leader lines, `A`/`B`/`C`/`D` markers on the four
+walls. Driven by the schedule, one row at a time; a row that cannot be located is `not read`.
 
-### Stage 3 — Defuse the symbol profile. Small, and must land before anything reads a symbol.
+### Stage 4 — Read the composition, one vision call per opening, against its own crop.
 
-### Stages 4+ — Outline only; host decided by Stage 1.
+The schedule's dimensions and type go in as context. The model is asked how the opening
+**divides**, never what family it is — §6's ruling is unchanged and still binds: geometry or
+model, the drawing claims operable-or-not and the schedule names the family.
 
-Geometry → **frame lookup per known opening** → `splitHints` with `source: "drawing"` →
-escalation → disambiguation → progress detail. Each independently shippable and inert until the
-next lands.
+### Stage 5 — Verification, which is what makes the bar checkable.
 
-Note the ordering change that the §0 framing buys: **disambiguation moves late.** It was a
-prerequisite when this looked like a discovery problem; driven by a known list it is only needed
-for same-sized rows, so the pass delivers value for every uniquely-sized opening before any tag
-harvesting exists at all. On this document that is **13 of 19** openings — of which **12 read
-outright** and one, D1, is not read (§2a). It was stated as 17 of 19 while W14/W16 were believed
-to be the only same-sized pair, and briefly as 15 of 19 while they were wrongly believed not to
-be drawn.
+**The model fails silently, so this stage is not optional.** Each reading carries its crop.
+Disagreement with the schedule's type is surfaced, never resolved. The demoted geometric decoder
+runs as the cheap second opinion: agreement raises confidence, disagreement sends it to a human.
+"Could not read this" must be an easy answer to give.
+
+### Stage 6 — Into the estimator. Unchanged by the route.
+
+`SplitHint.source` gains `"drawing"`, `SplitUnitHint` gains an optional `ratio`, and the
+evidence columns `page_no`/`sheet_ref`/`region_json` already exist in migration 0016 with every
+writer passing `null`. The crop's page and box fill all three. A drawing-derived hint is a new
+**source**, not a new mechanism.
+
+### Orientation is still a separate workstream.
+
+§5's chain — boundary bearings as text → the lot's compass axes → the tag's wall on the floor
+plan → outward normal — is unchanged and unaffected. It serves a different consumer (the thermal
+band's SHGC cap) and ships on its own schedule. Under the model route the middle two steps get
+easier, not harder.
+
+### Withdrawn by the ROUTE DECISION
+
+**Stage 1a — "does the geometry run in workerd, in 128 MB?"** No longer on the critical path.
+It was the gate on hosting the geometric decoder in the isolate; the decoder is now the second
+opinion and the job has a container regardless.
+
+**Stage 1b — "does it generalise to a second plan set?"** Withdrawn *as a gate*, kept *as a
+measurement*. It no longer decides the route — that is settled, and the owner's reasoning was
+precisely that it would come back low. It remains the only honest test of any route, including
+this one, and the owner has a second set to supply. Everything in §2a is one drafter, one CAD
+chain.
 
 ---
 
@@ -604,9 +657,14 @@ be drawn.
    awning/hopper distinction the convention exists to draw cannot be expressed by the catalogue.
    Geometry claims operable-or-not; the schedule names the family. `refineOperable` is unused in
    v1. See §6.
-4. **Is ±2.5% good enough to ship unreviewed?** Every proposed split already carries "confirm
-   the configuration at review". If drawing-derived splits stay behind that gate the question is
-   moot; if they are to flow through unreviewed, ±2.5% at 2050 mm is ±50 mm and needs sign-off.
-5. **Who owns a practice's symbol profile?** An ops screen someone fills in, or inferred and
-   confirmed once per practice on first encounter? It decides whether §6 is a code change or a
-   data model.
+4. **Is a drawing-derived split allowed to flow through unreviewed?** Every proposed split
+   already carries "confirm the configuration at review", so behind that gate the question is
+   moot. It sharpens under the model route rather than going away: the geometric figure was
+   wrong by a *bounded* ±2.5% (±50 mm at 2050 mm), whereas a model's wrong reading is not wrong
+   by a small amount — it is a different window. The verification stage exists for that, and
+   whether it is sufficient to remove the review gate is the open question.
+5. ~~**Who owns a practice's symbol profile?**~~ **MOOT under both routes.** §6 settled that
+   nothing claims a family from a symbol — the schedule names it — so no practice profile has to
+   be owned, stored or confirmed by anyone. `refineOperable` and `apexMeans` stay unreferenced.
+6. **Node or Python in the container, and does the vision call live in the container or the
+   Worker?** §7. Neither is settled and both change the image.
