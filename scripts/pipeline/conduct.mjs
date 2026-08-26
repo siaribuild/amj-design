@@ -304,7 +304,8 @@ function runClaude(spec, promptText, run, label) {
       run.stages[label] = s
       saveRun(run)
       process.stdout.write('  ok ' + label + '  $' + s.cost.toFixed(2) +
-        '  ctx ' + fmt(ctx) + '  out ' + fmt(s.outputTokens) + '  ' + s.seconds + 's\n')
+        '  ctx ' + fmt(s.contextTokens) + '  out ' + fmt(s.outputTokens) +
+        '  ' + s.turns + ' calls  ' + s.seconds + 's\n')
       if (s.overBudget)
         process.stdout.write('  !! ' + label + ' hit its $' + spec.budget +
           ' ceiling - raise it in STAGES, or the work needs splitting\n')
