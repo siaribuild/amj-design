@@ -296,3 +296,16 @@ contention is microseconds long, so retrying is the fix; the reviewers stay
 concurrent and `runBuild` stays sequential. Asserts: with a separate process
 holding `run.json` in a `copyFileSync` loop for the whole fan-out, all four
 `review-*` stage records survive. Red run recorded `stages: {}`.
+
+## fix — herd() assumed every herdr command returns JSON
+
+Real `pane run` writes zero bytes at exit 0, so `JSON.parse('')` threw at
+`ensureCockpit`'s first call and every live run printed "could not build the
+cockpit (Unexpected end of JSON input) - running headless". `herd()` now treats
+unparseable stdout at exit 0 as a success with no payload — no allowlist of
+replying commands; errors are unchanged (JSON on stderr at exit 1, syntax at 2).
+The stub answered JSON for `pane run`, which is why the suite never saw it; it
+is now silent and reproduces the live message. Test: `ensureCockpit` completes
+past a payload-less `pane run` and still returns both panes. Re-measured on
+0.8.2 — `workspace list/create/close`, `pane split`, `pane process-info`,
+`notification show`, `agent list` answer JSON; only `pane run` is silent.

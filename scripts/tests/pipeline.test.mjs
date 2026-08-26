@@ -730,6 +730,20 @@ test('the cockpit accepts every slug conduct itself accepts', async () => {
     /base commit/i, 'a commit sha is the only variable in a command STRING - it must be allowlisted')
 })
 
+test('a herdr command that answers with nothing is a success, not a parse error', async () => {
+  const s = stubbed('silent-ok')
+
+  // `pane run` writes zero bytes and exits 0 - and the cockpit's first act is a
+  // pane run. JSON.parse('') threw "Unexpected end of JSON input", ensureCockpit
+  // failed at its own first call, and every live run degraded to headless with
+  // the cockpit - this feature's whole point - never built once.
+  const c = await ensureCockpit({ slug: 'demo', base: 'abc1234', root: s.root })
+
+  assert.equal(c.planPane, 'w9:p1')
+  assert.equal(c.diffPane, 'w9:p2', 'the split after a payload-less pane run must still land')
+  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both watch loops must have been sent')
+})
+
 test('launchStage checks the pane is at a shell, then boots claude with native args', async () => {
   const s = stubbed('launch')
   const argv = paneArgs(STAGES.find((st) => st.id === 'spec'), 'sess-uuid', false)

@@ -80,7 +80,12 @@ export async function herd(...args) {
     try { body = JSON.parse(text).error } catch { /* not JSON: a crash, not a refusal */ }
     throw herdrError(body, text)
   }
-  const parsed = JSON.parse(out)
+  // Exit 0 is the answer; a payload is optional. `pane run` writes not one byte
+  // (measured, herdr 0.8.2), so parsing unconditionally threw at the cockpit's
+  // very first call and downgraded every live run to headless. No list of
+  // "commands that reply" - anything unparseable at exit 0 simply has no result.
+  let parsed
+  try { parsed = JSON.parse(out) } catch { return undefined }
   // Exit 0 with an error body: `agent start` reports its own timeout this way.
   if (parsed.error) throw herdrError(parsed.error, parsed.error.code)
   return parsed.result

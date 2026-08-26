@@ -92,7 +92,11 @@ switch (sub) {
     // Fresh id per split: the cockpit's diff pane is p2, role panes follow.
     ok({ type: 'pane_info', pane: pane('w9:p' + (2 + priorCalls('pane', 'split'))) })
   case 'pane run':
-    ok({ type: 'ok' })
+    // NOT `ok(...)`: the real `pane run` writes zero bytes on stdout and exits
+    // 0 (measured against herdr 0.8.2, 2026-08-26). A stub that answered JSON
+    // here is exactly why herd()'s unconditional JSON.parse shipped, and why
+    // every live run degraded to headless at the cockpit's first pane run.
+    process.exit(0)
   case 'pane process-info': {
     // A bare shell: one foreground process, and it IS the shell. Anything else
     // (a watch loop, a live claude) shows a second pid and is not ready.
