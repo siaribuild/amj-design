@@ -56,3 +56,45 @@ started. (b) is the closest to the "agents listed down the left" picture that
 prompted this feature, so say so if that is what you want to see.
 
 A:
+
+---
+
+## Owner answers (2026-08-26, round 2)
+
+**D1 — runaway guard: KEEP, but unify it with blocked-and-hold.**
+
+The owner's question — "we had a concept earlier that 3 retries max and then
+ask, is this the same conceptually?" — is the better framing, and supersedes the
+recommendation that prompted it.
+
+There is ONE concept, *runaway detected*, and the response depends on whether a
+human is present:
+
+- **pane mode** — hold the stage warm in its pane, notify, and ask. This is the
+  Q9 blocked-and-hold path that criteria 5-8 already specify; a runaway simply
+  becomes another thing that can enter it. No new mechanism.
+- **headless** — stop, record the reason, leave committed work in place. There
+  is nobody to ask, which is the only reason a hard stop exists at all.
+
+This matches the guardrails already in the repo: `agent-guard` pauses for
+explicit approval and tells the operator to *diagnose, not re-approve*; the
+Codex rule is retry once, then stop and say so plainly. Both ask when a human is
+there. `--max-budget-usd` hard-stops only because headless cannot ask.
+
+Consequences for the design:
+
+- Do NOT build a separate budget-guard mechanism. Extend the blocked-and-hold
+  path with a runaway trigger.
+- The threshold is expressed in **tokens or turns, never dollars** — consistent
+  with deleting the cost column. `--max-budget-usd` may remain as the underlying
+  headless enforcement primitive if nothing better exists, but it is an
+  implementation detail, is not called a budget, and never surfaces a dollar
+  figure.
+- A stage held for runaway must be resumable warm, like any other held stage -
+  no re-boot to continue.
+
+**D2 — pane timing: skeleton first, stage panes on demand.**
+
+Workspace, plan pane and diff pane at `conduct start`; each stage pane appears
+when that stage begins. Lighter on a 16GB machine, and no panes for stages that
+never run (the ui stages when `ui` is off).
