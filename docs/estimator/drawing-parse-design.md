@@ -100,11 +100,18 @@ the decode measures leaves of **596.9** and **601.1**. The drawing agrees with t
 within 3 mm, without being told the answer.
 
 **W14 and W16 do NOT reproduce W1's structure — that claim was wrong.** *(corrected
-2026-08-27, on re-measurement.)* Nothing 2050 × 2000 is drawn anywhere in the 14-page set:
-searching page 6 for a 2050 mm width at any height returns one 2104 mm-tall rectangle (W1)
-and one 2049 mm square (the title-block logo), and nothing else. The original reading almost
-certainly matched **W1's own frame**, because W14, W16 and W1 share a 2050 width — the
-same-dimension trap, sprung in the direction nobody was watching. See §2a.
+2026-08-27, on re-measurement.)* **No frame of their size resolves on either elevation.** Every
+height drawn at a 2050 mm width across both elevation sheets is `368, 758, 830, 1748, 2049,
+2074, 2104, 2718` — the nearest to their stated 2000 is 2049, which is 2.45% out and therefore
+rejected, and 2104 is W1. The original reading almost certainly matched **W1's own frame**,
+because W14, W16 and W1 share a 2050 width — the same-dimension trap, sprung in the direction
+nobody was watching.
+
+*This paragraph said "nothing 2050 × 2000 is drawn anywhere in the 14-page set" until later the
+same day. That was unsupported and is exactly the overclaim §2a was opened to retract — the
+all-pages search behind it is worthless, because a floor plan holds a rectangle of the right
+width and an unrelated depth for every opening in the house. **`not read` is the claim the
+measurement supports; `not drawn` is not.** See §2a.*
 
 **Cost:** page 6 is 31,082 operators → 5,928 segments in 110 ms; page 7 is 36,415 → 8,924 in
 70 ms. Peak heap for the whole job, text plus both elevations: **34 MB** in node.

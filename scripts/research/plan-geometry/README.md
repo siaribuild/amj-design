@@ -41,11 +41,14 @@ not only a demo:
 | gate | catches |
 |---|---|
 | §2a's table — which 11 read, which 4 ambiguous, which 4 not read | a decoder that loses windows |
-| §2's eight verticals for W1, and their bands | a decoder that stops resolving the glass or sash lines |
-| W1 and W4's leaf widths and ratios | a decoder that finds the right windows and measures them wrongly |
+| §2's eight verticals for W1, and their bands | one that stops resolving the glass or sash lines |
+| single-unit leaves are the sash, not the frame (W2, D2, D4) | one that picks the frame band — invisible in the ratio, which is 1.000 either way |
+| §2's quoted heights at a 2050mm width | prose drifting from measurement |
+| W1 and W4's leaf widths and ratios | one that finds the right windows and measures them wrongly |
 
-None is sufficient alone. All three were verified to fail by perturbing the
-matcher tolerance, the band threshold and the page scale in turn.
+None is sufficient alone, and each was added because something got past the ones
+before it. Every one was verified to fail by perturbing the thing it guards —
+matcher tolerance, band threshold, frame-band rule and page scale in turn.
 
 ## What each file is
 
@@ -80,3 +83,16 @@ that size resolved on an elevation. Whether the opening is on the sheet at all i
 a different claim and this method does not measure it — see W15 in §2a, which has
 a candidate inside 2% on both dimensions whose right-hand stile is a building
 line.
+
+## The failure mode this reader actually has
+
+It is not crashing. It is answering confidently and wrongly, in a way that looks
+right: a leaf bounded by the frame instead of the sash, a slider read through its
+glazing, a window matched to a neighbour that shares its width. None of those
+raise an error and all of them price a window nobody drew.
+
+Three separate rules here began life as a tolerance that happened to work on W1 —
+an inset distance, then `frac < 0.995`, then a modal band. Each survived review
+because it produced the documented answer on the one opening anybody checked. So
+the standing rule for this directory: **a rule with a magic number inside it is
+not a rule, and any number a document quotes is a number this harness asserts.**

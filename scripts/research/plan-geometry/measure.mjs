@@ -186,9 +186,22 @@ for (const [tag, w, h, sash] of singles) {
   }
 }
 console.log(`single-unit leaves are the sash, not the frame: ${framesOk ? "MATCH" : "DRIFTED"}`);
+
+// §2 quotes this list verbatim as its evidence that W14/W16 do not resolve. It
+// is pinned because the prose is where every one of this reader's errors has
+// actually escaped: three times now a claim outran its measurement, survived
+// review, and had to be retracted. Numbers a document quotes are numbers the
+// harness owns.
+const W14_HEIGHTS = [368, 758, 830, 1748, 2049, 2074, 2104, 2718];
+const got14 = (await heightsAtWidth(sheets, 2050)).map((k) => Math.round(k.h));
+const quotedOk = got14.length === W14_HEIGHTS.length
+  && got14.every((h, i) => Math.abs(h - W14_HEIGHTS[i]) <= 1);
+console.log(`§2's quoted heights at a 2050mm width: ${quotedOk ? "MATCH" : "DRIFTED"}`);
+if (!quotedOk) console.log(`  doc says ${W14_HEIGHTS.join(", ")}
+  got      ${got14.join(", ")}`);
 console.log(`calibration W1+W4 vs the design's recorded figures: ${ok ? "MATCH" : "DRIFTED"}`);
 
 // Both gates, or the run failed. The table without the calibration would pass a
 // decoder that found the right eleven windows and measured them all wrongly;
 // the calibration without the table would pass one that lost half of them.
-if (!ok || !tableOk || !vsOk || !framesOk) process.exitCode = 1;
+if (!ok || !tableOk || !vsOk || !framesOk || !quotedOk) process.exitCode = 1;
