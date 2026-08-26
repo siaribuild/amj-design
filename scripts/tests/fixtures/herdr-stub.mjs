@@ -18,6 +18,12 @@
 //                        `agent wait` calls, e.g. "working;unknown;blocked".
 //                        "timeout" makes that call fail the way a bounded wait
 //                        does when the agent is still going. Default: "idle".
+//   HERDR_STUB_BLOCKED   the agent is blocked on a startup dialog. `agent start`
+//                        answers agent_not_ready and `agent prompt` answers
+//                        agent_blocked - two different codes at once, which the
+//                        single-code knobs above cannot express, which is why
+//                        this shipped untested. `agent get` keeps answering:
+//                        herdr keeps a blocked agent's name addressable.
 //   HERDR_STUB_NOAGENT   `agent get` answers agent_not_found until an
 //                        `agent start` has been recorded - the world as a
 //                        reboot leaves it, with the pane's agent gone.
@@ -72,6 +78,12 @@ for (const f of (process.env.HERDR_STUB_FAIL || '').split(';').filter(Boolean))
   if (sub === f) err(CODE, ERR)
 if (process.env.HERDR_STUB_FAIL_ONCE === sub && !before.includes('"' + argv[0] + '","' + argv[1] + '"'))
   err(CODE, ERR)
+if (process.env.HERDR_STUB_BLOCKED) {
+  if (sub === 'agent start')
+    err('agent_not_ready', 'agent ' + argv[2] + ' is blocked during startup and is not ready for prompts')
+  if (sub === 'agent prompt')
+    err('agent_blocked', 'agent ' + argv[2] + ' is blocked and requires interactive input')
+}
 
 const pane = (id, tab = 'w9:t1') => ({
   agent_status: 'unknown', cwd: process.cwd(), focused: false, pane_id: id,

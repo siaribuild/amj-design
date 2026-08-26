@@ -641,6 +641,15 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
     },
   })
   if (!boot) return null
+  if (boot.blocked) {
+    // The agent booted, herdr refused to type into its dialog, and nothing was
+    // delivered. It is alive - so it is held, not killed, and `answer` still
+    // owes it the one line launchStage never got to send.
+    console.log('    ' + label + ' is blocked on a dialog and never received its prompt.')
+    console.log('    Clear it in the pane; conduct answer then hands the prompt over.')
+    run.stages[label].pendingLine = boot.pendingLine
+    return holdWarm(run, label, 'blocked-launch', started)
+  }
   return settleStage(run, label, started)
 }
 
@@ -1039,10 +1048,14 @@ const cmds = {
     // --resume, no second boot, one session id across the entire cycle.
     if (st.status === 'held' && st.mode === 'pane' && await paneMode(flags)) {
       console.log('  answering ' + id + ' in its pane - same session, nothing re-booted')
-      await agentPrompt(id, 'The owner has answered the questions in ' + run.dir +
+      // A stage held at LAUNCH never received its instructions, so what it is
+      // owed is the prompt line, not a nudge about a DECISIONS.md it has not read.
+      await agentPrompt(id, st.pendingLine ||
+        'The owner has answered the questions in ' + run.dir +
         '/DECISIONS.md - read it now, revise your artifact, and delete DECISIONS.md ' +
         'once nothing in it is still open.')
       st.status = 'running'
+      delete st.pendingLine
       delete st.holdReason
       run.gateStage = null
       saveRun(run)

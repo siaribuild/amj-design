@@ -201,7 +201,18 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
     if (onSession) await onSession(reported || sessionId, { adopted })
     // The ONLY thing typed into the pane. The prompt itself never transits a
     // TTY or a shell - it is on disk, and this is the path to it.
-    await herd('agent', 'prompt', label, line || 'Read ' + promptPath + ' and do exactly what it says.')
+    const text = line || 'Read ' + promptPath + ' and do exactly what it says.'
+    try {
+      await herd('agent', 'prompt', label, text)
+    } catch (e) {
+      // `agent_blocked` is herdr refusing to type into a dialog: it sent not one
+      // byte, and the agent is alive and still addressable. Throwing here killed
+      // the conductor and orphaned a live agent in its pane - in the one case a
+      // human IS present to clear it. The caller holds it warm instead, and
+      // `pendingLine` is what the agent is still owed.
+      if (e.code !== 'agent_blocked') throw e
+      return { session: reported || sessionId, adopted, blocked: true, pendingLine: text }
+    }
     return { session: reported || sessionId, adopted }
   }
   return null

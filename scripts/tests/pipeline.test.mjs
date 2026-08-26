@@ -543,7 +543,11 @@ function stubbed(name, extra = {}) {
   const log = join(root, 'herdr-calls.jsonl')
   const env = {
     HERDR_BIN: STUB, HERDR_STUB_LOG: log, HERDR_STUB_FAIL: '', HERDR_STUB_FAIL_ONCE: '',
-    HERDR_STUB_ERR: '', HERDR_STUB_BUSY: '', HERDR_STUB_SESSION: '', HERDR_STUB_NOAGENT: '', ...extra,
+    HERDR_STUB_ERR: '', HERDR_STUB_BUSY: '', HERDR_STUB_SESSION: '', HERDR_STUB_NOAGENT: '',
+    // These two were the hole in "every knob is reset": stubbed() writes into
+    // process.env, so a lifecycle script or an error code set by one test was
+    // inherited by every test after it that did not happen to override it.
+    HERDR_STUB_BLOCKED: '', HERDR_STUB_STATES: 'idle', HERDR_STUB_ERRCODE: '', ...extra,
   }
   Object.assign(process.env, env)
   return { root, log, env: { ...process.env, ...env } }
@@ -1027,6 +1031,47 @@ test('a herdr-blocked stage holds warm too - nothing was written, and the agent 
   // The stage has not finished, so it has not failed to write anything yet.
   assert.ok(!out.includes('did not write'),
     'a produces warning against a stage still waiting on a human is simply wrong')
+})
+
+test('a stage blocked at LAUNCH holds warm - the conductor must never die on it', () => {
+  // Live, herdr 0.8.2: the agent booted and herdr's sidebar showed it `blocked`
+  // on a startup dialog. `agent start` had answered agent_not_ready and
+  // `agent prompt` then refused with agent_blocked - which threw straight out of
+  // launchStage, killed the conductor, and left a live agent orphaned in its
+  // pane. A blocked agent is the exact case hold-warm exists for, and it was
+  // failing in the one situation where a human IS there to clear it.
+  const s = paneRepo('pane-blocked-launch', 'sess-blocked-launch')
+  s.env.HERDR_STUB_BLOCKED = '1'
+
+  const out = paned(s, 'run', 'spec')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'held', 'a launch block must hold, not crash:' + NL + out)
+  assert.equal(st.holdReason, 'blocked-launch')
+  assert.equal(st.code, undefined, 'a held stage is not done - conduct next must not skip it')
+  assert.equal(st.session, 'sess-blocked-launch', 'a live agent must stay attributable')
+  assert.equal(runJson(s).gateStage, 'spec')
+  assert.match(out, /HELD WARM \(blocked-launch\)/)
+  assert.match(out, /answer/i, 'the operator must be told to clear it, then run conduct answer')
+  assert.equal(said(s.log, 'notification', 'show').length, 1, 'a hold nobody is told about is a stall')
+  assert.equal(said(s.log, 'agent', 'start').length, 1, 'a live agent name must not be re-started')
+  for (const closer of ['close', 'kill', 'stop'])
+    assert.equal(said(s.log, 'pane', closer).length, 0, 'the pane must survive a blocked launch')
+
+  // The owner clears the dialog in the pane. `conduct answer` then owes this
+  // agent the line it never received - not a DECISIONS.md nudge it cannot use.
+  s.env.HERDR_STUB_BLOCKED = ''
+  paned(s, 'answer')
+
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.match(typed[1], /docs\/runs\/demo\/prompts\/spec\.txt/,
+    'answer must hand over the prompt the blocked launch never delivered: ' + typed.join(' | '))
+  assert.equal(typed[2], '/exit')
+  const after = runJson(s)
+  assert.equal(after.stages.spec.status, 'done')
+  assert.equal(after.stages.spec.session, 'sess-blocked-launch',
+    'exactly one session id across the whole cycle - a block must cost no second boot')
+  assert.equal(after.gateStage, null)
 })
 
 test('the watch loop asks herdr repeatedly, bounded, and never sleeps or applies a ceiling', async () => {
