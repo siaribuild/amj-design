@@ -110,3 +110,35 @@ dialog — the `agent_not_ready` path). So today **every** native arg is lost in
 pane mode, `--autocompact` included, and t5 will always hit the headless
 fallback until `claude.cmd`/`claude.exe` shadows the shim on PATH or herdr's
 Windows launcher is fixed. Raised, not worked around.
+
+## t5 — Pane-mode stage execution
+
+Files: `scripts/pipeline/herd.mjs`, `scripts/pipeline/conduct.mjs`,
+`scripts/tests/pipeline.test.mjs`, `scripts/tests/fixtures/herdr-stub.mjs`.
+
+- `herd.mjs`: `watch(label, {sliceMs})` — repeated bounded `agent wait`; settles
+  on `idle|done` / `blocked`, treats an expired slice, `working` and `unknown`
+  as "ask again", any other herdr error as `lost`. No sleep, no ceiling. Plus
+  `agentPrompt`, `splitPane`, `notify` (best-effort), and an `onSession` hook in
+  `launchStage` fired between `agent get` and `agent prompt`.
+- `conduct.mjs`: `CONDUCT_CLAUDE_BIN` seam; `decisionsPending` split out of
+  `decisionsOpen` (asked twice per stage, printed once); `rolePane` (reuse when
+  the pane is back at a shell); `runPaneStage` → `settleStage` → `holdWarm` |
+  `finalizePane`. `run`/`next`/`answer` take flags; `run` builds the cockpit if
+  a headless-started run lacks one, and falls back to `runClaude` whenever pane
+  mode yields null. `answer` nudges a live held agent — same session, no boot.
+- Stub knobs added: `HERDR_STUB_STATES` (state sequence for `agent wait`,
+  `timeout` = expired slice), `HERDR_STUB_SNAPSHOT` (copies a file aside on the
+  first call of each subcommand — used to prove run.json holds the session
+  BEFORE `agent prompt`); `pane split` now returns a fresh pane id each time.
+- 5 tests: full lifecycle + `unknown` is not settled + pane left open + produces
+  warning; decisions hold → `answer` → exactly one `agent start` and one session
+  id; blocked-ui hold with no produces warning; watch-loop bounds/no-sleep/no-
+  ceiling (source-read of the loop body); headless gate still spawns claude.
+
+For t6/t7: a **held** stage has no `code`, so `cmds.next` would relaunch it into
+a live agent name — t7's reattach must key off `status` in (`running`,`held`),
+not just `running`. `runPaneStage(spec, promptText, run, label)` takes an
+explicit label, so reviewers and `build-<id>` reuse it as-is; `settleStage` is
+the tail to reuse after any relaunch. `previousSessions` is deliberately NOT
+folded into `finalizePane` yet — t7 owns it.
