@@ -77,3 +77,25 @@ function seg(ctm, x0, y0, x1, y1, lw, dashed, paintOp) {
   const [bx, by] = apply(ctm, x1, y1);
   return { ax, ay, bx, by, lw, dashed, paintOp };
 }
+
+/** Which pages are ELEVATIONS.
+ *
+ *  Read from the text layer, not hardcoded, because the sheet a window is drawn
+ *  face-on is the only sheet where its width means anything: a floor plan holds
+ *  a rectangle of the same width at an unrelated depth for every opening in the
+ *  house, and treating those as candidates inverts the answer.
+ *
+ *  Note this is deliberately NOT the shipped classifyPageRoles heuristic, which
+ *  requires two plan signals and scores these sheets at one — see §4 of the
+ *  design. An elevation callout on its own is sufficient and specific. */
+export async function elevationPages(pdfPath) {
+  const doc = await getDocumentProxy(new Uint8Array(await readFile(pdfPath)));
+  const pages = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const text = (await page.getTextContent()).items.map((i) => i.str).join(" ");
+    if (/\bELEVATION\s+[A-D]\b/i.test(text)) pages.push(p);
+    page.cleanup();
+  }
+  return pages;
+}

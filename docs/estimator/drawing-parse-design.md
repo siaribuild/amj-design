@@ -121,15 +121,24 @@ same-dimension trap, sprung in the direction nobody was watching. See §2a.
 |---|---|---|
 | **Read, with composition** | **11** | W1 W2 W3 W4 W7 W8 W10 W12 D2 D3 D4 |
 | Ambiguous — two rows share a size | 4 | W5/W6 (850 × 2057), W9/W11 (1810 × 1027) |
-| **Not drawn in the set at all** | 4 | D1, W14, W15, W16 |
+| **Not read** | 4 | D1, W14, W15, W16 |
 
-**The four misses are not parse failures.** They are openings the drawings do not show, and
-`not stated` is the correct and useful output for them — it is the schedule-family fallback
-doing its job, visibly. Confirmed by searching every one of the 14 pages at 2% for each
-stated size, and then by width alone at any height.
+Reproduce with `node scripts/research/plan-geometry/measure.mjs`, which accounts for every one
+of the nineteen and fails loudly if either calibration point drifts.
 
-**So the denominator is 15, not 19**, and 11 of those 15 are read outright with the other 4
-falling to the disambiguation stage §6 already specifies. Nothing was read *wrongly*.
+**The four are `not read`, which is not the same as `not drawn`** — and the distinction is the
+output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is
+drawn at that width on either elevation, so no frame of that size is there. **W15 is different
+and worth stating against my own first reading of it:** a 1380 × ~1975 rectangle does sit on
+page 6, inside 2% on both dimensions, but its right-hand stile is a 2718 mm building line
+rather than a jamb, so no single frame resolves. Whether W15 is drawn is **undetermined**. It
+would have been easy, and wrong, to write "not drawn in the set" — which is the same overclaim
+this section was opened to correct.
+
+The output is identical either way, and correct either way: the row keeps everything the
+schedule gave it. **Nothing was read wrongly**, which is the property that matters — a wrong
+composition is a priced window nobody drew, and a missing one is a fallback doing its job
+visibly.
 
 **Both calibration points reproduce exactly**, which is what licenses the rest:
 
@@ -242,8 +251,10 @@ known, rejection is cheap and rule-based:
   opening.** Never a guess, and the row keeps everything the schedule gave it.
 
 **Stage 6 — Disambiguation only** *(drawing Stages B and D)*. Needed **only** when two rows
-share dimensions, because then a matched frame could belong to either. W14 and W16 are the case
-here — both 2050 × 2000 OFFSET AWNING, drawn identically.
+share dimensions, because then a matched frame could belong to either. On this document the
+pairs are **W5/W6** (850 × 2057) and **W9/W11** (1810 × 1027) — four openings, all four found
+as two candidates each. *(This paragraph named W14/W16 until 2026-08-27; they are not drawn at
+all. See §2a.)*
 
 Tags come from `getTextContent` on the floor plans; no operator list, ~30–50 ms. Two verified
 traps: each tag is an octagon carrying **two** lines (`W1` over `S08`), so a single-token reader
@@ -252,9 +263,11 @@ its second line reads `S7`. Resolution is ordering along the wall from plan-view
 against order along the elevation.
 
 Worth stating plainly: **when two identical rows resolve to identical compositions, the
-ambiguity does not matter** — which is the case for W14/W16 on this document. Disambiguation
-only has to work the day two same-sized openings are drawn differently, and until then a
-mismatch between them is itself the signal that this stage is needed.
+ambiguity does not matter.** Disambiguation only has to work the day two same-sized openings
+are drawn differently, and until then a mismatch between them is itself the signal that this
+stage is needed. Whether that day has arrived on W5/W6 and W9/W11 is not yet measured — the
+sweep records them as two candidates and stops there, which is the correct conservative
+outcome either way.
 
 **Stage 7 — Output.** Conforms to the spec. For W1:
 
@@ -441,7 +454,9 @@ next lands.
 Note the ordering change that the §0 framing buys: **disambiguation moves late.** It was a
 prerequisite when this looked like a discovery problem; driven by a known list it is only needed
 for same-sized rows, so the pass delivers value for every uniquely-sized opening before any tag
-harvesting exists at all. On this document that is 17 of 19 openings.
+harvesting exists at all. On this document that is **15 of 19** openings — of which **11 read
+outright** and 4 are not read (§2a). It was stated as 17 of 19 while W14/W16 were believed to
+be the only same-sized pair; the real pairs are W5/W6 and W9/W11.
 
 ---
 
