@@ -119,11 +119,27 @@ export const sixDigit = () =>
  *  local part, so a single shared prefix would let the address "a@b.co:OF-1"
  *  and the guest pair (a@b.co, OF-1) collide onto one key AND one hash subject
  *  — a code issued for one would verify the other. */
-export interface Challenge { key: string; subject: string }
+/*  THREE fields, because two of them answer different questions and merging them
+ *  is how the doubled-budget bugs happened:
+ *
+ *    key/subject — WHO this code was emailed to. Must stay recipient-specific: a
+ *      code sent to one address must not be redeemable by someone who typed a
+ *      different one, or the code stops proving control of the mailbox, which is
+ *      the only thing an emailed OTP proves.
+ *    budget      — WHAT is being protected. Must be a function of the resolved
+ *      RECORD alone and never of caller input, or every extra way of naming the
+ *      record buys another full allowance of guesses.
+ *
+ *  Guest tracking has two ways to name one record and both are legitimate, so
+ *  those two answers genuinely differ there. For sign-in the address IS the
+ *  record and all three collapse onto it. */
+export interface Challenge { key: string; subject: string; budget: string }
 
-/** Customer + ops email sign-in. Subject is the address, key `otp:{email}` —
- *  byte-identical to what these two flows have always stored. */
-export const signinChallenge = (email: string): Challenge => ({ key: `otp:${email}`, subject: email });
+/** Customer + ops email sign-in. Subject is the address, key `otp:{email}`,
+ *  counter `otpc:{email}` — byte-identical to what these two flows have always
+ *  stored. There is no second way to address a mailbox, so no axis to collapse. */
+export const signinChallenge = (email: string): Challenge =>
+  ({ key: `otp:${email}`, subject: email, budget: `otpc:${email}` });
 
 /** Guest order tracking, keyed on the RESOLVED RECORD rather than on the string
  *  the customer typed.
@@ -137,9 +153,24 @@ export const signinChallenge = (email: string): Challenge => ({ key: `otp:${emai
  *  The PROJECT id, not the order id: matchRecord prefers the order once one
  *  exists, so keying on whatever it returned would silently change the key the
  *  moment a quote is accepted — invalidating a code already in a customer's
- *  inbox. The project id is the same before and after that transition. */
-export const guestTrackChallenge = (email: string, projectId: string): Challenge =>
-  ({ key: `gcode:${email}:${projectId}`, subject: `${email}:${projectId}` });
+ *  inbox. The project id is the same before and after that transition.
+ *
+ *  The EMAIL is the second addressing axis and it stays out of the budget for
+ *  the same reason. matchRecord accepts either the project's contact_email or
+ *  the owner's user email, which can be two different people on one job, so
+ *  alternating them used to open a second full allowance against one grant. The
+ *  address still decides the key and the hash — a code mailed to the builder
+ *  must not be redeemable by the account holder — but it no longer decides how
+ *  many codes the record is worth.
+ *
+ *  Those are the only two axes: they are exactly the two disjunctions in
+ *  matchRecord's WHERE clause, and case and whitespace are normalised on both
+ *  sides before it runs. A third would have to be a third OR. */
+export const guestTrackChallenge = (email: string, projectId: string): Challenge => ({
+  key: `gcode:${email}:${projectId}`,
+  subject: `${email}:${projectId}`,
+  budget: `otpc:proj:${projectId}`,
+});
 
 interface OtpRecord { hash: string; attempts: number; at: number }
 
@@ -159,13 +190,14 @@ export async function challengeAllowed(env: Env, ch: Challenge): Promise<boolean
     // silently overwrite one inside it (that would invalidate the real user's code).
     try { const rec = JSON.parse(raw) as OtpRecord; if (rec.at && Date.now() - rec.at < RESEND_COOLDOWN_MS) return false; } catch { /* reissue on corrupt record */ }
   }
-  // Keyed on the SUBJECT, not the key: for sign-in that is the address, which
-  // keeps `otpc:{email}` exactly as it has always been (no live counter resets
-  // on deploy), and for guest tracking it is the (address, project) pair the
-  // budget actually belongs to.
+  // The challenge's OWN budget key — the record for guest tracking, the address
+  // for sign-in (where `otpc:{email}` stays byte-identical, so no live counter
+  // resets on deploy). Never derived from the key or the subject: both of those
+  // carry caller input, and a budget keyed on caller input is a budget the
+  // caller can duplicate by addressing the same record another way.
   //
   // Read-modify-write, so the same serial-only ceiling as MAX_OTP_ATTEMPTS.
-  const countKey = `otpc:${ch.subject}`;
+  const countKey = ch.budget;
   const count = parseInt((await env.KV.get(countKey)) ?? "0", 10) || 0;
   if (count >= MAX_CHALLENGES_PER_WINDOW) return false;
   await env.KV.put(countKey, String(count + 1), { expirationTtl: CHALLENGE_WINDOW });
@@ -232,10 +264,22 @@ export async function consumeChallenge(env: Env, ch: Challenge, code: string): P
   // new code" and costs an attacker a challenge they could never satisfy.
   let rec: OtpRecord;
   try { rec = JSON.parse(raw) as OtpRecord; } catch { await env.KV.delete(ch.key); return false; }
-  if (!rec || typeof rec.attempts !== "number" || typeof rec.hash !== "string") {
+  if (!rec || typeof rec.attempts !== "number" || typeof rec.hash !== "string" || typeof rec.at !== "number") {
     await env.KV.delete(ch.key);
     return false;
   }
+  // ABSOLUTE expiry, enforced here rather than left to the KV TTL. Every failed
+  // attempt below re-puts the record, and expirationTtl cannot express "eight
+  // seconds left" (KV's floor is 60s), so the stored TTL drifted forward with
+  // each guess and the ten minutes the customer was promised was not true.
+  // Checking `at` pins the deadline to issuance whatever TTL the record carries.
+  if (Date.now() - rec.at >= OTP_TTL * 1000) {
+    await env.KV.delete(ch.key);
+    return false;
+  }
+  // Defensive: nothing writes a record at the cap any more (the final failure
+  // deletes instead), but a record stored by the previous revision can still be
+  // in flight for the length of one TTL after deploy.
   if (rec.attempts >= MAX_OTP_ATTEMPTS) {
     await env.KV.delete(ch.key);
     return false;
@@ -245,6 +289,20 @@ export async function consumeChallenge(env: Env, ch: Challenge, code: string): P
     return true;
   }
   rec.attempts += 1;
+  // The LAST failure burns the challenge rather than storing it spent. Leaving a
+  // spent record behind kept the resend cooldown running against it, so a
+  // customer who mistyped five times was told to start over and then got no
+  // email — the refusal copy promised a fresh code the server would not send.
+  //
+  // It also removes a state rather than adding one: "spent" and "never existed"
+  // now look identical from outside instead of merely answering identically, so
+  // this narrows what an attacker can distinguish rather than widening it. Their
+  // allowance is unchanged — five guesses, then re-issue against the record's
+  // own budget, which is what bounds the total.
+  if (rec.attempts >= MAX_OTP_ATTEMPTS) {
+    await env.KV.delete(ch.key);
+    return false;
+  }
   await env.KV.put(ch.key, JSON.stringify(rec), { expirationTtl: OTP_TTL });
   return false;
 }

@@ -305,7 +305,11 @@ test("auth: a code issued for one challenge cannot satisfy another", async () =>
 // cause, and which nothing else in the suite can see.
 test("auth: the challenge KV keys are the ones already deployed", async () => {
   const signin = M.signinChallenge("jason@example.com");
-  assert.deepEqual(signin, { key: "otp:jason@example.com", subject: "jason@example.com" });
+  assert.deepEqual(signin, {
+    key: "otp:jason@example.com",
+    subject: "jason@example.com",
+    budget: "otpc:jason@example.com",   // all three collapse: the address IS the record
+  });
 
   const touched = [];
   const env = { KV: {
@@ -320,10 +324,48 @@ test("auth: the challenge KV keys are the ones already deployed", async () => {
     "put otpc:jason@example.com",
   ]);
 
-  // Guest tracking is keyed on the resolved project, so both of a record's
-  // references land on one challenge and one attempt counter.
-  assert.deepEqual(M.guestTrackChallenge("a@b.co", "p_order"),
-    { key: "gcode:a@b.co:p_order", subject: "a@b.co:p_order" });
+  // Guest tracking splits them. The key and subject carry the address, so a code
+  // stays redeemable only by the mailbox it was sent to; the budget carries only
+  // the project, so neither of the record's two references NOR either of its two
+  // valid addresses can buy a second allowance.
+  const viaOwner = M.guestTrackChallenge("owner@b.co", "p_order");
+  const viaContact = M.guestTrackChallenge("contact@c.co", "p_order");
+  assert.deepEqual(viaOwner,
+    { key: "gcode:owner@b.co:p_order", subject: "owner@b.co:p_order", budget: "otpc:proj:p_order" });
+  assert.notEqual(viaContact.key, viaOwner.key, "different recipients, different challenges");
+  assert.notEqual(viaContact.subject, viaOwner.subject, "and different code hashes");
+  assert.equal(viaContact.budget, viaOwner.budget, "but one budget, because it is one record");
+});
+
+// The email promises ten minutes. Nothing enforced it: every failed attempt
+// re-put the record with a fresh expirationTtl and no code path ever looked at
+// `at`, so spaced-out guessing kept the CORRECT code alive far past the stated
+// expiry — stretching the guessing window with each guess.
+//
+// Enforced as an ABSOLUTE deadline rather than by not resetting the TTL: KV's
+// expirationTtl has a 60-second floor, so "eight seconds left" is inexpressible,
+// and KV expiry is storage cleanup rather than a security boundary. Checking
+// `at` in code holds the exact ten minutes whatever TTL the record carries.
+test("auth: a code past its ten minutes is refused however few attempts it has", async () => {
+  const kv = fakeKv();
+  const ch = M.guestTrackChallenge("a@b.co", "p_1");
+  await M.storeChallenge(kv.env, ch, "123456");
+  const rec = JSON.parse(kv.store.get(ch.key));
+  assert.equal(rec.attempts, 0, "unspent, so only age can refuse it below");
+  rec.at = Date.now() - (600 + 1) * 1000;          // OTP_TTL is 10 minutes
+  kv.store.set(ch.key, JSON.stringify(rec));
+
+  assert.equal(await M.consumeChallenge(kv.env, ch, "123456"), false, "an expired code must not verify");
+  assert.equal(kv.store.has(ch.key), false, "and the dead record is cleared rather than left to linger");
+
+  // The same code one second inside the window still works — so the refusal
+  // above is about age, not about the code or the record being wrong.
+  const live = fakeKv();
+  await M.storeChallenge(live.env, ch, "123456");
+  const r2 = JSON.parse(live.store.get(ch.key));
+  r2.at = Date.now() - (600 - 1) * 1000;
+  live.store.set(ch.key, JSON.stringify(r2));
+  assert.equal(await M.consumeChallenge(live.env, ch, "123456"), true);
 });
 
 test("auth: a pre-upgrade OTP record is refused, not thrown on", async () => {

@@ -34,6 +34,15 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     const staff = new Session(baseUrl);
     await login(staff, "/api/ops/auth", staffEmail); // admin
 
+    // Direct D1 access, for fixtures no HTTP surface can build. The seed has no
+    // project whose contact_email differs from its owner's user email, and that
+    // pairing is the second way to address one record (see the alias subtest).
+    const sql = async (command) => {
+      const r = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db",
+        "--local", "--persist-to", state, "--json", "--command", command], { env: wranglerEnv });
+      return JSON.parse(r.stdout.slice(r.stdout.indexOf("[")))[0].results;
+    };
+
     await t.test("customer OTP: wrong code rejected; 5 wrong attempts burn the code", async () => {
       const s = new Session(baseUrl);
       const challenge = await requestJson(s, "/api/auth/challenge", { method: "POST", json: { email: "capped@example.com" } });
@@ -94,6 +103,80 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await requestJson(anon, "/api/guest/records/not-a-real-token", {}, 404);
     });
 
+    // The SECOND way to address one record. matchRecord accepts either the
+    // project's contact_email or the owner's user email, and they can genuinely
+    // differ — the builder who submitted the job versus the account holder. Both
+    // buy the identical owner-equivalent grant, so alternating them must not buy
+    // two issuance budgets, for the same reason two references must not.
+    //
+    // The rule both subtests enforce: the budget is a function of the RESOLVED
+    // RECORD, never of how the caller chose to address it. Every disjunction in
+    // matchRecord's WHERE clause is one such addressing axis, and there are
+    // exactly two — reference and email.
+    await t.test("guest tracking: an email alias is not a second budget", async () => {
+      const s = new Session(baseUrl);
+      const headers = { "X-Forwarded-For": "198.51.100.26" };
+      const ALIAS = "alias.contact@example.com";
+      const REF = "OF-Q-19001";
+      // Owned by u_demo (so demoEmail matches via user.email) but carrying a
+      // different contact_email (which matches via project.contact_email).
+      await sql(`INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, contact_email, created_at, updated_at)
+                 VALUES ('p_alias', 'org_demo', 'u_demo', 'Alias axis fixture', 'submitted', 'submitted', '${REF}', '${ALIAS}', datetime('now','-1 days'), datetime('now','-1 days'))`);
+
+      const req = (email) => requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref: REF }, headers });
+      // Six, not five: enough to clear the slot whichever call the burn lands on.
+      const burn = async (email) => {
+        for (let i = 0; i < 6; i++) {
+          await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email, ref: REF, code: "000000" }, headers }, 400);
+        }
+      };
+
+      // Spend the record's whole allowance through the owner's address.
+      let viaOwner = 0;
+      for (let round = 0; round < 8; round++) {
+        const r = await req(demoEmail);
+        if (!r.body.devCode) continue;
+        viaOwner++;
+        await burn(demoEmail);
+      }
+      assert.equal(viaOwner, 5, "the owner's address must resolve this record and spend its window");
+
+      // The contact address reaches the SAME record, so there is nothing left.
+      // Asserted on the budget rather than on the cooldown: the two addresses
+      // keep separate challenges on purpose (a code mailed to one must not be
+      // redeemable by the other), so the cooldown is legitimately per-recipient.
+      // What must not be per-recipient is how many codes the record is worth.
+      const viaContact = await req(ALIAS);
+      assert.equal(viaContact.body.devCode, undefined,
+        "the contact address is the same record — its allowance is already spent, not a fresh one");
+    });
+
+    // Five wrong codes must leave NOTHING stored. Otherwise the record survives
+    // with attempts at the cap, the resend cooldown is still running against it,
+    // and "start over to get a fresh code" — the instruction this branch added to
+    // the refusal, and which the E2E suite now pins — silently sends no email
+    // while the UI advances to the code screen. The customer waits for a code
+    // that was never sent.
+    await t.test("guest tracking: after the cap, a fresh code can actually be sent", async () => {
+      const s = new Session(baseUrl);
+      const headers = { "X-Forwarded-For": "198.51.100.27" };
+      const ref = "OF-Q-19002";
+      const email = demoEmail;
+      // Its own record: the alias subtest spends its one in full.
+      await sql(`INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, created_at, updated_at)
+                 VALUES ('p_resend', 'org_demo', 'u_demo', 'Resend fixture', 'submitted', 'submitted', '${ref}', datetime('now','-1 days'), datetime('now','-1 days'))`);
+      const first = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref }, headers });
+      assert.match(first.body.devCode, /^\d{6}$/, "a code must issue, or the retry below tests nothing");
+      for (let i = 0; i < 5; i++) {
+        await requestJson(s, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: "000000" }, headers }, 400);
+      }
+      // Immediately, inside the resend cooldown — exactly what a customer
+      // clicking "Start over" does.
+      const retry = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref }, headers });
+      assert.match(retry.body.devCode, /^\d{6}$/,
+        "the fifth failure must burn the challenge, so the promised fresh code is really sent");
+    });
+
     // The budget has to belong to the RECORD, not to the string the customer
     // typed. matchRecord deliberately resolves two references to one row — a
     // project that has become an order answers to both its OF-Q- quote reference
@@ -146,10 +229,11 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
 
     // Criterion 2. Burning the challenge is only a real bound if REPLACING it is
     // also bounded — an attacker whose optimal move is "spend the attempts, then
-    // ask for another code" is back to unlimited guessing, just noisier. Six
-    // wrong codes is what it costs to clear the slot (five are counted, the sixth
-    // finds the cap and deletes the record), after which the per-window issuance
-    // cap is the only thing left holding the line.
+    // ask for another code" is back to unlimited guessing, just noisier. Five
+    // wrong codes is what it costs to clear the slot (the fifth records the cap
+    // and deletes the record), after which the per-window issuance cap on the
+    // RECORD is the only thing left holding the line. The loop below still sends
+    // six so it keeps working whichever way that boundary moves.
     await t.test("guest tracking: re-issuing does not refill the guess budget", async () => {
       const s = new Session(baseUrl);
       // Sarah's submitted quote: one reference, one record, and no other subtest
@@ -196,13 +280,15 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       const issued = await requestJson(s, "/api/guest/track/request", { method: "POST", json: { email, ref }, headers });
       assert.match(issued.body.devCode, /^\d{6}$/, "a fresh pair must issue, or (b) and (c) below test nothing");
       const wrong = await verify(email, "000000");
-      // (c) The attempt cap is reached and the code being offered is the RIGHT
-      // one. Four more, not five: the call above already counted one, and the cap
-      // is observed on the call AFTER the fifth — that call is `capped` below,
-      // and it is the only moment the record exists with attempts at the limit.
-      // (Overshooting by one deletes the record first, which silently turns this
-      // into a second copy of case (a); a mutation that made the capped state
-      // observable proved that version of the assertion could not fail.)
+      // (c) The allowance is spent and the code being offered is the RIGHT one.
+      // Four more, because the call above already counted one.
+      //
+      // There is deliberately no lingering "capped" record to probe: the fifth
+      // failure deletes it, so this state IS the absent state rather than merely
+      // answering like it. That is the strongest form of the property — a state
+      // that does not exist cannot leak — and it is why the assertion below is
+      // worded about the caller's view. It still fails if the cap stops working:
+      // without it the right code opens the record and returns 200.
       for (let i = 0; i < 4; i++) await verify(email, "000000");
       const capped = await verify(email, issued.body.devCode);
 
