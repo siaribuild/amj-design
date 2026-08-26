@@ -286,8 +286,10 @@ function runClaude(spec, promptText, run, label) {
     })
     cp.stderr.on('data', (d) => process.stderr.write('    ! ' + d))
     cp.on('close', (code) => {
-      // result.usage is the LAST message's usage, not the sum over the run - it
-      // under-reported the smoke-test design stage by 3x. Read the transcript.
+      // Read the transcript rather than result.usage - not because result.usage
+      // is wrong (it is right; the deduped transcript matches it exactly) but
+      // because the transcript also yields the API-call count, which is the
+      // number that tells you whether a stage is exploring or working.
       const t = result?.session_id ? sessionTotals(result.session_id) : { ctx: 0, out: 0, turns: 0 }
       const s = {
         code,

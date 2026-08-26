@@ -7,22 +7,22 @@
     "spec": {
       "code": 0,
       "cost": 0.5426285,
-      "contextTokens": 248461,
-      "outputTokens": 10138,
+      "contextTokens": 110499,
+      "outputTokens": 3718,
       "session": "a3caa593-a5e3-4bd4-8a4a-22268eab078f",
       "seconds": 67,
       "overBudget": false,
-      "turns": 7
+      "turns": 3
     },
     "design": {
       "code": 0,
       "cost": 4.1085295,
-      "contextTokens": 1453670,
-      "outputTokens": 47373,
+      "contextTokens": 556185,
+      "outputTokens": 16933,
       "session": "378e86ec-6368-466e-8a8a-fb99948c21c6",
       "seconds": 368,
       "overBudget": false,
-      "turns": 26
+      "turns": 10
     }
   },
   "tasksDone": [],

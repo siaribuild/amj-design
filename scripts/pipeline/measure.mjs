@@ -12,11 +12,16 @@
 // orchestrated arm spends most of its tokens. They are counted separately so an
 // arm's orchestrator overhead is visible on its own.
 //
-// Why this file exists at all, rather than trusting the CLI's result JSON: that
-// JSON's `usage` block is the LAST message's usage, not the sum over the run.
-// The smoke-test design stage reported 556k that way and had actually spent
-// 1.5M across 26 turns. conduct.mjs imports sessionTotals from here so its own
-// report and an A/B measurement can never disagree.
+// COUNT EACH API RESPONSE ONCE. A single response is written to the transcript
+// as one assistant record PER CONTENT BLOCK, and every one of those records
+// carries the same `usage` object. Summing records naively multi-counts: the
+// smoke-test design stage has 26 assistant records but only 10 distinct
+// requestIds, and the naive sum came out at 1.45M against a true 0.556M - a 2.6x
+// overstatement. Dedup by requestId; the deduped total matches the CLI's own
+// result.usage exactly.
+//
+// Records with no requestId (rare - local/synthetic turns) are counted once each,
+// keyed by uuid, rather than collapsed together.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -55,11 +60,15 @@ function* records(sinceMs, cwdFilter) {
   }
 }
 
-/** Sum one session's turns. Used by `conduct report`. */
+/** Sum one session's API responses, each counted once. Used by `conduct report`. */
 export function sessionTotals(sessionId) {
   const b = zero()
+  const seen = new Set()
   for (const d of records(0)) {
     if (d.sessionId !== sessionId) continue
+    const key = d.requestId || ('uuid:' + d.uuid)
+    if (seen.has(key)) continue
+    seen.add(key)
     b.ctx += ctxOf(d.message.usage)
     b.out += d.message.usage.output_tokens || 0
     b.turns++
@@ -83,15 +92,19 @@ function main() {
   const bySession = new Map(), byModel = new Map()
   let first = Infinity, last = 0
 
+  const seen = new Set()
   for (const d of records(sinceMs, cwdFilter)) {
     const t = Date.parse(d.timestamp || '')
     if (!(t >= sinceMs)) continue
+    const key = d.requestId || ('uuid:' + d.uuid)
+    if (seen.has(key)) continue
+    seen.add(key)
     const ctx = ctxOf(d.message.usage)
     const out = d.message.usage.output_tokens || 0
     for (const b of [total, d.isSidechain ? sub : top]) { b.ctx += ctx; b.out += out; b.turns++ }
-    for (const [map, key] of [[bySession, d.sessionId || '?'], [byModel, d.message.model || '?']]) {
-      if (!map.has(key)) map.set(key, zero())
-      const b = map.get(key); b.ctx += ctx; b.out += out; b.turns++
+    for (const [map, bucket] of [[bySession, d.sessionId || '?'], [byModel, d.message.model || '?']]) {
+      if (!map.has(bucket)) map.set(bucket, zero())
+      const b = map.get(bucket); b.ctx += ctx; b.out += out; b.turns++
     }
     if (t < first) first = t
     if (t > last) last = t
