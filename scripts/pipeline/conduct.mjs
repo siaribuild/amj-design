@@ -568,6 +568,49 @@ If you believe the finding is wrong, say so and change nothing.`
     console.log('\n  re-verify before accepting:  conduct run verify\n')
   },
 
+  // A glanceable tree of what is done, running, and still to come. Built for a
+  // watch loop in its own pane, so keep it short enough to fit one screen.
+  async plan() {
+    const run = loadRun(activeSlug())
+    const mark = (state) => state === 'done' ? '[x]' : state === 'run' ? '[>]' : '[ ]'
+    console.log('\n  ' + run.slug + '   base ' + run.base + ' on ' + run.branch +
+      (run.ui ? '   (UI feature)' : ''))
+    console.log('\n  STAGES')
+    for (const spec of STAGES) {
+      if (spec.ui && !run.ui) continue
+      const s = run.stages[spec.id]
+      const done = s?.code === 0
+      const detail = done
+        ? '$' + (s.cost || 0).toFixed(2) + '  ' + (s.seconds || 0) + 's'
+        : spec.gate ? 'gate: ' + spec.gate : ''
+      console.log('  ' + mark(done ? 'done' : 'todo') + ' ' + spec.id.padEnd(9) + detail)
+    }
+
+    const tp = join(RUNS, run.slug, '02-tasks.json')
+    if (existsSync(tp)) {
+      const tasks = JSON.parse(readFileSync(tp, 'utf8'))
+      const done = new Set(run.tasksDone || [])
+      console.log('\n  BUILD TASKS')
+      for (const t of tasks) {
+        const blocked = (t.after || []).filter((d) => !done.has(d))
+        console.log('  ' + mark(done.has(t.id) ? 'done' : 'todo') + ' ' + t.id + '  ' +
+          t.title.slice(0, 52) + (blocked.length ? '   (waits on ' + blocked.join(',') + ')' : ''))
+      }
+      const files = [...new Set(tasks.flatMap((t) => t.files || []))]
+      console.log('\n  FILES THIS FEATURE TOUCHES (' + files.length + ')')
+      for (const f of files) console.log('      ' + f)
+    } else {
+      console.log('\n  BUILD TASKS   (not sliced yet - the design stage writes 02-tasks.json)')
+    }
+
+    if (existsSync(join(RUNS, run.slug, 'DECISIONS.md'))) {
+      const t = readFileSync(join(RUNS, run.slug, 'DECISIONS.md'), 'utf8')
+      console.log('\n  ' + (/^\s*A:\s*\S/m.test(t) ? 'DECISIONS answered' : '*** DECISION GATE OPEN ***'))
+    }
+    const spent = Object.values(run.stages).reduce((a, s) => a + (s.cost || 0), 0)
+    console.log('\n  spent so far: $' + spent.toFixed(2) + '\n')
+  },
+
   async report() {
     const run = loadRun(activeSlug())
     const rows = Object.entries(run.stages).filter(([, s]) => !s.rollup)
