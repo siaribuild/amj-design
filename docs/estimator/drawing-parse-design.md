@@ -56,7 +56,7 @@ things materially:
   for that rectangle. This is why the >2% rejection rule is sufficient rather than heroic, and
   why the title-block logo that came back as a 2091 × 2091 "window" is easy to reject.
 - **Tag harvesting is almost unnecessary.** It is needed only to tell apart two rows with
-  identical dimensions — W5/W6 and W9/W11 here — not to find openings.
+  identical dimensions — W5/W6, W9/W11 and W14/W16 here — not to find openings.
 - **Failure is per-opening and harmless.** An opening whose frame is not found keeps everything
   the schedule gave it and reports composition as *not stated*. The list never degrades.
 
@@ -146,7 +146,7 @@ It is `not read`, which is not a claim that it is undrawn.
 Reproduce with `node scripts/research/plan-geometry/measure.mjs`. It accounts for every one of
 the nineteen and **exits non-zero** if this table, the eight verticals of §2, or either
 calibration point drifts. Both gates are needed and neither is sufficient: the table alone
-would pass a decoder that found the right eleven windows and measured them all wrongly, and
+would pass a decoder that found every window and measured them all wrongly, and
 the calibration alone would pass one that lost half of them.
 
 **Which verticals bound a leaf — the rule, replacing a tolerance.** A frame elevation draws
@@ -189,7 +189,7 @@ betrays it, which is why single-unit openings are now where it is pinned.
 Stating the rule properly also fixed a real misreading it had been hiding: **D3**, a 3000 mm
 slider, read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
 
-**The two are `not read`, which is not the same as `not drawn`** — and the distinction is the
+**`not read` is not the same as `not drawn`** — and the distinction is the
 output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is
 drawn at that width on either elevation, so no frame of that size is there. **W15 is different
 and worth stating against my own first reading of it:** a 1380 × ~1975 rectangle does sit on
@@ -212,9 +212,9 @@ W4   OP 596.9  |  fx 1913.5  |  OP 601.1             the drafter wrote "2x 600mm
 
 W4 lands 3.1 mm and 1.1 mm from a figure a human typed, without being told it.
 
-**The ambiguity is twice what §6 assumed.** It named W14/W16 as the only same-size pair; the
-real pairs are W5/W6 and W9/W11, and W14/W16 are not read at all. Disambiguation therefore buys 4
-openings, not 2 — still late-ordered, still not a prerequisite.
+**The ambiguity is three times what §6 assumed.** It named W14/W16 as the only same-size pair.
+They are one, and so are **W5/W6** and **W9/W11** — three pairs, six openings. Disambiguation
+therefore buys 6 openings, not 2 — still late-ordered, still not a prerequisite.
 
 **A conflict the drawing settles.** W4's drawn frame is **3200 × 2100** — the energy report's
 figure, not the schedule's 2410 × 1800. `conf_energy_2` on this project has been flagged for
@@ -315,9 +315,15 @@ known, rejection is cheap and rule-based:
 
 **Stage 6 — Disambiguation only** *(drawing Stages B and D)*. Needed **only** when two rows
 share dimensions, because then a matched frame could belong to either. On this document the
-pairs are **W5/W6** (850 × 2057) and **W9/W11** (1810 × 1027) — four openings, all four found
-as two candidates each. *(This paragraph named W14/W16 until 2026-08-27; no frame of their size
-resolves on either elevation, so they are `not read` and never reach this stage. See §2a.)*
+pairs are **W5/W6** (850 × 2057), **W9/W11** (1810 × 1027) and **W14/W16** (2050 × 2000) — six
+openings across three pairs.
+
+**W14/W16 arrive at this stage from the other direction, and it matters.** W5/W6 and W9/W11 each
+produce *two* frames for two rows: the frames are there and the question is which is which.
+W14/W16 produce *one* frame for two rows, so either the second is drawn somewhere this pass does
+not look, or one of the two rows is not drawn at all. Both are settled by the same evidence — the
+tag order on the floor plan — but the second case must never be resolved by assigning the one
+frame to both, which is what an earlier version of the harness did silently.
 
 Tags come from `getTextContent` on the floor plans; no operator list, ~30–50 ms. Two verified
 traps: each tag is an octagon carrying **two** lines (`W1` over `S08`), so a single-token reader
@@ -519,9 +525,10 @@ next lands.
 Note the ordering change that the §0 framing buys: **disambiguation moves late.** It was a
 prerequisite when this looked like a discovery problem; driven by a known list it is only needed
 for same-sized rows, so the pass delivers value for every uniquely-sized opening before any tag
-harvesting exists at all. On this document that is **15 of 19** openings — of which **11 read
-outright** and 4 are not read (§2a). It was stated as 17 of 19 while W14/W16 were believed to
-be the only same-sized pair; the real pairs are W5/W6 and W9/W11.
+harvesting exists at all. On this document that is **13 of 19** openings — of which **12 read
+outright** and one, D1, is not read (§2a). It was stated as 17 of 19 while W14/W16 were believed
+to be the only same-sized pair, and briefly as 15 of 19 while they were wrongly believed not to
+be drawn.
 
 ---
 
