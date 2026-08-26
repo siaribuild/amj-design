@@ -1239,3 +1239,30 @@ test('a stage whose agent is gone is relaunched with --resume, on the SAME sessi
     'a restored agent must be pointed back at its prompt file, not re-fed the prompt')
   assert.ok(!typed[0].includes(NL), 'a newline in typed text submits it early')
 })
+
+test('an unrecoverable session is said out loud, kept in previousSessions, and re-run from scratch', () => {
+  // Nothing was ever flushed for this id, so `claude --resume` has nothing to
+  // restore. Starting over SILENTLY is the failure mode: it looks identical to
+  // a normal run, which is exactly how a destroyed 44 minutes hides.
+  const s = paneRepo('durable-lost', 'sess-new', { HERDR_STUB_NOAGENT: '1' })
+  interrupted(s, 'spec', { session: 'sess-vanished' })
+
+  const out = paned(s, 'next')
+
+  assert.match(out, /cannot be resumed|unrecoverable/i,
+    'the operator was not told the session could not be recovered')
+  assert.match(out, /from the start|from scratch/i,
+    'the operator was not told the stage is starting over')
+
+  const start = said(s.log, 'agent', 'start')
+  assert.equal(start.length, 1, 'the stage was not re-run exactly once')
+  const native = start[0].slice(start[0].indexOf('--') + 1)
+  assert.equal(native[0], '--session-id',
+    'a session with nothing on disk cannot be --resumed: ' + native.join(' '))
+  assert.ok(!native.includes('--resume'))
+
+  const st = runJson(s).stages.spec
+  assert.deepEqual(st.previousSessions, ['sess-vanished'],
+    'the dead session was dropped, and everything it spent dropped with it')
+  assert.equal(st.session, 'sess-new', 'the re-run is a new session, recorded as such')
+})

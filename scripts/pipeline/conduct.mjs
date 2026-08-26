@@ -929,9 +929,24 @@ const cmds = {
       die(label + ' has no prompt on disk to hand back to it - re-run it with:  conduct run ' + label)
     const promptText = readFileSync(promptPath, 'utf8')
 
+    // `claude --resume <id>` can only restore a session that reached the disk.
+    // Nothing there means nothing to resume - and the operator hears that in
+    // plain words, because starting over quietly looks exactly like a normal run.
+    const recoverable = !!st.session && sessionTotals(st.session).turns > 0
     console.log('\n  ' + label + ': its agent is gone - herdr no longer has it.')
-    console.log('  resuming session ' + st.session + ' in a new pane; its work on disk stands.')
-    const s = await runPaneStage(spec, promptText, run, label, st.session)
+    if (recoverable) {
+      console.log('  resuming session ' + st.session + ' in a new pane; its work on disk stands.')
+    } else {
+      console.log('  !! ' + (st.session
+        ? 'session ' + st.session + ' is UNRECOVERABLE - nothing of it reached the disk.'
+        : 'no session was ever recorded for it.'))
+      console.log('     Re-running ' + label + ' FROM THE START. Whatever the lost session did')
+      console.log('     is gone; what it spent is kept in previousSessions and still counted.')
+      if (st.session) st.previousSessions = [...(st.previousSessions || []), st.session]
+      delete st.session
+      saveRun(run)
+    }
+    const s = await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null)
     if (s && s.status !== 'held') afterStage(run, spec)
   },
 
