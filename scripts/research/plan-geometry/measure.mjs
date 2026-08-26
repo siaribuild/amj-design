@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { decodePage, elevationPages } from "./decode.mjs";
-import { findFrames, frameVerticals, leafBounds, diagonals, MM_PER_PT } from "./frames.mjs";
+import { findFrames, findFramesV2, frameVerticals, leafBounds, diagonals, MM_PER_PT } from "./frames.mjs";
 
 // Resolved against THIS file, not the shell's cwd: the fixture lives beside the
 // scripts and the documented command runs from the repo root.
@@ -53,9 +53,9 @@ function designClaims(md) {
   };
   return {
     verticals: nums(grab(/verticals, mm from left:([^\n]+)/, "§2's verticals line")),
-    heights2050: nums(grab(/across both elevation sheets is `([^`]+)`/, "§2's quoted heights")),
+    heights1380: nums(grab(/across both elevation sheets is `([^`]+)`/, "§2a's quoted heights at 1380mm")),
     read: row(/\|[^|\n]*Read, with composition[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Read"),
-    ambiguous: row(/\|[^|\n]*Ambiguous[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Ambiguous"),
+    ambiguous: row(/\|[^|\n]*Awaiting disambiguation[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Awaiting disambiguation"),
     notRead: row(/\|[^|\n]*Not read[^|\n]*\|[^|\n]*?(\d+)[^|\n]*\|([^|\n]+)\|/, "Not read"),
   };
 }
@@ -120,9 +120,13 @@ const decodeMs = Date.now() - t0;
 console.log(`elevations p${ELEVATIONS.join(",p")} decoded in ${decodeMs}ms, `
   + `heap ${Math.round(process.memoryUsage().heapUsed / 1e6)}MB\n`);
 
-const read = [], ambiguous = [], absent = [];
+const read = [], ambiguous = [], absent = [], claimed = [];
 for (const o of openings) {
-  const hits = ELEVATIONS.flatMap((p) => findFrames(sheets[p], o.w, o.h).map((f) => ({ p, f })));
+  // Strict first. The rail-driven fallback runs only where strict finds nothing,
+  // because alone it is looser than the job wants — see findFramesV2.
+  const strict = ELEVATIONS.flatMap((p) => findFrames(sheets[p], o.w, o.h).map((f) => ({ p, f, via: "strict" })));
+  const hits = strict.length ? strict
+    : ELEVATIONS.flatMap((p) => findFramesV2(sheets[p], o.w, o.h).map((f) => ({ p, f, via: "rail" })));
   const label = `${o.tag.padEnd(4)} ${String(o.w).padStart(4)}x${String(o.h).padStart(4)}`;
   if (hits.length > 1) {
     ambiguous.push(o.tag);
@@ -134,10 +138,32 @@ for (const o of openings) {
   const leaves = compose(sheets[p], f);
   if (!leaves) { absent.push(o); console.log(`${label}  —  frame found, no readable division`); continue; }
   read.push(o.tag);
+  claimed.push({ tag: o.tag, p, key: `${p}:${Math.round(f.x0)}:${Math.round(f.y0)}` });
   const parts = leaves.map((l) => `${l.operable ? "OP" : "fx"} ${l.w.toFixed(1)}mm r=${l.ratio.toFixed(3)}`);
-  console.log(`${label}  ✓  p${p} ${f.wMm.toFixed(0)}x${f.hMm.toFixed(0)}  ${parts.join("  |  ")}`);
+  console.log(`${label}  ✓ ${hits[0].via.padEnd(6)} p${p} ${f.wMm.toFixed(0)}x${f.hMm.toFixed(0)}  ${parts.join("  |  ")}`);
 }
 const sweepMs = Date.now() - t0;
+
+// TWO OPENINGS CANNOT BE ONE RECTANGLE. W14 and W16 are both 2050 x 2000 and the
+// elevations yield a single frame of that size, so one of them is being matched
+// to the other's window. Both then report the same composition with the same
+// confidence and one of them is wrong — a confident wrong answer, which is the
+// only kind of failure this reader actually has. Surfaced, not counted.
+const byFrame = new Map();
+for (const c of claimed) byFrame.set(c.key, [...(byFrame.get(c.key) ?? []), c.tag]);
+const contested = [...byFrame.values()].filter((t) => t.length > 1);
+if (contested.length) {
+  console.log(`\nFRAMES CLAIMED BY MORE THAN ONE OPENING — each is one wrong answer waiting:`);
+  for (const t of contested) console.log(`  ${t.join(" and ")} resolve to the same rectangle`);
+  // Demote them out of `read`. A composition two openings both claim is not a
+  // reading of either — it is the same-size ambiguity arriving from the other
+  // direction, one frame for two rows instead of two frames for one row, and it
+  // is settled by the same thing: the tag order on the floor plan.
+  for (const t of contested.flat()) {
+    read.splice(read.indexOf(t), 1);
+    ambiguous.push(t);
+  }
+}
 
 // Why each unmatched opening is unmatched. NOT a verdict that it is undrawn:
 // "nothing of that width at that height resolves to a frame" and "this opening
@@ -246,13 +272,13 @@ console.log(`single-unit leaves are the sash, not the frame: ${framesOk ? "MATCH
 // actually escaped: three times now a claim outran its measurement, survived
 // review, and had to be retracted. Numbers a document quotes are numbers the
 // harness owns.
-const W14_HEIGHTS = DOC.heights2050;
-const got14 = (await heightsAtWidth(sheets, 2050)).map((k) => Math.round(k.h));
-const quotedOk = got14.length === W14_HEIGHTS.length
-  && got14.every((h, i) => Math.abs(h - W14_HEIGHTS[i]) <= 1);
-console.log(`§2's quoted heights at a 2050mm width: ${quotedOk ? "MATCH" : "DRIFTED"}`);
-if (!quotedOk) console.log(`  doc says ${W14_HEIGHTS.join(", ")}
-  got      ${got14.join(", ")}`);
+const QUOTED_1380 = DOC.heights1380;
+const got1380 = (await heightsAtWidth(sheets, 1380)).map((k) => Math.round(k.h));
+const quotedOk = got1380.length === QUOTED_1380.length
+  && got1380.every((h, i) => Math.abs(h - QUOTED_1380[i]) <= 1);
+console.log(`§2a's quoted heights at a 1380mm width: ${quotedOk ? "MATCH" : "DRIFTED"}`);
+if (!quotedOk) console.log(`  doc says ${QUOTED_1380.join(", ")}
+  got      ${got1380.join(", ")}`);
 console.log(`calibration W1+W4 vs the design's recorded figures: ${ok ? "MATCH" : "DRIFTED"}`);
 
 // Both gates, or the run failed. The table without the calibration would pass a

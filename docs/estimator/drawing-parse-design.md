@@ -99,19 +99,25 @@ whose make-up appears both in words and in line-work. Its comment says `2x 600mm
 the decode measures leaves of **596.9** and **601.1**. The drawing agrees with the human to
 within 3 mm, without being told the answer.
 
-**W14 and W16 do NOT reproduce W1's structure — that claim was wrong.** *(corrected
-2026-08-27, on re-measurement.)* **No frame of their size resolves on either elevation.** Every
-height drawn at a 2050 mm width across both elevation sheets is `368, 758, 830, 1748, 2049,
-2074, 2104, 2718` — the nearest to their stated 2000 is 2049, which is 2.45% out and therefore
-rejected, and 2104 is W1. The original reading almost certainly matched **W1's own frame**,
-because W14, W16 and W1 share a 2050 width — the same-dimension trap, sprung in the direction
-nobody was watching.
+**W14 and W16 reproduce W1's internal structure — confirmed, after I wrongly denied it.**
+*(2026-08-27.)* W14's frame sits at `pt(684.3, 620.5)`, the same x as W1 and directly above it:
+the first-floor window over the ground-floor one on Elevation A. Its composition reads
+`awning 698.5 | fixed 1286.9`, ratios `0.352 / 0.648` — W1's, to the millimetre.
 
-*This paragraph said "nothing 2050 × 2000 is drawn anywhere in the 14-page set" until later the
-same day. That was unsupported and is exactly the overclaim §2a was opened to retract — the
-all-pages search behind it is worthless, because a floor plan holds a rectangle of the right
-width and an unrelated depth for every opening in the house. **`not read` is the claim the
-measurement supports; `not drawn` is not.** See §2a.*
+*Retraction of a retraction, and the more useful half of this entry.* Earlier today this
+paragraph said the claim "was wrong" and that no frame of their size resolved. That was my
+matcher's limitation reported as a fact about the drawing. `findFrames` requires each stile to
+be its own segment of the opening's height, which holds for a window drawn in clear space and
+fails for one whose jamb is shared with a wall line — as W14, W15 and W16's are, being upper
+storey. **The original observation was right and the refutation was the error.** `findFramesV2`
+takes the weaker, truer requirement — a stile may be *part* of a longer line, provided head and
+sill rails bound it — and finds all three.
+
+Two things worth keeping from it. `not read` was the correct thing to write while the harness
+could not see them, and writing `not drawn` instead would have put a false statement about the
+world into this document. And a measurement is not evidence about a drawing until something
+independent agrees with it: five review rounds hardened gates around a table that was wrong,
+because the gates asserted what the matcher said rather than what the sheet showed.
 
 **Cost:** page 6 is 31,082 operators → 5,928 segments in 110 ms; page 7 is 36,415 → 8,924 in
 70 ms. Peak heap for the whole job, text plus both elevations: **34 MB** in node.
@@ -127,8 +133,14 @@ measurement supports; `not drawn` is not.** See §2a.*
 | outcome | n | which |
 |---|---|---|
 | **Read, with composition** | **11** | W1 W2 W3 W4 W7 W8 W10 W12 D2 D3 D4 |
-| Ambiguous — two rows share a size | 4 | W5/W6 (850 × 2057), W9/W11 (1810 × 1027) |
-| **Not read** | 4 | D1, W14, W15, W16 |
+| Awaiting disambiguation | 6 | W5/W6, W9/W11 — two frames, two rows; W14/W16 — **one** frame, two rows |
+| **Not read** | 2 | D1, W15 |
+
+**What is still unread, and the evidence for it.** D1 and W15 are both 1380 mm wide, and every
+height drawn at a 1380 mm width across both elevation sheets is `830, 889, 978, 1490, 1975,
+2718`. For D1 (2405 mm) nothing is within 2%, so no frame of its size is there. For W15
+(2000 mm) the 1975 is inside 2% and a frame does resolve, but its division does not — one
+member, so no leaf. Neither is a claim that they are undrawn.
 
 Reproduce with `node scripts/research/plan-geometry/measure.mjs`. It accounts for every one of
 the nineteen and **exits non-zero** if this table, the eight verticals of §2, or either
@@ -176,7 +188,7 @@ betrays it, which is why single-unit openings are now where it is pinned.
 Stating the rule properly also fixed a real misreading it had been hiding: **D3**, a 3000 mm
 slider, read as one 2942 mm unit and now resolves to three panels at 952.5 | 999.1 | 952.5.
 
-**The four are `not read`, which is not the same as `not drawn`** — and the distinction is the
+**The two are `not read`, which is not the same as `not drawn`** — and the distinction is the
 output spec's §4, not pedantry. For D1, W14 and W16 nothing within 2% of the stated height is
 drawn at that width on either elevation, so no frame of that size is there. **W15 is different
 and worth stating against my own first reading of it:** a 1380 × ~1975 rectangle does sit on

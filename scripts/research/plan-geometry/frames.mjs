@@ -150,6 +150,68 @@ export function leafBounds(segs, f) {
   return usable.length ? usable[0][1].map((r) => r.mm) : [];
 }
 
+/** THE FALLBACK, when findFrames returns nothing: drive the match from the RAILS.
+ *
+ *  findFrames requires each stile to be its own segment of the opening's height,
+ *  which is true of a window drawn in clear space and false of one whose jamb is
+ *  shared with a wall line. That cost three real windows: W14, W15 and W16 sit on
+ *  the upper storey of Elevation A, W14 directly above W1 at the same x, and at
+ *  least one of their stiles is embedded in a longer building line. They were
+ *  reported "not read", and on that basis a correct statement in the design — that
+ *  W14 and W16 reproduce W1's structure — was wrongly retracted.
+ *
+ *  So: a stile may be PART of a longer line, provided head and sill rails bound
+ *  it and span the width. That is the weaker, truer requirement.
+ *
+ *  It is a FALLBACK and not the primary because it is looser and it shows: run
+ *  alone it returns nineteen candidates for W12 and loses D3 entirely. Precision
+ *  first, recall second, and the caller keeps them apart.
+ */
+function dedupeSegs(segs) {
+  const seen = new Set(), keep = [];
+  for (const s of segs) {
+    const k = `${Math.round(s.ax * 20)},${Math.round(s.ay * 20)},${Math.round(s.bx * 20)},${Math.round(s.by * 20)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    keep.push(s);
+  }
+  return keep;
+}
+
+export function findFramesV2(segs, widthMm, heightMm, tolPct = 2) {
+  const wPt = widthMm / MM_PER_PT, hPt = heightMm / MM_PER_PT;
+  const wTol = wPt * tolPct / 100, hTol = hPt * tolPct / 100;
+  const d = dedupeSegs(segs);
+  const V = d.filter(isV).map((s) => ({ at: s.ax, lo: Math.min(s.ay,s.by), hi: Math.max(s.ay,s.by) }));
+  const H = d.filter(isH).map((s) => ({ at: s.ay, lo: Math.min(s.ax,s.bx), hi: Math.max(s.ax,s.bx) }));
+  // A vertical COVERS the band if any segment at that x spans it — the segment
+  // may be longer, which is the whole point.
+  const covers = (x, y0, y1) => V.some((r) => Math.abs(r.at - x) <= 0.25 && r.lo <= y0 + 0.5 && r.hi >= y1 - 0.5);
+  const xsIn = (y0, y1, lo, hi) => [...new Set(V
+    .filter((r) => r.lo <= y0 + 0.5 && r.hi >= y1 - 0.5 && r.at >= lo - 0.5 && r.at <= hi + 0.5)
+    .map((r) => Math.round(r.at * 4) / 4))];
+
+  const out = [];
+  for (let i = 0; i < H.length; i++) {
+    for (let j = 0; j < H.length; j++) {
+      const a = H[i], b = H[j];
+      const gap = b.at - a.at;
+      if (Math.abs(gap - hPt) > hTol) continue;              // b is above a
+      const lo = Math.max(a.lo, b.lo), hi = Math.min(a.hi, b.hi);
+      if (hi - lo < wPt - wTol) continue;                    // rails must span the width
+      const xs = xsIn(a.at, b.at, lo, hi);
+      for (const x0 of xs) for (const x1 of xs) {
+        if (Math.abs(x1 - x0 - wPt) > wTol) continue;
+        if (!covers(x0, a.at, b.at) || !covers(x1, a.at, b.at)) continue;
+        out.push({ x0, x1, y0: a.at, y1: b.at, wMm: (x1-x0)*MM_PER_PT, hMm: gap*MM_PER_PT });
+      }
+    }
+  }
+  const kept = [];
+  for (const c of out) if (!kept.some((k) => Math.abs(k.x0-c.x0)<1 && Math.abs(k.y0-c.y0)<1 && Math.abs(k.x1-c.x1)<1)) kept.push(c);
+  return kept;
+}
+
 /** Diagonals whose whole extent sits inside the box — the operation symbol. */
 export function diagonals(segs, box) {
   return segs.filter((s) => {
