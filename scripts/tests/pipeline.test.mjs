@@ -1305,3 +1305,29 @@ test('report heals an interrupted stage to the sum of every session it burned', 
   assert.equal(st.outputTokens, 50)
   assert.equal(st.turns, 5)
 })
+
+test('a tester session in the verify worktree is metered by its recorded id, wherever its transcript landed', () => {
+  // Claude Code names its project directory after the cwd, so the verify
+  // stage - which runs in an isolated worktree - writes its transcript under a
+  // DIFFERENT project folder than every other stage of the same run. Metering
+  // is addressed by session id, so where the file landed cannot lose the spend,
+  // and an interruption in the worktree is accounted for like any other.
+  const projects = tmp('worktree')
+  seedTranscript(projects, 'E--Projects-demo-verify', 'sess-wt', ['w1', 'w2', 'w3'], 2)
+  seedTranscript(projects, 'E--Projects-demo-verify', 'sess-wt-dead', ['d1'], 2)
+  const { root, runJson: saved } = seedRun('worktree-run', {
+    verify: {
+      code: 0, session: 'sess-wt', previousSessions: ['sess-wt-dead'],
+      contextTokens: 0, outputTokens: 0, turns: 0, source: 'none', seconds: 30,
+    },
+  })
+
+  const out = conduct(root, projects, 'report')
+
+  const st = JSON.parse(readFileSync(saved, 'utf8')).stages.verify
+  assert.equal(st.turns, 4, 'the tester worktree session was not found by its recorded id')
+  assert.equal(st.contextTokens, 4000)
+  assert.equal(st.outputTokens, 40)
+  assert.ok(!out.includes('unknown'),
+    'a verify stage metered "unknown" is a whole stage of spend lost to a cwd')
+})
