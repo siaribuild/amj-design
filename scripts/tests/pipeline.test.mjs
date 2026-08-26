@@ -1104,3 +1104,34 @@ test('the review fan-out starts all four reviewers before it consumes any comple
   assert.equal(st['review-codex'].code, 0)
   assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
 })
+
+test('one reviewer holding does not stall the other three', () => {
+  // The first agent to settle reports a permission/question UI and is held
+  // warm; the second settles clean. Codex, meanwhile, fails its own
+  // infrastructure - which is NOT a clean review and must not read as one.
+  const s = reviewRepo('review-hold', { HERDR_STUB_STATES: 'blocked;idle' }, 3)
+
+  const out = paned(s, 'run', 'review')
+
+  const st = runJson(s).stages
+  const pane = ['review-conformance', 'review-ponytail'].map((id) => st[id])
+  assert.equal(pane.filter((r) => r.status === 'held').length, 1,
+    'exactly one pane reviewer should have been held: ' + JSON.stringify(pane))
+  const held = pane.find((r) => r.status === 'held')
+  assert.equal(held.holdReason, 'blocked-ui')
+  assert.equal(held.code, undefined, 'a held reviewer is not a finished one')
+
+  // The other three ran to completion regardless. That is the whole claim.
+  assert.equal(pane.find((r) => r.status !== 'held').status, 'done')
+  assert.ok('code' in st['review-security'], 'the headless security child never finished')
+  assert.equal(st['review-codex'].code, 3)
+
+  // The held agent is still alive: only the settled one was freed.
+  assert.equal(said(s.log, 'agent', 'prompt').map((a) => a[3]).filter((l) => l === '/exit').length, 1,
+    'a held reviewer must not be /exited - the whole saving is that it stays warm')
+  assert.match(out, /HELD WARM \(blocked-ui\)/)
+
+  // An infrastructure failure is not a review. Saying otherwise is the one
+  // thing this gate must never do.
+  assert.match(out, /UNREVIEWED|NOT[\s\S]{0,40}a clean review/)
+})
