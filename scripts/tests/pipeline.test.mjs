@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
-import { STAGES, REVIEWERS, cmds, resetAdvisory } from '../pipeline/conduct.mjs'
+import { STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, browserMcp, mcpAdvisory } from '../pipeline/conduct.mjs'
 
 const CONDUCT = resolve('scripts/pipeline/conduct.mjs')
 
@@ -424,4 +424,69 @@ test('no conductor output contains a dollar figure', () => {
     assert.ok(!/\$\s*\d/.test(out), cmd + ' printed a dollar figure:\n' + out)
     assert.ok(!out.includes('3.21') && !out.includes('9.99'), cmd + ' printed a persisted cost')
   }
+})
+
+// --- the MCP knob ------------------------------------------------------------
+
+test('.mcp.json declares exactly one server, a browser one, and nothing else', () => {
+  const cfg = JSON.parse(readFileSync(resolve('.mcp.json'), 'utf8'))
+  const servers = Object.entries(cfg.mcpServers || {})
+  assert.equal(servers.length, 1, 'every session in this repo pays for these definitions: ' +
+    JSON.stringify(Object.keys(cfg.mcpServers || {})))
+  const [name, server] = servers[0]
+  // Criterion 31: Sanity's server is large and almost no stage touches the
+  // catalogue, so its absence here is a tested constraint, not a preference.
+  const decl = (name + ' ' + JSON.stringify(server)).toLowerCase()
+  assert.match(decl, /playwright/, 'the one server must be the browser one, got: ' + decl)
+  assert.ok(!/sanity/.test(decl), 'a non-browser server appeared in .mcp.json: ' + decl)
+
+  const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
+  assert.ok(pkg.devDependencies['@playwright/mcp'],
+    '@playwright/mcp must be pinned so availability is deterministic and offline')
+})
+
+test('mcp stages load exactly that file; every other stage loads nothing', () => {
+  const ux = STAGES.find((s) => s.id === 'ux')
+  const polish = STAGES.find((s) => s.id === 'polish')
+  assert.ok(ux.mcp && polish.mcp, 'the browser stages must still carry mcp: true')
+
+  const a = claudeArgs(ux, 'prompt', true)
+  assert.equal(a[a.indexOf('--mcp-config') + 1], '.mcp.json', 'mcp stage got no project config')
+  assert.ok(a.includes('--strict-mcp-config'),
+    'without --strict-mcp-config the session also inherits user/global servers')
+
+  for (const s of [...STAGES, ...REVIEWERS].filter((s) => !s.mcp)) {
+    const b = claudeArgs(s, 'prompt', true)
+    assert.ok(!b.includes('--mcp-config'), s.id + ' loads an MCP config it does not need')
+    assert.ok(b.includes('--strict-mcp-config'), s.id + ' may inherit servers')
+  }
+})
+
+test('an uninstalled browser server warns and degrades the stage, never fails it', () => {
+  const ux = STAGES.find((s) => s.id === 'ux')
+
+  assert.equal(browserMcp(tmp('mcp-absent')), false, 'preflight must key off a real install')
+
+  const warn = mcpAdvisory(ux, false)
+  assert.ok(warn, 'no warning when the browser server is unavailable')
+  assert.match(warn, /unavailable/i)
+  assert.match(warn, /without it/i, 'the warning must say the stage runs regardless')
+  assert.equal(mcpAdvisory(ux, true), null, 'warned about an installed server')
+  assert.equal(mcpAdvisory(STAGES.find((s) => s.id === 'spec'), false), null,
+    'a stage that never asked for a browser must not be warned about one')
+
+  // Degraded means bare: no config to a server that cannot start, and no npx
+  // fetch of an uninstalled package mid-stage.
+  const a = claudeArgs(ux, 'prompt', false)
+  assert.ok(!a.includes('--mcp-config'))
+  assert.ok(a.includes('--strict-mcp-config'))
+
+  // The warning is printed, never obeyed.
+  const src = readFileSync(CONDUCT, 'utf8')
+  const runClaude = src.slice(src.indexOf('function runClaude'), src.indexOf('// --- sliced build'))
+  assert.ok(/mcpAdvisory\(/.test(runClaude), 'runClaude never consults mcpAdvisory')
+  assert.ok(runClaude.indexOf('mcpAdvisory(') < runClaude.indexOf('spawn(CLAUDE'),
+    'the warning must print before the stage is spawned')
+  assert.ok(!/(return|process\.exit|throw)[^\n]*mcp/i.test(runClaude),
+    'a missing browser must not abort the stage')
 })

@@ -319,7 +319,20 @@ function activeSlug() {
 
 // --- running a stage -------------------------------------------------------
 
-function claudeArgs(spec, promptText) {
+// A CLI-spawned session inherits nothing from the desktop app's MCP servers, so
+// `mcp: true` only means anything if a project config is passed. `.mcp.json`
+// holds the browser server and nothing else: whatever is in it is loaded by
+// every session in this repo and paid for on every turn.
+export const browserMcp = (root = ROOT) =>
+  existsSync(join(root, 'node_modules', '@playwright', 'mcp'))
+
+// A missing browser makes the ui-designer work blind; it does not make the run
+// worthless. So the stage degrades and says so, rather than aborting.
+export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
+  ? 'browser MCP unavailable (node_modules/@playwright/mcp not installed) - running the stage without it'
+  : null
+
+export function claudeArgs(spec, promptText, mcpOk = browserMcp()) {
   const a = ['-p', promptText, '--output-format', 'stream-json', '--verbose']
   if (spec.agent) a.push('--agent', spec.agent)
   if (spec.model) a.push('--model', spec.model)
@@ -327,9 +340,10 @@ function claudeArgs(spec, promptText) {
   // uncapped 1M window is what turns a long run into 182M.
   a.push('--autocompact', String(spec.compact || 120000))
   a.push('--permission-mode', spec.readonly ? 'plan' : 'bypassPermissions')
-  // The Sanity/Chrome MCP tool definitions are dead weight in every stage that
-  // does not touch the CMS, and they are paid for on every single turn.
-  if (!spec.mcp) a.push('--strict-mcp-config')
+  if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
+  // Always strict: an inherited user or global config drags its tool
+  // definitions - Sanity's are large - into every turn of every stage.
+  a.push('--strict-mcp-config')
   return a
 }
 
@@ -342,7 +356,10 @@ function runClaude(spec, promptText, run, label) {
     // the stage regardless. Never a gate.
     const advisory = resetAdvisory(latestRateLimitAnchor(RUNS))
     if (advisory) process.stdout.write('\n  ' + advisory + '\n')
-    const cp = spawn(CLAUDE, claudeArgs(spec, promptText),
+    const mcpOk = browserMcp()
+    const mcpWarning = mcpAdvisory(spec, mcpOk)
+    if (mcpWarning) process.stdout.write('\n  ' + mcpWarning + '\n')
+    const cp = spawn(CLAUDE, claudeArgs(spec, promptText, mcpOk),
       { cwd: spec.cwd || ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
     let buf = ''
     let result = null

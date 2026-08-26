@@ -52,3 +52,23 @@ Next tasks: there is still **no quota figure anywhere in the instrument** — do
 not add a percentage, a remaining or a headroom, however tempting the gauge
 looks. `resetAdvisory`/`printWindow` are exported/testable; the claude binary
 still has no seam, so the advisory's call site is asserted by source read.
+
+## t3 — Real MCP config
+
+Files: `.mcp.json` (new), `package.json` (+`@playwright/mcp` devDep, installed),
+`scripts/pipeline/conduct.mjs`, `scripts/tests/pipeline.test.mjs`.
+
+- `.mcp.json`: one server, `playwright` (`npx @playwright/mcp`). Sanity stays out
+  — every session in this repo pays for whatever is in here.
+- `conduct.mjs`: `claudeArgs(spec, promptText, mcpOk = browserMcp())` now exported;
+  `mcp: true` + installed → `--mcp-config .mcp.json`, and **every** stage gets
+  `--strict-mcp-config` (previously only non-mcp stages did). New exports
+  `browserMcp(root)` (preflight) and `mcpAdvisory(spec, ok)` (warning or null);
+  `runClaude` prints the warning before `spawn` and passes `mcpOk` through, so a
+  missing browser degrades the stage to bare args instead of an npx fetch mid-run.
+- 3 tests: `.mcp.json` parses to exactly one browser server (a second/`sanity`
+  entry fails it) and the devDep is pinned; per-stage argv for both branches; the
+  degraded path (warning text, no `--mcp-config`, source-read that `runClaude`
+  never returns/exits on it). Each was mutation-checked.
+- Probed live: init reports `playwright: connected`, 24 `mcp__playwright__*` tools
+  (was 0). Next tasks: `claudeArgs` is exported now — assert argv, don't spawn.
