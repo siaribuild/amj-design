@@ -53,3 +53,6 @@ backup-*.sql
 # Dataset exports taken as pre-change backups. Large, and a copy of production
 # content -- keep them locally, never in the repo.
 sanity/backups/
+
+# pipeline v2 raw stage transcripts (large, reproducible)
+docs/runs/*/logs/
