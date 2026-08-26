@@ -1351,3 +1351,99 @@ test('a resumed build task is marked done, so the build does not start it over',
   assert.deepEqual(runJson(s).tasksDone, ['t1'],
     'the resumed task was not recorded as done - the build will run it again')
 })
+
+// --- the Probity shim (design 9.5) -----------------------------------------
+//
+// The shim is the TDD gate's entry point, so these run it as a child process
+// against a STUB @nizos/probity: a bin.js that records the bytes it was handed.
+// Nothing here touches the real probity or the real hook payloads.
+
+const SHIM = resolve('.claude/hooks/probity-subagent-shim.mjs')
+
+/** A temp root whose node_modules/@nizos/probity records its stdin verbatim. */
+function stubProbity(name) {
+  const root = tmp(name)
+  const pkg = join(root, 'node_modules', '@nizos', 'probity')
+  mkdirSync(join(pkg, 'dist'), { recursive: true })
+  const saw = join(root, 'saw.txt')
+  writeFileSync(join(pkg, 'dist', 'bin.js'), [
+    "import fs from 'node:fs'",
+    "let raw = ''",
+    "try { raw = fs.readFileSync(0, 'utf8') } catch {}",
+    'fs.writeFileSync(' + JSON.stringify(saw) + ', raw)',
+    "process.stdout.write('STUB-PROBITY-RAN' + String.fromCharCode(10))",
+  ].join(NL) + NL)
+  writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@nizos/probity', type: 'module' }))
+  return { root, saw }
+}
+
+/** Run the shim with `raw` on stdin. Returns its stdout. */
+function shim(raw, { cwd, projectDir } = {}) {
+  const env = { ...process.env }
+  delete env.CLAUDE_PROJECT_DIR
+  if (projectDir) env.CLAUDE_PROJECT_DIR = projectDir
+  return execFileSync(process.execPath, [SHIM], { cwd, input: raw, encoding: 'utf8', env })
+}
+
+test('the shim forwards a payload with no agent_id byte-identical', () => {
+  // Every pane-pipeline stage is a top-level session, so no hook payload
+  // carries agent_id any more. The shim must be a pass-through: re-serialising
+  // the payload would hand Probity bytes the harness never wrote.
+  const { root, saw } = stubProbity('shim-passthrough')
+  // Deliberately not what JSON.stringify would emit: the double space and the
+  // member order are the discriminator.
+  const raw = '{"session_id":"s-1",  "transcript_path":"t.jsonl","tool_name":"Write","cwd":'
+    + JSON.stringify(root) + '}'
+
+  const out = shim(raw, { cwd: root })
+
+  assert.match(out, /STUB-PROBITY-RAN/, 'the shim never reached the local probity bin')
+  assert.equal(readFileSync(saw, 'utf8'), raw, 'the payload was rewritten on its way to Probity')
+})
+
+test('the shim denies when no candidate root has a local probity', () => {
+  // Fail closed, like Probity itself: no gate means no write, never a silent
+  // skip. A gate that fails open is not a gate.
+  const bare = tmp('shim-nogate')
+
+  const out = shim(JSON.stringify({ tool_name: 'Write', cwd: bare }), { cwd: bare })
+
+  const d = JSON.parse(out).hookSpecificOutput
+  assert.equal(d.hookEventName, 'PreToolUse')
+  assert.equal(d.permissionDecision, 'deny')
+  assert.match(d.permissionDecisionReason, /@nizos\/probity is not installed/)
+})
+
+test('the shim still resolves the bin when payload.cwd is an unresolvable POSIX path', () => {
+  // After a `cd` inside a Bash call Claude Code reports cwd as "/e/Projects/x",
+  // which path.join cannot resolve on Windows. Resolving from payload.cwd alone
+  // denied EVERY Bash/Write/Edit for the rest of the session - including the
+  // edits needed to repair it - and blamed a missing install while probity was
+  // present throughout. CLAUDE_PROJECT_DIR and process.cwd() are the fallbacks.
+  const { root, saw } = stubProbity('shim-posix-cwd')
+  const raw = JSON.stringify({ tool_name: 'Edit', cwd: '/e/Projects/amj-website-design' })
+
+  const out = shim(raw, { cwd: tmp('shim-elsewhere'), projectDir: root })
+
+  assert.doesNotMatch(out, /permissionDecision/,
+    'a POSIX cwd denied the write again - the multi-candidate resolution regressed')
+  assert.match(out, /STUB-PROBITY-RAN/)
+  assert.equal(readFileSync(saw, 'utf8'), raw)
+})
+
+test('the shim carries no subagent transcript rewrite, and still invokes the bin directly', () => {
+  // Job 1 (the agent_id transcript rewrite) existed only because v1 ran the
+  // developer as a subagent; under pane mode every stage is a top-level session
+  // and agent_id never appears. Job 2 (direct `node .../dist/bin.js` instead of
+  // the plugin's per-tool-call npx) is an improvement and stays - see
+  // docs/adr/0013-probity-direct-shim-not-plugin.md.
+  const src = readFileSync(SHIM, 'utf8')
+
+  assert.doesNotMatch(src, /agent_id/, 'the subagent branch is dead code under pane mode')
+  assert.doesNotMatch(src, /findSubagentTranscript/)
+  assert.match(src, /node_modules[\s\S]{0,80}bin\.js/, 'direct bin invocation is not a workaround')
+  assert.doesNotMatch(src, /npx @/, 'a shell-spawned npx is needless attack surface')
+  for (const c of ['payload?.cwd', 'CLAUDE_PROJECT_DIR', 'process.cwd()']) {
+    assert.ok(src.includes(c), 'root candidate dropped: ' + c)
+  }
+})
