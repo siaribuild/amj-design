@@ -132,15 +132,16 @@ because the gates asserted what the matcher said rather than what the sheet show
 
 | outcome | n | which |
 |---|---|---|
-| **Read, with composition** | **11** | W1 W2 W3 W4 W7 W8 W10 W12 D2 D3 D4 |
+| **Read, with composition** | **12** | W1 W2 W3 W4 W7 W8 W10 W12 W15 D2 D3 D4 |
 | Awaiting disambiguation | 6 | W5/W6, W9/W11 — two frames, two rows; W14/W16 — **one** frame, two rows |
-| **Not read** | 2 | D1, W15 |
+| **Not read** | 1 | D1 |
 
 **What is still unread, and the evidence for it.** D1 and W15 are both 1380 mm wide, and every
 height drawn at a 1380 mm width across both elevation sheets is `830, 889, 978, 1490, 1975,
-2718`. For D1 (2405 mm) nothing is within 2%, so no frame of its size is there. For W15
-(2000 mm) the 1975 is inside 2% and a frame does resolve, but its division does not — one
-member, so no leaf. Neither is a claim that they are undrawn.
+2718`. W15's 1975 is inside 2% of its stated 2000 and reads as a single fixed unit of 1329.3 mm,
+which agrees with the schedule calling it FIXED. D1's 2405 has nothing within 2%, at that width
+or at the 1200 mm the energy report gives it — the trick that settled W4 does not settle this.
+It is `not read`, which is not a claim that it is undrawn.
 
 Reproduce with `node scripts/research/plan-geometry/measure.mjs`. It accounts for every one of
 the nineteen and **exits non-zero** if this table, the eight verticals of §2, or either

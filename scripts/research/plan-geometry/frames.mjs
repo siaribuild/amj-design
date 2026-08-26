@@ -144,8 +144,14 @@ export function leafBounds(segs, f) {
     if (!bands.has(k)) bands.set(k, []);
     bands.get(k).push(r);
   }
+  // A band needs at least TWO lines: one line bounds nothing, and a leaf has two
+  // sides. W15 was lost to this — the rail-driven match puts its frame origin
+  // 2.8mm left of the drawn frame line, so that line read as a non-edge band of
+  // one, outranked the real sash band, and yielded no division at all. Requiring
+  // a partition is the rule; widening the edge tolerance until 2.8 counted as
+  // zero would have been another magic number.
   const usable = [...bands.entries()]
-    .filter(([, rs]) => rs.some((r) => !atEdge(r)))
+    .filter(([, rs]) => rs.length >= 2 && rs.some((r) => !atEdge(r)))
     .sort((a, b) => b[0] - a[0]);
   return usable.length ? usable[0][1].map((r) => r.mm) : [];
 }
