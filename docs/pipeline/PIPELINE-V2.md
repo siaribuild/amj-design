@@ -160,14 +160,22 @@ terminal. That last property is the one that matters here — a build stage can 
 
 ## One-time setup
 
-Herdr installs to `%LOCALAPPDATA%\Programs\Herdr\bin` and is **not** on PATH.
-Add it (PowerShell, once):
+None. Herdr's installer already puts `%LOCALAPPDATA%\Programs\Herdr\bin` on the
+**User** PATH. Open a **new** terminal and `herdr --version` prints `herdr 0.8.2`.
 
-```powershell
-[Environment]::SetEnvironmentVariable('Path', $env:Path + ';' + $env:LOCALAPPDATA + '\Programs\Herdr\bin', 'User')
-```
+If a shell says `herdr` is not found, it is almost certainly a terminal (or an
+editor, or a Claude Code session) started *before* herdr was installed, still
+holding the old environment block. Restart it rather than editing PATH.
 
-Open a new terminal, then `herdr --version` should print `herdr 0.8.2`.
+> Do not "fix" this by appending `$env:Path` to the User scope. `$env:Path` is
+> the resolved process PATH — machine plus user plus whatever the session added
+> — so writing it back into the User scope permanently duplicates the entire
+> machine PATH into it. If you ever do need to add something, read the User
+> scope specifically:
+>
+> ```powershell
+> $p = [Environment]::GetEnvironmentVariable('Path','User')
+> ```
 
 ## The layout
 
