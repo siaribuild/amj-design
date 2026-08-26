@@ -98,3 +98,124 @@ Consequences for the design:
 Workspace, plan pane and diff pane at `conduct start`; each stage pane appears
 when that stage begins. Lighter on a 16GB machine, and no panes for stages that
 never run (the ui stages when `ui` is off).
+
+---
+
+## Architect's decisions raised (2026-08-26, design stage)
+
+Answer inline with `A:` as before. Neither blocks the build starting — the stub
+test suite and the headless fallback are unaffected. Decision 3 gates only the
+**live** pane-mode evidence.
+
+## 3. Pane mode cannot launch claude on this machine today — pick the remediation
+
+Probed live during design (evidence in `02-design.md` §1): herdr panes currently
+run with a restricted filesystem view. Files under `%APPDATA%` that existed
+before the herdr server started are invisible inside panes (`Test-Path
+...\Roaming\npm` → False from a pane; True outside), while `E:\Projects`,
+`~/.claude` and Program Files are visible. Your only claude install is the npm
+global under `%APPDATA%\npm` — so no pane can start claude, and `herdr agent
+start --kind claude` times out ("timed out waiting for agent startup",
+reproduced twice on a fresh workspace). Same host, same user, medium integrity,
+not AppContainer; the cause was not identified — you may know it (a sandboxing
+tool? how the server was started?).
+
+The conductor is designed to survive this (probe → verbatim diagnosis →
+headless fallback, criteria 35/36), but pane mode stays dark until claude is
+launchable from a pane:
+
+- **(a) Install Claude Code's native build** (`irm https://claude.ai/install.ps1 | iex`),
+  which lands at `%USERPROFILE%\.local\bin\claude.exe` — the profile root IS
+  visible from panes. The conductor's binary resolution already prefers this
+  path when it exists. Adds a second claude install alongside the npm one.
+- **(b) Restart the herdr server from a fresh shell** (`herdr session stop
+  default`, then `herdr`) and re-probe — if the restricted view is an artifact
+  of how the current server was started, this alone fixes it. Costs your
+  current panes.
+- **(c) Accept headless-until-fixed** — the run works, pane mode waits.
+
+**Recommendation: (b) first (free, diagnostic), then (a) if the view is still
+restricted.** Re-probe with:
+`herdr workspace create --cwd E:\Projects\amj-website-design --label probe --no-focus`,
+then `herdr pane run <root-pane> "Test-Path $env:APPDATA\npm"` and read the
+pane. `True` means pane mode will light up with zero code change.
+
+A:
+
+## 4. Reviewers in the sidebar: 2 of 4, not 4 of 4
+
+Your grill answer (Q7) used `review-security` as an example agent name. The
+design puts **conformance and ponytail** in panes, but keeps **security** as a
+headless `-p "/security-review"` child in all modes: `security-review` is
+compiled into the CLI — the Skill tool cannot reach it, so a file-based prompt
+cannot invoke it, and typing a multi-line prompt that starts with `/` into the
+TUI is not a reliable way to fire a built-in command. Headless `-p` is also your
+own 2026-08-24 ruling on how that gate is invoked. Codex stays a child process
+(spec out-of-scope). Reviewers are read-only and never need steering, so the
+pane's value there was visibility only; tokens are identical either way.
+
+- **(a) Accept**: conformance + ponytail visible in the sidebar, security +
+  codex as console lines.
+- **(b) Override**: all three Claude reviewers in panes, accepting that
+  security's slash delivery through the TUI is unproven and may silently not
+  fire the command — I do not recommend this without a verified delivery
+  mechanism.
+
+**Recommendation: (a).**
+
+A:
+
+---
+
+## Owner answers (2026-08-26, round 3)
+
+**Runaway guard: DELETED ENTIRELY.** Supersedes round 2's "keep it, unify it
+with blocked-and-hold". The owner's objection is decisive and should be recorded
+so nobody re-proposes it: *there is no defensible threshold*. A large feature's
+build stage legitimately outspends a small feature's entire run, so any fixed
+number is either tight enough to block real work or loose enough to miss a
+runaway. And the 5-hour rate-limit window is a real, externally enforced ceiling
+that fires regardless — a guard would only ever trip before the thing that
+actually protects you.
+
+The feature itself replaces the guard: a looping stage is invisible today
+*because it is headless*. In a pane you watch it loop and stop it. Visibility is
+the guard, and it needs no threshold. Build no runaway mechanism, and do not
+reintroduce `--max-budget-usd` under another name.
+
+**Reviewer placement (architect item 4): accepted as recommended.** Conformance
+and ponytail run as pane agents; `/security-review` stays a headless `-p` child
+because it is a CLI built-in slash command no pane-safe delivery can reach;
+codex stays a child. This is a property of the tools, not a design choice.
+
+**Probity shim: shrink it, and write the ADR.** Both folded into this feature.
+
+The shim (`.claude/hooks/probity-subagent-shim.mjs`) does two jobs, and only one
+is a workaround:
+
+1. *Subagent transcript rewrite* — the real workaround. Claude Code sets the hook
+   payload's `transcript_path` to the SESSION transcript even for a subagent
+   call, so Probity could not see the failing test a subagent had just written
+   and denied every implementation write. This exists because v1 ran the
+   developer as a subagent.
+2. *Direct binary invocation* — `node node_modules/@nizos/probity/dist/bin.js`
+   instead of the plugin's `npx @nizos/probity`. Not a workaround: an
+   improvement. `npx` resolves on EVERY Bash/Write/Edit call, and the shim's own
+   comment calls a shell-spawned npx needless attack surface.
+
+Under this feature every stage is a top-level session, so `agent_id` is never
+present and job 1 becomes dead code (~30 lines, including the recursive
+subagent-transcript search). Job 2 stays.
+
+TIMING IS LOAD-BEARING: the v1 pipeline is being used to build this feature, and
+its developer IS a subagent. Removing job 1 before the pane pipeline is the norm
+would disable the TDD gate for the very build in progress. The removal task must
+therefore be sequenced LAST, after pane execution works.
+
+Keep `probity@probity` **disabled**. Enabling it alongside the shim would
+double-gate, and the plugin's `npx` path is the worse of the two.
+
+**ADR required.** Nothing on disk records why the plugin is disabled; the owner
+could not remember and it had to be reconstructed from a file header and a
+plugin manifest. One ADR in `docs/adr/` so the next person does not "fix" it back
+to the plugin and reintroduce `npx` on every tool call.
