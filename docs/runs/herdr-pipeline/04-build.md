@@ -72,3 +72,41 @@ Files: `.mcp.json` (new), `package.json` (+`@playwright/mcp` devDep, installed),
   never returns/exits on it). Each was mutation-checked.
 - Probed live: init reports `playwright: connected`, 24 `mcp__playwright__*` tools
   (was 0). Next tasks: `claudeArgs` is exported now — assert argv, don't spawn.
+
+## t4 — herd.mjs adapter
+
+Files: `scripts/pipeline/herd.mjs` (new), `scripts/pipeline/conduct.mjs`,
+`scripts/tests/fixtures/herdr-stub.mjs` (new), `scripts/tests/pipeline.test.mjs`,
+`.gitignore` (+`docs/runs/*/prompts/`).
+
+- `herd.mjs`: `available()`, `ensureCockpit()`, `paneReady()`, `writePrompt()`,
+  `launchStage()`, and `herd(...argv)` — every call an execFile argv array whose
+  thrown Error carries herdr's message verbatim AND its `code` (the branch for
+  `agent_not_ready` keys off the code, not its prose). Allowlists at the
+  boundary: `LABEL`, slug, pane id, and the base sha — the sha because the diff
+  watch loop is the only command *string* with a variable in it.
+- `conduct.mjs`: `checkSlug` is now `start`'s first statement (it fired after
+  mkdir/.active/git before). New `paneMode(args)`/`noPanes()`; `--no-panes` is
+  per-invocation, never persisted. `claudeArgs` split so `paneArgs(spec, sid)`
+  shares the session flags (`--autocompact` above all) and drops `-p`.
+- 12 new tests: bad slug creates nothing and calls no herdr/git; cockpit is
+  workspace+plan+diff and boots no agent; herdr down ⇒ headless, run continues;
+  launch sequence is process-info → agent start `-- <native args>` → agent get →
+  one typed line; `$(...)` prompt leaves no marker and no byte in any argv;
+  adoption of `agent_session.value`; retry-once-then-headless with the error
+  verbatim; `agent_not_ready` is not a failure; the stub hard-fails on
+  `agent read` and no path calls it.
+
+**`--session-id` live check (DONE WHEN item) — PARTIAL, and it found a blocker.**
+Interactive `claude --session-id not-a-uuid` answers `Invalid session ID. Must be
+a valid UUID.` — so a non-`--print` boot **does** parse the flag. But end to end
+through herdr it never gets that far on Windows: `herdr agent start ... -- <args>`
+launches via `Start-Process -FilePath claude`, which resolves the extensionless
+npm shim and dies with `%1 is not a valid Win32 application` →
+`{"error":{"code":"timeout"}}`. Verified directly: `-FilePath claude` fails,
+`-FilePath claude.cmd` prints the version. With **no** `--` args herdr types
+`claude` at the prompt instead and it boots fine (blocked on the MCP trust
+dialog — the `agent_not_ready` path). So today **every** native arg is lost in
+pane mode, `--autocompact` included, and t5 will always hit the headless
+fallback until `claude.cmd`/`claude.exe` shadows the shim on PATH or herdr's
+Windows launcher is fixed. Raised, not worked around.
