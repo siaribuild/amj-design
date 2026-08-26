@@ -309,3 +309,28 @@ is now silent and reproduces the live message. Test: `ensureCockpit` completes
 past a payload-less `pane run` and still returns both panes. Re-measured on
 0.8.2 — `workspace list/create/close`, `pane split`, `pane process-info`,
 `notification show`, `agent list` answer JSON; only `pane run` is silent.
+
+## fixes — blocked at launch, and pane permission mode
+
+Live, against herdr 0.8.2 and a real claude: every pane stage raised the Bypass
+Permissions consent dialog. `agent start` answered `agent_not_ready`, which was
+handled, and `agent prompt` then answered `agent_blocked`, which threw out of
+`launchStage`, killed the conductor, and orphaned a live agent in its pane.
+
+`launchStage` now returns `{ blocked, pendingLine }` on `agent_blocked` instead
+of throwing; the conductor holds the stage warm as `blocked-launch`, and
+`conduct answer` delivers the prompt line the agent never received rather than a
+DECISIONS.md nudge it has not read. Asserts: the run holds instead of crashing,
+one session across the whole cycle, the pane survives, the agent is never
+`/exit`ed, and `answer` types the prompt path. New `HERDR_STUB_BLOCKED` models a
+blocked agent — two error codes at once, which the single-code knobs could not
+express, which is why this shipped untested.
+
+Pane stages now boot `acceptEdits`, headless keeps `bypassPermissions` (no TTY,
+no dialog). Chosen by probing a real claude in a real pane: `acceptEdits`,
+`auto`, `dontAsk` and `manual` all boot to `idle` with no dialog; `acceptEdits`
+is the most restrictive of them that still lets a stage work — a `Write` and a
+`Bash` both went through unprompted against this repo's allowlist, where
+`manual` prompts on every edit and `plan` is read-only. Nothing persists a bypass
+acceptance (`~/.claude.json` carries only `hasTrustDialogAccepted`, the separate
+workspace-trust dialog), so the dialog fired on every pane stage of every run.
