@@ -23,25 +23,34 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HOME = process.env.USERPROFILE || process.env.HOME
-const DIR = join(HOME, '.claude', 'projects', 'E--Projects-amj-website-design')
+const PROJECTS = join(HOME, '.claude', 'projects')
+// A/B arms run in git worktrees, which Claude Code files under their own project
+// directory. Scan them all and filter by the record's own cwd instead.
+const DIRS = () => readdirSync(PROJECTS).map((d) => join(PROJECTS, d)).filter((d) => {
+  try { return statSync(d).isDirectory() } catch { return false }
+})
 const NL = String.fromCharCode(10)
+const SEP = String.fromCharCode(92) // backslash, for normalising Windows cwd paths
 
 const zero = () => ({ ctx: 0, out: 0, turns: 0 })
 
 const ctxOf = (u) =>
   (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0)
 
-function* records(sinceMs) {
-  for (const f of readdirSync(DIR)) {
-    if (!f.endsWith('.jsonl')) continue
-    // Cheap prefilter: a file untouched since the window opened holds nothing new.
-    if (sinceMs && statSync(join(DIR, f)).mtimeMs < sinceMs) continue
-    for (const line of readFileSync(join(DIR, f), 'utf8').split(NL)) {
-      if (!line.trim()) continue
-      let d
-      try { d = JSON.parse(line) } catch { continue }
-      if (d.type !== 'assistant' || !d.message?.usage) continue
-      yield d
+function* records(sinceMs, cwdFilter) {
+  for (const dir of DIRS()) {
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.jsonl')) continue
+      // Cheap prefilter: a file untouched since the window opened holds nothing new.
+      if (sinceMs && statSync(join(dir, f)).mtimeMs < sinceMs) continue
+      for (const line of readFileSync(join(dir, f), 'utf8').split(NL)) {
+        if (!line.trim()) continue
+        let d
+        try { d = JSON.parse(line) } catch { continue }
+        if (d.type !== 'assistant' || !d.message?.usage) continue
+        if (cwdFilter && !String(d.cwd || '').split(SEP).join('/').includes(cwdFilter)) continue
+        yield d
+      }
     }
   }
 }
@@ -65,7 +74,8 @@ export const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B'
 function main() {
   const since = process.argv[2]
   const label = process.argv[3] || 'arm'
-  if (!since) { console.error('usage: measure.mjs <since-iso> [label]'); process.exit(1) }
+  const cwdFilter = process.argv[4] || null
+  if (!since) { console.error('usage: measure.mjs <since-iso> [label] [cwd-substring]'); process.exit(1) }
   const sinceMs = Date.parse(since)
   if (Number.isNaN(sinceMs)) { console.error('bad timestamp: ' + since); process.exit(1) }
 
@@ -73,7 +83,7 @@ function main() {
   const bySession = new Map(), byModel = new Map()
   let first = Infinity, last = 0
 
-  for (const d of records(sinceMs)) {
+  for (const d of records(sinceMs, cwdFilter)) {
     const t = Date.parse(d.timestamp || '')
     if (!(t >= sinceMs)) continue
     const ctx = ctxOf(d.message.usage)

@@ -1,0 +1,7 @@
+Trade customers keep working out GST by hand when they are pricing a job on site
+or checking a supplier invoice in the ute. Add a small GST quick-calculator to
+the customer site: they type an amount, and see it both ex-GST and inc-GST,
+rounded the way this business rounds money everywhere else.
+
+It should feel like part of the app, not a bolted-on tool, and it should respect
+the fact that different customers think in ex-GST or inc-GST by default.

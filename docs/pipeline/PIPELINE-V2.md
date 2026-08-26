@@ -149,3 +149,108 @@ Everything worth turning is in the `STAGES` table at the top of
 
 After each run, `conduct report` prints the split. If a role is disproportionate,
 that is the next thing to slice.
+
+---
+
+# Running it with herdr
+
+Herdr is a terminal workspace manager: persistent panes that survive closing the
+terminal. That last property is the one that matters here — a build stage can run
+40 minutes, and v1 lost two ~100-minute agent runs to a machine restart.
+
+## One-time setup
+
+Herdr installs to `%LOCALAPPDATA%\Programs\Herdr\bin` and is **not** on PATH.
+Add it (PowerShell, once):
+
+```powershell
+[Environment]::SetEnvironmentVariable('Path', $env:Path + ';' + $env:LOCALAPPDATA + '\Programs\Herdr\bin', 'User')
+```
+
+Open a new terminal, then `herdr --version` should print `herdr 0.8.2`.
+
+## The layout
+
+```bash
+herdr
+```
+
+That launches or re-attaches the persistent session. Split it into three panes —
+the split keys are in herdr's own help, or from inside a pane:
+
+```bash
+herdr pane split --current --direction right --cwd "$PWD" --no-focus
+```
+
+| pane | what runs there | why |
+|---|---|---|
+| **conductor** | `node scripts/pipeline/conduct.mjs ...` | stages stream their tool calls here; this is where you work |
+| **grill** | `claude` → `/grilling` | stage 0 is the one stage that talks to you |
+| **scratch** | `npm run dev`, `git log`, opening the mock | so you never interrupt the conductor to look at something |
+
+Nothing about the pipeline *requires* herdr — the conductor is a plain Node
+script. Herdr buys persistence, and somewhere to put the grill and the dev server
+that isn't the pane the pipeline is streaming into.
+
+## A full feature, start to finish
+
+**1. Grill it** — in the grill pane:
+
+```bash
+claude
+```
+
+Then `/grilling` and paste the ask. Stress-test the idea, and pin down which
+actor in `CONTEXT.md` this serves. When it's done, paste the conclusions and the
+actors-and-needs section into `docs/runs/<slug>/00-ask.md` (created by step 2).
+
+**2. Start the run** — in the conductor pane:
+
+```bash
+node scripts/pipeline/conduct.mjs start my-feature "the one-line ask"
+node scripts/pipeline/conduct.mjs ui on
+```
+
+`ui on` only if the feature adds or changes UI; it enables the ux and polish
+stages and the mock gate.
+
+**3. Drive it.** Repeat until it tells you otherwise:
+
+```bash
+node scripts/pipeline/conduct.mjs next
+```
+
+Each call runs one stage and stops. You will be stopped at three kinds of gate:
+
+- **A decision.** The stage wrote `DECISIONS.md` and stopped. Answer inline —
+  put `A: ...` under each question — then `conduct answer`, which resumes that
+  same stage warm rather than paying to boot a new one.
+- **The mock.** Open `docs/mocks/<slug>.html` in the scratch pane. Not happy?
+  Write what you want into `03-ux.md` and `conduct run ux`. Happy? `conduct next`.
+- **Sign-off.** `08-accept.md` is a recommendation, not a decision.
+
+**4. Route any findings.** Reviewers report; only the developer fixes:
+
+```bash
+node scripts/pipeline/conduct.mjs fix "the finding, or the review file path"
+node scripts/pipeline/conduct.mjs run verify
+```
+
+**5. See what it cost:**
+
+```bash
+node scripts/pipeline/conduct.mjs report
+```
+
+## If a stage goes wrong
+
+- **It stopped on its budget ceiling.** The line says so. Either the work needs
+  splitting into more tasks, or raise that stage's `budget` in `STAGES`.
+- **It didn't write what it promised.** The conductor says which file is missing.
+  Just `conduct run <stage>` again — stages are re-runnable.
+- **A build task failed.** `docs/runs/<slug>/logs/build-<task>.jsonl` is the full
+  transcript. Fix the task's entry in `02-tasks.json` and re-run `build`;
+  completed tasks are skipped via `tasksDone`.
+- **Codex failed for infrastructure reasons** (network, quota, auth). That is not
+  a clean review. Retry once, and if it fails again say the work is unreviewed —
+  never present it as reviewed.
