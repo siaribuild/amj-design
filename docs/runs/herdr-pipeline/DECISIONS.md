@@ -219,3 +219,33 @@ double-gate, and the plugin's `npx` path is the worse of the two.
 could not remember and it had to be reconstructed from a file header and a
 plugin manifest. One ADR in `docs/adr/` so the next person does not "fix" it back
 to the plugin and reintroduce `npx` on every tool call.
+
+---
+
+## Owner answers (2026-08-27, round 4)
+
+**Criterion 14 — KEEP OPEN as a known gap. Do not descope, do not invert.**
+
+The criterion asks that `herdr agent read <label>` return live output for a
+running stage. It cannot today: herdr returns `agent_not_idle` while an agent is
+working, and Claude runs on the terminal's ALTERNATE SCREEN, so rows that scroll
+off never enter herdr's host scrollback and are unrecoverable at any `--lines`.
+Reproduced repeatedly, including losing part of a probe agent's own reply.
+
+The design discharged the criterion by citing its own negation — "no `agent read`
+in any data path" — which the tester correctly identified as answering a
+criterion by inverting it. That reasoning is withdrawn.
+
+Owner ruling: the criterion stays **unmet and visible** in the acceptance report
+rather than being marked rejected. A solution will be sought later. Do not close
+it by redefining it, and do not let a future acceptance pass silently reclassify
+it as out of scope.
+
+Note what is and is not blocked: the owner can SEE a running stage by looking at
+its pane — that part works and is the thing he asked for. What is impossible is
+the CONDUCTOR reading it programmatically. Any future solution lives in that gap,
+e.g. a stage streaming its own progress to a file the conductor can tail.
+
+**Live pane verification — do it before sign-off.** Eight criteria currently rest
+on a stub. The herdr server is being restarted to pick up the `claude.cmd`
+forwarder, after which a real stage must be observed running in a real pane.
