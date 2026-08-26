@@ -251,3 +251,33 @@ Files: `scripts/tests/pipeline.test.mjs`, `docs/adr/0013-probity-direct-shim-not
   settings, not this repo, so no test can assert it; the ADR carries it.
 - Order executed, as §9.5 requires: tests green → ADR → commit → shim edit →
   suite re-run. `npm run test:pipeline`: 57/57.
+
+## fixes — F1, F2, F4, F5
+
+Files: `scripts/pipeline/conduct.mjs`, `scripts/pipeline/herd.mjs`,
+`scripts/tests/pipeline.test.mjs`. One red-then-green cycle and one commit each.
+
+- **F1** `answer` now resolves its gate with `stageSpec`, not `STAGES.find`, so
+  `build-*`/`review-*` labels stop crashing on `spec.gate`/`spec.compact`;
+  `resume`'s task recording is now a shared `finished()` that `answer` uses, so a
+  task finished at a gate reaches `tasksDone`. The test also caught a third half:
+  `afterStage` over-wrote the `gateStage` its own held agent had just claimed with
+  the wrapper's id (`build`), so `build-t1` was reachable only via blocked-ui —
+  now `r.gateStage || spec.id`. Asserts: gate is `build-t1`, `answer` exits clean,
+  `tasksDone == ['t1']`, one `agent start` across the whole cycle.
+- **F2** `plan` marks a `running`/`held` stage `[>]` and says which (`running` /
+  `held: <reason>`), for build-task rows too — a task is the stage `build-<id>`,
+  and `tasksDone` only knows about tasks that finished. Asserts each of `[x]`,
+  `[>]`, `[ ]` lands on the right row.
+- **F4** `writePrompt` validates the slug with the `checkSlug` already in the
+  module. Asserts eight bad slugs throw; the red run really did create
+  `%TEMP%/ESCAPED`.
+- **F5** `refreshRun` re-reads stages already sourced `transcript` (writing only
+  when a figure moved) and the headless `answer` branch meters and records the way
+  `finalizePane` does. The test drives the same held stage through both modes and
+  asserts the totals are *equal*, 5,000 ctx / 5 calls, not just non-stale.
+
+`npm run test:pipeline`: 61/61. `npm run typecheck:gate` clean.
+Pre-existing flake, NOT from these fixes — see the note under F5 in the handoff:
+`one reviewer holding does not stall the other three` fails intermittently with
+`EBUSY` on `run.json`; reproduced on the pre-fix sources (833 tests) too.
