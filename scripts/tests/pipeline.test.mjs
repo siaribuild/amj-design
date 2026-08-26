@@ -580,6 +580,24 @@ test('a stage prompt is delivered as a FILE, byte-exact, and the file is gitigno
     'prompt files are stage scratch and must be ignored beside docs/runs/*/logs/')
 })
 
+test('writePrompt allowlists the slug too, not just the label', () => {
+  // Criterion 39: no unvalidated run or task field may reach a herdr command.
+  // The slug is half of this path, the path is typed at a herdr agent, and
+  // checkSlug was sitting ten lines above unused - so `../../../ESCAPED` wrote
+  // outside the repo and was then handed to an agent as its instructions.
+  const { root } = stubbed('prompt-slug')
+
+  for (const bad of ['../../../ESCAPED', '../escape', 'Bad Slug', 'evil;rm', '$(id)',
+    '', '-leading', 'x'.repeat(50)])
+    assert.throws(() => writePrompt(root, bad, 'spec', 'body'), /slug/i,
+      'writePrompt accepted the slug ' + JSON.stringify(bad))
+  assert.equal(existsSync(resolve(root, '..', '..', '..', 'ESCAPED')), false,
+    'a rejected slug still created a directory outside the repo')
+
+  assert.equal(writePrompt(root, 'demo', 'spec', 'body'), 'docs/runs/demo/prompts/spec.txt',
+    'the legal path must be unchanged')
+})
+
 test('the pane boot carries the same native args as the headless one, plus the session id', () => {
   const ux = STAGES.find((s) => s.id === 'ux')
   const a = paneArgs(ux, 'sess-uuid', true)

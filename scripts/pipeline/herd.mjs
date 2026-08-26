@@ -128,6 +128,10 @@ export async function ensureCockpit({ slug, base, root }) {
 
 /** Write a stage's prompt where the pane can read it. Returns the repo-relative path. */
 export function writePrompt(root, slug, label, text) {
+  // BOTH halves of this path are run-derived, and the whole of it is typed at a
+  // herdr agent as the file holding its instructions. Validating only the label
+  // let `../../../ESCAPED` write outside the repo and then be read as a prompt.
+  checkSlug(slug)
   const rel = 'docs/runs/' + slug + '/prompts/' + checkLabel(label) + '.txt'
   const abs = join(root, 'docs', 'runs', slug, 'prompts', checkLabel(label) + '.txt')
   mkdirSync(join(root, 'docs', 'runs', slug, 'prompts'), { recursive: true })
