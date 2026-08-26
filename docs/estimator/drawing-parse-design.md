@@ -56,7 +56,7 @@ things materially:
   for that rectangle. This is why the >2% rejection rule is sufficient rather than heroic, and
   why the title-block logo that came back as a 2091 × 2091 "window" is easy to reject.
 - **Tag harvesting is almost unnecessary.** It is needed only to tell apart two rows with
-  identical dimensions — W14 and W16 here — not to find openings.
+  identical dimensions — W5/W6 and W9/W11 here — not to find openings.
 - **Failure is per-opening and harmless.** An opening whose frame is not found keeps everything
   the schedule gave it and reports composition as *not stated*. The list never degrades.
 
@@ -150,7 +150,7 @@ W4   OP 596.9  |  fx 1913.5  |  OP 601.1             the drafter wrote "2x 600mm
 W4 lands 3.1 mm and 1.1 mm from a figure a human typed, without being told it.
 
 **The ambiguity is twice what §6 assumed.** It named W14/W16 as the only same-size pair; the
-real pairs are W5/W6 and W9/W11, and W14/W16 are not drawn. Disambiguation therefore buys 4
+real pairs are W5/W6 and W9/W11, and W14/W16 are not read at all. Disambiguation therefore buys 4
 openings, not 2 — still late-ordered, still not a prerequisite.
 
 **A conflict the drawing settles.** W4's drawn frame is **3200 × 2100** — the energy report's
@@ -253,8 +253,8 @@ known, rejection is cheap and rule-based:
 **Stage 6 — Disambiguation only** *(drawing Stages B and D)*. Needed **only** when two rows
 share dimensions, because then a matched frame could belong to either. On this document the
 pairs are **W5/W6** (850 × 2057) and **W9/W11** (1810 × 1027) — four openings, all four found
-as two candidates each. *(This paragraph named W14/W16 until 2026-08-27; they are not drawn at
-all. See §2a.)*
+as two candidates each. *(This paragraph named W14/W16 until 2026-08-27; no frame of their size
+resolves on either elevation, so they are `not read` and never reach this stage. See §2a.)*
 
 Tags come from `getTextContent` on the floor plans; no operator list, ~30–50 ms. Two verified
 traps: each tag is an octagon carrying **two** lines (`W1` over `S08`), so a single-token reader
