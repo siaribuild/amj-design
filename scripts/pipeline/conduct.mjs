@@ -24,6 +24,7 @@
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { sessionTotals } from './measure.mjs'
 
 const ROOT = resolve(process.cwd())
 const RUNS = join(ROOT, 'docs', 'runs')
@@ -48,12 +49,13 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/
 const checkSlug = (s) => SLUG.test(s) ? s : die('slug must match ' + SLUG + ' - got "' + s + '"')
 
 // --- stage table -----------------------------------------------------------
-// budget: hard ceiling in USD (--max-budget-usd). A stage that hits it stops and
-// reports instead of quietly burning. compact: context window cap, in tokens.
+// budget: hard ceiling in USD (--max-budget-usd) - a RUNAWAY GUARD, set well
+// above expected spend, not a target. For 'build' it applies per task session.
+// A stage that hits it stops and says so. compact: context window cap, in tokens.
 
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', budget: 4, compact: 120000,
+    id: 'spec', agent: 'product-manager', budget: 8, compact: 120000,
     needs: ['00-ask.md'], produces: ['01-spec.md'],
     prompt: (r) => `Write the spec for this feature.
 
@@ -80,7 +82,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', budget: 5, compact: 120000,
+    id: 'design', agent: 'architect', budget: 15, compact: 120000,
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -118,7 +120,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', budget: 4, compact: 100000, mcp: true,
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', budget: 12, compact: 100000, mcp: true,
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -137,11 +139,11 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, budget: 8, compact: 120000,
+    id: 'build', agent: 'developer', sliced: true, budget: 25, compact: 120000,
     needs: ['02-tasks.json'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, budget: 3, compact: 100000, mcp: true,
+    id: 'polish', agent: 'ui-designer', ui: true, budget: 8, compact: 100000, mcp: true,
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -152,7 +154,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', worktree: true, budget: 6, compact: 120000,
+    id: 'verify', agent: 'tester', worktree: true, budget: 18, compact: 120000,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => `Independently verify this feature. Assume nothing reported is true.
 
@@ -175,7 +177,7 @@ Findings go back to a developer, not to you - do not fix code.`,
     id: 'review', parallel: true, needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', budget: 3, compact: 100000,
+    id: 'accept', agent: 'product-manager', gate: 'signoff', budget: 6, compact: 100000,
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -193,7 +195,7 @@ reference, anything descoped, and an ACCEPT / REJECT verdict.`,
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', budget: 3, compact: 100000,
+    id: 'conformance', agent: 'architect', budget: 8, compact: 100000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the branch diff:
@@ -207,10 +209,10 @@ diff-reading review always misses. Check every path in 02-tasks.json exists.
 WRITE ${r.dir}/07-review-conformance.md.`,
   },
   {
-    id: 'security', slash: '/security-review', budget: 4, compact: 100000,
+    id: 'security', slash: '/security-review', budget: 8, compact: 100000,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', budget: 3, compact: 100000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', budget: 6, compact: 100000,
   },
   { id: 'codex', codex: true },
 ]
@@ -284,13 +286,15 @@ function runClaude(spec, promptText, run, label) {
     })
     cp.stderr.on('data', (d) => process.stderr.write('    ! ' + d))
     cp.on('close', (code) => {
-      const u = result?.usage || {}
-      const ctx = (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0)
+      // result.usage is the LAST message's usage, not the sum over the run - it
+      // under-reported the smoke-test design stage by 3x. Read the transcript.
+      const t = result?.session_id ? sessionTotals(result.session_id) : { ctx: 0, out: 0, turns: 0 }
       const s = {
         code,
         cost: result?.total_cost_usd ?? 0,
-        contextTokens: ctx,
-        outputTokens: u.output_tokens || 0,
+        contextTokens: t.ctx,
+        outputTokens: t.out,
+        turns: t.turns,
         session: result?.session_id,
         seconds: Math.round((Date.now() - started) / 1000),
         overBudget: /budget/i.test(String(result?.terminal_reason || result?.stop_reason || '')),
@@ -570,12 +574,12 @@ If you believe the finding is wrong, say so and change nothing.`
     const to = rows.reduce((a, [, s]) => a + (s.outputTokens || 0), 0)
     console.log('\n  ' + run.slug + ' - ' + rows.length + ' stage runs\n')
     console.log('  ' + 'stage'.padEnd(20) + 'cost'.padStart(9) + 'context'.padStart(11) +
-      'output'.padStart(9) + 'time'.padStart(8))
+      'output'.padStart(9) + 'turns'.padStart(7) + 'time'.padStart(8))
     console.log('  ' + '-'.repeat(57))
     for (const [k, s] of rows)
       console.log('  ' + k.padEnd(20) + ('$' + (s.cost || 0).toFixed(2)).padStart(9) +
         fmt(s.contextTokens || 0).padStart(11) + fmt(s.outputTokens || 0).padStart(9) +
-        ((s.seconds || 0) + 's').padStart(8))
+        String(s.turns || 0).padStart(7) + ((s.seconds || 0) + 's').padStart(8))
     console.log('  ' + '-'.repeat(57))
     console.log('  ' + 'TOTAL'.padEnd(20) + ('$' + tc.toFixed(2)).padStart(9) +
       fmt(tk).padStart(11) + fmt(to).padStart(9))
