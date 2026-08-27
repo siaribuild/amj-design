@@ -127,6 +127,13 @@ A customer-uploaded document (plans, window schedule) listing openings to be quo
 **Schedule parse**:
 Turning an uploaded schedule into proposed lines. Parsed lines carry their origin and stay reviewable — a parse proposes, a person confirms.
 
+**Drawing reading**:
+The per-opening answer read from a plan set's elevations by a vision model: how the opening *divides* — operations, their order, the division axis, and the ratio each unit takes. Three states, never collapsed (plan-parse output spec §4): a value, *not stated* (readable drawings that simply do not say), *not read* (we could not tell). A reading claims operable-or-not, never a family — the schedule names the family — and a stated width always beats a measured ratio. Every reading carries its crop as evidence. The customer sees successes only; ops sees gaps and disagreements, because only ops can act on them.
+_Avoid_: drawing parse result (a reading is per opening, not per document), detection
+
+**Crop evidence**:
+The exact image the model was shown for a drawing reading, stored per stage run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface.
+
 **Estimator (the subsystem)**:
 Distinct from the Estimator persona above — one word, two senses, both live. The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
 _Avoid_: quote (an estimator output is not a quote)

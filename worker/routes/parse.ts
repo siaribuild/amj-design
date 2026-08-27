@@ -12,7 +12,7 @@ import {
 } from "../lib/parse";
 import { uuid } from "../lib/util";
 import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
-import { derivedKeys } from "../lib/ai/ingest";
+import { derivedKeys, deleteProjectDerived } from "../lib/ai/ingest";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -254,6 +254,16 @@ parse.post("/projects/current/clear", async (c) => {
     c.env.FILES.delete(f.r2_key),
     c.env.FILES.delete(derivedKeys(project.id, f.id).markdown),
   ])).catch(() => { /* D1 is authoritative; unreachable R2 objects are lifecycle cleanup */ });
+  // …and everything ELSE derived from those documents, which the per-file
+  // deletes above cannot reach. Crops cut from a plan live under the project's
+  // own prefix, not beside the file they came from, so clearing a draft deleted
+  // the source drawing and left fragments of it in R2 indefinitely.
+  //
+  // A registered customer's draft lives until they clear it — there is no expiry
+  // and `expired` is never written by anything — so clearing IS the retention
+  // event for everything derived from it. The "lifecycle cleanup" the comment
+  // above defers to does not exist.
+  await deleteProjectDerived(c.env, project.id);
   return c.json({ ok: true });
 });
 
@@ -368,7 +378,8 @@ parse.get("/projects/current/extraction-status", async (c) => {
   }
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
-            j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at
+            j.failure_class, j.retry_after, j.progress_stage, j.drawings_done, j.drawings_total,
+            j.created_at, j.updated_at
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -381,6 +392,8 @@ parse.get("/projects/current/extraction-status", async (c) => {
     failure_class: string | null;
     retry_after: string | null;
     progress_stage: string;
+    drawings_done: number | null;
+    drawings_total: number | null;
     created_at: string;
     updated_at: string;
   }>().catch(() => null);
@@ -398,6 +411,14 @@ parse.get("/projects/current/extraction-status", async (c) => {
         summary: null,
         diagnostic,
         progressStage: pending.progress_stage,
+        // The counter, and ONLY the counter. Successes accruing against the real
+        // opening count; nothing about the ones that could not be read, because
+        // a gap is not a customer's to resolve — they cannot add a split, an
+        // orientation or a head height to an opening that did not parse, and
+        // inviting an action the interface does not support is worse than
+        // silence (§7.2, owner 2026-08-27).
+        drawingsDone: pending.drawings_done ?? undefined,
+        drawingsTotal: pending.drawings_total ?? undefined,
       },
       basis: {},
     });

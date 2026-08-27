@@ -99,6 +99,35 @@ export function classifyDocument(markdown: string | null, filename: string): Doc
   return "supporting";
 }
 
+/** Does this page carry at least three DISTINCT opening tags — W1, D3, W04a?
+ *
+ *  Bounded on purpose, because `hay` is text out of a customer's PDF and every
+ *  other signal in classifyPageRoles is a constant-memory RegExp.test.
+ *  `new Set(hay.match(/…/g))` is not: it builds an array holding one string per
+ *  match before the Set dedupes, so a page decompressing to a megabyte of
+ *  "w1 w1 w1 …" — comfortably inside the upload cap — retained 22 MB on a
+ *  128 MB Worker. Measured, not supposed.
+ *
+ *  Two bounds, and they close different holes. Iterating lazily and stopping at
+ *  the third distinct tag means nothing accumulates. Capping the matches EXAMINED means
+ *  a flood of one repeated tag cannot spend the CPU either: the pattern can only
+ *  produce a few thousand distinct strings, so not having found three within
+ *  this many is a page saying something other than "I am a tagged floor plan",
+ *  and a real one carries a few dozen tags in total. A page that trips the cap
+ *  can still route on a corroborating signal — it loses this one test, not its
+ *  chance to be a plan. */
+const MAX_TAG_MATCHES_SCANNED = 500;
+function hasDistinctOpeningTags(hay: string): boolean {
+  const seen = new Set<string>();
+  let scanned = 0;
+  for (const m of hay.matchAll(/\b[wd]\s?\d{1,2}[a-z]?\b/g)) {
+    seen.add(m[0]);
+    if (seen.size >= 3) return true;
+    if (++scanned >= MAX_TAG_MATCHES_SCANNED) return false;
+  }
+  return false;
+}
+
 /**
  * Classify PDF pages independently. Architectural sets routinely contain floor
  * plans, elevations and a window schedule in one file; a single file-level
@@ -130,17 +159,60 @@ export function classifyPageRoles(pages: string[], filename = ""): RolePages {
       has(/\b(?:heating|cooling)\s+load\b/),
       has(/\bstar\s+rating\b/),
     ].filter(Boolean).length;
-    const planSignals = [
-      has(/\b(?:floor|site|roof|reflected ceiling)\s+plan\b/),
-      has(/\belevation\b/),
-      has(/\bsection\b/),
-      has(/\bscale\s*1\s*:/),
-      has(/\bnorth\s+(?:point|arrow)\b/),
-    ].filter(Boolean).length;
+    // PLAN SIGNALS ARE NOT EQUAL, and counting them as equal selected exactly
+    // the wrong pages on every architectural set.
+    //
+    // Measured against a real 14-page set: all four drawing sheets — two floor
+    // plans and two elevation sheets — scored ONE signal each, while the only
+    // two pages scoring two were a 1:20 stair detail and an NCC compliance
+    // sheet, both of which say "SECTION" and print an inline "SCALE 1:20". A
+    // ">= 2" rule therefore rejected every sheet that mattered and selected the
+    // two that did not, and the plan skill was handed a stair detail on every
+    // architectural upload.
+    //
+    // The elevations lost their second signal to the title block. A CAD title
+    // block emits its header LABELS as one run and their VALUES as another, so
+    // the text layer reads "Sheet Date Scale ... 01/05/2025 1 : 100" and
+    // /\bscale\s*1\s*:/ cannot match however many times the sheet prints 1:100.
+    //
+    // So: only a sheet that NAMES a drawing is a drawing sheet. A section mark,
+    // a scale and a north point corroborate — a detail sheet carries two of
+    // them — and may lift a plan-titled page, but never qualify one alone.
+    // An elevation TITLE, never the word. "elevation" is one of the commonest
+    // incidental words in a set — "see elevation for head height", "spot
+    // elevation 42.15 AHD", "finished floor elevation RL 0.000", and on the
+    // reference set's own stair detail, "refer to elevations for roof materials
+    // and pitch". Treating the bare word as sufficient routes every one of them
+    // as a drawing sheet.
+    //
+    // Two title forms, and both are needed: a designator (ELEVATION A, and the
+    // singular plus a lone character is what keeps a cover sheet's drawing index
+    // out — that reads "A5 - ELEVATIONS A6" and names no drawing), or a face
+    // (NORTH / FRONT / REAR ELEVATION).
+    const namesAnElevation = has(/\belevation\s+[a-z0-9](?![a-z0-9])/)
+      || has(/\b(?:north|south|east|west|front|rear|side)\s+elevations?\b/);
+    const namesAPlan = has(/\b(?:floor|site|roof|reflected ceiling)\s+plan\b/);
+    const corroborating = has(/\bsection\b/) || has(/\bscale\s*1\s*:/)
+      || has(/\bnorth\s+(?:point|arrow)\b/);
+    // A cover sheet's drawing INDEX names every sheet in the set, so it matches
+    // "floor plan" as readily as the floor plan does. On the reference set that
+    // page is excluded only because it happens to carry no north point — and a
+    // cover sheet commonly shows the site plan, which brings one. Naming three
+    // different drawing types is what an index does and what a drawing does not.
+    const namesManyDrawings = [
+      namesAPlan,
+      has(/\belevations?\b/),
+      has(/\bsections?\b/),
+      has(/\b(?:electrical|drainage|landscape|bracing)\b/),
+    ].filter(Boolean).length >= 3;
+    // A floor plan carrying opening tags is the one the plan skill actually
+    // needs: it is where a W-number is joined to a room and a wall. Three tells
+    // a tagged plan from a cover sheet that happens to print one.
     const pageNo = index + 1;
     if (scheduleSignals >= 2 || has(/\b(window|door|glazing|opening)\s+schedule\b/)) add("schedule", pageNo);
     if (energySignals >= 2) add("energy_report", pageNo);
-    if (planSignals >= 2) add("plans", pageNo);
+    const isDrawingSheet = namesAnElevation || (namesAPlan && (corroborating || hasDistinctOpeningTags(hay)));
+    if (isDrawingSheet && !namesManyDrawings) add("plans", pageNo);
   });
   return roles;
 }
@@ -155,6 +227,63 @@ export function textForPages(pages: string[], pageNumbers: number[]): string | n
 
 // ── §7.1 derivative keys ─────────────────────────────────────────────────────
 const safeSeg = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+/**
+ * Delete every AI-derived object for a project: markdown derivatives, and the
+ * crops cut from its drawings.
+ *
+ * A REGISTERED CUSTOMER'S DRAFT LIVES UNTIL THEY CLEAR IT — there is no expiry,
+ * and `expired` is never written by anything — so clearing IS the retention event
+ * for everything derived from that draft, exactly as issuing or voiding is for a
+ * quote.
+ *
+ * Clearing used to delete each uploaded file's own R2 object and its markdown,
+ * and nothing else, on the reasoning that "unreachable R2 objects are lifecycle
+ * cleanup". There is no lifecycle rule. So a customer who asked for their draft
+ * to be cleared had the source plan deleted while crops cut from that same
+ * drawing stayed in R2 indefinitely — fragments of the document, outliving the
+ * document.
+ *
+ * Prefix-swept rather than keyed off D1: an orphan is exactly the thing D1 no
+ * longer knows about, and this is the one moment it can still be found by where
+ * it lives.
+ */
+export async function deleteProjectDerived(
+  env: Env,
+  projectId: string,
+  /** `all` for a cleared draft — its owner threw the whole thing away. `crops`
+   *  for an ISSUED quote, whose source documents are deliberately kept
+   *  (orders.ts:404) and whose markdown derivative is not an image: the owner's
+   *  rule is that the IMAGES are not needed once a quote is issued. */
+  scope: "all" | "crops" = "all",
+): Promise<void> {
+  // `crops` must NOT be runs/ — that is the stage replay archive (stage.ts:28),
+  // which an issued quote keeps. The two prefixes are deliberately disjoint.
+  const prefix = scope === "crops"
+    ? `projects/${safeSeg(projectId)}/crops/`
+    : `projects/${safeSeg(projectId)}/`;
+  let cursor: string | undefined;
+  let swept = 0;
+  do {
+    const page = await env.FILES.list({ prefix, cursor }).catch(() => null);
+    if (!page) {
+      // Best-effort is right — this must never fail an issue or a clear — but
+      // stopping silently leaves customer drawing fragments behind with nobody
+      // aware. The caller cannot act on it, so the log is the only place it can
+      // surface, and a retention control that fails quietly is not one.
+      console.warn(`retention: sweep of ${prefix} stopped after ${swept} objects; some remain`);
+      return;
+    }
+    const keys = page.objects.map((o) => o.key);
+    if (keys.length) {
+      await env.FILES.delete(keys).catch(() => {
+        console.warn(`retention: ${keys.length} objects under ${prefix} could not be deleted`);
+      });
+      swept += keys.length;
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+}
+
 export const derivedKeys = (projectId: string, fileId: string) => ({
   markdown: `projects/${safeSeg(projectId)}/derived/${safeSeg(fileId)}/markdown.md`,
 });

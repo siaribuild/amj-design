@@ -417,7 +417,11 @@ test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () =
   // NON-VACUITY FIRST. A regex that stopped matching would report perfect
   // agreement over two empty sets, which is the assertion shape this feature
   // has now caught twelve of.
-  assert.equal(writerUnion.length, 5, `SplitProposal["basis"] read as ${JSON.stringify(writerUnion)}`);
+  // 6 since "drawing" joined the writer's union. This number is NON-VACUITY, not
+  // the guard — the guard is the loop below, which checks every writer spelling
+  // against the reader's union. Bump it when a basis is genuinely added, which is
+  // the one edit that should make you check the loop still passes.
+  assert.equal(writerUnion.length, 6, `SplitProposal["basis"] read as ${JSON.stringify(writerUnion)}`);
   assert.ok(writerLiteral.length >= 1, "splitCandidates' own literal was not found");
 
   for (const spelling of [...writerUnion, ...writerLiteral]) {

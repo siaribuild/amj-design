@@ -1212,3 +1212,132 @@ test("A20 a split that cannot be built is EXCLUDED, and says why it was rejected
     assert.equal(r.selectedSplit, null);
   });
 });
+
+// ─── t4: a drawing-derived hint, and the rounding rule that makes it exact ────
+
+test("ratio units round to the step, and the LAST unit takes the remainder", () => {
+  // Output spec §1.2, with its own worked examples. The last unit absorbs the
+  // rounding so the units ALWAYS partition the opening exactly — validateSplit
+  // computes a coverage delta and flags it, so a rule that snapped every unit to
+  // the step would break whenever the opening is not a multiple of it.
+  const hint = {
+    source: "drawing",
+    raw: "read from the elevation",
+    axis: "vertical",
+    units: [
+      { operation: "awning", count: 1, widthMm: null, ratio: 0.634 },
+      { operation: "fixed", count: 1, widthMm: null, ratio: 0.366 },
+    ],
+  };
+  const at2050 = proposeSplit({ widthMm: 2050, heightMm: 2100 }, hint, null);
+  assert.deepEqual(at2050.segments.map((s) => s.widthMm), [1300, 750], "2050 → 1300|750");
+  assert.equal(at2050.segments.reduce((n, s) => n + s.widthMm, 0), 2050, "partitions exactly");
+
+  // The opening that is NOT a multiple of the step is the case that matters.
+  const at2047 = proposeSplit({ widthMm: 2047, heightMm: 2100 }, hint, null);
+  assert.deepEqual(at2047.segments.map((s) => s.widthMm), [1300, 747], "2047 → 1300|747");
+  assert.equal(at2047.segments.reduce((n, s) => n + s.widthMm, 0), 2047,
+    "still exact — only the last unit carries a non-round figure, which is the piece cut to fit");
+});
+
+test("a drawing-derived split says so, and is not described as the schedule's comment", () => {
+  // The provenance lie: SplitProposal.basis had no "drawing" member and every
+  // non-report hint mapped to "schedule_comment", so a reviewer would be told an
+  // architect wrote in words what a model read off a drawing. Those are exactly
+  // the two things a reviewer weighs differently, and it is the surface the whole
+  // zero-wrong-readings bar depends on.
+  const proposal = proposeSplit({ widthMm: 2050, heightMm: 2100 }, {
+    source: "drawing", raw: "elevation A", axis: "vertical",
+    units: [
+      { operation: "awning", count: 1, widthMm: null, ratio: 0.352 },
+      { operation: "fixed", count: 1, widthMm: null, ratio: 0.648 },
+    ],
+  }, null);
+  assert.equal(proposal.basis, "drawing");
+  assert.match(proposal.note, /drawing|elevation/i);
+  assert.doesNotMatch(proposal.note, /schedule comment/i);
+  assert.equal(proposal.reviewRequired, true, "still never a final answer");
+});
+
+test("a STATED width beats a measured ratio, and the rest scale to what is left", () => {
+  // Design §6, owner 2026-08-07. W4's comment says 600mm units; the drawing
+  // measures 596.9 and 601.1. A person wrote 600 and meant exactly 600 — the
+  // drawing is a ±2.5% measurement of that intent, not a better source for it.
+  const proposal = proposeSplit({ widthMm: 3200, heightMm: 2100 }, {
+    source: "drawing", raw: "elevation C", axis: "vertical",
+    units: [
+      { operation: "awning", count: 1, widthMm: 600, ratio: 0.192 },
+      { operation: "fixed", count: 1, widthMm: null, ratio: 0.615 },
+      { operation: "awning", count: 1, widthMm: 600, ratio: 0.193 },
+    ],
+  }, null);
+  const widths = proposal.segments.map((s) => s.widthMm);
+  assert.equal(widths[0], 600, "stated, not 614");
+  assert.equal(widths[2], 600, "stated, not 618");
+  assert.equal(widths.reduce((a, b) => a + b, 0), 3200, "and the unstated one takes the remainder");
+  assert.equal(widths[1], 2000, "which is the 2000 the drafter also wrote");
+});
+
+test("a horizontal split stacks: each unit spans the full width and shares the height", () => {
+  // As written, the ratio branch gave BOTH dimensions the share — a unit whose
+  // width was a fraction of the opening's HEIGHT. Nonsense geometry, and it would
+  // have reached validateSplit as a coverage failure on an axis nobody was
+  // watching. fitReportComponentsToOpening already swaps along/across correctly;
+  // this branch simply did not.
+  const proposal = proposeSplit({ widthMm: 1800, heightMm: 2400 }, {
+    source: "drawing", raw: "elevation B", axis: "horizontal",
+    units: [
+      { operation: "awning", count: 1, widthMm: null, ratio: 0.25 },   // a highlight over
+      { operation: "fixed", count: 1, widthMm: null, ratio: 0.75 },
+    ],
+  }, null);
+  assert.equal(proposal.axis, "horizontal");
+  assert.deepEqual(proposal.segments.map((s) => s.widthMm), [1800, 1800],
+    "every stacked unit spans the opening's full width");
+  assert.deepEqual(proposal.segments.map((s) => s.heightMm), [600, 1800],
+    "and the HEIGHT is what divides");
+  assert.equal(proposal.segments.reduce((n, s) => n + s.heightMm, 0), 2400, "partitioning it exactly");
+});
+
+test("the reviewer's own sentence names the drawing — provenance that stops at the type is not provenance", async () => {
+  // basis: "drawing" existed and was still dropped where it mattered. The
+  // sentence written to quote_line.review_json — what a human reads, and one of
+  // the three review channels this ships behind — branched on "energy_report"
+  // and dropped everything else into a generic line naming no source at all. A
+  // reviewer weighs "an architect wrote this down" against "a model read this off
+  // an elevation" completely differently, and was told neither.
+  const products = [
+    splitProduct("awn-36", { operation: "awning", maxWidthMm: 1200, glasses: [glass("dg", 3.6, 0.45)] }),
+    splitProduct("fix-44", { operation: "fixed", maxWidthMm: 1200, glasses: [glass("dg", 4.4, 0.45)] }),
+  ];
+  const r = await selectWithSplits(
+    { family: "windows", operationType: "awning", widthMm: 2000, heightMm: 1000, externalRef: "W1" },
+    {
+      source: "drawing", raw: "elevation A", axis: "vertical",
+      units: [
+        // Both under the 1200mm these fixture products make — 0.35/0.65 would
+        // put the fixed lite at 1300 and the split would be correctly excluded
+        // as unbuildable, which is a different test.
+        { operation: "awning", count: 1, widthMm: null, ratio: 0.45 },
+        { operation: "fixed", count: 1, widthMm: null, ratio: 0.55 },
+      ],
+    },
+    splitCtx(products),
+  );
+  assert.ok(r.selectedSplit, "a drawing-derived split won the ladder");
+  assert.equal(r.selectedSplit.proposalBasis, "drawing", "and carried its provenance that far");
+
+  // The same refusal path the schedule-comment case already exercises, so the
+  // only thing differing under test is where the make-up came from.
+  const env = scriptedDb({
+    "SELECT options_json FROM quote_line": { options_json: "{}" },
+    "FROM composite_policy": { tolerance_mm: 5, default_joiner_mm: 0, max_segments: 6 },
+  });
+  const warnings = await materialiseSelectedSplit(env, {
+    openingId: "o1", quoteLineId: "ql1", externalRef: "W1",
+    opening: { widthMm: 2000 }, result: r,
+  });
+  const said = [...warnings, ...env.writes.map((w) => JSON.stringify(w.args))].join(" ");
+  assert.match(said, /drawing|elevation/i, "the reviewer is told it came from the drawing");
+  assert.doesNotMatch(said, /schedule comment/i, "and is not told an architect wrote it in words");
+});
