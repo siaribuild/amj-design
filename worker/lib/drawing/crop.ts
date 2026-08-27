@@ -114,3 +114,27 @@ export function cropBoxFor(
  *  Never downscales. A large crop is already legible and resampling it down only
  *  destroys the thing being read. */
 export const MIN_CROP_WIDTH_PX = 900;
+
+/** Reduce a box to the image that was actually rendered.
+ *
+ *  THE WORKER CANNOT KNOW THE RENDERER'S PIXEL SIZE, and asking it to guess is
+ *  what broke the first real read: a whole sheet was requested as
+ *  ceil(1190.52 × 3) = 3572 wide, unpdf produced 3571, sharp.extract refuses a
+ *  rectangle larger than its image, and all four sheets came back crop_failed.
+ *  Pass A never ran and all nineteen openings resolved `not_read`.
+ *
+ *  Clamping here is not the repair-untrusted-input this file refuses elsewhere.
+ *  A model-supplied REGION is refused because clamping [0.2,0.2,1.4,0.6] hands
+ *  the model a whole sheet described as one window. This box is the WORKER'S OWN
+ *  arithmetic meeting the renderer's rounding, and the container is the only
+ *  side that knows the answer — reducing it is reporting what it has.
+ *
+ *  A box entirely outside the image is not a rounding difference. That is a real
+ *  fault and returns null rather than a 1×1 crop of a corner. */
+export function clampToImage(box: CropBox, imageWidth: number, imageHeight: number): CropBox | null {
+  const left = Math.min(box.left, imageWidth);
+  const top = Math.min(box.top, imageHeight);
+  const width = Math.min(box.width, imageWidth - left);
+  const height = Math.min(box.height, imageHeight - top);
+  return width > 0 && height > 0 ? { left, top, width, height } : null;
+}

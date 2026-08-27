@@ -1036,3 +1036,30 @@ test("the energy report does not overwrite a drawing-derived hint — the guard,
     "not a single-source equality — that is the shape that lost the drawing",
   );
 });
+
+test("a whole-sheet box one pixel larger than the render is not a failed sheet", () => {
+  // THE BUG THAT STOPPED THE FIRST REAL READ. read.ts asks for a whole sheet as
+  // a crop of the whole page, computing the box as ceil(pageWidthPt × scale) —
+  // 1190.52 × 3 → 3572. unpdf's renderer produced 3571. sharp.extract refuses a
+  // rectangle larger than its image, so all four sheets came back crop_failed,
+  // Pass A never ran, and all 19 openings resolved not_read. The fallback took
+  // over correctly and the failure was reported per sheet — it just read nothing.
+  //
+  // The Worker cannot know the exact pixel size the renderer will produce, so it
+  // must not have to. The container clamps a box to the image it actually
+  // rendered: it is the only side that knows, and reducing a box by a rounding
+  // pixel is reporting what it has, not repairing untrusted input.
+  assert.deepEqual(
+    M.clampToImage({ left: 0, top: 0, width: 3572, height: 2526 }, 3571, 2525),
+    { left: 0, top: 0, width: 3571, height: 2525 },
+  );
+  // An offset box loses only the overhang, keeping its origin.
+  assert.deepEqual(
+    M.clampToImage({ left: 3500, top: 2400, width: 200, height: 200 }, 3571, 2525),
+    { left: 3500, top: 2400, width: 71, height: 125 },
+  );
+  // A box entirely outside the image is not a rounding difference and is refused
+  // — that is a real fault and must not be turned into a 1×1 crop of a corner.
+  assert.equal(M.clampToImage({ left: 9000, top: 0, width: 50, height: 50 }, 3571, 2525), null);
+  assert.equal(M.clampToImage({ left: 0, top: 9000, width: 50, height: 50 }, 3571, 2525), null);
+});

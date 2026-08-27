@@ -1651,8 +1651,8 @@ test("a counted drawing read replaces the phase label, whatever the stage says",
   // total is what switches the label.
   assert.equal(
     M.readingMessage({ stage: "extracting_schedule", drawingsDone: 0, drawingsTotal: 20 }),
-    "20 openings found in your drawings…",
-    "the denominator is announced before any opening is read",
+    "Reading the drawings…",
+    "the count itself belongs to the SCHEDULE step; this line is the no-stage fallback",
   );
   assert.equal(
     M.readingMessage({ stage: "extracting_schedule", drawingsDone: 7, drawingsTotal: 20 }),
