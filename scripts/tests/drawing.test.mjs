@@ -889,6 +889,7 @@ test("ONE box that two rows both fit makes BOTH rows not read", () => {
   for (const n of out.notRead) {
     assert.match(n.reason, /one box/i);
     assert.equal(n.state, "not_read", "not `not_stated` — the drawing shows something, we cannot say whose");
+    assert.equal(n.subReason, "ambiguous_box");
   }
 });
 
@@ -917,19 +918,32 @@ test("a same-size PAIR with two boxes resolves by order along the wall, and only
   assert.deepEqual(blind.notRead.map((n) => n.tag).sort(), ["W11", "W9"]);
 });
 
-test("a row no box fits is NOT STATED, not NOT READ", () => {
-  // D1 on the reference set: 1380x2405, and nothing within 2% is drawn at that
-  // width on either elevation. The drawings are readable and simply do not show
-  // it. Output spec §4 — the two states must never collapse, and this is the one
-  // that means "the fallback is doing its job", not "we failed".
+test("no box fits is UNLOCATED — a fact about us, never proof the opening is undrawn", () => {
+  // The error this test used to encode, and it is the one this session already
+  // made once with the geometric matcher: concluding "not drawn" from "I did not
+  // find it". W14 and W16 were declared undrawn on exactly that reasoning and
+  // were on the sheet all along — the matcher was the limitation, not the
+  // drawing.
+  //
+  // assign() sees ONE elevation. A row missing from it may be on another sheet,
+  // or Pass A may simply have missed the box. Neither is knowable here, so the
+  // design records D1 as `not read` — "not a claim that it is undrawn" — and the
+  // spec makes `unlocated` an ops-visible SUB-reason of it, never a fourth state.
+  //
+  // `not_stated` is a POSITIVE finding and belongs to Pass B: the box was found,
+  // the crop was read, and the drawing does not divide the opening. Locating
+  // cannot produce it.
   const out = M.assign({
     rows: [row("D1", 1380, 2405)],
     boxes: [box([0.1, 0.1, 0.2, 0.2], 1, [false], 0.976)],
     elevation: "A",
   });
   assert.equal(out.assigned.size, 0);
-  assert.equal(out.notRead.length, 0, "not a failure");
-  assert.deepEqual(out.notStated.map((n) => n.tag), ["D1"]);
+  assert.equal(out.notRead.length, 1);
+  assert.equal(out.notRead[0].state, "not_read");
+  assert.equal(out.notRead[0].subReason, "unlocated");
+  assert.match(out.notRead[0].reason, /elevation A/, "names the sheet it looked at, not all of them");
+  assert.equal(out.notStated, undefined, "locating never concludes the drawing is silent");
 });
 
 test("a FIXED row whose drawing carries an operating symbol is a disagreement, not a decision", () => {

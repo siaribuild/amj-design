@@ -9,17 +9,23 @@
 // Nothing here reads a drawing. It compares Pass A's boxes against the schedule
 // the platform already holds, and its whole job is to REFUSE the ambiguous ones.
 //
-// THREE OUTCOMES, and the middle one is the reason this file is not a Map:
+// TWO OUTCOMES, which is why this returns a result rather than a Map:
 //
-//   assigned    this row owns that box, and may be cropped and read.
-//   not_stated  no box fits. The drawings are readable and do not show it — the
-//               even-split fallback takes over, which is today's behaviour and
-//               is not news. D1 on the reference set.
-//   not_read    we cannot say. Two rows fit one box, or the signals disagree.
+//   assigned   this row owns that box, and may be cropped and read.
+//   not_read   we cannot say which box is this row's, if any.
 //
-// Output spec §4 forbids collapsing the last two, and records what it cost when
-// they were collapsed. `not_stated` is a fact about the drawing; `not_read` is a
-// fact about us.
+// THERE IS NO `not_stated` HERE, and that is the correction this file exists
+// around. Locating cannot conclude that a drawing is silent: this sees ONE
+// elevation, a row missing from it may be on another sheet, and Pass A may
+// simply have missed the box. Reporting "no box fits" as "the drawings do not
+// show it" is inferring a fact about the WORLD from a failure of our own — the
+// mistake this project already made once, when W14 and W16 were declared undrawn
+// on exactly that reasoning and were on the sheet all along.
+//
+// So a row nothing fits is `not_read` with sub-reason `unlocated`, which the
+// design states in those words: "not a claim that it is undrawn". `not_stated`
+// is a POSITIVE finding and belongs to Pass B — the box was found, the crop was
+// read, and the drawing does not divide the opening.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { Region } from "./types";
 
@@ -48,15 +54,18 @@ export interface Assignment {
   proportionDelta: number;
 }
 
+/** Why a row was not located. `subReason` is ops-visible detail beneath a single
+ *  output state — spec AC-10: never a fourth state on the contract, and never on
+ *  a customer surface. */
 export interface Unassigned {
   tag: string;
-  state: "not_stated" | "not_read";
+  state: "not_read";
+  subReason: "unlocated" | "ambiguous_box" | "ambiguous_row";
   reason: string;
 }
 
 export interface AssignResult {
   assigned: Map<string, Assignment>;
-  notStated: Unassigned[];
   notRead: Unassigned[];
 }
 
@@ -85,7 +94,6 @@ export function assign(input: {
   elevation: string;
 }): AssignResult {
   const assigned = new Map<string, Assignment>();
-  const notStated: Unassigned[] = [];
   const notRead: Unassigned[] = [];
 
   // Which boxes could each row be? Proportion is the discriminator because it
@@ -115,10 +123,12 @@ export function assign(input: {
     const fits = candidates.get(r.tag) ?? [];
 
     if (fits.length === 0) {
-      // Readable drawings that do not show this opening. Not a failure.
-      notStated.push({
+      // NOT proof the opening is undrawn — see the header. It may be on another
+      // elevation, or Pass A may have missed it, and neither is knowable here.
+      notRead.push({
         tag: r.tag,
-        state: "not_stated",
+        state: "not_read",
+        subReason: "unlocated",
         reason: `no box on elevation ${input.elevation} is proportioned like ${r.widthMm}x${r.heightMm}`,
       });
       continue;
@@ -131,6 +141,7 @@ export function assign(input: {
         notRead.push({
           tag: r.tag,
           state: "not_read",
+          subReason: "ambiguous_box",
           reason: `one box on elevation ${input.elevation} fits ${rivals.length} rows (${rivals.join(", ")}); two openings cannot be one window`,
         });
         continue;
@@ -154,6 +165,7 @@ export function assign(input: {
       notRead.push({
         tag: r.tag,
         state: "not_read",
+        subReason: "ambiguous_row",
         reason: ordered
           ? `${pair.length} rows of this size against ${fits.length} boxes on elevation ${input.elevation}`
           : `${fits.length} boxes fit ${r.tag} and the floor plan's wall order is unknown`,
@@ -170,7 +182,7 @@ export function assign(input: {
     assigned.set(r.tag, { boxIndex: chosen, proportionDelta: Math.abs(p - proportionOf(r)) });
   }
 
-  return { assigned, notStated, notRead };
+  return { assigned, notRead };
 }
 
 /** Same stated size, to the millimetre — which is what makes a pair a pair. */
