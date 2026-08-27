@@ -253,3 +253,24 @@ test("a degenerate or inverted region yields no crop rather than a bad one", () 
   assert.equal(M.cropBoxFor([0.2, 0.9, 0.8, 0.1], 600, 400, 3), null, "y inverted");
   assert.equal(M.cropBoxFor([0.2, 0.2, 0.8, 0.8], 0, 400, 3), null, "no page");
 });
+
+test("a region outside 0..1 is refused, because clamping it would silently mean 'the whole sheet'", () => {
+  // Region is FRACTIONS of the page. Out of range means the producer misread the
+  // convention — and Pass A's regions come from a vision model, so this is
+  // untrusted input, not an internal invariant.
+  //
+  // Clamping is not a defence here, it is the bug: [0.2, 0.2, 1.4, 0.6] clamps to
+  // the full page width, so the model is handed the entire elevation sheet as if
+  // it were one window, and describes it. Refusing costs one `not read`, which
+  // the fallback already covers.
+  for (const bad of [
+    [-0.1, 0.2, 0.5, 0.6],
+    [0.2, -0.1, 0.5, 0.6],
+    [0.2, 0.2, 1.4, 0.6],
+    [0.2, 0.2, 0.5, 1.2],
+  ]) {
+    assert.equal(M.cropBoxFor(bad, 600, 400, 3), null, `out of range: ${JSON.stringify(bad)}`);
+  }
+  // The full page is in range and legitimate — a sheet holding one drawing.
+  assert.ok(M.cropBoxFor([0, 0, 1, 1], 600, 400, 3), "0..1 inclusive is valid");
+});

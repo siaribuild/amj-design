@@ -59,6 +59,15 @@ export function cropBoxFor(
   const [x0, y0, x1, y1] = region;
   if (![x0, y0, x1, y1, pageWidthPt, pageHeightPt, scale].every(Number.isFinite)) return null;
   if (pageWidthPt <= 0 || pageHeightPt <= 0 || scale <= 0) return null;
+  // A Region is FRACTIONS of the page, and these arrive from a vision model, so
+  // out of range is untrusted input rather than an internal invariant.
+  //
+  // The clamping below is not a defence against it — it IS the bug. [0.2, 0.2,
+  // 1.4, 0.6] clamps to the full page width, so the model is handed the whole
+  // elevation sheet as though it were one window and describes it. Refusing
+  // costs one `not read`, which the even-split fallback already covers.
+  // Inclusive, because a drawing filling its sheet is legitimate.
+  if ([x0, y0, x1, y1].some((v) => v < 0 || v > 1)) return null;
   // Inverted is not the same as reversed: a region that arrives with its corners
   // swapped came from something that misunderstood the convention, and silently
   // sorting it hides that. Refuse it.
