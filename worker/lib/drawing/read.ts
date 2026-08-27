@@ -42,6 +42,32 @@ import type { Region } from "./types";
  *  not an argument. See the design's constants section. */
 const RENDER_SCALE = 3;
 
+/** Pass A's sheets are rendered SMALLER, and this is why the first working read
+ *  still timed out before `opening_composition` ran even once.
+ *
+ *  An A3 sheet at RENDER_SCALE is 3571px wide. Vision models cap an image around
+ *  1568px and downscale anything larger, so each of those calls uploaded ~1MB to
+ *  send detail the model discarded. Four of them consumed the job's budget.
+ *
+ *  1.3 puts an A3 page at ~1548px: at the cap, nothing lost, a fraction of the
+ *  bytes. Pass A only has to LOCATE window-shaped boxes; the crops it leads to
+ *  are still cut from a RENDER_SCALE render, because reading a chevron is where
+ *  resolution actually matters.
+ *
+ *  A CALIBRATION KNOB: the evidence that would move it is Pass A's hit rate at
+ *  1.0 / 1.3 / 2.0 against a labelled fixture. */
+const PASS_A_SCALE = 1.3;
+
+/** How many openings are read at once.
+ *
+ *  Nineteen serial reads at a few seconds each is most of a job's budget. The
+ *  calls share nothing — one crop, one schedule row — so the only reason they
+ *  were serial is that it was simpler to write.
+ *
+ *  Four, not nineteen: the gateway is shared with every other extraction stage,
+ *  and a burst that trips a rate limit turns a slow read into a failed one. */
+const READ_CONCURRENCY = 4;
+
 export interface OpeningOutcome {
   tag: string;
   state: "read" | "not_stated" | "not_read";
@@ -182,12 +208,12 @@ export async function readDrawings(env: Env, args: {
       // any box against any render. This is the arithmetic simply not being
       // wrong in the first place.
       left: 0, top: 0,
-      width: Math.floor(s.pageWidthPt * RENDER_SCALE),
-      height: Math.floor(s.pageHeightPt * RENDER_SCALE),
+      width: Math.floor(s.pageWidthPt * PASS_A_SCALE),
+      height: Math.floor(s.pageHeightPt * PASS_A_SCALE),
     },
   }));
   while (pendingSheets.length) {
-    const req = buildCropRequest(pendingSheets, RENDER_SCALE);
+    const req = buildCropRequest(pendingSheets, PASS_A_SCALE);
     if (req.pages.length === 0) break;
     try {
       const res = await callPlanParse(env, args, req, pdfBytes);
@@ -270,11 +296,28 @@ export async function readDrawings(env: Env, args: {
   let done = 0;
   const advance = async () => { done++; await args.onProgress?.(done, total); };
 
-  for (const row of args.rows) {
-    const place = located.get(row.tag);
+  // ── Read them in a small pool ──────────────────────────────────────────────
+  // Nineteen serial reads is most of a job's budget, which is how the first
+  // working read timed out before opening_composition ran even once. The bodies
+  // below are unchanged — only the iteration is.
+  //
+  // Results are placed BY INDEX. Push order is completion order, and outcomes are
+  // matched to schedule rows by position downstream, so a race that reordered
+  // them would attach readings to the wrong windows.
+  const ordered: (OpeningOutcome | undefined)[] = new Array(args.rows.length);
+  let nextRow = 0;
+  await Promise.all(Array.from(
+    { length: Math.min(READ_CONCURRENCY, args.rows.length) },
+    async () => {
+      for (;;) {
+        const i = nextRow++;
+        if (i >= args.rows.length) return;
+        const row = args.rows[i];
+        const place_outcome = (o: OpeningOutcome) => { ordered[i] = o; };
+        const place = located.get(row.tag);
     const crop = crops.get(row.tag);
     if (!place || !crop) {
-      outcomes.push({
+      place_outcome({
         tag: row.tag,
         state: "not_read",
         subReason: cropFailed.get(row.tag) ?? unlocated.get(row.tag) ?? "unlocated",
@@ -336,7 +379,7 @@ export async function readDrawings(env: Env, args: {
 
     if (!run.ok || !run.data) {
       const outcome: OpeningOutcome = { tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey };
-      outcomes.push(outcome);
+      place_outcome(outcome);
       if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
@@ -345,7 +388,7 @@ export async function readDrawings(env: Env, args: {
     const reading = run.data;
     if (reading.outcome !== "read") {
       const outcome: OpeningOutcome = { tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading };
-      outcomes.push(outcome);
+      place_outcome(outcome);
       if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
@@ -360,10 +403,23 @@ export async function readDrawings(env: Env, args: {
       // Surfaced, never resolved — the reviewer decides.
       disagreements: verified.agrees ? undefined : verified.disagreements,
     };
-    outcomes.push(outcome);
+    place_outcome(outcome);
     if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
     await advance();
-  }
+      }
+    },
+  ));
+  // FILL, DO NOT FILTER. Compacting the array would slide every later reading up
+  // a slot, and outcomes are matched to schedule rows by position — the exact
+  // misattribution the index-placement above exists to prevent. Unreachable
+  // today (every branch places an outcome), but a `continue` added later without
+  // one would turn a silent compaction into readings on the wrong windows.
+  // Naming the hole is cheap; finding it afterwards is not.
+  outcomes.push(...ordered.map((o, i) => o ?? {
+    tag: args.rows[i].tag,
+    state: "not_read" as const,
+    subReason: "no_outcome_recorded",
+  }));
 
   return { outcomes, total, warnings };
 }

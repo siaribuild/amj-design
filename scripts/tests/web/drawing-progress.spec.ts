@@ -38,7 +38,7 @@ test("the drawing read is its own step, counted, and silent about what it could 
   });
   const steps = page.locator("ol").first();
   await expect(steps).toContainText("Extracting the schedule · 20 openings found");
-  await expect(steps).toContainText("Extracting opening details · opening 7 of 20");
+  await expect(steps).toContainText("Extracting opening details · 7 of 20");
   // A gap is not a customer's to resolve — they cannot add a split, an
   // orientation or a head height to an opening that did not parse.
   for (const forbidden of [/unread/i, /could not be read/i, /upload the remaining/i]) {
@@ -55,3 +55,8 @@ test("the drawing read is its own step, counted, and silent about what it could 
 // with no counts produced no progress block under any stub I tried, while the
 // counted case above renders reliably. Rather than assert something weaker and
 // call it coverage, the check lives where it actually runs.
+
+// The no-drawings case is asserted in unit.test.mjs against stepsFor: a
+// schedule-only run must not carry a drawing step at all, or it renders as done
+// and claims work that never happened. It is not here for the same reason the
+// no-counts case is not: that combination does not render under any stub.
