@@ -167,10 +167,22 @@ function DimGroups({ F, S, wMm, hMm, spans, stacked, gap }: {
           + `M${q(F.x + F.w)} ${q(by + 2)} V${q(dimY + 4)} `
           + `M${q(F.x)} ${q(dimY)} H${q(F.x + F.w)} `
           + tick(F.x, dimY, 3.5) + tick(F.x + F.w, dimY, 3.5)} />
-        <text {...text} className="elev-dim" x={q(F.x + F.w / 2)} y={q(dimY - 3)} textAnchor="middle">{fmtMm(wMm)}</text>
         {/* Break-line for a very wide opening — hidden until the drawing is
             narrow enough that the leader would otherwise read as a dimension
-            drawn to scale. CSS owns that breakpoint, as in the wireframe. */}
+            drawn to scale. CSS owns that breakpoint, as in the wireframe.
+
+            IT IS EMITTED BEFORE THE FIGURE, and the order is the whole of it.
+            The symbol erases the leader it interrupts with a rect filled in the
+            paper colour, and it is centred on the leader — which is where the
+            number is centred too. Painted after, that rect took the lower half
+            of every digit: measured on a 3500 x 700 opening, glyphs at y
+            78.6-87.2 under a rect covering 83.2-97.2, reported as a width
+            "cut in half due to not fitting" when nothing was short of room.
+
+            Nothing else had to change, because the figure already knows how to
+            survive something crossing its leader: `text`'s `paint-order: stroke`
+            haloes it against `--paper`, the same colour the rect is filled with.
+            Under the number, the symbol reads as the break it is. */}
         {wide && (
           <g className="elev-break" aria-hidden="true">
             <rect x={q(bx - bw / 2)} y={q(dimY - 7)} width={q(bw)} height="14" fill="var(--paper)" stroke="none" />
@@ -180,6 +192,7 @@ function DimGroups({ F, S, wMm, hMm, spans, stacked, gap }: {
                 + `L${q(bx + bw * 0.08)} ${q(dimY + 5)} L${q(bx + bw * 0.2)} ${q(dimY)} H${q(bx + bw / 2)}`} />
           </g>
         )}
+        <text {...text} className="elev-dim" x={q(F.x + F.w / 2)} y={q(dimY - 3)} textAnchor="middle">{fmtMm(wMm)}</text>
       </g>
       <g>
         <path {...rule} d={

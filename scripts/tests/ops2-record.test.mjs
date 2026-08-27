@@ -1146,6 +1146,41 @@ test("unit leaders are opt-in, so the customer site's drawings are untouched", a
   assert.deepEqual(leaders(unsized), []);
 });
 
+test("FB-AC-33 — the break symbol is painted BEFORE the width figure, never over it", async () => {
+  // THE DEFECT, REDUCED TO DOCUMENT ORDER. A wide opening gets a "not to scale"
+  // break symbol, and the symbol erases the leader it interrupts with a rect
+  // filled in the paper colour. That rect was emitted AFTER the number sharing
+  // the same centre, so it painted out the lower half of every digit — measured
+  // on a 3500 x 700 opening: glyphs at y 78.6-87.2, rect covering 83.2-97.2.
+  //
+  // The number already knows how to survive a leader crossing it: `paint-order:
+  // stroke` haloes it against `--paper`, which is the same colour the rect is
+  // filled with. So the fix is ordering, not geometry — put the symbol under
+  // the figure and the halo does the rest, on both consoles.
+  const svg = await renderElevation({
+    productSlug: "", widthMm: "3500", heightMm: "700", size: "hero",
+  });
+  assert.match(svg, /elev-break/, "3500 x 700 is 5:1, well past the 2.4 the symbol appears at");
+
+  const breakAt = svg.indexOf("elev-break");
+  const widthFigure = svg.indexOf(">3500<");
+  assert.ok(widthFigure > 0, "the width is drawn as a figure");
+  assert.ok(breakAt < widthFigure,
+    "the break symbol precedes the figure it interrupts, so the figure paints last");
+
+  // AND IT IS ONLY THE WIDTH'S. The height leader runs up the other side and is
+  // never interrupted — an ordering fix that swept the whole group would put the
+  // height's own figure under something too.
+  assert.ok(svg.indexOf(">700<") > breakAt, "the height figure is unaffected by the reorder");
+
+  // A drawing that is not wide has no symbol to order at all, which is the case
+  // every other test in this file renders.
+  const square = await renderElevation({
+    productSlug: "", widthMm: "1200", heightMm: "1200", size: "hero",
+  });
+  assert.doesNotMatch(square, /elev-break/, "no symbol below the ratio, so nothing to paint over");
+});
+
 test("a line with no code still has a back control that says where it goes", () => {
   // The record keeps a line whose code the parser could not read, so the viewer
   // has to open on one. A back control labelled with an empty string is a

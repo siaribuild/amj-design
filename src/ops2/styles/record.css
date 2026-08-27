@@ -32,6 +32,25 @@
   --paper: var(--ds-surface-page);
 }
 
+/* ── AND THE BREAK SYMBOL'S GATE, which is the other half of the same debt ───
+ * `Elevation` emits a "not to scale" break through the width leader whenever an
+ * opening is wider than 2.4:1, and the CUSTOMER theme then decides when it is
+ * actually drawn (`src/styles/theme.css:904-907`): never by default, and only
+ * on a phone, where the drawing really has been squeezed. ops2 does not load
+ * that file, so the symbol showed at EVERY width here — on a 3500 x 700 opening
+ * it was the reported defect, because its leader-erasing rect used to paint over
+ * the number. The paint order is fixed in the component now and the symbol is
+ * legible either way; this is the second half, so the two consoles draw the same
+ * opening the same way rather than agreeing only by accident.
+ *
+ * The pair is copied whole rather than simplified to the component's own `wide`
+ * test: collapsing the two gates into one changes what the CUSTOMER site draws
+ * at desk width, which is a decision nobody has taken. */
+svg[data-elevation] .elev-break { display: none; }
+@media (max-width: 767px) {
+  svg[data-elevation][data-wide="1"] .elev-break { display: block; }
+}
+
 /* ── The head row's controls ────────────────────────────────────────────────*/
 .rec-cta {
   display: flex;
