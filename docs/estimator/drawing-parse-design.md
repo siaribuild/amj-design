@@ -317,6 +317,43 @@ silent guess.
 
 ## 6. Precedence — a stated width beats a measured one. DECIDED, owner 2026-08-07.
 
+### Crop retention is EVENT-driven, not a clock. Owner, 2026-08-27.
+
+**Decision: crops die when the quote reaches a terminal state, not at an age.** The owner's
+reasoning: the images are not needed once a quote is either voided/deleted or issued in its
+final version, and they are almost certainly not needed before that — so binding to the event
+already carries the safety margin a TTL would have to guess at.
+
+This removes the failure a fixed TTL introduces and which both review passes flagged: a crop
+expiring *underneath a live, unreviewed quote*, leaving a reviewer holding a provenance claim
+with nothing to check it against.
+
+**The triggers, against the real state machine** (`migrations/0001_customer_core.sql:59`):
+`quote_issued` and `accepted` (issued in final form — and since quote revisions were removed,
+issue IS final), `expired` and `closed` (voided). Delete the run's crop prefix on transition
+into any of them.
+
+**R2 lifecycle rules are time-based only** and cannot fire on an application event, so the
+primary mechanism is an application delete on transition. Three constraints follow:
+
+1. **The delete must never block the transition.** A failed R2 delete cannot fail an issue or a
+   void. Log and sweep; the quote is the business record, the crop is evidence for it.
+2. **A backstop is still required.** A missed transition — a crash, or a project that simply
+   never reaches a terminal state — leaks crops forever, and R2 objects already outlive their
+   D1 rows here (the same orphan gap that exists today for stage archives). A generous R2
+   lifecycle rule (proposed: 365 days) catches those. It is a safety net, not the policy: by a
+   year any live quote has reached `expired` anyway.
+3. **The ground-truth fixture is exempt, and this is not optional.** The fixture is built by the
+   owner confirming openings against crops. If fixture crops die with their quote, ground truth
+   evaporates and the release gate's wrong-rate becomes unmeasurable — which is the one thing
+   the zero-wrong-readings bar rests on. Labelling copies the crop to a separate prefix outside
+   both the event delete and the backstop rule.
+
+*Stated once and not re-argued:* after issue there is no crop behind a line's "from your
+drawing" claim, so a post-issue question about why an opening was priced as it was is answered
+from the line and the plan set, not the evidence. The owner has weighed that and set the point
+at issue.
+
 ### The energy report is authoritative for THERMAL parameters, not architectural ones. Owner, 2026-08-27.
 
 **A shipped defect, found by that one sentence.** `energyMap.ts` already splits precedence by
