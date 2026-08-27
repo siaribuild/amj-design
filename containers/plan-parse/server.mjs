@@ -5,6 +5,7 @@
 // Worker owns R2, D1, the model call and every decision.
 import { createServer } from "node:http";
 import { renderCrops } from "./render.mjs";
+import { badRequest } from "./validate.mjs";
 
 const PORT = Number(process.env.PORT ?? 8080);
 // A plan set is megabytes and arrives inline because the container has no R2
@@ -15,34 +16,25 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const readBody = (req) => new Promise((resolve, reject) => {
   const chunks = [];
   let size = 0;
+  let over = false;
   req.on("data", (c) => {
+    if (over) return;
     size += c.length;
-    if (size > MAX_BODY_BYTES) { reject(new Error("payload_too_large")); req.destroy(); return; }
+    if (size > MAX_BODY_BYTES) {
+      // PAUSE, do not destroy. Destroying here tore down the stream before the
+      // 413 could be written, so an oversized upload got no status at all and
+      // the write surfaced as an ERR_STREAM_DESTROYED rejection instead. Stop
+      // reading, let the handler answer, and close the socket after.
+      over = true;
+      req.pause();
+      reject(new Error("payload_too_large"));
+      return;
+    }
     chunks.push(c);
   });
-  req.on("end", () => resolve(Buffer.concat(chunks)));
+  req.on("end", () => { if (!over) resolve(Buffer.concat(chunks)); });
   req.on("error", reject);
 });
-
-/** Validate what arrived. The Worker builds this request and is trusted to have
- *  clamped the boxes, but "trusted" and "unchecked" are different things, and a
- *  malformed box reaches sharp.extract as a throw either way. */
-function badRequest(job) {
-  if (!job || typeof job !== "object") return "not an object";
-  if (!(job.scale > 0)) return "scale must be positive";
-  if (!Array.isArray(job.pages) || job.pages.length === 0) return "no pages";
-  for (const page of job.pages) {
-    if (!Number.isInteger(page.pageNo) || page.pageNo < 1) return "bad pageNo";
-    if (!Array.isArray(page.crops) || page.crops.length === 0) return "a page with no crops";
-    for (const c of page.crops) {
-      if (typeof c.id !== "string" || !c.id) return "a crop with no id";
-      const b = c.box;
-      if (!b || !["left", "top", "width", "height"].every((k) => Number.isInteger(b[k]))) return "a box that is not integer pixels";
-      if (b.width <= 0 || b.height <= 0 || b.left < 0 || b.top < 0) return "a box outside the page";
-    }
-  }
-  return null;
-}
 
 const server = createServer(async (req, res) => {
   const send = (code, body) => {
@@ -69,7 +61,11 @@ const server = createServer(async (req, res) => {
       failures,
     });
   } catch (err) {
-    if (err.message === "payload_too_large") return send(413, { error: "payload_too_large" });
+    if (err.message === "payload_too_large") {
+      send(413, { error: "payload_too_large" });
+      req.destroy();          // now that the client has been told why
+      return;
+    }
     // The message goes to the log, not the response. A pdf.js or sharp internal
     // string tells a caller about the inside of this process and tells the
     // Worker nothing it can act on — it retries or reports the opening unread

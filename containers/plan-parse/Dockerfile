@@ -19,7 +19,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-COPY render.mjs server.mjs ./
+# Explicit per file, never `COPY . .` — that would sweep rendered customer crops
+# from out/ and the fixture into the image. Explicit lists go stale, so a test
+# asserts that everything server.mjs imports appears here.
+COPY render.mjs server.mjs validate.mjs ./
 
 ENV NODE_ENV=production
 EXPOSE 8080

@@ -46,7 +46,8 @@ export async function renderCrops(pdfBytes, request) {
       );
     } catch (err) {
       // One unrenderable page costs its own openings, never the document.
-      for (const c of page.crops) failures.push({ id: c.id, reason: `page_render_failed: ${err.message}` });
+      console.error(`page_render_failed p${page.pageNo}:`, err.stack ?? err.message);
+      for (const c of page.crops) failures.push({ id: c.id, reason: "page_render_failed" });
       continue;
     }
 
@@ -65,8 +66,12 @@ export async function renderCrops(pdfBytes, request) {
       } catch (err) {
         // sharp throws when a rectangle runs outside the image. The Worker
         // clamps before sending, so this is a contract breach worth naming
-        // rather than a condition to paper over.
-        failures.push({ id, reason: `crop_failed: ${err.message}` });
+        // rather than a condition to paper over. A STABLE code, not the
+        // message: the Worker decides between retrying and reporting the
+        // opening unread, and that decision should not be a string match on a
+        // sharp internal.
+        console.error(`crop_failed ${id}:`, err.stack ?? err.message);
+        failures.push({ id, reason: "crop_failed" });
       }
     }
   }

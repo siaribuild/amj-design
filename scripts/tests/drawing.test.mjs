@@ -323,6 +323,50 @@ test("the number of crops in one call is bounded", () => {
   assert.equal(req.deferred.length, 5, "the rest is named, for the next call");
 });
 
+
+// ─── The container manifest ───────────────────────────────────────────────────
+
+/** npm's caret, including the rule it is always got wrong: with a ZERO major,
+ *  `^0.1.69` pins the MINOR and means `>=0.1.69 <0.2.0`, so 0.2.0 is NOT
+ *  compatible. The general rule is that the caret pins everything up to and
+ *  including the leftmost non-zero component.
+ *
+ *  Written out rather than assumed because the first version of this guard
+ *  checked only the major, and would therefore have waved through exactly the
+ *  0.2.0 case that npm refuses — a guard that approves the thing it exists to
+ *  catch. */
+const satisfiesCaret = (version, range) => {
+  const parts = (v) => v.replace(/^\D*/, "").split(".").map(Number);
+  const v = parts(version), r = parts(range);
+  if (v.length < 3 || r.length < 3 || [...v, ...r].some(Number.isNaN)) return false;
+  const firstNonZero = r.findIndex((n) => n > 0);
+  const pinnedThrough = firstNonZero === -1 ? r.length - 1 : firstNonZero;
+  for (let i = 0; i <= pinnedThrough; i++) if (v[i] !== r[i]) return false;
+  for (let i = 0; i < 3; i++) {
+    if (v[i] > r[i]) return true;
+    if (v[i] < r[i]) return false;
+  }
+  return true;
+};
+
+test("the caret guard itself is right about npm's zero-major rule", () => {
+  // The table is the point. Without it the guard is a claim about semver rather
+  // than a check on one.
+  const cases = [
+    ["0.1.100", "^0.1.69", true, "the pin in use"],
+    ["0.1.69", "^0.1.69", true, "the floor itself"],
+    ["0.1.65", "^0.1.69", false, "below the floor — the break this guard was written for"],
+    ["0.2.0", "^0.1.69", false, "a zero major pins the MINOR; npm refuses this and the first guard did not"],
+    ["1.0.0", "^0.1.69", false, "a different major"],
+    ["1.9.0", "^1.2.3", true, "a non-zero major pins only the major"],
+    ["2.0.0", "^1.2.3", false, "…and stops at the next one"],
+    ["1.2.2", "^1.2.3", false, "below the floor"],
+  ];
+  for (const [version, range, want, why] of cases) {
+    assert.equal(satisfiesCaret(version, range), want, `${version} vs ${range}: ${why}`);
+  }
+});
+
 test("the container pins a canvas inside the range unpdf demands", async () => {
   // The image is not buildable here — there is no Docker on every machine that
   // touches this — so a dependency conflict inside the Dockerfile is invisible
@@ -346,12 +390,17 @@ test("the container pins a canvas inside the range unpdf demands", async () => {
 
   const want = unpdf.peerDependencies?.["@napi-rs/canvas"];
   assert.ok(want, "unpdf still declares a canvas peer; if it stopped, this test is the stale thing");
+  // satisfiesCaret understands one range shape. If unpdf moves to `>=x`, a
+  // compound `a || b`, or a hyphen range, judging it as a caret would be a
+  // confident wrong answer — so refuse to judge instead, and say why.
+  assert.match(
+    want, /^\^\d+\.\d+\.\d+$/,
+    `unpdf's canvas peer is now "${want}", which is not a plain caret. Teach satisfiesCaret `
+    + `that shape before trusting this guard again.`,
+  );
   const pinned = container.dependencies["@napi-rs/canvas"];
-  const parts = (v) => v.replace(/^\D*/, "").split(".").map(Number);
-  const [major, minor, patch] = parts(pinned);
-  const [wMajor, wMinor, wPatch] = parts(want);
   assert.ok(
-    major === wMajor && (minor > wMinor || (minor === wMinor && patch >= wPatch)),
+    satisfiesCaret(pinned, want),
     `pinned ${pinned} is outside unpdf's ${want} — npm ci will refuse it`,
   );
 });
@@ -374,4 +423,69 @@ test("the container image installs from a lockfile, not from ranges", async () =
       `${needed} is missing from the lockfile — the image would install no binary for its own platform`,
     );
   }
+});
+
+test("the container refuses a request it should not attempt", async () => {
+  // Pure, so it lives in its own module and is tested here rather than only
+  // inside an image nobody on this machine can build. The container re-validates
+  // what the Worker sends on purpose: "trusted" and "unchecked" are different
+  // things, and the container is the only thing standing between a malformed
+  // box and a native renderer.
+  const { badRequest } = await import(
+    pathToFileURL(join(projectRoot, "containers/plan-parse/validate.mjs")).href
+  );
+  const ok = { scale: 3, pages: [{ pageNo: 6, crops: [{ id: "W1", box: { left: 0, top: 0, width: 10, height: 10 } }] }] };
+  assert.equal(badRequest(ok), null);
+
+  const box = { left: 0, top: 0, width: 10, height: 10 };
+  const cases = [
+    [null, "not an object"],
+    [{ ...ok, scale: 0 }, "scale"],
+    [{ ...ok, scale: 500 }, "scale"],                         // a huge canvas is an OOM, not a render
+    [{ ...ok, pages: [] }, "pages"],
+    [{ ...ok, pages: [{ pageNo: 0, crops: ok.pages[0].crops }] }, "pageNo"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: [] }] }, "crops"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: [{ id: "", box }] }] }, "id"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: [{ id: "W1", box: { ...box, width: 0 } }] }] }, "box"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: [{ id: "W1", box: { ...box, left: -1 } }] }] }, "box"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: [{ id: "W1", box: { ...box, width: 1.5 } }] }] }, "box"],
+    // Bounded, because the Worker's own cap is not a thing the container can see.
+    [{ ...ok, pages: Array.from({ length: 100 }, () => ({ pageNo: 1, crops: [{ id: "W1", box }] })) }, "pages"],
+    [{ ...ok, pages: [{ pageNo: 1, crops: Array.from({ length: 200 }, (_, i) => ({ id: `W${i}`, box })) }] }, "crops"],
+  ];
+  for (const [job, expect] of cases) {
+    const why = badRequest(job);
+    assert.ok(why, `should have been refused: ${JSON.stringify(job).slice(0, 60)}`);
+    assert.match(why, new RegExp(expect, "i"), `refused for the right reason: got "${why}"`);
+  }
+});
+
+test("every file the container imports is actually copied into the image", async () => {
+  // The class, not the instance. server.mjs gained an import of ./validate.mjs
+  // and the Dockerfile still copied two files, so the image would have started
+  // and immediately died on a missing module — invisible here, because there is
+  // no Docker to run it. COPY is explicit per-file on purpose (never COPY . .,
+  // which would sweep rendered customer crops into the image), and explicit
+  // lists go stale.
+  const dir = join(projectRoot, "containers/plan-parse");
+  const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
+  const copied = new Set(
+    [...dockerfile.matchAll(/^COPY\s+(.+?)\s+\.\/\s*$/gm)]
+      .flatMap((m) => m[1].split(/\s+/)),
+  );
+
+  const seen = new Set();
+  const walk = async (entry) => {
+    if (seen.has(entry)) return;
+    seen.add(entry);
+    const src = await readFile(join(dir, entry), "utf8");
+    for (const m of src.matchAll(/from\s+"\.\/([^"]+)"/g)) {
+      assert.ok(copied.has(m[1]), `${entry} imports ./${m[1]}, which the Dockerfile does not COPY`);
+      await walk(m[1]);
+    }
+  };
+  // The CMD's entry point, and everything it reaches.
+  assert.match(dockerfile, /CMD \["node", "server\.mjs"\]/);
+  assert.ok(copied.has("server.mjs"), "the entry point itself");
+  await walk("server.mjs");
 });
