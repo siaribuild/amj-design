@@ -62,6 +62,19 @@ export function run(command, args, options = {}) {
   });
 }
 
+/** Is this command on PATH and runnable?
+ *
+ *  `run` REJECTS on a non-zero exit and resolves with `{stdout, stderr}` — there
+ *  is no `code` on the resolved value. A caller that checks `r.code === 0` reads
+ *  undefined and gets false for a command that is present, which is how a build
+ *  gate came to skip its own container build on every machine including the one
+ *  runner that could do it. */
+export function commandExists(command, args = ["--version"]) {
+  // `run` already encodes the answer: it resolves only on exit 0 and rejects
+  // otherwise, so resolving IS "present and runnable".
+  return run(command, args).then(() => true).catch(() => false);
+}
+
 export function start(command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: projectRoot,

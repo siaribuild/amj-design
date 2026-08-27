@@ -27,8 +27,15 @@ export class PlanParseContainer extends Container {
   // at.
   //
   // UNVERIFIED until the first deploy — the SDK warns that disabling internet
-  // "may have functional consequences", and no image has been built yet. If the
-  // container fails to start or hangs on boot, this is the first thing to try
-  // turning back on.
+  // "may have functional consequences", and no image has been built yet. So
+  // CONFIRM IT ON THE FIRST DEPLOY, as a step of its own: bring the container up
+  // behind `wrangler versions upload` and check it serves a crop.
+  //
+  // If it will not start, do not reach for this line first. An earlier version of
+  // this comment said to, and that is a troubleshooting hint that removes an
+  // egress control from a process parsing untrusted customer PDFs — under exactly
+  // the time pressure where nobody writes down that they did it. Rule it out as
+  // the cause before changing it, and if it genuinely has to come back, that is a
+  // security decision to record, not a quick fix.
   enableInternet = false;
 }

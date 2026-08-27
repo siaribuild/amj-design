@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { makeRunDir, removeRunDir, run, viteCli, wranglerCli } from "./helpers.mjs";
+import { commandExists, makeRunDir, removeRunDir, run, viteCli, wranglerCli } from "./helpers.mjs";
 
 test("customer/ops bundles and the Cloudflare Worker build", { timeout: 120_000 }, async () => {
   const runDir = await makeRunDir("build");
@@ -23,8 +23,7 @@ test("customer/ops bundles and the Cloudflare Worker build", { timeout: 120_000 
     // So: skip only where it cannot run, and never silently.
     // .github/workflows/container-build.yml is the gate that always runs, on a
     // runner that has Docker.
-    const hasDocker = await run("docker", ["version"])
-      .then((r) => r.code === 0).catch(() => false);
+    const hasDocker = await commandExists("docker", ["version"]);
     if (!hasDocker) {
       console.log(
         "  ! no Docker: the plan-parse image is NOT built by this run. "
@@ -39,4 +38,15 @@ test("customer/ops bundles and the Cloudflare Worker build", { timeout: 120_000 
   } finally {
     await removeRunDir(runDir);
   }
+});
+
+
+test("commandExists answers TRUE for a command that is present", async () => {
+  // The bug this exists for: the first version checked `r.code === 0` on a value
+  // that carries no `code`, so it returned false for everything — and a build
+  // gate that always skips its container build looks identical to one that has
+  // no Docker. Docker cannot be tested here, so it is tested with a command that
+  // is certainly present and one that certainly is not.
+  assert.equal(await commandExists(process.execPath, ["--version"]), true, "node is present");
+  assert.equal(await commandExists("definitely-not-a-real-binary-xyz"), false, "and this is not");
 });
