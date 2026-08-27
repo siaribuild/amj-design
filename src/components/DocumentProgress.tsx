@@ -43,6 +43,49 @@ const AI_STEPS: { stage: AiProgressStage | null; label: string }[] = [
  *  unconditionally it renders as done the moment the stage moves past it — on a
  *  schedule-only project, on an energy-report-only project, and on every run
  *  predating this — claiming work that never occurred. A tick is a claim. */
+/** How long a step took, or has been running.
+ *
+ *  A step's end is the next OBSERVED step's start, and the current step ticks
+ *  live. The drawing step breaks that rule and has to be handled, not papered
+ *  over: it has no stage, so it borrows the start of `building_envelope` — the
+ *  phase it runs inside — and the very next step IS building_envelope. The
+ *  subtraction was therefore one timestamp minus itself, and the clock read 0s
+ *  forever.
+ *
+ *  stageLog simply cannot time this step. The phase's start is a real start; the
+ *  phase's end is not the drawing read's end, because the envelope work happens
+ *  in the same phase afterwards. So it ticks while it is running and reports
+ *  NOTHING once it is not — a duration we cannot know must not be rendered as
+ *  one. A wrong number is worse than no number, and 0s was a wrong number that
+ *  looked like a working clock. */
+export function stepDurationMs(input: {
+  steps: { stage: AiProgressStage | null }[];
+  stageLog: StageLogEntry[];
+  nowTick: number;
+  current: number;
+  index: number;
+}): number | null {
+  const { steps, stageLog, nowTick, current, index } = input;
+  const startOf = (i: number) => {
+    const stage = steps[i]?.stage ?? "building_envelope";
+    return stageLog.find((s) => s.stage === stage)?.at;
+  };
+  const start = startOf(index);
+  if (start == null) return null;
+
+  // The stageless step: live while current, silent otherwise.
+  if (steps[index]?.stage === null) {
+    return index === current ? Math.max(0, nowTick - start) : null;
+  }
+  for (let j = index + 1; j < steps.length; j++) {
+    const next = startOf(j);
+    // STRICTLY LATER. The drawing step shares building_envelope's timestamp, so
+    // an equal value is not an end — taking it was the zero.
+    if (next != null && next > start) return next - start;
+  }
+  return index === current ? Math.max(0, nowTick - start) : null;
+}
+
 export const stepsFor = (phase: AiPhase): { stage: AiProgressStage | null; label: string }[] =>
   AI_STEPS.filter((s) => s.stage !== null || drawingCounts(phase) !== null);
 
@@ -158,22 +201,8 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
 
   // Per-step elapsed, from the observed transition times. A step's end is the
   // next observed step's start; the current step ticks live.
-  // The drawing step has NO stage, so stageLog can never key it and it showed no
-  // elapsed time at all. It runs inside the building_envelope phase, so that
-  // phase's start is its start — an approximation, and the honest one available.
-  const stepStart = (i: number) => {
-    const stage = steps[i]?.stage ?? "building_envelope";
-    return stageLog.find((s) => s.stage === stage)?.at;
-  };
-  const stepDurMs = (i: number): number | null => {
-    const start = stepStart(i);
-    if (start == null) return null;
-    for (let j = i + 1; j < steps.length; j++) {
-      const nx = stepStart(j);
-      if (nx != null) return nx - start;
-    }
-    return i === current ? Math.max(0, nowTick - start) : null;
-  };
+  const stepDurMs = (i: number): number | null =>
+    stepDurationMs({ steps, stageLog, nowTick, current, index: i });
   // Stall = no new step for a while. This, not elapsed time, is what actually
   // worries a customer, so it is the only thing that changes the reassurance
   // into a heads-up.

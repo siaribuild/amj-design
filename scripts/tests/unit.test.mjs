@@ -19,7 +19,7 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
-      export { readingMessage, stepsFor } from ${p("src/components/DocumentProgress.tsx")};
+      export { readingMessage, stepsFor, stepDurationMs } from ${p("src/components/DocumentProgress.tsx")};
       export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -1716,4 +1716,42 @@ test("a project with no drawings has no drawing step to tick off", () => {
   // point of the owner's correction.
   assert.equal(withDrawings.findIndex((s) => s.stage === null),
     withDrawings.findIndex((s) => s.stage === "extracting_schedule") + 1);
+});
+
+test("the drawing step's clock ticks, and never invents a duration it cannot know", () => {
+  // Codex: permanently 0s. The step has no stage, so it borrows
+  // building_envelope's start — and the NEXT step IS building_envelope, so
+  // `nextStart - start` was the same timestamp minus itself. Zero, always.
+  //
+  // The honest answer is that stageLog cannot time this step: the drawing read
+  // runs INSIDE building_envelope, so that phase's start is a real start but its
+  // end is not the drawing step's end. So: tick live while it runs, and show
+  // nothing once it is done rather than a number that is wrong.
+  const steps = M.stepsFor({ kind: "reading", docs: 1, drawingsDone: 3, drawingsTotal: 19 });
+  const drawing = steps.findIndex((s) => s.stage === null);
+  const log = [
+    { stage: "queued", at: 1000 },
+    { stage: "reading_documents", at: 2000 },
+    { stage: "extracting_schedule", at: 3000 },
+    { stage: "building_envelope", at: 5000 },
+  ];
+
+  // In progress: elapsed since the phase it runs inside began.
+  assert.equal(
+    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing, index: drawing }),
+    4000,
+    "it ticks",
+  );
+  // Not current any more, and no end time exists for it — so no number.
+  assert.equal(
+    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing + 1, index: drawing }),
+    null,
+    "a duration we cannot know is not reported as one",
+  );
+  // A real staged step is unaffected: schedule ran 3000→5000.
+  const schedule = steps.findIndex((s) => s.stage === "extracting_schedule");
+  assert.equal(
+    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing, index: schedule }),
+    2000,
+  );
 });
