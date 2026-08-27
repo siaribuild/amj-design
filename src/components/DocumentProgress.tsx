@@ -37,8 +37,17 @@ const AI_STEPS: { stage: AiProgressStage | null; label: string }[] = [
 ];
 // `waiting_capacity` is deliberately NOT a step: it is not a stage of the work
 // but a pause in it, and giving it a row would imply the run had moved on.
-const stepIndex = (stage: AiProgressStage | undefined): number =>
-  AI_STEPS.findIndex((s) => s.stage === stage);
+/** The checklist for THIS run.
+ *
+ *  The drawing step appears only when a drawing read actually happened. Left in
+ *  unconditionally it renders as done the moment the stage moves past it — on a
+ *  schedule-only project, on an energy-report-only project, and on every run
+ *  predating this — claiming work that never occurred. A tick is a claim. */
+export const stepsFor = (phase: AiPhase): { stage: AiProgressStage | null; label: string }[] =>
+  AI_STEPS.filter((s) => s.stage !== null || drawingCounts(phase) !== null);
+
+const stepIndex = (steps: { stage: AiProgressStage | null }[], stage: AiProgressStage | undefined): number =>
+  steps.findIndex((s) => s.stage === stage);
 
 const fmtDur = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -104,7 +113,10 @@ const scheduleDetail = (phase: AiPhase): string | null => {
 /** …and the drawing step's own progress through them. */
 const drawingDetail = (phase: AiPhase): string | null => {
   const c = drawingCounts(phase);
-  return c && c.done > 0 ? ` · opening ${c.done} of ${c.total}` : null;
+  // From the moment a total exists, including 0 — the owner watched this step
+  // sit with no count at all and no elapsed time, which reads as nothing
+  // happening. "0 of 19" is honest; silence is not.
+  return c ? ` · ${c.done} of ${c.total}` : null;
 };
 
 const progressMessage = (stage: AiProgressStage | undefined): string => {
@@ -138,18 +150,25 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   // the stage alone would put the marker on "Checking thermal requirements"
   // while the work is plainly something else.
   const counts = drawingCounts(aiPhase);
-  const drawingStep = AI_STEPS.findIndex((s) => s.stage === null);
-  const byStage = waiting ? 0 : Math.max(0, stepIndex(active));
-  const current = counts && counts.done < counts.total ? drawingStep : byStage;
+  const steps = stepsFor(aiPhase);
+  const drawingStep = steps.findIndex((s) => s.stage === null);
+  const byStage = waiting ? 0 : Math.max(0, stepIndex(steps, active));
+  const current = counts && counts.done < counts.total && drawingStep >= 0 ? drawingStep : byStage;
   const showSteps = aiPhase?.kind === "reading" && !!active;
 
   // Per-step elapsed, from the observed transition times. A step's end is the
   // next observed step's start; the current step ticks live.
-  const stepStart = (i: number) => stageLog.find((s) => s.stage === AI_STEPS[i].stage)?.at;
+  // The drawing step has NO stage, so stageLog can never key it and it showed no
+  // elapsed time at all. It runs inside the building_envelope phase, so that
+  // phase's start is its start — an approximation, and the honest one available.
+  const stepStart = (i: number) => {
+    const stage = steps[i]?.stage ?? "building_envelope";
+    return stageLog.find((s) => s.stage === stage)?.at;
+  };
   const stepDurMs = (i: number): number | null => {
     const start = stepStart(i);
     if (start == null) return null;
-    for (let j = i + 1; j < AI_STEPS.length; j++) {
+    for (let j = i + 1; j < steps.length; j++) {
       const nx = stepStart(j);
       if (nx != null) return nx - start;
     }
@@ -168,7 +187,7 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
       {showSteps ? (
         <>
           <ol className="space-y-2">
-            {AI_STEPS.map((step, i) => {
+            {steps.map((step, i) => {
               const done = i < current;
               const inProgress = i === current && !waiting;
               const stalled = i === current && waiting;

@@ -2102,6 +2102,44 @@ test("a whole-sheet box can never be larger than the render", async () => {
   const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
   const sheetBox = src.slice(src.indexOf("id: `sheet:${s.pageNo}`"), src.indexOf("})), RENDER_SCALE)"));
   assert.doesNotMatch(sheetBox, /Math\.ceil/, "ceil can exceed the image; that is the bug");
-  assert.match(sheetBox, /Math\.floor\(s\.pageWidthPt \* RENDER_SCALE\)/);
-  assert.match(sheetBox, /Math\.floor\(s\.pageHeightPt \* RENDER_SCALE\)/);
+  assert.match(sheetBox, /Math\.floor\(s\.pageWidthPt \* PASS_A_SCALE\)/);
+  assert.match(sheetBox, /Math\.floor\(s\.pageHeightPt \* PASS_A_SCALE\)/);
+});
+
+test("openings are read in a pool, and the outcome order still matches the schedule", async () => {
+  // Serial, 19 openings at a few seconds each is most of a job's budget — which
+  // is how the first working read timed out before opening_composition ran even
+  // once. A pool is only safe if order survives it: outcomes are matched to
+  // schedule rows by position downstream, so a race that reorders them attaches
+  // readings to the wrong windows.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.match(src, /READ_CONCURRENCY/, "the reads are pooled");
+  assert.match(src, /ordered\[i\] = o/,
+    "placed BY INDEX, not pushed — push order is completion order");
+  assert.doesNotMatch(src, /for \(const row of args\.rows\)/,
+    "no serial loop remains");
+});
+
+test("Pass A renders sheets at the model's cap, not the crop scale", async () => {
+  // An A3 sheet at RENDER_SCALE is 3571px. Vision models cap around 1568px and
+  // downscale anything larger, so those calls uploaded ~1MB apiece to send
+  // detail the model discarded — four of them consumed the whole job budget.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  const sheetBlock = src.slice(src.indexOf("Render each sheet whole"), src.indexOf("Pass A, once per elevation"));
+  assert.match(sheetBlock, /PASS_A_SCALE/, "sheets use the smaller scale");
+  assert.doesNotMatch(sheetBlock, /RENDER_SCALE/, "and not the crop scale");
+  // The crops themselves must still be cut at full scale — reading a chevron is
+  // where resolution actually matters.
+  const cropBlock = src.slice(src.indexOf("Crop only what is located"), src.indexOf("Pass B"));
+  assert.match(cropBlock, /RENDER_SCALE/);
+});
+
+test("an unfilled slot becomes an unread opening, never a shifted one", async () => {
+  // /security-review, on the pool: filtering the results array would compact it,
+  // sliding every later reading up a slot — and outcomes are matched to schedule
+  // rows BY POSITION. Unreachable today, and one `continue` from being real.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.doesNotMatch(src, /ordered\.filter/, "compaction would misattribute readings");
+  assert.match(src, /ordered\.map\(\(o, i\) => o \?\?/, "a gap is named, not closed up");
+  assert.match(src, /no_outcome_recorded/);
 });

@@ -19,7 +19,7 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
-      export { readingMessage } from ${p("src/components/DocumentProgress.tsx")};
+      export { readingMessage, stepsFor } from ${p("src/components/DocumentProgress.tsx")};
       export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -1692,4 +1692,28 @@ test("the counter says nothing about openings it could not read", () => {
       assert.doesNotMatch(msg, forbidden, `"${msg}" must not mention ${forbidden}`);
     }
   }
+});
+
+test("a project with no drawings has no drawing step to tick off", () => {
+  // A step that never ran must not render as done. The step was inserted into
+  // the checklist unconditionally, so on a schedule-only project — or any run
+  // predating drawing reading — "Extracting opening details" would show a tick
+  // the moment the stage moved past it, claiming work that never happened.
+  const withDrawings = M.stepsFor({ kind: "reading", docs: 1, drawingsDone: 3, drawingsTotal: 19 });
+  const without = M.stepsFor({ kind: "reading", docs: 1 });
+
+  assert.ok(withDrawings.some((s) => s.label === "Extracting opening details"));
+  assert.ok(!without.some((s) => s.label === "Extracting opening details"),
+    "no counts, no step — not a step shown as done");
+
+  // The rest of the checklist is untouched, in order.
+  assert.deepEqual(
+    without.map((s) => s.stage),
+    ["queued", "reading_documents", "extracting_schedule", "building_envelope", "matching_and_pricing", "preparing_quote"],
+  );
+  assert.equal(withDrawings.length, without.length + 1);
+  // And it sits between the schedule and the thermal check, which is the whole
+  // point of the owner's correction.
+  assert.equal(withDrawings.findIndex((s) => s.stage === null),
+    withDrawings.findIndex((s) => s.stage === "extracting_schedule") + 1);
 });
