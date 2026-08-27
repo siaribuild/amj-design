@@ -24,6 +24,7 @@ import { readSourced, type CompassPoint, type ThermalModelInputs } from "../esti
 import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
 import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
+import { readDrawings, recordDrawingProgress } from "../drawing/read";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
@@ -703,6 +704,39 @@ export async function runAiExtraction(
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
+
+  // ── Read the drawings ──────────────────────────────────────────────────────
+  // AFTER the openings list exists, because the drawings contribute DETAIL to
+  // rows the schedule owns and never re-derive them. An opening this cannot read
+  // keeps everything the schedule gave it, which is today's behaviour.
+  const drawingReadings = new Map<string, Awaited<ReturnType<typeof readDrawings>>["outcomes"][number]>();
+  const planDoc = docs.find((d) => d.roles.includes("plans") && (d.rolePages?.plans?.length ?? 0) > 0);
+  if (planDoc && model.openings.length) {
+    const read = await readDrawings(env, {
+      aiRunId: run.id,
+      projectId,
+      sourceGeneration,
+      fileId: planDoc.fileId,
+      elevationPages: planDoc.rolePages?.plans ?? [],
+      rows: model.openings.map((o) => ({
+        tag: o.externalRef,
+        widthMm: o.widthMm ?? 0,
+        heightMm: o.heightMm ?? 0,
+        // The schedule's own words about the family — which is what the drawing
+        // is NEVER asked for, and what verifyReading cross-checks against.
+        typeText: o.configuration?.familyRequested ?? null,
+      })).filter((r) => r.widthMm > 0 && r.heightMm > 0),
+      onProgress: opts.processingToken
+        // The same guarded writer, not a second one: a job whose lease expired
+        // must not write counts over the run that re-claimed its work.
+        ? (done, total) => recordDrawingProgress(env, {
+            projectId, sourceGeneration, processingToken: opts.processingToken as string, done, total,
+          }).catch(() => {})
+        : undefined,
+    });
+    for (const o of read.outcomes) drawingReadings.set(o.tag, o);
+    warnings.push(...read.warnings);
+  }
   const technicalReviewReasons = new Map<string, Set<string>>();
   const flagOpening = (externalRef: string, reason: string) => {
     const current = technicalReviewReasons.get(externalRef) ?? new Set<string>();
@@ -726,9 +760,36 @@ export async function runAiExtraction(
   for (const l of merged.lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
     if (l.typeText) scheduleTypes.set(l.tag, l.typeText);
-    const hint: SplitHint | null = l.split?.operable?.length
+    // THE DRAWINGS WIN, every time (owner, 2026-08-27). A schedule says "AWNING"
+    // and is silent on how the opening divides; the drawing is the architectural
+    // contract and says. A comment-stated unit WIDTH still beats the drawing's
+    // measured ratio (§6) — the drawing supplies the shape, a stated dimension
+    // supplies the size — which layoutFromHint applies per unit.
+    const read = drawingReadings.get(l.tag);
+    const drawn = read?.state === "read" && read.reading?.outcome === "read"
+      ? read.reading
+      : null;
+    const commentHint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
       : parseSplitHint(l.notes);
+    const hint: SplitHint | null = drawn
+      ? {
+          source: "drawing",
+          axis: drawn.divisionAxis,
+          raw: read?.cropKey ? `elevation crop ${read.cropKey}` : "the elevation",
+          units: drawn.units.map((u, i) => ({
+            // The drawing says operable-or-not; the FAMILY comes from the
+            // schedule, because the catalogue publishes no hopper and a chevron
+            // cannot settle it. A passive leaf is fixed.
+            operation: u.operable ? ((l.typeText ?? "").toLowerCase() || "awning") : "fixed",
+            count: 1,
+            // A stated width from the comment, matched by position, outranks the
+            // measured ratio beside it.
+            widthMm: commentHint?.units[i]?.widthMm ?? u.widthMm,
+            ratio: u.ratio,
+          })),
+        }
+      : commentHint;
     if (!hint) continue;
     splitHints.set(l.tag, hint);
     const proposal = proposeSplit(

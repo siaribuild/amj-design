@@ -1720,3 +1720,53 @@ test("the customer's channel carries the counter and nothing about what could no
       `the customer response must not carry ${forbidden}`);
   }
 });
+
+test("the elevation sheets are rendered by the container, not asked for by the caller", async () => {
+  // Pass A needs a whole-sheet image and nothing was producing one — read.ts
+  // took `sheets` with an imageDataUrl already prepared, which no caller could
+  // supply. It renders them itself, as a full-page crop, which is why the floor
+  // is two container calls per job: Pass B cannot be batched until Pass A's
+  // boxes have come back to the Worker and been assigned.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.match(src, /elevationPages/, "the caller names pages, not images");
+  assert.doesNotMatch(src, /imageDataUrl:\s*sheet\.imageDataUrl/,
+    "no caller-supplied sheet image survives");
+  // Page geometry comes from the document itself — a caller that had to measure
+  // the page would be a second place the scale could be wrong.
+  assert.match(src, /getDocumentProxy|getViewport/, "dimensions are read from the PDF");
+});
+
+test("the pipeline reads the drawings, and a drawing hint outranks the report for shape", async () => {
+  // The wiring commit. Until this, every module in worker/lib/drawing was
+  // unreachable — which is what three security reviews meant by "re-review when
+  // it is wired", because that is the change that turns an unreachable native
+  // PDF renderer into a reachable one.
+  const src = await readFile(join(projectRoot, "worker/lib/ai/pipeline.ts"), "utf8");
+
+  assert.match(src, /readDrawings\(/, "the pipeline calls it");
+  // After the plan context, because the openings list must exist to be read
+  // against — the drawings contribute detail to rows the schedule owns.
+  assert.ok(src.indexOf("applyPlanContext(model, planContexts)") < src.indexOf("readDrawings("),
+    "and only once the openings list exists");
+
+  // The counter is fed from the same token-guarded writer, not a second one.
+  assert.match(src, /recordDrawingProgress/, "progress goes through the guarded writer");
+
+  // The merge guard keeps an architectural hint. Pinned separately from t4's
+  // assertion because this is the commit where a drawing hint can actually exist.
+  const guard = src.slice(src.indexOf("const planHint = splitHints.get("), src.indexOf("const planHint = splitHints.get(") + 400);
+  assert.match(guard, /"drawing"/);
+});
+
+test("a set with more elevation sheets than one call allows renders all of them", async () => {
+  // The sheet render was a single buildCropRequest whose `deferred` was ignored,
+  // so a set with more than MAX_CROPS_PER_CALL elevations silently lost the
+  // surplus — every opening on them becoming not_read with nothing said. The
+  // per-opening loop already batches; this did not. Found by /security-review
+  // tracing the path, not by a test, which is why there is one now.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  const render = src.slice(src.indexOf("Render each sheet whole"), src.indexOf("Pass A, once per elevation"));
+  assert.match(render, /deferred/,
+    "the sheet render honours what one call could not take");
+  assert.match(render, /while|for \(/, "and loops until there is nothing left");
+});

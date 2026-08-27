@@ -26,6 +26,7 @@
 // verifyReading()'s, and none of them are re-litigated here. An orchestrator
 // that starts making judgements is an orchestrator nobody can test.
 // ═══════════════════════════════════════════════════════════════════════════════
+import { getDocumentProxy } from "unpdf";
 import type { Env } from "../../types";
 import { runStage } from "../ai/stage";
 import { elevationInventory, openingComposition, type CompositionReading } from "../estimator/skills/drawingRead";
@@ -64,10 +65,26 @@ export interface DrawingReadResult {
 interface ElevationSheet {
   pageNo: number;
   label: string;
-  /** The whole sheet, as a data URL, for Pass A. */
-  imageDataUrl: string;
   pageWidthPt: number;
   pageHeightPt: number;
+}
+
+/** Page geometry, read from the document itself.
+ *
+ *  Not asked of the caller: a caller that had to measure the page would be a
+ *  second place the scale could be wrong, and it would have to open the PDF to
+ *  do it — which this has already done. */
+async function measureSheets(pdfBytes: Uint8Array, pages: number[]): Promise<ElevationSheet[]> {
+  const doc = await getDocumentProxy(Uint8Array.from(pdfBytes));
+  const sheets: ElevationSheet[] = [];
+  for (const pageNo of pages) {
+    if (pageNo < 1 || pageNo > doc.numPages) continue;
+    const page = await doc.getPage(pageNo);
+    const vp = page.getViewport({ scale: 1 });
+    sheets.push({ pageNo, label: `p${pageNo}`, pageWidthPt: vp.width, pageHeightPt: vp.height });
+    page.cleanup();
+  }
+  return sheets;
 }
 
 /**
@@ -83,7 +100,8 @@ export async function readDrawings(env: Env, args: {
   sourceGeneration: number;
   fileId: string;
   rows: ScheduleRow[];
-  sheets: ElevationSheet[];
+  /** The pages the router judged to be drawing sheets. */
+  elevationPages: number[];
   /** Called as each opening resolves, so the customer's counter moves. The
    *  denominator is the real opening count and a `not_read` still advances it:
    *  a bar that stalls on what it could not read is lying about work it did. */
@@ -112,14 +130,52 @@ export async function readDrawings(env: Env, args: {
     };
   }
 
+  const sheets = await measureSheets(pdfBytes, args.elevationPages);
+
+  // ── Render each sheet whole, as a full-page crop ───────────────────────────
+  // THE FIRST OF TWO CONTAINER CALLS, and the floor is two by construction: Pass
+  // B cannot be batched until Pass A's boxes have come back here and been
+  // assigned. The container renders pages and cuts rectangles; a whole sheet is
+  // just the rectangle that is the whole page, so this needs no second endpoint.
+  const sheetImages = new Map<number, Uint8Array>();
+  // BATCHED, like the per-opening crops. A single request whose `deferred` was
+  // ignored silently lost every sheet past the cap, and every opening on those
+  // sheets became not_read with nothing said about why. The container also
+  // refuses more than 20 pages outright, so one call was never going to be
+  // enough for a large set.
+  let pendingSheets: CropIntent[] = sheets.map((s) => ({
+    id: `sheet:${s.pageNo}`,
+    pageNo: s.pageNo,
+    box: {
+      left: 0, top: 0,
+      width: Math.ceil(s.pageWidthPt * RENDER_SCALE),
+      height: Math.ceil(s.pageHeightPt * RENDER_SCALE),
+    },
+  }));
+  while (pendingSheets.length) {
+    const req = buildCropRequest(pendingSheets, RENDER_SCALE);
+    if (req.pages.length === 0) break;
+    try {
+      const res = await callPlanParse(env, args, req, pdfBytes);
+      for (const c of res.crops) sheetImages.set(Number(c.id.slice("sheet:".length)), c.bytes);
+      for (const f of res.failures) warnings.push(`drawing_read: sheet ${f.id} did not render (${f.reason})`);
+    } catch (err) {
+      warnings.push(`drawing_read: a sheet batch could not be rendered (${(err as Error).message})`);
+    }
+    const deferred = new Set(req.deferred);
+    pendingSheets = pendingSheets.filter((i) => deferred.has(i.id));
+  }
+
   // ── Pass A, once per elevation ─────────────────────────────────────────────
   const boxesBySheet = new Map<number, ElevationBox[]>();
-  for (const sheet of args.sheets) {
+  for (const sheet of sheets) {
+    const image = sheetImages.get(sheet.pageNo);
+    if (!image) continue;
     const run = await runStage(env, {
       aiRunId: args.aiRunId,
       projectId: args.projectId,
       skill: elevationInventory,
-      input: { imageDataUrl: sheet.imageDataUrl, sheetLabel: sheet.label },
+      input: { imageDataUrl: dataUrl(image), sheetLabel: sheet.label },
     });
     if (!run.ok || !run.data) {
       warnings.push(`drawing_read: elevation ${sheet.label} was not inventoried`);
@@ -131,7 +187,7 @@ export async function readDrawings(env: Env, args: {
   // ── Assign, per sheet, in arithmetic ───────────────────────────────────────
   const located = new Map<string, { sheet: ElevationSheet; region: Region }>();
   const unlocated = new Map<string, string>();
-  for (const sheet of args.sheets) {
+  for (const sheet of sheets) {
     const boxes = boxesBySheet.get(sheet.pageNo);
     if (!boxes?.length) continue;
     const result = assign({ rows: args.rows, boxes, elevation: sheet.label });

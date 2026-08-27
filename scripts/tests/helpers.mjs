@@ -84,7 +84,13 @@ export function commandExists(command, args = ["--version"]) {
  *
  *  Stubbed rather than marked external: external leaves a real import in the
  *  output, which then fails at load time in node for the same reason. Nothing in
- *  these suites instantiates a Durable Object; the class only has to exist. */
+ *  these suites instantiates a Durable Object; the class only has to exist.
+ *
+ *  WHEN YOU NEED IT: any suite bundling worker code whose import graph now
+ *  reaches worker/lib/drawing/containerClient.ts. The failure is an esbuild
+ *  "Could not resolve cloudflare:workers", which says nothing about the cause —
+ *  four suites have hit it as the graph grew. Add this plugin; it is a no-op for
+ *  a bundle that imports no workerd built-in, so it is never wrong to include. */
 export const workerdBuiltins = {
   name: "workerd-builtins",
   setup(build) {
