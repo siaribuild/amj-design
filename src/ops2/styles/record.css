@@ -151,10 +151,26 @@ ion-toolbar.ops2-topbar--identity {
 
 /* The band stays on screen while the openings scroll under it — it carries the
    total, the tabs and the attention row, and a reviewer twelve lines down still
-   needs all three. Desk width already has this: there it is a header. */
+   needs all three. Desk width already has this: there it is a header.
+
+   THE OFFSET IS THE BAND'S OWN PULL, NEGATED — never `0`.
+
+   The band is dragged up by `margin-top: calc(-1 * var(--ops2-band-top))`
+   (projects.css) so the white bleeds under the status bar. Its resting top is
+   therefore NEGATIVE, and a sticky offset of `0` is above that: the constraint
+   binds at rest, on a page that has not been scrolled at all, and clamps the
+   bleed away. Every child moved down by exactly the inset — measured at 390 and
+   900, queue and line page at -16, the record alone at 0 — which is the record's
+   header "sitting lower" than the two surfaces beside it.
+
+   It jumped, too, because `bandPinned` is gated on the record having arrived:
+   the clamp landed with the data, in front of the reader.
+
+   Matching the pull means the pin changes nothing until the band would actually
+   leave the top of the scrollport, which is the only thing it was ever for. */
 .ops2-page__band--pinned {
   position: sticky;
-  top: 0;
+  top: calc(-1 * var(--ops2-band-top));
   z-index: 2;
 }
 
