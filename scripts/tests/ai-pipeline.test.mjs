@@ -2094,3 +2094,14 @@ test("a listing that fails part-way does not report success", async () => {
   assert.match(fn.slice(0, 1400), /console\.(warn|error)/,
     "a sweep that could not finish says so somewhere");
 });
+
+test("a whole-sheet box can never be larger than the render", async () => {
+  // Ceil made it one pixel larger and sharp refused every sheet. Floor is exact
+  // when the renderer floors, and one pixel short when it rounds — which costs a
+  // row of margin. It can never be fatal.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  const sheetBox = src.slice(src.indexOf("id: `sheet:${s.pageNo}`"), src.indexOf("})), RENDER_SCALE)"));
+  assert.doesNotMatch(sheetBox, /Math\.ceil/, "ceil can exceed the image; that is the bug");
+  assert.match(sheetBox, /Math\.floor\(s\.pageWidthPt \* RENDER_SCALE\)/);
+  assert.match(sheetBox, /Math\.floor\(s\.pageHeightPt \* RENDER_SCALE\)/);
+});
