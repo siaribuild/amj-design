@@ -25,7 +25,15 @@ import type { CropRequest } from "./container";
  *  underlying error, and its message is neither useful to the Worker — which
  *  either retries or records the opening unread — nor safe on a staff surface,
  *  where a sharp or pdf.js internal reads as if it meant something. */
-export type CropFailureReason = "page_render_failed" | "crop_failed" | "unknown";
+export type CropFailureReason =
+  | "page_render_failed"
+  | "crop_failed"
+  /** The container said nothing about this opening — neither a crop nor a
+   *  failure. Its own code, not folded into `unknown`, because it means the
+   *  CONTAINER is broken rather than the drawing: an opening it never mentioned
+   *  is a different fault from one it tried and could not cut. */
+  | "not_returned"
+  | "unknown";
 const KNOWN_REASONS: readonly string[] = ["page_render_failed", "crop_failed"];
 
 export interface DecodedCrop {
@@ -73,13 +81,23 @@ export function encodeCropRequest(request: CropRequest, pdfBytes: Uint8Array): U
  * id hides the same fault.
  */
 export function decodeCropResponse(payload: unknown, sentIds: readonly string[]): DecodedCropResponse {
-  const body = payload as { crops?: unknown[]; failures?: unknown[] } | null;
+  const body = payload as { crops?: unknown; failures?: unknown } | null;
   if (!body || typeof body !== "object") throw new Error("plan-parse: response is not an object");
+  // A wrong TYPE is malformed — a broken container, or something else answering
+  // on that port. That is not a per-opening condition and must not be smoothed
+  // into one. An ABSENT list is different: it is handled by the accounting below,
+  // which names what went missing.
+  if (body.crops !== undefined && !Array.isArray(body.crops)) {
+    throw new Error("plan-parse: response crops is not an array");
+  }
+  if (body.failures !== undefined && !Array.isArray(body.failures)) {
+    throw new Error("plan-parse: response failures is not an array");
+  }
   const asked = new Set(sentIds);
   const seen = new Set<string>();
 
   const crops: DecodedCrop[] = [];
-  for (const raw of body.crops ?? []) {
+  for (const raw of (body.crops as unknown[]) ?? []) {
     const c = raw as { id?: unknown; png?: unknown; width?: unknown; height?: unknown };
     if (typeof c.id !== "string" || !asked.has(c.id)) {
       throw new Error(`plan-parse: response names an opening that was not requested: ${String(c.id)}`);
@@ -93,7 +111,7 @@ export function decodeCropResponse(payload: unknown, sentIds: readonly string[])
   }
 
   const failures: { id: string; reason: CropFailureReason }[] = [];
-  for (const raw of body.failures ?? []) {
+  for (const raw of (body.failures as unknown[]) ?? []) {
     const f = raw as { id?: unknown; reason?: unknown };
     if (typeof f.id !== "string" || !asked.has(f.id)) {
       throw new Error(`plan-parse: failure names an opening that was not requested: ${String(f.id)}`);
@@ -101,7 +119,21 @@ export function decodeCropResponse(payload: unknown, sentIds: readonly string[])
     const reason = typeof f.reason === "string" && KNOWN_REASONS.includes(f.reason)
       ? (f.reason as CropFailureReason)
       : "unknown";
+    if (seen.has(f.id)) throw new Error(`plan-parse: ${f.id} is both cropped and failed`);
+    seen.add(f.id);
     failures.push({ id: f.id, reason });
+  }
+
+  // EVERY OPENING SENT COMES BACK ACCOUNTED FOR. Output spec §7: an opening that
+  // could not be read is reported unread, never omitted, because a silently
+  // missing opening is indistinguishable from a house with fewer windows. A
+  // partial response used to lose whatever it did not mention.
+  //
+  // Named rather than thrown: failure granularity is the OPENING, never the
+  // document, so the batch keeps the crops it did produce and the rest go to the
+  // fallback visibly.
+  for (const id of sentIds) {
+    if (!seen.has(id)) failures.push({ id, reason: "not_returned" });
   }
   return { crops, failures };
 }

@@ -588,3 +588,35 @@ test("the upscale floor is the same number on both sides of the wire", async () 
   const inContainer = Number(/MIN_CROP_WIDTH_PX\s*=\s*(\d+)/.exec(render)[1]);
   assert.equal(inContainer, M.MIN_CROP_WIDTH_PX, "one floor, two files");
 });
+
+test("every opening sent comes back accounted for, or the decoder says which did not", () => {
+  // The output spec's §7 rule, at the wire: an opening that could not be read is
+  // REPORTED unread, never omitted, "because a silently missing opening is
+  // indistinguishable from a house with fewer windows".
+  //
+  // `crops ?? []` made a 200 carrying `{}` decode as a successful batch of zero,
+  // and a partial response drop whatever it did not mention — neither read nor
+  // failed, just gone.
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+  const sent = ["W1", "W2", "W3"];
+
+  const partial = M.decodeCropResponse(
+    { crops: [{ id: "W1", width: 900, height: 918, png }], failures: [] }, sent,
+  );
+  assert.deepEqual(partial.crops.map((c) => c.id), ["W1"]);
+  assert.deepEqual(
+    partial.failures.map((f) => [f.id, f.reason]),
+    [["W2", "not_returned"], ["W3", "not_returned"]],
+    "the two it said nothing about are named, and distinguishable from a render that failed",
+  );
+
+  // A 200 that says nothing at all accounts for nothing at all.
+  const empty = M.decodeCropResponse({}, sent);
+  assert.equal(empty.crops.length, 0);
+  assert.deepEqual(empty.failures.map((f) => f.id), sent, "all three, not zero of three");
+
+  // Wrong TYPE is malformed rather than unaccounted — that is a broken container
+  // or something else answering, and it is not a per-opening condition.
+  assert.throws(() => M.decodeCropResponse({ crops: "nope", failures: [] }, sent), /crops/);
+  assert.throws(() => M.decodeCropResponse({ crops: [], failures: {} }, sent), /failures/);
+});
