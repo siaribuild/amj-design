@@ -1,11 +1,744 @@
 # Reading the drawings — design and plan
 
-**Status:** design for owner review. Nothing implemented.
+**Status:** design for owner review. Container built and verified; Worker-side crop
+arithmetic built and tested; everything else unimplemented.
 **Output contract:** [plan-parse-output-spec.md](plan-parse-output-spec.md). Settled; conformed
 to, not redesigned.
+**Build slices:** `docs/runs/plan-parse/02-tasks.json`.
 
-**Headline — SUPERSEDED 2026-08-27 by the ROUTE DECISION below. Read that first.** A vision
-model reads the drawings; rasterisation is the critical path, and the container is the host.
+**How to read this document.** Part I is the design as it stands — read it cold, top to
+bottom, and you have the current plan. Part II is the record: the retracted claims, the
+demoted geometric route, and the evidence that calibrated everything. The retractions are
+load-bearing — three confident wrong answers in one document is the fact the ROUTE DECISION
+rests on — but they are history, and history is not the plan. Nothing in Part II overrides
+anything in Part I.
+
+---
+
+# PART I — THE DESIGN
+
+## 1. ROUTE DECISION — the model reads the drawings. Owner, 2026-08-27.
+
+**Binding.** The primary path is the method that was proven manually with Fable and written
+down as `containers/plan-parse/`: render the sheet, crop to one opening, and ask a vision
+model, with the schedule row as context. The vector-geometry route (Part II §5) is **demoted
+to a corroborating check** — useful because it is free and exact where it works, never the
+thing the answer depends on.
+
+**The owner's reasoning, which the session's own evidence supports.** Plans differ. A window tag
+is sometimes beside its diagram and sometimes far from it on a leader line; a stile is sometimes
+its own segment and sometimes part of a wall line; a frame band is sometimes at 100% of the
+opening and sometimes at 99.1%. Each is an edge case, each needs a new geometric rule, and this
+session found **three of them in a single document** — every one of which produced a confident
+wrong answer until it was caught. Re-deriving that ruleset for every drafter is the work the
+owner declined, and the bar he set makes the trade explicit: *the fallback already works
+ok-ish, so anything short of 100% is not worth the complexity.*
+
+**Two things the geometry could not do at all**, both verified by looking at the rendered sheets:
+
+- **The tag→wall→elevation chain.** The floor plan carries octagon tags (`W14/S08`) whose
+  legend reads *"denotes the window & door number, and sheet number"*, with elevation markers
+  A/B/C/D on the four walls. Reading a tag, associating it with a wall through a leader line,
+  and mapping that wall to an elevation letter is the join this whole pass needs, and it is
+  text-and-symbol work, not line-work.
+- **Disambiguation.** W9 and W11 are both 1810 × 1027 and the geometry reports "2 candidates,
+  not stated" for each. On Elevation C both are visible and the plan states their order along
+  the wall. The model resolves what the matcher can only decline.
+
+**The one thing the geometry has that the model does not, and it is not nothing.** Geometry
+fails *loudly* — no frame resolves, so the row says `not read` and the fallback takes over
+visibly. A vision model fails *silently*: it returns a plausible composition for an opening it
+could not actually see, indistinguishable from a real one. So the model route needs the output
+spec's three-state rule enforced at the boundary: every reading carries its crop as evidence,
+disagreements with the schedule's type are surfaced rather than resolved, and "could not read
+this" must be an answer the prompt makes easy to give. **The geometric decoder becomes the
+cheap second opinion** — where both agree, confidence is high; where they disagree, a human
+looks.
+
+## 2. What this pass is, and what it is not
+
+**The openings list already works and is authoritative.** Extraction returns every opening with
+its tag, dimensions, product type and comment, and the shipped parser does it at 19 rows and
+zero warnings on the reference document. None of that is in question and none of it is
+re-derived here.
+
+This pass takes that list and asks the drawings **one further question per opening**: the thing
+a human would look at an elevation to find.
+
+| Already known, authoritative | What this pass adds |
+|---|---|
+| tag, width, height | how the opening **divides** |
+| product type / family | which units make it up, and what each one **is** |
+| comments, glazing, head height | their **order**, left to right |
+| | the **ratio** each unit takes of the width |
+| | whether the division is side-by-side or stacked |
+
+So it is **not a discovery problem**. We are never asking "what windows exist" — we are looking
+up a window we already know the size of, and reading how it is made up. Three consequences:
+
+- **Locating is the work, reading is the easy half.** The schedule states a size, not a
+  position; the join from a row to a pixel box is the hard part (§4.1–4.2).
+- **Failure is per-opening and harmless.** An opening whose composition is not read keeps
+  everything the schedule gave it and reports composition as *not stated* or *not read*
+  (output spec §4 — the two never collapse). The list never degrades.
+- **The schedule route is closed** (Part II §3): all eight schedule columns are already
+  parsed, `comments` is genuinely null for W1/W14/W16, and the sheet's own legend says the
+  schedule nominates *sizes*, not make-up. It is the drawings or nothing.
+
+## 3. Who runs where — the Worker/container seam
+
+The model route needs an image of each opening, so something must rasterise on every job. The
+isolate cannot: `wrangler.jsonc` has no Browser Rendering binding and workerd has no canvas.
+Cloudflare Containers are GA and cost roughly $0.00016 per job beyond an allowance of ~4,500.
+
+**The container renders and crops; the Worker reads, verifies and reports.** The division is
+absolute and both halves are already written down as code comments
+(`worker/lib/drawing/container.ts`, `containers/plan-parse/server.mjs`):
+
+- The container receives PDF bytes and integer rectangles, returns PNGs and stable failure
+  codes. It holds **no credentials** — no R2 keys, no D1, no model key — keeps nothing between
+  requests, runs as a non-root user, and makes no outbound call. A crop it cannot make is
+  reported, never substituted.
+- The Worker owns every judgement: which pages, which rectangles (`cropBoxFor`), what a
+  failure means, the model calls, retries/escalation (`jobs.ts`, `stage.ts`, `escalation.ts`,
+  `runs.ts` — all reused, none rewritten), and every D1/R2 write.
+
+### 3.1 The transport — a container/DO binding, never a route
+
+*This did not exist when the container was built, and `/security-review` has twice required
+that it be named. It is now a design constraint, not an implementation detail:*
+
+> **The container is reachable ONLY through the Cloudflare container binding — a Durable
+> Object namespace — and never through a public route, a service route, or a hostname.**
+
+Mechanism, concretely:
+
+- `wrangler.jsonc` gains a `containers` entry (`class_name: "PlanParseContainer"`, `image:
+  "./containers/plan-parse/Dockerfile"`, `max_instances`), a `durable_objects` binding
+  (`PLAN_PARSE` → `PlanParseContainer`) and a `new_sqlite_classes` migration for the class.
+- `worker/lib/drawing/planParseContainer.ts` defines `class PlanParseContainer extends
+  Container` (`@cloudflare/containers`; `defaultPort = 8080`, `sleepAfter` a few minutes),
+  exported from `worker/index.ts`.
+- The Worker calls it via the namespace and nothing else. Cloudflare does not expose the
+  container's port publicly; the Worker is the only ingress. The container therefore carries
+  no auth of its own — a shared secret would make it a secret-holder, which is the design
+  reversal the Dockerfile's closing comment warns against.
+- **Instance affinity:** the namespace id is derived from `projectId:sourceGeneration`, so a
+  job's calls (Pass A, then the per-opening batch) land on the same warm instance and pay one
+  cold start, not two. Affinity is an optimisation only — correctness never depends on which
+  instance answers, because the container is stateless.
+
+### 3.2 The seam ruling — stateless, whole PDF per call. Kept, with its costs stated.
+
+The container receives the **whole PDF on every call** and re-renders any page a later call
+needs again. Challenged (2026-08-27) and kept:
+
+- **The floor is two calls per job by construction, not one.** Pass B needs Pass A's model
+  output back in the Worker before per-opening boxes exist, so "one call that does everything"
+  is not available to any design. The real cost is therefore the *delta* over two calls:
+  ⌈openings / 24⌉ − 1 extra calls. At 19 openings: zero. At 50: one extra call, ~2 MB of extra
+  transfer, and one page rendered a third time — single-digit seconds against a 40–95 s job in
+  which cold start (1–3 s) and the model calls dominate.
+- **What statelessness buys is worth more than those seconds.** No cache invalidation, retry =
+  resend, and — the security property — **no customer document survives in the container after
+  its response is written**. A render cache keyed on checksum would hold customer drawings
+  across requests inside a component that is deliberately credential-free and audit-thin.
+- Rejected alternatives, for the record: *container-side R2 read* (needs S3 keys — the `boto3`
+  objection, §3.3); *container-side page cache* (state, invalidation, data residue — above);
+  *Worker sends single extracted pages* (page extraction is itself PDF surgery the Worker
+  would then be doing twice). Revisit only if a measured job shows transfer or re-render as a
+  material fraction of wall time — the per-run report (§8) will show it.
+
+### 3.3 Both host questions settled — owner, 2026-08-27
+
+**Node, not Python.** The scaffold was Python because that is what the method was proven with.
+Against it, item by item from the old `requirements.txt`: `pdfplumber`'s per-word coordinates
+are `getTextContent()` items' `transform`; `pillow` is `sharp`, already a dependency; `poppler`
+is `unpdf` plus a canvas, proven in `render.mjs`; the `anthropic` call moves to the Worker.
+What decides it:
+
+- **One PDF library, therefore one coordinate space.** The geometric second opinion is pdf.js.
+  If the container crops with poppler and the decoder measures with pdf.js, the verification
+  cross-check needs a coordinate reconciliation before it can compare anything. Same library
+  makes it a subtraction.
+- **`boto3` is a credential.** A container doing its own R2 I/O needs S3-compatible keys — a new
+  secret with a new blast radius, in a product holding payout details and ABNs. A Worker holding
+  the binding needs none. This one outweighs the rest.
+- Leaner image, and image size sets the 1–3 s cold start.
+
+*Reversible, and testable rather than arguable:* if Node's crops read worse, the release gate's
+numbers say so.
+
+**The vision call lives in the Worker, not the container.** Three things decide it:
+
+- `jobs.ts`, `stage.ts`, `escalation.ts` and `runs.ts` already carry retries, escalation
+  triggers, run records and token accounting. In the container every one is rewritten.
+- A container awaiting a vision call bills a GiB-second per second at **zero CPU**.
+- **Progress has to reach D1 to reach the customer** — and a container that writes progress needs
+  D1 credentials too, which is the `boto3` objection a second time.
+
+## 4. The read, stage by stage
+
+### 4.0 Page selection — FIXED, shipped this session.
+
+The live defect recorded in Part II §4 — `classifyPageRoles` routing a stair detail as "plans"
+on every architectural set — is fixed in `worker/lib/ai/ingest.ts` (commits `00669315`,
+`0d59a4e7`): only a sheet that **names** a drawing is a drawing sheet; section marks, scales
+and north points corroborate but never qualify a page alone. Every route needed this; the
+model route needed it most, because rendering the wrong page pays for the render, pays for the
+tokens, and returns nothing.
+
+### 4.1 Pass A — inventory each elevation. No schedule involved.
+
+Split each elevation sheet by its `ELEVATION x` labels, whose **positions the text layer gives
+for free** — the Worker already opens the document for text (`ingest.ts`), and positioned text
+on a selected page costs ~30–50 ms with no operator list. The Worker turns those label
+positions into elevation-sized regions; the container renders them as (large) crops; the model
+is asked, per elevation, for every window-like object it can see: a normalised bounding box,
+the drawn width:height proportion, the panel count, and whether each panel carries a symbol.
+It is not asked to name anything — nothing is matched yet, so nothing can be matched wrongly.
+
+**The demoted decoder earns its keep here.** The frame matchers produce candidate rectangles
+for free and exactly, and Pass A only needs them as a **superset** — it does not need them to
+be right, which is the entire difference between this use and the one the owner declined. On
+the reference set they cover every opening that is drawn, including all six the matcher could
+only call ambiguous. Where a geometric candidate and a model box coincide, the box is exact and
+free; where only one exists, it is still a candidate. (Second-opinion machinery is §4.4; it
+ships after the primary path, not before.)
+
+### 4.2 Pass B — assign schedule rows to boxes. Pure, no I/O.
+
+Three independent signals:
+
+| signal | source | settles |
+|---|---|---|
+| which elevation | the tag's wall on the floor plan → the `A`–`D` marker on that wall | which sheet and which half of it |
+| drawn size vs stated size | Pass A's proportion against the schedule's W×H | which box, when sizes differ |
+| order along the wall | the tag order on the floor plan vs left-to-right on the elevation | same-size pairs — W5/W6, W9/W11, W14/W16 |
+
+**A row that two signals disagree about is `not read`, and so is a box two rows both fit.** The
+second is not hypothetical: W14 and W16 are both 2050 × 2000 and the elevations yield **one**
+frame of that size, so either the second is drawn where this pass does not look or one row is
+not drawn. Assigning that one frame to both is the confident wrong answer this reader fails by,
+and the research harness did it silently until a check was written for it.
+
+Only after a row owns a box is it cropped and read. **Nothing reaches §4.3 unlocated.**
+
+### 4.3 The per-opening read — one vision call per opening, against its own crop.
+
+The schedule's dimensions and type go in as context. The model is asked how the opening
+**divides**, never what family it is — §5's ruling binds: geometry or model, the drawing
+claims operable-or-not and the schedule names the family. The output schema makes **"could not
+read this" a first-class answer** — a model never offered the option invents rather than
+declines — and every output is schema-validated through the same clamp every skill already
+passes (`runSkill`).
+
+The crop the model saw is stored as evidence (§9 names where), so a reviewer checks the
+reading against the exact pixels without reopening the PDF.
+
+### 4.4 Verification — what makes the bar checkable.
+
+The model fails silently, so this stage is not optional. Three checks, defined once in THE
+RELEASE GATE (§8) because they are the same checks that decide whether the thing may ship:
+
+1. **Schedule cross-check** — panel count and operable/passive pattern against the schedule's
+   type text. Disagreement is surfaced, never resolved. *Pure; ships with the primary path.*
+2. **The geometric second opinion** — free, exact, and wrong in *different* ways than a model.
+   The segment extraction (operator lists, CTM walk) runs **in the container** — it is
+   extraction, not judgement, and workerd's 128 MB was never proven to hold it (the withdrawn
+   Stage 1a question; the measured peak was 48 MB in Node *before* the Worker also holds PDF
+   bytes and crop responses). The frame *matching* is pure and runs in the Worker. *Ships as
+   its own slice, after the primary path — checks 1 and 3 plus the review gate hold the line
+   until it lands.*
+3. **Dimension agreement** — the drawn frame against the schedule's W×H (output spec §2.2),
+   which caught W4's 3200 × 2100 siding with the energy report against the schedule. *Pure;
+   ships with the primary path.*
+
+### 4.5 Into the estimator — a new source, not a new mechanism.
+
+`SplitHint.source` (`worker/lib/estimator/split.ts:144`) gains `"drawing"`; `SplitUnitHint`
+gains an optional `ratio`, consumed through the output spec's §1.2 rounding rule (round all but
+the last unit to the manufacturing step; the last takes the remainder, so units always
+partition exactly). Evidence columns (`page_no`, `sheet_ref`, `region_json`) already exist in
+migration 0016 and every writer passes `null` today — the crop's page and box fill all three
+with no schema work.
+
+**Precedence, and a live comment defect.** The output spec §6 and the owner rule already coded
+into `pipeline.ts` (~line 780: "THE PLAN WINS THE GEOMETRY") agree: for composition, axis,
+order and count **the drawings win — above the schedule comment, above the energy report**. A
+stated unit width still wins over a measured ratio (§6 below). But `pairing.ts:15`'s precedence
+comment currently lists "energy report components — authoritative" *above* "drawing-derived
+split", which contradicts both. The comment is corrected in the same slice that lands the merge
+logic, and the merge guard at `pipeline.ts:784` extends so a `"drawing"` hint keeps its shape
+while the report's components still ride along for their thermal targets.
+
+### 4.6 Orientation is a separate workstream. Unchanged.
+
+The chain — boundary bearings as text → the lot's compass axes → the tag's wall on the floor
+plan → outward normal — is feasibility-proven (Part II §5, "Orientation is readable after
+all") and is **one determination per building, not one per opening**. It serves a different
+consumer (the thermal band's SHGC cap via `computeDefaultBand`) and ships on its own schedule.
+Nothing in this pass blocks on it and nothing here builds it.
+
+## 5. The symbol never names a family — DECIDED, owner 2026-08-07
+
+`worker/lib/drawing/profile.ts` ships `DEFAULT_PROFILE = { apexMeans: "hinge", confirmed: true }`
+and `refineOperable` maps a bottom apex to **hopper**. Every operable sash measured in the
+reference set has its apex at the bottom while the schedule calls all of them **AWNING**, so on
+this practice's convention `refineOperable` would name every operable panel a hopper, at full
+confidence, because `confirmed: true` makes the "don't name a family until confirmed" guard
+vacuous.
+
+**The whole machinery is unnecessary, because AMJ does not make a hopper.** An awning is hinged
+at the top and opens outward; a hopper is hinged at the bottom and opens inward — different
+windows, drawn with the same chevron, distinguished only by which end the apex points at. The
+catalogue has fourteen families and none is a hopper; `OPERATIONS` in `split.ts` does not list
+one either. Distinguishing awning from hopper is a distinction this product range cannot
+express.
+
+So the rule, and it removes an entire class of risk:
+
+> **The drawing claims `operable` or `not operable`. It never claims a family.**
+> The operable leaves take the family the SCHEDULE states — which is authoritative and already
+> extracted. The passive leaves are fixed.
+
+For W1: the schedule says `OFFSET AWNING`, the drawing says the left leaf carries a symbol and
+the right does not ⇒ `awning | fixed`. No convention is consulted, so no convention can be
+wrong.
+
+`refineOperable`, `apexMeans` and the practice-profile model are **not used in v1** and should
+stay unreferenced rather than be corrected. They become relevant only if the catalogue ever
+carries two families that share a symbol and differ by hinge edge.
+
+*Residual limitation, stated:* an opening whose leaves are genuinely different operable families
+— an awning beside a casement — cannot be told apart this way, because the schedule states one
+type. Nothing in the reference document does that, and if it appears it is a review flag, not a
+silent guess.
+
+## 6. Precedence — a stated width beats a measured one. DECIDED, owner 2026-08-07.
+
+W4's comment states `600 | 2000 | 600`; the drawing measures `615 | 1970 | 615`. A person wrote
+the comment and meant it exactly; the drawing is a ±2.5% measurement of it. So a stated
+dimension is never replaced by a measured one.
+
+Precisely: **the drawing wins operations, order, count and division axis; a stated dimension
+wins widths.** Where a comment states widths for only some units, the stated ones stand and the
+rest are scaled to the remainder. Where the two disagree on the *count* — a comment naming two
+units against a drawing showing three — that is a conflict for review, not an arithmetic
+problem, because the comment cannot be applied to a make-up it does not describe.
+
+This amends [plan-parse-output-spec.md](plan-parse-output-spec.md) §6, whose precedence row
+reads "composition, division axis, order — the drawings win" without the width caveat.
+
+**The ratio convention, decided by measurement** (full workings in Part II §5): leaf-span
+normalisation — it distributes joiner and frame material pro rata, landed within 15 mm of W4's
+stated widths where the centreline convention missed by 35, and through the spec's rounding
+rule yields exact partitions.
+
+## 7. Progress and surfaces
+
+Parsing is on the order of **40–95 s serial for 19 openings, ~10–20 s at five concurrent**, so
+the customer waits on screen and must be told what is happening.
+
+### 7.1 The customer: extend the channel that exists — and no schema rebuild.
+
+The whole channel is already built and shipping: `progress_stage` on the job row → exposed by
+`worker/routes/parse.ts` → typed in `src/data/api.ts` → polled in
+`src/data/useProjectDocuments.ts`, which already renders a named phase.
+
+**Exactly one thing is missing: a count.**
+
+| what the customer sees | comes from |
+|---|---|
+| uploading file | the upload surface, before any run |
+| parsing file | `reading_documents` — exists |
+| **20 openings discovered** | `extracting_schedule` completing — the count is the schedule's own row count |
+| **reading opening 7 of 20** | **`drawings_done` / `drawings_total`, two new nullable INTEGER columns on `ai_job_claim`** |
+
+*Amended 2026-08-27 (architect pass).* An earlier version of this section also wanted a new
+`reading_drawings` value in the `progress_stage` vocabulary. **Withdrawn:** migration 0035
+gave `progress_stage` a `CHECK (progress_stage IN (...))` constraint, and SQLite cannot alter
+a CHECK — adding the value means rebuilding `ai_job_claim`, which is the exact class of change
+`d1-migration-safety` exists to keep rare (§10). The two count columns carry the same
+information: the UI renders "reading opening N of M" whenever `drawingsTotal` is non-null on a
+processing run, whatever the stage label says. One additive migration, no rebuild, no new enum.
+
+The counter's writes reuse `setProgress`'s guard verbatim — `WHERE project_id=? AND
+source_generation=? AND status='processing' AND processing_token=?` — so a superseded or
+stolen job cannot move a live job's bar.
+
+**The counter must be honest.** Its denominator is the real opening count, and an opening that
+comes back `not read` still advances it. A bar that stalls, or quietly shortens its denominator
+to reach 100%, is dishonest about work it did not do.
+
+### 7.2 What the customer sees — successes, never unreads. Owner, 2026-08-27.
+
+**`not read` is not an error, and must not be presented as one.** The schedule is authoritative
+and gives every opening its size, type and glazing; the drawings contribute *how it divides*.
+Partial plans, an elevation that does not show a face, a set that stops at the ground floor —
+all ordinary, and §2's rule already covers them: the list never degrades.
+
+| surface | shows | never shows |
+|---|---|---|
+| progress | `reading opening 7 of 20` — successes accruing against the real count | anything about openings it could not read |
+| the result | which lines the drawings detailed | an error state, a gap count, or a request to supply more |
+| `diagnostic` (`src/data/api.ts`) | real failures — file unreadable, service down | `not read`, ever |
+
+*This reverses an earlier position in this document and the reversal is the point.* The counter
+was going to expose unreads so they could not be hidden. Right instinct, wrong surface. A
+**missing** composition falls back to the even split, which is exactly today's behaviour and is
+not news to anyone; a **wrong** one is a priced window nobody drew.
+
+**Which is why the surface is OPS, not the customer** *(owner, 2026-08-27)*. Ops can act on a
+gap: re-run it, correct it, ask the customer for a sheet, or decide the drawing simply does not
+show it. A customer cannot. The provenance a reviewer needs — *this composition came from the
+drawing* versus *this is the default split* — belongs on the ops line, and so does every
+unread and every disagreement the verification stage records.
+
+**Do not assume the reads are right** *(owner, same)*. Everything above about `not read` being
+ordinary is about **gaps**. Parsing **errors** remain possible and always will, and the
+"successes only" rule must never harden into "successes are correct" — that is the assumption
+this whole reader fails by. Ops sees gaps AND disagreements; the customer sees neither, because
+neither is a customer's to resolve.
+
+**No invitation to the customer, either.** An earlier draft proposed telling them "adding the
+remaining elevations will detail the rest". **Withdrawn — it asks for something they cannot
+give.** A customer cannot add a split, an orientation or a head height to an opening that did
+not parse; the product offers them no way to, and inviting an action the interface does not
+support is worse than saying nothing.
+
+### 7.3 The ops surface — provenance, gaps, disagreements, and the crop.
+
+It does not exist yet, and **nothing ships unreviewed until it does** (owner, §14). Concretely:
+
+- The staff project read (`GET /api/ops/projects/:id`, `worker/routes/ops.ts`) gains a
+  per-opening readings summary: state (`read` / `not_read` / `not_stated` / `unlocated`),
+  which verification checks fired, the disagreement details, and the crop reference.
+- A new staff route streams the crop PNG (§9 authorization). The reviewer sees the exact
+  pixels the model saw, beside the schedule row and the resulting composition, in
+  `src/ops2/projects/` (a readings panel on `ProjectRecordPage`, provenance on the line).
+- Per-opening evidence rows use the structures that already exist: one `ai_stage_runs` row per
+  opening read (via `runStage`, which is also the retry/idempotency machinery), with the
+  model's JSON in `result_r2_key` as every stage already archives it, and the crop's own R2
+  key carried in `metrics_json`. *(Amended: an earlier draft said the crop goes in
+  `result_r2_key` itself — wrong; that key is the replay archive and must stay the validated
+  JSON payload.)*
+
+**OCR for genuinely scanned sets** remains the container's other job someday, and
+`GeometryGap = "raster_page"` remains its trigger — but it is no longer the thing that decides
+whether a container exists, and it is not in this plan's scope.
+
+## 8. THE RELEASE GATE — what "100%" has to mean before anything ships
+
+**The bar has to be split in two, because one half is achievable and the other is not.**
+
+| | bar | why |
+|---|---|---|
+| **A reading that is WRONG** | **zero. A release blocker.** | A wrong composition is a priced window nobody drew. It reaches a customer as a quote and a factory as a cut list. |
+| A reading that is ABSENT | measured and reported, not gated | `not read` hands the opening to the fallback **visibly**. The fallback already works ok-ish; a visible handover is the status quo, not a regression. |
+
+So *100% correct* is the gate and *100% covered* is the target. Conflating them is what would
+make this project unshippable forever: a set whose drawings genuinely do not state a
+composition cannot be read by any method, and the output spec's §4 already says `not stated` is
+a correct answer.
+
+**Ground truth, which does not exist yet and is the long pole.** No gate is measurable without a
+labelled set, and nobody has labelled one. Cheapest honest route: run the pipeline over N real
+sets and have the owner confirm or correct each opening **once**, in the ops surface, against
+the crop the reading carries. That is review work he would do anyway on the first jobs, and it
+produces the fixture as a by-product. **N is a decision for him** (§14): the second plan set
+stopped being a route gate and became the first row of this.
+
+**The three checks that have to run before a reading counts as correct** are §4.4's — schedule
+cross-check, geometric second opinion, dimension agreement — all of which exist independently
+of any label.
+
+**Staged release, so the gate can be met before the fixture is large.** Drawing-derived splits
+already land behind "confirm the configuration at review". Ship there first: every reading is
+seen by a human before it prices anything, wrong readings are caught as review corrections
+rather than as customer-visible errors, and each correction is a labelled row. **Removing the
+review gate is a separate decision with its own evidence bar** — see §14 — and must not be
+taken as implied by shipping.
+
+**What gets reported per run**, so the numbers exist from day one rather than being
+reconstructed later: read / located-but-unread / unlocated, per opening; which of the three
+checks fired; the crop key for every reading; and the container/model call counts and wall
+times (which is also what would justify revisiting §3.2's seam). The per-opening
+`ai_stage_runs.metrics_json` plus the run summary carry all of it;
+`scripts/research/plan-geometry/measure.mjs` is the shape to copy.
+
+## 9. Security
+
+This feature processes customer-uploaded plan sets, stores derived fragments of them, sends
+them to a third-party model, and stands up a new compute surface. Every one of those is a
+sensitive surface; none of this section is optional.
+
+### 9.1 Data classification
+
+| data | class | where it lives / moves | new? |
+|---|---|---|---|
+| Plan set PDF | **personal PII** (client names, site addresses in title blocks and the text layer) + commercial (project scope, quantities) | R2 `FILES` via `file_asset`, project-scoped; already virus-scanned and size-capped at upload | existing |
+| Crops (per-opening PNG; Pass A elevation PNGs) | same class as the source — a fragment of the customer's drawing; elevation-sized crops can include title-block text (names, addresses) | **NEW at rest**: R2 under `projects/<projectId>/runs/<runId>/crops/<stageRunId>.png` — the same project-scoped prefix the stage archives already use. `ASSUMED:` this prefix and lifecycle pending the retention decision (§14 D1) | new |
+| Model input | crop bytes + schedule row context (tag, dims, type text) | Worker → Google via the AI Gateway, `collectLog: false` (payloads never stored gateway-side); document text already crosses this boundary today — pixels are a new modality, not a new boundary | new modality |
+| Model output (regions, compositions, declines) | untrusted input, commercial once accepted | validated in Worker, stored via `runStage` archives + hints | new |
+| Container I/O | PDF bytes + rectangles in; PNGs + failure codes out | in-memory only; the container persists nothing, logs no document content (`server.mjs` logs error stacks only), and its dev `out/` directory is gitignored with the Dockerfile COPYing files explicitly (both already asserted by tests) | new |
+| Progress counts | non-sensitive integers | two columns on `ai_job_claim` | new |
+
+Nothing new is logged by value: the existing §21.1 discipline (never log filenames, document
+text or model output; hashes and ids only) binds every new code path, container included.
+
+**Retention is undecided and escalated** (§14 D1). The release gate *requires* every reading
+to carry its crop, so crops cannot simply be discarded — but "kept for review" and "kept
+forever" are different policies, and a customer's drawings sitting in R2 indefinitely is a
+liability the owner must size, not a default the code should pick. Two facts for that
+decision: R2 objects do **not** die with D1 rows (project deletion cascades D1 but leaves the
+R2 prefix — an orphan-cleanup gap that already exists for stage archives today and which crops
+would widen), and the ground-truth fixture (§8) *wants* labelled crops retained — so the
+recommendation separates the two: operational crops live with the project, fixture crops are
+an explicit, deliberate copy made at labelling time.
+
+### 9.2 Trust boundaries
+
+1. **Customer → Worker (upload).** Unchanged; this feature adds no upload surface. Existing
+   controls: virus scan gate, size caps, project scoping in `file_asset`.
+2. **Worker → container (the DO binding — §3.1).** The only path in; no public ingress by
+   construction. Validation at the crossing runs on **both** sides, deliberately: the Worker
+   clamps and refuses first (`cropBoxFor`), and the container re-validates everything anyway
+   (`validate.mjs`: scale ≤ 6, pages ≤ 20, crops ≤ 64, positive-integer boxes, 32 MB body) —
+   "trusted" and "unchecked" are different things, and validate.ts is the only thing standing
+   between a malformed rectangle and a native renderer. The container is also the **blast
+   radius** for parsing hostile PDFs in native code (pdf.js, canvas, sharp — image parsers are
+   CVE country): non-root, credential-free, nothing to read but the one document it was
+   handed, nothing to write to. A fully compromised container can lie about pixels of that one
+   document — an outcome the verification checks and the review gate already bound.
+3. **Container → Worker (response).** PNGs and stable failure codes. The Worker matches echoed
+   crop ids against the set it sent (never trusts an id as a key), enforces
+   `MAX_CROPS_PER_CALL = 24` on what it requested (bounding response size against the 128 MB
+   isolate), and treats failure reasons as an enum — container internals never reach any
+   surface.
+4. **Worker → model (AI Gateway).** Existing boundary, existing spend/rate controls, payload
+   logging off per-request. New: image parts, already supported by the skill runner.
+5. **Model → Worker.** **The heart of this design's threat model.** Model output is untrusted
+   input that becomes a pixel rectangle and a priced composition:
+   - Regions are **refused, not clamped** (`cropBoxFor`): out-of-range or inverted corners
+     return `null` → the opening is `not read`. Clamping IS the bug — `[0.2, 0.2, 1.4, 0.6]`
+     clamps to "the whole sheet", which the model then confidently describes. Refusing costs
+     one `not read`, which the even-split fallback already covers. This is the right boundary
+     and it is **not the only one**: every model output also passes the skill's JSON-schema
+     clamp (`runSkill` — the same validator path re-applied even to R2 replays, because
+     storage is not a trust boundary), the composition may never set a family (§5), a stated
+     width always beats a model ratio (§6), verification (§4.4) cross-checks what survives,
+     and the review gate has a human confirm before anything prices.
+   - Nothing model-produced is interpolated into SQL, R2 keys, file paths or logs: crop keys
+     derive from `stageRunId`, joins go through bound parameters, tags are matched against the
+     schedule's own roster.
+6. **Ops → Worker.** New read surfaces, below.
+
+### 9.3 Authorization, per endpoint
+
+- **No new customer-facing endpoint.** The progress counts ride the existing extraction-run
+  read in `worker/routes/parse.ts` (~line 371), whose scoping is unchanged and stated here so
+  it is checked, not assumed: the project is resolved from the session/claim cookie
+  (`resolveCurrentProject` / `resolveUser`), and the job row is read with
+  `WHERE j.project_id = ?` bound to that resolved project — never to an id from the request.
+  The two new columns join that SELECT; they add no new query and no new filter.
+- **Progress writes** (Worker-internal): `UPDATE ai_job_claim ... WHERE project_id=? AND
+  source_generation=? AND status='processing' AND processing_token=?` — the token guard means
+  a superseded run cannot write a live run's counter.
+- **`GET /api/ops/projects/:id` (extended, `worker/routes/ops.ts`).** Staff-gated as today:
+  `resolveStaff` plus the **`isStaffUser` predicate — manufacturer partners are excluded**,
+  because readings, gaps and crops are customer data and CONTEXT.md excludes manufacturer
+  partners from customer data categorically. Readings query:
+  `... FROM ai_stage_runs s JOIN ai_runs r ON r.id = s.ai_run_id WHERE r.project_id = ?` with
+  the path's project id bound.
+- **`GET /api/ops/ai/crops/:stageRunId` (new, `worker/routes/ops.ts`).** Same staff gate
+  (`isStaffUser` — not merely `resolveStaff`), and audit-logged exactly like the existing
+  staff file download (`ops.ts:2274` pattern). The R2 key is read from the row —
+  `SELECT s.metrics_json, r.project_id FROM ai_stage_runs s JOIN ai_runs r ON r.id =
+  s.ai_run_id WHERE s.id = ?` — **never from the request**, so the route cannot be steered to
+  an arbitrary R2 object. Ids are UUIDs; enumeration yields nothing to a non-staff caller and
+  an audit line per hit for a staff one.
+- **Crops appear on no customer-facing surface, scoped or otherwise.** Specifically they are
+  never attached to the customer files listing or the guest-grant download surface — the guest
+  OTP weakness (ticketed HIGH, 2026-08-25) can already reach customer files, and this feature
+  must not widen what that grant reaches.
+- **The container endpoint has no authorization because it has no reachability** (§3.1). Its
+  authorization *is* the binding. Adding a shared secret would be a regression, not hardening.
+
+### 9.4 Abuse cases
+
+| abuse | held by | proven by |
+|---|---|---|
+| Customer A reads customer B's progress/readings | session-resolved project scoping on the parse read (above) | existing api suite; new columns covered in `scripts/tests/ai-pipeline.test.mjs` |
+| Non-staff or manufacturer-partner pulls a crop or readings | `isStaffUser` gate on both ops surfaces | **negative tests** in `scripts/tests/drawing-evidence-api.test.mjs` (customer token → 401/403; manufacturer session → denied; both executed, not asserted-by-reading) |
+| Hostile PDF: render bomb / decompression bomb | container caps (scale ≤ 6, pages ≤ 20, crops ≤ 64, 32 MB body), per-page failure isolation, container as blast radius; Worker-side text scanning already bounded (`MAX_TAG_MATCHES_SCANNED`) | `validate.mjs` bounds covered in `scripts/tests/drawing.test.mjs` (exists) |
+| Prompt injection via the drawing itself (text or drawn glyphs steering the model) | schema-clamped output; family never model-claimed (§5); stated widths win (§6); verification (§4.4); human review gate before pricing | **residual risk, named:** a poisoned ratio inside the plausible range survives to review — the review gate is the control, which is one reason removing it needs its own evidence bar (§14) |
+| Model self-reference: Pass A's wrong box → crop → confident wrong read | refuse-not-clamp at `cropBoxFor`; Pass B's two-signal agreement requirement; crop carried as evidence so review sees what the model saw | `cropBoxFor` refusal tests (exist); assignment tests in `scripts/tests/drawing.test.mjs` |
+| Crop-id / stage-run enumeration | UUID ids; staff-only route; audit log per access | `drawing-evidence-api.test.mjs` |
+| Spend abuse: repeated parses to burn model budget | existing parse quota + per-IP rate limit + `ai_daily_usage` reservation; AI Gateway monthly cap as backstop | existing suites; call-count in the per-run report (§8) |
+| Replay / tamper of container traffic | not reachable off-platform; requests deterministic and idempotent (byte-identical for the same batch, by design in `buildCropRequest`) | `drawing.test.mjs` (exists) |
+| Customer data residue in the container between jobs | statelessness (§3.2) — no cache, no disk writes, `out/` is dev-only and gitignored | Dockerfile COPY test + gitignore (exist) |
+| Customer PII committed to the repo | the README's identifiers-are-looked-up-not-written-down rule (a site address *did* land in a committed README this effort and was purged); fixtures fetched by key, never stored | reviewer attention; the rule is written where the fetch instructions are |
+
+## 10. Data and migrations
+
+`d1-migration-safety` loaded; live cascade count re-measured at **52** (comment mentions
+excluded).
+
+**One migration, additive only — `migrations/0059_drawing_read_progress.sql`:**
+
+```sql
+ALTER TABLE ai_job_claim ADD COLUMN drawings_done  INTEGER;  -- null until a drawing read starts
+ALTER TABLE ai_job_claim ADD COLUMN drawings_total INTEGER;  -- the honest denominator (§7.1)
+```
+
+- **Cascade analysis:** nothing in the schema `REFERENCES ai_job_claim` (verified by grep over
+  `migrations/`), and an `ADD COLUMN` rebuilds nothing regardless. Children affected: none.
+- **The rebuild that was avoided, named so nobody reintroduces it:** extending
+  `progress_stage`'s CHECK (migration 0035) with a `reading_drawings` value would require the
+  CREATE/INSERT/DROP/RENAME recipe on `ai_job_claim`. That table has no cascade children, so
+  it would not repeat the incident — but it is the incident's *class*, and two nullable
+  columns carry the same information for free. §7.1 records the withdrawal.
+- **No other schema work.** Evidence lands in the existing `evidence_items` columns
+  (`page_no`, `sheet_ref`, `region_json` — migration 0016, currently always null) and
+  `ai_stage_runs` rows via `runStage`; the crop's R2 key rides `metrics_json`.
+
+## 11. Constants — calibration knobs, and what settles each
+
+Chosen unilaterally during the container build; **flagged here rather than silently owned.**
+None is an owner decision *in itself* — each is a technical calibration whose right value is an
+empirical question the release-gate fixture (§8) answers — but their *product* is cost per job,
+and cost is the owner's (§14 D3). Refuse-vs-clamp is different in kind: it is not a knob, it is
+the owner's own zero-wrong-readings bar applied at a boundary (a clamped region risks a wrong
+read; a refused one costs a visible `not read`), and changing it would need the bar changed
+first.
+
+| constant | value | trades | settled by |
+|---|---|---|---|
+| `scale` | 3 (~216 DPI) | render cost + payload size vs glyph legibility | read-rate on the labelled set at 2/3/4 — the per-run report already carries the numbers |
+| `MIN_CROP_WIDTH_PX` | 900 | model tokens per image vs legibility of sliver crops (3500×700 renders ~300×60 px unscaled) | decline-rate + wrong-rate on wide-short openings in the fixture |
+| `PAD_FRACTION` / `MIN_PAD_PT` | 0.18 / 12 | context (dimension strings, tags, storey lines) vs pulling a neighbouring opening into frame | verification disagreement rate; the `ponytail:` note in `crop.ts` already names per-producer padding as the upgrade path |
+| `MAX_CROPS_PER_CALL` | 24 | Worker memory headroom vs extra container calls on large sets (§3.2: cost is ⌈n/24⌉−1 calls) | measured response sizes in the per-run report; the container's own cap (64) is the not-from-the-Worker tripwire, not the operating limit |
+| refuse-not-clamp | — | coverage vs correctness | **not a knob** — derived from the release gate's wrong=0 bar; revisit only if the owner revisits the bar |
+
+`MIN_CROP_WIDTH_PX` exists on both sides of the network boundary (`crop.ts` and `render.mjs` —
+the container cannot import Worker TS). A repo test asserts the two stay equal.
+
+## 12. Affected files — the hand-off index
+
+Discovery is done; the developer starts from these, not from a search. (Slices and ordering:
+`docs/runs/plan-parse/02-tasks.json`.)
+
+**Exists, unchanged by this plan (context):**
+- `containers/plan-parse/` — `server.mjs`, `render.mjs`, `validate.mjs`, `verify.mjs`,
+  `Dockerfile` — the container, built and verified this session (t7 extends it).
+- `worker/lib/drawing/crop.ts` — `cropBoxFor`, refusal semantics, `MIN_CROP_WIDTH_PX`.
+- `worker/lib/drawing/container.ts` — `CropIntent/CropRequest`, `buildCropRequest`,
+  `MAX_CROPS_PER_CALL`.
+- `worker/lib/ai/ingest.ts` — page routing, fixed this session.
+- `scripts/research/plan-geometry/` — the calibration harness (`measure.mjs` gates), source
+  of the frame matchers t7 ports.
+
+**To create:**
+- `worker/lib/drawing/planParseContainer.ts` — `PlanParseContainer extends Container`
+  (`@cloudflare/containers`), `defaultPort = 8080`, `sleepAfter`.
+- `worker/lib/drawing/containerClient.ts` — request framing (JSON header line + PDF bytes, the
+  framing `server.mjs:49` already parses), response decode, failure mapping; pure parts
+  exported for tests; instance key `projectId:sourceGeneration` (§3.1).
+- `worker/lib/estimator/skills/drawingRead.ts` — two skills beside the existing three
+  (`plan.ts`, `schedule.ts`, `energy.ts` show the shape, incl. `imageDataUrl` parts):
+  `elevationInventory` (Pass A) and `openingComposition` (§4.3), schemas with a first-class
+  decline.
+- `worker/lib/drawing/assign.ts` — Pass B, pure (§4.2 rules).
+- `worker/lib/drawing/verifyReading.ts` — checks 1 and 3 pure; check 2 wiring in t7.
+- `worker/lib/drawing/frames.ts` — t7 port of the matchers from
+  `scripts/research/plan-geometry/frames.mjs` (pure; segments arrive from the container).
+- `worker/lib/drawing/toHint.ts` — reading → `SplitHint{source:"drawing"}` with §6 width
+  precedence and the count-conflict review flag.
+- `worker/lib/drawing/read.ts` — the orchestrator: R2 read (once), elevation regions from
+  positioned text, container calls, `runStage` per elevation and per opening, verification,
+  evidence + crop persistence, progress callback. The only new file that touches `env`.
+- `migrations/0059_drawing_read_progress.sql` — §10.
+- `src/ops2/projects/DrawingReadings.tsx` — the ops readings panel.
+- `scripts/tests/drawing-evidence-api.test.mjs` — NEW suite (§13).
+
+**To modify (line/symbol):**
+- `wrangler.jsonc` — `containers` + `durable_objects` + `new_sqlite_classes` migration
+  (bindings block, after `r2_buckets` ~line 45).
+- `worker/types.ts` — `Env.PLAN_PARSE: DurableObjectNamespace` (near `AI_GATEWAY_ID`, ~48).
+- `worker/index.ts` — export `PlanParseContainer`.
+- `package.json` — `@cloudflare/containers` dependency; new test script + suite wiring (§13).
+- `worker/lib/estimator/split.ts:144` — `source` union gains `"drawing"`; `SplitUnitHint`
+  gains `ratio?: number`; ratio → widths via the §1.2 rounding rule.
+- `worker/lib/estimator/pairing.ts:15` — correct the precedence comment (§4.5).
+- `worker/lib/ai/pipeline.ts` — invoke `read.ts` after `mergeScheduleLines`/`applyPlanContext`
+  (~700–740); extend the plan-wins guard at ~784 to cover `source === "drawing"`; evidence
+  into `o.evidence`; progress counts beside `setProgress` (~541).
+- `worker/routes/parse.ts` — SELECT + response gain the two count fields (~371–400).
+- `src/data/api.ts` — `ExtractionRun` gains `drawingsDone`/`drawingsTotal` (~585).
+- `src/data/useProjectDocuments.ts` — render "reading opening N of M" (~347).
+- `worker/routes/ops.ts` — readings summary on the project read; crop route beside the staff
+  download (~2274), same audit-log pattern.
+- `src/ops2/projects/ProjectRecordPage.tsx` — host the readings panel.
+- `worker/lib/drawing/index.ts` — export the new pure modules.
+- `containers/plan-parse/{server,render,validate,verify}.mjs` — t7 segments operation.
+
+## 13. Test plan
+
+Every named file below is created or extended by a task in `02-tasks.json`; a design-named
+test that never materialises is the pipeline's most-repeated failure and is checked at
+conformance.
+
+| suite | runs in | covers |
+|---|---|---|
+| `scripts/tests/drawing.test.mjs` (exists, `test:pure` / `test:drawing`) | node, pure | container client framing/decode + failure mapping; `assign` (two-signal disagreement ⇒ not read; one-box-two-rows ⇒ both not read); `verifyReading` checks 1 & 3; `toHint` (§6 width precedence, count conflict); frames port against fixture segments; `MIN_CROP_WIDTH_PX` equality across the boundary; existing crop/request/Dockerfile assertions stay green |
+| `scripts/tests/estimator-split.test.mjs` (exists, `test:composite`) | node, pure | `ratio` → widths through `proposeSplit` (§1.2 rounding: all-but-last, exact partition) |
+| `scripts/tests/ai-pipeline.test.mjs` (exists, `test:ai-pipeline`) | node | drawing hints merge ABOVE comment and energy for shape; components still attach; `not read` leaves today's fallback untouched; progress counts written under the token guard; customer summary/diagnostic never carries unreads |
+| `scripts/tests/drawing-evidence-api.test.mjs` (**new**; wire into `test:heavy` and add `test:drawing-api`) | node | ops readings + crop routes: staff OK; customer token denied; **manufacturer-partner session denied** (executed abuse cases, §9.4); crop key read from row not request; audit line written |
+| `scripts/tests/web/customer.spec.ts` (exists) | Playwright | "reading opening 7 of 20" renders from a stubbed run with counts; absent counts ⇒ today's phase label |
+| `scripts/tests/web/ops2-record.spec.ts` (exists) | Playwright | readings panel: provenance per line, an unread listed, a disagreement listed, crop image requested |
+| `containers/plan-parse/verify.mjs` (exists; manual, fixture-gated) | node + fixture | end-to-end render/crop against the real set; extended for the segments op in t7 |
+| `scripts/research/plan-geometry/measure.mjs` (exists; manual, fixture-gated) | node + fixture | the calibration gate — §2/§2a tables enforced, exits non-zero on drift |
+
+## 14. Decisions
+
+**Settled (owner):** the route (§1); Node + vision-call-in-Worker (§3.3); comment-wins-widths
+(§6); no-hopper / schedule-names-the-family (§5); customer sees successes only, ops sees gaps
+and disagreements (§7.2–7.3); customer waits on screen, per opening (§7.1).
+
+**Open — carried forward:**
+
+1. **Is a drawing-derived split allowed to flow through unreviewed?** Behind the review gate
+   the question is moot, and it sharpens under the model route: the geometric figure was wrong
+   by a bounded ±2.5%, whereas a model's wrong reading is a *different window*. The
+   verification stage exists for that; whether it suffices to remove the review gate is
+   decided later, against §8's fixture, never implied by shipping.
+
+**Decisions needed (new, this pass):**
+
+- **D1 — Crop retention.** Crops are fragments of customer drawings held in R2. Options:
+  (a) live with the project — deleted when the project's files are deleted, which requires the
+  already-missing R2 prefix cleanup to be ticketed and built; (b) fixed TTL (e.g. 90 days) via
+  an R2 lifecycle rule on `projects/*/runs/*/crops/`; (c) indefinite. **Recommended: (a)**,
+  with fixture crops (§8) surviving only as an explicit copy made when the owner labels them —
+  review evidence and training corpus are different retentions and should not share a default.
+- **D2 — N, the ground-truth set count** (§8). How many real sets the owner will confirm
+  opening-by-opening in the ops surface before the wrong-rate means anything.
+  **Recommended: 10**, revisited after the first 3.
+- **D3 — Spend headroom.** Roughly 21–26 vision calls per parsed set (Pass A per elevation +
+  one per opening + retries) against the AI Gateway's $20/mo cap, plus the container add-on
+  beyond its free allowance. Trivial per job at flash pricing, but the cap is monthly and
+  shared with every other skill: confirm the cap, or set the number the gateway should hold.
+
+---
+
+# PART II — THE RECORD
+
+*Everything below is retained as history: the superseded headline, the errors that were mine,
+the evidence that calibrated the method, and the demoted geometric route whose output contract,
+precedence rules and landing zone still bind the model route. Nothing here overrides Part I.*
+
+## The superseded headline (pre-ROUTE-DECISION)
 
 *The original headline, kept because its measurements are sound and only its conclusion was:*
 W1's composition is in the document's **vector line-work**, and it reads out in 110 ms using
@@ -14,8 +747,6 @@ container, no model call. Three independently written decoders returned the same
 coordinates. *It then concluded "rasterisation is not on the critical path", which was the
 wrong lesson from a right measurement: reading the line-work precisely was never the hard part,
 and finding out which window the line-work belongs to is.*
-
----
 
 ## What the previous version of this document got wrong
 
@@ -34,85 +765,7 @@ It is worth recording, because the errors were confident and they were mine.
    needed proving was whether *we* could extract it in *our* runtime — and that has now been
    done, in this session, rather than planned.
 
----
-
-## ROUTE DECISION — the model reads the drawings. Owner, 2026-08-27.
-
-**Binding, and it reverses this document's headline.** The primary path is the method that was
-proven manually with Fable and written down as `containers/plan-parse/` on branch
-`feat/drawing-extraction`: render the sheet, crop to one opening, and ask a vision model, with
-the schedule row as context. The vector-geometry route below is **demoted to a corroborating
-check** — useful because it is free and exact where it works, never the thing the answer depends
-on.
-
-**The owner's reasoning, which the session's own evidence supports.** Plans differ. A window tag
-is sometimes beside its diagram and sometimes far from it on a leader line; a stile is sometimes
-its own segment and sometimes part of a wall line; a frame band is sometimes at 100% of the
-opening and sometimes at 99.1%. Each is an edge case, each needs a new geometric rule, and this
-session found **three of them in a single document** — every one of which produced a confident
-wrong answer until it was caught. Re-deriving that ruleset for every drafter is the work the
-owner declined, and the bar he set makes the trade explicit: *the fallback already works
-ok-ish, so anything short of 100% is not worth the complexity.*
-
-**Two things the geometry could not do at all**, both verified by looking at the rendered sheets:
-
-- **The tag→wall→elevation chain.** `docs`' floor plan carries octagon tags (`W14/S08`) whose
-  legend reads *"denotes the window & door number, and sheet number"*, with elevation markers
-  A/B/C/D on the four walls. Reading a tag, associating it with a wall through a leader line,
-  and mapping that wall to an elevation letter is the join this whole pass needs, and it is
-  text-and-symbol work, not line-work.
-- **Disambiguation.** W9 and W11 are both 1810 × 1027 and the geometry reports "2 candidates,
-  not stated" for each. On Elevation C both are visible and the plan states their order along
-  the wall. The model resolves what the matcher can only decline.
-
-**The one thing the geometry has that the model does not, and it is not nothing.** Geometry
-fails *loudly* — no frame resolves, so the row says `not read` and the fallback takes over
-visibly. A vision model fails *silently*: it returns a plausible composition for an opening it
-could not actually see, indistinguishable from a real one. So the model route needs what this
-document's §4 three-state rule already demands, enforced at the boundary: every reading carries
-its crop as evidence, disagreements with the schedule's type are surfaced rather than resolved,
-and "could not read this" must be an answer the prompt makes easy to give. **The geometric
-decoder becomes the cheap second opinion** — where both agree, confidence is high; where they
-disagree, a human looks.
-
-*Everything below §0 is retained as written. It is the record of the demoted route and of what
-it cost to learn, and its output contract, precedence rules and §6 family ruling are unchanged
-and still bind the model route.*
-
----
-
-## 0. What this pass is, and what it is not
-
-**The openings list already works and is authoritative.** Extraction returns every opening with
-its tag, dimensions, product type and comment, and the shipped parser does it at 19 rows and
-zero warnings on this document. None of that is in question and none of it is re-derived here.
-
-This pass takes that list and asks the drawings **one further question per opening**: the thing
-a human would look at an elevation to find.
-
-| Already known, authoritative | What this pass adds |
-|---|---|
-| tag, width, height | how the opening **divides** |
-| product type / family | which units make it up, and what each one **is** |
-| comments, glazing, head height | their **order**, left to right |
-| | the **ratio** each unit takes of the width |
-| | whether the division is side-by-side or stacked |
-
-So it is **not a discovery problem**. We are never asking "what windows exist" — we are looking
-up a window we already know the size of, and reading how it is made up. That changes three
-things materially:
-
-- **Frame matching is a lookup, not a search.** The schedule says 2050 × 2100; the decoder looks
-  for that rectangle. This is why the >2% rejection rule is sufficient rather than heroic, and
-  why the title-block logo that came back as a 2091 × 2091 "window" is easy to reject.
-- **Tag harvesting is almost unnecessary.** It is needed only to tell apart two rows with
-  identical dimensions — W5/W6, W9/W11 and W14/W16 here — not to find openings.
-- **Failure is per-opening and harmless.** An opening whose frame is not found keeps everything
-  the schedule gave it and reports composition as *not stated*. The list never degrades.
-
----
-
-## 1. The method being reproduced
+## §1 (historical) — the method being reproduced
 
 SKILL.md's six steps, unchanged: inventory cheaply → choose a strategy → text extraction for
 data → **rasterise only what matters and look at it** → do both when precision matters → manage
@@ -129,14 +782,13 @@ millimetre is the entire deliverable, and the path operators state what a raster
 of text, and an elevation letter on a wall — none of which is line-work, and all of which step 4
 handles by looking. A decoder that measures a mullion to 0.1 mm and cannot tell you which window
 it belongs to has answered the easy half. The geometry keeps its precision advantage in the role
-it now has: the second opinion of §7's verification stage, where being exact and free is exactly
+it now has: the second opinion of the verification stage, where being exact and free is exactly
 what a cross-check should be.
 
-The platform has no step 2 at all today. It runs one path for everything, and that path is text.
+The platform had no step 2 at all before this effort. It ran one path for everything, and that
+path was text.
 
----
-
-## 2. The evidence
+## §2 (historical) — the evidence
 
 All measured against the reference plan set — job 20016, a two-storey detached house, 14
 pages, producer "Microsoft: Print To PDF". It is a customer document and is identified here
@@ -182,10 +834,7 @@ because the gates asserted what the matcher said rather than what the sheet show
 **Cost:** page 6 is 31,082 operators → 5,928 segments in 110 ms; page 7 is 36,415 → 8,924 in
 70 ms. Peak heap for the whole job, text plus both elevations: **34 MB** in node.
 
-
----
-
-## 2a. The whole set, measured — 2026-08-27
+## §2a (historical) — the whole set, measured — 2026-08-27
 
 §2 was calibrated on two openings. This is all nineteen, decoded by
 `scripts/research/plan-geometry/` against the same document.
@@ -274,9 +923,9 @@ W4   OP 596.9  |  fx 1913.5  |  OP 601.1             the drafter wrote "2x 600mm
 
 W4 lands 3.1 mm and 1.1 mm from a figure a human typed, without being told it.
 
-**The ambiguity is three times what §6 assumed.** It named W14/W16 as the only same-size pair.
-They are one, and so are **W5/W6** and **W9/W11** — three pairs, six openings. Disambiguation
-therefore buys 6 openings, not 2 — still late-ordered, still not a prerequisite.
+**The ambiguity is three times what the family ruling's section assumed.** It named W14/W16 as
+the only same-size pair. They are one, and so are **W5/W6** and **W9/W11** — three pairs, six
+openings. Disambiguation therefore buys 6 openings, not 2.
 
 **A conflict the drawing settles.** W4's drawn frame is **3200 × 2100** — the energy report's
 figure, not the schedule's 2410 × 1800. `conf_energy_2` on this project has been flagged for
@@ -288,8 +937,7 @@ is the first case of the drawings arbitrating a conflict rather than creating on
 409 ms before the rail-driven fallback; it runs only where the strict pass finds nothing, and
 three openings were worth the difference.
 
----
-## 3. The cheap route is dead — proven, not assumed
+## §3 (historical) — the cheap route is dead — proven, not assumed
 
 The printed schedule has eight columns and the shipped parser already reads all eight:
 
@@ -307,12 +955,11 @@ legend says the schedule *"nominates window sizes and head heights"* — sizes, 
 
 **So it is the drawings or nothing.**
 
----
+## §4 (historical) — the page-router defect. FIXED this session.
 
-## 4. A live defect, shipping today, independent of all of this
-
-The page router selects the wrong pages. Running the shipped `classifyPageRoles`
-(`worker/lib/ai/ingest.ts:110`) against the real document:
+*Fixed in `worker/lib/ai/ingest.ts` by commits `00669315` and `0d59a4e7`; kept because the
+diagnosis explains the fix's shape.* Running the then-shipped `classifyPageRoles` against the
+real document:
 
 ```
 ROLES {"schedule":[4,5,7], "energy_report":[], "plans":[12,14]}
@@ -325,22 +972,21 @@ ROLES {"schedule":[4,5,7], "energy_report":[], "plans":[12,14]}
 14  NCC compliance sheet             ← SELECTED
 ```
 
-`ingest.ts:143` requires two plan signals; the four real drawing sheets score one. Root cause:
-`/\bscale\s*1\s*:/` never matches, because the title block emits the label "Scale" about forty
-characters from the value "1 : 100". Pages 12 and 14 match only because they carry the inline
-prose "SCALE 1:20". Downstream, `pipeline.ts:461` reads `doc.roleText.plans ?? doc.markdown` —
-and because `rolePages.plans` is non-empty, the fallback to full text never fires.
+The rule required two plan signals; the four real drawing sheets scored one, because a CAD
+title block emits the label "Scale" about forty characters from the value "1 : 100", so
+`/\bscale\s*1\s*:/` never matched. Pages 12 and 14 matched only because they carry inline
+prose "SCALE 1:20". Downstream, `pipeline.ts` read `doc.roleText.plans ?? doc.markdown` — and
+because `rolePages.plans` was non-empty, the fallback to full text never fired. **The plan
+skill was fed a stair detail on every architectural set.** The fix: only a sheet that NAMES a
+drawing is a drawing sheet; section marks, scales and north points corroborate, never qualify.
 
-**The plan skill is fed a stair detail on every architectural set.** That is why it returned
-zero openings and zero rooms. Worth fixing whether or not the drawing reader is ever built.
+## §5 (historical) — design of the DEMOTED geometric route
 
----
+*Retained as written. Its output contract, its precedence rules and its Stage 8 landing zone
+still bind the model route; its Stages 4–6 describe the second opinion, not the answer. See the
+ROUTE DECISION.*
 
-## 5. Design — of the DEMOTED geometric route
-
-*Retained as written. Its output contract, its precedence rules and its Stage 8 landing zone still bind the model route; its Stages 4–6 describe the second opinion, not the answer. See the ROUTE DECISION.*
-
-**Stage 1 — Inventory** *(extend existing)*. `ingest.ts:287` already opens the document and
+**Stage 1 — Inventory** *(extend existing)*. `ingest.ts` already opens the document and
 reads the text layer. On the same proxy add: page count, per-page size and rotation, text-item
 count, image-XObject census, attachments, form fields. ~30 ms + 1 ms/page. Persist it — it is
 what makes a bad parse diagnosable a month later.
@@ -359,15 +1005,15 @@ positives.
 > plan) alone is 348,687 operators and 56 MB of heap. Page selection is a correctness
 > requirement here, not an optimisation.
 
-**Stage 4 — Geometry** *(drawing Stage A — the only unimplemented stage)*. `getOperatorList`
+**Stage 4 — Geometry** *(the only stage never implemented in the Worker)*. `getOperatorList`
 per selected page; decode `constructPath`; compose the CTM through save/restore/transform;
 bucket into vertical / horizontal / diagonal; `page.cleanup()` between pages. Scale from the
 title block's `1 : 100`.
 
-**Stage 5 — Frame lookup, per known opening** *(drawing Stage C)*. **Driven by the openings
-list, one row at a time.** For a row of 2050 × 2100, search the selected pages for a rectangle
-of that size; then read its internal full-height verticals as mullions and count diagonals per
-leaf, left to right.
+**Stage 5 — Frame lookup, per known opening.** **Driven by the openings list, one row at a
+time.** For a row of 2050 × 2100, search the selected pages for a rectangle of that size; then
+read its internal full-height verticals as mullions and count diagonals per leaf, left to
+right.
 
 **Rejection is the work, not extraction.** A strict matcher searching for W1's 2050 × 2100 also
 returned the title-block logo border as a 2091 × 2091 mm "window". Because the target size is
@@ -379,10 +1025,10 @@ known, rejection is cheap and rule-based:
 - **zero candidates or two-plus surviving candidates ⇒ composition is *not stated* for that
   opening.** Never a guess, and the row keeps everything the schedule gave it.
 
-**Stage 6 — Disambiguation only** *(drawing Stages B and D)*. Needed **only** when two rows
-share dimensions, because then a matched frame could belong to either. On this document the
-pairs are **W5/W6** (850 × 2057), **W9/W11** (1810 × 1027) and **W14/W16** (2050 × 2000) — six
-openings across three pairs.
+**Stage 6 — Disambiguation only.** Needed **only** when two rows share dimensions, because
+then a matched frame could belong to either. On this document the pairs are **W5/W6**
+(850 × 2057), **W9/W11** (1810 × 1027) and **W14/W16** (2050 × 2000) — six openings across
+three pairs.
 
 **W14/W16 arrive at this stage from the other direction, and it matters.** W5/W6 and W9/W11 each
 produce *two* frames for two rows: the frames are there and the question is which is which.
@@ -424,7 +1070,7 @@ real sheet returns W1's own frame, chevron and all.*
 
 No `widthMm` on either unit — this sheet does not dimension them and the spec forbids
 back-calculating (§1.2). Orientation is left null **by this pass**, which reads elevations; it
-is obtainable by a separate route (below) and is not a reason to hold the composition back.
+is obtainable by a separate route and is not a reason to hold the composition back.
 
 #### Orientation is readable after all — from the survey, not from a compass rose
 
@@ -467,10 +1113,6 @@ wall position on the floor plan. The elevation letters then become a cross-check
 says a window is on the east wall and it is drawn on the elevation that other windows place to
 the west, something is wrong and both should be flagged.
 
-**This is a separate workstream from composition and should not be bundled with it.** It shares
-the geometry machinery but nothing else, it serves a different consumer (the thermal band's
-SHGC cap), and it can ship later without holding up the split.
-
 **The ratio convention, decided by measurement.** Two candidates, tested against W4 where the
 drafter wrote the answer down:
 
@@ -484,12 +1126,12 @@ dumping it on the outer units. For W1 that gives 0.352 / 0.648, which through th
 rounding rule at the schedule's 2050 yields **720 | 1330**, partitioning exactly. Residual
 accuracy ±2.5%, which the spec already anticipates.
 
-**Stage 8 — Into the estimator** *(drawing Stage E)*. A drawing-derived hint is a new **source**,
-not a new mechanism: `SplitHint.source` gains `"drawing"`, `SplitUnitHint` gains an optional
-`ratio`. `pairing.ts` already lists `drawing-derived split` in its precedence chain and its own
-comment anticipates this. Evidence columns (`page_no`, `sheet_ref`, `region_json`) already exist
-in migration 0016 and every writer passes `null` today — the frame's bounding box fills all
-three with no schema work.
+**Stage 8 — Into the estimator.** A drawing-derived hint is a new **source**, not a new
+mechanism: `SplitHint.source` gains `"drawing"`, `SplitUnitHint` gains an optional `ratio`.
+`pairing.ts` already lists `drawing-derived split` in its precedence chain and its own comment
+anticipates this. Evidence columns (`page_no`, `sheet_ref`, `region_json`) already exist in
+migration 0016 and every writer passes `null` today — the frame's bounding box fills all three
+with no schema work.
 
 **~~No model call on the primary path.~~ INVERTED by the ROUTE DECISION.** The geometry does
 produce exact numbers at no token cost, and that is why it survives as the second opinion — but
@@ -497,372 +1139,29 @@ the model call *is* the primary path now, and the escalation runs the other way:
 decoder and the model disagree, or the model declines, a human looks.
 `frame_decomposition_uncertain` still exists and is still the right code for it.
 
----
-
-## 6. The symbol never names a family — DECIDED, owner 2026-08-07
-
-`worker/lib/drawing/profile.ts` ships `DEFAULT_PROFILE = { apexMeans: "hinge", confirmed: true }`
-and `refineOperable` maps a bottom apex to **hopper**. Every operable sash measured in this set
-has its apex at the bottom while the schedule calls all of them **AWNING**, so on this
-practice's convention `refineOperable` would name every operable panel a hopper, at full
-confidence, because `confirmed: true` makes the "don't name a family until confirmed" guard
-vacuous.
-
-**The whole machinery is unnecessary, because AMJ does not make a hopper.** An awning is hinged
-at the top and opens outward; a hopper is hinged at the bottom and opens inward — different
-windows, drawn with the same chevron, distinguished only by which end the apex points at. The
-catalogue has fourteen families and none is a hopper; `OPERATIONS` in `split.ts` does not list
-one either. Distinguishing awning from hopper is a distinction this product range cannot
-express.
-
-So the rule, and it removes an entire class of risk:
-
-> **Geometry claims `operable` or `not operable`. It never claims a family.**
-> The operable leaves take the family the SCHEDULE states — which is authoritative and already
-> extracted. The passive leaves are fixed.
-
-For W1: the schedule says `OFFSET AWNING`, the drawing says the left leaf carries a symbol and
-the right does not ⇒ `awning | fixed`. No convention is consulted, so no convention can be
-wrong.
-
-`refineOperable`, `apexMeans` and the practice-profile model are **not used in v1** and should
-stay unreferenced rather than be corrected. They become relevant only if the catalogue ever
-carries two families that share a symbol and differ by hinge edge.
-
-*Residual limitation, stated:* an opening whose leaves are genuinely different operable families
-— an awning beside a casement — cannot be told apart this way, because the schedule states one
-type. Nothing in this document does that, and if it appears it is a review flag, not a silent
-guess.
-
----
-
-## 7. The container is the host — from day one, not on a trigger
-
-*(Rewritten 2026-08-27 by the ROUTE DECISION. This section previously said "provision a
-container when a document reports a gap the isolate cannot close, and not before — until it
-fires, ship nothing." That was correct for a route where the geometry was the answer and pixels
-were the exception. It is exactly wrong for a route whose answer IS the pixels.)*
-
-The model route needs an image of each opening, so something must rasterise on every job. The
-isolate cannot: `wrangler.jsonc` has no Browser Rendering binding and workerd has no canvas.
-Cloudflare Containers are GA and cost roughly $0.00016 per job beyond an allowance of ~4,500.
-
-**But the image is leaner than the scaffold assumes.** `containers/plan-parse/` is built around
-poppler and PIL because that is the toolchain the method was proven with. `render.mjs` in
-`scripts/research/plan-geometry/` does the same two steps — page → PNG, PNG → one opening's crop
-— in **Node**, on the `unpdf` already in the Worker's bundle plus a canvas. So the container is
-needed for **pixels, not for Python**, and image size is what sets the 1–3 s cold start.
-
-### Both settled — owner, 2026-08-27
-
-**Node, not Python.** The scaffold is Python because that is what the method was proven with, and
-fidelity to a 100% run is a real argument — it was the right default while nothing had been
-measured. Against it, item by item from `requirements.txt`: `pdfplumber`'s per-word coordinates
-are `getTextContent()` items' `transform`; `pillow` is `sharp`, already a dependency; `poppler`
-is `unpdf` plus a canvas, proven in `render.mjs`; the `anthropic` call moves to the Worker (see
-below). What decides it:
-
-- **One PDF library, therefore one coordinate space.** The geometric second opinion is pdf.js.
-  If the container crops with poppler and the decoder measures with pdf.js, the verification
-  cross-check needs a coordinate reconciliation before it can compare anything. Same library
-  makes it a subtraction.
-- **`boto3` is a credential.** A container doing its own R2 I/O needs S3-compatible keys — a new
-  secret with a new blast radius, in a product holding payout details and ABNs. A Worker holding
-  the binding needs none. This one outweighs the rest.
-- Leaner image, and image size sets the 1–3 s cold start.
-
-*Reversible, and testable rather than arguable:* if Node's crops read worse, the release gate's
-numbers say so.
-
-**The vision call lives in the Worker, not the container.** The faithful reading put it in the
-container, and cost alone would not have settled it. Three things do:
-
-- `jobs.ts`, `stage.ts`, `escalation.ts` and `runs.ts` already carry retries, escalation
-  triggers, run records and token accounting. In the container every one is rewritten.
-- A container awaiting a vision call bills a GiB-second per second at **zero CPU**.
-- **Progress has to reach D1 to reach the customer** — and a container that writes progress needs
-  D1 credentials too, which is the `boto3` objection a second time.
-
-So: **the container renders and crops; the Worker reads, verifies and reports.**
-
----
-
-### Progress — extend the channel that exists, do not build a second one
-
-Parsing is on the order of **40–95 s serial for 19 openings, ~10–20 s at five concurrent**, so
-the customer waits on screen and must be told what is happening.
-
-The whole channel is already built and shipping: `progress_stage` on the job row → exposed by
-`worker/routes/parse.ts` → typed in `src/data/api.ts` → polled in
-`src/data/useProjectDocuments.ts`, which already renders a named phase. The vocabulary already
-runs `queued → reading_documents → extracting_schedule → building_envelope →
-matching_and_pricing → preparing_quote → complete`.
-
-**Exactly one thing is missing: a count.** The wanted shape, against what exists:
-
-| what the customer sees | comes from |
-|---|---|
-| uploading file | the upload surface, before any run |
-| parsing file | `reading_documents` — exists |
-| **20 openings discovered** | `extracting_schedule` completing — the count is the schedule's own row count |
-| **reading opening 7 of 20** | a new `reading_drawings` stage, plus **done/total** |
-
-So: one new stage name, and a done/total pair carried beside `progressStage` on the same
-response the UI already polls. Two nullable integer columns on the job row — additive, and
-**`migrations/` means loading the `d1-migration-safety` skill first, without exception**.
-
-Independently, **one `ai_stage_runs` row per opening**: that table exists, its `result_r2_key`
-holds the crop, and it is the evidence trail THE RELEASE GATE requires anyway. One mechanism,
-two needs, no new table.
-
-**The counter must be honest.** Its denominator is the real opening count, and an opening that
-comes back `not read` still advances it. A bar that stalls, or quietly shortens its denominator
-to reach 100%, is dishonest about work it did not do.
-
-### What the customer sees — successes, never unreads. Owner, 2026-08-27.
-
-**`not read` is not an error, and must not be presented as one.** The schedule is authoritative
-and gives every opening its size, type and glazing; the drawings contribute *how it divides*.
-Partial plans, an elevation that does not show a face, a set that stops at the ground floor —
-all ordinary, and §0's rule already covers them: the list never degrades.
-
-| surface | shows | never shows |
-|---|---|---|
-| progress | `reading opening 7 of 20` — successes accruing against the real count | anything about openings it could not read |
-| the result | which lines the drawings detailed | an error state, a gap count, or a request to supply more |
-| `diagnostic` (`src/data/api.ts`) | real failures — file unreadable, service down | `not read`, ever |
-
-*This reverses an earlier position in this document and the reversal is the point.* The counter
-was going to expose unreads so they could not be hidden. Right instinct, wrong surface. A
-**missing** composition falls back to the even split, which is exactly today's behaviour and is
-not news to anyone; a **wrong** one is a priced window nobody drew.
-
-**Which is why the surface is OPS, not the customer** *(owner, 2026-08-27)*. Ops can act on a
-gap: re-run it, correct it, ask the customer for a sheet, or decide the drawing simply does not
-show it. A customer cannot. The provenance a reviewer needs — *this composition came from the
-drawing* versus *this is the default split* — belongs on the ops line, and so does every
-unread and every disagreement the verification stage records.
-
-**Do not assume the reads are right** *(owner, same)*. Everything above about `not read` being
-ordinary is about **gaps**. Parsing **errors** remain possible and always will, and the
-"successes only" rule must never harden into "successes are correct" — that is the assumption
-this whole reader fails by. Ops sees gaps AND disagreements; the customer sees neither, because
-neither is a customer's to resolve.
-
-**No invitation to the customer, either.** An earlier draft of this section proposed telling
-them "adding the remaining elevations will detail the rest". **Withdrawn — it asks for something
-they cannot give.** A customer cannot add a split, an orientation or a head height to an opening
-that did not parse; the product offers them no way to, and inviting an action the interface does
-not support is worse than saying nothing.
-
-**OCR for genuinely scanned sets** remains the container's other job, and `GeometryGap =
-"raster_page"` remains its trigger — but it is no longer the thing that decides whether a
-container exists.
-
----
-
-## 8. Plan
-
-### Stage 0 — The proof. **Done, and this time it is on disk.**
-
-Read W1's composition from the real document with no pipeline: 110 ms, 34 MB, eight
-coordinates, reproduced independently three times, and calibrated against W4 where the drafter
-stated the answer.
-
-**The code for it was never committed and was gone by 2026-08-27**, when rebuilding it cost a
-session. It now lives at `scripts/research/plan-geometry/`, with the two traps that cost the
-most time written down beside it. `measure.mjs` reproduces the eight verticals above and both
-calibration points, and **fails the run** if either they or §2a's table drift — a result this
-document states is a result the harness enforces. §2a extends them from two openings to all
-nineteen.
-
-### Stage 1 — Fix page selection. Unchanged by the route, and shippable today.
-
-The one item that survives the ROUTE DECISION untouched, because **every** route has to be
-pointed at the right sheets. §4's defect is live: the plan skill reads a stair detail on every
-architectural upload. It is also worth more now than it was — a model route that renders the
-wrong page pays for the render, pays for the tokens, and returns nothing.
-
-### Stage 2 — Render and crop, hosted. *(`render.mjs` exists; it needs somewhere to run.)*
-
-Steps 4 and 5 of the method, already working locally. What remains is the host — see §7 — and
-the two questions it leaves open.
-
-### Stage 3 — Locate each schedule row on the sheets. **Two passes, because one cannot work.**
-
-This is the join the whole pass needs and the one the geometry could not do. It is also the
-stage that was hand-waved when this plan was first written: "tag → wall → elevation letter →
-sheet" names the *evidence* and not the *mechanism*, and the mechanism has to end at a **pixel
-box**, because a crop is what Stage 4 reads.
-
-You cannot go straight from a schedule row to a box. The row states a size, not a position; the
-tag states a position on the **plan**, not on the elevation. So:
-
-**Pass A — inventory the elevation, no schedule involved.** Split the sheet by its `ELEVATION x`
-labels, whose positions the text layer gives for free (page 6 carries A and B, page 7 C and D).
-Ask the model, per elevation, for every window-like object it can see: a normalised bounding
-box, the drawn width:height proportion, the panel count, and whether each panel carries a
-symbol. It is not asked to name anything — nothing is matched yet, so nothing can be matched
-wrongly.
-
-**The demoted decoder earns its keep here.** `findFrames` + `findFramesV2` produce candidate
-rectangles for free and exactly, and Pass A only needs them as a **superset** — it does not need
-them to be right, which is the entire difference between this use and the one the owner
-declined. On the reference set they cover every opening that is drawn, including all six the
-matcher could only call ambiguous. Where a geometric candidate and a model box coincide, the box
-is exact and free; where only one exists, it is still a candidate.
-
-**Pass B — assign schedule rows to boxes**, on three independent signals:
-
-| signal | source | settles |
-|---|---|---|
-| which elevation | the tag's wall on the floor plan → the `A`–`D` marker on that wall | which sheet and which half of it |
-| drawn size vs stated size | Pass A's proportion against the schedule's W×H | which box, when sizes differ |
-| order along the wall | the tag order on the floor plan vs left-to-right on the elevation | same-size pairs — W5/W6, W9/W11, W14/W16 |
-
-**A row that two signals disagree about is `not read`, and so is a box two rows both fit.** The
-second is not hypothetical: W14 and W16 are both 2050 × 2000 and the elevations yield **one**
-frame of that size, so either the second is drawn where this pass does not look or one row is
-not drawn. Assigning that one frame to both is the confident wrong answer this reader fails by,
-and the harness did it silently until a check was written for it.
-
-Only after a row owns a box is it cropped and read. **Nothing reaches Stage 4 unlocated.**
-
-### Stage 4 — Read the composition, one vision call per opening, against its own crop.
-
-The schedule's dimensions and type go in as context. The model is asked how the opening
-**divides**, never what family it is — §6's ruling is unchanged and still binds: geometry or
-model, the drawing claims operable-or-not and the schedule names the family.
-
-### Stage 5 — Verification, which is what makes the bar checkable.
-
-**The model fails silently, so this stage is not optional** — a geometric miss says `not read`
-and hands over visibly, where a model's miss is a plausible composition for an opening it never
-saw. Two properties belong to this stage and nothing else: every reading **carries its crop**,
-so a human can check it without reopening the PDF, and **"could not read this" is made an easy
-answer to give** in the prompt, because a model that is never offered the option will invent
-rather than decline.
-
-The three checks a reading must pass are defined once, in **THE RELEASE GATE** below, because
-they are the same checks that decide whether the thing may ship.
-
-### Stage 6 — Into the estimator. Unchanged by the route.
-
-`SplitHint.source` gains `"drawing"`, `SplitUnitHint` gains an optional `ratio`, and the
-evidence columns `page_no`/`sheet_ref`/`region_json` already exist in migration 0016 with every
-writer passing `null`. The crop's page and box fill all three. A drawing-derived hint is a new
-**source**, not a new mechanism.
-
-### Orientation is still a separate workstream.
-
-§5's chain — boundary bearings as text → the lot's compass axes → the tag's wall on the floor
-plan → outward normal — is unchanged and unaffected. It serves a different consumer (the thermal
-band's SHGC cap) and ships on its own schedule. Under the model route the middle two steps get
-easier, not harder.
-
-### THE RELEASE GATE — what "100%" has to mean before anything ships
-
-*(Added 2026-08-27. Withdrawing Stages 1a and 1b removed the only two gates this plan had and
-put nothing in their place, which left a route with no definition of done and an owner's bar of
-100% with nothing to measure it against.)*
-
-**The bar has to be split in two, because one half is achievable and the other is not.**
-
-| | bar | why |
-|---|---|---|
-| **A reading that is WRONG** | **zero. A release blocker.** | A wrong composition is a priced window nobody drew. It reaches a customer as a quote and a factory as a cut list. |
-| A reading that is ABSENT | measured and reported, not gated | `not read` hands the opening to the fallback **visibly**. The fallback already works ok-ish; a visible handover is the status quo, not a regression. |
-
-So *100% correct* is the gate and *100% covered* is the target. Conflating them is what would
-make this project unshippable forever: a set whose drawings genuinely do not state a
-composition cannot be read by any method, and the output spec's §4 already says `not stated` is
-a correct answer.
-
-**Ground truth, which does not exist yet and is the long pole.** No gate is measurable without a
-labelled set, and nobody has labelled one. Cheapest honest route: run the pipeline over N real
-sets and have the owner confirm or correct each opening **once**, in the ops surface, against
-the crop the reading carries. That is review work he would do anyway on the first jobs, and it
-produces the fixture as a by-product. **N is a decision for him**, and it is the real successor
-to Stage 1b: the second plan set stopped being a route gate and became the first row of this.
-
-**The three checks that have to run before a reading counts as correct**, all of which exist
-independently of any label:
-
-1. **Schedule cross-check.** The drawing's panel count and operable/passive pattern against the
-   schedule's type text. `OFFSET AWNING` with two panels and one symbol agrees; `FIXED` with a
-   symbol does not. Disagreement is surfaced, never resolved — §6 and the output spec §6 both
-   already bind this.
-2. **The geometric second opinion.** Free, exact, and wrong in *different* ways than a model is.
-   Agreement across two methods that fail differently is the strongest evidence available here,
-   and it is the only check that costs nothing per job.
-3. **Dimension agreement.** The drawn frame against the schedule's W×H, which §1.2 of the output
-   spec already defines and which caught W4's 3200 × 2100 siding with the energy report against
-   the schedule.
-
-**Staged release, so the gate can be met before the fixture is large.** Drawing-derived splits
-already land behind "confirm the configuration at review". Ship there first: every reading is
-seen by a human before it prices anything, wrong readings are caught as review corrections
-rather than as customer-visible errors, and each correction is a labelled row. **Removing the
-review gate is a separate decision with its own evidence bar** — see §9.4 — and must not be
-taken as implied by shipping.
-
-**What gets reported per run**, so the numbers exist from day one rather than being
-reconstructed later: read / located-but-unread / unlocated, per opening; which of the three
-checks fired; and the crop key for every reading. `measure.mjs` already reports the first of
-these for the geometric route and is the shape to copy.
-
-### Withdrawn by the ROUTE DECISION
+## Withdrawn by the ROUTE DECISION
 
 **Stage 1a — "does the geometry run in workerd, in 128 MB?"** No longer on the critical path.
 It was the gate on hosting the geometric decoder in the isolate; the decoder is now the second
-opinion and the job has a container regardless.
+opinion and the job has a container regardless — which is also why Part I §4.4 runs the segment
+extraction in the container rather than re-opening this question.
 
 **Stage 1b — "does it generalise to a second plan set?"** Withdrawn *as a gate*, kept *as a
 measurement*. It no longer decides the route — that is settled, and the owner's reasoning was
 precisely that it would come back low. It remains the only honest test of any route, including
 this one, and the owner has a second set to supply. Everything in §2a is one drafter, one CAD
-chain.
+chain. Its successor is the ground-truth fixture of Part I §8.
 
----
+## Resolved questions (the trail)
 
-## 9. Open questions
-
-1. ~~When a drawing and a stated dimension disagree, which wins?~~ **DECIDED, owner 2026-08-07:
-   the comment wins.** W4's comment states `600 | 2000 | 600`; the drawing measures
-   `615 | 1970 | 615`. A person wrote the comment and meant it exactly; the drawing is a ±2.5%
-   measurement of it. So a stated dimension is never replaced by a measured one.
-
-   Precisely: **the drawing wins operations, order, count and division axis; a stated dimension
-   wins widths.** Where a comment states widths for only some units, the stated ones stand and
-   the rest are scaled to the remainder. Where the two disagree on the *count* — a comment
-   naming two units against a drawing showing three — that is a conflict for review, not an
-   arithmetic problem, because the comment cannot be applied to a make-up it does not describe.
-
-   This amends [plan-parse-output-spec.md](plan-parse-output-spec.md) §6, whose precedence row
-   reads "composition, division axis, order — the drawings win" without the width caveat.
-2. ~~`wallOrientation` is unreadable on this set.~~ **WITHDRAWN — it was wrong.** The site plan
-   states the boundary bearings as text and 268°22'10" is west, matching the independently
-   reported west-facing front. No north-arrow reader is needed. It is a separate workstream
-   from composition (§5) and the only question left is scheduling, not feasibility.
-3. ~~`DEFAULT_PROFILE.confirmed`~~ **RESOLVED, owner 2026-08-07.** AMJ makes no hopper, so the
-   awning/hopper distinction the convention exists to draw cannot be expressed by the catalogue.
-   Geometry claims operable-or-not; the schedule names the family. `refineOperable` is unused in
-   v1. See §6.
-4. **Is a drawing-derived split allowed to flow through unreviewed?** Every proposed split
-   already carries "confirm the configuration at review", so behind that gate the question is
-   moot. It sharpens under the model route rather than going away: the geometric figure was
-   wrong by a *bounded* ±2.5% (±50 mm at 2050 mm), whereas a model's wrong reading is not wrong
-   by a small amount — it is a different window. The verification stage exists for that, and
-   whether it is sufficient to remove the review gate is the open question.
-5. ~~**Who owns a practice's symbol profile?**~~ **MOOT under both routes.** §6 settled that
-   nothing claims a family from a symbol — the schedule names it — so no practice profile has to
-   be owned, stored or confirmed by anyone. `refineOperable` and `apexMeans` stay unreferenced.
-6. ~~**Node or Python in the container, and where does the vision call live?**~~ **DECIDED,
-   owner 2026-08-27: Node, and the call lives in the Worker.** §7 carries the reasoning; the
-   deciding arguments were one coordinate space shared with the second opinion, and keeping R2
-   and D1 credentials out of the container.
-7. ~~**Does the customer wait on screen, and at what granularity?**~~ **DECIDED, owner
-   2026-08-27: on screen, per opening, successes only.** See §7. What remains is an **ops**
-   surface — provenance per line, plus the unreads and the verification disagreements — and it
-   does not exist yet. It is the only thing that makes a wrong composition findable, so nothing
-   ships unreviewed until it does.
+1. ~~When a drawing and a stated dimension disagree, which wins?~~ **DECIDED, owner
+   2026-08-07** — Part I §6.
+2. ~~`wallOrientation` is unreadable on this set.~~ **WITHDRAWN — it was wrong.** See §5's
+   orientation entry above; only scheduling remains, not feasibility.
+3. ~~`DEFAULT_PROFILE.confirmed`~~ **RESOLVED, owner 2026-08-07** — Part I §5.
+4. ~~Who owns a practice's symbol profile?~~ **MOOT under both routes** — nothing claims a
+   family from a symbol, so no profile has to be owned, stored or confirmed.
+5. ~~Node or Python in the container, and where does the vision call live?~~ **DECIDED, owner
+   2026-08-27** — Part I §3.3.
+6. ~~Does the customer wait on screen, and at what granularity?~~ **DECIDED, owner
+   2026-08-27** — Part I §7.
