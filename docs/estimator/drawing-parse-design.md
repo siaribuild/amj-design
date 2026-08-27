@@ -609,9 +609,33 @@ holds the crop, and it is the evidence trail THE RELEASE GATE requires anyway. O
 two needs, no new table.
 
 **The counter must be honest.** Its denominator is the real opening count, and an opening that
-comes back `not read` still advances it. A bar that stalls on the openings it could not read, or
-quietly shortens its denominator to reach 100%, is the same silent failure the verification
-stage exists to prevent — and it would be the one place the customer could see it.
+comes back `not read` still advances it. A bar that stalls, or quietly shortens its denominator
+to reach 100%, is dishonest about work it did not do.
+
+### What the customer sees — successes, never unreads. Owner, 2026-08-27.
+
+**`not read` is not an error, and must not be presented as one.** The schedule is authoritative
+and gives every opening its size, type and glazing; the drawings contribute *how it divides*.
+Partial plans, an elevation that does not show a face, a set that stops at the ground floor —
+all ordinary, and §0's rule already covers them: the list never degrades.
+
+| surface | shows | never shows |
+|---|---|---|
+| progress | `reading opening 7 of 20` — successes accruing against the real count | anything about openings it could not read |
+| the result | which lines the drawings detailed | an error state; there is no error |
+| `diagnostic` (`src/data/api.ts`) | real failures — file unreadable, service down | `not read`, ever |
+
+*This reverses an earlier position in this document and the reversal is the point.* The counter
+was going to expose unreads so they could not be hidden. Right instinct, wrong surface. The
+outcome worth surfacing is a **wrong** composition — a priced window nobody drew. A **missing**
+one falls back to the even split, which is exactly today's behaviour and is not news to anyone.
+So the customer is not told; the **reviewer** is, and per line: *this composition came from your
+drawing* versus *this is the default split* is what tells a reviewer where to look. That is the
+same split the RELEASE GATE draws — wrong is a blocker, absent is reported and not gated.
+
+**And partial coverage is an invitation, not a failure.** "8 of 20 openings were detailed from
+your drawings; adding the remaining elevations will detail the rest" is true, actionable, and
+produces a better quote. It belongs on the result, not the progress view.
 
 **OCR for genuinely scanned sets** remains the container's other job, and `GeometryGap =
 "raster_page"` remains its trigger — but it is no longer the thing that decides whether a
@@ -819,7 +843,8 @@ chain.
    owner 2026-08-27: Node, and the call lives in the Worker.** §7 carries the reasoning; the
    deciding arguments were one coordinate space shared with the second opinion, and keeping R2
    and D1 credentials out of the container.
-7. **Does the customer wait on screen, and at what granularity?** The counter shape is settled
-   (§7) but the surface is not: whether a 20 s wait shows per-opening detail or a single bar is
-   a UX decision, and it is the only place a customer would ever see an opening reported as
-   unread.
+7. ~~**Does the customer wait on screen, and at what granularity?**~~ **DECIDED, owner
+   2026-08-27: on screen, per opening, successes only.** See §7. The remaining piece is the
+   reviewer's line-level provenance marker — *from your drawing* versus *default split* — which
+   is a surface that does not exist yet and is the thing that makes a wrong composition
+   findable.
