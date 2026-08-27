@@ -159,6 +159,44 @@ test("page routing: a real title block splits Scale from its value, and the draw
   assert.deepEqual(roles.plans, [1, 2, 3]);
 });
 
+test("page routing: the word elevation is not a drawing sheet; an elevation TITLE is", () => {
+  // "elevation" is one of the most common incidental words in a set, and making
+  // it sufficient on its own meant any page mentioning it routed as a drawing.
+  // All four of these are real forms. The last is from the reference set's own
+  // 1:20 stair detail, which reads "REFER TO ELEVATIONS FOR ROOF MATERIALS AND
+  // PITCH" — the exact page the old two-signal rule already picked by mistake.
+  for (const incidental of [
+    "WINDOW SCHEDULE W1 2050 2100 SEE ELEVATION FOR HEAD HEIGHT",
+    "SITE SURVEY SPOT ELEVATION 42.15 AHD BENCHMARK",
+    "GROUND FLOOR PLAN FINISHED FLOOR ELEVATION RL 0.000",
+    "DRAWING INDEX A4 - FIRST FLOOR PLAN A5 - ELEVATIONS A6 - ELEVATIONS",
+    "SHEET METAL ROOF FLASHING REFER TO ELEVATIONS FOR ROOF MATERIALS AND PITCH",
+  ]) {
+    assert.deepEqual(
+      classifyPageRoles([incidental]).plans, [],
+      `mentioning an elevation is not being one: ${incidental.slice(0, 44)}`,
+    );
+  }
+  // A cover sheet's drawing INDEX names every sheet in the set, so it matches
+  // "floor plan" as readily as the floor plan does — and unlike the elevation
+  // case, one incidental match plus any corroborating signal is enough. A cover
+  // sheet commonly carries the site plan and therefore a north point. Naming
+  // three different drawing types is what an index does and what a drawing never
+  // does.
+  assert.deepEqual(
+    classifyPageRoles([
+      "DRAWING INDEX A2 - SITE PLAN A4 - FIRST FLOOR PLAN A5 - ELEVATIONS "
+      + "A7 - SECTIONS NORTH POINT",
+    ]).plans,
+    [],
+    "an index is not a drawing, even carrying a north point",
+  );
+
+  // A drawing TITLE, in both forms a set actually uses.
+  assert.deepEqual(classifyPageRoles(["ELEVATION A ELEVATION B"]).plans, [1]);
+  assert.deepEqual(classifyPageRoles(["WEST ELEVATION"]).plans, [1]);
+});
+
 test("page routing: counting opening tags is bounded, over text a customer controls", () => {
   // classifyPageRoles runs over text extracted from an uploaded PDF, and every
   // other signal in it uses RegExp.test — constant memory. Counting tags with

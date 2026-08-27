@@ -178,18 +178,41 @@ export function classifyPageRoles(pages: string[], filename = ""): RolePages {
     // So: only a sheet that NAMES a drawing is a drawing sheet. A section mark,
     // a scale and a north point corroborate — a detail sheet carries two of
     // them — and may lift a plan-titled page, but never qualify one alone.
-    const namesAnElevation = has(/\belevation\b/);
+    // An elevation TITLE, never the word. "elevation" is one of the commonest
+    // incidental words in a set — "see elevation for head height", "spot
+    // elevation 42.15 AHD", "finished floor elevation RL 0.000", and on the
+    // reference set's own stair detail, "refer to elevations for roof materials
+    // and pitch". Treating the bare word as sufficient routes every one of them
+    // as a drawing sheet.
+    //
+    // Two title forms, and both are needed: a designator (ELEVATION A, and the
+    // singular plus a lone character is what keeps a cover sheet's drawing index
+    // out — that reads "A5 - ELEVATIONS A6" and names no drawing), or a face
+    // (NORTH / FRONT / REAR ELEVATION).
+    const namesAnElevation = has(/\belevation\s+[a-z0-9](?![a-z0-9])/)
+      || has(/\b(?:north|south|east|west|front|rear|side)\s+elevations?\b/);
     const namesAPlan = has(/\b(?:floor|site|roof|reflected ceiling)\s+plan\b/);
     const corroborating = has(/\bsection\b/) || has(/\bscale\s*1\s*:/)
       || has(/\bnorth\s+(?:point|arrow)\b/);
+    // A cover sheet's drawing INDEX names every sheet in the set, so it matches
+    // "floor plan" as readily as the floor plan does. On the reference set that
+    // page is excluded only because it happens to carry no north point — and a
+    // cover sheet commonly shows the site plan, which brings one. Naming three
+    // different drawing types is what an index does and what a drawing does not.
+    const namesManyDrawings = [
+      namesAPlan,
+      has(/\belevations?\b/),
+      has(/\bsections?\b/),
+      has(/\b(?:electrical|drainage|landscape|bracing)\b/),
+    ].filter(Boolean).length >= 3;
     // A floor plan carrying opening tags is the one the plan skill actually
     // needs: it is where a W-number is joined to a room and a wall. Three tells
     // a tagged plan from a cover sheet that happens to print one.
-    const enoughOpeningTags = hasDistinctOpeningTags(hay);
     const pageNo = index + 1;
     if (scheduleSignals >= 2 || has(/\b(window|door|glazing|opening)\s+schedule\b/)) add("schedule", pageNo);
     if (energySignals >= 2) add("energy_report", pageNo);
-    if (namesAnElevation || (namesAPlan && (corroborating || enoughOpeningTags))) add("plans", pageNo);
+    const isDrawingSheet = namesAnElevation || (namesAPlan && (corroborating || hasDistinctOpeningTags(hay)));
+    if (isDrawingSheet && !namesManyDrawings) add("plans", pageNo);
   });
   return roles;
 }
