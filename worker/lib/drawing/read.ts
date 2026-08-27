@@ -93,9 +93,18 @@ export async function readDrawings(env: Env, args: {
   const outcomes: OpeningOutcome[] = [];
   const total = args.rows.length;
 
+  // THE DENOMINATOR IS ANNOUNCED BEFORE ANY WORK. This is the "20 openings
+  // discovered" moment: without it the UI has a numerator and no total to put it
+  // over, and the customer watches a spinner instead of a count.
+  await args.onProgress?.(0, total);
+
   const pdfBytes = await planBytes(env, args.projectId, args.fileId);
   if (!pdfBytes) {
-    // Not a per-opening condition: nothing was read because nothing was opened.
+    // Nothing was read because nothing was opened — but every opening IS
+    // resolved, so the counter has to say so. Returning here without reporting
+    // left the job finished and the bar sitting at nothing, which is the same
+    // dishonesty as a bar that stalls on what it could not read.
+    await args.onProgress?.(total, total);
     return {
       total,
       warnings: ["drawing_read: the plan file could not be read"],

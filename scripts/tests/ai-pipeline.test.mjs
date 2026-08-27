@@ -1670,22 +1670,33 @@ test("the counter's denominator is every opening, and an unread one still advanc
   // §7.1. A bar that stalls on the openings it could not read, or quietly
   // shortens its denominator to reach 100%, is dishonest about work it did not
   // do — and it is the one place a customer could see the difference.
-  const seen = [];
+  //
+  // The no-document path was exactly that: it resolved every opening and
+  // returned, without ever calling onProgress. The job finished and the bar sat
+  // at nothing forever. The first version of this test collected progress into
+  // an array and then asserted nothing about it, which is why it passed.
   const rows = ["W1", "W2", "D1"].map((tag) => ({ tag, widthMm: 1000, heightMm: 1000, typeText: null }));
-  await readDrawings(
-    { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) }, FILES: { get: async () => null } },
-    { aiRunId: "r1", projectId: "p1", sourceGeneration: 1, fileId: "f1", rows, sheets: [],
-      onProgress: async (done, total) => { seen.push([done, total]); } },
-  );
-  // No document at all: every opening is not_read, and the counter still has to
-  // account for all three rather than reporting nothing to do.
-  const out = await readDrawings(
-    { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) }, FILES: { get: async () => null } },
-    { aiRunId: "r1", projectId: "p1", sourceGeneration: 1, fileId: "f1", rows, sheets: [] },
-  );
+  const noDocument = {
+    DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) },
+    FILES: { get: async () => null },
+  };
+
+  const seen = [];
+  const out = await readDrawings(noDocument, {
+    aiRunId: "r1", projectId: "p1", sourceGeneration: 1, fileId: "f1", rows, sheets: [],
+    onProgress: async (done, total) => { seen.push([done, total]); },
+  });
+
   assert.equal(out.total, 3, "the denominator is the real opening count");
   assert.equal(out.outcomes.length, 3, "and every opening is accounted for");
   assert.ok(out.outcomes.every((o) => o.state === "not_read"));
+
+  assert.ok(seen.length > 0, "progress was reported at all");
+  // The denominator is known before any opening resolves — that is the
+  // "20 openings discovered" moment, and without it the UI has no total to show.
+  assert.deepEqual(seen[0], [0, 3], "the total is announced up front");
+  assert.deepEqual(seen[seen.length - 1], [3, 3],
+    "and every opening resolved, so the counter reaches its own denominator");
 });
 
 test("the customer's channel carries the counter and nothing about what could not be read", async () => {
