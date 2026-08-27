@@ -28,6 +28,12 @@ export type {
   RecognitionDecision, RecognitionResult,
 } from "./types";
 
+export type { ScheduleRow, ElevationBox, Assignment, Unassigned, AssignResult } from "./assign";
+export { assign } from "./assign";
+
+export type { Disagreement, Verification } from "./verifyReading";
+export { verifyReading } from "./verifyReading";
+
 export type { CropBox } from "./crop";
 export type { CropIntent, CropPage, CropRequest } from "./container";
 export { buildCropRequest, MAX_CROPS_PER_CALL } from "./container";

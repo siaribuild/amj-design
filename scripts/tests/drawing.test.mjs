@@ -850,3 +850,156 @@ test("EVERY skill in this module refuses an unknown top-level key, including one
     );
   }
 });
+
+// ─── t3: which box is which opening, and does the reading survive scrutiny ────
+// Pure arithmetic over Pass A's boxes and the schedule the platform already has.
+// No model, no I/O — which is what lets the interesting cases be pinned exactly.
+
+const box = (region, panelCount, panelsWithSymbol, proportion) =>
+  ({ region, panelCount, panelsWithSymbol, proportion });
+const row = (tag, w, h, extra = {}) => ({ tag, widthMm: w, heightMm: h, typeText: null, ...extra });
+
+test("a uniquely-sized row takes the box whose proportion matches", () => {
+  // W1 is 2050x2100 — proportion 0.976 — and nothing else on the sheet is close.
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100), row("W2", 3500, 700)],
+    boxes: [
+      box([0.10, 0.10, 0.20, 0.20], 1, [false], 5.0),    // 5:1, that is W2
+      box([0.57, 0.29, 0.62, 0.36], 2, [true, false], 0.976),
+    ],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.get("W1")?.boxIndex, 1);
+  assert.equal(out.assigned.get("W2")?.boxIndex, 0);
+  assert.equal(out.notRead.length, 0);
+});
+
+test("ONE box that two rows both fit makes BOTH rows not read", () => {
+  // The W14/W16 case, and the one the research harness got wrong silently: both
+  // are 2050x2000, the elevations yield ONE frame of that size, and it resolved
+  // to both. Assigning one box twice is the confident wrong answer this reader
+  // fails by — two openings cannot be one window.
+  const out = M.assign({
+    rows: [row("W14", 2050, 2000), row("W16", 2050, 2000)],
+    boxes: [box([0.57, 0.19, 0.63, 0.26], 2, [true, false], 1.025)],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.size, 0, "neither row takes it");
+  assert.deepEqual(out.notRead.map((n) => n.tag).sort(), ["W14", "W16"]);
+  for (const n of out.notRead) {
+    assert.match(n.reason, /one box/i);
+    assert.equal(n.state, "not_read", "not `not_stated` — the drawing shows something, we cannot say whose");
+  }
+});
+
+test("a same-size PAIR with two boxes resolves by order along the wall, and only by order", () => {
+  // W9 and W11 are both 1810x1027 on Elevation C, and two boxes exist. Proportion
+  // cannot separate them — it is identical by construction — so the floor plan's
+  // tag order along that wall is the only signal left.
+  const boxes = [
+    box([0.10, 0.50, 0.20, 0.56], 2, [true, false], 1.762),   // left on the sheet
+    box([0.30, 0.50, 0.40, 0.56], 2, [true, false], 1.762),   // right
+  ];
+  const ordered = M.assign({
+    rows: [row("W9", 1810, 1027, { wallOrder: 1 }), row("W11", 1810, 1027, { wallOrder: 2 })],
+    boxes, elevation: "C",
+  });
+  assert.equal(ordered.assigned.get("W9")?.boxIndex, 0);
+  assert.equal(ordered.assigned.get("W11")?.boxIndex, 1);
+
+  // Without the order signal there is nothing to choose with, and guessing is
+  // a 50/50 chance of putting a real reading on the wrong window.
+  const blind = M.assign({
+    rows: [row("W9", 1810, 1027), row("W11", 1810, 1027)],
+    boxes, elevation: "C",
+  });
+  assert.equal(blind.assigned.size, 0);
+  assert.deepEqual(blind.notRead.map((n) => n.tag).sort(), ["W11", "W9"]);
+});
+
+test("a row no box fits is NOT STATED, not NOT READ", () => {
+  // D1 on the reference set: 1380x2405, and nothing within 2% is drawn at that
+  // width on either elevation. The drawings are readable and simply do not show
+  // it. Output spec §4 — the two states must never collapse, and this is the one
+  // that means "the fallback is doing its job", not "we failed".
+  const out = M.assign({
+    rows: [row("D1", 1380, 2405)],
+    boxes: [box([0.1, 0.1, 0.2, 0.2], 1, [false], 0.976)],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.size, 0);
+  assert.equal(out.notRead.length, 0, "not a failure");
+  assert.deepEqual(out.notStated.map((n) => n.tag), ["D1"]);
+});
+
+test("a FIXED row whose drawing carries an operating symbol is a disagreement, not a decision", () => {
+  // Release-gate check 1. The schedule says the family; the drawing says whether
+  // a leaf operates. When those contradict, something is wrong and a human has
+  // to look — resolving it here would pick a winner silently, and the wrong pick
+  // is either a fixed pane priced as an awning or an awning priced as glass.
+  const d = M.verifyReading({
+    row: { tag: "W8", widthMm: 1450, heightMm: 1543, typeText: "FIXED" },
+    reading: { outcome: "read", divisionAxis: "vertical", units: [{ operable: true, ratio: 1, widthMm: null }] },
+  });
+  assert.equal(d.agrees, false);
+  assert.equal(d.disagreements.length, 1);
+  assert.match(d.disagreements[0].detail, /FIXED/);
+  assert.equal(d.disagreements[0].check, "schedule_cross_check");
+  // The record carries BOTH claims and picks neither.
+  assert.ok(!("resolved" in d) && !("winner" in d), "nothing here resolves anything");
+});
+
+test("OFFSET AWNING with two panels and one symbol agrees", () => {
+  // W1: the schedule names an offset awning, the drawing shows two leaves of
+  // which one operates. That is the same window described twice.
+  const d = M.verifyReading({
+    row: { tag: "W1", widthMm: 2050, heightMm: 2100, typeText: "OFFSET AWNING" },
+    reading: {
+      outcome: "read", divisionAxis: "vertical",
+      units: [{ operable: true, ratio: 0.352, widthMm: null }, { operable: false, ratio: 0.648, widthMm: null }],
+    },
+  });
+  assert.equal(d.agrees, true);
+  assert.deepEqual(d.disagreements, []);
+});
+
+test("an AWNING row with no operating leaf anywhere is a disagreement", () => {
+  const d = M.verifyReading({
+    row: { tag: "W3", widthMm: 2100, heightMm: 2100, typeText: "AWNING" },
+    reading: { outcome: "read", divisionAxis: "vertical", units: [{ operable: false, ratio: 1, widthMm: null }] },
+  });
+  assert.equal(d.agrees, false);
+  assert.match(d.disagreements[0].detail, /AWNING/);
+});
+
+test("a stated unit width that contradicts its own ratio is surfaced", () => {
+  // Release-gate check 3, and output spec §2.2: a conflict is REPRESENTED, never
+  // silently resolved. W4's comment says 600mm units; if a reading claimed a
+  // printed 600 on a leaf its own ratio puts at 1900mm, both cannot be true.
+  const d = M.verifyReading({
+    row: { tag: "W4", widthMm: 3200, heightMm: 2100, typeText: "AWNING" },
+    reading: {
+      outcome: "read", divisionAxis: "vertical",
+      units: [
+        { operable: true, ratio: 0.192, widthMm: 600 },
+        { operable: false, ratio: 0.615, widthMm: 600 },   // 0.615 x 3200 = 1968, not 600
+        { operable: true, ratio: 0.193, widthMm: null },
+      ],
+    },
+  });
+  assert.equal(d.agrees, false);
+  const dim = d.disagreements.find((x) => x.check === "dimension_agreement");
+  assert.ok(dim, "the impossible one is named");
+  assert.match(dim.detail, /1968|616/);
+});
+
+test("a decline is not verified — there is nothing to disagree with", () => {
+  for (const outcome of ["not_stated", "not_read"]) {
+    const d = M.verifyReading({
+      row: { tag: "D1", widthMm: 1380, heightMm: 2405, typeText: "HINGED" },
+      reading: { outcome, reason: "…" },
+    });
+    assert.equal(d.agrees, true, `${outcome} is not a claim`);
+    assert.deepEqual(d.disagreements, []);
+  }
+});
