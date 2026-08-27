@@ -1832,3 +1832,23 @@ test("a replayed read reuses its original crop and writes no orphan", async () =
   // or still misses.
   assert.match(src, /if \(!run\.cached\)|run\.cached\s*\?/, "the store is conditional");
 });
+
+test("a replay whose original crop is gone stores one, rather than losing the evidence", async () => {
+  // The first fix traded an orphan for a hole. Reusing the cached row's crop key
+  // is right when there IS one — but a replay can hit a row that predates
+  // metrics_json entirely, whose crop store failed, or whose crop the retention
+  // rule has since deleted at a terminal quote state. In all three the key comes
+  // back undefined and nothing was stored either, so the reading arrived with no
+  // evidence at all. An orphan is recoverable; a hole is not.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+
+  // Existence, not just a key: a key pointing at a deleted object is a dangling
+  // reference the ops surface would 404 on, which is worse than no key.
+  assert.match(src, /FILES\.head\(/, "the reused key is checked to still resolve");
+
+  // And the fallback actually stores, rather than shrugging.
+  const region = src.slice(src.indexOf("cachedCropKey"), src.indexOf("cachedCropKey") + 1200);
+  assert.match(src.slice(src.indexOf("run.cached")), /storeCrop/,
+    "a replay with no usable crop still stores one");
+  assert.ok(region.length > 0);
+});

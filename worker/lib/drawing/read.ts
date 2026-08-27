@@ -273,9 +273,23 @@ export async function readDrawings(env: Env, args: {
     // because those two came from different runs. Bytes with nothing pointing at
     // them, once per opening per replay. The original run already stored its
     // crop and recorded its outcome; reuse them.
-    const cropKey = run.cached
-      ? await cachedCropKey(env, run.stageRunId)
-      : await storeCrop(env, args, run.stageRunId ?? row.tag, crop.bytes);
+    // On a replay, reuse what the original run stored — IF it still exists. A
+    // replay can land on a row that predates metrics_json, whose crop store
+    // failed, or whose crop the retention rule has since deleted at a terminal
+    // quote state. In all three the key comes back undefined, and simply
+    // shrugging leaves the reading with no evidence at all. An orphan is
+    // recoverable; a hole is not.
+    let cropKey = run.cached ? await cachedCropKey(env, run.stageRunId) : undefined;
+    if (!cropKey) {
+      // Keyed on the OPENING under this run, not on a stage id that belongs to
+      // someone else's run — which is what produced the orphan in the first
+      // place.
+      cropKey = await storeCrop(env, args, run.cached ? row.tag : (run.stageRunId ?? row.tag), crop.bytes);
+      // Back-fill the row that actually produced the reading, scoped by its own
+      // primary key: a replay writes no row of its own, so this is completing
+      // that record rather than rewriting history.
+      if (run.cached && cropKey && run.stageRunId) await backfillCropKey(env, run.stageRunId, cropKey);
+    }
 
     if (!run.ok || !run.data) {
       const outcome: OpeningOutcome = { tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey };
@@ -376,10 +390,27 @@ async function cachedCropKey(env: Env, stageRunId: string | null): Promise<strin
     "SELECT metrics_json FROM ai_stage_runs WHERE id=?",
   ).bind(stageRunId).first<{ metrics_json: string | null }>().catch(() => null);
   if (!row?.metrics_json) return undefined;
-  try {
-    const key = JSON.parse(row.metrics_json)?.cropKey;
-    return typeof key === "string" ? key : undefined;
-  } catch { return undefined; }
+  let key: unknown;
+  try { key = JSON.parse(row.metrics_json)?.cropKey; } catch { return undefined; }
+  if (typeof key !== "string") return undefined;
+  // A key is not evidence — the object it names has to still be there. Crops die
+  // when their quote reaches a terminal state, so a re-run after issue finds the
+  // row and not the bytes, and a dangling key is worse than none: the ops surface
+  // would offer a reviewer a crop that 404s.
+  const still = await env.FILES.head(key).catch(() => null);
+  return still ? key : undefined;
+}
+
+/** Complete the record of the run that produced a reading, when a replay had to
+ *  store the crop it should already have had. Scoped by primary key alone: the
+ *  row belongs to a different ai_run by construction, which is the whole reason
+ *  the id-plus-run guard matched nothing here. */
+async function backfillCropKey(env: Env, stageRunId: string, cropKey: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE ai_stage_runs
+        SET metrics_json = json_patch(COALESCE(metrics_json, '{}'), ?)
+      WHERE id = ?`,
+  ).bind(JSON.stringify({ cropKey }), stageRunId).run().catch(() => {});
 }
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
