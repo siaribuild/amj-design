@@ -40,7 +40,7 @@ export { buildCropRequest, MAX_CROPS_PER_CALL } from "./container";
 
 export type { CropFailureReason, DecodedCrop, DecodedCropResponse } from "./containerClient";
 export { encodeCropRequest, decodeCropResponse, callPlanParse } from "./containerClient";
-export { cropBoxFor, MIN_CROP_WIDTH_PX } from "./crop";
+export { cropBoxFor, clampToImage, MIN_CROP_WIDTH_PX } from "./crop";
 
 export type { SymbolProfile, ApexMeaning, ViewBasis } from "./profile";
 export { DEFAULT_PROFILE, classify, refineOperable, MISMATCH_QUORUM } from "./profile";

@@ -19,6 +19,18 @@ import sharp from "sharp";
  *  reasoning: a 3500 x 700 opening renders to roughly 300 x 60 pixels. */
 const MIN_CROP_WIDTH_PX = 900;
 
+/** Mirror of clampToImage in worker/lib/drawing/crop.ts, which carries the full
+ *  reasoning. Duplicated rather than imported because this file ships in an
+ *  image that has no access to the Worker's source, and drawing.test.mjs asserts
+ *  the two agree. */
+function clampToImage(box, imageWidth, imageHeight) {
+  const left = Math.min(box.left, imageWidth);
+  const top = Math.min(box.top, imageHeight);
+  const width = Math.min(box.width, imageWidth - left);
+  const height = Math.min(box.height, imageHeight - top);
+  return width > 0 && height > 0 ? { left, top, width, height } : null;
+}
+
 /** Driving pdf.js's canvas directly was tried and does not work here: its own
  *  internal canvas factory resolves @napi-rs/canvas from unpdf's location and
  *  fails with "not available in this environment", after separately needing
@@ -51,14 +63,27 @@ export async function renderCrops(pdfBytes, request) {
       continue;
     }
 
+    // The rendered size, which only this side knows. The Worker computes boxes
+    // from PAGE POINTS and cannot know how the renderer rounds — asking it to
+    // guess is what broke the first real read (see clampToImage in
+    // worker/lib/drawing/crop.ts).
+    const { width: imgW, height: imgH } = await sharp(pageImage).metadata();
+
     for (const { id, box } of page.crops) {
       try {
+        const fitted = clampToImage(box, imgW, imgH);
+        if (!fitted) {
+          // Entirely outside the image is not a rounding difference; it is a
+          // real fault and must not become a 1x1 crop of a corner.
+          failures.push({ id, reason: "crop_failed" });
+          continue;
+        }
         // Flattened onto white before cropping: a PDF renders on transparent,
         // and a transparent crop becomes black-on-black wherever it is shown.
         const png = await sharp(pageImage)
           .flatten({ background: "#ffffff" })
-          .extract(box)
-          .resize({ width: Math.max(box.width, MIN_CROP_WIDTH_PX) })
+          .extract(fitted)
+          .resize({ width: Math.max(fitted.width, MIN_CROP_WIDTH_PX) })
           .png()
           .toBuffer();
         const { width, height } = await sharp(png).metadata();

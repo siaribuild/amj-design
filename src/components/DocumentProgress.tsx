@@ -18,10 +18,19 @@ import type { AiPhase, AiProgressStage, StageLogEntry } from "../data/useProject
 
 // Shorter labels than the single-line fallback: a checklist is scanned, not
 // read, and the sentence-length copy belongs to the fallback.
-const AI_STEPS: { stage: AiProgressStage; label: string }[] = [
+const AI_STEPS: { stage: AiProgressStage | null; label: string }[] = [
   { stage: "queued", label: "Preparing document review" },
   { stage: "reading_documents", label: "Reading the documents" },
   { stage: "extracting_schedule", label: "Extracting the schedule" },
+  // A step with NO stage. Reading the drawings happens inside the
+  // building_envelope phase — which is why the opening counter first appeared
+  // under "Checking thermal requirements", saying something conceptually wrong:
+  // finding 19 openings is the SCHEDULE's result, reading their details is its
+  // own job, and checking thermal requirements is what happens to each opening
+  // afterwards. There is no progress_stage for it and there will not be one
+  // (the column's CHECK constraint would need a table rebuild), so the step is
+  // driven by the counts instead.
+  { stage: null, label: "Extracting opening details" },
   { stage: "building_envelope", label: "Checking thermal requirements" },
   { stage: "matching_and_pricing", label: "Matching products and prices" },
   { stage: "preparing_quote", label: "Preparing your recommendations" },
@@ -64,7 +73,7 @@ export const readingMessage = (phase: {
     // Before the first opening resolves, the useful thing to say is how many
     // there are — the moment the count becomes knowable at all.
     return done === 0
-      ? `${total} openings found in your drawings…`
+      ? "Reading the drawings…"
       : `Reading opening ${done} of ${total}…`;
   }
   return progressMessage(phase.stage);
@@ -77,12 +86,25 @@ export const readingMessage = (phase: {
  *  never sees it. Same mechanism the reading step already uses for its document
  *  count, and it hangs off whichever step is in progress: there is no
  *  reading_drawings stage to attach it to, by design. */
-const drawingDetail = (phase: AiPhase): string | null => {
+const drawingCounts = (phase: AiPhase): { done: number; total: number } | null => {
   if (phase?.kind !== "reading") return null;
   const total = phase.drawingsTotal;
   if (typeof total !== "number" || total <= 0) return null;
-  const done = typeof phase.drawingsDone === "number" ? phase.drawingsDone : 0;
-  return done === 0 ? ` · ${total} openings found` : ` · opening ${done} of ${total}`;
+  return { done: typeof phase.drawingsDone === "number" ? phase.drawingsDone : 0, total };
+};
+
+/** How many openings the schedule yielded — the SCHEDULE step's own result, not
+ *  the drawing step's. It is known the moment the count exists, so it stays
+ *  visible after that step completes. */
+const scheduleDetail = (phase: AiPhase): string | null => {
+  const c = drawingCounts(phase);
+  return c ? ` · ${c.total} openings found` : null;
+};
+
+/** …and the drawing step's own progress through them. */
+const drawingDetail = (phase: AiPhase): string | null => {
+  const c = drawingCounts(phase);
+  return c && c.done > 0 ? ` · opening ${c.done} of ${c.total}` : null;
 };
 
 const progressMessage = (stage: AiProgressStage | undefined): string => {
@@ -111,7 +133,14 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   const waiting = active === "waiting_capacity";
   // An unknown stage is treated as the first step rather than as no progress:
   // work IS under way, and showing six pending rows would say the opposite.
-  const current = waiting ? 0 : Math.max(0, stepIndex(active));
+  // While openings are still being read, THAT is the step in progress — whatever
+  // the stage says. The drawing read runs inside the building_envelope phase, so
+  // the stage alone would put the marker on "Checking thermal requirements"
+  // while the work is plainly something else.
+  const counts = drawingCounts(aiPhase);
+  const drawingStep = AI_STEPS.findIndex((s) => s.stage === null);
+  const byStage = waiting ? 0 : Math.max(0, stepIndex(active));
+  const current = counts && counts.done < counts.total ? drawingStep : byStage;
   const showSteps = aiPhase?.kind === "reading" && !!active;
 
   // Per-step elapsed, from the observed transition times. A step's end is the
@@ -149,8 +178,10 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
               // in one call, so there is no live per-page tick to show).
               // A drawing count outranks the document count: it is the finer
               // granularity, and it is the one the customer asked to see.
-              const detail = inProgress && drawingDetail(aiPhase)
-                ? drawingDetail(aiPhase)
+              const detail = step.stage === null
+                ? drawingDetail(aiPhase) ?? ""
+                : step.stage === "extracting_schedule" && scheduleDetail(aiPhase)
+                ? scheduleDetail(aiPhase)
                 : inProgress && step.stage === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
                 ? ` · ${aiPhase.docs} document${aiPhase.docs !== 1 ? "s" : ""}`
                 : "";
