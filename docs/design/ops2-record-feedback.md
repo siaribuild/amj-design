@@ -73,14 +73,14 @@ It lives in `chrome/` beside `OpsPage`/`SidePanel`/`DrawingViewer` — the exist
 ops2 components shared across surfaces. No new directory.
 
 ```tsx
-/** The one list container (FB-AC-5's container token: `ds-row-list`). */
+/** The one list container (FB-AC-5's container token: `ops2-rows`). */
 export function RowList({ className, testId, children }: {
   className?: string;            // card chrome is composed on, not owned: `ds-surface-card`
   testId?: string;
   children: ReactNode;
-}): JSX.Element;                 // <ul className={`ds-row-list ${className}`} data-testid=…>
+}): JSX.Element;                 // <ul className={`ops2-rows ${className}`} data-testid=…>
 
-/** The one row (FB-AC-5's row token: `ds-row`; press token: `ds-row__press`). */
+/** The one row (FB-AC-5's row token: `ops2-row`; press token: `ops2-row__open`). */
 export function Row({ edge, selected, chevron, onActivate, pressTestId, children, ...rest }: {
   /** What the leading edge paints, or nothing. WHICH FACT it means stays the
    *  caller's (FB-AC-9): the queue maps waitingOn, the record maps needsReview,
@@ -103,10 +103,10 @@ Rendered shape — this is the invariant made structural, so it is stated once h
 per call site:
 
 ```html
-<li class="ds-row" data-selected? aria-current?>
-  <button type="button" class="ds-row__press" data-edge?>   ← wash, edge AND tint all here
+<li class="ops2-row <surface>" data-edge? data-selected? aria-current?>
+  <button type="button" class="ops2-row__open">              ← wash, edge AND tint all here
     {children}                                              ← the surface's own grammar
-    {chevron && <svg class="ds-row__chev" …/>}
+    {chevron && <svg class="ops2-row__chev" …/>}
   </button>
 </li>
 ```
@@ -144,43 +144,90 @@ the passthrough attribute for test selectors; 44 px floor → recipe (§3); `ari
 
 ---
 
-## 3. The CSS layer — `src/ops2/styles/recipes/row.css` (new recipe)
+## 3. The CSS layer — `src/ops2/styles/rows.css` (new; spec §15.2's names adopted)
 
-Imported in `src/ops2/styles/index.css` after `./recipes/surface.css` (line ~124). It owns
-**the list grammar and the row treatment, and nothing else**:
+Spec §15.2 (added after this design's first draft) names the tokens — `ops2-rows`,
+`ops2-row`, `ops2-row__open`, `ops2-row__chev` — and the file; this design adopts them
+wholesale rather than keep a second vocabulary. §15.2's state table, geometry, markup contract
+and keyboard rules are the contract, with the two amendments recorded here (§3.1's ruling and
+the card-chrome split below). Imported once in `src/ops2/styles/index.css` (after
+`./recipes/type.css`, before the surface sheets). It owns **the list grammar and the row
+treatment, and nothing else**:
 
 ```css
 /* Container: rhythm and clipping (FB-AC-8). NO card chrome — that is
    surface.css's fact; compose `ds-surface-card` at the call site. */
-.ds-row-list { margin: 0; padding: 0; list-style: none; overflow: hidden;
+.ops2-rows { margin: 0; padding: 0; list-style: none; overflow: hidden;
                border-radius: inherit; }
-.ds-row { display: block; }
-.ds-row + .ds-row { border-top: 1px solid var(--ds-border-subtle); }   /* pair's hairline */
+.ops2-row { display: block; }
+.ops2-row + .ops2-row { border-top: 1px solid var(--ds-border-subtle); }   /* pair's hairline */
 
 /* THE INVARIANT LIVES HERE AND ONLY HERE: wash, edge and tint are all declared
-   on .ds-row__press. This recipe contains no background and no box-shadow on
-   .ds-row or .ds-row-list — a child cannot cover what is painted on itself. */
-.ds-row__press { /* the nine shared declarations from record.css:275-288 */
+   on .ops2-row__open. This recipe contains no background and no box-shadow on
+   .ds-row or .ops2-rows — a child cannot cover what is painted on itself. */
+.ops2-row__open { /* the nine shared declarations from record.css:275-288 */
   display: flex; align-items: center; gap: var(--theme-spacing-sm);
   width: 100%; padding: var(--theme-spacing-sm) var(--theme-spacing-md);
   background: none; border: 0; text-align: left; font: inherit; color: inherit;
   cursor: pointer;
   min-height: 44px;                    /* the unit row's hit floor, for every row */
 }
-.ds-row__press:focus-visible { outline-offset: -2px; }   /* the group clips; ring stays in */
-@media (hover: hover) { .ds-row__press:hover { background: var(--ds-color-brand-wash); } }
-.ds-row__press:active { background: var(--ds-color-brand-wash); }  /* the ripple's one job */
+.ops2-row__open:focus-visible { outline-offset: -2px; }   /* the group clips; ring stays in */
+@media (hover: hover) { .ops2-row:hover > .ops2-row__open { background: var(--ds-color-brand-wash); } }
+.ops2-row__open:active { background: var(--ds-color-brand-subtle); }  /* the ripple's one job */
 
-.ds-row__press[data-edge="warning"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
-.ds-row__press[data-edge="info"]    { box-shadow: inset 3px 0 0 var(--ds-color-info); }
+.ops2-row[data-edge="warning"] > .ops2-row__open { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
+.ops2-row[data-edge="info"] > .ops2-row__open    { box-shadow: inset 3px 0 0 var(--ds-color-info); }
 
-/* Selection AFTER the edge rules, so the brand edge wins on a flagged+selected
-   row — the precedence record.css:533-534 already has. */
-.ds-row[data-selected] > .ds-row__press {
+/* Selection AFTER the edge rules: the brand edge wins on a selected+flagged
+   row. RULED in §3.1 — the flag stays in words (the row's own `needs review`
+   badge, plus the canvas's Needs-review panel beside it); selection has no
+   visible word, and this console has already recorded that the tint alone is
+   not a signal (record.css:530-532). Supersedes spec §15.2's state-table row
+   for selected+flagged. */
+.ops2-row[data-selected] > .ops2-row__open {
   background: var(--ds-color-brand-wash);
   box-shadow: inset 3px 0 0 var(--ds-color-brand);
 }
 ```
+
+### 3.1 Ruling (2026-08-28): selected + flagged — the selection edge wins
+
+Spec §15.2's state table had `data-edge` winning the shadow on a selected row; this design had
+selection winning. Ruled for **selection**, and the spec's row is corrected to match:
+
+- **What carries the flag while selected:** the row's own `needs review` badge
+  (`lines.tsx:99` — words, inside the row, kept by name in both documents' content tables),
+  and the canvas beside the rail, which renders that line's full **Needs review** reasons
+  panel (`LineReview.tsx:240-252`) at exactly that moment. The flag does not disappear when
+  the reviewer acts; it moves from a 3 px colour edge to words, twice.
+- **What would have carried selection under the spec's rule:** a 4 % tint and `aria-current`.
+  The tint alone is what this console's own comments call "not a signal"
+  (`record.css:530-532`, `lines.tsx:54-56`), and `aria-current` is words for assistive
+  technology, not for a sighted reader scanning eighteen rows for the one the canvas is
+  describing. Misreading *which line is selected* makes the reviewer read the canvas's
+  reasons against the wrong row — a worse failure than an edge yielding to a badge.
+- **Precedent, twice over:** the shipped selected row already paints the brand edge over the
+  flag (`record.css:533-534`) on a surface the owner accepted with no such defect among his
+  eight; and the queue's own recorded principle — "an edge that repeats a chip earns nothing"
+  (`projects.css:393-395`) — is precisely a flag edge repeating the badge beside it.
+- FB-AC-2's own vocabulary ("the selection tint, **the selection edge** and the hover wash")
+  presumes the selection edge exists on the row under review.
+
+This is not the FB-AC-1 defect class: FB-AC-1 is a state *erased by paint on another element*;
+this is one element deliberately showing the rarer, wordless state in colour while the worded
+state keeps its words. §15.2's `selected + hover` deeper wash (brand-subtle) is kept as
+specced.
+
+### 3.2 Card chrome stays composed, not baked into `.ops2-rows`
+
+One amendment to §15.2's geometry: it puts `background`/`border`/`border-radius`/`box-shadow`
+on `.ops2-rows` unconditionally, which would draw the unit list as a card **inside** its
+`lp-panel` card — a visible change to an accepted surface no criterion asks for. `.ops2-rows`
+owns grammar and clipping only (`overflow: hidden`, zero inline padding, hairlines); the queue
+and record call sites compose the existing `ds-surface-card` recipe (`recipes/surface.css`)
+for the chrome, and the unit list composes nothing. One place per fact — the card recipe
+already exists.
 
 Unit-row divergence stays in `line.css` exactly as its comment already promises: the grid, the
 top alignment (`line.css:428-436` minus the now-recipe `min-height`/focus rules).
@@ -196,7 +243,7 @@ the `ops2-projects.spec.ts:410` locator), the whole `.pq-cards ion-item` block (
 
 The precedent this generalises — `record.css`'s "same selector rather than a second copy"
 comment for `.rl-open, .lp-unit__open` — is retired in favour of the recipe; the comment moves
-to `row.css`'s header.
+to `rows.css`'s header.
 
 ---
 
@@ -409,7 +456,7 @@ Files: `src/ops2/styles/record.css` (done), `scripts/tests/web/ops2-record-feedb
 (FB-AC-10/11/12, done), `scripts/db/seed.sql` (u_staff6, done). Verify: FB-AC-10/11/12 pass.
 
 **Slice 2 — the shared row, record list first (tracer for defect 1).**
-Files: `src/ops2/chrome/RowList.tsx` (new), `src/ops2/styles/recipes/row.css` (new),
+Files: `src/ops2/chrome/RowList.tsx` (new), `src/ops2/styles/rows.css` (new),
 `src/ops2/styles/index.css` (one `@import`), `src/ops2/projects/lines.tsx` (LineRow +
 RecordLines onto Row/RowList), `src/ops2/styles/record.css` (delete the migrated `.rl-*`
 paint rules per §3), `docs/adr/0014-ops2-shared-row-is-light-dom.md` (new),
@@ -536,7 +583,7 @@ grammar is unchanged), no replay surface exists (GETs only).
   disqualifiers 2 and 3; changes two accepted surfaces instead of the one the spec flags;
   harder to test. The ripple's job is kept by one `:active` declaration.
 - **Card chrome inside the row recipe** — rejected; `surface.css` already owns it (one place
-  per fact), and the unit list must be a `ds-row-list` *without* card chrome to avoid a card
+  per fact), and the unit list must be a `ops2-rows` *without* card chrome to avoid a card
   inside its panel.
 - **Recipe painting from surface facts (`data-waiting`, `data-flagged`) directly** — rejected;
   the recipe would then know every surface's vocabulary. The caller maps its fact to `edge`;

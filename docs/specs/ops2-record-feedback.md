@@ -818,7 +818,7 @@ queue; it is being generalised, not invented.
 | flagged **+ hover** | both rules, one element | wash **and** edge, both legible — **FB-AC-1** |
 | selected | `.ops2-row[data-selected] > .ops2-row__open` | `background: var(--ds-color-brand-wash)` **and** `box-shadow: inset 3px 0 0 var(--ds-color-brand)` |
 | selected + hover | `.ops2-row[data-selected]:hover > …` | `background: var(--ds-color-brand-subtle)` — a *deeper* wash, so hover stays perceptible on an already-tinted row without touching the edge |
-| selected + flagged | `[data-selected][data-edge="warning"]` | brand tint, **warning** edge — `data-edge` wins the shadow. Selection is the tint, the flag is the edge, and `aria-current="true"` says selection in words either way |
+| selected + flagged | `[data-selected][data-edge="warning"]` | brand tint, **brand** edge — selection wins the shadow. The flag keeps its own words (the `needs review` badge) and, at the desk, the canvas beside the rail renders that line's whole reasons panel; selection has no word a sighted reader can see, and this console has already recorded that its 4% tint "is not a signal" on its own. Ruled by the architect, design §3.1 |
 
 `data-edge` replaces today's `data-flagged` / `data-waiting`: the row takes an
 `edge?: "warning" | "info"` prop and each surface decides what it means (FB-AC-9) — the record
@@ -827,10 +827,14 @@ for `"Customer"`, the unit list passes nothing.
 
 #### Geometry
 
-- Container `.ops2-rows`: `list-style: none`; `padding: 0`; `background: var(--ds-surface-card)`;
-  `1px solid var(--ds-border-subtle)`; `border-radius: var(--ds-radius-surface)`;
-  `box-shadow: var(--ds-layer-raised)`; **`overflow: hidden`** — FB-AC-8's clip, so no leading edge
-  paints outside the rounded corner. **No inline padding, ever.**
+- Container `.ops2-rows`: `list-style: none`; `padding: 0`; **`overflow: hidden`** — FB-AC-8's
+  clip, so no leading edge paints outside the rounded corner. **No inline padding, ever.**
+  It owns grammar and clipping ONLY.
+- **The card chrome is composed, not built in** (architect, design §3.2). Background, border,
+  radius and elevation come from the existing `ds-surface-card` recipe at the call sites that
+  want them — the queue's list and the record's line list. The unit list composes nothing,
+  because it already sits inside an `lp-panel` card and an unconditional card on the container
+  would draw a card inside a card.
 - `.ops2-row + .ops2-row { border-top: 1px solid var(--ds-border-subtle) }`; no `gap`; the first
   row draws no hairline (FB-AC-8).
 - `.ops2-row__open`: `width: 100%`; `min-height: 44px`; `padding: var(--theme-spacing-sm)

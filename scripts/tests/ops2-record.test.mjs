@@ -299,6 +299,34 @@ test("the attention row is a queue, and every empty case says a different thing"
   assert.deepEqual(M.visibleLines(M.parseProjectRecord(body({ lines: [line()] })), true), []);
 });
 
+test("FB-AC-21 — the filter means everything requiring attention, not just no rate", () => {
+  // OWNER, Q4: "everything requiring attention". The filter narrowed to lines
+  // with no rate, so a line the list had already marked `needs review` — its
+  // leading edge painted, its badge printed — could not be reached by the one
+  // control that exists to reach it. Three such lines sat in the reproduction
+  // project, unreachable.
+  //
+  // The predicate is now the SAME ONE the row draws itself from. That is the
+  // point: one meaning of "attention" per surface, so the filter can never
+  // disagree with the marks it filters on.
+  const mixed = M.parseProjectRecord(body({ lines: [
+    line({ code: "W01" }),
+    line({ code: "W02", lineTotal: null, status: "incomplete" }),
+    line({ code: "W03", status: "technical_review", review: { size: "size outside the product range" } }),
+    line({ code: "W04" }),
+  ] }));
+
+  assert.deepEqual(M.visibleLines(mixed, true).map((l) => l.code), ["W02", "W03"]);
+  assert.equal(M.visibleLines(mixed, false).length, 4);
+
+  // AND IT IS EXACTLY THE ROWS THAT CARRY A MARK. Asserted as an identity
+  // rather than as a list, so the two cannot drift apart later.
+  assert.deepEqual(
+    M.visibleLines(mixed, true).map((l) => l.code),
+    mixed.lines.filter((l) => M.needsReview(l) || l.lineTotal == null).map((l) => l.code),
+  );
+});
+
 test("one badge whatever the reason count, and every figure states its kind", () => {
   // P1-AC-22 — THREE REASONS ARE STILL ONE BOOLEAN. The parser's individual
   // reasons pollute a scannable list ("Highlight is enough"); they are read on
@@ -316,7 +344,16 @@ test("one badge whatever the reason count, and every figure states its kind", ()
   // An empty review map is not a flag, and a status the server flags is one
   // even when the parser raised nothing.
   assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ review: {} })] })).lines[0]), false);
-  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ status: "needs_review" })] })).lines[0]), true);
+  // `technical_review` IS a flag on its own, because the server sets it from the
+  // review map and a record can arrive with the status and an empty map.
+  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ status: "technical_review" })] })).lines[0]), true);
+  // AND `needs_review` IS NOT A QUOTE LINE STATUS. It belongs to
+  // `schedule_parse_job` (migrations/0012), and this file's flag test asserted
+  // it for two revisions — which is how a distinction between "needs attention"
+  // and "blocks the quote" got invented and defended, when on every writer the
+  // two are the same set. Every path derives `no total -> incomplete`,
+  // `reasons left -> technical_review`, else `ready`; nothing writes this.
+  assert.equal(M.needsReview(M.parseProjectRecord(body({ lines: [line({ status: "needs_review" })] })).lines[0]), false);
 
   // P1-AC-31 — WHAT KIND OF FIGURE IT IS. An unpriced line is `no_rate` and
   // never a zero; a figure a human set is not the rate card's.

@@ -14,9 +14,9 @@ import { LineReview } from "./LineReview";
 import { drawingSuffix, VIEWER_FROM_RECORD } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  ageLabel, attentionFor, cornerFigure, money, otherActions, pendingPrimary,
+  ageLabel, cornerFigure, money, needsAttention, otherActions, pendingPrimary,
   primaryAction, totalsFor, visibleLines, waitingSentence,
-  type Attention, type ProjectRecord, type RecordAction, type RecordTotals,
+  type ProjectRecord, type RecordAction, type RecordTotals,
 } from "./record";
 
 const PROJECTS = destination("projects");
@@ -93,7 +93,11 @@ export function ProjectRecordPage() {
   const primary = record ? primaryAction(record) : null;
   const pending = record ? pendingPrimary(record) : null;
   const others = record ? otherActions(record) : [];
-  const attention = record ? attentionFor(record) : null;
+  // HOW MANY ROWS CARRY A MARK — the pill's whole content, and the filter's.
+  // One number rather than a ranked queue of blockers: the owner deleted the
+  // band that queue existed to fit into ("drop the yellow bar altogether — it
+  // duplicates what the pill says").
+  const attention = record ? record.lines.filter(needsAttention).length : 0;
   const shown = record ? visibleLines(record, filterOn) : [];
   // THE SELECTION FOLLOWS THE LIST IT CAME FROM. Switching the filter on can
   // take the reviewed line out of the rail; leaving the canvas on it would show
@@ -295,18 +299,6 @@ export function ProjectRecordPage() {
               </button>
             </div>
           </div>
-          {/* THE ATTENTION ROW IS PART OF THE BAND, on both tabs. A list of
-              eighteen openings with two unpriced is a scanning problem, and the
-              answer is one row that names the leading blocker and offers the
-              control that clears it — not a flag on every row. It stays with
-              the disabled primary above it, which it is the reason for. */}
-          {attention && (
-            <AttentionRow
-              attention={attention}
-              filterOn={filterOn}
-              onToggle={() => setFilterOn((on) => !on)}
-            />
-          )}
         </div>
       ) : undefined}
     >
@@ -344,20 +336,28 @@ export function ProjectRecordPage() {
 
       {record && (
         <>
-          {/* A CRITICAL FAULT IN THE QUOTE, drawn as one. An unpriced line
-              stops this quote going out; a note-coloured strip said so at the
-              weight of an aside. The sentence is the server's own — the console
-              never re-derives the gate. */}
-          {/* ONLY WHAT THE ATTENTION ROW CANNOT SAY. It derives its blockers
-              from the same two facts the gate refuses on — lines with no rate,
-              unsettled delivery — so when the CTA is blocked for one of those,
-              a second strip beneath it repeated the sentence in a louder
-              colour. The mock has ONE row and its own comment says why: it "is
-              the reason the header's CTA is disabled, so it may not disappear
-              while the CTA is still on screen". A refusal the row cannot
-              express — a state the quote cannot be issued from — still gets
-              said, because nothing else on the page would say it. */}
-          {primary?.blockedReason && attention?.kind !== "blockers" && (
+          {/* THE PILL, and it is drawn only when there is something to draw it
+              for. It is the reason the header's CTA is disabled, so it may not
+              disappear while the CTA is still refused for a LINE reason — and
+              it never does, because both read the same predicate. */}
+          {attention > 0 && (
+            <AttentionPill
+              count={attention}
+              filterOn={filterOn}
+              onToggle={() => setFilterOn((on) => !on)}
+            />
+          )}
+          {/* ONLY WHAT THE PILL CANNOT SAY. The pill counts the lines that need
+              a person; the gate also refuses on things that are not lines at
+              all — an unsettled delivery, a project in a state a quote cannot
+              be issued from. Those still get said, because nothing else on the
+              page would say them, and the sentence is the SERVER'S own: the
+              console never re-derives the gate.
+
+              The two are mutually exclusive on purpose. Rendered together they
+              said the same thing twice, once counted and once in prose, which
+              is the duplication the owner deleted the yellow bar for. */}
+          {primary?.blockedReason && attention === 0 && (
             <p className="rec-refusal" data-testid="record-blocked">
               <IonIcon icon={alertCircle} aria-hidden="true" />
               {primary.blockedReason}
@@ -618,57 +618,45 @@ function StateRow({ record }: { record: ProjectRecord }) {
 }
 
 /**
- * The one row that says what needs doing, with the control that does it.
+ * THE PILL — what still needs a person, and the control that shows only those.
  *
- * Blockers are a QUEUE, not a list: the leading one is stated and the rest are
- * counted, so the row stays one line and the next surfaces as each clears. When
- * the leading blocker is one this build cannot act on it carries NO action word
- * and no navigation — there is no delivery screen in ops2 to send anyone to.
+ * The owner, having seen the band it replaces: "the large pill-like area that
+ * says '2 lines have no rate' is the solution — use that design and incorporate
+ * quick filter in it. Drop the yellow bar altogether — it duplicates what the
+ * pill says. no pill when the filter is cleared."
+ *
+ * So there is ONE object, not two. The tinted row inside the band is gone with
+ * its ranked queue of blockers, its clear state and its no-lines state: a
+ * surface that says "nothing is blocking this quote" is spending a permanent
+ * line on the absence of news, and the eye stops reading a thing that is always
+ * there. Nothing needing attention means nothing drawn.
+ *
+ * IT COUNTS THE ROWS THAT CARRY A MARK — `needsAttention`, the same predicate
+ * that paints the leading edge and prints the badge — so the pill, the filter
+ * and the list can never disagree about what "attention" means. On today's
+ * writers that is also exactly the set that blocks issuing (`record.ts`), which
+ * is why one sentence can carry both without the console re-deriving the gate.
  */
-function AttentionRow({ attention, filterOn, onToggle }: {
-  attention: Attention;
+function AttentionPill({ count, filterOn, onToggle }: {
+  count: number;
   filterOn: boolean;
   onToggle: () => void;
 }) {
-  if (attention.kind !== "blockers") {
-    return (
-      <p className="rec-attention" data-kind={attention.kind} data-testid="record-attention">
-        <span className="rec-attention__dot" aria-hidden="true" />
-        <span className="rec-attention__text">{attention.text}</span>
-      </p>
-    );
-  }
-  const { lead, more } = attention;
-  const text = filterOn && lead.key === "unpriced"
-    ? `Showing the ${lead.count} lines with no rate`
-    : lead.text;
-  const body = (
-    <>
-      <span className="rec-attention__dot" aria-hidden="true" />
-      <span className="rec-attention__text">
-        {text}
-        {more > 0 && <span className="rec-attention__more"> · +{more} more</span>}
-      </span>
-    </>
-  );
-  if (lead.action == null) {
-    return (
-      <p className="rec-attention" data-kind="blocked" data-testid="record-attention">
-        {body}
-      </p>
-    );
-  }
   return (
     <button
       type="button"
-      className="rec-attention rec-attention--button"
-      data-kind="blocked"
+      className="rec-pill"
       data-testid="record-attention"
       aria-pressed={filterOn}
       onClick={onToggle}
     >
-      {body}
-      <span className="rec-attention__act">{filterOn ? "show all" : lead.action}</span>
+      <IonIcon icon={alertCircle} aria-hidden="true" />
+      <span className="rec-pill__text">
+        {filterOn
+          ? `Showing ${count} line${count === 1 ? "" : "s"} that need${count === 1 ? "s" : ""} attention`
+          : `${count} line${count === 1 ? "" : "s"} need${count === 1 ? "s" : ""} attention`}
+      </span>
+      <span className="rec-pill__act">{filterOn ? "Show all" : "Show only these"}</span>
     </button>
   );
 }

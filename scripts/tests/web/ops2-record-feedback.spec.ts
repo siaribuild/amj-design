@@ -100,61 +100,94 @@ const token = (page: import("@playwright/test").Page, name: string) =>
     return value;
   }, name);
 
-test("FB-AC-13/15/16/17/18 — the attention row is the rail's tinted floor, edge to edge", async ({ page }) => {
-  // THE DEFECT, IN THE OWNER'S WORDS: "tabs sit on rail that immediately has a
-  // different background colour. At the moment the darker background starts
-  // only after the error label." The approved mock draws this row as a
-  // full-bleed tinted band under the segment; the build shipped it transparent,
-  // unpadded and floorless, so the header's white simply ran on through it.
-  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
-    lines: [line(), line({ id: "l2", code: "W02", lineTotal: null })],
-  }) }));
+test("FB-AC-13 — the pill is drawn only when something needs a person, and it carries the filter", async ({ page }) => {
+  // THE OWNER DELETED THE BAND THIS REPLACES, on sight: "the large pill-like
+  // area that says '2 lines have no rate' is the solution — use that design and
+  // incorporate quick filter in it. Drop the yellow bar altogether — it
+  // duplicates what the pill says. no pill when the filter is cleared."
+  //
+  // So: one object, in the page rather than in the band, and NOTHING when there
+  // is nothing to say. A permanent line reporting the absence of news is a line
+  // the eye learns to skip, which is what made the band's "Nothing is blocking
+  // this quote" state worth deleting rather than restyling.
   await page.setViewportSize({ width: 390, height: 844 });
+
+  // Nothing wrong ⇒ nothing drawn, and the band carries no attention row at all.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line(), line({ id: "l2", code: "W02", lineTotal: 2000 })],
+  }) }));
   await page.goto(RECORD);
+  await expect(page.getByTestId("record-identity")).toBeVisible();
+  await expect(page.getByTestId("record-attention")).toHaveCount(0);
+  await expect(page.locator(".ops2-page__band [data-testid=record-attention]")).toHaveCount(0);
+  await page.unroute(RECORD_URL);
 
-  const row = page.getByTestId("record-attention");
-  await expect(row).toBeVisible();
+  // Something wrong ⇒ one pill, in the body, above the list.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line(),
+      line({ id: "l2", code: "W02", lineTotal: null, status: "incomplete" }),
+      line({ id: "l3", code: "W03", status: "technical_review", review: { size: "size outside the product range" } }),
+    ],
+  }) }));
+  await page.goto(RECORD);
+  const pill = page.getByTestId("record-attention");
+  await expect(pill).toBeVisible();
+  await expect(pill).toContainText("2 lines need attention");
+  await expect(pill).toContainText("Show only these");
 
-  const style = await row.evaluate((el) => {
-    const s = getComputedStyle(el);
-    return {
-      background: s.backgroundColor,
-      borderTop: s.borderTopWidth, borderBottom: s.borderBottomWidth,
-      borderLeft: s.borderLeftWidth, borderRight: s.borderRightWidth,
-      padLeft: parseFloat(s.paddingLeft), padRight: parseFloat(s.paddingRight),
-    };
-  });
+  // IT IS IN THE PAGE, NOT IN THE BAND. The band is the header; the owner's
+  // ruling was that a strip wedged between the rail and the first card is not a
+  // solution, and the pill is a block on the page instead.
+  await expect(page.locator(".ops2-page__band [data-testid=record-attention]")).toHaveCount(0);
+  const list = (await page.getByTestId("record-lines").boundingBox())!;
+  const box = (await pill.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(list.y + 1);
 
-  // FB-AC-13 — the ground changes, and it is the warning tint, not a nudge.
-  expect(style.background).toBe(await token(page, "--ds-color-warning-subtle"));
-  const bandBg = await page.locator(".ops2-page__band")
-    .evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(style.background).not.toBe(bandBg);
+  // AND IT IS THE FILTER. One press narrows the list to exactly the rows the
+  // list itself marks; a second restores it.
+  await expect(page.getByTestId("record-line")).toHaveCount(3);
+  await pill.click();
+  await expect(page.getByTestId("record-line")).toHaveCount(2);
+  await expect(pill).toContainText("Showing 2 lines that need attention");
+  await expect(pill).toHaveAttribute("aria-pressed", "true");
+  await pill.click();
+  await expect(page.getByTestId("record-line")).toHaveCount(3);
+});
 
-  // FB-AC-17 — it CLOSES the header. A top border makes it read as something
-  // hanging off the tabs; the bottom one is the band's own last edge.
-  expect(parseFloat(style.borderBottom)).toBeGreaterThan(0);
-  expect(parseFloat(style.borderTop)).toBe(0);
-  expect(parseFloat(style.borderLeft)).toBe(0);
-  expect(parseFloat(style.borderRight)).toBe(0);
+test("FB-AC-20 — the pill and the refusal never say the same thing twice", async ({ page }) => {
+  // THE DUPLICATION THE OWNER DELETED. The gate refuses on things that are not
+  // lines — an unsettled delivery, a project state a quote cannot be issued
+  // from — and those still need saying, in the SERVER's own words, because
+  // nothing else on the page says them. What must not happen is both at once:
+  // the count and the prose describing one fact.
+  await page.setViewportSize({ width: 390, height: 844 });
 
-  // FB-AC-18 — weight, and not compressed: a floor, and inline padding of its
-  // own rather than borrowing the band's.
-  const box = (await row.boundingBox())!;
-  expect(box.height).toBeGreaterThanOrEqual(40);
-  expect(style.padLeft).toBeGreaterThan(0);
-  expect(style.padRight).toBeGreaterThan(0);
+  // Lines need attention ⇒ the pill speaks and the refusal stays quiet.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: null, status: "incomplete" })],
+    actions: [{
+      id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
+      blockedReason: "1 line has no rate. This quote cannot be issued.",
+    }],
+  }) }));
+  await page.goto(RECORD);
+  await expect(page.getByTestId("record-attention")).toBeVisible();
+  await expect(page.getByTestId("record-blocked")).toHaveCount(0);
+  await page.unroute(RECORD_URL);
 
-  // FB-AC-15 — full bleed. The tint runs to the band's edges; inside the band's
-  // inline padding it reads as a card on a card.
-  const band = (await page.locator(".ops2-page__band").boundingBox())!;
-  expect(Math.abs(box.x - band.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs((box.x + box.width) - (band.x + band.width))).toBeLessThanOrEqual(1);
-
-  // FB-AC-16 — and no white gap between the tabs and the tint, which is the
-  // literal complaint.
-  const tabs = (await page.locator(".pq-chips").boundingBox())!;
-  expect(Math.abs(box.y - (tabs.y + tabs.height))).toBeLessThanOrEqual(1);
+  // A refusal the pill cannot express ⇒ the server's sentence, and no pill.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line(), line({ id: "l2", code: "W02", lineTotal: 2000 })],
+    delivery: { amount: null, settled: false, estimate: null },
+    actions: [{
+      id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
+      blockedReason: "Delivery has not been set. This quote cannot be issued.",
+    }],
+  }) }));
+  await page.goto(RECORD);
+  await expect(page.getByTestId("record-blocked")).toContainText("Delivery has not been set");
+  await expect(page.getByTestId("record-attention")).toHaveCount(0);
 });
 
 test("FB-AC-10 — the record's band rests where every other surface's band rests", async ({ page }) => {

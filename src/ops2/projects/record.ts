@@ -492,10 +492,32 @@ export function attentionFor(record: ProjectRecord): Attention {
   return { kind: "blockers", lead: blockers[0], more: blockers.length - 1 };
 }
 
-/** The lines the list shows. The filter is the attention row's own control, and
- *  the only one there is: it narrows to the lines carrying no rate. */
+/**
+ * The lines the list shows, and the one meaning of "attention" this surface has.
+ *
+ * OWNER, Q4: "everything requiring attention". It narrowed to lines carrying no
+ * rate, so a line the list had already marked — leading edge painted, `needs
+ * review` badge printed — could not be reached by the one control that exists to
+ * reach it. Three of the five lines in the reported project were in exactly that
+ * state.
+ *
+ * THE PREDICATE IS THE ROW'S OWN. `needsReview` is what paints the edge and the
+ * badge; `lineTotal == null` is what prints `No rate` instead of a figure. The
+ * filter shows precisely the rows that carry a mark, which is the only version
+ * of this control that cannot disagree with the list it filters.
+ *
+ * It is also, on today's writers, exactly the set that blocks issuing: status is
+ * derived as `no total -> incomplete`, `review reasons left -> technical_review`,
+ * else `ready` (worker/routes/ops.ts:1159, lib/lines.ts:250, lib/parse.ts:363),
+ * and both of those statuses are in `ISSUE_BLOCKING_LINE_STATUSES`. The two
+ * halves below are one idea, not a union of two.
+ */
+export function needsAttention(line: RecordLine): boolean {
+  return needsReview(line) || line.lineTotal == null;
+}
+
 export function visibleLines(record: ProjectRecord, filterOn: boolean): RecordLine[] {
-  return filterOn ? record.lines.filter((l) => l.lineTotal == null) : [...record.lines];
+  return filterOn ? record.lines.filter(needsAttention) : [...record.lines];
 }
 
 // ── What the drawing needs ───────────────────────────────────────────────────
@@ -550,8 +572,19 @@ export function unitLabel(code: string, index: number): string {
 
 // ── What one row says about itself ───────────────────────────────────────────
 
-/** The statuses the server flags for a human, whatever the parser said. */
-const REVIEW_STATUSES = new Set(["needs_review", "technical_review"]);
+/** The statuses the server flags for a human, whatever the parser said.
+ *
+ *  ONE MEMBER, and the one that was removed is why this comment exists.
+ *  `needs_review` is a `schedule_parse_job` status (migrations/0012) — no
+ *  `quote_line` has ever carried it, on any writer or in the database. Its
+ *  presence here made this set look BROADER than the blocking set below, which
+ *  is what a careful reader then builds on: a distinction between "needs a human
+ *  eye" and "stops the quote" that the schema does not have. Every writer
+ *  derives `no total -> incomplete`, `reasons left -> technical_review`, else
+ *  `ready` (worker/routes/ops.ts:1159, lib/lines.ts:250, lib/parse.ts:363), and
+ *  both of those block. Owner, on the distinction: "I think you're
+ *  overengineering it." */
+const REVIEW_STATUSES = new Set(["technical_review"]);
 
 /** The statuses `issueQuote` REFUSES on — `worker/lib/issue.ts`'s
  *  `ISSUE_BLOCKING_LINE_STATUSES`. A narrower set than the one above: a line
