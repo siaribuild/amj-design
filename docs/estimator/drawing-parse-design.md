@@ -317,6 +317,39 @@ silent guess.
 
 ## 6. Precedence — a stated width beats a measured one. DECIDED, owner 2026-08-07.
 
+### The energy report is authoritative for THERMAL parameters, not architectural ones. Owner, 2026-08-27.
+
+**A shipped defect, found by that one sentence.** `energyMap.ts` already splits precedence by
+field — `PRECEDENCE_POLICY_V2.dimensions` correctly puts the architectural schedule at 100 and
+the energy report at 80. But the other bucket is
+`configurationAndPerformance: PRECEDENCE_POLICY_V1`, where the report sits at 100 above the
+schedule's 80, and **configuration is an architectural property sharing a bucket with a thermal
+one**. The comment above it states the error as intent: *"the energy report remains
+authoritative for operation, glazing and thermal performance."* Operation is not the report's to
+decide.
+
+It has already bitten. On a real project, `conf_energy_1` records opening **W3** with the report
+saying `fixed` at precedence 100 against the architect's schedule saying `awning` at 80. The
+report won: **an awning became fixed glass** — the cheapest product in the catalogue, and a
+window that does not open.
+
+*Why it must be fixed before the drawing route merges, not after.* The drawings supply operation
+as well as composition. With the report above them on configuration, a drawing-derived reading is
+discarded at exactly the seam this effort exists to build. Blast radius is as small as it will
+ever be: no file in production is currently typed `energy_report`.
+
+The correction is already written — the output spec's §6 table has been right the whole time.
+`configurationAndPerformance` splits:
+
+| bucket | order |
+|---|---|
+| `dimensions` | schedule 100, plans 90, report 80 — **already correct** |
+| `configuration` (operation, composition, count, order) | drawings and schedule above the report |
+| `performance` (Uw, SHGC) | the report is authoritative |
+| specification (glass, colour, hardware) | the schedule table, per output spec §6 |
+
+
+
 W4's comment states `600 | 2000 | 600`; the drawing measures `615 | 1970 | 615`. A person wrote
 the comment and meant it exactly; the drawing is a ±2.5% measurement of it. So a stated
 dimension is never replaced by a measured one.
