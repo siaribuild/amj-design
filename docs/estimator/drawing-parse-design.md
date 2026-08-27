@@ -546,15 +546,72 @@ poppler and PIL because that is the toolchain the method was proven with. `rende
 — in **Node**, on the `unpdf` already in the Worker's bundle plus a canvas. So the container is
 needed for **pixels, not for Python**, and image size is what sets the 1–3 s cold start.
 
-Two consequences worth settling before the image is built:
+### Both settled — owner, 2026-08-27
 
-- **Node or Python?** Node reuses the extractor the Worker already trusts and keeps one PDF
-  library across the codebase; Python is what the proof ran on and what the scaffold's step
-  functions are written in. This is a real choice and it is not made here.
-- **Where does the model call live?** In the container is the faithful reproduction and is what
-  the scaffold assumes. In the Worker is cheaper — a container waiting on a vision call bills a
-  GiB-second every second at zero CPU. It is an optimisation, not a correction, and per the
-  scaffold's own README it should not be done before the pipeline is known to work.
+**Node, not Python.** The scaffold is Python because that is what the method was proven with, and
+fidelity to a 100% run is a real argument — it was the right default while nothing had been
+measured. Against it, item by item from `requirements.txt`: `pdfplumber`'s per-word coordinates
+are `getTextContent()` items' `transform`; `pillow` is `sharp`, already a dependency; `poppler`
+is `unpdf` plus a canvas, proven in `render.mjs`; the `anthropic` call moves to the Worker (see
+below). What decides it:
+
+- **One PDF library, therefore one coordinate space.** The geometric second opinion is pdf.js.
+  If the container crops with poppler and the decoder measures with pdf.js, the verification
+  cross-check needs a coordinate reconciliation before it can compare anything. Same library
+  makes it a subtraction.
+- **`boto3` is a credential.** A container doing its own R2 I/O needs S3-compatible keys — a new
+  secret with a new blast radius, in a product holding payout details and ABNs. A Worker holding
+  the binding needs none. This one outweighs the rest.
+- Leaner image, and image size sets the 1–3 s cold start.
+
+*Reversible, and testable rather than arguable:* if Node's crops read worse, the release gate's
+numbers say so.
+
+**The vision call lives in the Worker, not the container.** The faithful reading put it in the
+container, and cost alone would not have settled it. Three things do:
+
+- `jobs.ts`, `stage.ts`, `escalation.ts` and `runs.ts` already carry retries, escalation
+  triggers, run records and token accounting. In the container every one is rewritten.
+- A container awaiting a vision call bills a GiB-second per second at **zero CPU**.
+- **Progress has to reach D1 to reach the customer** — and a container that writes progress needs
+  D1 credentials too, which is the `boto3` objection a second time.
+
+So: **the container renders and crops; the Worker reads, verifies and reports.**
+
+---
+
+### Progress — extend the channel that exists, do not build a second one
+
+Parsing is on the order of **40–95 s serial for 19 openings, ~10–20 s at five concurrent**, so
+the customer waits on screen and must be told what is happening.
+
+The whole channel is already built and shipping: `progress_stage` on the job row → exposed by
+`worker/routes/parse.ts` → typed in `src/data/api.ts` → polled in
+`src/data/useProjectDocuments.ts`, which already renders a named phase. The vocabulary already
+runs `queued → reading_documents → extracting_schedule → building_envelope →
+matching_and_pricing → preparing_quote → complete`.
+
+**Exactly one thing is missing: a count.** The wanted shape, against what exists:
+
+| what the customer sees | comes from |
+|---|---|
+| uploading file | the upload surface, before any run |
+| parsing file | `reading_documents` — exists |
+| **20 openings discovered** | `extracting_schedule` completing — the count is the schedule's own row count |
+| **reading opening 7 of 20** | a new `reading_drawings` stage, plus **done/total** |
+
+So: one new stage name, and a done/total pair carried beside `progressStage` on the same
+response the UI already polls. Two nullable integer columns on the job row — additive, and
+**`migrations/` means loading the `d1-migration-safety` skill first, without exception**.
+
+Independently, **one `ai_stage_runs` row per opening**: that table exists, its `result_r2_key`
+holds the crop, and it is the evidence trail THE RELEASE GATE requires anyway. One mechanism,
+two needs, no new table.
+
+**The counter must be honest.** Its denominator is the real opening count, and an opening that
+comes back `not read` still advances it. A bar that stalls on the openings it could not read, or
+quietly shortens its denominator to reach 100%, is the same silent failure the verification
+stage exists to prevent — and it would be the one place the customer could see it.
 
 **OCR for genuinely scanned sets** remains the container's other job, and `GeometryGap =
 "raster_page"` remains its trigger — but it is no longer the thing that decides whether a
@@ -758,5 +815,11 @@ chain.
 5. ~~**Who owns a practice's symbol profile?**~~ **MOOT under both routes.** §6 settled that
    nothing claims a family from a symbol — the schedule names it — so no practice profile has to
    be owned, stored or confirmed by anyone. `refineOperable` and `apexMeans` stay unreferenced.
-6. **Node or Python in the container, and does the vision call live in the container or the
-   Worker?** §7. Neither is settled and both change the image.
+6. ~~**Node or Python in the container, and where does the vision call live?**~~ **DECIDED,
+   owner 2026-08-27: Node, and the call lives in the Worker.** §7 carries the reasoning; the
+   deciding arguments were one coordinate space shared with the second opinion, and keeping R2
+   and D1 credentials out of the container.
+7. **Does the customer wait on screen, and at what granularity?** The counter shape is settled
+   (§7) but the surface is not: whether a 20 s wait shows per-opening detail or a single bar is
+   a UX decision, and it is the only place a customer would ever see an opening reported as
+   unread.
