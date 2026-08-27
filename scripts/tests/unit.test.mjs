@@ -1429,6 +1429,28 @@ test("a browser-facing ops2 path carries the base exactly once", () => {
 // The Worker is bundled separately from the shared bundle at the top of this
 // file so that an import-time break in any route cannot take the pure tests
 // down with it.
+/** Stub workerd's own built-ins so the Worker can be bundled for node.
+ *
+ *  `cloudflare:workers` exists only inside workerd. Nothing in this Worker
+ *  imported one until the plan-parse container arrived — `@cloudflare/containers`
+ *  extends `DurableObject` from it — and esbuild cannot resolve it for a node
+ *  platform, which failed the bundle rather than the assertion.
+ *
+ *  Stubbing rather than marking it external: external leaves a real import in the
+ *  output, which then fails at load time in node for the same reason. The tests
+ *  here exercise the fetch handler, and a Durable Object class that is never
+ *  instantiated only has to be constructible. */
+const workerdBuiltins = {
+  name: "workerd-builtins",
+  setup(build) {
+    build.onResolve({ filter: /^cloudflare:/ }, (args) => ({ path: args.path, namespace: "workerd" }));
+    build.onLoad({ filter: /.*/, namespace: "workerd" }, () => ({
+      contents: "export class DurableObject {}; export class WorkerEntrypoint {};",
+      loader: "js",
+    }));
+  },
+};
+
 test("the ops2 shell does not wait for a catalogue it never reads", async () => {
   const outfile = join(runDir, "worker-bundle.mjs");
   await build({
@@ -1437,6 +1459,7 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
       resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+    plugins: [workerdBuiltins],
   });
   const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 

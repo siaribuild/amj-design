@@ -10,6 +10,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -488,4 +489,43 @@ test("every file the container imports is actually copied into the image", async
   assert.match(dockerfile, /CMD \["node", "server\.mjs"\]/);
   assert.ok(copied.has("server.mjs"), "the entry point itself");
   await walk("server.mjs");
+});
+
+test("the plan-parse container is reachable only through its binding, never a route", () => {
+  // Named twice by /security-review as the constraint that makes the container a
+  // blast-radius boundary rather than a second public surface. It holds no
+  // credentials and re-validates everything it is sent, but an internet-reachable
+  // renderer is still a renderer strangers can run.
+  //
+  // Asserted against the config rather than trusted to a comment, because this is
+  // the kind of invariant that is true until someone adds a convenience route.
+  const raw = readFileSync(join(projectRoot, "wrangler.jsonc"), "utf8");
+  const config = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, ""));
+
+  const container = config.containers?.find((c) => c.class_name === "PlanParseContainer");
+  assert.ok(container, "the container entry exists");
+  assert.equal(container.image, "./containers/plan-parse/Dockerfile");
+  // basic (1/4 vCPU, 1 GiB), not lite: an A3 sheet at working DPI does not sit
+  // comfortably in 256 MiB.
+  assert.equal(container.instance_type, "basic");
+
+  const binding = config.durable_objects?.bindings
+    ?.find((b) => b.class_name === "PlanParseContainer");
+  assert.ok(binding, "reachable through a Durable Object binding");
+  // A container-backed DO requires the SQLite storage backend, and a migration
+  // tag is a one-way door — the class cannot be renamed without a fresh tag.
+  assert.ok(
+    config.migrations?.some((m) => m.new_sqlite_classes?.includes("PlanParseContainer")),
+    "declared as a new_sqlite_classes migration",
+  );
+
+  // THE POINT: no route, no service binding, no hostname reaches it.
+  const exposed = JSON.stringify({
+    routes: config.routes, route: config.route,
+    services: config.services, workers_dev: config.workers_dev,
+  });
+  assert.doesNotMatch(
+    exposed, /PlanParseContainer|PLAN_PARSE|plan-parse/,
+    "nothing in routes/services/hostnames names the container",
+  );
 });

@@ -1,3 +1,5 @@
 # The fixture is a customer document. Fetch it per README; never commit it.
 plans.pdf
 openings.json
+# …and never the crops rendered from it, which are pieces of the same drawing.
+*.png
