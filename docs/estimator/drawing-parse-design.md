@@ -376,6 +376,13 @@ what the policy removed. The three cases are different costs and must stay disti
 An orphan is recoverable, a hole is regrettable, and a resurrection is a policy breach. The code
 that gets this wrong looks identical in all three.
 
+**And the table above is not sufficient on its own**, which took three rounds to see. The third
+row — a stage row that never had a crop — is the state a FRESH run is in by construction, so
+gating only on it left every read of a finished quote creating evidence by the front door rather
+than through a replay. The rule is therefore about the QUOTE, not about the row: **no crop is
+created for a project in a terminal state**, whatever the evidence table says. Unknown is not
+terminal, so a broken status query stops evidence for nobody.
+
 *Stated once and not re-argued:* after issue there is no crop behind a line's "from your
 drawing" claim, so a post-issue question about why an opening was priced as it was is answered
 from the line and the plan set, not the evidence. The owner has weighed that and set the point

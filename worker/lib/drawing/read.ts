@@ -116,6 +116,9 @@ export async function readDrawings(env: Env, args: {
   // over, and the customer watches a spinner instead of a count.
   await args.onProgress?.(0, total);
 
+  // Asked once, not per opening: a quote does not finish halfway through a read.
+  const terminal = await isTerminalProject(env, args.projectId);
+
   const pdfBytes = await planBytes(env, args.projectId, args.fileId);
   if (!pdfBytes) {
     // Nothing was read because nothing was opened — but every opening IS
@@ -286,7 +289,10 @@ export async function readDrawings(env: Env, args: {
     // `deleted` means retention removed it deliberately. The reading still
     // stands — it was made from a crop that legitimately existed at the time —
     // but the evidence is gone by policy and must not be re-created.
-    if (evidence.kind === "absent") {
+    // `absent` may be filled — unless the quote is finished, in which case
+    // creating evidence now is the resurrection the retention rule forbids,
+    // arriving by the front door rather than through a replay.
+    if (evidence.kind === "absent" && !terminal) {
       // Keyed on the OPENING under this run, not on a stage id that belongs to
       // someone else's run — which is what produced the orphan in the first
       // place.
@@ -390,6 +396,32 @@ async function recordOutcome(env: Env, aiRunId: string, stageRunId: string | nul
  *  Scoped by id alone because that is what a replay hands back — the row belongs
  *  to a different ai_run by construction, so scoping by this run's id would
  *  return nothing, which is the bug this exists to avoid rather than repeat. */
+/** The states at which a quote is finished and its crops are deleted — the same
+ *  set the retention trigger uses (`0001_customer_core.sql:59`): issued in final
+ *  form, or voided. */
+const TERMINAL_STATES = new Set(["quote_issued", "accepted", "expired", "closed"]);
+
+/**
+ * Is this quote already finished?
+ *
+ * THE ROOT CAUSE of three rounds of replay fixes. Crops are deleted when a quote
+ * reaches a terminal state, and that deletion is the privacy control. But
+ * `absent` — a stage row that never had a crop — still stored one, and a FRESH
+ * run is `absent` by construction, so this was never really about replay: ANY
+ * read on a finished quote wrote new fragments of a customer's drawings, for a
+ * quote whose evidence had just been deleted on purpose.
+ *
+ * Unknown is NOT terminal. A project the query cannot find is not evidence that
+ * it is finished, and defaulting the other way would silently stop storing
+ * evidence for every live quote the moment this query broke.
+ */
+export async function isTerminalProject(env: Env, projectId: string): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT status_customer FROM project WHERE id = ?",
+  ).bind(projectId).first<{ status_customer: string }>().catch(() => null);
+  return row ? TERMINAL_STATES.has(row.status_customer) : false;
+}
+
 export type CropEvidence =
   /** The original run's crop is still there — reuse it, store nothing. */
   | { kind: "reuse"; key: string }

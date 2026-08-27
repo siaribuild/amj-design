@@ -37,7 +37,7 @@ await build({
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
       export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
-      export { readDrawings, recordDrawingProgress, cropEvidenceFor } from ${p("worker/lib/drawing/read.ts")};
+      export { readDrawings, recordDrawingProgress, cropEvidenceFor, isTerminalProject } from ${p("worker/lib/drawing/read.ts")};
       export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
@@ -49,7 +49,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  readDrawings, recordDrawingProgress, cropEvidenceFor,
+  readDrawings, recordDrawingProgress, cropEvidenceFor, isTerminalProject,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
@@ -1881,4 +1881,34 @@ test("crop evidence: reuse it, or store it, but never resurrect what retention d
 
   const noRow = await cropEvidenceFor(withRow(null, false), "s1");
   assert.deepEqual(noRow, { kind: "absent" });
+});
+
+test("no crop is created for a quote that has already reached a terminal state", async () => {
+  // The root cause behind three rounds of replay fixes. `absent` — a row that
+  // never had a crop — still stored one, and a FRESH run is `absent` by
+  // construction, so it was never really about replay at all: ANY read on a
+  // terminal quote wrote new fragments of a customer's drawings, for a quote
+  // whose evidence the retention rule had just finished deleting.
+  //
+  // Terminal is the same set the retention trigger uses (0001_customer_core:59):
+  // issued in final form, or voided.
+  const withStatus = (status) => ({
+    DB: { prepare: () => ({ bind: () => ({ first: async () => (status ? { status_customer: status } : null) }) }) },
+  });
+
+  for (const terminal of ["quote_issued", "accepted", "expired", "closed"]) {
+    assert.equal(await isTerminalProject(withStatus(terminal), "p1"), true, terminal);
+  }
+  for (const live of ["draft", "submitted", "needs_information", "under_review"]) {
+    assert.equal(await isTerminalProject(withStatus(live), "p1"), false, live);
+  }
+  // A project nobody can find is not evidence that it is finished — reading it as
+  // terminal would silently stop storing evidence for every live quote if the
+  // query ever broke.
+  assert.equal(await isTerminalProject(withStatus(null), "p1"), false, "unknown is not terminal");
+
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.match(src, /isTerminalProject/, "and the read consults it");
+  const store = src.slice(src.indexOf("evidence.kind === \"absent\""), src.indexOf("evidence.kind === \"absent\"") + 400);
+  assert.match(store, /terminal/, "the store is gated on it, not just the evidence kind");
 });
