@@ -214,3 +214,42 @@ test("the mismatch quorum is a set-level judgement, not a per-window one", () =>
   // and ask once, never to auto-flip.
   assert.equal(M.MISMATCH_QUORUM, 3);
 });
+
+// ─── Stage 2: the crop box the vision model is actually shown ─────────────────
+// The container renders and crops what it is GIVEN, so this arithmetic is the
+// whole risk: a box that is wrong here shows the model the wrong window, and a
+// wrong read is a priced window nobody drew. Region is the normalised 0..1
+// top-left form already stored in evidence_items.region_json.
+
+test("a region becomes a pixel box at the render scale, padded so the sheet's own labels survive", () => {
+  // 600x400pt page, the middle quarter, rendered at 3x.
+  const box = M.cropBoxFor([0.25, 0.25, 0.5, 0.5], 600, 400, 3);
+  // Unpadded: x 150..300pt and y 100..200pt, so left 450, top 300, 450 x 300 px.
+  // Padding is proportional, so the box grows around the same centre and the
+  // centre does not move — which is what makes the crop still be of the window.
+  assert.ok(box.width > 450 && box.height > 300, "padded outward");
+  const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+  assert.ok(Math.abs(cx - (450 + 450 / 2)) < 1, `centre held on x, got ${cx}`);
+  assert.ok(Math.abs(cy - (300 + 300 / 2)) < 1, `centre held on y, got ${cy}`);
+  assert.ok(Number.isInteger(box.left) && Number.isInteger(box.width), "pixels are integers");
+});
+
+test("a region against the page edge is clamped, never negative and never past the page", () => {
+  // Top-left corner: padding would take it off the sheet.
+  const tl = M.cropBoxFor([0, 0, 0.1, 0.1], 600, 400, 3);
+  assert.equal(tl.left, 0);
+  assert.equal(tl.top, 0);
+  // Bottom-right corner: padding would run past it.
+  const br = M.cropBoxFor([0.9, 0.9, 1, 1], 600, 400, 3);
+  assert.ok(br.left + br.width <= 600 * 3, "inside the page on x");
+  assert.ok(br.top + br.height <= 400 * 3, "inside the page on y");
+});
+
+test("a degenerate or inverted region yields no crop rather than a bad one", () => {
+  // sharp.extract throws on a zero or negative rectangle, and a caller that
+  // guesses one shows the model an arbitrary part of the sheet.
+  assert.equal(M.cropBoxFor([0.5, 0.5, 0.5, 0.5], 600, 400, 3), null, "zero area");
+  assert.equal(M.cropBoxFor([0.6, 0.2, 0.4, 0.8], 600, 400, 3), null, "x inverted");
+  assert.equal(M.cropBoxFor([0.2, 0.9, 0.8, 0.1], 600, 400, 3), null, "y inverted");
+  assert.equal(M.cropBoxFor([0.2, 0.2, 0.8, 0.8], 0, 400, 3), null, "no page");
+});

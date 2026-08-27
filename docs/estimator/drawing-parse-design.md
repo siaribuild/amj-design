@@ -412,8 +412,15 @@ outcome either way.
                    { "operation": "fixed",  "ratio": 0.648 } ],
   "wallOrientation": null, "wallOrientationState": "not_read",
   "dimensionAgreement": { "drawnWidthMm": 2049, "drawnHeightMm": 2104, "agrees": true },
-  "evidence": { "pageNo": 6, "sheetRef": "A5", "region": [0.575, 0.634, 0.624, 0.705] } }
+  "evidence": { "pageNo": 6, "sheetRef": "A5", "region": [0.575, 0.295, 0.624, 0.366] } }
 ```
+
+*The region's y was `0.634, 0.705` here until 2026-08-27, which is page space — y measured up
+from the bottom. `Region` is **top-left**, as `types.ts` states and `evidence_items.region_json`
+stores, because every consumer of it is a browser. The two are 1−y apart, so implementing from
+this example would have produced a crop of whatever sits at the mirror image of the window,
+once, silently. Verified the other way round: `toRegion` → `cropBoxFor` → `sharp.extract` on the
+real sheet returns W1's own frame, chevron and all.*
 
 No `widthMm` on either unit — this sheet does not dimension them and the spec forbids
 back-calculating (§1.2). Orientation is left null **by this pass**, which reads elevations; it

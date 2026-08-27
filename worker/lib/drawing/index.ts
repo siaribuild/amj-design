@@ -28,6 +28,9 @@ export type {
   RecognitionDecision, RecognitionResult,
 } from "./types";
 
+export type { CropBox } from "./crop";
+export { cropBoxFor, MIN_CROP_WIDTH_PX } from "./crop";
+
 export type { SymbolProfile, ApexMeaning, ViewBasis } from "./profile";
 export { DEFAULT_PROFILE, classify, refineOperable, MISMATCH_QUORUM } from "./profile";
 
