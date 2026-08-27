@@ -352,6 +352,18 @@ while crops cut from that same drawing stayed in R2 indefinitely. Fragments of a
 outliving the document. Clearing now sweeps the whole `projects/<id>/` prefix, by prefix rather
 than from D1, because an orphan is exactly what D1 no longer knows about.
 
+**The two prefixes are disjoint on purpose, and that is the control.** Crops live at
+`projects/<id>/crops/<runId>/…` and the stage replay archive at `projects/<id>/runs/<runId>/raw/…`.
+An earlier version swept `runs/` for "crops only" — which would have destroyed the record of what
+the model actually returned, and dangled every `ai_stage_runs.result_r2_key`, at exactly the
+moment the quote became a formal artefact. The retention boundary is now a PREFIX boundary:
+checkable, rather than reasoned about.
+
+| event | prefix swept | keeps |
+|---|---|---|
+| cleared draft | `projects/<id>/` | nothing — its owner threw it away |
+| issued quote | `projects/<id>/crops/` | the stage archive, the markdown, the source documents |
+
 **The triggers, against the real state machine** (`migrations/0001_customer_core.sql:59`):
 `quote_issued` and `accepted` (issued in final form — and since quote revisions were removed,
 issue IS final), `expired` and `closed` (voided). Delete the run's crop prefix on transition

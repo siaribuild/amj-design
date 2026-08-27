@@ -256,15 +256,30 @@ export async function deleteProjectDerived(
    *  rule is that the IMAGES are not needed once a quote is issued. */
   scope: "all" | "crops" = "all",
 ): Promise<void> {
+  // `crops` must NOT be runs/ — that is the stage replay archive (stage.ts:28),
+  // which an issued quote keeps. The two prefixes are deliberately disjoint.
   const prefix = scope === "crops"
-    ? `projects/${safeSeg(projectId)}/runs/`
+    ? `projects/${safeSeg(projectId)}/crops/`
     : `projects/${safeSeg(projectId)}/`;
   let cursor: string | undefined;
+  let swept = 0;
   do {
     const page = await env.FILES.list({ prefix, cursor }).catch(() => null);
-    if (!page) return;
+    if (!page) {
+      // Best-effort is right — this must never fail an issue or a clear — but
+      // stopping silently leaves customer drawing fragments behind with nobody
+      // aware. The caller cannot act on it, so the log is the only place it can
+      // surface, and a retention control that fails quietly is not one.
+      console.warn(`retention: sweep of ${prefix} stopped after ${swept} objects; some remain`);
+      return;
+    }
     const keys = page.objects.map((o) => o.key);
-    if (keys.length) await env.FILES.delete(keys).catch(() => {});
+    if (keys.length) {
+      await env.FILES.delete(keys).catch(() => {
+        console.warn(`retention: ${keys.length} objects under ${prefix} could not be deleted`);
+      });
+      swept += keys.length;
+    }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 }

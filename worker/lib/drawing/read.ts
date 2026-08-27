@@ -376,7 +376,16 @@ async function planBytes(env: Env, projectId: string, fileId: string): Promise<U
  *  the stage layer reads back and re-validates as JSON, and a PNG there breaks
  *  replay. The key travels in `metrics_json` instead. */
 async function storeCrop(env: Env, args: { projectId: string; aiRunId: string }, stageRunId: string, bytes: Uint8Array): Promise<string | undefined> {
-  const key = `projects/${safe(args.projectId)}/runs/${safe(args.aiRunId)}/crops/${safe(stageRunId)}.png`;
+  // NOT under runs/. That prefix belongs to the stage replay archive
+  // (stage.ts:28, `projects/<id>/runs/<runId>/raw/…json`), and the retention rule
+  // deletes crops when a quote is issued while KEEPING the archive — so a
+  // crops-only sweep of runs/ would have destroyed the record of what the model
+  // returned, and dangled every ai_stage_runs.result_r2_key, at exactly the
+  // moment the quote became a formal artefact.
+  //
+  // Crops get their own top-level prefix so the retention boundary IS a prefix
+  // boundary: checkable, rather than reasoned about.
+  const key = `projects/${safe(args.projectId)}/crops/${safe(args.aiRunId)}/${safe(stageRunId)}.png`;
   try {
     await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
     return key;

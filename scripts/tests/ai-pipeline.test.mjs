@@ -1964,8 +1964,8 @@ test("clearing a draft removes the crops cut from the document, not just the doc
       list: async ({ prefix }) => ({
         objects: prefix === "projects/p-1/"
           ? [{ key: "projects/p-1/derived/f1/markdown.md" },
-             { key: "projects/p-1/runs/r1/crops/s1.png" },
-             { key: "projects/p-1/runs/r1/crops/s2.png" }]
+             { key: "projects/p-1/crops/r1/s1.png" },
+             { key: "projects/p-1/crops/r1/s2.png" }]
           : [],
         truncated: false,
       }),
@@ -1973,8 +1973,8 @@ test("clearing a draft removes the crops cut from the document, not just the doc
     },
   };
   await deleteProjectDerived(env, "p-1");
-  assert.ok(deleted.includes("projects/p-1/runs/r1/crops/s1.png"), "crops go");
-  assert.ok(deleted.includes("projects/p-1/runs/r1/crops/s2.png"));
+  assert.ok(deleted.includes("projects/p-1/crops/r1/s1.png"), "crops go");
+  assert.ok(deleted.includes("projects/p-1/crops/r1/s2.png"));
   assert.ok(deleted.includes("projects/p-1/derived/f1/markdown.md"), "and so do the derivatives");
   assert.equal(deleted.length, 3, "and nothing outside the project's own prefix");
 });
@@ -1994,9 +1994,13 @@ test("issuing a quote deletes the crops, and only the crops", async () => {
   const env = {
     FILES: {
       list: async ({ prefix }) => ({
-        objects: prefix === "projects/p-1/runs/"
-          ? [{ key: "projects/p-1/runs/r1/crops/s1.png" }, { key: "projects/p-1/runs/r1/crops/s2.png" }]
-          : [{ key: "projects/p-1/derived/f1/markdown.md" }, { key: "projects/p-1/runs/r1/crops/s1.png" }],
+        objects: prefix === "projects/p-1/crops/"
+          ? [{ key: "projects/p-1/crops/r1/s1.png" }, { key: "projects/p-1/crops/r1/s2.png" }]
+          // The whole-project prefix also holds the markdown derivative and the
+          // stage archive under runs/ — neither of which a crops-only sweep sees.
+          : [{ key: "projects/p-1/derived/f1/markdown.md" },
+             { key: "projects/p-1/runs/r1/raw/opening_composition-abc.json" },
+             { key: "projects/p-1/crops/r1/s1.png" }],
         truncated: false,
       }),
       delete: async (keys) => { deleted.push(...(Array.isArray(keys) ? keys : [keys])); },
@@ -2004,8 +2008,8 @@ test("issuing a quote deletes the crops, and only the crops", async () => {
   };
   await deleteProjectDerived(env, "p-1", "crops");
   assert.deepEqual(deleted.sort(), [
-    "projects/p-1/runs/r1/crops/s1.png", "projects/p-1/runs/r1/crops/s2.png",
-  ], "the crops go and the markdown derivative stays");
+    "projects/p-1/crops/r1/s1.png", "projects/p-1/crops/r1/s2.png",
+  ], "the crops go; the markdown derivative and the stage archive stay");
 });
 
 test("the issue path actually calls it, and cannot be failed by R2", async () => {
@@ -2018,4 +2022,75 @@ test("the issue path actually calls it, and cannot be failed by R2", async () =>
   // reported a missing catch that was 300 lines further down.
   const call = src.slice(src.indexOf("deleteProjectDerived(env"));
   assert.match(call.slice(0, 120), /catch/, "and a failed sweep cannot fail the issue");
+});
+
+test("issuing a quote does NOT delete its extraction archive", async () => {
+  // The crops-only sweep used prefix projects/<id>/runs/, and the stage replay
+  // archive lives at projects/<id>/runs/<runId>/raw/<stage>-<hash>.json — inside
+  // it. Issuing a quote would have destroyed the record of what the model
+  // actually returned, and left every ai_stage_runs.result_r2_key dangling, at
+  // exactly the moment the quote became a formal artefact.
+  //
+  // Crops now have their own top-level prefix, so the retention boundary IS a
+  // prefix boundary and can be checked rather than reasoned about.
+  const listed = [];
+  const deleted = [];
+  const env = {
+    FILES: {
+      list: async ({ prefix }) => {
+        listed.push(prefix);
+        return {
+          objects: prefix === "projects/p-1/crops/"
+            ? [{ key: "projects/p-1/crops/r1/s1.png" }]
+            : [],
+          truncated: false,
+        };
+      },
+      delete: async (keys) => { deleted.push(...(Array.isArray(keys) ? keys : [keys])); },
+    },
+  };
+  await deleteProjectDerived(env, "p-1", "crops");
+  assert.deepEqual(listed, ["projects/p-1/crops/"], "it does not even LIST the archive prefix");
+  assert.deepEqual(deleted, ["projects/p-1/crops/r1/s1.png"]);
+});
+
+test("a crop key sits outside the stage archive's prefix", async () => {
+  // Pinned against both writers, because the whole retention rule now rests on
+  // these two prefixes not overlapping.
+  const stage = await readFile(join(projectRoot, "worker/lib/ai/stage.ts"), "utf8");
+  const read = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  const archive = /projects\/\$\{safeSeg\(projectId\)\}\/runs\//.test(stage);
+  assert.ok(archive, "the archive is under runs/ — if this moved, re-check the sweep");
+  assert.match(read, /projects\/\$\{safe\(args\.projectId\)\}\/crops\//,
+    "and a crop is under crops/, which the archive prefix cannot reach");
+});
+
+test("the sweep follows the cursor, so a large project is not half-deleted", async () => {
+  // R2 list() returns at most 1000 keys a page. A project with more derived
+  // objects than that — 19 openings across several re-parses is not far off —
+  // would have had its first page deleted and the rest left, which is the worst
+  // outcome available: it LOOKS cleared and is not.
+  const pages = {
+    "": { objects: Array.from({ length: 1000 }, (_, i) => ({ key: `projects/p-1/crops/r1/${i}.png` })), truncated: true, cursor: "c1" },
+    c1: { objects: [{ key: "projects/p-1/crops/r1/1000.png" }], truncated: false },
+  };
+  const deleted = [];
+  await deleteProjectDerived({
+    FILES: {
+      list: async ({ cursor }) => pages[cursor ?? ""],
+      delete: async (keys) => { deleted.push(...keys); },
+    },
+  }, "p-1", "crops");
+  assert.equal(deleted.length, 1001, "both pages");
+  assert.ok(deleted.includes("projects/p-1/crops/r1/1000.png"), "including the one past the page boundary");
+});
+
+test("a listing that fails part-way does not report success", async () => {
+  // Best-effort is right for a delete that must not fail an issue — but silently
+  // stopping mid-sweep and saying nothing leaves crops behind with nobody aware.
+  // The caller cannot act on it; the log is the only place it can surface.
+  const src = await readFile(join(projectRoot, "worker/lib/ai/ingest.ts"), "utf8");
+  const fn = src.slice(src.indexOf("export async function deleteProjectDerived"));
+  assert.match(fn.slice(0, 1400), /console\.(warn|error)/,
+    "a sweep that could not finish says so somewhere");
 });
