@@ -622,20 +622,31 @@ all ordinary, and §0's rule already covers them: the list never degrades.
 | surface | shows | never shows |
 |---|---|---|
 | progress | `reading opening 7 of 20` — successes accruing against the real count | anything about openings it could not read |
-| the result | which lines the drawings detailed | an error state; there is no error |
+| the result | which lines the drawings detailed | an error state, a gap count, or a request to supply more |
 | `diagnostic` (`src/data/api.ts`) | real failures — file unreadable, service down | `not read`, ever |
 
 *This reverses an earlier position in this document and the reversal is the point.* The counter
-was going to expose unreads so they could not be hidden. Right instinct, wrong surface. The
-outcome worth surfacing is a **wrong** composition — a priced window nobody drew. A **missing**
-one falls back to the even split, which is exactly today's behaviour and is not news to anyone.
-So the customer is not told; the **reviewer** is, and per line: *this composition came from your
-drawing* versus *this is the default split* is what tells a reviewer where to look. That is the
-same split the RELEASE GATE draws — wrong is a blocker, absent is reported and not gated.
+was going to expose unreads so they could not be hidden. Right instinct, wrong surface. A
+**missing** composition falls back to the even split, which is exactly today's behaviour and is
+not news to anyone; a **wrong** one is a priced window nobody drew.
 
-**And partial coverage is an invitation, not a failure.** "8 of 20 openings were detailed from
-your drawings; adding the remaining elevations will detail the rest" is true, actionable, and
-produces a better quote. It belongs on the result, not the progress view.
+**Which is why the surface is OPS, not the customer** *(owner, 2026-08-27)*. Ops can act on a
+gap: re-run it, correct it, ask the customer for a sheet, or decide the drawing simply does not
+show it. A customer cannot. The provenance a reviewer needs — *this composition came from the
+drawing* versus *this is the default split* — belongs on the ops line, and so does every
+unread and every disagreement the verification stage records.
+
+**Do not assume the reads are right** *(owner, same)*. Everything above about `not read` being
+ordinary is about **gaps**. Parsing **errors** remain possible and always will, and the
+"successes only" rule must never harden into "successes are correct" — that is the assumption
+this whole reader fails by. Ops sees gaps AND disagreements; the customer sees neither, because
+neither is a customer's to resolve.
+
+**No invitation to the customer, either.** An earlier draft of this section proposed telling
+them "adding the remaining elevations will detail the rest". **Withdrawn — it asks for something
+they cannot give.** A customer cannot add a split, an orientation or a head height to an opening
+that did not parse; the product offers them no way to, and inviting an action the interface does
+not support is worse than saying nothing.
 
 **OCR for genuinely scanned sets** remains the container's other job, and `GeometryGap =
 "raster_page"` remains its trigger — but it is no longer the thing that decides whether a
@@ -844,7 +855,7 @@ chain.
    deciding arguments were one coordinate space shared with the second opinion, and keeping R2
    and D1 credentials out of the container.
 7. ~~**Does the customer wait on screen, and at what granularity?**~~ **DECIDED, owner
-   2026-08-27: on screen, per opening, successes only.** See §7. The remaining piece is the
-   reviewer's line-level provenance marker — *from your drawing* versus *default split* — which
-   is a surface that does not exist yet and is the thing that makes a wrong composition
-   findable.
+   2026-08-27: on screen, per opening, successes only.** See §7. What remains is an **ops**
+   surface — provenance per line, plus the unreads and the verification disagreements — and it
+   does not exist yet. It is the only thing that makes a wrong composition findable, so nothing
+   ships unreviewed until it does.
