@@ -1810,3 +1810,25 @@ test("each opening's outcome and its crop key are persisted, or the ops surface 
   assert.match(region.slice(0, 300), /WHERE id=\?\s+AND ai_run_id=\?/,
     "scoped to this run's own row, not just an id");
 });
+
+test("a replayed read reuses its original crop and writes no orphan", async () => {
+  // runStage's cached path returns `stageRunId: hit.id` — the ORIGINAL row, found
+  // by project across ALL runs, so it belongs to a different ai_run. Storing a
+  // crop keyed on it under the CURRENT run wrote a fresh R2 object, and the
+  // outcome update (WHERE id=? AND ai_run_id=?) then matched nothing, silently,
+  // because those two came from different runs. Bytes in R2 with nothing pointing
+  // at them, once per opening per replay.
+  //
+  // Latent today — replay is off unless AI_STAGE_CACHE is "on" — which is exactly
+  // why it needed catching before someone turns it on.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.match(src, /\.cached/, "the replay case is distinguished at all");
+  // From the per-opening stage call to the end of the loop — indexOf("await
+  // advance()") finds an EARLIER one, on the unlocated branch, and slices backwards.
+  const perOpening = src.indexOf("skill: openingComposition");
+  const region = src.slice(perOpening, perOpening + 1800);
+  assert.match(region, /cached/, "…on the per-opening path, where the crop is written");
+  // The guard must gate BOTH the write and the update: either alone still orphans
+  // or still misses.
+  assert.match(src, /if \(!run\.cached\)|run\.cached\s*\?/, "the store is conditional");
+});

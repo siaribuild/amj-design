@@ -265,12 +265,22 @@ export async function readDrawings(env: Env, args: {
     // The crop is stored whatever the reading said. A decline a reviewer cannot
     // look at is a decline they cannot check, and `not_read` is exactly the case
     // where someone will want to see what the model saw.
-    const cropKey = await storeCrop(env, args, run.stageRunId ?? row.tag, crop.bytes);
+    //
+    // EXCEPT ON A REPLAY. runStage's cached path returns the ORIGINAL row's id,
+    // found by project across all runs, so it belongs to a different ai_run.
+    // Writing a crop keyed on it under THIS run produces a fresh R2 object, and
+    // the outcome update — scoped by id AND ai_run_id — then matches nothing,
+    // because those two came from different runs. Bytes with nothing pointing at
+    // them, once per opening per replay. The original run already stored its
+    // crop and recorded its outcome; reuse them.
+    const cropKey = run.cached
+      ? await cachedCropKey(env, run.stageRunId)
+      : await storeCrop(env, args, run.stageRunId ?? row.tag, crop.bytes);
 
     if (!run.ok || !run.data) {
       const outcome: OpeningOutcome = { tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey };
       outcomes.push(outcome);
-      await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
+      if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
     }
@@ -279,7 +289,7 @@ export async function readDrawings(env: Env, args: {
     if (reading.outcome !== "read") {
       const outcome: OpeningOutcome = { tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading };
       outcomes.push(outcome);
-      await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
+      if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
     }
@@ -294,7 +304,7 @@ export async function readDrawings(env: Env, args: {
       disagreements: verified.agrees ? undefined : verified.disagreements,
     };
     outcomes.push(outcome);
-    await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
+    if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
     await advance();
   }
 
@@ -353,6 +363,23 @@ async function recordOutcome(env: Env, aiRunId: string, stageRunId: string | nul
     cropKey: outcome.cropKey ?? null,
     disagreements: outcome.disagreements ?? [],
   }), stageRunId, aiRunId).run().catch(() => {});
+}
+
+/** The crop a previous run already stored for this exact input.
+ *
+ *  Scoped by id alone because that is what a replay hands back — the row belongs
+ *  to a different ai_run by construction, so scoping by this run's id would
+ *  return nothing, which is the bug this exists to avoid rather than repeat. */
+async function cachedCropKey(env: Env, stageRunId: string | null): Promise<string | undefined> {
+  if (!stageRunId) return undefined;
+  const row = await env.DB.prepare(
+    "SELECT metrics_json FROM ai_stage_runs WHERE id=?",
+  ).bind(stageRunId).first<{ metrics_json: string | null }>().catch(() => null);
+  if (!row?.metrics_json) return undefined;
+  try {
+    const key = JSON.parse(row.metrics_json)?.cropKey;
+    return typeof key === "string" ? key : undefined;
+  } catch { return undefined; }
 }
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
