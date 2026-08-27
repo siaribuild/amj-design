@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { makeRunDir, projectRoot, removeRunDir , workerdBuiltins } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("drawing");
@@ -22,6 +22,7 @@ await build({
     resolveDir: projectRoot, sourcefile: "drawing-entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  plugins: [workerdBuiltins],
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -528,4 +529,62 @@ test("the plan-parse container is reachable only through its binding, never a ro
     exposed, /PlanParseContainer|PLAN_PARSE|plan-parse/,
     "nothing in routes/services/hostnames names the container",
   );
+});
+
+// ─── t1: the Worker's side of the wire ────────────────────────────────────────
+// The container parses a JSON header line, a newline, then PDF bytes. Both ends
+// of that framing are load-bearing and neither can be checked by types.
+
+test("a crop request frames as one JSON line, a newline, then the PDF unaltered", () => {
+  const req = M.buildCropRequest(
+    [{ id: "W1", pageNo: 6, box: { left: 1, top: 2, width: 3, height: 4 } }], 3,
+  );
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x0a, 0xff, 0x00, 0x0a, 0x42]);
+  const body = M.encodeCropRequest(req, pdf);
+
+  const nl = body.indexOf(0x0a);
+  const header = JSON.parse(new TextDecoder().decode(body.subarray(0, nl)));
+  assert.equal(header.scale, 3);
+  assert.deepEqual(header.pages[0].crops.map((c) => c.id), ["W1"]);
+  // A PDF contains newlines and 0xFF bytes. The split is on the FIRST newline
+  // only, so the payload must survive byte for byte — including its own.
+  assert.deepEqual([...body.subarray(nl + 1)], [...pdf], "the PDF is not re-encoded");
+  assert.ok(!JSON.stringify(header).includes("gaps") || Array.isArray(header.gaps));
+});
+
+test("a response may only speak about openings that were asked for", () => {
+  const sent = ["W1", "W4"];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+
+  const ok = M.decodeCropResponse({
+    crops: [{ id: "W1", width: 900, height: 918, png }],
+    failures: [{ id: "W4", reason: "crop_failed" }],
+  }, sent);
+  assert.deepEqual(ok.crops.map((c) => c.id), ["W1"]);
+  assert.deepEqual([...ok.crops[0].bytes], [0x89, 0x50, 0x4e, 0x47], "base64 decoded, not passed through");
+  assert.deepEqual(ok.failures, [{ id: "W4", reason: "crop_failed" }]);
+
+  // An id nobody asked for is the container answering a question it was not
+  // asked — a bug or a mixed-up response, and either way it must not be attached
+  // to an opening. W99 is not in `sent`.
+  assert.throws(
+    () => M.decodeCropResponse({ crops: [{ id: "W99", width: 1, height: 1, png }], failures: [] }, sent),
+    /W99/,
+  );
+  // And a reason outside the enum becomes the unknown one, never free text on a
+  // staff surface.
+  const odd = M.decodeCropResponse(
+    { crops: [], failures: [{ id: "W1", reason: "Error: ENOENT /home/node/secret" }] }, sent,
+  );
+  assert.equal(odd.failures[0].reason, "unknown");
+});
+
+test("the upscale floor is the same number on both sides of the wire", async () => {
+  // crop.ts sizes the box; render.mjs resizes the crop. They are in different
+  // languages, different processes and different images, and nothing but this
+  // test makes them agree — a drift means the Worker reasons about a crop the
+  // container did not produce.
+  const render = await readFile(join(projectRoot, "containers/plan-parse/render.mjs"), "utf8");
+  const inContainer = Number(/MIN_CROP_WIDTH_PX\s*=\s*(\d+)/.exec(render)[1]);
+  assert.equal(inContainer, M.MIN_CROP_WIDTH_PX, "one floor, two files");
 });

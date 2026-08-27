@@ -8,6 +8,12 @@ export interface Env {
   KV: KVNamespace;
   /** Static assets binding — serves the built Vite SPA (./dist). */
   ASSETS: Fetcher;
+  /** The plan-parse container, reachable ONLY through this Durable Object —
+   *  there is deliberately no route or service binding for it. It renders a plan
+   *  page and cuts one rectangle per opening, and holds no credentials of its
+   *  own. See worker/lib/drawing/containerClient.ts for the construction rule
+   *  that governs every call. */
+  PLAN_PARSE: DurableObjectNamespace;
   /** 'development' | 'production' — from vars. */
   APP_ENV: string;
   /** Comma-separated email domains allowed to sign in to the ops console. */

@@ -31,6 +31,9 @@ export type {
 export type { CropBox } from "./crop";
 export type { CropIntent, CropPage, CropRequest } from "./container";
 export { buildCropRequest, MAX_CROPS_PER_CALL } from "./container";
+
+export type { CropFailureReason, DecodedCrop, DecodedCropResponse } from "./containerClient";
+export { encodeCropRequest, decodeCropResponse, callPlanParse } from "./containerClient";
 export { cropBoxFor, MIN_CROP_WIDTH_PX } from "./crop";
 
 export type { SymbolProfile, ApexMeaning, ViewBasis } from "./profile";

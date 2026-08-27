@@ -75,6 +75,27 @@ export function commandExists(command, args = ["--version"]) {
   return run(command, args).then(() => true).catch(() => false);
 }
 
+/** Stub workerd's own built-ins so Worker code can be bundled for node.
+ *
+ *  `cloudflare:workers` exists only inside workerd. Nothing here imported one
+ *  until the plan-parse container arrived — `@cloudflare/containers` extends
+ *  `DurableObject` from it — and esbuild cannot resolve it for a node platform,
+ *  which fails the BUILD rather than the assertion.
+ *
+ *  Stubbed rather than marked external: external leaves a real import in the
+ *  output, which then fails at load time in node for the same reason. Nothing in
+ *  these suites instantiates a Durable Object; the class only has to exist. */
+export const workerdBuiltins = {
+  name: "workerd-builtins",
+  setup(build) {
+    build.onResolve({ filter: /^cloudflare:/ }, (args) => ({ path: args.path, namespace: "workerd" }));
+    build.onLoad({ filter: /.*/, namespace: "workerd" }, () => ({
+      contents: "export class DurableObject {}; export class WorkerEntrypoint {};",
+      loader: "js",
+    }));
+  },
+};
+
 export function start(command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: projectRoot,

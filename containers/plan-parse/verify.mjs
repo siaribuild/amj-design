@@ -16,7 +16,20 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { build } from "esbuild";
+import { workerdBuiltins } from "../../scripts/tests/helpers.mjs";
 import { renderCrops } from "./render.mjs";
+
+// @napi-rs/canvas is not a repo dependency — it belongs to the image. Installed
+// here with --no-save, ANY later `npm install` prunes it as extraneous, and the
+// failure then surfaces from inside the container as a page_render_failed with a
+// module-not-found buried in a log. Say it plainly instead.
+try {
+  await import("@napi-rs/canvas");
+} catch {
+  console.error("@napi-rs/canvas is not installed (a later `npm install` prunes a --no-save package).");
+  console.error("  npm install @napi-rs/canvas --no-save");
+  process.exit(1);
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..");
@@ -26,7 +39,10 @@ const OUT = join(here, "out");
 // The Worker's half, compiled the way the test suite compiles it.
 const bundle = await build({
   stdin: { contents: `export * from "./worker/lib/drawing/index.ts";`, resolveDir: repo, loader: "ts" },
+  // The drawing surface now reaches @cloudflare/containers, which imports the
+  // workerd-only `cloudflare:workers`. Same stub the test suites use.
   bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent",
+  plugins: [workerdBuiltins],
 });
 const W = await import("data:text/javascript;base64," + Buffer.from(bundle.outputFiles[0].text).toString("base64"));
 
