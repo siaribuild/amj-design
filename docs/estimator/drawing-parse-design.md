@@ -354,61 +354,40 @@ drawing" claim, so a post-issue question about why an opening was priced as it w
 from the line and the plan set, not the evidence. The owner has weighed that and set the point
 at issue.
 
-### The energy report is authoritative for THERMAL parameters, not architectural ones. Owner, 2026-08-27.
+### The split ladder, and why the report ever outranked the schedule. Owner, 2026-08-27.
 
-**A shipped defect, found by that one sentence.** `energyMap.ts` already splits precedence by
-field — `PRECEDENCE_POLICY_V2.dimensions` correctly puts the architectural schedule at 100 and
-the energy report at 80. But the other bucket is
-`configurationAndPerformance: PRECEDENCE_POLICY_V1`, where the report sits at 100 above the
-schedule's 80, and **configuration is an architectural property sharing a bucket with a thermal
-one**. The comment above it states the error as intent: *"the energy report remains
-authoritative for operation, glazing and thermal performance."* Operation is not the report's to
-decide.
+**The drawings are the contract. The energy report is not. That has never changed.**
 
-It has already bitten. On a real project, `conf_energy_1` records opening **W3** with the report
-saying `fixed` at precedence 100 against the architect's schedule saying `awning` at 80. The
-report won: **an awning became fixed glass** — the cheapest product in the catalogue, and a
-window that does not open.
+The confusion was entirely split-related, and the reason is worth stating because it is not
+obvious from the code: **a schedule typically says `AWNING`, not `awning + fixed`.** It names the
+family of an opening and is silent on how that opening divides. The energy report is not more
+authoritative — it enumerates components, so it carries make-up information the schedule simply
+does not contain. That is why it was given an edge, and given only a schedule it remains a good
+fallback.
 
-*Why it must be fixed before the drawing route merges, not after.* The drawings supply operation
-as well as composition. With the report above them on configuration, a drawing-derived reading is
-discarded at exactly the seam this effort exists to build. Blast radius is as small as it will
-ever be: no file in production is currently typed `energy_report`.
+The ladder for composition and split:
 
-The correction is already written — the output spec's §6 table has been right the whole time.
-`configurationAndPerformance` splits:
+| | source | why it sits there |
+|---|---|---|
+| 1 | **Advanced parsing — the drawings** | the architectural contract. **Wins every time.** |
+| 2 | Energy report | enumerates components; the schedule is silent, so this beats nothing |
+| 3 | Schedule alone (legacy parsing) | states the family, not the make-up |
 
-| bucket | order |
-|---|---|
-| `dimensions` | schedule 100, plans 90, report 80 — **already correct** |
-| `configuration` (operation, composition, count, order) | drawings and schedule above the report |
-| `performance` (Uw, SHGC) | the report is authoritative |
-| specification (glass, colour, hardware) | the schedule table, per output spec §6 |
+Unchanged elsewhere: thermal targets (Uw, SHGC) are the report's; specification — glass, colour
+and hardware — is the schedule table's; and a **stated** unit width still beats a measured ratio.
 
+**Two corrections of my own, recorded so nobody re-derives them from the code.** I read the
+report's rank over the schedule as a shipped defect and cited opening W3 — report `fixed` at
+precedence 100 against the schedule's `awning` at 80 — as the evidence. The drawing reads W3 as a
+single fixed unit with no operable symbol, so **the report was right and the schedule was
+wrong**: that conflict is evidence *for* the ladder, not against it. I then corrected myself to
+"drawings and schedule above the report", which was also wrong — it demoted the report beneath a
+document that does not describe splits at all.
 
+So the change this effort needs is small: **insert the drawing source above the energy report**
+for composition and configuration, and leave the report's existing rank over the schedule alone.
+`PRECEDENCE_POLICY_V2.dimensions` is already correct and is not touched.
 
-W4's comment states `600 | 2000 | 600`; the drawing measures `615 | 1970 | 615`. A person wrote
-the comment and meant it exactly; the drawing is a ±2.5% measurement of it. So a stated
-dimension is never replaced by a measured one.
-
-Precisely: **the drawing wins operations, order, count and division axis; a stated dimension
-wins widths.** Where a comment states widths for only some units, the stated ones stand and the
-rest are scaled to the remainder. Where the two disagree on the *count* — a comment naming two
-units against a drawing showing three — that is a conflict for review, not an arithmetic
-problem, because the comment cannot be applied to a make-up it does not describe.
-
-This amends [plan-parse-output-spec.md](plan-parse-output-spec.md) §6, whose precedence row
-reads "composition, division axis, order — the drawings win" without the width caveat.
-
-**The ratio convention, decided by measurement** (full workings in Part II §5): leaf-span
-normalisation — it distributes joiner and frame material pro rata, landed within 15 mm of W4's
-stated widths where the centreline convention missed by 35, and through the spec's rounding
-rule yields exact partitions.
-
-## 7. Progress and surfaces
-
-Parsing is on the order of **40–95 s serial for 19 openings, ~10–20 s at five concurrent**, so
-the customer waits on screen and must be told what is happening.
 
 ### 7.1 The customer: extend the channel that exists — and no schema rebuild.
 
