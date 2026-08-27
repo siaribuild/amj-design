@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { readdir, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { makeRunDir, projectRoot } from "./helpers.mjs";
+import { makeRunDir, projectRoot, workerdBuiltins } from "./helpers.mjs";
 
 /** Every TypeScript source under a directory, for the structural pins below. */
 async function sourceFilesUnder(dir) {
@@ -37,6 +37,7 @@ await build({
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
       export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
+      export { readDrawings, recordDrawingProgress } from ${p("worker/lib/drawing/read.ts")};
       export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
@@ -44,9 +45,11 @@ await build({
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  plugins: [workerdBuiltins],
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
+  readDrawings, recordDrawingProgress,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
@@ -1594,4 +1597,115 @@ test("A18 fallout: the proposal seed is the best PRICEABLE single, not merely ra
   // And when nothing single-unit can be priced at all there is still no seed —
   // the empty-line branch is the honest outcome, not a line with no price.
   assert.equal(proposalSeed({ ...result, evaluated: [unpriceable] }), null);
+});
+
+test("migration 0059 adds two columns and rebuilds nothing", async () => {
+  // This repo has lost production rows to a table rebuild: the standard SQLite
+  // recipe's DROP fired ON DELETE CASCADE and took 20 order_line and 4 payment
+  // rows with it, after applying cleanly locally — local data had no children to
+  // kill. There are 52 live cascades in this schema.
+  //
+  // The progress counters were nearly a rebuild in disguise: the first design
+  // said "one new progress_stage value", and progress_stage carries a CHECK
+  // constraint (migration 0035), so extending it means rebuilding ai_job_claim.
+  // Two nullable columns carry the same information and touch nothing.
+  const sql = await readFile(join(projectRoot, "migrations/0059_drawing_read_progress.sql"), "utf8");
+  const statements = sql.replace(/--[^\n]*/g, "");         // strip comments, which may discuss anything
+
+  assert.doesNotMatch(statements, /CREATE\s+TABLE/i, "no table is created — that is half the rebuild recipe");
+  assert.doesNotMatch(statements, /\bDROP\b/i, "and nothing is dropped, which is the half that cascades");
+  assert.doesNotMatch(statements, /progress_stage/i,
+    "the CHECK constraint is not touched; extending it would mean rebuilding the table");
+  assert.doesNotMatch(statements, /\bRENAME\b/i);
+
+  const adds = statements.match(/ALTER TABLE ai_job_claim ADD COLUMN/gi) ?? [];
+  assert.equal(adds.length, 2, "exactly two columns");
+  assert.match(statements, /drawings_done\s+INTEGER/i);
+  assert.match(statements, /drawings_total\s+INTEGER/i);
+  assert.doesNotMatch(statements, /NOT\s+NULL/i, "nullable — an existing row has no counts and must not need any");
+
+  // The skill requires the cascade effect be stated in the file itself, so the
+  // next person does not have to re-derive it.
+  assert.match(sql, /children affected/i, "the migration states its cascade effect");
+});
+
+test("the plan bytes are read under the project's own scope, and the container is told nothing else", async () => {
+  // /security-review named this three rounds running as the finding-shaped hole:
+  // callPlanParse takes projectId as an opaque instance key and authorises
+  // nothing, so the R2 read that feeds it is where the account scope must
+  // actually appear. Until this module existed it was a promise in a comment.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+
+  const query = src.slice(src.indexOf("FROM file_asset"), src.indexOf("FROM file_asset") + 200);
+  assert.match(query, /WHERE\s+project_id\s*=\s*\?/, "the file is looked up under the project");
+  assert.match(query, /virus_status\s*=\s*'clean'/, "and only a scanned-clean upload is opened");
+
+  // The R2 key comes from that row, never from anything a caller supplied — an
+  // arbitrary key would read another project's document with this project's id.
+  assert.doesNotMatch(src, /FILES\.get\((?!row|file)/, "R2 is keyed from the scoped row");
+});
+
+test("the drawing counter is written only by the worker that still holds the lease", async () => {
+  // Same token guard every other progress write uses. Without it a job whose
+  // lease expired — and whose work was re-claimed by another worker — keeps
+  // writing counts over the run that actually owns it, and the customer watches
+  // two jobs fight over one bar.
+  let sql = "";
+  let args = [];
+  const env = { DB: { prepare(q) { sql = q; return { bind: (...a) => { args = a; return { run: async () => ({}) }; } }; } } };
+  await recordDrawingProgress(env, {
+    projectId: "p1", sourceGeneration: 3, processingToken: "tok-1", done: 7, total: 20,
+  });
+
+  assert.match(sql, /UPDATE ai_job_claim/);
+  assert.match(sql, /drawings_done=\?/);
+  assert.match(sql, /drawings_total=\?/);
+  assert.match(sql, /WHERE project_id=\?\s+AND source_generation=\?\s+AND status='processing'\s+AND processing_token=\?/,
+    "the full guard, not a subset of it");
+  assert.doesNotMatch(sql, /progress_stage/, "the stage vocabulary is untouched — its CHECK would need a rebuild");
+  assert.deepEqual(args, [7, 20, "p1", 3, "tok-1"]);
+});
+
+test("the counter's denominator is every opening, and an unread one still advances it", async () => {
+  // §7.1. A bar that stalls on the openings it could not read, or quietly
+  // shortens its denominator to reach 100%, is dishonest about work it did not
+  // do — and it is the one place a customer could see the difference.
+  const seen = [];
+  const rows = ["W1", "W2", "D1"].map((tag) => ({ tag, widthMm: 1000, heightMm: 1000, typeText: null }));
+  await readDrawings(
+    { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) }, FILES: { get: async () => null } },
+    { aiRunId: "r1", projectId: "p1", sourceGeneration: 1, fileId: "f1", rows, sheets: [],
+      onProgress: async (done, total) => { seen.push([done, total]); } },
+  );
+  // No document at all: every opening is not_read, and the counter still has to
+  // account for all three rather than reporting nothing to do.
+  const out = await readDrawings(
+    { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) }, FILES: { get: async () => null } },
+    { aiRunId: "r1", projectId: "p1", sourceGeneration: 1, fileId: "f1", rows, sheets: [] },
+  );
+  assert.equal(out.total, 3, "the denominator is the real opening count");
+  assert.equal(out.outcomes.length, 3, "and every opening is accounted for");
+  assert.ok(out.outcomes.every((o) => o.state === "not_read"));
+});
+
+test("the customer's channel carries the counter and nothing about what could not be read", async () => {
+  // §7.2, owner 2026-08-27. `not read` is ordinary — the schedule is
+  // authoritative and the drawings contribute detail, so partial plans are
+  // normal. The customer is shown successes accruing against the real count and
+  // is told nothing about gaps, because a gap is not theirs to resolve: they
+  // cannot add a split, an orientation or a head height to an opening that did
+  // not parse.
+  const route = await readFile(join(projectRoot, "worker/routes/parse.ts"), "utf8");
+  const api = await readFile(join(projectRoot, "src/data/api.ts"), "utf8");
+
+  assert.match(route, /drawings_done/, "the counts are selected");
+  assert.match(route, /drawingsDone/, "and exposed");
+  assert.match(api, /drawingsDone\?:/, "the contract declares them");
+  assert.match(api, /drawingsTotal\?:/);
+
+  // The words that must never appear on a customer response.
+  for (const forbidden of [/not_?read/i, /unlocated/i, /gapCount/i, /unreadTags/i]) {
+    assert.doesNotMatch(route.slice(route.indexOf("progressStage:")), forbidden,
+      `the customer response must not carry ${forbidden}`);
+  }
 });

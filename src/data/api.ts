@@ -591,6 +591,15 @@ export interface ExtractionRun {
     | "preparing_quote"
     | "waiting_capacity"
     | "complete";
+  /** How many of the project's openings have been read from the drawings, and
+   *  how many there are. Present only while a drawing read is running.
+   *
+   *  The denominator is the REAL opening count and an opening that could not be
+   *  read still advances the numerator — a bar that stalls on what it could not
+   *  read, or shortens its denominator to reach 100%, is lying about work it did
+   *  not do. Which openings those were is an ops question, never a customer one. */
+  drawingsDone?: number;
+  drawingsTotal?: number;
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:
