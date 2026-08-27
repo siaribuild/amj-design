@@ -227,6 +227,48 @@ export function textForPages(pages: string[], pageNumbers: number[]): string | n
 
 // ── §7.1 derivative keys ─────────────────────────────────────────────────────
 const safeSeg = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+/**
+ * Delete every AI-derived object for a project: markdown derivatives, and the
+ * crops cut from its drawings.
+ *
+ * A REGISTERED CUSTOMER'S DRAFT LIVES UNTIL THEY CLEAR IT — there is no expiry,
+ * and `expired` is never written by anything — so clearing IS the retention event
+ * for everything derived from that draft, exactly as issuing or voiding is for a
+ * quote.
+ *
+ * Clearing used to delete each uploaded file's own R2 object and its markdown,
+ * and nothing else, on the reasoning that "unreachable R2 objects are lifecycle
+ * cleanup". There is no lifecycle rule. So a customer who asked for their draft
+ * to be cleared had the source plan deleted while crops cut from that same
+ * drawing stayed in R2 indefinitely — fragments of the document, outliving the
+ * document.
+ *
+ * Prefix-swept rather than keyed off D1: an orphan is exactly the thing D1 no
+ * longer knows about, and this is the one moment it can still be found by where
+ * it lives.
+ */
+export async function deleteProjectDerived(
+  env: Env,
+  projectId: string,
+  /** `all` for a cleared draft — its owner threw the whole thing away. `crops`
+   *  for an ISSUED quote, whose source documents are deliberately kept
+   *  (orders.ts:404) and whose markdown derivative is not an image: the owner's
+   *  rule is that the IMAGES are not needed once a quote is issued. */
+  scope: "all" | "crops" = "all",
+): Promise<void> {
+  const prefix = scope === "crops"
+    ? `projects/${safeSeg(projectId)}/runs/`
+    : `projects/${safeSeg(projectId)}/`;
+  let cursor: string | undefined;
+  do {
+    const page = await env.FILES.list({ prefix, cursor }).catch(() => null);
+    if (!page) return;
+    const keys = page.objects.map((o) => o.key);
+    if (keys.length) await env.FILES.delete(keys).catch(() => {});
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+}
+
 export const derivedKeys = (projectId: string, fileId: string) => ({
   markdown: `projects/${safeSeg(projectId)}/derived/${safeSeg(fileId)}/markdown.md`,
 });

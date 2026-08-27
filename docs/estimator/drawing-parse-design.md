@@ -340,6 +340,18 @@ This removes the failure a fixed TTL introduces and which both review passes fla
 expiring *underneath a live, unreviewed quote*, leaving a reviewer holding a provenance claim
 with nothing to check it against.
 
+**A registered customer's draft has no expiry, and that is fine — clearing it is the event.**
+*(Owner, 2026-08-27.)* A draft submitted once and forgotten simply stays; the account owns it.
+`expired` is in the CHECK constraint and is **never written by anything**, so there is no
+time-based path into the terminal set at all, and none is wanted.
+
+What that makes load-bearing is `POST /api/projects/current/clear`. It deleted each uploaded
+file's own R2 object and its markdown derivative and nothing else, deferring to "lifecycle
+cleanup" that does not exist — so a customer who cleared their draft had the source plan deleted
+while crops cut from that same drawing stayed in R2 indefinitely. Fragments of a document
+outliving the document. Clearing now sweeps the whole `projects/<id>/` prefix, by prefix rather
+than from D1, because an orphan is exactly what D1 no longer knows about.
+
 **The triggers, against the real state machine** (`migrations/0001_customer_core.sql:59`):
 `quote_issued` and `accepted` (issued in final form — and since quote revisions were removed,
 issue IS final), `expired` and `closed` (voided). Delete the run's crop prefix on transition
@@ -382,6 +394,24 @@ gating only on it left every read of a finished quote creating evidence by the f
 than through a replay. The rule is therefore about the QUOTE, not about the row: **no crop is
 created for a project in a terminal state**, whatever the evidence table says. Unknown is not
 terminal, so a broken status query stops evidence for nobody.
+
+**The state is checked ONCE, and that is sufficient — from the code, not from reasoning about
+it.** *(Owner, 2026-08-27, correcting me.)* A version of this asked per opening and latched, on
+the theory that a 40–95 second read leaves room for a quote to be issued. It does not: the
+workflow is strictly ordered and takes hours to days.
+
+- every pipeline writer of `status_customer` is guarded on `='draft'`
+  (`jobs.ts:220,231,239,325,677`; `pipeline.ts:1050,1067`; `proposal.ts:166`)
+- `closed` is reachable only **from** `quote_issued` (`orders.ts:412`, guarded on exactly that)
+- `expired` is never written anywhere
+- `quote_issued` needs an ops review of a quote this read has to finish producing first
+
+So a read runs only on a draft project, and no terminal transition can land mid-read. The single
+check catches one thing — a read that somehow starts against an already-finished project — which
+is cheap to ask once and worth asking, because the cost of being wrong is creating fragments of a
+customer's drawings for a quote whose evidence was deliberately deleted. Twenty extra reads a job
+to guard an impossible transition is the speculative defence this repo's guardrails exist to
+prevent.
 
 *Stated once and not re-argued:* after issue there is no crop behind a line's "from your
 drawing" claim, so a post-issue question about why an opening was priced as it was is answered

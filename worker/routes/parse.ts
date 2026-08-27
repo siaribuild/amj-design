@@ -12,7 +12,7 @@ import {
 } from "../lib/parse";
 import { uuid } from "../lib/util";
 import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
-import { derivedKeys } from "../lib/ai/ingest";
+import { derivedKeys, deleteProjectDerived } from "../lib/ai/ingest";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -254,6 +254,16 @@ parse.post("/projects/current/clear", async (c) => {
     c.env.FILES.delete(f.r2_key),
     c.env.FILES.delete(derivedKeys(project.id, f.id).markdown),
   ])).catch(() => { /* D1 is authoritative; unreachable R2 objects are lifecycle cleanup */ });
+  // …and everything ELSE derived from those documents, which the per-file
+  // deletes above cannot reach. Crops cut from a plan live under the project's
+  // own prefix, not beside the file they came from, so clearing a draft deleted
+  // the source drawing and left fragments of it in R2 indefinitely.
+  //
+  // A registered customer's draft lives until they clear it — there is no expiry
+  // and `expired` is never written by anything — so clearing IS the retention
+  // event for everything derived from it. The "lifecycle cleanup" the comment
+  // above defers to does not exist.
+  await deleteProjectDerived(c.env, project.id);
   return c.json({ ok: true });
 });
 

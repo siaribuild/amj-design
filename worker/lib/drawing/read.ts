@@ -116,7 +116,26 @@ export async function readDrawings(env: Env, args: {
   // over, and the customer watches a spinner instead of a count.
   await args.onProgress?.(0, total);
 
-  // Asked once, not per opening: a quote does not finish halfway through a read.
+  // ── Is the quote already finished? Asked ONCE ─────────────────────────────
+  //
+  // Defence in depth on a privacy rule, not a load-bearing guard, and the
+  // difference is worth stating because a previous version of this asked per
+  // opening and latched — twenty extra reads a job against a transition that
+  // cannot occur.
+  //
+  // IT CANNOT OCCUR, from the code rather than from reasoning about it. Every
+  // pipeline writer of `status_customer` is guarded on `='draft'` (jobs.ts:220,
+  // 231, 239, 325, 677; pipeline.ts:1050, 1067; proposal.ts:166), so a read runs
+  // only while a project is draft. `closed` is reachable only FROM
+  // `quote_issued` (orders.ts:412, guarded on exactly that), `expired` is never
+  // written at all, and `quote_issued` requires an ops review of a quote that
+  // only exists once this read has finished. The workflow is hours to days and
+  // strictly ordered.
+  //
+  // So this catches one thing: a read somehow started against an
+  // already-finished project. That is cheap to check once and worth checking,
+  // because the cost of being wrong is creating fragments of a customer's
+  // drawings for a quote whose evidence was deliberately deleted.
   const terminal = await isTerminalProject(env, args.projectId);
 
   const pdfBytes = await planBytes(env, args.projectId, args.fileId);
@@ -289,8 +308,8 @@ export async function readDrawings(env: Env, args: {
     // `deleted` means retention removed it deliberately. The reading still
     // stands — it was made from a crop that legitimately existed at the time —
     // but the evidence is gone by policy and must not be re-created.
-    // `absent` may be filled — unless the quote is finished, in which case
-    // creating evidence now is the resurrection the retention rule forbids,
+    // `absent` may be filled — unless the quote is already finished, in which
+    // case creating evidence now is the resurrection the retention rule forbids,
     // arriving by the front door rather than through a replay.
     if (evidence.kind === "absent" && !terminal) {
       // Keyed on the OPENING under this run, not on a stage id that belongs to
@@ -396,9 +415,20 @@ async function recordOutcome(env: Env, aiRunId: string, stageRunId: string | nul
  *  Scoped by id alone because that is what a replay hands back — the row belongs
  *  to a different ai_run by construction, so scoping by this run's id would
  *  return nothing, which is the bug this exists to avoid rather than repeat. */
-/** The states at which a quote is finished and its crops are deleted — the same
- *  set the retention trigger uses (`0001_customer_core.sql:59`): issued in final
- *  form, or voided. */
+/** The states at which a quote is finished and its crops are deleted: issued in
+ *  final form, or voided.
+ *
+ *  `0001_customer_core.sql:59` is a CHECK CONSTRAINT, not a trigger, and an
+ *  earlier version of this comment called it one. There is no `CREATE TRIGGER`
+ *  anywhere in `migrations/` and there never was — the deletion is application
+ *  code, in `issue.ts` (crops only; the source documents are deliberately kept)
+ *  and in the draft-clear route (the whole derived prefix; its owner threw it
+ *  away). Both were written after this comment claimed they existed, which is
+ *  how a comment describing a control nobody built survives review: it names a
+ *  real line in a real file.
+ *
+ *  `expired` is in the CHECK and is written by nothing. It stays here because
+ *  the constraint admits it, not because anything produces it. */
 const TERMINAL_STATES = new Set(["quote_issued", "accepted", "expired", "closed"]);
 
 /**

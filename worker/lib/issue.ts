@@ -8,6 +8,7 @@ import { uuid } from "./util";
 import { referralDiscountState } from "./referral-discount";
 import { captureRecommendationOutcomes, type IssuedCartLine } from "./ai/outcomes";
 import { createLearningExample, refreshLearningExampleEligibility } from "./ai/examples";
+import { deleteProjectDerived } from "./ai/ingest";
 
 export type IssueResult =
   | { ok: true; total: number; goods: number; delivery: number }
@@ -290,6 +291,20 @@ export async function issueQuote(env: Env, projectId: string): Promise<IssueResu
   const outbox = await env.DB.prepare("SELECT id FROM learning_outbox WHERE project_id = ?")
     .bind(projectId).first<{ id: string }>();
   if (outbox) await processLearningOutbox(env, outbox.id);
+  // ── The crops have done their job ──────────────────────────────────────────
+  // Owner's retention rule: the images are not needed once a quote is issued in
+  // its final version. Crops are fragments of a customer's drawings, and the
+  // quote is now the formal artefact.
+  //
+  // CROPS ONLY. The source documents are deliberately kept — staff and any order
+  // still rely on them (orders.ts:404) — and a markdown derivative is not an
+  // image, so neither is swept here. A cleared DRAFT is different and takes the
+  // whole prefix: its owner threw it away.
+  //
+  // Best-effort, like the learning capture above it: a failed R2 delete must
+  // never fail an issue. The quote is the business record; the crop was evidence
+  // for a decision that has now been made.
+  await deleteProjectDerived(env, projectId, "crops").catch(() => {});
   // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
   // proposal vs the human-approved outcome, retrieval-eligible immediately,
   // training-gated. Best-effort — issuing must never fail because capture did.

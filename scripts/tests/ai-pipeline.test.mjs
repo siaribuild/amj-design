@@ -27,7 +27,7 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
+      export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, deleteProjectDerived, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
@@ -48,7 +48,7 @@ await build({
   plugins: [workerdBuiltins],
 });
 const {
-  sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
+  sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, deleteProjectDerived, MIN_IMAGE_DIM,
   readDrawings, recordDrawingProgress, cropEvidenceFor, isTerminalProject,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
@@ -1910,5 +1910,112 @@ test("no crop is created for a quote that has already reached a terminal state",
   const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
   assert.match(src, /isTerminalProject/, "and the read consults it");
   const store = src.slice(src.indexOf("evidence.kind === \"absent\""), src.indexOf("evidence.kind === \"absent\"") + 400);
-  assert.match(store, /terminal/, "the store is gated on it, not just the evidence kind");
+  assert.match(store, /!terminal/,
+    "the store is gated on the quote's state, not just the evidence kind");
+});
+
+test("the terminal check is asked once, because the state cannot change during a read", async () => {
+  // A previous version asked per opening and latched, on the reasoning that a
+  // 40-95 second read leaves room for a quote to be issued. The owner pushed
+  // back, and the code agrees with him: the workflow is strictly ordered and
+  // takes hours to days.
+  //
+  //   every pipeline writer of status_customer is guarded on ='draft'
+  //     (jobs.ts:220,231,239,325,677; pipeline.ts:1050,1067; proposal.ts:166)
+  //   'closed' is reachable only FROM 'quote_issued'  (orders.ts:412)
+  //   'expired' is never written anywhere
+  //   'quote_issued' needs an ops review of a quote this read has to finish first
+  //
+  // So a read runs only on a draft project and no terminal transition can land
+  // mid-read. Twenty extra reads a job to guard an impossible transition is the
+  // speculative defence this codebase's guardrails exist to prevent.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  // Bounded to the loop BODY. Slicing to end-of-file swept in isTerminalProject's
+  // own definition, which sits below it, and reported a re-read that was not there.
+  const loopStart = src.indexOf("for (const row of args.rows)");
+  const loop = src.slice(loopStart, src.indexOf("return { outcomes, total, warnings };", loopStart));
+  assert.doesNotMatch(loop, /isTerminalProject/,
+    "the state is NOT re-read per opening — it cannot have changed");
+
+  // The one check stays: cheap, once, and defence in depth on a privacy rule, so
+  // a read that somehow starts against a finished project still stores nothing.
+  const before = src.slice(0, src.indexOf("for (const row of args.rows)"));
+  assert.match(before, /isTerminalProject/, "and it is still asked once, up front");
+  // Why it is safe to ask only once is written down, so this is not re-raised.
+  assert.match(src, /orders\.ts:412|='draft'|='draft'/,
+    "with the evidence in the file rather than in a commit message");
+});
+
+
+test("clearing a draft removes the crops cut from the document, not just the document", async () => {
+  // The owner's point, and a real hole. `POST /api/projects/current/clear`
+  // deletes each file_asset's own R2 object and its markdown derivative — and
+  // nothing else. Crops live under projects/<id>/runs/<runId>/crops/, so a
+  // customer who cleared their draft had the source plan deleted while fragments
+  // cut from that same drawing stayed in R2 indefinitely.
+  //
+  // The handler's comment leans on "unreachable R2 objects are lifecycle
+  // cleanup". There is no lifecycle rule. A registered customer's draft lives
+  // until they clear it, so clearing IS the retention event for everything
+  // derived from it.
+  const deleted = [];
+  const env = {
+    FILES: {
+      list: async ({ prefix }) => ({
+        objects: prefix === "projects/p-1/"
+          ? [{ key: "projects/p-1/derived/f1/markdown.md" },
+             { key: "projects/p-1/runs/r1/crops/s1.png" },
+             { key: "projects/p-1/runs/r1/crops/s2.png" }]
+          : [],
+        truncated: false,
+      }),
+      delete: async (keys) => { deleted.push(...(Array.isArray(keys) ? keys : [keys])); },
+    },
+  };
+  await deleteProjectDerived(env, "p-1");
+  assert.ok(deleted.includes("projects/p-1/runs/r1/crops/s1.png"), "crops go");
+  assert.ok(deleted.includes("projects/p-1/runs/r1/crops/s2.png"));
+  assert.ok(deleted.includes("projects/p-1/derived/f1/markdown.md"), "and so do the derivatives");
+  assert.equal(deleted.length, 3, "and nothing outside the project's own prefix");
+});
+
+test("issuing a quote deletes the crops, and only the crops", async () => {
+  // The other half of the retention rule, which was documented as decided and
+  // never built: /security-review found four comment blocks and a `deleted`
+  // field resting on a "retention trigger" that is a CHECK constraint, with no
+  // CREATE TRIGGER anywhere and no R2 cleanup on any terminal transition.
+  //
+  // Scope matters here in a way it does not for clear. A cleared draft was
+  // thrown away by its owner, so everything derived from it goes. An ISSUED
+  // quote is a live business record whose source documents are deliberately
+  // KEPT (orders.ts:404) — the owner's rule is that the IMAGES are not needed
+  // once a quote is issued, and a markdown derivative is not an image.
+  const deleted = [];
+  const env = {
+    FILES: {
+      list: async ({ prefix }) => ({
+        objects: prefix === "projects/p-1/runs/"
+          ? [{ key: "projects/p-1/runs/r1/crops/s1.png" }, { key: "projects/p-1/runs/r1/crops/s2.png" }]
+          : [{ key: "projects/p-1/derived/f1/markdown.md" }, { key: "projects/p-1/runs/r1/crops/s1.png" }],
+        truncated: false,
+      }),
+      delete: async (keys) => { deleted.push(...(Array.isArray(keys) ? keys : [keys])); },
+    },
+  };
+  await deleteProjectDerived(env, "p-1", "crops");
+  assert.deepEqual(deleted.sort(), [
+    "projects/p-1/runs/r1/crops/s1.png", "projects/p-1/runs/r1/crops/s2.png",
+  ], "the crops go and the markdown derivative stays");
+});
+
+test("the issue path actually calls it, and cannot be failed by R2", async () => {
+  // "A failed R2 delete cannot fail an issue or a void. Log and sweep; the quote
+  // is the business record, the crop is evidence for it." — the design, which
+  // until now nothing implemented.
+  const src = await readFile(join(projectRoot, "worker/lib/issue.ts"), "utf8");
+  assert.match(src, /deleteProjectDerived/, "issuance sweeps the crops");
+  // Anchored on the CALL, not the import — indexOf found the import line and
+  // reported a missing catch that was 300 lines further down.
+  const call = src.slice(src.indexOf("deleteProjectDerived(env"));
+  assert.match(call.slice(0, 120), /catch/, "and a failed sweep cannot fail the issue");
 });
