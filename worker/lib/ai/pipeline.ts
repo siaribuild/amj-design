@@ -781,8 +781,22 @@ export async function runAiExtraction(
         // came from the plan now keeps its units; the report's components ride
         // along in `components` so the thermal targets they carry can still be
         // attached to whatever the plan produced (plans do not carry targets).
+        // EVERY ARCHITECTURAL SOURCE KEEPS ITS UNITS, not just the comment. This
+        // guard named `schedule_comment` alone, so a drawing-derived hint fell
+        // into the else and was silently replaced by the report — the very bug
+        // the comment above says was already fixed once, waiting for the second
+        // source to exist.
+        //
+        // The ladder (owner, 2026-08-27): the drawings are the architectural
+        // contract and win every time; the energy report outranks a schedule
+        // ALONE, because a schedule says "AWNING" and is silent on how the
+        // opening divides while the report enumerates components. Either way the
+        // report's components ride along so the per-unit thermal targets it
+        // carries can attach to whatever the architectural source produced —
+        // plans do not have them.
         const planHint = splitHints.get(o.externalRef);
-        if (planHint && planHint.source === "schedule_comment") {
+        const architectural = planHint?.source === "drawing" || planHint?.source === "schedule_comment";
+        if (planHint && architectural) {
           planHint.components = componentUnits;
         } else {
           splitHints.set(o.externalRef, {

@@ -1017,3 +1017,22 @@ test("a decline is not verified — there is nothing to disagree with", () => {
     assert.deepEqual(d.disagreements, []);
   }
 });
+
+test("the energy report does not overwrite a drawing-derived hint — the guard, pinned at the source", async () => {
+  // The latent defect the architect found, timed to bite exactly when this
+  // effort landed. pipeline.ts guarded only source === "schedule_comment", so a
+  // drawing hint would fall into the else and be silently REPLACED by the energy
+  // report — the same bug the comment above it says was already fixed once.
+  //
+  // Read from the source because applyEnergyReport needs a whole extraction model
+  // to invoke. The assertion that matters is that the guard is not a single-source
+  // equality, which is what the bug WAS.
+  const src = await readFile(join(projectRoot, "worker/lib/ai/pipeline.ts"), "utf8");
+  const guard = src.slice(src.indexOf("const planHint = splitHints.get("), src.indexOf("const planHint = splitHints.get(") + 500);
+  assert.match(guard, /"drawing"/, "a drawing-derived hint survives the report");
+  assert.match(guard, /"schedule_comment"/, "and so does a comment-derived one");
+  assert.doesNotMatch(
+    guard, /planHint\.source === "schedule_comment"\s*\)/,
+    "not a single-source equality — that is the shape that lost the drawing",
+  );
+});
