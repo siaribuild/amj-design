@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 // each other on the dev server: the checklist only exists once a poll round trip
 // has set the phase, and the loser reports "element not found", which reads like
 // a missing feature rather than a slow one. That wrong diagnosis already cost
-// two deleted tests once. The counted case lives in drawing-progress-counted.spec.ts.
+// two deleted tests once. The absent case lives in drawing-progress.spec.ts.
 
 // The drawing-read checklist, in a browser.
 //
@@ -37,21 +37,23 @@ async function runningWith(page: import("@playwright/test").Page, run: Record<st
   await page.goto("/quote");
 }
 
-test("a run with no drawings has no drawing step to render as done", async ({ page }) => {
-  // Codex: the step was in the checklist unconditionally, so on a schedule-only
-  // project it ticked the moment the stage moved past it — claiming work that
-  // never happened. A tick is a claim.
-  //
-  // This was dropped once as "does not render", which was a WRONG DIAGNOSIS: the
-  // 10s default was simply too short for the poll's round trip. Restored with
-  // the same explicit wait as above.
+test("the drawing read is its own step, counted, and silent about what it could not read", async ({ page }) => {
   await runningWith(page, {
-    id: "r-plain", status: "running", startedAt: new Date().toISOString(),
-    progressStage: "matching_and_pricing",
+    id: "r-read", status: "running", startedAt: new Date().toISOString(),
+    progressStage: "building_envelope", drawingsDone: 7, drawingsTotal: 20,
   });
+  // The checklist only appears once the poll has completed a round trip and set
+  // the phase — the default 10s is marginal for that on a cold dev server, and
+  // the failure reads as "element not found", which looks like a missing feature
+  // rather than a slow one.
   const steps = page.locator("ol").first();
   await expect(steps).toBeVisible({ timeout: 30_000 });
-  await expect(steps).toContainText("Matching products and prices");
-  await expect(steps).not.toContainText("Extracting opening details");
-  await expect(steps).not.toContainText("openings found");
+  await expect(steps).toContainText("Extracting the schedule · 20 openings found");
+  await expect(steps).toContainText("Extracting opening details · 7 of 20");
+  // A gap is not a customer's to resolve — they cannot add a split, an
+  // orientation or a head height to an opening that did not parse.
+  for (const forbidden of [/unread/i, /could not be read/i, /upload the remaining/i]) {
+    await expect(page.getByText(forbidden)).toHaveCount(0);
+  }
 });
+
