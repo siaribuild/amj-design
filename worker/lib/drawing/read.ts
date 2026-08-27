@@ -169,9 +169,21 @@ export async function readDrawings(env: Env, args: {
     id: `sheet:${s.pageNo}`,
     pageNo: s.pageNo,
     box: {
+      // FLOOR, NOT CEIL, and the difference is the whole bug that stopped the
+      // first real read: ceil(1190.52 x 3) is 3572, the renderer produced 3571,
+      // and sharp.extract refuses a rectangle larger than its image — so all
+      // four sheets failed and every opening resolved unread.
+      //
+      // Floor can never exceed the render. If the renderer floors too, this is
+      // exact; if it rounds, this is at most one pixel short, which costs a row
+      // of margin and nothing else. Ceil can only ever be exact or fatal.
+      //
+      // The container also clamps (clampToImage) — that is the general fix, for
+      // any box against any render. This is the arithmetic simply not being
+      // wrong in the first place.
       left: 0, top: 0,
-      width: Math.ceil(s.pageWidthPt * RENDER_SCALE),
-      height: Math.ceil(s.pageHeightPt * RENDER_SCALE),
+      width: Math.floor(s.pageWidthPt * RENDER_SCALE),
+      height: Math.floor(s.pageHeightPt * RENDER_SCALE),
     },
   }));
   while (pendingSheets.length) {
