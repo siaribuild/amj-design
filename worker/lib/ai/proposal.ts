@@ -438,6 +438,13 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
 
     if (canApply) {
       const review = JSON.stringify({
+        // This line HAS a product and a price now. If an earlier generation
+        // could not find one, its sentence is retired here rather than left to
+        // accumulate — a re-parse that succeeds was reported still showing
+        // "could not select and exactly price a suitable configuration" on a
+        // priced, ready line (opening W1, 2026-08-28). The two fields below
+        // already retire themselves this way; product simply never did.
+        product: null,
         thermalRecommendation: thermalBandNotMet
           ? "We selected the closest available glazing to the energy requirement and will confirm the final glass and performance during technical review."
           : reviewRequired

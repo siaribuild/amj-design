@@ -1222,6 +1222,54 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.ok(pid, "project resolved");
     });
 
+    await t.test("a reason the customer has already answered does not survive their edit", async () => {
+      // Reported from production, 2026-08-28, on opening D1: the AI could not
+      // select a product, so the line carried "We found this opening but could
+      // not select and exactly price a suitable configuration." The customer
+      // then picked one themselves and it priced — and the line went on saying
+      // we could not price it, beside a price.
+      //
+      // The cause is that every writer PATCHES review_json. json_patch adds a
+      // key and never removes one, so reasons accumulate: a sentence written
+      // about a configuration that no longer exists outlives it. The owner's
+      // objection is the right one — "this was true initially, but I just
+      // selected one myself" — a review reason is a claim about the CURRENT
+      // state of the line, not a log of everything that was ever true of it.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "stale-reason@example.com");
+      const line = {
+        code: "D1", location: "Entry", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const serverId = saved.body.items[0].id;
+
+      // Exactly how the proposal's no-product branch leaves a line.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET origin='ai', line_total=NULL, status='incomplete', `
+        + `review_json='{"product":"We found this opening but could not select and exactly price a suitable configuration.",`
+        + `"thermalRecommendation":"We selected the closest available glazing to the energy requirement and will confirm the final glass and performance during technical review."}' `
+        + `WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      const edited = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...line, serverId, options: { ...line.options, colour: "Dover White" } }] },
+      });
+      const after = edited.body.items[0];
+      assert.ok(after.lineTotal > 0, "the customer's own selection prices");
+      assert.equal(after.review?.product, undefined,
+        "the sentence saying we could not price this opening is gone once the customer has priced it");
+      assert.equal(after.review?.thermalRecommendation, undefined,
+        "a recommendation about the AI's glazing choice does not outlive that choice");
+      // What must NOT be lost: staff still confirm the customer's substitution.
+      assert.ok(after.review?.customerConfigurationChanged, "the edit still raises the technical flag");
+      assert.equal(after.status, "Needs review");
+    });
+
     // The role-based RBAC test that lived here is gone. Roles were flattened
     // (owner decision, 2026-07-28): a role-less staffer is no longer blocked from
     // payments, PII or files, so asserting that they are would assert the opposite

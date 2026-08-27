@@ -36,7 +36,7 @@ await build({
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
-      export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
+      export { proposalVerdict, proposalSeed, publishAiProposal } from ${p("worker/lib/ai/proposal.ts")};
       export { readDrawings, recordDrawingProgress, cropEvidenceFor, isTerminalProject } from ${p("worker/lib/drawing/read.ts")};
       export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
@@ -55,7 +55,7 @@ const {
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
   computeThermalBand,
-  proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
+  proposalVerdict, publishAiProposal, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
 
 // The dial every pipeline test runs against. TB-18: it deliberately does NOT
@@ -2142,4 +2142,78 @@ test("an unfilled slot becomes an unread opening, never a shifted one", async ()
   assert.doesNotMatch(src, /ordered\.filter/, "compaction would misattribute readings");
   assert.match(src, /ordered\.map\(\(o, i\) => o \?\?/, "a gap is named, not closed up");
   assert.match(src, /no_outcome_recorded/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A REVIEW REASON IS A CLAIM ABOUT THE LINE AS IT STANDS
+//
+// Reported on opening W1, 2026-08-28: a re-parse priced the opening, the line
+// went `ready`, and it still carried "We found this opening but could not select
+// and exactly price a suitable configuration." beside its price.
+//
+// The cause is that every writer PATCHES review_json, and json_patch adds keys
+// without ever removing one — so a sentence about a generation that failed
+// outlives the generation that succeeded. `thermalRecommendation` and
+// `energyMapping` already retire themselves by patching null; `product` never
+// did, so it was the one reason that could not be taken back.
+// ─────────────────────────────────────────────────────────────────────────────
+function proposalDb({ reviewJson }) {
+  const calls = [];
+  const first = (sql) => {
+    if (/FROM project WHERE id/.test(sql)) return { ai_generation: 3, status_customer: "draft" };
+    if (/FROM quote_line WHERE id/.test(sql)) {
+      return { id: "q1", origin: "ai", edited_fields: null, line_total: null, review_json: reviewJson, edit_version: 7 };
+    }
+    if (/MAX\(position\)/.test(sql)) return { n: 0 };
+    return null;
+  };
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) { calls.push({ sql, args }); return this; },
+    async first() { return first(sql); },
+    async run() { return { success: true }; },
+    async all() { return { results: [] }; },
+  });
+  return { calls, env: { DB: { prepare, async batch() { return []; } } } };
+}
+
+test("a proposal that CAN price the opening retires the reason saying it could not", async () => {
+  const priced = {
+    candidate: { slug: "amj80-series-awning-window", sanityProductId: "sp1", catalogueRevision: "r1" },
+    selectedVariant: null,
+    price: { ok: true, total: 1234, pricingPolicyVersion: "pp1" },
+    outcome: { status: "meets" },
+    candidateOutcome: { rank: 1, fit: { fits: true } },
+  };
+  const { calls, env } = proposalDb({
+    reviewJson: JSON.stringify({
+      product: "We found this opening but could not select and exactly price a suitable configuration.",
+    }),
+  });
+  await publishAiProposal(env, {
+    projectId: "p1", aiRunId: "run1", buildingModelId: "bm1",
+    sourceGeneration: 3, sourceManifestHash: "h1",
+    lines: [{
+      openingId: "o1", quoteLineId: "q1", externalRef: "W1",
+      opening: { widthMm: 900, heightMm: 1200, qty: 1, family: "awning" },
+      result: {
+        selected: priced, evaluated: [priced], selectedSplit: null,
+        selection: { competingTier: "meets", requirement: { absent: false } },
+        catalogueVersion: "cv1", selectionVersion: "sv1",
+      },
+    }],
+  });
+
+  const update = calls.find((c) => /UPDATE quote_line SET\s+product_slug/.test(c.sql));
+  assert.ok(update, "the priced line is written back to the cart");
+  // The review payload is the argument that is valid JSON with review keys.
+  const patch = update.args
+    .filter((a) => typeof a === "string" && a.startsWith("{"))
+    .map((a) => { try { return JSON.parse(a); } catch { return null; } })
+    .find((o) => o && "thermalRecommendation" in o);
+  assert.ok(patch, "the update patches review_json");
+  assert.equal("product" in patch, true,
+    "the patch must SAY something about `product` — silence leaves the old sentence in place");
+  assert.equal(patch.product, null,
+    "null is how json_patch deletes a key: the line has a product and a price, so the reason is retired");
 });

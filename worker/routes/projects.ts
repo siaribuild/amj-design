@@ -555,8 +555,23 @@ projects.put("/current/lines", async (c) => {
           // warning, and a warning excuses an absent price.
           f.line_total == null ? "incomplete" : "technical_review",
           i,
+          // A null DELETES the key (json_patch is an RFC 7396 merge patch, and
+          // proposal.ts already relies on that to retire its own reasons).
+          //
+          // Both of these describe the AI'S configuration, and the customer has
+          // just replaced it: "we could not select and exactly price a suitable
+          // configuration" printed beside the price the customer's own selection
+          // produced, and a note about glazing the AI chose that is no longer
+          // fitted. Reported on opening D1, 2026-08-28 — "this was true
+          // initially, but I just selected one myself".
+          //
+          // A review reason is a claim about the line as it stands, not a log of
+          // everything ever true of it. What replaces them is written in the same
+          // patch, so the line is never left with no reason at all.
           JSON.stringify({
             customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
+            product: null,
+            thermalRecommendation: null,
           }),
           edited,
           stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
