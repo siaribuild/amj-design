@@ -279,8 +279,14 @@ export async function readDrawings(env: Env, args: {
     // quote state. In all three the key comes back undefined, and simply
     // shrugging leaves the reading with no evidence at all. An orphan is
     // recoverable; a hole is not.
-    let cropKey = run.cached ? await cachedCropKey(env, run.stageRunId) : undefined;
-    if (!cropKey) {
+    const evidence: CropEvidence = run.cached
+      ? await cropEvidenceFor(env, run.stageRunId)
+      : { kind: "absent" };
+    let cropKey = evidence.kind === "reuse" ? evidence.key : undefined;
+    // `deleted` means retention removed it deliberately. The reading still
+    // stands — it was made from a crop that legitimately existed at the time —
+    // but the evidence is gone by policy and must not be re-created.
+    if (evidence.kind === "absent") {
       // Keyed on the OPENING under this run, not on a stage id that belongs to
       // someone else's run — which is what produced the orphan in the first
       // place.
@@ -384,21 +390,39 @@ async function recordOutcome(env: Env, aiRunId: string, stageRunId: string | nul
  *  Scoped by id alone because that is what a replay hands back — the row belongs
  *  to a different ai_run by construction, so scoping by this run's id would
  *  return nothing, which is the bug this exists to avoid rather than repeat. */
-async function cachedCropKey(env: Env, stageRunId: string | null): Promise<string | undefined> {
-  if (!stageRunId) return undefined;
+export type CropEvidence =
+  /** The original run's crop is still there — reuse it, store nothing. */
+  | { kind: "reuse"; key: string }
+  /** The row NAMES a crop whose object is gone: retention removed it when the
+   *  quote reached a terminal state. Do not re-create it. */
+  | { kind: "deleted" }
+  /** The row never had a crop — it predates metrics_json, or the store failed.
+   *  This one may be filled. */
+  | { kind: "absent" };
+
+/**
+ * What evidence, if any, a replayed reading already has.
+ *
+ * THE MIDDLE CASE IS THE POINT. Crops die when their quote is issued or voided —
+ * the owner's retention decision, and the privacy control behind it: fragments
+ * of a customer's drawings stop existing. Storing a fresh crop whenever the
+ * cached key failed to resolve re-created exactly what the policy had removed,
+ * so a re-run after issue resurrected it, silently.
+ *
+ * A row that NAMES a key whose object is gone was deleted on purpose. A row that
+ * names no key never had one. Only the second may be filled.
+ */
+export async function cropEvidenceFor(env: Env, stageRunId: string | null): Promise<CropEvidence> {
+  if (!stageRunId) return { kind: "absent" };
   const row = await env.DB.prepare(
     "SELECT metrics_json FROM ai_stage_runs WHERE id=?",
   ).bind(stageRunId).first<{ metrics_json: string | null }>().catch(() => null);
-  if (!row?.metrics_json) return undefined;
+  if (!row?.metrics_json) return { kind: "absent" };
   let key: unknown;
-  try { key = JSON.parse(row.metrics_json)?.cropKey; } catch { return undefined; }
-  if (typeof key !== "string") return undefined;
-  // A key is not evidence — the object it names has to still be there. Crops die
-  // when their quote reaches a terminal state, so a re-run after issue finds the
-  // row and not the bytes, and a dangling key is worse than none: the ops surface
-  // would offer a reviewer a crop that 404s.
+  try { key = JSON.parse(row.metrics_json)?.cropKey; } catch { return { kind: "absent" }; }
+  if (typeof key !== "string" || !key) return { kind: "absent" };
   const still = await env.FILES.head(key).catch(() => null);
-  return still ? key : undefined;
+  return still ? { kind: "reuse", key } : { kind: "deleted" };
 }
 
 /** Complete the record of the run that produced a reading, when a replay had to

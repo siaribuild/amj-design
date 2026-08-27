@@ -37,7 +37,7 @@ await build({
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
       export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
-      export { readDrawings, recordDrawingProgress } from ${p("worker/lib/drawing/read.ts")};
+      export { readDrawings, recordDrawingProgress, cropEvidenceFor } from ${p("worker/lib/drawing/read.ts")};
       export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
@@ -49,7 +49,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  readDrawings, recordDrawingProgress,
+  readDrawings, recordDrawingProgress, cropEvidenceFor,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
@@ -1833,22 +1833,52 @@ test("a replayed read reuses its original crop and writes no orphan", async () =
   assert.match(src, /if \(!run\.cached\)|run\.cached\s*\?/, "the store is conditional");
 });
 
-test("a replay whose original crop is gone stores one, rather than losing the evidence", async () => {
-  // The first fix traded an orphan for a hole. Reusing the cached row's crop key
-  // is right when there IS one — but a replay can hit a row that predates
-  // metrics_json entirely, whose crop store failed, or whose crop the retention
-  // rule has since deleted at a terminal quote state. In all three the key comes
-  // back undefined and nothing was stored either, so the reading arrived with no
-  // evidence at all. An orphan is recoverable; a hole is not.
+test("a replay that never had a crop gets one; a replay whose crop was deleted does not", async () => {
+  // This test previously asserted the opposite of its second half — that a
+  // missing crop should always be re-stored — and that was wrong. Crops are
+  // deleted deliberately when a quote reaches a terminal state, so re-creating
+  // one on the next run resurrects evidence the retention policy had removed.
+  // Kept as a rewrite rather than a patch because the superseded rule is worth
+  // being able to see: an orphan is recoverable, a hole is not, and a
+  // resurrection is a policy breach — they are three different costs.
   const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
 
-  // Existence, not just a key: a key pointing at a deleted object is a dangling
-  // reference the ops surface would 404 on, which is worse than no key.
+  // Existence is checked, so a key pointing at nothing is never handed on: the
+  // ops surface would offer a reviewer a crop that 404s.
   assert.match(src, /FILES\.head\(/, "the reused key is checked to still resolve");
 
-  // And the fallback actually stores, rather than shrugging.
-  const region = src.slice(src.indexOf("cachedCropKey"), src.indexOf("cachedCropKey") + 1200);
-  assert.match(src.slice(src.indexOf("run.cached")), /storeCrop/,
-    "a replay with no usable crop still stores one");
-  assert.ok(region.length > 0);
+  // Storing happens ONLY on the absent branch — never on `deleted`.
+  const region = src.slice(src.indexOf("const evidence: CropEvidence"), src.indexOf("const evidence: CropEvidence") + 900);
+  assert.match(region, /evidence\.kind === "absent"/, "the store is gated on absent, not on falsiness");
+  assert.doesNotMatch(region, /"deleted"[\s\S]{0,200}storeCrop/, "deleted never leads to a store");
+});
+
+test("crop evidence: reuse it, or store it, but never resurrect what retention deleted", async () => {
+  // Three cases, and the middle one is the whole point. Crops die when their
+  // quote is issued or voided — that is the owner's retention decision and the
+  // privacy control behind it: fragments of a customer's drawings stop existing.
+  //
+  // The previous fix stored a fresh crop whenever the cached key did not resolve,
+  // which re-created precisely the evidence the policy had just removed. A
+  // re-run after issue would have resurrected it, silently.
+  //
+  // A row that NAMES a key whose object is gone was deleted. A row that names no
+  // key never had one. Those are different, and only the second may be filled.
+  const withRow = (metrics, objectExists) => ({
+    DB: { prepare: () => ({ bind: () => ({ first: async () => (metrics === null ? null : { metrics_json: metrics }) }) }) },
+    FILES: { head: async () => (objectExists ? { key: "x" } : null) },
+  });
+
+  const reuse = await cropEvidenceFor(withRow('{"cropKey":"k1"}', true), "s1");
+  assert.deepEqual(reuse, { kind: "reuse", key: "k1" });
+
+  const deleted = await cropEvidenceFor(withRow('{"cropKey":"k1"}', false), "s1");
+  assert.deepEqual(deleted, { kind: "deleted" },
+    "a named key whose object is gone was removed on purpose, and must not be re-created");
+
+  const never = await cropEvidenceFor(withRow('{"state":"read"}', false), "s1");
+  assert.deepEqual(never, { kind: "absent" }, "a row that never had a crop may be given one");
+
+  const noRow = await cropEvidenceFor(withRow(null, false), "s1");
+  assert.deepEqual(noRow, { kind: "absent" });
 });

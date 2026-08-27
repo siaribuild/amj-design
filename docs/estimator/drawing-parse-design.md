@@ -361,6 +361,21 @@ primary mechanism is an application delete on transition. Three constraints foll
    the zero-wrong-readings bar rests on. Labelling copies the crop to a separate prefix outside
    both the event delete and the backstop rule.
 
+**A deleted crop must not come back.** *(2026-08-27, found in review.)* The retention rule
+removes crops at a terminal quote state, and that deletion is the privacy control — fragments of a
+customer's drawings stop existing. A re-run after issue therefore finds the stage row and not the
+bytes, and anything that treats "the crop is missing" as "store a fresh one" resurrects exactly
+what the policy removed. The three cases are different costs and must stay distinguishable:
+
+| the row | the object | what it means | what may be done |
+|---|---|---|---|
+| names a key | present | evidence survives | reuse it |
+| names a key | **gone** | **retention deleted it** | **nothing — never re-create** |
+| names no key | — | never had one | store one |
+
+An orphan is recoverable, a hole is regrettable, and a resurrection is a policy breach. The code
+that gets this wrong looks identical in all three.
+
 *Stated once and not re-argued:* after issue there is no crop behind a line's "from your
 drawing" claim, so a post-issue question about why an opening was priced as it was is answered
 from the line and the plan set, not the evidence. The owner has weighed that and set the point
