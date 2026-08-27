@@ -138,7 +138,9 @@ The platform has no step 2 at all today. It runs one path for everything, and th
 
 ## 2. The evidence
 
-All measured against the real `20016_Lot 312 Banjo Boulevard_Plans.pdf`.
+All measured against the reference plan set — job 20016, a two-storey detached house, 14
+pages, producer "Microsoft: Print To PDF". It is a customer document and is identified here
+by its job number only; `scripts/research/plan-geometry/README.md` says how to fetch it.
 
 **W1, decoded from page 6 (Elevation A):**
 

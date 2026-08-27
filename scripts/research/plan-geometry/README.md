@@ -23,14 +23,24 @@ directory, not the shell's cwd, so the command below works from the repo root.
 
 ```bash
 cd scripts/research/plan-geometry
-npx wrangler r2 object get "apertly-files/project/560e1909-0370-44c6-96de-a896e9cb3945/b9d9c14f-f19a-42d6-81cf-95445a6b5a58-20016_Lot 312 Banjo Boulevard_Plans.pdf" --remote --file plans.pdf
+npx wrangler d1 execute apertly-db --remote --json --command   "SELECT f.r2_key, f.project_id FROM file_asset f WHERE f.filename LIKE '%_Plans.pdf' ORDER BY f.created_at DESC LIMIT 5"
+npx wrangler r2 object get "apertly-files/<r2_key from above>" --remote --file plans.pdf
 ```
 
+**The identifiers are looked up, not written down.** An earlier version of this
+file pasted the bucket path verbatim, which put a real customer's site address
+and the project and file UUIDs into the repository — the `.gitignore` beside it
+excludes the document while the pointer identifying it sat two lines above. The
+document is the customer's; so is the address in its filename.
+
 `openings.json` is the schedule the platform has already extracted — the input
-the whole method depends on being authoritative. Regenerate it with:
+the whole method depends on being authoritative. Regenerate it with the
+`project_id` the query above returned:
 
 ```bash
-npx wrangler d1 execute apertly-db --remote --json --command "SELECT external_ref AS tag, width_mm AS w, height_mm AS h, operation_type AS op FROM opening_instance WHERE project_id='p_draft' ORDER BY LENGTH(external_ref), external_ref"
+npx wrangler d1 execute apertly-db --remote --json --command   "SELECT external_ref AS tag, width_mm AS w, height_mm AS h, operation_type AS op
+   FROM opening_instance WHERE project_id='<project_id>'
+   ORDER BY LENGTH(external_ref), external_ref"
 ```
 
 Take the `results` array from that output verbatim as `openings.json`.

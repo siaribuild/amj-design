@@ -135,6 +135,49 @@ test("page routing: one architectural set can supply plan context and a schedule
   ], roles.schedule), /page 2[\s\S]*WINDOW SCHEDULE/);
 });
 
+test("page routing: a real title block splits Scale from its value, and the drawing sheets still route", () => {
+  // Shaped from the reference set, structure preserved and identifying text
+  // removed. The title block is the point: a CAD title block emits its header
+  // LABELS as one run and their VALUES as another, so "Scale" is followed by the
+  // date, never by "1 : 100". Every real drawing sheet in that 14-page set
+  // scored ONE plan signal and the only two pages scoring two were a 1:20 stair
+  // detail and an NCC compliance sheet, both of which say "SECTION" and carry an
+  // inline "SCALE 1:20". The router therefore selected exactly the two wrong
+  // pages and rejected all four right ones, and the plan skill was handed a
+  // stair detail on every architectural upload.
+  const TITLE_BLOCK = "Proposed Residence Sheet Date Scale Drawn by Job No. 01/05/2025 1 : 100 A5";
+  const pages = [
+    `FIRST FLOOR PLAN ${TITLE_BLOCK} W7 S08 W8 S08 W9 S08 W10 S08 W11 S08 W12 S08`,
+    `ELEVATION A ELEVATION B ${TITLE_BLOCK}`,
+    `ELEVATION C ELEVATION D WINDOW SCHEDULE ${TITLE_BLOCK}`,
+    `RAMP (86MM STEPDOWN) SCALE 1:20 SECTION THROUGH GARAGE ${TITLE_BLOCK}`,
+    `NCC 2022 COMPLIANCE SECTION J ${TITLE_BLOCK} SCALE 1:20`,
+  ];
+  const roles = classifyPageRoles(pages, "architectural-set.pdf");
+  // The floor plan and both elevation sheets, and NOT the 1:20 construction
+  // detail or the NCC sheet — which are the two the old rule picked.
+  assert.deepEqual(roles.plans, [1, 2, 3]);
+});
+
+test("page routing: counting opening tags is bounded, over text a customer controls", () => {
+  // classifyPageRoles runs over text extracted from an uploaded PDF, and every
+  // other signal in it uses RegExp.test — constant memory. Counting tags with
+  // `hay.match(/g)` was not: it materialises one string per match BEFORE the Set
+  // dedupes them, and a page decompressing to a megabyte of "w1 w1 w1 ..." fits
+  // easily inside the upload cap. Measured at +21 MB of retained heap for a
+  // single 1.2 MB page, against a 128 MB Worker.
+  //
+  // Both properties are asserted because either alone is passable: one distinct
+  // tag is not three however often it is printed, AND finding that out must not
+  // cost the heap.
+  const flood = `GROUND FLOOR PLAN ${"w1 ".repeat(400_000)}`;
+  const before = process.memoryUsage().heapUsed;
+  const roles = classifyPageRoles([flood]);
+  const grewMb = (process.memoryUsage().heapUsed - before) / 1e6;
+  assert.deepEqual(roles.plans, [], "one distinct tag is not three, however many times it appears");
+  assert.ok(grewMb < 12, `tag counting retained ${grewMb.toFixed(1)} MB; it must not accumulate matches`);
+});
+
 test("ingestion queries scan-clean files only; legacy skipped files never reach AI", async () => {
   let query = "";
   const env = {
