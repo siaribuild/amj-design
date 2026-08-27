@@ -274,3 +274,51 @@ test("a region outside 0..1 is refused, because clamping it would silently mean 
   // The full page is in range and legitimate — a sheet holding one drawing.
   assert.ok(M.cropBoxFor([0, 0, 1, 1], 600, 400, 3), "0..1 inclusive is valid");
 });
+
+// ─── Stage 2: what the Worker asks the container for ──────────────────────────
+// The container is a dumb pair of hands: it renders pages and cuts rectangles.
+// Every judgement — which openings, which pages, what to do about one that has
+// no box — is made here, where it can be tested without Docker.
+
+test("crops are grouped by page, so a page is rendered once however many openings sit on it", () => {
+  const req = M.buildCropRequest([
+    { id: "W1", pageNo: 6, box: { left: 10, top: 10, width: 50, height: 50 } },
+    { id: "W4", pageNo: 7, box: { left: 20, top: 20, width: 50, height: 50 } },
+    { id: "W14", pageNo: 6, box: { left: 30, top: 30, width: 50, height: 50 } },
+  ], 3);
+  assert.equal(req.pages.length, 2, "two pages, three crops");
+  assert.deepEqual(req.pages.map((p) => p.pageNo), [6, 7], "ascending, so a retry is byte-identical");
+  assert.deepEqual(req.pages[0].crops.map((c) => c.id), ["W1", "W14"]);
+  assert.equal(req.scale, 3);
+});
+
+test("an opening with no box is a gap, and never reaches the container", () => {
+  // cropBoxFor returns null when it will not vouch for a region. Sending that on
+  // as a default rectangle is exactly the substitution it refused to make.
+  const req = M.buildCropRequest([
+    { id: "W1", pageNo: 6, box: { left: 10, top: 10, width: 50, height: 50 } },
+    { id: "D1", pageNo: 6, box: null },
+  ], 3);
+  assert.deepEqual(req.pages[0].crops.map((c) => c.id), ["W1"]);
+  assert.deepEqual(req.gaps, ["D1"], "reported, not dropped silently");
+});
+
+test("a request with nothing to crop is not a request", () => {
+  const req = M.buildCropRequest([{ id: "D1", pageNo: 6, box: null }], 3);
+  assert.equal(req.pages.length, 0);
+  assert.deepEqual(req.gaps, ["D1"]);
+  assert.equal(req.pages.length, 0, "nothing to ask for: no round trip, no cold start, no bill");
+});
+
+test("the number of crops in one call is bounded", () => {
+  // The response carries PNG bytes for every crop. A document with hundreds of
+  // openings would build a response the Worker cannot hold in 128 MB, so the
+  // caller batches rather than discovering the limit in production.
+  const many = Array.from({ length: M.MAX_CROPS_PER_CALL + 5 }, (_, i) => ({
+    id: `W${i}`, pageNo: 6, box: { left: 0, top: 0, width: 10, height: 10 },
+  }));
+  const req = M.buildCropRequest(many, 3);
+  const total = req.pages.reduce((n, p) => n + p.crops.length, 0);
+  assert.equal(total, M.MAX_CROPS_PER_CALL);
+  assert.equal(req.deferred.length, 5, "the rest is named, for the next call");
+});
