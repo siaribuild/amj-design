@@ -744,6 +744,23 @@ export async function runAiExtraction(
     technicalReviewReasons.set(externalRef, current);
   };
 
+  // ── What the two documents disagree about ──────────────────────────────────
+  // verifyReading exists because a wrong reading is well-formed and plausible,
+  // and the only thing that catches one is a second source contradicting it.
+  // Computing that and then not routing it is the same as not checking: the
+  // reading was used as a hint either way, and the human was never told.
+  //
+  // REPRESENTED, NEVER RESOLVED. The split is still proposed — every proposed
+  // composite is reviewed, and the drawing remains the best evidence about
+  // shape — but the contradiction goes on the line with it. W3 on the reference
+  // set is the live case: the schedule calls it AWNING and no leaf in the
+  // drawing carries an operating symbol, and one of those two is wrong.
+  for (const [tag, outcome] of drawingReadings) {
+    for (const d of outcome.disagreements ?? []) {
+      flagOpening(tag, `drawing vs schedule (${d.check}): ${d.detail}`);
+    }
+  }
+
   // WS5: propose a composite split where the schedule COMMENT describes one. The
   // model extracts a structured `split` from the free-text comment (flexible to
   // wording); the deterministic parser is the fallback. The proposal is ALWAYS

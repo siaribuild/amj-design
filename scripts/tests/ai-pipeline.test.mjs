@@ -1770,3 +1770,43 @@ test("a set with more elevation sheets than one call allows renders all of them"
     "the sheet render honours what one call could not take");
   assert.match(render, /while|for \(/, "and loops until there is nothing left");
 });
+
+test("a drawing that disagrees with its schedule row reaches review, not the floor", async () => {
+  // verifyReading's entire purpose: a wrong reading is well-formed and plausible,
+  // and the ONLY thing that catches one is a second source disagreeing. The
+  // pipeline computed the disagreement and then used `reading` without ever
+  // looking at `disagreements` — so W3, where the schedule says AWNING and the
+  // drawing shows no operating symbol, would have become a hint exactly as if
+  // the two agreed.
+  //
+  // Represented, never resolved (house rule): the split is still proposed,
+  // because every proposed composite is reviewed anyway and the drawing is still
+  // the best evidence about SHAPE. What must not happen is the human never being
+  // told the two documents contradict each other.
+  const src = await readFile(join(projectRoot, "worker/lib/ai/pipeline.ts"), "utf8");
+  assert.match(src, /disagreements/, "the pipeline reads them");
+  const region = src.slice(src.indexOf("disagreements"));
+  assert.match(region.slice(0, 600), /flagOpening/,
+    "and routes them to the review flag, which is how ops sees anything");
+});
+
+test("each opening's outcome and its crop key are persisted, or the ops surface has nothing to read", async () => {
+  // t5's slice: "store each crop PNG … with the key in metrics_json". The crop
+  // was written to R2 and the key went nowhere — it reached hint.raw, which stops
+  // at SplitCandidate.note and is never persisted. So the evidence existed in R2
+  // with nothing pointing at it, and t8's readings surface queries exactly this
+  // column.
+  //
+  // The comment in read.ts already SAID the key travels in metrics_json, which is
+  // the trap this repo has been bitten by before: a comment describing behaviour
+  // the live path does not have.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  assert.match(src, /UPDATE ai_stage_runs/, "the stage row is updated");
+  assert.match(src, /metrics_json\s*=\s*\?/, "with the metrics column");
+  // result_r2_key is the replay archive the stage layer reads back and
+  // re-validates as JSON. A PNG key there breaks replay.
+  assert.doesNotMatch(src, /result_r2_key\s*=/, "and never the replay archive's key");
+  const region = src.slice(src.indexOf("UPDATE ai_stage_runs"));
+  assert.match(region.slice(0, 300), /WHERE id=\?\s+AND ai_run_id=\?/,
+    "scoped to this run's own row, not just an id");
+});

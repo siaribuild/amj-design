@@ -268,27 +268,33 @@ export async function readDrawings(env: Env, args: {
     const cropKey = await storeCrop(env, args, run.stageRunId ?? row.tag, crop.bytes);
 
     if (!run.ok || !run.data) {
-      outcomes.push({ tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey });
+      const outcome: OpeningOutcome = { tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey };
+      outcomes.push(outcome);
+      await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
     }
 
     const reading = run.data;
     if (reading.outcome !== "read") {
-      outcomes.push({ tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading });
+      const outcome: OpeningOutcome = { tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading };
+      outcomes.push(outcome);
+      await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
       continue;
     }
 
     const verified = verifyReading({ row, reading });
-    outcomes.push({
+    const outcome: OpeningOutcome = {
       tag: row.tag,
       state: "read",
       reading,
       cropKey,
       // Surfaced, never resolved — the reviewer decides.
       disagreements: verified.agrees ? undefined : verified.disagreements,
-    });
+    };
+    outcomes.push(outcome);
+    await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
     await advance();
   }
 
@@ -323,6 +329,30 @@ async function storeCrop(env: Env, args: { projectId: string; aiRunId: string },
     // Evidence that could not be stored is not a reading that did not happen.
     return undefined;
   }
+}
+
+/** Write what happened to this opening onto its own stage row.
+ *
+ *  `metrics_json`, NOT `result_r2_key` — that key is the replay archive the
+ *  stage layer reads back and re-validates as JSON, and a PNG key there breaks
+ *  replay. This column exists on ai_stage_runs (0016) and nothing wrote it until
+ *  now, which meant the crop sat in R2 with nothing pointing at it: the ops
+ *  readings surface queries exactly this.
+ *
+ *  Scoped by ai_run_id as well as id. An id alone is a primary key and would be
+ *  correct, but every other write in this pipeline carries its run and a
+ *  narrower guard costs nothing. */
+async function recordOutcome(env: Env, aiRunId: string, stageRunId: string | null, outcome: OpeningOutcome): Promise<void> {
+  if (!stageRunId) return;
+  await env.DB.prepare(
+    "UPDATE ai_stage_runs SET metrics_json=? WHERE id=? AND ai_run_id=?",
+  ).bind(JSON.stringify({
+    tag: outcome.tag,
+    state: outcome.state,
+    subReason: outcome.subReason ?? null,
+    cropKey: outcome.cropKey ?? null,
+    disagreements: outcome.disagreements ?? [],
+  }), stageRunId, aiRunId).run().catch(() => {});
 }
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
