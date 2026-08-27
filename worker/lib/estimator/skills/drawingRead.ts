@@ -98,23 +98,26 @@ export const elevationInventory: Skill<{
     // Capped: a sheet has tens of windows, and a runaway list is a model looping
     // rather than a house with four hundred of them.
     for (const w of p.windows.slice(0, 120)) {
+      // A volunteered tag refuses the SHEET, the same way a family name refuses a
+      // composition. Pass A is told not to identify anything; one that does may
+      // be shaping its regions and panel counts around what it believes each
+      // window is, and dropping the word keeps that reading.
+      if (!w || typeof w !== "object" || !onlyKeys(w, WINDOW_KEYS)) return null;
       // isRegion, not a local copy: one definition, in the module that owns Region.
-      if (!isRegion(w?.region)) continue;
+      if (!isRegion(w.region)) continue;
       const region = w.region as Region;                       // a bad box drops its window, not the sheet
-      const panelCount = numOrNull(w?.panelCount, 1, 12);
+      const panelCount = numOrNull(w.panelCount, 1, 12);
       if (panelCount === null) continue;
-      const flags = Array.isArray(w?.panelsWithSymbol)
+      const flags = Array.isArray(w.panelsWithSymbol)
         ? w.panelsWithSymbol.slice(0, panelCount).map((f: unknown) => f === true)
         : [];
       // A per-panel answer that does not cover the panels is not an answer about
       // them. Padding it would invent "no symbol", which reads downstream as
       // fixed glass — the cheapest product in the catalogue.
       if (flags.length !== panelCount) continue;
-      // Rebuilt field by field: anything else the model attached — a tag, a
-      // guess at which opening this is — does not survive.
       windows.push({
-        region,
-        proportion: numOrNull(w?.proportion, 0.01, 100),
+        region: w.region,
+        proportion: numOrNull(w.proportion, 0.01, 100),
         panelCount: Math.round(panelCount),
         panelsWithSymbol: flags,
       });
@@ -212,6 +215,30 @@ function ratioOrNull(v: unknown): number | null {
   return Math.round(v * 1000) / 1000;
 }
 
+/** The exact keys a reading may carry. Anything else means the model answered a
+ *  question it was not asked, and the response is REFUSED rather than trimmed.
+ *
+ *  Trimming was the first version and it is the wrong instinct. The family is the
+ *  case that matters: AMJ makes no hopper, so a chevron cannot settle
+ *  awning-versus-hopper and the drawing is never allowed to claim one. A model
+ *  that volunteers `operation: "awning"` has ignored an explicit instruction, and
+ *  the rest of its answer is then of unknown provenance — it may be deriving
+ *  `operable` from the schedule's type text rather than from a symbol it can see,
+ *  which destroys the independence that makes agreement with the geometric
+ *  decoder worth anything. Discarding the word hides the fault and keeps the
+ *  reading.
+ *
+ *  Refusing returns null, which is invalid_output: the runner's repair pass gets
+ *  one attempt and the opening is otherwise unread. That is the right cost — a
+ *  prompt violation is a bad response, not a fact about the drawing, and must not
+ *  be recorded as `not_read` where it would look like one. */
+const UNIT_KEYS: readonly string[] = ["operable", "ratio", "widthMm"];
+const WINDOW_KEYS: readonly string[] = ["region", "proportion", "panelCount", "panelsWithSymbol"];
+const READING_KEYS: readonly string[] = ["outcome", "divisionAxis", "units", "reason"];
+
+const onlyKeys = (o: object, allowed: readonly string[]): boolean =>
+  Object.keys(o).every((k) => allowed.includes(k));
+
 /** How far the ratios may miss 1.0. Three decimals across up to a dozen units
  *  is a few thousandths of accumulated rounding; beyond that the model is not
  *  describing a partition of one opening. */
@@ -250,6 +277,9 @@ export const openingComposition: Skill<{
       return { outcome: p.outcome, reason: strCap(p.reason, 200) ?? "" };
     }
     if (p.outcome !== "read" || !Array.isArray(p.units)) return null;
+    // A family volunteered at the top level is the same violation as one on a
+    // unit, and `additionalProperties: false` in the schema is advisory only.
+    if (!onlyKeys(p, READING_KEYS)) return null;
 
     const axis = p.divisionAxis === "horizontal" ? "horizontal"
       : p.divisionAxis === "vertical" ? "vertical" : null;
@@ -257,14 +287,12 @@ export const openingComposition: Skill<{
 
     const units: CompositionUnit[] = [];
     for (const u of p.units.slice(0, 12)) {
+      if (!u || typeof u !== "object" || !onlyKeys(u, UNIT_KEYS)) return null;
       // Zero is not a unit, and a ratio outside 0..1 is not a share of anything.
-      const ratio = ratioOrNull(u?.ratio);
+      const ratio = ratioOrNull(u.ratio);
       if (ratio === null) return null;
-      if (typeof u?.operable !== "boolean") return null;
-      // Field by field, so a smuggled `operation: "awning"` cannot survive: the
-      // catalogue publishes no hopper, so the chevron cannot settle the family
-      // and the drawing is never allowed to claim one.
-      units.push({ operable: u.operable, ratio, widthMm: numOrNull(u?.widthMm, 1, 20000) });
+      if (typeof u.operable !== "boolean") return null;
+      units.push({ operable: u.operable, ratio, widthMm: numOrNull(u.widthMm, 1, 20000) });
     }
     if (units.length === 0) return null;
 

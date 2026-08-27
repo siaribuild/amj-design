@@ -663,25 +663,44 @@ test("a composition reading distinguishes NOT STATED from NOT READ", () => {
   assert.ok(!("units" in sneaky), "a decline carries no reading");
 });
 
-test("the drawing claims operable-or-not, never a family", () => {
+test("a reading that names a family is REFUSED, not quietly stripped", () => {
   // Design §5, the owner's ruling: AMJ makes no hopper, so awning-vs-hopper is a
-  // distinction this catalogue cannot express and the chevron cannot settle. The
-  // family comes from the schedule, which is text. A model that volunteers one
-  // must not have it believed.
-  const read = S.openingComposition.validate({
-    outcome: "read",
-    divisionAxis: "vertical",
-    units: [
-      { operable: true, ratio: 0.352, operation: "awning" },
-      { operable: false, ratio: 0.648, type: "fixed glass" },
-    ],
-  });
-  assert.equal(read.outcome, "read");
-  assert.deepEqual(read.units.map((u) => u.operable), [true, false]);
-  for (const u of read.units) {
-    assert.ok(!("operation" in u) && !("type" in u) && !("family" in u),
-      "no family name survives validation");
+  // distinction this catalogue cannot express and a chevron cannot settle. The
+  // family comes from the schedule, which is text.
+  //
+  // Stripping the extra key and keeping the rest was the first version, and it is
+  // wrong. A model that answers a question it was explicitly told not to answer
+  // has not followed the prompt, and the rest of its reading is then of unknown
+  // provenance — in particular it may be deriving `operable` from the schedule's
+  // "OFFSET AWNING" rather than from a chevron it can see, which destroys the
+  // independence that makes agreement with the geometric decoder mean anything.
+  // Discarding the word keeps the symptom out of the data and the fault out of
+  // sight.
+  for (const unit of [
+    { operable: true, ratio: 0.5, operation: "awning" },
+    { operable: true, ratio: 0.5, type: "fixed glass" },
+    { operable: true, ratio: 0.5, family: "casement" },
+  ]) {
+    const out = S.openingComposition.validate({
+      outcome: "read", divisionAxis: "vertical",
+      units: [unit, { operable: false, ratio: 0.5 }],
+    });
+    assert.equal(out, null, `${JSON.stringify(unit)} must be refused outright`);
   }
+
+  // A family volunteered at the top level is the same violation.
+  assert.equal(S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical", family: "awning",
+    units: [{ operable: true, ratio: 0.5 }, { operable: false, ratio: 0.5 }],
+  }), null);
+
+  // The clean shape still reads.
+  const ok = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical",
+    units: [{ operable: true, ratio: 0.352 }, { operable: false, ratio: 0.648, widthMm: null }],
+  });
+  assert.equal(ok.outcome, "read");
+  assert.deepEqual(ok.units.map((u) => u.operable), [true, false]);
 });
 
 test("ratios must be a partition, or the reading is refused", () => {
@@ -728,22 +747,34 @@ test("the elevation inventory never names or matches anything", () => {
   // Pass A looks at a sheet and reports window-shaped things. Asking it to also
   // say WHICH opening each one is invites it to invent a tag, and a tag is the
   // join key — a wrong one attaches a real reading to the wrong window.
+  // REFUSED, not stripped — the same rule as a family name on a composition, for
+  // the same reason. A model told "do not identify which window is which" that
+  // identifies one anyway has ignored the instruction, and its regions and panel
+  // counts may then be shaped by what it thinks each window IS rather than by
+  // what is drawn. Discarding the tag keeps that reading and hides the fault.
+  assert.equal(S.elevationInventory.validate({
+    windows: [
+      { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false], tag: "W1" },
+    ],
+  }), null, "a volunteered tag refuses the sheet");
+
   const out = S.elevationInventory.validate({
     windows: [
-      { region: [0.57, 0.29, 0.62, 0.36], panelCount: 2, panelsWithSymbol: [true, false], tag: "W1" },
+      { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false] },
     ],
   });
   assert.equal(out.windows.length, 1);
-  assert.ok(!("tag" in out.windows[0]), "a tag the model volunteered is discarded");
   assert.deepEqual(out.windows[0].region, [0.57, 0.29, 0.62, 0.36]);
 
   // An inverted or out-of-range region is refused, not sorted — the same rule
   // cropBoxFor applies, at the earlier boundary.
+  // A bad BOX is different from a prompt violation: it is one window the model
+  // could not place, so it drops its own window and the sheet survives.
   const bad = S.elevationInventory.validate({
     windows: [
-      { region: [0.6, 0.2, 0.4, 0.8], panelCount: 2, panelsWithSymbol: [true, false] },
-      { region: [0.2, 0.2, 1.4, 0.6], panelCount: 1, panelsWithSymbol: [false] },
-      { region: [0.1, 0.1, 0.2, 0.2], panelCount: 1, panelsWithSymbol: [false] },
+      { region: [0.6, 0.2, 0.4, 0.8], proportion: 1, panelCount: 2, panelsWithSymbol: [true, false] },
+      { region: [0.2, 0.2, 1.4, 0.6], proportion: 1, panelCount: 1, panelsWithSymbol: [false] },
+      { region: [0.1, 0.1, 0.2, 0.2], proportion: 1, panelCount: 1, panelsWithSymbol: [false] },
     ],
   });
   assert.equal(bad.windows.length, 1, "only the sane one survives");
