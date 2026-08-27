@@ -87,6 +87,76 @@ const record = (over: Record<string, unknown> = {}) => ({
 const bandTop = (page: import("@playwright/test").Page) =>
   page.locator(".ops2-page__band").evaluate((el) => el.getBoundingClientRect().top);
 
+/** A design token, resolved to the same `rgb(...)` form `getComputedStyle`
+ *  reports — so a criterion naming a token can be asserted against a paint
+ *  rather than against the token's text. */
+const token = (page: import("@playwright/test").Page, name: string) =>
+  page.evaluate((n) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${n})`;
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).color;
+    probe.remove();
+    return value;
+  }, name);
+
+test("FB-AC-13/15/16/17/18 — the attention row is the rail's tinted floor, edge to edge", async ({ page }) => {
+  // THE DEFECT, IN THE OWNER'S WORDS: "tabs sit on rail that immediately has a
+  // different background colour. At the moment the darker background starts
+  // only after the error label." The approved mock draws this row as a
+  // full-bleed tinted band under the segment; the build shipped it transparent,
+  // unpadded and floorless, so the header's white simply ran on through it.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line(), line({ id: "l2", code: "W02", lineTotal: null })],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  const row = page.getByTestId("record-attention");
+  await expect(row).toBeVisible();
+
+  const style = await row.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      background: s.backgroundColor,
+      borderTop: s.borderTopWidth, borderBottom: s.borderBottomWidth,
+      borderLeft: s.borderLeftWidth, borderRight: s.borderRightWidth,
+      padLeft: parseFloat(s.paddingLeft), padRight: parseFloat(s.paddingRight),
+    };
+  });
+
+  // FB-AC-13 — the ground changes, and it is the warning tint, not a nudge.
+  expect(style.background).toBe(await token(page, "--ds-color-warning-subtle"));
+  const bandBg = await page.locator(".ops2-page__band")
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(style.background).not.toBe(bandBg);
+
+  // FB-AC-17 — it CLOSES the header. A top border makes it read as something
+  // hanging off the tabs; the bottom one is the band's own last edge.
+  expect(parseFloat(style.borderBottom)).toBeGreaterThan(0);
+  expect(parseFloat(style.borderTop)).toBe(0);
+  expect(parseFloat(style.borderLeft)).toBe(0);
+  expect(parseFloat(style.borderRight)).toBe(0);
+
+  // FB-AC-18 — weight, and not compressed: a floor, and inline padding of its
+  // own rather than borrowing the band's.
+  const box = (await row.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(40);
+  expect(style.padLeft).toBeGreaterThan(0);
+  expect(style.padRight).toBeGreaterThan(0);
+
+  // FB-AC-15 — full bleed. The tint runs to the band's edges; inside the band's
+  // inline padding it reads as a card on a card.
+  const band = (await page.locator(".ops2-page__band").boundingBox())!;
+  expect(Math.abs(box.x - band.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs((box.x + box.width) - (band.x + band.width))).toBeLessThanOrEqual(1);
+
+  // FB-AC-16 — and no white gap between the tabs and the tint, which is the
+  // literal complaint.
+  const tabs = (await page.locator(".pq-chips").boundingBox())!;
+  expect(Math.abs(box.y - (tabs.y + tabs.height))).toBeLessThanOrEqual(1);
+});
+
 test("FB-AC-10 — the record's band rests where every other surface's band rests", async ({ page }) => {
   // THE DEFECT. The band is pulled up by its own negative margin so the white
   // bleeds under the status bar. The record is the only surface that pins it,

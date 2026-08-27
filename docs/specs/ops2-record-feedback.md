@@ -726,3 +726,245 @@ alternatives (Q10/Q14), the filter's predicate (Q4), no red on the disabled CTA 
 **None.** The grill closed with an empty frontier and every question it settled is carried above.
 The two `ASSUMED:` items in §13 are flagged for veto at sign-off rather than held as blocking
 questions.
+
+---
+
+## 15. Interaction spec
+
+*Mock:* `docs/mocks/ops2-record-feedback.html` (single file, no external assets). It draws **only
+the three genuinely new visual decisions**. Defects 3, 4 and the attention row's placement are a
+restoration of the already-approved `ops2-r1-ionic` mock and appear in that file as **context**, in
+its §5 — they are not redesigned here and the developer builds them from §6 of this spec plus
+`docs/mocks/ops2-r1-ionic-src/src/ops2-record.css:51-68` on branch `design/ops2-planning`.
+
+Tokens throughout are ops2's own (`src/ops2/styles/tokens.css`, `src/ops2/theme/*.css`). No hex,
+and no `--ion-color-step-*` — undefined in this stylesheet set, they render full-strength black.
+
+---
+
+### 15.1 The refused primary action (defect 6 — FB-AC-29…33)
+
+**File:** `src/ops2/styles/record.css:52-61`. Markup unchanged; `ProjectRecordPage.tsx` unchanged.
+
+Replace the `.rec-cta__primary.button-disabled` block with:
+
+| Property | Value | Why |
+|---|---|---|
+| `--background` | `var(--ds-surface-sunken)` | Differs from the toolbar's `--ds-surface-card`, so the control is an object in the bar rather than a line of text in it — FB-AC-30 is satisfied by the background alone, before the border. |
+| `border` | `1px solid var(--ds-border-strong)` | The second half of FB-AC-30, and the edge that keeps the button's *shape* once the fill is quiet. |
+| `border-radius` | `var(--ds-radius-control)` | Unchanged. |
+| `--color` | `var(--ds-text-secondary)` | 4.75:1 on `--ds-surface-sunken` — above the 4.5 floor with margin, and quieter than the enabled label (FB-AC-31). |
+| `opacity` | `1` | Ionic's `.5` is what took the label to the edge of legibility. Overridden, not compensated for; the existing `opacity: 0.9` line goes with it. |
+| `cursor` | `not-allowed` | The one hover-time signal. Hover changes nothing else. |
+
+No colour from the error family appears anywhere on the control (FB-AC-29). Delete the
+`--ds-color-error-text` and `--ds-color-error` declarations; the comment above them explaining why
+the treatment exists stays, with "the outline" reworded to "the fill and the outline".
+
+- **Focus:** the control stays natively `disabled` — FB-AC-33 requires activation to do nothing,
+  and `disabled` is the native guarantee — so it is out of the tab order. Focus order in the head
+  row is unchanged: back → title → *(primary skipped)* → the overflow control.
+- **Announcement:** unchanged. The accessible name stays `<label>. Blocked: <server's reason>`
+  (`ProjectRecordPage.tsx:238-247`), and `aria-describedby` still points at `.rec-refusal`.
+- **`.rec-refusal` is untouched** (FB-AC-32): error-subtle background, 1 px `--ds-color-error` on
+  all four sides, `--ds-radius-control`, `--ds-color-error-text`. It stays the loudest thing on the
+  screen, which is the point of moving the red off the button.
+- **Long content:** the label never wraps (`white-space: nowrap`, already present). At 375 px the
+  refusal sentence wraps under its icon and the icon stays aligned to the first line — unchanged.
+
+*Rejected while drawing this:* a lock or ban glyph inside the button. It duplicates a sentence
+sitting directly beneath it, and it is the only element here that would need a new icon import.
+
+---
+
+### 15.2 One row, one list (defect 1 — FB-AC-1…9, N1)
+
+**The two shared class tokens FB-AC-5 asks the design to name once:**
+
+- container — `ops2-rows`
+- row root — `ops2-row`
+
+and the row's single pressable, which is where the whole fix lives — `ops2-row__open`.
+
+Each surface keeps its own class **alongside** the shared one, for content only:
+`class="ops2-row rl-row"`, `class="ops2-row pq-row"`, `class="ops2-row ops2-row--unit"`.
+
+**Where the CSS lives:** a new `src/ops2/styles/rows.css`, imported once. The nine declarations
+currently shared between `.rl-open` and `.lp-unit__open` (`record.css:275-288`) move there and that
+selector pair is deleted, as are `projects.css:361-402`'s `.pq-cards` row rules and
+`line.css:405-436`'s `.lp-unit` rules — each surface then keeps only what its *content* needs.
+
+#### The structural rule this defect exists for
+
+> The leading edge, the selection tint and the hover wash are all computed on
+> **`.ops2-row__open`**, and on nothing else.
+
+An inset `box-shadow` paints above its own element's background, so once every state is on one
+element no state can erase another. Today the edge is on the `<li>` and the wash on the `<button>`
+filling it (`record.css:265` vs `:290`) — a child's background over a parent's inset shadow, which
+is exactly FB-AC-1. The comment at `projects.css:376-384` already states this reasoning for the
+queue; it is being generalised, not invented.
+
+#### States, in full
+
+| State | Selector | Treatment |
+|---|---|---|
+| default | `.ops2-row__open` | `background: var(--ds-surface-card)`; no shadow |
+| hover *(inside `@media (hover: hover)`)* | `.ops2-row:hover > .ops2-row__open` | `background: var(--ds-color-brand-wash)` |
+| pressed | `.ops2-row__open:active` | `background: var(--ds-color-brand-subtle)` |
+| focus | `.ops2-row__open:focus-visible` | `outline: 2px solid var(--ds-border-focus); outline-offset: -2px` — inside the row, so it draws against the row's own edge instead of over the hairline above it (`line.css:434` already states this) |
+| flagged | `.ops2-row[data-edge="warning"] > .ops2-row__open` | `box-shadow: inset 3px 0 0 var(--ds-color-warning)` |
+| waiting on customer | `.ops2-row[data-edge="info"] > …` | `box-shadow: inset 3px 0 0 var(--ds-color-info)` |
+| flagged **+ hover** | both rules, one element | wash **and** edge, both legible — **FB-AC-1** |
+| selected | `.ops2-row[data-selected] > .ops2-row__open` | `background: var(--ds-color-brand-wash)` **and** `box-shadow: inset 3px 0 0 var(--ds-color-brand)` |
+| selected + hover | `.ops2-row[data-selected]:hover > …` | `background: var(--ds-color-brand-subtle)` — a *deeper* wash, so hover stays perceptible on an already-tinted row without touching the edge |
+| selected + flagged | `[data-selected][data-edge="warning"]` | brand tint, **warning** edge — `data-edge` wins the shadow. Selection is the tint, the flag is the edge, and `aria-current="true"` says selection in words either way |
+
+`data-edge` replaces today's `data-flagged` / `data-waiting`: the row takes an
+`edge?: "warning" | "info"` prop and each surface decides what it means (FB-AC-9) — the record
+passes `warning` for `needsReview`, the queue passes `warning` for `waitingOn === "Us"` and `info`
+for `"Customer"`, the unit list passes nothing.
+
+#### Geometry
+
+- Container `.ops2-rows`: `list-style: none`; `padding: 0`; `background: var(--ds-surface-card)`;
+  `1px solid var(--ds-border-subtle)`; `border-radius: var(--ds-radius-surface)`;
+  `box-shadow: var(--ds-layer-raised)`; **`overflow: hidden`** — FB-AC-8's clip, so no leading edge
+  paints outside the rounded corner. **No inline padding, ever.**
+- `.ops2-row + .ops2-row { border-top: 1px solid var(--ds-border-subtle) }`; no `gap`; the first
+  row draws no hairline (FB-AC-8).
+- `.ops2-row__open`: `width: 100%`; `min-height: 44px`; `padding: var(--theme-spacing-sm)
+  var(--theme-spacing-md)`; `border: 0`; `font: inherit`; `color: inherit`; `text-align: left`;
+  `cursor: pointer`. **The gutter belongs to the row** (FB-AC-6) — which is why the container has
+  none, and what makes the wash and the focus ring reach the block's inner edge.
+- Nested in a panel, `line.css:417-422`'s existing rule carries over under the new selector
+  (`.lp-panel:has(> .ops2-rows)`): the panel drops its own inline padding and re-applies it to its
+  non-list children.
+
+#### Markup contract
+
+```html
+<li class="ops2-row <surface>" data-edge? data-selected? aria-current?>
+  <button type="button" class="ops2-row__open">
+    …surface content…
+    <svg class="ops2-row__chev" aria-hidden="true">?</svg>
+  </button>
+</li>
+```
+
+- **Exactly one interactive element per row, no interactive descendant, no `aria-expanded`
+  anywhere** (FB-AC-7). The chevron is a decorative `<svg aria-hidden="true">`, never a control.
+- The queue's phone card supplies `.ops2-row__chev` (it has one today via `IonItem detail`); the
+  record row and the unit row do not.
+- Keyboard: `Enter` and `Space` activate — native `<button>`, nothing added. Tab order is document
+  order down the list. The list is **not** a roving-tabindex widget and does not become one.
+
+#### What each surface still owns (FB-AC-9)
+
+| Surface | Inside the row | `data-edge` means |
+|---|---|---|
+| queue, phone | ref · status · title · customer · lines · money · flags · chevron | `waitingOn` |
+| record lines | elevation · code · product · size · units · money · `needs review` badge | `needsReview` |
+| line page units | elevation · code · label · product · size · note · options (grid, `align-items: start`) | nothing |
+
+#### Empty and long content
+
+- The record's filtered-empty and record-empty blocks (`.rl-empty`) are **not** rows and stay as
+  they are; only the wording changes, per FB-AC-27.
+- Long product names truncate with an ellipsis on `.rl-name` / `.pq-title` (unchanged). The code,
+  the money and the badge never truncate — they are `flex: none`.
+- A unit row with a note and options grows past 44 px; the drawing stays top-aligned
+  (`align-items: start` on `.ops2-row--unit > .ops2-row__open`).
+
+**Not converted:** the queue's desk `<table>` (FB-AC-N1). It keeps its `<th scope="col">` headers
+and its own row rules, and does not import `rows.css`.
+
+---
+
+### 15.3 "Why this product" — the door is always there (defect 8 — FB-AC-38…46)
+
+#### The panel
+
+`WhyPanel.tsx` loses its `copy.door` branch: the head with the chevron, the `lp-panel--door` class
+and the stretched `.lp-panel__door` button render **unconditionally** on a resolved load.
+`loading`, `error` and `missing` are unchanged — a skeleton and an unreachable fact are not doors.
+
+- Hover, inside `@media (hover: hover)` — `.lp-panel--door:hover { background:
+  var(--ds-color-brand-wash) }`, already present.
+- Focus — the ring is drawn around the **card**, `outline-offset: 2px`, already present. The
+  invisible stretched button is the focus target; the card is the thing that moves.
+- Door accessible name for the three kinds that had none — one string, because what is behind it is
+  the same on all three:
+  **`Why this product — open what was recorded for this line`**
+  (`ASSUMED:`, §13. The recommendation kind keeps its three existing variants,
+  `whyCopy.ts:415-418`.)
+- `hasWhy` (`lineRoute.ts:155-159`) widens from `kind === "recommendation"` to *any resolved kind*.
+  It stays the one place that fact lives (FB-AC-40).
+
+#### The detail, for `human` / `unrecorded` / `unresolved`
+
+`WhyDetail.tsx` renders only `kind === "recommendation"` today; it gains a second body component.
+`SidePanel`, its title, its `phoneForm="screen"` and its back control are unchanged, and back still
+names the line's code and returns focus to the door (FB-AC-39).
+
+Reading order, top to bottom — the mock's frames 3d / 3e / 3f:
+
+1. **`.wd__lede`** — the `Chosen` sentence, **verbatim from `chosenLine(dto)`**, under a small
+   uppercase `Chosen` label (`.wd__lede .lbl`, the same type role as `.wd__blk-h`). It leads rather
+   than sitting in a block because it is the one thing on this screen that is actually *known*. Its
+   tone class comes from `chosenLine`: `ops2-absent` for `unrecorded`, `lp-why__warn` for
+   `unresolved`, none for `human`. `ASSUMED:` — the alternative was a fourth block headed `Chosen`,
+   which reads as a heading over a single sentence.
+2. **`What it had to meet`** (`DETAIL.hadToMeet`, existing) → body `Not recorded for this line.` in
+   `.ops2-absent`.
+3. **The figures block**, whose heading and body depend on the kind:
+   - `human` **with units** → heading `Each unit's own band` (`DETAIL.bands`, existing); body is the
+     existing per-unit block (`WhyDetail.tsx:204-237`) reused as-is — each unit's code, its product,
+     its recorded band or `DETAIL.bandMissing` (`Its band was not recorded.`), and its figures.
+     `DETAIL.bandsNote` is **not** printed here: it explains a *platform* split.
+   - `human` **without units**, and `unrecorded` → heading `This line's figures` (new string); body
+     is a `.wd__kv` of `Uw` / `SHGC`, or `not recorded` (`NOT_RECORDED`, existing) in `.ops2-absent`
+     when there are none.
+   - `unresolved` → heading `This line's figures`; body is the panel's own sentence,
+     `no selection was made on this line` (`whyCopy.ts:348`, existing), in `.ops2-absent`.
+     **Never a figure, never a dash.**
+4. **`What else was considered`** (`DETAIL.ladder`, existing) → body
+   `No alternatives were recorded for this line.` in `.ops2-absent`.
+5. **`DETAIL.closing`**, unchanged, in `.wd__reason.wd__closing`.
+
+The three new strings go in `DETAIL` (`whyCopy.ts:465-495`), not in JSX — the ban is a scan of that
+file.
+
+- **Absence role:** every stated absence wears `.ops2-absent` (italic, `--ds-text-muted`). Never a
+  dash, never a zero, never an omitted block.
+- **Nothing on the detail acts** (FB-AC-43): back is the only interactive element. These kinds have
+  no ladder rows, so there is nothing new that could look pressable.
+- **Nothing new is fetched** (FB-AC-N5). This is a rendering change over the DTO already on hand.
+- **Error and loading** on the detail are the panel's existing states; the detail is only reachable
+  once the load has resolved.
+
+#### The record's desk canvas (FB-AC-44…46)
+
+- `ProjectRecordPage.tsx:433` stops passing `why={null}`; the canvas gets the same `WhyPanel` the
+  line page renders, in the same position — **between the specification (or the units) and the
+  price** (`LineReview.tsx:254-269`). Mock frame 4.
+- The canvas's door **navigates**: `/projects/:id/line/:lineId/why`, the same seam `openDrawing`
+  uses (`ProjectRecordPage.tsx:209-211`). Back returns to the record and names it.
+- The line-actions panel's sentence *"Why this product? — the estimator reasoning arrives on this
+  page next."* is deleted (`ProjectRecordPage.tsx:523-526`): it becomes false the moment the panel
+  lands.
+- No other desk layout change. Desk has no owner feedback yet and none is proposed.
+
+---
+
+### 15.4 Copy added by this section
+
+| Where | String |
+|---|---|
+| door, three no-detail kinds (accessible name) | `Why this product — open what was recorded for this line` |
+| detail, block 2 body | `Not recorded for this line.` |
+| detail, block 3 heading (non-unit) | `This line's figures` |
+| detail, block 4 body | `No alternatives were recorded for this line.` |
+
+All four fall under §13's second `ASSUMED:` bullet — the owner decided that absences are *stated*;
+these are the words, strikeable at sign-off without touching a criterion's behaviour.

@@ -1146,7 +1146,7 @@ test("unit leaders are opt-in, so the customer site's drawings are untouched", a
   assert.deepEqual(leaders(unsized), []);
 });
 
-test("FB-AC-33 — the break symbol is painted BEFORE the width figure, never over it", async () => {
+test("FB-AC-34 — the break symbol is painted BEFORE the width figure, never over it", async () => {
   // THE DEFECT, REDUCED TO DOCUMENT ORDER. A wide opening gets a "not to scale"
   // break symbol, and the symbol erases the leader it interrupts with a rect
   // filled in the paper colour. That rect was emitted AFTER the number sharing

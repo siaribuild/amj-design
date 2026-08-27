@@ -177,20 +177,62 @@ ion-toolbar.ops2-topbar--identity {
 /* ── The attention row ──────────────────────────────────────────────────────
  * One line, inside the band, under the tabs. It names the leading blocker and
  * offers the control that clears it; the rest are counted. */
+/* THE TINT IS THE BAND'S FLOOR, AND IT IS STRUCTURAL.
+ *
+ * The owner, on the shipped version: "the tabs should follow the established in
+ * Projects design pattern: tabs sit on rail that immediately has a different
+ * background colour. At the moment the darker background starts only after the
+ * error label" — and, separately, "warning labels/area is not grabbing
+ * attention, and everything is compressed together."
+ *
+ * Both are one defect and the approved mock already answered it. Its
+ * `.filterrow` (ops2-r1-ionic-src/src/ops2-record.css:51-56, branch
+ * design/ops2-planning) is a full-bleed tinted band with a 40px floor, its own
+ * inline padding and a BOTTOM border; what shipped was transparent, floorless,
+ * with no inline padding of its own and a TOP border. So the header's white ran
+ * straight through the row, the ground changed only below it, and the one line
+ * that says what needs doing had less presence than the tabs above it.
+ *
+ * The tint does not come and go with the status — the mock wears it on the
+ * clear state too. A ground that changes under the rail says "the header ends
+ * here", which is a fact about the layout; what the row is SAYING is carried by
+ * the dot beside the text. A tint that appeared only when something was wrong
+ * would be a second status channel disagreeing with the first.
+ *
+ * `--ds-color-warning-subtle` is ops2's `--ops-warn-tint`. */
 .rec-attention {
   display: flex;
   align-items: center;
   gap: var(--theme-spacing-xs);
   width: 100%;
+  min-height: 40px;
   margin: 0;
-  padding: var(--theme-spacing-xs) 0;
+  padding: var(--theme-spacing-xs) var(--theme-spacing-md);
   border: 0;
-  border-top: 1px solid var(--ds-border-subtle);
-  background: none;
+  border-bottom: 1px solid var(--ds-border-subtle);
+  background: var(--ds-color-warning-subtle);
   font: inherit;
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-secondary);
   text-align: left;
+}
+/* FULL BLEED, by pulling back exactly the band's own inline padding. Inside it
+   the tint reads as a card sitting on a card; run to the edges it reads as the
+   band's last course, which is what it is.
+
+   THE WIDTH IS RESTATED WITH THE MARGINS, and both halves are needed. This row
+   is a `<button>` in its acting state, and a button is shrink-to-fit even as a
+   block-level flex box — `width: auto` sized it to its own text and left 146px
+   of band uncovered on the right. `100%` alone resolves against the container's
+   CONTENT box, so it stops exactly where the padding the margins just pulled
+   back begins. The pair is what reaches both edges.
+
+   Scoped to the phone's band rather than stated on the row: at desk width the
+   row is slotted into an `ion-toolbar`, whose inline padding is its own and is
+   not this length. */
+.ops2-page__band .rec-attention {
+  margin-inline: calc(-1 * var(--theme-spacing-lg));
+  width: calc(100% + 2 * var(--theme-spacing-lg));
 }
 .rec-attention--button { cursor: pointer; }
 @media (hover: hover) {
