@@ -19,6 +19,7 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
+      export { readingMessage } from ${p("src/components/DocumentProgress.tsx")};
       export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -1635,4 +1636,60 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
+});
+
+// ─── t6: the drawing-read counter the customer watches ───────────────────────
+
+test("a counted drawing read replaces the phase label, whatever the stage says", () => {
+  // The owner's sketch: "20 openings discovered" then "reading opening 1 out of
+  // 20". The counter is driven by the COUNTS, not by a stage name — §7.1
+  // withdrew the new progress_stage value, because that column carries a CHECK
+  // constraint and extending it means rebuilding ai_job_claim, the recipe that
+  // once cascade-deleted production rows here.
+  //
+  // So the stage stays whatever the pipeline last set, and the presence of a
+  // total is what switches the label.
+  assert.equal(
+    M.readingMessage({ stage: "extracting_schedule", drawingsDone: 0, drawingsTotal: 20 }),
+    "20 openings found in your drawings…",
+    "the denominator is announced before any opening is read",
+  );
+  assert.equal(
+    M.readingMessage({ stage: "extracting_schedule", drawingsDone: 7, drawingsTotal: 20 }),
+    "Reading opening 7 of 20…",
+  );
+  assert.equal(
+    M.readingMessage({ stage: "matching_and_pricing", drawingsDone: 20, drawingsTotal: 20 }),
+    "Reading opening 20 of 20…",
+    "the stage is irrelevant while a count is present",
+  );
+});
+
+test("without counts the existing label is untouched", () => {
+  // Every project that predates drawing reading, every set with no plans, and
+  // every run whose columns are still null. The counters are nullable precisely
+  // so this stays true.
+  assert.equal(
+    M.readingMessage({ stage: "reading_documents" }),
+    "Reading document text, tables and images…",
+  );
+  assert.equal(
+    M.readingMessage({ stage: "reading_documents", drawingsDone: 3, drawingsTotal: null }),
+    "Reading document text, tables and images…",
+    "a numerator without a denominator is not a counter",
+  );
+  assert.equal(M.readingMessage({}), "Reading and refining your schedule…");
+});
+
+test("the counter says nothing about openings it could not read", () => {
+  // Owner, 2026-08-27: a gap is not a customer's to resolve — they cannot add a
+  // split, an orientation or a head height to an opening that did not parse, and
+  // inviting an action the interface does not support is worse than silence.
+  // A `not_read` still ADVANCES the counter, so the bar never stalls on it.
+  for (const done of [0, 7, 20]) {
+    const msg = M.readingMessage({ drawingsDone: done, drawingsTotal: 20 });
+    for (const forbidden of [/unread/i, /could not/i, /fail/i, /skip/i, /missing/i, /upload/i]) {
+      assert.doesNotMatch(msg, forbidden, `"${msg}" must not mention ${forbidden}`);
+    }
+  }
 });

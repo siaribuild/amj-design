@@ -36,6 +36,55 @@ const fmtDur = (ms: number): string => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
+/** What the customer is told while a run is working.
+ *
+ *  A COUNT WINS OVER A STAGE, and the reason is worth knowing: there is no
+ *  `reading_drawings` stage. `progress_stage` carries a CHECK constraint, and
+ *  SQLite cannot extend a CHECK in place — adding a value means rebuilding
+ *  ai_job_claim, which is the recipe whose DROP once cascade-deleted 20
+ *  order_line and 4 payment rows in production. Two nullable counters carry the
+ *  same information and touch nothing, so the label is derived here.
+ *
+ *  A numerator without a denominator is not a counter: an older run, or a set
+ *  with no drawings, has null columns and keeps today's wording exactly.
+ *
+ *  NOTHING HERE MENTIONS WHAT COULD NOT BE READ. An opening the drawings do not
+ *  cover is ordinary — the schedule is authoritative and the drawings add detail
+ *  — and it is not a customer's to resolve: they cannot add a split, an
+ *  orientation or a head height to an opening that did not parse. A `not_read`
+ *  still advances `done`, so the count never stalls on one. */
+export const readingMessage = (phase: {
+  stage?: AiProgressStage;
+  drawingsDone?: number | null;
+  drawingsTotal?: number | null;
+}): string => {
+  const total = phase.drawingsTotal;
+  if (typeof total === "number" && total > 0) {
+    const done = typeof phase.drawingsDone === "number" ? phase.drawingsDone : 0;
+    // Before the first opening resolves, the useful thing to say is how many
+    // there are — the moment the count becomes knowable at all.
+    return done === 0
+      ? `${total} openings found in your drawings…`
+      : `Reading opening ${done} of ${total}…`;
+  }
+  return progressMessage(phase.stage);
+};
+
+/** The counter as a checklist suffix — ` · opening 7 of 20`.
+ *
+ *  The single message line only renders when there is NO stage, and a real run
+ *  always has one, so the counter has to reach the checklist or the customer
+ *  never sees it. Same mechanism the reading step already uses for its document
+ *  count, and it hangs off whichever step is in progress: there is no
+ *  reading_drawings stage to attach it to, by design. */
+const drawingDetail = (phase: AiPhase): string | null => {
+  if (phase?.kind !== "reading") return null;
+  const total = phase.drawingsTotal;
+  if (typeof total !== "number" || total <= 0) return null;
+  const done = typeof phase.drawingsDone === "number" ? phase.drawingsDone : 0;
+  return done === 0 ? ` · ${total} openings found` : ` · opening ${done} of ${total}`;
+};
+
 const progressMessage = (stage: AiProgressStage | undefined): string => {
   switch (stage) {
     case "queued": return "Preparing document review…";
@@ -98,7 +147,11 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
               // Reading step names how many documents it is working through —
               // the honest, available granularity (the PDF text layer is read
               // in one call, so there is no live per-page tick to show).
-              const detail = inProgress && step.stage === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
+              // A drawing count outranks the document count: it is the finer
+              // granularity, and it is the one the customer asked to see.
+              const detail = inProgress && drawingDetail(aiPhase)
+                ? drawingDetail(aiPhase)
+                : inProgress && step.stage === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
                 ? ` · ${aiPhase.docs} document${aiPhase.docs !== 1 ? "s" : ""}`
                 : "";
               return (
@@ -148,7 +201,7 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
               {uploading
                 ? `Uploading and checking ${processingDocs} file${processingDocs !== 1 ? "s" : ""}…`
                 : aiPhase?.kind === "reading"
-                  ? progressMessage(aiPhase.stage)
+                  ? readingMessage(aiPhase)
                   : `Reading your document${processingDocs !== 1 ? "s" : ""}…`}
             </span>
             <span className="block mt-0.5 text-body leading-relaxed">
