@@ -48,7 +48,15 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     const boundary = body.indexOf(0x0a); // first newline: JSON header, then PDF bytes
     if (boundary < 1) return send(400, { error: "malformed_body" });
-    const job = JSON.parse(body.subarray(0, boundary).toString("utf8"));
+    let job;
+    try {
+      job = JSON.parse(body.subarray(0, boundary).toString("utf8"));
+    } catch {
+      // 400, not 500. A 5xx tells the Worker's retry policy this is transient
+      // and worth another go, and a malformed header will be malformed every
+      // time — that is a retry loop against a request that cannot succeed.
+      return send(400, { error: "malformed_header" });
+    }
     const pdfBytes = body.subarray(boundary + 1);
 
     const why = badRequest(job);

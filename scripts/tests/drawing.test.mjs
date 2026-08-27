@@ -620,3 +620,152 @@ test("every opening sent comes back accounted for, or the decoder says which did
   assert.throws(() => M.decodeCropResponse({ crops: "nope", failures: [] }, sent), /crops/);
   assert.throws(() => M.decodeCropResponse({ crops: [], failures: {} }, sent), /failures/);
 });
+
+// ─── t2: the two vision skills, validated ─────────────────────────────────────
+// Everything below tests the VALIDATOR, not the model. The model is untrusted by
+// construction here — JSON mode does not guarantee schema conformance, and the
+// interesting failures are the ones that would validate cleanly and be wrong.
+
+const S = await import(`${pathToFileURL(join(runDir, "skills-bundle.mjs")).href}?run=${Date.now()}`)
+  .catch(() => null) ?? await (async () => {
+    const outfile = join(runDir, "skills-bundle.mjs");
+    await build({
+      stdin: {
+        contents: `export * from ${p("worker/lib/estimator/skills/drawingRead.ts")};`,
+        resolveDir: projectRoot, sourcefile: "skills-entry.ts", loader: "ts",
+      },
+      bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+      plugins: [workerdBuiltins],
+    });
+    return import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+  })();
+
+test("a composition reading distinguishes NOT STATED from NOT READ", () => {
+  // Output spec §4: the two must never collapse. It has already cost this
+  // product once — an unreadable symbol was recorded as "no marks", which
+  // downstream read as "no operable panel", which is fixed glass, the cheapest
+  // thing in the catalogue.
+  const stated = S.openingComposition.validate({
+    outcome: "not_stated", reason: "the elevation draws the opening but shows no division",
+  });
+  const unread = S.openingComposition.validate({
+    outcome: "not_read", reason: "the crop is a hatch pattern, no frame is discernible",
+  });
+  assert.equal(stated.outcome, "not_stated");
+  assert.equal(unread.outcome, "not_read");
+  assert.notEqual(stated.outcome, unread.outcome);
+
+  // And a decline may not smuggle units through beside itself.
+  const sneaky = S.openingComposition.validate({
+    outcome: "not_read", reason: "unclear", units: [{ operable: true, ratio: 1 }],
+  });
+  assert.equal(sneaky.outcome, "not_read");
+  assert.ok(!("units" in sneaky), "a decline carries no reading");
+});
+
+test("the drawing claims operable-or-not, never a family", () => {
+  // Design §5, the owner's ruling: AMJ makes no hopper, so awning-vs-hopper is a
+  // distinction this catalogue cannot express and the chevron cannot settle. The
+  // family comes from the schedule, which is text. A model that volunteers one
+  // must not have it believed.
+  const read = S.openingComposition.validate({
+    outcome: "read",
+    divisionAxis: "vertical",
+    units: [
+      { operable: true, ratio: 0.352, operation: "awning" },
+      { operable: false, ratio: 0.648, type: "fixed glass" },
+    ],
+  });
+  assert.equal(read.outcome, "read");
+  assert.deepEqual(read.units.map((u) => u.operable), [true, false]);
+  for (const u of read.units) {
+    assert.ok(!("operation" in u) && !("type" in u) && !("family" in u),
+      "no family name survives validation");
+  }
+});
+
+test("ratios must be a partition, or the reading is refused", () => {
+  const bad = [
+    [{ operable: true, ratio: 0.3 }, { operable: false, ratio: 0.3 }],   // sums to 0.6
+    [{ operable: true, ratio: 1.4 }, { operable: false, ratio: -0.4 }],  // out of 0..1
+    [{ operable: true, ratio: 0.5 }],                                     // a lone 0.5 partitions nothing
+  ];
+  for (const units of bad) {
+    const out = S.openingComposition.validate({ outcome: "read", divisionAxis: "vertical", units });
+    assert.notEqual(out?.outcome, "read", `${JSON.stringify(units)} must not validate as read`);
+  }
+  // …and a real one does, within tolerance for three-decimal rounding.
+  const ok = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical",
+    units: [{ operable: true, ratio: 0.192 }, { operable: false, ratio: 0.615 }, { operable: true, ratio: 0.193 }],
+  });
+  assert.equal(ok.outcome, "read", "W4's three units sum to 1.000");
+
+  // A single undivided unit at 1.0 IS a reading, and a useful one: it is
+  // positive evidence the opening is not split, which can contradict a schedule
+  // comment claiming two leaves. Distinct from not_stated, which says the
+  // drawing is silent.
+  const whole = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical", units: [{ operable: false, ratio: 1 }],
+  });
+  assert.equal(whole.outcome, "read");
+  assert.equal(whole.units.length, 1);
+});
+
+test("a printed width survives only when the sheet printed it", () => {
+  // Output spec §1.2: widthMm ONLY when the drawing dimensions that unit, never
+  // back-calculated. A derived figure claims an authority it does not have and
+  // the consumer cannot tell it from a real one.
+  const out = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical",
+    units: [{ operable: true, ratio: 0.5, widthMm: 600 }, { operable: false, ratio: 0.5 }],
+  });
+  assert.equal(out.units[0].widthMm, 600);
+  assert.equal(out.units[1].widthMm, null, "absent stays absent, it is not computed");
+});
+
+test("the elevation inventory never names or matches anything", () => {
+  // Pass A looks at a sheet and reports window-shaped things. Asking it to also
+  // say WHICH opening each one is invites it to invent a tag, and a tag is the
+  // join key — a wrong one attaches a real reading to the wrong window.
+  const out = S.elevationInventory.validate({
+    windows: [
+      { region: [0.57, 0.29, 0.62, 0.36], panelCount: 2, panelsWithSymbol: [true, false], tag: "W1" },
+    ],
+  });
+  assert.equal(out.windows.length, 1);
+  assert.ok(!("tag" in out.windows[0]), "a tag the model volunteered is discarded");
+  assert.deepEqual(out.windows[0].region, [0.57, 0.29, 0.62, 0.36]);
+
+  // An inverted or out-of-range region is refused, not sorted — the same rule
+  // cropBoxFor applies, at the earlier boundary.
+  const bad = S.elevationInventory.validate({
+    windows: [
+      { region: [0.6, 0.2, 0.4, 0.8], panelCount: 2, panelsWithSymbol: [true, false] },
+      { region: [0.2, 0.2, 1.4, 0.6], panelCount: 1, panelsWithSymbol: [false] },
+      { region: [0.1, 0.1, 0.2, 0.2], panelCount: 1, panelsWithSymbol: [false] },
+    ],
+  });
+  assert.equal(bad.windows.length, 1, "only the sane one survives");
+});
+
+test("a ratio keeps three decimals, because the shared clamp keeps two", () => {
+  // numOrNull rounds to 2dp — right for the areas and millimetres it was built
+  // for, wrong for a share of an opening. At 2050mm, 0.01 is 20mm, and the
+  // output spec asks for three decimals for exactly that reason: "at 2050mm,
+  // 0.001 is 2mm". Passing ratios through the shared clamp threw away the
+  // precision the spec asked for, silently, and the reading still looked right.
+  const out = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical",
+    units: [{ operable: true, ratio: 0.352 }, { operable: false, ratio: 0.648 }],
+  });
+  assert.equal(out.units[0].ratio, 0.352, "not 0.35");
+  assert.equal(out.units[1].ratio, 0.648, "not 0.65");
+
+  // Beyond three is false precision and is rounded away, not preserved.
+  const noisy = S.openingComposition.validate({
+    outcome: "read", divisionAxis: "vertical",
+    units: [{ operable: true, ratio: 0.3518273 }, { operable: false, ratio: 0.6481727 }],
+  });
+  assert.equal(noisy.units[0].ratio, 0.352);
+});
