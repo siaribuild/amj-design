@@ -322,3 +322,56 @@ test("the number of crops in one call is bounded", () => {
   assert.equal(total, M.MAX_CROPS_PER_CALL);
   assert.equal(req.deferred.length, 5, "the rest is named, for the next call");
 });
+
+test("the container pins a canvas inside the range unpdf demands", async () => {
+  // The image is not buildable here — there is no Docker on every machine that
+  // touches this — so a dependency conflict inside the Dockerfile is invisible
+  // until a deploy. It happened: @napi-rs/canvas was pinned at 0.1.65 while
+  // unpdf declares peerOptional ^0.1.69, and `npm ci` refuses that outright.
+  //
+  // unpdf's own package.json blocks the ./package.json subpath, so it is read
+  // rather than required.
+  const container = JSON.parse(
+    await readFile(join(projectRoot, "containers/plan-parse/package.json"), "utf8"),
+  );
+  const unpdf = JSON.parse(
+    await readFile(join(projectRoot, "node_modules/unpdf/package.json"), "utf8"),
+  );
+
+  // The container and the Worker must read PDFs with the same library at the
+  // same version, or the crop box and the second opinion stop sharing a
+  // coordinate space, which is the whole reason this is Node.
+  const repo = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8"));
+  assert.equal(container.dependencies.unpdf, repo.dependencies.unpdf, "one pdf.js, one version");
+
+  const want = unpdf.peerDependencies?.["@napi-rs/canvas"];
+  assert.ok(want, "unpdf still declares a canvas peer; if it stopped, this test is the stale thing");
+  const pinned = container.dependencies["@napi-rs/canvas"];
+  const parts = (v) => v.replace(/^\D*/, "").split(".").map(Number);
+  const [major, minor, patch] = parts(pinned);
+  const [wMajor, wMinor, wPatch] = parts(want);
+  assert.ok(
+    major === wMajor && (minor > wMinor || (minor === wMinor && patch >= wPatch)),
+    `pinned ${pinned} is outside unpdf's ${want} — npm ci will refuse it`,
+  );
+});
+
+test("the container image installs from a lockfile, not from ranges", async () => {
+  // A build that resolves ranges on the day it runs is not the build that was
+  // tested, and this one cannot be tested locally at all.
+  const dockerfile = await readFile(join(projectRoot, "containers/plan-parse/Dockerfile"), "utf8");
+  // Instructions only. The comments explain why it is `npm ci` and say the words
+  // "npm install" while doing so, which a naive scan reads as the thing itself.
+  const instructions = dockerfile
+    .split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join("\n");
+  assert.match(instructions, /npm ci\b/, "npm ci");
+  assert.doesNotMatch(instructions, /npm install\b/, "never npm install");
+  assert.match(instructions, /COPY package\.json package-lock\.json/, "the lockfile has to be in the image");
+  const lock = JSON.parse(await readFile(join(projectRoot, "containers/plan-parse/package-lock.json"), "utf8"));
+  for (const needed of ["@img/sharp-linux-x64", "@napi-rs/canvas-linux-x64-gnu"]) {
+    assert.ok(
+      lock.packages[`node_modules/${needed}`],
+      `${needed} is missing from the lockfile — the image would install no binary for its own platform`,
+    );
+  }
+});
