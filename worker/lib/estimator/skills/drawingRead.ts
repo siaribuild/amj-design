@@ -93,7 +93,10 @@ export const elevationInventory: Skill<{
   },
   validate(raw) {
     const p: any = typeof raw === "string" ? parseModelJson(raw) : raw;
-    if (!p || !Array.isArray(p.windows)) return null;
+    if (!p || typeof p !== "object" || !Array.isArray(p.windows)) return null;
+    // The sheet-level object, not just each window. Every window can be clean
+    // while the response as a whole answers something it was not asked.
+    if (!onlyKeys(p, INVENTORY_KEYS)) return null;
     const windows: ElevationWindowV1[] = [];
     // Capped: a sheet has tens of windows, and a runaway list is a model looping
     // rather than a house with four hundred of them.
@@ -234,6 +237,7 @@ function ratioOrNull(v: unknown): number | null {
  *  be recorded as `not_read` where it would look like one. */
 const UNIT_KEYS: readonly string[] = ["operable", "ratio", "widthMm"];
 const WINDOW_KEYS: readonly string[] = ["region", "proportion", "panelCount", "panelsWithSymbol"];
+const INVENTORY_KEYS: readonly string[] = ["windows"];
 const READING_KEYS: readonly string[] = ["outcome", "divisionAxis", "units", "reason"];
 
 const onlyKeys = (o: object, allowed: readonly string[]): boolean =>
@@ -268,6 +272,11 @@ export const openingComposition: Skill<{
   validate(raw) {
     const p: any = typeof raw === "string" ? parseModelJson(raw) : raw;
     if (!p || typeof p !== "object") return null;
+    // CHECKED BEFORE THE BRANCH. This sat inside the `read` path, so a decline
+    // returned early and carried whatever it liked — trimmed, not refused, which
+    // is precisely the behaviour this policy replaced. A violation is a violation
+    // whichever answer it arrives with.
+    if (!onlyKeys(p, READING_KEYS)) return null;
 
     // A decline is rebuilt as a decline. Anything else the model attached beside
     // it — a units array "just in case" — does not travel with it, because a
@@ -277,9 +286,6 @@ export const openingComposition: Skill<{
       return { outcome: p.outcome, reason: strCap(p.reason, 200) ?? "" };
     }
     if (p.outcome !== "read" || !Array.isArray(p.units)) return null;
-    // A family volunteered at the top level is the same violation as one on a
-    // unit, and `additionalProperties: false` in the schema is advisory only.
-    if (!onlyKeys(p, READING_KEYS)) return null;
 
     const axis = p.divisionAxis === "horizontal" ? "horizontal"
       : p.divisionAxis === "vertical" ? "vertical" : null;

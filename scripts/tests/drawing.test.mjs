@@ -800,3 +800,53 @@ test("a ratio keeps three decimals, because the shared clamp keeps two", () => {
   });
   assert.equal(noisy.units[0].ratio, 0.352);
 });
+
+test("the refusal policy has no back door — every top-level path enforces it", () => {
+  // The policy was applied on the paths I was thinking about and skipped on the
+  // two I was not. Both trimmed instead of refusing, which is the behaviour the
+  // policy exists to replace: a model that ignored an instruction produced an
+  // answer that still looked clean.
+
+  // 1. A DECLINE returned before the top-level key check ran.
+  assert.equal(S.openingComposition.validate({
+    outcome: "not_read", reason: "unclear", family: "awning",
+  }), null, "a decline is not a way past the check");
+  assert.equal(S.openingComposition.validate({
+    outcome: "not_stated", reason: "undivided", operation: "fixed",
+  }), null);
+
+  // …while a well-formed decline, including the schema's required nulls, reads.
+  const clean = S.openingComposition.validate({
+    outcome: "not_stated", divisionAxis: null, units: [], reason: "the opening is not divided",
+  });
+  assert.equal(clean.outcome, "not_stated");
+
+  // 2. The INVENTORY checked each window and never its own top level.
+  assert.equal(S.elevationInventory.validate({
+    windows: [], sheetTag: "A5", family: "awning",
+  }), null, "the sheet-level object is checked too");
+  assert.deepEqual(S.elevationInventory.validate({ windows: [] }), { windows: [] });
+});
+
+test("EVERY skill in this module refuses an unknown top-level key, including ones not yet written", () => {
+  // Enumerated rather than listed, so a third skill added later inherits the
+  // rule instead of quietly not having it. The policy has now been applied
+  // inconsistently twice — once on the decline path, once on the inventory's own
+  // top level — and both times it looked fine because the output was trimmed and
+  // still well-formed. A rule that depends on remembering it is not a rule.
+  const skills = Object.entries(S).filter(([, v]) =>
+    v && typeof v === "object" && typeof v.validate === "function" && typeof v.id === "string");
+  assert.ok(skills.length >= 2, `expected the module's skills, found ${skills.length}`);
+
+  for (const [name, skill] of skills) {
+    // A shape each skill would otherwise accept, plus one key nobody asked for.
+    const base = skill.id === "elevation_inventory"
+      ? { windows: [] }
+      : { outcome: "not_stated", divisionAxis: null, units: [], reason: "" };
+    assert.notEqual(skill.validate(base), null, `${name} should accept its own clean shape`);
+    assert.equal(
+      skill.validate({ ...base, somethingNobodyAskedFor: "awning" }), null,
+      `${name} must refuse an unknown top-level key`,
+    );
+  }
+});
