@@ -486,3 +486,53 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   const halfTotal = Math.round(total / 2);
   await expect(page.getByText(new RegExp(`\\$${halfTotal.toLocaleString("en-AU")}`)).first()).toBeVisible();
 });
+
+// ─── The drawing-read counter ────────────────────────────────────────────────
+// Owner's sketch: "20 openings discovered", then "reading opening 1 out of 20".
+// Driven by the COUNTS, not by a stage name — there is no reading_drawings
+// stage, because progress_stage carries a CHECK constraint and extending it
+// means rebuilding ai_job_claim.
+
+async function stubRun(page: Page, run: Record<string, unknown>) {
+  await page.route("**/api/auth/me", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ user: { id: "u_demo", email: seedEmail("u_demo"), name: "Demo" } }),
+  }));
+  await page.route("**/api/projects/current", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      project: { id: "p-read", ref: "OF-Q-READ", title: "Reading", status: "draft", createdAt: new Date().toISOString() },
+      items: [],
+      files: [{ id: "f1", filename: "plans.pdf", kind: "upload", size: 100, doc_type: "plans" }],
+    }),
+  }));
+  await page.route("**/api/projects/current/extraction-status", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ run, basis: {} }),
+  }));
+  await page.goto("/quote");
+}
+
+test("a running drawing read counts openings, and says nothing about the ones it could not read", async ({ page }) => {
+  await stubRun(page, {
+    id: "r-read", status: "running", startedAt: new Date().toISOString(),
+    // The stage is deliberately NOT a drawing stage — the counts are what switch
+    // the label, and this asserts the stage does not have to change at all.
+    progressStage: "extracting_schedule",
+    drawingsDone: 7, drawingsTotal: 20,
+  });
+  // A real run always carries a stage, so the checklist renders and the counter
+  // is the in-progress step's detail. The single message line is the no-stage
+  // path, covered by the pure tests.
+  await expect(page.getByText(/opening 7 of 20/)).toBeVisible();
+  // A gap is not a customer's to resolve, so none of this may appear.
+  for (const forbidden of [/unread/i, /could not be read/i, /upload the remaining/i]) {
+    await expect(page.getByText(forbidden)).toHaveCount(0);
+  }
+});
+
+// The other two states — the pre-first-opening wording and the untouched
+// no-counts label — are asserted in scripts/tests/unit.test.mjs against
+// readingMessage/drawingDetail directly. They were written here too and removed:
+// a minimal stub does not make the progress block render at all (the component is
+// gated behind `processing`, which needs the poll to have started), so those
+// tests were exercising the fixture rather than the feature. The one above is
+// kept because it does render, and proves the counter reaches the DOM.

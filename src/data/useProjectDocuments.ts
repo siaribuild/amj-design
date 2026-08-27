@@ -24,7 +24,17 @@ export type AiProgressStage = NonNullable<ExtractionRun["progressStage"]>;
 
 export type AiPhase =
   | null
-  | { kind: "reading"; docs: number; stage?: AiProgressStage }
+  | {
+      kind: "reading";
+      docs: number;
+      stage?: AiProgressStage;
+      /** How many of the project's openings have been read from the drawings,
+       *  and how many there are. Null on every run that predates drawing
+       *  reading and on every set without plans — which is why the label falls
+       *  back rather than showing "0 of 0". */
+      drawingsDone?: number | null;
+      drawingsTotal?: number | null;
+    }
   | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
   | { kind: "done"; refined: number }
   | { kind: "failed"; diagnostic?: SafeDiagnostic | null };
@@ -348,7 +358,8 @@ export function useProjectDocuments(
           recordStage(run.progressStage);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-            : { kind: "reading", docs, stage: run.progressStage });
+            : { kind: "reading", docs, stage: run.progressStage,
+                 drawingsDone: run.drawingsDone ?? null, drawingsTotal: run.drawingsTotal ?? null });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
@@ -423,7 +434,8 @@ export function useProjectDocuments(
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase(run.diagnostic
           ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-          : { kind: "reading", docs, stage: run.progressStage });
+          : { kind: "reading", docs, stage: run.progressStage,
+               drawingsDone: run.drawingsDone ?? null, drawingsTotal: run.drawingsTotal ?? null });
         pollExtraction(docs);
       } else if (docs > 0 && run?.status === "failed") {
         setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
