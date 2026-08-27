@@ -306,10 +306,17 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
     }
     if (sizes.some((w) => w === null || (w as number) <= 0)) return null;
 
+    // A stacked opening divides its HEIGHT: every unit spans the full width and
+    // takes a share of the height. Giving both dimensions the share — which this
+    // did — produces a unit whose width is a fraction of the opening's height,
+    // and it would have reached validateSplit as a coverage failure on an axis
+    // nobody was watching. fitReportComponentsToOpening already swaps along and
+    // across correctly; this branch simply did not.
+    const stacked = hint.axis === "horizontal";
     return units.map((u, i) => ({
       operation: u.operation || fallbackOp,
-      widthMm: sizes[i] as number,
-      heightMm: hint.axis === "horizontal" ? (sizes[i] as number) : heightMm,
+      widthMm: stacked ? totalWidthMm : (sizes[i] as number),
+      heightMm: stacked ? (sizes[i] as number) : heightMm,
       ref: u.ref ?? null,
       requirement: u.requirement ?? null,
       performanceTypeId: u.performanceTypeId ?? null,
