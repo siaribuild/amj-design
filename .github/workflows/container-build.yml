@@ -1,0 +1,61 @@
+# Builds the plan-parse container image.
+#
+# This is the ONLY thing that builds it before a deploy. Wrangler builds the
+# image during `deploy` — and during `deploy --dry-run` too — but the local build
+# gate passes `--containers-rollout none` on machines with no Docker, because
+# wrangler otherwise fails there and refuses `wrangler dev` outright on Windows.
+# Without this job the first build of the image would be a production deploy.
+#
+# Runners have Docker, so here it is built for real: the Dockerfile is exercised,
+# `npm ci` resolves against the committed lockfile, and both native dependencies
+# fetch a linux/amd64 binary. Delete this file and the image is unvalidated until
+# it is deployed.
+name: container-build
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "containers/plan-parse/**"
+      - ".github/workflows/container-build.yml"
+  pull_request:
+    paths:
+      - "containers/plan-parse/**"
+
+# Least privilege: this job reads the repo and builds an image locally to the
+# runner. It pushes nothing and needs no token.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: plan-parse image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t plan-parse:ci containers/plan-parse
+
+      # Building proves the Dockerfile resolves. Starting proves it can actually
+      # run — a missing COPY or an unresolvable import only shows up here, and
+      # that exact bug shipped once already.
+      - name: It starts, and answers
+        run: |
+          docker run -d --name pp -p 8080:8080 plan-parse:ci
+          for i in $(seq 1 30); do
+            if curl -fsS localhost:8080 >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS localhost:8080 | tee /dev/stderr | grep -q '"ok":true'
+
+      - name: It refuses a malformed job
+        run: |
+          printf '{"scale":0,"pages":[]}\nnotapdf' \
+            | curl -s -o body.txt -w '%{http_code}' -XPOST --data-binary @- localhost:8080 \
+            | grep -q '^400$'
+          grep -q 'bad_request' body.txt
+
+      - name: Container log (always, so a failure is diagnosable)
+        if: always()
+        run: docker logs pp || true

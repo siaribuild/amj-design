@@ -128,6 +128,18 @@ Mechanism, concretely:
   cold start, not two. Affinity is an optimisation only — correctness never depends on which
   instance answers, because the container is stateless.
 
+**CONSTRUCTION RULE, written before the wiring exists.** The `@cloudflare/containers` base
+class proxies the **entire** forwarded Request to `defaultPort`. So a route that passes a
+customer's request through to `env.PLAN_PARSE` — rather than building a fresh internal request
+from values the Worker itself chose — hands that caller control of the method, path and body of
+a call to an endpoint which by design has no authorization. The container is safe because it is
+unreachable, not because it checks who is asking.
+
+Therefore: **the Worker constructs the container request; it never forwards one.** The only
+thing crossing that boundary is a `CropRequest` the Worker built and a PDF the Worker read from
+R2 under `WHERE project_id = ?`. `/security-review` raised this against a surface that is not
+yet live and asked for it to be recorded before the call site is written; t1's tests assert it.
+
 ### 3.2 The seam ruling — stateless, whole PDF per call. Kept, with its costs stated.
 
 The container receives the **whole PDF on every call** and re-renders any page a later call
