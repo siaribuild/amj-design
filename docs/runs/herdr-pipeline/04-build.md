@@ -334,3 +334,19 @@ is the most restrictive of them that still lets a stage work — a `Write` and a
 `manual` prompts on every edit and `plan` is read-only. Nothing persists a bypass
 acceptance (`~/.claude.json` carries only `hasTrustDialogAccepted`, the separate
 workspace-trust dialog), so the dialog fired on every pane stage of every run.
+
+## fixes — stale session id, and the decisions hold record
+
+Live: `herdr agent list` said session `604dafed` for the pane, `run.json` said
+`ad806d75`. `604dafed` was an earlier agent killed in that pane before it was
+reused; `ad806d75` really ran and has the transcript. **The boot id is
+authoritative** — it is causal (claude was launched with it) and is what
+`--resume`, `answer` and metering address; herdr's `agent_session` is metadata
+that can outlive its agent. `launchStage` no longer adopts it (`adopted` is
+gone, nothing read it): a disagreement is printed and kept as `herdrSession`.
+
+Second: a stage writing `DECISIONS.md` outside pane mode left status/mode/
+holdReason undefined. `holdRecord` is now the one place a hold is written —
+`holdWarm` (blocked) and `runClaude` (decisions) — and a held stage gives up
+`code`, because it is not a finished stage. Stub: `HERDR_STUB_TRANSCRIPT`
+writes a transcript for the id a fresh boot is given.
