@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import { SidePanel } from "../chrome/SidePanel";
 import type { LineRationaleDto, RationaleUnit } from "../../data/rationale";
 import {
-  DETAIL, basisLabel, candidateFigures, candidateName, chosenRowMark, comparisonVerdict,
-  figuresText, ladderNote, rankedText, unitBandText, unitBasisLabel, verdictWord,
+  DETAIL, NO_SELECTION, basisLabel, candidateFigures, candidateName, chosenRowMark,
+  chosenLine, comparisonVerdict, figuresText, ladderNote, rankedText, unitBandText,
+  unitBasisLabel, verdictWord,
 } from "./whyCopy";
 
 /**
@@ -24,8 +25,11 @@ import {
  * longer exists.
  */
 export function WhyDetail({ dto, open, backLabel, onClose }: {
-  /** Only ever a `recommendation`: every other kind has no detail, and the
-   *  panel offers no door into one (WHY-AC-41). */
+  /** ANY of the four kinds. WHY-AC-41 — a panel with no detail carries no
+   *  control — is superseded (owner, FB-AC-38): every panel has a door, so
+   *  every kind has to have something honest behind it. `recommendation` is
+   *  unchanged; the other three keep the same headings and NAME what is
+   *  missing, which is a different screen from an empty one. */
   dto: LineRationaleDto | null;
   open: boolean;
   /** Where back returns to, named — the line's own code. */
@@ -35,7 +39,7 @@ export function WhyDetail({ dto, open, backLabel, onClose }: {
   const recommendation = dto && dto.kind === "recommendation" ? dto : null;
   return (
     <SidePanel
-      open={open && !!recommendation}
+      open={open && !!dto}
       onClose={onClose}
       title={DETAIL.title}
       testId="line-why-detail"
@@ -43,6 +47,7 @@ export function WhyDetail({ dto, open, backLabel, onClose }: {
       dismiss={{ back: backLabel }}
     >
       {recommendation && <Body dto={recommendation} />}
+      {dto && dto.kind !== "recommendation" && <Recorded dto={dto} />}
     </SidePanel>
   );
 }
@@ -102,6 +107,61 @@ function Body({ dto }: { dto: Recommendation }) {
       {dto.unsuppliedSplitNote && (
         <p className="wd__reason" data-testid="why-split-note">{dto.unsuppliedSplitNote}</p>
       )}
+
+      <p className="wd__reason wd__closing">{DETAIL.closing}</p>
+    </div>
+  );
+}
+
+/**
+ * THE DETAIL FOR A LINE WITH NO RECORDED RUN BEHIND IT — `human`, `unrecorded`
+ * and `unresolved` (FB-AC-42).
+ *
+ * SAME HEADINGS, ALWAYS. The DTO for these three carries only the line's own
+ * figures (and units, on a human split): no requirement, no candidates. The
+ * temptation is to drop the blocks that would be empty, and it is wrong — a
+ * screen whose shape changes has to be READ before its content can be, and
+ * "this was not recorded" is a fact a reviewer needs, where a missing heading
+ * is a fact they have to infer.
+ *
+ * The `Chosen` sentence is the PANEL'S, verbatim, so the two surfaces cannot
+ * describe one line differently. It leads, because on these kinds it is the
+ * only thing actually known.
+ */
+function Recorded({ dto }: { dto: Exclude<LineRationaleDto, { kind: "recommendation" }> }) {
+  const chosen = chosenLine(dto);
+  const units = dto.kind === "human" ? dto.units : null;
+  return (
+    <div className="wd" data-testid="line-why-body">
+      <p className="wd__reason" data-testid="why-chosen">{chosen.text}</p>
+
+      <Block heading={DETAIL.hadToMeet} testId="why-requirement">
+        <p className="wd__reason ops2-absent">{DETAIL.notRecorded}</p>
+      </Block>
+
+      {/* THE UNITS BLOCK IS THE RECOMMENDATION'S OWN, not a second copy of it. A
+          human-decided split has exactly the units a machine-decided one does,
+          and each still carries its own recorded band or the sentence that none
+          was recorded — the fact does not change because a person made the
+          call. */}
+      {units && units.length > 0 ? (
+        <Bands units={units} />
+      ) : (
+        <Block heading={DETAIL.ownFigures} testId="why-figures">
+          {/* `unresolved` is not an absent figure — it is a run that established
+              there was nothing to select, and the two are told apart by the KIND
+              and never by the figures, which are present-and-null in both. So it
+              says the panel's own sentence rather than printing `not recorded`
+              and claiming the wrong absence. */}
+          <p className={dto.kind === "unresolved" ? "wd__reason" : "wd__reason wd__fig"}>
+            {dto.kind === "unresolved" ? NO_SELECTION : figuresText(dto.current.figures)}
+          </p>
+        </Block>
+      )}
+
+      <Block heading={DETAIL.ladder} testId="why-ladder">
+        <p className="wd__reason ops2-absent">{DETAIL.noAlternatives}</p>
+      </Block>
 
       <p className="wd__reason wd__closing">{DETAIL.closing}</p>
     </div>

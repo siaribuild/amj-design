@@ -200,11 +200,15 @@ The opening drawn to true proportion — panel arrangement, mullions, opening sy
 _Avoid_: icon, thumbnail, pictogram
 
 **Line page**:
-The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** and **"Why this product?"** attach here when built. Its line is always resolved from its project's own record — never fetched by bare line id.
+The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** attaches here when built. **"Why this product?"** is live: every rationale kind carries a door to the detail at `…/why`, which states what was recorded and names what was not — the record's desk canvas carries the same panel. Its line is always resolved from its project's own record — never fetched by bare line id.
 
 **Attention filter**:
-The record's blocker row. It names the leading blocker with the control that clears it and counts the rest (`+N more`) — a queue, not a list. Its "show only these" filters the line list to the lines with no rate. It is a scanning aid over the list the console already holds; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`).
-_Avoid_: warning banner, error list
+The record's pill — drawn only when at least one line needs attention, never as a permanent status line (owner: "no pill when the filter is cleared"). One predicate, `needsAttention` (`src/ops2/projects/record.ts`): `needsReview` or no rate — the same test that paints a row's leading edge and prints its badge, so the pill's count, the filter's set and the list's marks cannot disagree. Pressing it toggles the line list down to exactly those rows. It is a scanning aid; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`), whose refusal renders separately and never at the same time as the pill.
+_Avoid_: warning banner, error list, blocker queue, attention band
+
+**List row**:
+The one pressable row and its list container (`src/ops2/chrome/RowList.tsx` — `ops2-row` / `ops2-rows`), shared by the queue's phone cards, the record's line list and the line page's unit rows. The component is the same; the content within differs per surface, and so does what the leading edge means — waiting-on for the queue, needs-review for the record, nothing for units. Structural rule (ADR 0014): the leading edge, the selection tint and the hover wash all paint on the row's single button, so no state can erase another. The queue's desk `<table>` is not one of these.
+_Avoid_: card list, IonItem
 
 ### Referrals
 

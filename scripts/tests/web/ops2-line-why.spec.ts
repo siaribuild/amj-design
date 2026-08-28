@@ -277,7 +277,10 @@ test("WHY-AC-8/9 §9.0 the three states of an absence, told apart on the screen"
   await expect(page.getByTestId("line-why")).toContainText("Uw 4.35 · SHGC 0.58");
   await expect(page.getByTestId("line-why")).toContainText("a person chose this product");
   await expect(page.getByTestId("line-why-foot")).toHaveCount(0);
-  await expect(page.getByTestId("line-why-open")).toHaveCount(0);
+  await expect(page.getByTestId("line-why-open")).toHaveCount(1);
+  // SUPERSEDED by FB-AC-38: every kind has a door now, and a detail behind it
+  // that names what was not recorded. What this test still owns is the panel's
+  // own words, which did not change.
 
   // Saved before the capture existed: the column is NULL. Never a zero, never a
   // dash — and the foot sentence is the ONLY thing on screen that tells this
@@ -302,13 +305,19 @@ test("WHY-AC-10/41 a run from an earlier model says so, and offers no door", asy
   await openLine(page, "l5");
   await expect(page.getByTestId("line-why"))
     .toContainText("recorded by an earlier model, whose reasoning was not kept");
-  // WHY-AC-41: not a disabled control, not a chevron — no control at all.
-  // `ion-button` IS in the selector, because the one control this panel can
-  // legitimately grow — WHY-AC-42's retry — is an `ion-button`, and a negative
-  // that could not see it would pass with a control on screen.
-  await expect(page.getByTestId("line-why-open")).toHaveCount(0);
+  // SUPERSEDED by FB-AC-38. WHY-AC-41 asked for no control at all on this kind;
+  // the owner reversed it ("for consistency and less 'what-if' scenarios in the
+  // code"), and the detail behind the door names what was not recorded rather
+  // than opening empty.
+  //
+  // What survives is the SHAPE of the negative: exactly ONE control, and it is
+  // the door. `ion-button` stays in the selector because the one other control
+  // this panel can legitimately grow — WHY-AC-42's retry — is an `ion-button`,
+  // and a count that could not see it would pass with a second control on
+  // screen.
+  await expect(page.getByTestId("line-why-open")).toHaveCount(1);
   expect(await page.getByTestId("line-why")
-    .locator("ion-button, button, a, [role=button]").count()).toBe(0);
+    .locator("ion-button, button, a, [role=button]").count()).toBe(1);
 });
 
 /**
@@ -384,6 +393,9 @@ test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE differ
   //    this branch previously assumed and never checked.
   await page.goto(`${LINE("l99")}/why`);
   await expect(page.getByTestId("line-not-found")).toBeVisible();
+  // UNCHANGED by FB-AC-38. The door became unconditional across the four
+  // rationale KINDS; a refusal is not a kind. There is no line here to have a
+  // rationale about, and the page already says so.
   await expect(page.getByTestId("line-why")).toHaveCount(0);
   await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
   said.refused = await reasoningSentence(page);
@@ -396,6 +408,11 @@ test("WHY-AC-42 a failed read, a refusal and a recorded absence are THREE differ
   await page.route(RATIONALE_URL, refuse);
   await page.goto(LINE("l1"));
   await expect(page.getByTestId("line-spec")).toBeVisible();
+  // UNCHANGED by FB-AC-38, and this is the third of the three sentences the
+  // test is named for. A 404 is not a rationale KIND — it is the absence of a
+  // rationale altogether — so there is no panel, no retry and no door. The
+  // door became unconditional across the four kinds; it did not become
+  // unconditional across the failures.
   await expect(page.getByTestId("line-why")).toHaveCount(0);
   await expect(page.getByTestId("line-why-retry")).toHaveCount(0);
   await page.unroute(RATIONALE_URL, refuse);
@@ -552,11 +569,18 @@ test("WHY-AC-44 exactly one routed surface, on every address in the grammar", as
   expect(await surfaces(), "…/drawing shows the viewer and NO detail").toEqual({ detail: false, viewer: true });
 });
 
-test("WHY-AC-43 the record canvas shows no panel AND issues no rationale request", async ({ page }) => {
-  // D21, as a CHECKED absence rather than an accident of `why={null}`. §12
-  // note 6 is explicit: "no request issued", not merely "no panel visible" — a
-  // canvas that fetched a rationale and rendered nothing would satisfy the
-  // weaker claim while spending the read on every line a reviewer clicks.
+test("FB-AC-44 the record canvas carries the panel and issues its rationale request", async ({ page }) => {
+  // SUPERSEDED: WHY-AC-43 / owner ruling D21 said this canvas shows no panel
+  // and issues no rationale request, and `ProjectRecordPage` carried a comment
+  // saying the null was deliberate and that wiring it was "a real decision
+  // about this surface". The owner took it: "not tested yet. but yes."
+  //
+  // The old test's REASON survives the reversal and is what this now measures.
+  // It was written because "no panel visible" is the weaker claim: a canvas
+  // that fetched a rationale and rendered nothing would satisfy it while
+  // spending a read on every line a reviewer clicks. So the assertion is not
+  // "it asks" — it is that it asks ONCE PER LINE and never twice for the same
+  // one, which is the same defect the absence was protecting against.
   const calls = await serve(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${OPS2}/projects/p_rec`);
@@ -572,9 +596,32 @@ test("WHY-AC-43 the record canvas shows no panel AND issues no rationale request
   await expect(page.getByTestId("line-review")).toBeVisible();
   await page.waitForTimeout(1500);
 
-  await expect(page.getByTestId("line-why")).toHaveCount(0);
-  expect(calls.methods.filter((m) => m.includes("/rationale")),
-    "the canvas asked for a rationale it never shows").toEqual([]);
+  await expect(page.getByTestId("line-why")).toHaveCount(1);
+
+  const asked = calls.methods.filter((m) => m.includes("/rationale"));
+  expect(asked.length, "the canvas asks for the line it is showing").toBeGreaterThan(0);
+  // NO LINE ASKED TWICE. A selection that re-fetched on every render would pass
+  // a bare "it asked" and is exactly the waste D21 was avoiding.
+  expect(new Set(asked).size, `one read per line, got ${asked.join(", ")}`)
+    .toBe(asked.length);
+
+  // AND NOT WHEN THE READER COMES BACK TO IT. The version above passed while
+  // A -> B -> A read A twice, because it never went back: one hook instance is
+  // reused as the selection changes and it keeps only the current result. This
+  // is the direction that actually costs a read on a rail a reviewer walks up
+  // and down, and it is the invariant the assertion above was written for.
+  const rows = page.getByTestId("record-line");
+  await rows.nth(0).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await rows.nth(1).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await rows.nth(0).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await page.waitForTimeout(800);
+
+  const revisited = calls.methods.filter((m) => m.includes("/rationale"));
+  expect(new Set(revisited).size, `one read per line across a walk, got ${revisited.join(", ")}`)
+    .toBe(revisited.length);
 
   // THE CONTROL. The same counter on the LINE page does record a call, so the
   // empty list above means "no request" rather than "the counter never worked".
@@ -659,7 +706,10 @@ test("WHY-AC-11 an order record has no panel, and its /why address refuses", asy
   await page.goto(LINE("l1"));
   await expect(page.getByTestId("line-review")).toBeVisible();
 
-  // D2: NO PANEL AT ALL, and no sentence in its place.
+  // D2: NO PANEL AT ALL, and no sentence in its place. UNCHANGED by FB-AC-38 —
+  // the door became unconditional across the four rationale KINDS, and an order
+  // line has no rationale of any kind: a contract row is not a quote line and
+  // was never the subject of a selection run.
   await expect(page.getByTestId("line-why")).toHaveCount(0);
   await expect(page.getByTestId("line-review")).not.toContainText("Why this product");
   // And the endpoint is never called — not called and hidden.
@@ -777,15 +827,22 @@ test("WHY-AC-7c a cold link lands with the detail OPEN, and its back REPLACES", 
   expect(await historyLength(page)).toBe(length);
 });
 
-test("WHY-AC-7d a /why address on a line with no detail lands on the line, and grows no history", async ({ page }) => {
+test("FB-AC-38 a /why address is served on every resolved kind, and grows no history", async ({ page }) => {
   await serve(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  // l3 is a person's pick: there is no rationale to open, so the address is not
-  // one this line serves. It corrects by replace rather than opening empty.
+  // SUPERSEDED: WHY-AC-7d normalised `/why` back to the line for any kind but
+  // `recommendation`. That was the THIRD place one rule lived — the door, the
+  // detail's render and the route each withheld it separately — and it is the
+  // "what-if scenarios in the code" the owner ruled out. Fixing two of the
+  // three would have produced a door that changed the URL and opened nothing.
+  //
+  // l3 is a person's pick. There is no machine rationale, and the address is
+  // served anyway: what opens names what was not recorded.
   await page.goto(`${LINE("l3")}/why`);
   await expect(page.getByTestId("line-review")).toBeVisible();
-  await expect(page).toHaveURL(/\/line\/l3$/);
-  await expect(page.getByTestId("line-why-detail")).toBeHidden();
+  await expect(page).toHaveURL(/\/line\/l3\/why$/);
+  await expect(page.getByTestId("line-why-detail")).toBeVisible();
+  await expect(page.getByTestId("why-requirement")).toContainText("Not recorded for this line.");
 
   // And a line this project does not have refuses exactly as a missing one does
   // — one sentence, whether reached by URL or by anything else.
@@ -958,3 +1015,101 @@ test("WHY-AC-7b the Projects filter panel is exactly as it was", async ({ page }
   expect(await sheet.getByTestId("queue-filter-sheet-back").count()).toBe(0);
 });
 
+
+test("FB-AC-38/42 — every kind opens a detail, and it names what was not recorded", async ({ page }) => {
+  // WHY-AC-41 gave a panel with no recorded run no control at all. Reported:
+  // "Why This product - is not clickable, does not lead to more detailed view,
+  // does not have '>' to indicate possible path." Owner ruling: "I think it
+  // should, for consistency and less 'what-if' scenarios in the code."
+  //
+  // The door is only honest if the screen behind it is. These three kinds carry
+  // no requirement and no candidates, so the detail keeps the SAME headings and
+  // states each absence — a screen whose shape changes has to be read before
+  // its content can be, and a missing heading is a fact the reader must infer.
+  await serve(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  // `l5` is `unrecorded`: a run from before the model kept outcomes.
+  await page.goto(LINE("l5"));
+  const panel = page.getByTestId("line-why");
+  await expect(panel).toBeVisible();
+
+  const door = page.getByTestId("line-why-open");
+  await expect(door).toBeVisible();
+  await expect(door).toHaveAttribute("aria-label", /open what was recorded/);
+
+  await door.click();
+  const detail = page.getByTestId("line-why-detail");
+  await expect(detail).toBeVisible();
+
+  // The three headings, all present, each saying what it has.
+  await expect(detail.getByTestId("why-requirement")).toContainText("Not recorded for this line.");
+  await expect(detail.getByTestId("why-figures")).toBeVisible();
+  await expect(detail.getByTestId("why-ladder")).toContainText("No alternatives were recorded for this line.");
+
+  // The `Chosen` sentence is the PANEL'S, verbatim — the two surfaces may not
+  // describe one line differently.
+  // VERBATIM, which is the criterion — not "says something similar". The two
+  // surfaces may not describe one line differently, so the detail's sentence is
+  // compared against the panel's own rather than against a word I picked.
+  const panelChosen = await panel.locator("dd").last().innerText();
+  await expect(detail.getByTestId("why-chosen")).toHaveText(panelChosen.trim());
+
+  // WHY-AC-39/40 still hold, and they are about the BODY: nothing in what the
+  // detail SAYS is pressable. The panel's own way out is not part of that — it
+  // is the surface, not the content.
+  await expect(detail.locator(".wd button, .wd a, .wd [role=button]")).toHaveCount(0);
+});
+
+test("FB-AC-42 — `unresolved` says nothing was selected, and never prints an absent figure", async ({ page }) => {
+  // The distinction the KIND carries and the figures cannot: a run that
+  // established there was nothing to select is not a product with no published
+  // figure. Both arrive present-and-null, so a detail that printed `not
+  // recorded` here would state the wrong absence.
+  await serve(page, {
+    l5: { kind: "unresolved", current: { productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", figures: null } },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(LINE("l5"));
+
+  await page.getByTestId("line-why-open").click();
+  const detail = page.getByTestId("line-why-detail");
+  await expect(detail).toBeVisible();
+  await expect(detail.getByTestId("why-figures")).toContainText("no selection was made on this line");
+  await expect(detail.getByTestId("why-figures")).not.toContainText("not recorded");
+});
+
+test("FB-AC-44 — the desk canvas carries the panel, and its door opens the LINE's detail", async ({ page }) => {
+  // `ProjectRecordPage` passed `why={null}` with a comment saying the null was
+  // deliberate and that wiring it was "a real decision about this surface, not
+  // a rider on the line page's". The owner took it — "not tested yet. but yes."
+  // — which supersedes WHY-AC-43/D21, the ruling that this canvas shows no
+  // panel and issues no rationale request.
+  await serve(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${OPS2}/projects/p_rec`);
+
+  await expect(page.getByTestId("record-canvas")).toBeVisible();
+  const panel = page.getByTestId("line-why");
+  await expect(panel).toBeVisible();
+
+  // ONE DOOR, ONE ADDRESS. The route grammar allows exactly one `/why`, so the
+  // canvas opens the LINE's detail rather than a second copy of it — and back
+  // returns to the record it was opened from.
+  await page.getByTestId("line-why-open").click();
+  await expect(page.getByTestId("line-why-detail")).toBeVisible();
+  await expect(page).toHaveURL(/\/line\/[^/]+\/why$/);
+
+  // FB-AC-45 — BACK NAMES THE DOOR IT CAME THROUGH. There are two doors now and
+  // this reader came through the canvas's, having never seen the line page: a
+  // control naming the line would send them somewhere they have not been. The
+  // mark carries which door (`WHY_FROM_RECORD`), so the two are distinguishable
+  // — the exact indistinguishability `lineRoute.ts` warns one shared key causes.
+  await expect(page.getByTestId("line-why-detail-back")).toContainText("OF-Q-10482");
+
+  // AND IT LANDS THERE. The name is only a promise; this is the promise kept —
+  // and the two are asserted together because a control that says "OF-Q-10482"
+  // and goes to the line page is worse than one that says "Line".
+  await page.getByTestId("line-why-detail-back").click();
+  await expect(page).toHaveURL(/\/projects\/p_rec$/);
+});

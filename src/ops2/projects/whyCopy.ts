@@ -308,10 +308,36 @@ export interface WhyPanelCopy {
   lines: PanelLine[];
   /** WHY-AC-9's absence-1 sentence, or null. */
   foot: string | null;
-  /** The accessible name of the door, or `null` when there is nothing behind
-   *  it — WHY-AC-41: a panel with no detail has no control at all. */
-  door: string | null;
+  /** The accessible name of the door. NEVER null since FB-AC-38: every kind has
+   *  a detail behind it, so the type carries no absent case for a reader to
+   *  wonder about. */
+  door: string;
 }
+
+/**
+ * THE DOOR ON A KIND WITH NO MACHINE RATIONALE BEHIND IT.
+ *
+ * WHY-AC-41 said a panel with no detail carries no control at all, and it was
+ * right about the panel it was written for. The owner overruled it on the
+ * surface — "I think it should, for consistency and less 'what-if' scenarios in
+ * the code" — because a panel presenting three facts and no affordance is
+ * indistinguishable from one whose affordance the reader cannot find, and the
+ * branch that produced it was a fourth state to hold in every reader's head.
+ *
+ * It is not a control wired to nothing: the detail keeps the same three
+ * headings and NAMES what is missing, which is a different screen from an empty
+ * one. The words are weaker than the recommendation's on purpose — "what was
+ * recorded" promises a record, not a comparison, and there is no comparison.
+ */
+const DOOR_RECORDED = "Why this product — open what was recorded for this line";
+
+/** WHY-AC-9's second meaning, in one place. The panel says it and so does the
+ *  detail, and the two may not drift: a run that established there was nothing
+ *  to select is not a product with no published figure, and the KIND is the only
+ *  thing that tells them apart. This file's own rule — "a heading typed into JSX
+ *  is a heading the ban never looked at" — applies to it as much as to a
+ *  heading. */
+export const NO_SELECTION = "no selection was made on this line";
 
 /** UX §3.5 — an ops split shows at most three units and STATES the remainder.
  *  There is no detail behind this panel, so the units beyond the third have
@@ -345,10 +371,11 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         // nothing to select, which is a different fact from a product with no
         // published figure — and the figures, present-and-null in both, cannot
         // tell them apart (spec §9.0).
-        { k: "This one", v: "no selection was made on this line", absent: true },
+        { k: "This one", v: NO_SELECTION, absent: true },
         chosenRow(),
       ],
-      foot: null, door: null,
+      foot: null,
+      door: DOOR_RECORDED,
     };
   }
 
@@ -358,7 +385,8 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         { k: "This one", ...figuresRow(dto.current.figures) },
         chosenRow(),
       ],
-      foot: foot(dto.current), door: null,
+      foot: foot(dto.current),
+      door: DOOR_RECORDED,
     };
   }
 
@@ -378,7 +406,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         chosenRow(),
       ],
       foot: units ? null : foot(dto.current),
-      door: null,
+      door: DOOR_RECORDED,
     };
   }
 
@@ -489,6 +517,14 @@ export const DETAIL = {
     + "every split since the split feature shipped and have never been shown.",
   bandMissing: "Its band was not recorded.",
   noRequirement: "This opening had no thermal requirement.",
+  // ── The three kinds with no machine rationale behind the door (FB-AC-42) ──
+  // The detail keeps the same headings on all four kinds and states the absence
+  // where there is nothing, because a heading that vanishes teaches the reader
+  // that this screen has two shapes — and then the shape itself has to be read
+  // before the content can be.
+  notRecorded: "Not recorded for this line.",
+  ownFigures: "This line's figures",
+  noAlternatives: "No alternatives were recorded for this line.",
   // R28/WHY-AC-39 — stated positively, so a later reader does not mistake the
   // absence of an action for an oversight and helpfully restore one.
   closing: "Nothing on this screen changes the quote — it is read and closed.",

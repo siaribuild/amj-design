@@ -16,11 +16,14 @@ import type { RationaleLoad } from "./useLineRationale";
  * is positioned over it. The focus ring is drawn around the CARD rather than
  * around an invisible control.
  *
- * ── AND IT EXISTS ONLY WHEN THERE IS SOMETHING BEHIND IT ────────────────────
- * WHY-AC-41: no detail, no chevron, no control at all. A control drawn for a
- * screen that would open empty is the defect this effort has recorded four
- * times, and `panelCopy` decides it — not this component, which would be the
- * second place the rule lived.
+ * ── AND IT IS ALWAYS THERE (FB-AC-38, superseding WHY-AC-41) ────────────────
+ * WHY-AC-41 gave a panel with no recorded run no control at all. The owner
+ * reversed it — "for consistency and less 'what-if' scenarios in the code" —
+ * and the detail behind the door names what was not recorded rather than
+ * opening empty, which is what makes the door honest on every kind.
+ *
+ * The words still come from `panelCopy`, which is the one place that decides
+ * what the door SAYS; this component has never decided whether it exists.
  */
 export function WhyPanel({ load, onOpen, reload }: {
   load: RationaleLoad;
@@ -64,15 +67,18 @@ export function WhyPanel({ load, onOpen, reload }: {
   const copy = panelCopy(load.dto);
   const body = (
     <>
-      {copy.door && (
-        <span className="lp-panel__head">
-          <h2 className="lp-panel__title">Why this product</h2>
-          <svg className="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </span>
-      )}
-      {!copy.door && <h2 className="lp-panel__title">Why this product</h2>}
+      {/* THE HEAD IS ONE SHAPE NOW. Both branches of a `copy.door` test lived
+          here — one with the chevron and one without — and the second carried a
+          duplicate of this very `<h2>`. `panelCopy` returns a door on all four
+          kinds since FB-AC-38, so the no-door branch was unreachable: exactly
+          the "what-if scenario in the code" the owner's ruling removed, left
+          behind by the ruling that removed it. */}
+      <span className="lp-panel__head">
+        <h2 className="lp-panel__title">Why this product</h2>
+        <svg className="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </span>
       <dl className="lp-panel__lines">
         {copy.lines.map((line) => (
           <div key={line.k} className="lp-panel__line">
@@ -87,19 +93,17 @@ export function WhyPanel({ load, onOpen, reload }: {
 
   return (
     <section
-      className={copy.door ? "lp-panel lp-panel--door" : "lp-panel"}
+      className="lp-panel lp-panel--door"
       data-testid="line-why"
       aria-label="Why this product"
     >
-      {copy.door && (
-        <button
-          type="button"
-          className="lp-panel__door"
-          data-testid="line-why-open"
-          aria-label={copy.door}
-          onClick={onOpen}
-        />
-      )}
+      <button
+        type="button"
+        className="lp-panel__door"
+        data-testid="line-why-open"
+        aria-label={copy.door}
+        onClick={onOpen}
+      />
       {body}
     </section>
   );

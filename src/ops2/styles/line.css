@@ -394,19 +394,6 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 /* ── The units of a composite ───────────────────────────────────────────────
  * Each carries its OWN drawing and its own spec: units of one opening differ,
  * and which ones differ is exactly what a reviewer is here to check. */
-.lp-units__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/* THE ROW IS THE VIEWER'S OPENER, so the <li> keeps only the hairline and the
-   button carries the grid, the padding and the hover — the shipped `.rl-open`
-   move from the record's line list, and the same SELECTOR rather than a second
-   copy of it (see `.rl-open` in record.css). */
-.lp-unit {
-  border-top: 1px solid var(--ds-border-subtle);
-}
-.lp-unit:first-child { border-top: 0; }
 /* THE ROW REACHES THE BLOCK'S EDGE. The panel's own side padding held the wash
    and the focus ring 12px in from the border, so an active row read as a band
    floating inside the panel rather than as the row itself — the same half-built
@@ -421,22 +408,19 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 .lp-panel:has(> .lp-units__list) > .lp-panel__more {
   padding-inline: var(--theme-spacing-md);
 }
-/* The row's treatment is `.rl-open`'s, shared with it in `record.css`. What is
-   left here is only what a UNIT row does differently: a grid rather than a
-   flex row, because the drawing must stay top-aligned while the body beside it
-   wraps to two lines. */
-.lp-unit__open {
+/* The row's treatment is `rows.css`'s, shared with the queue and the record.
+   What is left here is only what a UNIT row does differently: a grid rather
+   than a flex row, because the drawing must stay top-aligned while the body
+   beside it wraps to two lines.
+
+   The hairline, the gutter, the hit floor, the wash and the focus ring are all
+   the shared row's, and the `.lp-unit` <li> rule that used to carry the first
+   two is gone with them. */
+.lp-units__list .ops2-row__open {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  /* A unit with no note and no options is 40px on content alone, and 44 is a
-     hit-target floor rather than a look — it adds nothing to a row that
-     already clears it. */
-  min-height: 44px;
 }
-/* Inside the row, so it draws against the row's own edge rather than over the
-   hairline of the row above it. */
-.lp-unit__open:focus-visible { outline-offset: -2px; }
 .lp-unit__elev { display: block; flex: none; }
 .lp-unit__svg { display: block; }
 .lp-unit__body { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--theme-spacing-sm); }

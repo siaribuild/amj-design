@@ -208,7 +208,7 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
     current: { productSlug: "x", productName: "AMJ92 Sliding", figures: { uValue: 4.35, shgc: 0.58 } },
   };
   assert.deepEqual(labels(human), ["This one", "Chosen"]);
-  assert.equal(M.panelCopy(human).door, null);
+  assert.ok(M.panelCopy(human).door); // SUPERSEDED: WHY-AC-41's no-door rule, overruled by the owner — FB-AC-38.
   assert.equal(M.panelCopy(human).lines[1].v, "a person chose this product");
   assert.equal(M.panelCopy(human).foot, null, "its figures WERE captured, so there is nothing to explain");
 
@@ -242,14 +242,14 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
   assert.equal(thisOne(unresolved), "no selection was made on this line");
   assert.notEqual(thisOne(unresolved), thisOne(noFigure),
     "and it must NOT read as 'this product has no published figure'");
-  assert.equal(M.panelCopy(unresolved).door, null);
+  assert.ok(M.panelCopy(unresolved).door); // SUPERSEDED: WHY-AC-41's no-door rule, overruled by the owner — FB-AC-38.
 
-  // S8: a run from an earlier model. Two lines, the line's own figures, no door.
+  // S8: a run from an earlier model. Two lines and the line's own figures.
   const unrecorded = { kind: "unrecorded", current: human.current };
   assert.deepEqual(labels(unrecorded), ["This one", "Chosen"]);
   assert.equal(M.panelCopy(unrecorded).lines[0].v, "Uw 4.35 · SHGC 0.58");
   assert.equal(M.panelCopy(unrecorded).lines[1].v, "recorded by an earlier model, whose reasoning was not kept");
-  assert.equal(M.panelCopy(unrecorded).door, null);
+  assert.ok(M.panelCopy(unrecorded).door); // SUPERSEDED: WHY-AC-41's no-door rule, overruled by the owner — FB-AC-38.
 
   // S5: the ops-decided split. "These ones", each unit's own figures, capped at
   // three with the remainder STATED — there is no detail behind this panel, so
@@ -281,7 +281,8 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
   assert.equal(split.lines[0].more, "+2 more units", "the budget bit, and it says so");
   assert.equal("more" in split, false, "and the panel itself carries no remainder to misplace");
   assert.equal(split.lines[1].v, "a person decided this split");
-  assert.equal(split.door, null, "R17: a person decided it, so there is no machine rationale to open");
+  assert.ok(split.door,
+    "R17 still holds — no machine rationale — but the door opens what WAS recorded (FB-AC-38)");
   // Three units exactly does not claim a remainder — and the key is ABSENT
   // rather than present-and-empty, so nothing can render an empty cutoff.
   const exact = M.panelCopy({ ...opsSplit, units: opsSplit.units.slice(0, 3) }).lines[0];
@@ -298,6 +299,35 @@ test("R6/D20 three lines when the platform chose, two when a person did — and 
   assert.equal(M.panelCopy(composite).lines[1].v, "made as 2 units");
   assert.equal(M.panelCopy(composite).door,
     "Why this product — open why it was split and what else was considered");
+});
+
+test("FB-AC-38 — every kind has a door, and WHY-AC-41 is superseded", () => {
+  // WHY-AC-41 said a panel with no detail has no control at all, and it was
+  // right about the panel it was written for. The owner overruled it on the
+  // surface: "I think it should, for consistency and less 'what-if' scenarios
+  // in the code" — a panel that presents three facts and no affordance is
+  // indistinguishable from one whose affordance you cannot find, and the branch
+  // that produced it was a fourth state for a reader to hold.
+  //
+  // The detail behind it is not empty: it keeps the same three headings and
+  // NAMES what is missing, which is a different thing from an empty screen and
+  // the reason this is not a control wired to nothing.
+  const kinds = [
+    ["human", { kind: "human", current: { figures: null }, units: null }],
+    ["unrecorded", { kind: "unrecorded", current: { figures: null } }],
+    ["unresolved", { kind: "unresolved", current: { figures: null } }],
+  ];
+  for (const [name, dto] of kinds) {
+    const copy = M.panelCopy(dto);
+    assert.ok(copy.door, `${name} carries a door`);
+    assert.match(copy.door, /^Why this product — /, `${name}'s door names what is behind it`);
+  }
+
+  // AND THE DOOR SAYS SOMETHING DIFFERENT when there IS a machine rationale
+  // behind it — the three above open what was recorded, which is a weaker
+  // promise than opening a comparison, and the words keep them apart.
+  const machine = M.panelCopy(recommendation());
+  assert.notEqual(machine.door, M.panelCopy(kinds[0][1]).door);
 });
 
 test("WHY-AC-4 a composite parent has no figures of its own, so it states no absence", () => {

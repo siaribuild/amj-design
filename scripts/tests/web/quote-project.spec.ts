@@ -1076,3 +1076,26 @@ test("T-C4: a postcode we do not price still shows a number, and says a person w
   await expect(page.getByText(/outside our usual runs/i)).toBeVisible();
   await expect(page.getByText(/quoted separately|contact us for delivery/i)).toHaveCount(0);
 });
+
+// ─── FB-AC-37 — deliberately NOT written here, and the reason is the premise ──
+//
+// The criterion asks that this surface still draw the "not to scale" break
+// symbol at 375px with its width figure legible. This surface cannot: a quote
+// row renders `Elevation` at `xs` and `square` (`OpeningRow.tsx:110`), and the
+// `xs` row of the SIZES table sets `font: 0`. No leaders are drawn, so there is
+// no leader for a break to interrupt and no figure for it to paint over.
+//
+// The only customer surface that draws a dimensioned opening is the composer's
+// preview (`ItemComposer.tsx:138`, `size="sm"`) — a different screen from the
+// one the criterion names, and one this file does not exercise.
+//
+// What actually protects the shared component for this caller:
+// `scripts/tests/ops2-record.test.mjs`'s FB-AC-34 pins the document order in
+// the generator itself, which IS the whole fix and holds for every caller; and
+// FB-AC-36 in `ops2-record-feedback.spec.ts` pins the rendered result at both
+// widths on a surface that does draw leaders. A test asserting a symbol on a
+// surface that never draws one would be green for the wrong reason.
+//
+// A first attempt existed here and was removed: it seeded its line through the
+// real backend — shared project state — and took `customer.spec.ts` down with
+// it on the same run.

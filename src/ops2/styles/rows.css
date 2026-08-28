@@ -1,0 +1,103 @@
+/* ops2 — the row and the list, for every list in the console.
+ *
+ * The companion to ../chrome/RowList.tsx, and it carries ONE rule that the rest
+ * of this file exists to make unbreakable:
+ *
+ *   the leading edge, the selection tint and the hover wash are all computed on
+ *   `.ops2-row__open`, and on nothing else.
+ *
+ * An inset box-shadow paints above its own element's background. Put the wash on
+ * one element and the edge on another and whichever paints later wins — which is
+ * the reported defect: hovering a flagged line erased the mark that said it
+ * needed a person. The queue had already hit it and fixed it in place
+ * (projects.css), and the fix did not travel, because nothing carried it.
+ *
+ * WHAT THIS FILE DOES NOT DO. It adds no state that ops2 did not already have.
+ * The owner, on a mock that proposed several: "DO NOT introduce additional
+ * colours for borders for card states that does not exist at the moment." So:
+ * default, hover, the two leading edges, selection, and the focus ring the
+ * console already draws globally. No pressed wash, no deepened hover on a
+ * selected row — both were drawn, neither exists today, and the extraction is
+ * not the place to introduce them.
+ */
+
+/* THE CONTAINER OWNS GRAMMAR AND CLIPPING, NOT CHROME.
+ *
+ * `overflow: hidden` is load-bearing: the leading edge is an inset shadow at the
+ * row's left edge, and without the clip it paints outside the block's rounded
+ * corner on the first and last rows.
+ *
+ * The card — background, border, radius, elevation — is COMPOSED by the call
+ * sites that want one (`ds-surface-card`). The unit list wants none, because it
+ * already sits inside an `lp-panel`, and a card inside a card is a card too many
+ * (architect, design 3.2). Built into the container it could not be declined. */
+.ops2-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+/* The hairline belongs to the PAIR, not to either row — a rule drawn under one
+   row's bottom edge is a rule that row appears to own, and a leading accent edge
+   two pixels away from it then reads as a corner. */
+.ops2-row + .ops2-row { border-top: 1px solid var(--ds-border-subtle); }
+
+/* THE ROW'S ONE PRESSABLE, and the gutter belongs to it rather than to the
+   container — which is what lets the wash and the focus ring reach the block's
+   inner edge instead of stopping short of it. */
+.ops2-row__open {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-sm);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ── The states. All of them, on the one element. ────────────────────────── */
+
+@media (hover: hover) {
+  .ops2-row:hover > .ops2-row__open { background: var(--ds-color-brand-wash); }
+}
+/* TOUCH FEEDBACK, and the only thing carried over from `IonItem`'s ripple when
+   the queue's card left it (ADR 0014). A press on a phone gets an answer. */
+.ops2-row__open:active { background: var(--ds-color-brand-wash); }
+/* Inside the row, so it draws against the row's own edge rather than over the
+   hairline it shares with the row above. */
+.ops2-row__open:focus-visible {
+  outline: 2px solid var(--ds-border-focus);
+  outline-offset: -2px;
+}
+
+/* THE LEADING EDGE. What it MEANS is the caller's — the record passes `warning`
+   for a line needing review, the queue passes `warning` for work waiting on us
+   and `info` for work waiting on the customer, the unit list passes nothing. The
+   row draws a mark and does not know why, which is what lets one component serve
+   three surfaces without a flag per surface. */
+.ops2-row[data-edge="warning"] > .ops2-row__open { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
+.ops2-row[data-edge="info"]    > .ops2-row__open { box-shadow: inset 3px 0 0 var(--ds-color-info); }
+
+/* SELECTION WINS THE EDGE when a row is both selected and flagged, and the rule
+   order is how it wins. Architect's ruling (design 3.1): the flag still has
+   words on the row — the `needs review` badge — and at the desk the canvas
+   beside the rail is showing that line's whole reasons panel at the moment it is
+   selected. Selection has no word a sighted reader can see, and this console has
+   already recorded that its tint alone "is not a signal". Misreading WHICH row
+   the canvas is describing is the worse failure. */
+.ops2-row[data-selected] > .ops2-row__open {
+  background: var(--ds-color-brand-wash);
+  box-shadow: inset 3px 0 0 var(--ds-color-brand);
+}
+
+/* The chevron — rows that navigate, which today is the queue's card alone. */
+.ops2-row__chev {
+  flex: none;
+  width: 16px; height: 16px;
+  color: var(--ds-text-muted);
+}
