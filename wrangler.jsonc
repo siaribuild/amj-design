@@ -38,6 +38,29 @@
       "migrations_dir": "migrations"
     }
   ],
+  // ── The plan-parse Durable Object, held open ────────────────────────────────
+  // Its implementation was reverted (#25) and is being rewritten; the class is a
+  // stub. It stays bound because Cloudflare refuses a version that drops a class
+  // its live objects depend on, and that refusal blocked every deploy of this
+  // Worker — not only the drawing feature's.
+  //
+  // NO `containers` BLOCK YET, and that is the point. The Dockerfile path that
+  // used to sit there made a Docker daemon a prerequisite for every deploy by
+  // every person. When the container returns it will be named by registry URI,
+  // built once in CI (docs/runs/plan-parse-method/00-ask.md §4).
+  //
+  // The `v1` tag is the one this class was created under and is re-declared
+  // unchanged — applied tags are tracked remotely, so this is a no-op against
+  // production and the namespace is adopted rather than re-made.
+  "durable_objects": {
+    "bindings": [
+      { "name": "PLAN_PARSE", "class_name": "PlanParseContainer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PlanParseContainer"] }
+  ],
+
   "kv_namespaces": [
     { "binding": "KV", "id": "f7433a11f02f46639053d919dd9b488a" }
   ],
