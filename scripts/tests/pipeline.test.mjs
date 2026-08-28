@@ -13,7 +13,8 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, browserMcp, mcpAdvisory,
+  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  browserMcp, mcpAdvisory,
   verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
@@ -699,6 +700,29 @@ test('a pane stage never boots with bypassPermissions - headless still does', ()
   const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
   const ro = claudeArgs(reviewer, 'prompt', false)
   assert.equal(ro[ro.indexOf('--permission-mode') + 1], 'plan', 'a read-only reviewer stays read-only')
+})
+
+test('an answered stage is resumed as itself - and a read-only reviewer is not answerable', () => {
+  // `answer` was the one boot path that hand-rolled its argv instead of going
+  // through sessionArgs, so an answered `design` came back as a generic session
+  // with no --agent: the architect silently stopped being the architect.
+  const design = STAGES.find((s) => s.id === 'design')
+  const a = answerArgs(design, 'sess-uuid', 'prompt', true)
+
+  assert.equal(a[a.indexOf('--agent') + 1], design.agent, 'the answered stage lost its agent')
+  assert.equal(a[a.indexOf('--resume') + 1], 'sess-uuid')
+  assert.equal(a[a.indexOf('--autocompact') + 1], String(design.compact))
+  assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions')
+  assert.ok(a.includes('--strict-mcp-config'))
+
+  // Carrying `readonly` through would make an answered reviewer a silent no-op:
+  // `plan` cannot revise an artifact or delete DECISIONS.md. Reviewers are
+  // read-only by design, so they are not answerable at all - findings route to
+  // a developer, which is the same rule the review stage already prints.
+  const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
+  assert.match(answerRefusal(reviewer, 'review-conformance') || '', /conduct fix/,
+    'a read-only reviewer must refuse and point at conduct fix')
+  assert.equal(answerRefusal(design, 'design'), null, 'a writing stage stays answerable')
 })
 
 /** A temp root that is a real git repo, so `conduct start` can read a base sha. */
@@ -1700,12 +1724,12 @@ test('answer resolves a held build-<task> label, and records the task it finishe
     'the answer re-booted a session that was already warm')
 })
 
-test('answer resolves a held review-<id> label too - the other half of the same crash', () => {
-  // The build-task test above cannot catch a `stageSpec` regression: `finished`
-  // returns before `afterStage` for a `build-*` label, so `spec` is never
-  // dereferenced on that path. A held REVIEWER goes straight through
-  // afterStage, where `STAGES.find` would hand it undefined and it dies on
-  // `spec.gate`. Criterion 7 covers both labels; so must the guard.
+test('answer refuses a held review-<id> label, by name and without crashing', () => {
+  // Two things at once. `stageSpec` must resolve a `review-<id>` label at all -
+  // `STAGES.find` alone hands back undefined and `answer` dies on `spec.gate`.
+  // And having resolved it, it must REFUSE: a reviewer boots read-only, so an
+  // answered reviewer would spend a session unable to touch its artifact.
+  // Reviewers report, only the developer fixes.
   const s = reviewRepo('answer-held-reviewer', { HERDR_STUB_STATES: 'blocked;idle' })
 
   paned(s, 'run', 'review')
@@ -1718,9 +1742,9 @@ test('answer resolves a held review-<id> label too - the other half of the same 
   try { out = paned(s, 'answer') } catch (e) { out = (e.stdout || '') + (e.stderr || '') }
 
   assert.ok(!/TypeError/.test(out), 'answer crashed on a reviewer label:' + NL + out)
+  assert.match(out, /conduct fix/, 'the refusal must point at the route that does work:' + NL + out)
   const r = runJson(s)
-  assert.equal(r.stages[held].status, 'done', held + ' was answered but never finished: ' + out)
-  assert.equal(r.gateStage, null, 'the gate was never cleared')
+  assert.equal(r.stages[held].status, 'held', held + ' was marked resolved by a no-op answer')
 })
 
 // --- the Probity shim (design 9.5) -----------------------------------------

@@ -557,6 +557,24 @@ export const paneArgs = (spec, sessionId, mcpOk = browserMcp()) =>
 export const resumeArgs = (spec, sessionId, mcpOk = browserMcp()) =>
   ['--resume', sessionId, ...sessionArgs(spec, mcpOk, PANE_PERMISSION)]
 
+// Answering a held stage is a HEADLESS boot into a session that already exists:
+// the claudeArgs shape with `--resume` instead of a fresh id. It goes through
+// sessionArgs like every other boot - hand-rolling the argv here is exactly how
+// an answered `design` came back without --agent and stopped being the architect.
+export const answerArgs = (spec, sessionId, promptText, mcpOk = browserMcp()) =>
+  ['-p', promptText, '--resume', sessionId, '--output-format', 'stream-json', '--verbose',
+    ...sessionArgs(spec, mcpOk, 'bypassPermissions')]
+
+// A reviewer boots read-only (`plan`) by design, so it cannot revise an artifact
+// or delete DECISIONS.md: answering one would spend a session to change nothing.
+// Reviewers report, only the developer fixes - so say that instead of inventing
+// a mechanism to let a reviewer edit.
+export const answerRefusal = (spec, id) => spec.readonly
+  ? id + ' is a read-only reviewer - it cannot revise anything, so an answer' +
+    ' would change nothing. Route what it found to a developer instead:' +
+    ' conduct fix "<finding>"'
+  : null
+
 function runClaude(spec, promptText, run, label) {
   return new Promise((res) => {
     const started = Date.now()
@@ -1257,6 +1275,8 @@ const cmds = {
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
+    const refusal = answerRefusal(spec, id)
+    if (refusal) die(refusal)
     // The whole point of holding warm: the agent is still sitting there, so the
     // answer is one typed line into the session that asked the question. No
     // --resume, no second boot, one session id across the entire cycle.
@@ -1282,9 +1302,7 @@ const cmds = {
       const p = `The owner has answered the questions in ${run.dir}/DECISIONS.md - read it now.
 Revise your artifact accordingly. If the answers raised NEW owner-only questions,
 append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
-      const cp = spawn(CLAUDE, ['-p', p, '--resume', sid, '--output-format', 'stream-json',
-        '--verbose', '--permission-mode', 'bypassPermissions',
-        '--autocompact', String(spec.compact || 120000)],
+      const cp = spawn(CLAUDE, answerArgs(spec, sid, p),
         { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'] })
       cp.on('close', res)
     })
