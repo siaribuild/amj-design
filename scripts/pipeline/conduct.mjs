@@ -84,6 +84,28 @@ export function parseTier(args) {
 
 export const inTier = (spec, run) => spec.tiers.includes(run.tier || 'full')
 
+// --- blast radius -----------------------------------------------------------
+//
+// How hard the tester looks is a property of what the diff touches, and it
+// belongs in the stage prompt where it is the same every run - not in whatever
+// the operator happens to type that day, which is how the ceremony leaked in.
+//
+// Sensitive: anything that can move money, data or an authorization decision.
+const SENSITIVE = /^(worker|src\/data|migrations)\/|auth|payment|payout|session/i
+
+/** The paths this branch actually changed, or null if the diff cannot be read. */
+export function changedPaths(base, cwd = ROOT) {
+  try {
+    return execFileSync('git', ['diff', '--name-only', base + '...HEAD'],
+      { cwd, encoding: 'utf8' }).split('\n').map((l) => l.trim()).filter(Boolean)
+  } catch { return null }
+}
+
+// Fails closed on purpose: an unreadable or empty diff is unknown, and unknown
+// gets the full pass. Cheapening a verify on a diff nobody could read is
+// exactly the trade this change must not make.
+export const sensitiveDiff = (paths) => !paths?.length || paths.some((p) => SENSITIVE.test(p))
+
 // --- stage table -----------------------------------------------------------
 // compact: context window cap, in tokens.
 // tiers:   which tier sizes run this stage.
@@ -198,22 +220,7 @@ WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   {
     id: 'verify', agent: 'tester', worktree: true, compact: 120000, tiers: ['full', 'fix'],
     needs: ['04-build.md'], produces: ['06-verify.md'],
-    prompt: (r) => `Independently verify this feature. Assume nothing reported is true.
-
-READ: ${r.dir}/01-spec.md (the acceptance criteria are your checklist) and
-${r.dir}/04-build.md (what was changed). Verify against the criteria - do not
-re-derive the design.
-
-Run: npm run typecheck:gate, then the owning test:* suites for the changed
-areas. A feature that adds or changes UI cannot PASS without Playwright
-coverage in scripts/tests/web/ - node:test suites cannot see anything the
-client decides, and that blind spot has shipped MAJOR defects here before.
-Execute every negative/abuse criterion for real: attempt the forbidden action
-and record the denial.
-
-WRITE ${r.dir}/06-verify.md: a PASS/FAIL verdict, a row per acceptance criterion
-with its evidence, and every finding with the exact command that reproduces it.
-Findings go back to a developer, not to you - do not fix code.`,
+    prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
   },
   {
     // MANDATORY for tier full - CLAUDE.md is explicit that neither a manual
@@ -236,6 +243,41 @@ WRITE ${r.dir}/08-accept.md: per-criterion met/not-met with the evidence
 reference, anything descoped, and an ACCEPT / REJECT verdict.`,
   },
 ]
+
+export function verifyPrompt(r, paths) {
+  const sensitive = (paths || []).filter((p) => SENSITIVE.test(p))
+  const depth = sensitiveDiff(paths)
+    ? `DEPTH: adversarial. This diff touches a sensitive surface - ` +
+      (sensitive.slice(0, 6).join(', ') || 'the diff could not be read, so assume it does') +
+      ` - so it gets the full pass. Probe the edge cases the developer missed,
+mutation-test the guards that matter, and execute every negative
+abuse criterion for real: attempt the forbidden action and record the denial.`
+    : `DEPTH: light. This diff touches no runtime surface - nothing under
+worker/**, src/data/** or migrations/**, and nothing naming auth, payments,
+payouts or sessions. Run the gates, walk the acceptance criteria, report.
+Do NOT mutation-test guards. Do NOT hunt for missing tests on
+code that already works, and do not raise cosmetics. At this blast radius such
+a finding costs a whole developer session to route and fix - more than the
+defect it stands in for is worth.`
+  return `Independently verify this feature. Assume nothing reported is true.
+
+READ: ${r.dir}/01-spec.md (the acceptance criteria are your checklist) and
+${r.dir}/04-build.md (what was changed). Verify against the criteria - do not
+re-derive the design.
+
+Run: npm run typecheck:gate, then the owning test:* suites for the changed
+areas. A feature that adds or changes UI cannot PASS without Playwright
+coverage in scripts/tests/web/ - node:test suites cannot see anything the
+client decides, and that blind spot has shipped MAJOR defects here before.
+
+${depth}
+
+WRITE ${r.dir}/06-verify.md: a PASS/FAIL verdict, a row per acceptance criterion
+with its evidence, and every finding with the exact command that reproduces it.
+Give every finding a severity - high / medium / low / cosmetic - because a low
+one is deferred to the run's debt file rather than costing a developer session.
+Findings go back to a developer, not to you - do not fix code.`
+}
 
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [

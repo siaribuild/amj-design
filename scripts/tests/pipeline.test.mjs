@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
   STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, browserMcp, mcpAdvisory,
+  verifyPrompt, sensitiveDiff,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -1860,4 +1861,29 @@ test('a direct-tier start refuses, and creates nothing at all', () => {
   assert.deepEqual(readdirSync(s.root).sort(), before, 'a refused start left something behind')
   assert.equal(existsSync(join(s.root, 'docs')), false, 'a refused start created docs/')
   assert.equal(existsSync(s.log), false, 'a refused start still went to herdr')
+})
+
+test('verify depth follows the blast radius of the real diff, and fails closed', () => {
+  const run = { dir: 'docs/runs/demo', base: 'abc12345' }
+
+  // Dev tooling with no runtime surface. The ceremony here is what cost 27%.
+  const light = verifyPrompt(run, ['scripts/pipeline/conduct.mjs', 'docs/pipeline/PIPELINE-V2.md'])
+  assert.match(light, /DEPTH: light/)
+  assert.match(light, /Do NOT mutation-test/,
+    'the light pass must forbid mutation testing, not merely omit asking for it')
+  assert.match(light, /code that already works/,
+    'the light pass must forbid hunting for missing tests on working code')
+
+  for (const p of ['worker/lib/pricing.ts', 'src/data/quote.ts', 'migrations/0099_x.sql',
+    'scripts/lib/guest-session.mjs']) {
+    const deep = verifyPrompt(run, ['docs/x.md', p])
+    assert.match(deep, /DEPTH: adversarial/, p + ' was treated as a cosmetic change')
+    assert.match(deep, /mutation-test/, p + ' lost the adversarial pass')
+    assert.match(deep, /abuse criterion for real/, p + ' lost its abuse-case execution')
+    assert.ok(deep.includes(p), 'the adversarial pass never names what made it sensitive')
+  }
+
+  // Unknown is not "safe". A diff that could not be read gets the full pass.
+  assert.equal(sensitiveDiff(null), true, 'an unreadable diff must fail closed')
+  assert.equal(sensitiveDiff([]), true, 'an empty diff must fail closed')
 })
