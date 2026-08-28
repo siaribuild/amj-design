@@ -5,7 +5,7 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, itemFields, itemProductSlug, itemOptions, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
+import { itemToInsert, itemFields, itemProductSlug, itemOptions, incomingServerId, editedFieldsAfterSave, sameConfiguration, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
 import { captureFigures, captureOne, fetchFigureCatalogue, pickMoved, storedPickOf } from "../lib/figures";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
@@ -492,11 +492,29 @@ projects.put("/current/lines", async (c) => {
         // price keeps its honest NULL rather than being quietly papered over
         // with a deterministic figure.
         const heal = stored.line_total == null && stored.edited_fields != null;
+        // …and the blocker is retired only when that price belongs to the
+        // configuration THIS ROW HOLDS. Nothing here persists product, size,
+        // options or quantity, so an incoming save that changes a group already
+        // on the record is priced but not stored; unblocking that line would
+        // publish a price for a configuration nobody can see. (Codex [P1].)
+        const healStored = heal && sameConfiguration(stored, f);
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?,
              line_total=COALESCE(line_total, ?),
              status=CASE WHEN line_total IS NULL AND ? IS NOT NULL
                          THEN 'technical_review' ELSE status END,
+             -- …and the reason that blocked it does not outlive the save that
+             -- priced it. A line repaired over several autosaves sets its
+             -- edited_fields on the FIRST one, so every save after that lands
+             -- here — including the one that finally fills the price. Without
+             -- this, the ERROR-severity product reason retained on the partial saves
+             -- stayed forever and the client went on blocking an opening that
+             -- now prices, with nothing the customer could do about it.
+             -- (Codex [P1].) Same condition as the status flip above, so the
+             -- two can never disagree about whether a heal happened.
+             review_json=CASE WHEN line_total IS NULL AND ? IS NOT NULL
+                              THEN json_patch(COALESCE(review_json,'{}'), '{"product":null}')
+                              ELSE review_json END,
              position=?, edit_version=edit_version+1, updated_at=datetime('now')
            WHERE id=? AND project_id=? AND parent_line_id IS NULL
              AND EXISTS (
@@ -505,7 +523,7 @@ projects.put("/current/lines", async (c) => {
              )`,
         ).bind(
           f.external_ref, f.room_label,
-          heal ? f.line_total : null, heal ? f.line_total : null,
+          heal ? f.line_total : null, heal ? f.line_total : null, healStored ? f.line_total : null,
           i, id, project.id, project.id, nextQuoteVersion, mutationToken,
         ));
         continue;
@@ -531,6 +549,31 @@ projects.put("/current/lines", async (c) => {
         // configured line, and that engine is exactly the right pricer for it.
         // The technical_review status and the review reason both stay, so staff
         // still confirm it; they now confirm a priced line instead of a blank.
+        // Built here, not inline in bind(): a spread inside the argument list
+        // makes the statement's arity un-checkable statically, and
+        // figure-capture.test.mjs pins the ONE statement in worker/** allowed
+        // to be that. It caught this within the hour.
+        const reviewPatch = {
+          customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
+          // `product` is ERROR severity, customerConfigurationChanged is a
+          // WARNING, and the shared gate is
+          //
+          //   block ⇔ an error is present ∨ (unpriced ∧ no warning explains it)
+          //
+          // so retiring the error from an edit that did NOT resolve pricing
+          // left a warning behind, the browser stopped blocking, and the
+          // server went on refusing the submission as `incomplete_lines`. A
+          // line that looks submittable and is then refused is worse than the
+          // stale sentence this is fixing. (Codex, on the first cut.)
+          //
+          // It is also still TRUE while unpriced: we could not price this
+          // opening. It is retired when that stops being so, and not before.
+          ...(f.line_total == null ? {} : { product: null }),
+          // The thermal note is different — it describes glazing the AI chose
+          // and the customer has since replaced, so it is false either way,
+          // and being a warning its removal changes nothing about blocking.
+          thermalRecommendation: null,
+        };
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?,
              options_json=?, dims_json=?, qty=?, line_total=?,
@@ -568,11 +611,7 @@ projects.put("/current/lines", async (c) => {
           // A review reason is a claim about the line as it stands, not a log of
           // everything ever true of it. What replaces them is written in the same
           // patch, so the line is never left with no reason at all.
-          JSON.stringify({
-            customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
-            product: null,
-            thermalRecommendation: null,
-          }),
+          JSON.stringify(reviewPatch),
           edited,
           stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
           // The configuration snapshot the estimator priced is voided above, but
