@@ -14,7 +14,7 @@ import { join, resolve } from 'node:path'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
   STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, browserMcp, mcpAdvisory,
-  verifyPrompt, sensitiveDiff,
+  verifyPrompt, sensitiveDiff, isDeferred,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -1886,4 +1886,29 @@ test('verify depth follows the blast radius of the real diff, and fails closed',
   // Unknown is not "safe". A diff that could not be read gets the full pass.
   assert.equal(sensitiveDiff(null), true, 'an unreadable diff must fail closed')
   assert.equal(sensitiveDiff([]), true, 'an empty diff must fail closed')
+})
+
+test('a low-severity finding lands in the debt file and spawns no developer session', () => {
+  const { root } = seedRun('severity-gate', { verify: { code: 0 } })
+  const env = { ...process.env, CONDUCT_CLAUDE_BIN: join(root, 'no-such-claude') }
+
+  const out = execFileSync(process.execPath,
+    [CONDUCT, 'fix', 'the report columns are misaligned', '--severity', 'cosmetic'],
+    { cwd: root, encoding: 'utf8', env })
+
+  const dir = join(root, 'docs', 'runs', 'demo')
+  const debt = readFileSync(join(dir, 'DEBT.md'), 'utf8')
+  assert.match(debt, /cosmetic/, 'the debt entry does not carry its severity')
+  assert.match(debt, /columns are misaligned/, 'the finding itself was not recorded')
+  assert.match(out, /deferred/i, 'a deferred finding must be said out loud, never dropped quietly')
+  assert.match(out, /DEBT\.md/, 'the operator is not told where the deferred finding went')
+  assert.equal(existsSync(join(dir, 'logs')), false,
+    'a cosmetic finding still cost a whole developer session')
+
+  // A finding with no severity is a real one: the gate defers, it never assumes.
+  assert.equal(isDeferred(undefined), false, 'an unlabelled finding must be fixed, not deferred')
+  assert.equal(isDeferred('high'), false)
+  assert.equal(isDeferred('medium'), false)
+  assert.equal(isDeferred('low'), true)
+  assert.equal(isDeferred('cosmetic'), true)
 })

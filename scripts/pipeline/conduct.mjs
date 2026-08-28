@@ -106,6 +106,30 @@ export function changedPaths(base, cwd = ROOT) {
 // exactly the trade this change must not make.
 export const sensitiveDiff = (paths) => !paths?.length || paths.some((p) => SENSITIVE.test(p))
 
+// --- severity gate ----------------------------------------------------------
+//
+// Every routed finding costs a fresh developer session. On this pipeline's own
+// build that was 0.92M subagent tokens over six rounds - more than the testing
+// that produced the findings - and they included "a test is missing for code
+// that already works" and a column-alignment cosmetic.
+//
+// So a finding below the bar is DEFERRED: appended to the run's debt file and
+// printed. Never silently dropped, and never a judgement the conductor makes on
+// its own - the severity comes from the reviewer that raised it.
+const SEVERITIES = ['high', 'medium', 'low', 'cosmetic']
+const DEFERRED = ['low', 'cosmetic']
+
+export const isDeferred = (severity) => DEFERRED.includes(String(severity || '').toLowerCase())
+
+export function parseSeverity(args) {
+  const i = args.indexOf('--severity')
+  if (i < 0) return { severity: null, rest: args }
+  const severity = String(args[i + 1] || '').toLowerCase()
+  if (!SEVERITIES.includes(severity))
+    die('--severity must be one of ' + SEVERITIES.join(', ') + ' - got "' + (args[i + 1] ?? '') + '"')
+  return { severity, rest: [...args.slice(0, i), ...args.slice(i + 2)] }
+}
+
 // --- stage table -----------------------------------------------------------
 // compact: context window cap, in tokens.
 // tiers:   which tier sizes run this stage.
@@ -1212,9 +1236,19 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
     finished(run, id, spec, st)
   },
 
-  async fix(...finding) {
+  async fix(...args) {
     const run = loadRun(activeSlug())
-    if (!finding.length) die('usage: conduct fix "<finding, or a path to the review file>"')
+    const { severity, rest: finding } = parseSeverity(args)
+    if (!finding.length)
+      die('usage: conduct fix "<finding, or a path to the review file>" [--severity high|medium|low|cosmetic]')
+    if (isDeferred(severity)) {
+      appendFileSync(join(RUNS, run.slug, 'DEBT.md'),
+        '- [' + severity + '] ' + finding.join(' ') + '\n')
+      console.log('\n  deferred (' + severity + '), no developer session spent:')
+      console.log('    ' + finding.join(' '))
+      console.log('  recorded in ' + run.dir + '/DEBT.md - visible, not dropped.\n')
+      return
+    }
     const prompt = `A reviewer raised this finding. Fix it test-first.
 
 FINDING: ${finding.join(' ')}
@@ -1334,6 +1368,8 @@ function main() {
     conduct answer                 after filling in DECISIONS.md
     conduct resume <stage>         pick a stage back up after an interruption
     conduct fix "<finding>"        route a review finding to a developer
+                                     [--severity high|medium|low|cosmetic]
+                                     low/cosmetic are deferred to DEBT.md
     conduct report                 token and time split per stage
 
   stages: ` + STAGES.map((s) => s.id).join(' -> ') + `
