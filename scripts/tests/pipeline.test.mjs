@@ -1989,3 +1989,17 @@ test('fix sessions are capped too - the expensive half of the loop, not just the
   assert.equal(Object.keys(after.stages).filter((k) => k.startsWith('fix-')).length, 1,
     'the refused fix still cost a developer session')
 })
+
+test('a fix-tier verify is pointed at the ask - the tier never wrote a spec', () => {
+  // Same class of defect as the 02-tasks.json one: a tier that skips a stage
+  // being told to read that stage's output. The file is not there, so the tier
+  // is unusable end to end.
+  const paths = ['scripts/pipeline/conduct.mjs']
+  const full = verifyPrompt({ dir: 'docs/runs/demo', base: 'abc12345' }, paths)
+  assert.match(full, /01-spec\.md/, 'the full tier lost its acceptance criteria')
+
+  const fix = verifyPrompt({ dir: 'docs/runs/demo', base: 'abc12345', tier: 'fix' }, paths)
+  assert.match(fix, /00-ask\.md/, 'the fix-tier tester was never told what to verify against')
+  assert.doesNotMatch(fix, /01-spec\.md/,
+    'the fix tier skips spec, so the tester was sent to read a file that does not exist')
+})

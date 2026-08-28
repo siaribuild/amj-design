@@ -286,9 +286,15 @@ Do NOT mutation-test guards. Do NOT hunt for missing tests on
 code that already works, and do not raise cosmetics. At this blast radius such
 a finding costs a whole developer session to route and fix - more than the
 defect it stands in for is worth.`
+  // The fix tier collapses spec and design to nothing, so 01-spec.md is never
+  // written. Sending its tester there is the 02-tasks.json defect again: a tier
+  // told to read the output of a stage it deliberately skips.
+  const criteria = (r.tier || 'full') === 'fix'
+    ? `${r.dir}/00-ask.md (the ask itself is your checklist)`
+    : `${r.dir}/01-spec.md (the acceptance criteria are your checklist)`
   return `Independently verify this feature. Assume nothing reported is true.
 
-READ: ${r.dir}/01-spec.md (the acceptance criteria are your checklist) and
+READ: ${criteria} and
 ${r.dir}/04-build.md (what was changed). Verify against the criteria - do not
 re-derive the design.
 

@@ -118,7 +118,9 @@ Four bounds, all in the conductor:
 
 In tier `fix` there is no architect, so nothing slices the build: `00-ask.md`
 *is* the task, and `build` is one developer session against it — still
-test-first, because Probity does not care what tier a change was sized at.
+test-first, because Probity does not care what tier a change was sized at. For
+the same reason its `verify` checks the work against `00-ask.md`; `01-spec.md`
+belongs to a stage this tier never runs.
 
 Membership is declared on the stage (`tiers: [...]`), not written into `next` as
 a skip: a skip at the call site is invisible from the stage table and gets
