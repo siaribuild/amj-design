@@ -1,0 +1,287 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE RECORD SURFACE
+//
+// Reworked against the owner's package. Reading down the header:
+//
+//   ‹ Projects                                        back, and it NAMES where
+//   OF-Q-10482 · Wattle Grove — Lot 14   $48,802.40   identity + the money
+//   Marchetti Constructions · Ana Bianchi     ex GST
+//   WAITING ON US   Technical review · 3 days      ›  ranked, taps to Progress
+//   [ Lines · 18 ][ Project ]                         the segment he liked
+//   • 2 lines have no rate            show only these the filter, now scoped
+//
+// THE LEADING SLOT is the one real design problem in the package.
+// "even if we don't have it yet, the navigation should not be missing" — so back
+// must exist, and in production the record is pushed from a list and is never the
+// root. But the drawer opener wants that slot too, and a drawer with no trigger
+// is a regression recorded twice in this repo (UX-AUDIT.md D2, HIGH).
+//
+// Both cannot have it. Two 44px targets, `‹` and `☰`, would take 88px of a 375px
+// bar before the title starts — and the owner's own instinct was that `☰` on the
+// left beside `⋯` on the right "feels weird".
+//
+// Resolved: BACK TAKES THE SLOT AND NAMES ITS DESTINATION — `‹ Projects`, not a
+// bare chevron — and the drawer opener lives on Projects, which is a destination
+// root and where switching destination belongs. Global navigation is two taps,
+// both visible and both labelled, and there is no screen from which the
+// destinations are unreachable, which is what the recorded regression actually
+// was. Inside a record — where a founder spends the day — the trade buys the
+// top-right corner for the money he said he misses.
+// ═══════════════════════════════════════════════════════════════════════════════
+import { useState } from "react";
+import {
+  IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonBackButton,
+  IonContent, IonFooter, IonSegment, IonSegmentButton, IonLabel, IonActionSheet,
+} from "@ionic/react";
+import { useHistory, useParams } from "react-router-dom";
+import { DELIVERY, LINES, RECORD } from "../data";
+import {
+  setStore, useEditorPane, useHeaderStyle, useShortViewport, useStore, useTabBar,
+  useWidthClass, visibleLines,
+} from "../store";
+import { LineBody } from "../LineBody";
+import { Plate } from "../Plate";
+import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
+import { EditorPane } from "../Editor";
+import { ActionFab, HeaderCta, hasBottomPanel, hasFab, hasHeaderCta, CTA_ICONS } from "../chrome";
+import {
+  BlockerRow, LineList, ProjectBlockBody, ProjectBlocks,
+  RecordNavBar, RecordSummaryBar, StateRow, Totals,
+} from "../pieces";
+
+export function RecordPage() {
+  const history = useHistory();
+  const { ref } = useParams<{ ref: string }>();
+  const wc = useWidthClass();
+  const wide = wc === "desktop" || wc === "wide";
+  const short = useShortViewport();
+  const canvasPlate = short ? "sm" : "md";
+  const paneBand = useEditorPane();
+  const { variant } = useTabBar();
+  const hdr = useHeaderStyle();
+  const { selectedId, filterUnpriced, draft, editing } = useStore();
+  const [segment, setSegment] = useState<"lines" | "project">("lines");
+  const [block, setBlock] = useState("progress");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+
+  const run = visibleLines(filterUnpriced);
+  const selected = LINES.find((l) => l.id === selectedId) ?? (wide ? run[0] ?? LINES[0] : null);
+  const at = selected ? Math.max(0, run.findIndex((l) => l.id === selected.id)) : 0;
+
+  const pick = (id: string) => {
+    setStore({ selectedId: id });
+    if (!wide) history.push(`/projects/record/${ref}/line/${id}`);
+  };
+  const move = (d: -1 | 1) => { const n = run[at + d]; if (n) setStore({ selectedId: n.id }); };
+  useMoveKeys(wide ? move : () => {});
+  const openEditor = (id: string) => {
+    if (wc === "phone") history.push(`/projects/record/${ref}/line/${id}/edit`);
+    else setStore({ editing: id });
+  };
+  const openBlock = (k: string) => {
+    if (wide) { setSegment("project"); setBlock(k); }
+    else history.push(`/projects/record/${ref}/project/${k}`);
+  };
+  const openDelivery = () => history.push(`/projects/record/${ref}/delivery`);
+
+  /* D3 — the state row moves OUT of the header and leads the content. It is
+     status, not navigation and not money, so it may scroll; keeping it in the
+     header was what pushed a fourth band into chrome. It is still the first
+     thing read on arrival.
+
+     D5 — and it is NOT gated on width. R1d wrote `{!wide && stateRow}` while
+     thinking only about the phone header, which silently deleted the answer to
+     "does this need me?" from every wide layout. `listColumn` is the rail at
+     ≥1024, so the row leads that column exactly as it leads the phone's content
+     — the same placement, not a desktop variant of it. */
+  const stateRow = <StateRow onOpenProgress={() => openBlock("progress")} />;
+
+  /* The blockers, ordered — a queue rather than a list. The row states the
+     leading one and offers the control that clears it; as each clears the next
+     surfaces. The header's disabled CTA points at the row by id, so the action
+     and its reason are read together (R-153's adjacency, honoured in the header
+     rather than the footer). */
+  const blockers = [
+    ...(RECORD.unpricedCount > 0 ? [{ key: "unpriced",
+      text: `${RECORD.unpricedCount} lines have no rate`, action: "show only these" }] : []),
+    ...(DELIVERY.finalCents === null ? [{ key: "delivery",
+      text: "Delivery is not confirmed", action: "confirm it" }] : []),
+  ];
+  const blocked = blockers.map((b) => b.text).join(", and ").toLowerCase();
+
+  const listColumn = segment === "lines" ? (
+    <>
+      {stateRow}
+      <LineList lines={run} selectedId={selected?.id ?? null} dense={wide} onPick={pick} />
+      {/* D5 — never gated. Totals carries the DELIVERY REVIEW ROW, so gating it
+          on width took the whole confirm flow off desktop: the one route to a
+          figure ops must set before a quote can be issued. It sits beneath the
+          line list here and beneath the rail's list at ≥1024 — the same place,
+          because "at the end of the list" is what he approved about it. */}
+      <Totals onReviewDelivery={openDelivery} />
+    </>
+  ) : (
+    <>
+      {stateRow}
+      <ProjectBlocks current={wide ? block : undefined} onOpen={openBlock} />
+      <Totals onReviewDelivery={openDelivery} />
+    </>
+  );
+
+  const header = (
+    <IonHeader className="ion-no-border">
+      {/* D3 — two toolbars, to the convention. See pieces.tsx RecordNavBar. */}
+      <RecordNavBar
+        cta={hasHeaderCta(variant)
+          ? { label: "Issue quote", disabled: blockers.length > 0,
+              blockedBy: blockers.length > 0 ? blocked : undefined }
+          : undefined}
+        onMore={hasHeaderCta(variant) ? () => setSheetOpen(true) : undefined}
+        style={hdr} />
+      <RecordSummaryBar />
+      <IonToolbar>
+        <IonSegment value={segment} scrollable={false}
+          onIonChange={(e) => setSegment((e.detail.value as "lines" | "project") ?? "lines")}>
+          <IonSegmentButton value="lines"><IonLabel>Lines · {LINES.length}</IonLabel></IonSegmentButton>
+          <IonSegmentButton value="project"><IonLabel>Project</IonLabel></IonSegmentButton>
+        </IonSegment>
+      </IonToolbar>
+      {/* Always present in E, on both tabs: it is the reason the header's CTA is
+          disabled, so it may not disappear when the CTA is still on screen. In
+          the other variants it stays what it was — a filter on the Lines tab. */}
+      {(segment === "lines" || hasHeaderCta(variant)) && (
+        <BlockerRow on={filterUnpriced} blockers={blockers}
+          onToggle={() => setStore({ filterUnpriced: !filterUnpriced })}
+          onDelivery={openDelivery} />
+      )}
+    </IonHeader>
+  );
+
+  /* The bottom action panel, called out as working — one primary, the overflow
+     beside it, and the status explanation BELOW the buttons. It now also carries
+     `⋯`, which came down from the top-right, and "Add a line", which came out of
+     the list: add and delete keep their acceptance criteria (AC-95, AC-96), they
+     just stop taking a permanent row for something "I don't anticipate that
+     being a frequent action". */
+  /* THE RECORD IS WHERE E, F AND G BREAK, and it is rendered so the break is
+     visible. `Issue quote` is BLOCKED, and R-153 calls the footer "the ONE footer
+     allowed a second line" precisely because a blocked primary must say why. A
+     header cannot carry that sentence and a FAB cannot either — so E and F keep
+     the reason as a slim strip, trading the panel's 75px for ~28px rather than
+     for nothing. G keeps the whole panel here, because no panel on this screen
+     owns `Issue quote` the way the spec panel owns Edit on a line. */
+  const footer = (
+    <IonFooter className="ion-no-border">
+      {hasBottomPanel(variant, "record") ? (
+        <>
+          <div className="actions">
+            <IonButton className="inert" disabled>Issue quote</IonButton>
+            <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
+              aria-label="More actions for this project">···</IonButton>
+          </div>
+          <p className="reason">{blocked}</p>
+        </>
+      ) : hasHeaderCta(variant) ? null : (
+        <p className="reason reason-alone">{blocked}</p>
+      )}
+    </IonFooter>
+  );
+
+  const sheet = (
+    <IonActionSheet
+      isOpen={sheetOpen}
+      onDidDismiss={() => setSheetOpen(false)}
+      header={`${RECORD.ref} · ${RECORD.title}`}
+      buttons={[
+        { text: "Add a line", handler: () => openEditor(LINES[3].id) },
+        { text: "Confirm the delivery charge", handler: openDelivery },
+        { text: "Request clarification" },
+        { text: "Add a note", handler: () => openBlock("notes") },
+        { text: "Copy a link to this project" },
+        { text: `Refresh · updated ${RECORD.updatedAt}` },
+        { text: "Cancel", role: "cancel" },
+      ]}
+    />
+  );
+
+  /* ── < 1024 ──────────────────────────────────────────────────────────────── */
+  if (!wide) {
+    return (
+      <IonPage>
+        {header}
+        <IonContent scrollEvents>{listColumn}</IonContent>
+        {footer}
+        {sheet}
+        {/* F on the record — the unflattering case, rendered rather than
+            described. `Issue quote` has no icon that reads as itself, and a
+            disabled FAB cannot say why it is disabled. */}
+        {hasFab(variant) && (
+          <ActionFab label="Issue quote" icon={CTA_ICONS.issue} disabled
+            onClick={() => undefined} />
+        )}
+      </IonPage>
+    );
+  }
+
+  /* ── ≥ 1024 : rail + canvas. Out of scope this pass; kept working. ───────── */
+  return (
+    <IonPage>
+      {header}
+      <IonContent scrollEvents className="ws">
+        <div className="zones" data-editing={paneBand && editing ? "" : undefined}>
+          <div className="zone rail">{listColumn}</div>
+          <div className="zone canvas">
+            {segment === "project" ? (
+              <div className="canvas-scroll"><ProjectBlockBody block={block} /></div>
+            ) : selected ? (
+              <>
+                <div className="canvas-ident">
+                  <h2><span className="mono">{selected.code}</span> · {selected.room}</h2>
+                  <span className="sub">{selected.product}</span>
+                </div>
+                {pinned && (
+                  <Plate line={selected} size={canvasPlate} pinned
+                    onUnpin={() => setPinned(false)} dirtyFrom={draft?.from ?? null} />
+                )}
+                <div className="canvas-scroll"
+                  onScroll={(e) => {
+                    const y = (e.target as HTMLElement).scrollTop;
+                    if (y > 24 && !pinned) setPinned(true);
+                    if (y <= 2 && pinned) setPinned(false);
+                  }}>
+                  <LineBody line={selected} plateSize={canvasPlate} showPlate={!pinned}
+                    dirtyFrom={draft?.from ?? null}
+                    heightMm={draft?.heightMm} widthMm={draft?.widthMm}
+                    onSpec={() => history.push(`/projects/record/${ref}/line/${selected.id}/spec`)}
+                    onWhy={() => history.push(`/projects/record/${ref}/line/${selected.id}/why`)}
+                    onManufacturer={() => history.push(`/projects/record/${ref}/line/${selected.id}/price`)}
+                    onUnit={(i) => history.push(`/projects/record/${ref}/line/${selected.id}/unit/${i}`)} />
+                </div>
+                <div className="deck">
+                  <LineScroller run={run} at={at} filtered={filterUnpriced}
+                    onPick={(id) => setStore({ selectedId: id })}
+                    onOpenList={() => setSwitcherOpen(true)} />
+                  <div className="actions">
+                    <IonButton onClick={() => openEditor(selected.id)}>Edit {selected.code}</IonButton>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="canvas-empty">Choose a line on the left to review it.</p>
+            )}
+          </div>
+          {paneBand && editing && (
+            <EditorPane lineId={editing} onClose={() => setStore({ editing: null })} />
+          )}
+        </div>
+      </IonContent>
+      {footer}
+      {sheet}
+      <LineSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)}
+        run={run} at={at} filtered={filterUnpriced}
+        onPick={(id) => setStore({ selectedId: id })} />
+    </IonPage>
+  );
+}

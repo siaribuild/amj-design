@@ -1,0 +1,2672 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>OpenFrame Ops — redesign prototype</title>
+<style>
+/* ═════════════════════════════════════════════════════════════════════════════
+   1. TOKENS — ported from src/styles/theme.css. No literal colour appears in a
+   rule below this block; restyling (Fluid UI 2 or anything else) is a matter of
+   replacing :root, not of rewriting components.
+   ═════════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* surfaces */
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0; --shade:#E8E5DF;
+  --sage-wash:#F3F6F5; --sage-veil:#F7FAF8; --background:#FAFAF8;
+  /* rules */
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --rule-05:rgba(0,0,0,.05); --rule-08:rgba(0,0,0,.08); --rule-10:rgba(0,0,0,.10);
+  --rule-12:rgba(0,0,0,.12); --rule-15:rgba(0,0,0,.15);
+  --rule-w-08:rgba(255,255,255,.08); --rule-w-10:rgba(255,255,255,.10); --rule-w-15:rgba(255,255,255,.15);
+  /* brand */
+  --sage:#5A7A6A; --sage-light:#8CA99B; --sage-deep:#3f5a4c; --sage-ink:#355344; --sage-hover:#4a6858;
+  /* text ramp */
+  --ink:#131311; --ink-soft:#3a3835; --body:#5c5a56; --body-soft:#6f6c67;
+  --quiet:#8b8880; --quieter:#9a9894; --quietest:#b5b2ac; --ink-hover:#2a2a27;
+  /* chrome */
+  --ops:#14150f; --ops-panel:#1d1e17; --night:#0c0c0a;
+  /* states — never used alone; the word always carries it too */
+  --positive:#2c7a54; --warning:#8a6a2a; --warning-ink:#7a5410;
+  --attention:#C0392B; --attention-ink:#96271B; --info:#4C6A88; --info-ink:#31485f;
+  --destructive:#C0392B;
+  /* tone triples (from theme.css --tone-*) */
+  --tone-attn:#A2610A; --tone-attn-bg:rgba(178,110,15,.10); --tone-attn-bd:rgba(178,110,15,.34);
+  --tone-pos:#2C7A54;  --tone-pos-bg:rgba(44,122,84,.10);   --tone-pos-bd:rgba(44,122,84,.30);
+  --tone-work:#4C6A88; --tone-work-bg:rgba(76,106,136,.10); --tone-work-bd:rgba(76,106,136,.30);
+  --tone-mute:#8b897f; --tone-mute-bg:rgba(0,0,0,.045);     --tone-mute-bd:rgba(0,0,0,.12);
+  /* panels */
+  --panel-sage-bg:rgba(90,122,106,.06); --panel-sage-bd:rgba(90,122,106,.30);
+  --panel-warn-bg:rgba(180,120,40,.09); --panel-warn-bd:rgba(180,120,40,.30);
+  --panel-err-bg:rgba(180,60,40,.07);   --panel-err-bd:rgba(180,60,40,.28); --panel-err-tx:#8a3b2a;
+  --chip-inf-bg:#b443361a; --chip-inf-bd:#b4433622; --chip-inf-tx:#8c2f24;
+  --chip-pen-bg:#b886001a; --chip-pen-bd:#b8860022; --chip-pen-tx:#7a5c00;
+  --ring-focus:var(--sage);
+  /* geometry */
+  --radius:2px;
+  --rail-w:48px; --rail-x:200px; --drawer-w:264px;
+  --pane-a:264px; --pane-c:360px; --header-h:auto; --content-max:1440px;
+  /* type — widened stacks: there is no network here, so the real Space Grotesk /
+     Inter never load. tabular-nums survives in every fallback, so columns stay
+     aligned even though the letterforms do not. */
+  --font-display:'Space Grotesk','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-body:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-data:var(--font-display);
+  --t-hd2:22px; --t-hd2-lh:28px; --t-hd3:17px; --t-hd3-lh:24px;
+  --t-bdlg:18px; --t-bdlg-lh:28px; --t-bd:16px; --t-bd-lh:24px;
+  --t-bdsm:14px; --t-bdsm-lh:20px; --t-cap:13px; --t-cap-lh:18px;
+  --t-lbl:11px; --t-lbl-lh:14px; --t-lbl-track:1px;
+  --t-dat:14px; --t-dat-lh:20px; --t-datsm:12px; --t-datsm-lh:16px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   2. BASE CONTRACT
+   ═════════════════════════════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;border:0 solid var(--line);}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--background); color:var(--ink);
+  font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;margin:0;}
+p{margin:0;}
+button,input,select,textarea{font:inherit;color:inherit;background:none;}
+button{cursor:pointer;padding:0;text-align:left;}
+button:disabled{cursor:not-allowed;}
+a{color:var(--sage);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:2px;}
+ul,ol{margin:0;padding:0;list-style:none;}
+table{border-collapse:collapse;width:100%;}
+:focus-visible{outline:2px solid var(--ring-focus);outline-offset:2px;}
+[hidden]{display:none!important;}
+::selection{background:var(--sage-wash);}
+
+/* type utilities — 1:1 with theme.css */
+.t-hd2{font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:-.01em;}
+.t-hd3{font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);}
+.t-bd-lg{font:400 var(--t-bdlg)/var(--t-bdlg-lh) var(--font-body);}
+.t-bd{font:400 var(--t-bd)/var(--t-bd-lh) var(--font-body);}
+.t-bd-sm{font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);}
+.t-cap{font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);}
+.t-label{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.t-data{font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums;}
+.t-data-sm{font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);font-variant-numeric:tabular-nums;}
+.font-display{font-family:var(--font-display);}
+.font-data{font-family:var(--font-data);font-variant-numeric:tabular-nums;}
+.ink{color:var(--ink);} .ink-soft{color:var(--ink-soft);} .body-tx{color:var(--body);}
+.quiet{color:var(--quiet);} .quietest{color:var(--quietest);} .sage-tx{color:var(--sage);}
+.warn-tx{color:var(--warning-ink);} .attn-tx{color:var(--attention-ink);}
+.right{text-align:right;} .nowrap{white-space:nowrap;}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* the card fill derives from its ground — an author never picks a card colour */
+.ground-bone{background:var(--bone);--card-fill:var(--paper);}
+.ground-paper{background:var(--paper);--card-fill:var(--bone);}
+.card{border:1px solid var(--line);background:var(--card-fill,var(--bone));}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   3. SHELL — of-app-frame / of-rail
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-app-frame{display:flex;height:100%;overflow:hidden;}
+.of-rail{
+  width:var(--rail-w);flex:0 0 var(--rail-w);background:var(--ops);color:#fff;
+  display:flex;flex-direction:column;position:relative;z-index:40;
+}
+.of-rail[data-pinned="1"]{width:var(--rail-x);flex-basis:var(--rail-x);}
+.of-rail-inner{position:absolute;inset:0 auto 0 0;width:var(--rail-w);background:var(--ops);
+  display:flex;flex-direction:column;transition:width .12s ease-out;overflow:hidden;}
+.of-rail:hover .of-rail-inner,.of-rail:focus-within .of-rail-inner,
+.of-rail[data-pinned="1"] .of-rail-inner{width:var(--rail-x);box-shadow:2px 0 0 rgba(0,0,0,.10);}
+.of-rail-head{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-bottom:1px solid var(--rule-w-10);flex:0 0 48px;}
+.of-mark{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;
+  border:1px solid var(--rule-w-15);color:var(--sage-light);}
+.of-rail-word{color:#fff;opacity:.55;white-space:nowrap;}
+.of-rail-nav{padding:8px 0;flex:1;overflow-y:auto;overflow-x:hidden;}
+.of-rail-item{width:100%;height:44px;display:flex;align-items:center;gap:12px;padding:0 13px;
+  color:rgba(255,255,255,.50);border-left:2px solid transparent;white-space:nowrap;}
+.of-rail-item:hover{color:rgba(255,255,255,.80);}
+.of-rail-item[aria-current="page"]{color:#fff;background:var(--rule-w-08);border-left-color:var(--sage);}
+.of-rail-ico{width:20px;flex:0 0 20px;display:grid;place-items:center;font-family:var(--font-data);font-size:13px;}
+.of-rail-count{margin-left:auto;font:500 11px/1 var(--font-data);color:rgba(255,255,255,.45);
+  border:1px solid var(--rule-w-15);padding:2px 5px;}
+.of-rail-lane{border-top:1px solid var(--rule-w-10);padding:10px 13px;color:rgba(255,255,255,.55);white-space:nowrap;}
+.of-rail-lane-btns{display:flex;gap:4px;margin-top:6px;}
+.of-rail-lane-btns button{width:28px;height:24px;border:1px solid var(--rule-w-15);
+  color:rgba(255,255,255,.75);display:grid;place-items:center;}
+.of-rail-lane-btns button:hover{background:var(--rule-w-08);}
+.of-rail-foot{border-top:1px solid var(--rule-w-10);padding:10px 13px;white-space:nowrap;}
+.of-rail-foot .nm{color:#fff;} .of-rail-foot .em{color:rgba(255,255,255,.40);}
+.of-rail-foot button{color:rgba(255,255,255,.55);margin-top:8px;display:flex;align-items:center;gap:8px;}
+.of-rail-foot button:hover{color:#fff;}
+.of-content{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bone);}
+.of-menu-btn{display:none;}
+
+/* ── The other axis ──────────────────────────────────────────────────────────
+   Pane A is itself a navigation rail — a list you pick from — so a nav rail
+   beside it stacks two rails and the eye has to work out which is which. A top
+   bar does not compete, because below it every vertical division means content.
+   Press L to switch and judge it. */
+.of-app-frame[data-nav="top"]{flex-direction:column;}
+.of-topbar{height:48px;flex:0 0 48px;background:var(--ops);color:#fff;display:flex;align-items:center;
+  gap:2px;padding:0 10px 0 14px;}
+.of-topbar .of-mark{margin-right:8px;}
+.of-top-item{height:48px;display:flex;align-items:center;padding:0 12px;white-space:nowrap;
+  color:rgba(255,255,255,.50);box-shadow:inset 0 -2px 0 transparent;}
+.of-top-item:hover{color:rgba(255,255,255,.80);}
+.of-top-item[aria-current="page"]{color:#fff;background:var(--rule-w-08);box-shadow:inset 0 -2px 0 var(--sage);}
+.of-top-item .of-rail-count{margin-left:7px;}
+.of-top-right{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0;}
+.of-top-search{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.45);
+  border:1px solid var(--rule-w-15);padding:5px 9px;}
+.of-top-search:hover{color:rgba(255,255,255,.75);}
+.of-top-id{display:flex;align-items:center;gap:8px;padding-left:8px;border-left:1px solid var(--rule-w-10);}
+.of-top-id .nm{color:rgba(255,255,255,.75);max-width:170px;}
+.of-top-id button{color:rgba(255,255,255,.45);}
+.of-top-id button:hover{color:#fff;}
+.of-top-menu{display:none;width:44px;height:44px;place-items:center;color:rgba(255,255,255,.75);}
+/* The lane stepper belongs to the record, not to the app — with no rail to hide
+   in, it sits beside "← Work" where it was always about to belong. */
+.of-lane-step{display:inline-flex;align-items:center;gap:4px;margin-left:10px;color:var(--quiet);}
+.of-lane-step button{border:1px solid var(--rule-12);width:24px;height:20px;display:grid;place-items:center;color:var(--body);}
+.of-lane-step button:hover{background:var(--bone);}
+@media (max-width:1180px){ .of-top-search .label{display:none;} .of-top-id .nm{display:none;} }
+@media (max-width:900px){ .of-top-item{padding:0 9px;} }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   4. PAGE ARCHETYPES — of-queue-page (scrolls) / of-record-page (does not)
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-queue-page{flex:1;overflow-y:auto;}
+.of-queue-inner{max-width:var(--content-max);margin:0 auto;padding:0 24px 40px;}
+.of-page-head{height:56px;display:flex;align-items:center;gap:16px;position:sticky;top:0;
+  background:var(--bone);z-index:5;}
+.of-page-head h1{font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);}
+.of-search-stub{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--quiet);
+  border:1px solid var(--rule-12);padding:6px 10px;background:var(--paper);min-width:240px;}
+.of-kbd{font:500 11px/1 var(--font-data);border:1px solid var(--rule-15);padding:3px 5px;color:var(--quiet);}
+.of-views{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 12px;}
+.of-view{padding:6px 10px;border:1px solid var(--rule-12);background:var(--paper);color:var(--body);white-space:nowrap;}
+.of-view[aria-pressed="true"]{background:var(--sage);border-color:var(--sage);color:#fff;}
+.of-view .n{font-family:var(--font-data);font-variant-numeric:tabular-nums;opacity:.8;margin-left:6px;}
+.of-foot-strip{margin-top:14px;padding:12px 0;border-top:1px solid var(--rule-08);color:var(--quiet);}
+
+.of-record-page{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bone);}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   5. LISTS — of-row-list with column-priority folding
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-row-list{border:1px solid var(--line);background:var(--paper);}
+.of-row-list thead th{
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);
+  text-transform:uppercase;color:var(--quiet);text-align:left;padding:10px 12px;
+  border-bottom:1px solid var(--rule-08);white-space:nowrap;
+}
+.of-row-list tbody tr{border-bottom:1px solid var(--rule-05);cursor:pointer;}
+.of-row-list tbody tr:last-child{border-bottom:0;}
+.of-row-list tbody tr:hover{background:var(--bone);}
+.of-row-list tbody tr[aria-selected="true"]{background:var(--sage-wash);}
+.of-row-list td{padding:10px 12px;vertical-align:top;}
+.of-row-list .sub{display:block;color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);}
+.of-row-list .meta-fold{display:none;}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   6. STATUS, TONE, STATE
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border:1px solid;
+  font:400 var(--t-cap)/1.35 var(--font-body);white-space:nowrap;}
+.of-chip[data-tone="pos"]{color:var(--tone-pos);background:var(--tone-pos-bg);border-color:var(--tone-pos-bd);}
+.of-chip[data-tone="attn"]{color:var(--tone-attn);background:var(--tone-attn-bg);border-color:var(--tone-attn-bd);}
+.of-chip[data-tone="work"]{color:var(--tone-work);background:var(--tone-work-bg);border-color:var(--tone-work-bd);}
+.of-chip[data-tone="mute"]{color:var(--tone-mute);background:var(--tone-mute-bg);border-color:var(--tone-mute-bd);}
+.of-chip[data-tone="stop"]{color:var(--attention-ink);background:var(--panel-err-bg);border-color:var(--panel-err-bd);}
+.of-status-word{font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);}
+.of-status-word[data-tone="pos"]{color:var(--tone-pos);}
+.of-status-word[data-tone="attn"]{color:var(--tone-attn);}
+.of-status-word[data-tone="work"]{color:var(--tone-work);}
+.of-status-word[data-tone="mute"]{color:var(--quiet);}
+.of-status-word[data-tone="stop"]{color:var(--attention-ink);}
+
+.of-banner{border:1px solid;padding:10px 12px;display:flex;gap:10px;align-items:flex-start;}
+.of-banner[data-tone="warn"]{background:var(--panel-warn-bg);border-color:var(--panel-warn-bd);color:var(--warning-ink);}
+.of-banner[data-tone="err"]{background:var(--panel-err-bg);border-color:var(--panel-err-bd);color:var(--panel-err-tx);}
+.of-banner[data-tone="info"]{background:var(--panel-sage-bg);border-color:var(--panel-sage-bd);color:var(--sage-ink);}
+
+.of-state{border:1px dashed var(--rule-15);background:var(--paper);padding:40px 24px;text-align:center;color:var(--body);}
+.of-state .hint{color:var(--quiet);margin-top:4px;}
+.of-state[data-kind="error"]{border-style:solid;border-color:var(--panel-err-bd);background:var(--panel-err-bg);color:var(--panel-err-tx);}
+.of-skel{height:12px;background:var(--shade);animation:pulse 1.2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:.9}}
+
+/* absence — a first-class primitive. An unset value is content, not a blank. */
+.of-absence{color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);font-style:normal;}
+.of-absence::before{content:"— ";color:var(--quietest);}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   7. RECORD CHROME — header band, ribbon, action bar
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-record-header{background:var(--paper);border-bottom:1px solid var(--line);flex:0 0 auto;}
+.of-rh-inner{padding:12px 20px 10px;}
+.of-rh-top{display:flex;gap:24px;align-items:flex-start;}
+.of-back{color:var(--sage);display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;}
+.of-eyebrow{color:var(--quiet);}
+.of-eyebrow b{color:var(--body);font-weight:500;font-family:var(--font-data);}
+.of-rh-metrics{margin-left:auto;display:flex;gap:28px;flex-wrap:wrap;justify-content:flex-end;}
+.of-metric{min-width:96px;}
+.of-metric .k{color:var(--quiet);}
+.of-metric .v{color:var(--ink);margin-top:2px;}
+.of-metric .c{color:var(--quiet);}
+.of-ribbon{display:flex;margin:10px 0 6px;border:1px solid var(--rule-12);}
+.of-ribbon-cell{flex:1;padding:5px 8px;text-align:center;color:var(--quiet);border-right:1px solid var(--rule-08);
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-ribbon-cell:last-child{border-right:0;}
+.of-ribbon-cell[data-state="done"]{color:var(--body);background:var(--recessive);}
+.of-ribbon-cell[data-state="now"]{color:#fff;background:var(--sage);}
+.of-ribbon-caption{color:var(--body);}
+.of-freshness{color:var(--quiet);text-align:right;white-space:nowrap;}
+.of-action-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;}
+.of-btn{border:1px solid var(--rule-15);padding:7px 12px;color:var(--ink-soft);background:var(--paper);white-space:nowrap;}
+.of-btn:hover:not(:disabled){background:var(--bone);}
+.of-btn[data-variant="primary"]{background:var(--sage);border-color:var(--sage);color:#fff;}
+.of-btn[data-variant="primary"]:hover:not(:disabled){background:var(--sage-hover);}
+.of-btn[data-variant="ghost"]{border-color:transparent;color:var(--sage);padding-left:4px;padding-right:4px;}
+.of-btn:disabled{opacity:.5;}
+.of-blocked{color:var(--warning-ink);}
+.of-confirm{margin-top:10px;border:1px solid var(--panel-sage-bd);background:var(--panel-sage-bg);padding:12px;}
+.of-confirm textarea{width:100%;border:1px solid var(--rule-15);background:var(--paper);padding:8px;margin-top:8px;min-height:64px;resize:vertical;}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   8. THE THREE PANES
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-pane-group{flex:1;display:flex;min-height:0;overflow:hidden;}
+.of-pane{overflow-y:auto;min-height:0;}
+.of-pane-a{flex:0 0 var(--pane-a);width:var(--pane-a);border-right:1px solid var(--line);background:var(--paper);}
+.of-pane-b{flex:1;min-width:0;background:var(--paper);}
+.of-pane-c{flex:0 0 var(--pane-c);width:var(--pane-c);border-left:1px solid var(--line);background:var(--bone);}
+.of-pane-group[data-collapse-a="1"] .of-pane-a{flex-basis:44px;width:44px;}
+.of-pane-group[data-collapse-c="1"] .of-pane-c{display:none;}
+.of-pane-head{position:sticky;top:0;background:inherit;padding:10px 14px;border-bottom:1px solid var(--rule-08);
+  display:flex;align-items:baseline;gap:8px;z-index:2;}
+.of-pane-head .n{margin-left:auto;color:var(--quiet);font-family:var(--font-data);}
+
+/* pane A — openings */
+.of-open-row{width:100%;display:flex;gap:10px;padding:10px 12px;border-bottom:1px solid var(--rule-05);
+  border-left:2px solid transparent;align-items:flex-start;}
+.of-open-row:hover{background:var(--bone);}
+.of-open-row[aria-selected="true"]{background:var(--sage-wash);border-left-color:var(--sage);}
+.of-open-row .body-col{flex:1;min-width:0;}
+.of-open-row .code{color:var(--sage);font-family:var(--font-data);}
+.of-open-row .total{color:var(--ink);font-family:var(--font-data);font-variant-numeric:tabular-nums;}
+.of-record-chip{width:100%;padding:9px 12px;border-bottom:1px solid var(--rule-08);border-left:2px solid transparent;
+  color:var(--body);display:flex;align-items:center;gap:8px;}
+.of-record-chip[aria-selected="true"]{background:var(--sage-wash);border-left-color:var(--sage);color:var(--sage-ink);}
+.of-unit-row{width:100%;display:flex;gap:8px;padding:5px 12px 5px 34px;border-bottom:1px solid var(--rule-05);color:var(--body);}
+.of-unit-row .ix{color:var(--quietest);font-family:var(--font-data);}
+.of-pane-a-foot{padding:12px;color:var(--quiet);border-top:1px solid var(--rule-08);}
+.of-elev{display:block;}
+
+/* pane B — the opening */
+.of-b-inner{padding:16px 20px 48px;max-width:940px;}
+.of-block{border-top:1px solid var(--rule-08);padding-top:14px;margin-top:16px;}
+.of-block:first-child{border-top:0;padding-top:0;margin-top:0;}
+.of-block-h{color:var(--quiet);margin-bottom:8px;display:flex;align-items:baseline;gap:8px;}
+.of-elev-stage{border:1px solid var(--rule-08);background:var(--bone);padding:18px;display:grid;place-items:center;}
+.of-honesty{color:var(--quiet);margin-top:8px;max-width:62ch;}
+.of-spec{width:100%;}
+.of-spec td{padding:5px 0;vertical-align:top;border-bottom:1px solid var(--rule-05);}
+.of-spec td:first-child{color:var(--quiet);width:190px;}
+.of-spec tr:last-child td{border-bottom:0;}
+.of-units td{padding:6px 8px;border-bottom:1px solid var(--rule-05);vertical-align:top;}
+.of-units th{padding:6px 8px;color:var(--quiet);text-align:left;
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-ledger{width:100%;}
+.of-ledger th{text-align:left;color:var(--quiet);padding:4px 8px;
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-ledger td{padding:5px 8px;border-bottom:1px solid var(--rule-05);}
+.of-ledger tr[data-changed="1"] td:first-child,
+.of-ledger tr[data-changed="1"] td:nth-child(2){box-shadow:inset 2px 0 0 var(--sage);}
+.of-check{display:flex;gap:9px;align-items:flex-start;padding:10px;border:1px solid var(--panel-warn-bd);background:var(--panel-warn-bg);}
+.of-check input{margin-top:3px;}
+.of-price{font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);color:var(--ink);}
+.of-editor{border:1px solid var(--panel-sage-bd);background:var(--sage-veil);padding:14px;margin-top:14px;}
+.of-field{display:block;margin-bottom:10px;}
+.of-field .lbl{color:var(--quiet);display:block;margin-bottom:3px;}
+.of-field input,.of-field select{width:100%;border:1px solid var(--line-strong);background:var(--paper);padding:6px 8px;}
+.of-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.of-err-inline{color:var(--panel-err-tx);background:var(--panel-err-bg);border:1px solid var(--panel-err-bd);padding:8px 10px;margin-top:8px;}
+
+/* pane C — derivation hops */
+.of-hop{border-bottom:1px solid var(--rule-08);}
+.of-hop-h{width:100%;display:flex;gap:8px;align-items:baseline;padding:9px 14px;color:var(--ink-soft);}
+.of-hop-h:hover{background:var(--sage-veil);}
+.of-hop-h .num{color:var(--quietest);font-family:var(--font-data);width:16px;flex:0 0 16px;}
+.of-hop-h .ttl{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-hop-h .caret{margin-left:auto;color:var(--quietest);}
+.of-hop-body{padding:0 14px 12px 38px;color:var(--body);}
+.of-hop-body dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;}
+.of-hop-body dt{color:var(--quiet);} .of-hop-body dd{margin:0;color:var(--ink-soft);}
+.of-tabs{display:flex;gap:2px;padding:8px 14px 0;flex-wrap:wrap;border-bottom:1px solid var(--rule-08);background:inherit;
+  position:sticky;top:0;z-index:2;}
+.of-tab{padding:7px 11px;color:var(--body);border:1px solid transparent;border-bottom:0;position:relative;top:1px;}
+.of-tab[aria-selected="true"]{background:var(--paper);border-color:var(--rule-12);color:var(--ink);}
+.of-tab .n{color:var(--quiet);font-family:var(--font-data);margin-left:5px;}
+
+/* flow list */
+.of-flow-step{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--rule-05);}
+.of-flow-mark{width:18px;flex:0 0 18px;text-align:center;color:var(--quietest);font-family:var(--font-data);}
+.of-flow-step[data-done="1"] .of-flow-mark{color:var(--positive);}
+.of-flow-step[data-gate="1"]{background:var(--panel-warn-bg);border-left:2px solid var(--panel-warn-bd);padding-left:10px;}
+.of-flow-when{margin-left:auto;color:var(--quiet);white-space:nowrap;padding-left:12px;}
+.of-flow-who{color:var(--quiet);white-space:nowrap;padding-left:12px;}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   9. OVERLAYS — omnibox, shortcut sheet, the one permitted modal, drawer
+   ═════════════════════════════════════════════════════════════════════════════ */
+.of-scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;}
+.of-omni{position:fixed;left:50%;top:12vh;transform:translateX(-50%);width:min(560px,92vw);z-index:51;
+  background:var(--paper);border:1px solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.22);}
+.of-omni input{width:100%;border:0;border-bottom:1px solid var(--rule-08);padding:14px 16px;}
+.of-omni-group{padding:8px 0;}
+.of-omni-group .gh{color:var(--quiet);padding:4px 16px;
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-omni-row{width:100%;display:flex;gap:12px;padding:7px 16px;color:var(--ink-soft);}
+.of-omni-row:hover,.of-omni-row[data-active="1"]{background:var(--sage-wash);}
+.of-omni-row .hint{margin-left:auto;color:var(--quiet);}
+.of-omni-foot{border-top:1px solid var(--rule-08);padding:8px 16px;color:var(--quiet);}
+.of-sheet{position:fixed;left:50%;top:8vh;transform:translateX(-50%);width:min(680px,92vw);max-height:80vh;overflow:auto;
+  z-index:51;background:var(--paper);border:1px solid var(--line);padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.22);}
+.of-modal{position:fixed;left:50%;top:16vh;transform:translateX(-50%);width:min(520px,92vw);z-index:51;
+  background:var(--paper);border:1px solid var(--line);padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.22);}
+.of-drawer{position:fixed;inset:0 auto 0 0;width:var(--drawer-w);max-width:82vw;background:var(--ops);color:#fff;
+  z-index:51;display:flex;flex-direction:column;transform:translateX(-100%);visibility:hidden;transition:transform .2s ease-out;}
+.of-drawer[data-open="1"]{transform:none;visibility:visible;}
+
+/* dev bar */
+.of-devbar{position:fixed;right:0;bottom:0;z-index:60;background:var(--ops-panel);color:#fff;
+  border-top:1px solid var(--rule-w-15);border-left:1px solid var(--rule-w-15);max-width:min(560px,96vw);}
+.of-devbar summary{padding:6px 12px;cursor:pointer;color:var(--sage-light);
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:var(--t-lbl-track);text-transform:uppercase;}
+.of-devbar .of-dev-body{padding:8px 12px 12px;display:flex;flex-wrap:wrap;gap:5px;max-height:40vh;overflow:auto;}
+.of-devbar button{border:1px solid var(--rule-w-15);color:rgba(255,255,255,.75);padding:3px 7px;
+  font:400 var(--t-cap)/1.3 var(--font-body);}
+.of-devbar button:hover{background:var(--rule-w-08);color:#fff;}
+.of-devbar button[data-on="1"]{background:var(--sage);border-color:var(--sage);color:#fff;}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   10. BREAKPOINTS
+   ═════════════════════════════════════════════════════════════════════════════ */
+@media (max-width:1439px){:root{--pane-a:248px;--pane-c:340px;}}
+@media (max-width:1279px){
+  :root{--pane-a:240px;--pane-c:320px;}
+  .of-rh-metrics{gap:20px;}
+}
+@media (max-width:1119px){
+  .of-pane-c{position:absolute;right:0;top:0;bottom:0;width:380px;z-index:20;box-shadow:-6px 0 18px rgba(0,0,0,.10);}
+  .of-pane-group{position:relative;}
+  .of-pane-group[data-drawer-c="0"] .of-pane-c{display:none;}
+}
+@media (max-width:899px){
+  .of-pane-a{flex-basis:44px;width:44px;}
+  .of-pane-a .fold{display:none;}
+}
+@media (max-width:767px){
+  .of-rail{display:none;}
+  .of-menu-btn{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;color:var(--ink-soft);}
+  .of-pane-group{flex-direction:column;}
+  .of-pane-a,.of-pane-c{flex:0 0 auto;width:auto;border:0;border-bottom:1px solid var(--line);max-height:38vh;}
+  .of-pane-b{border-bottom:1px solid var(--line);}
+  .of-rh-metrics{gap:16px;}
+  .of-metric{min-width:0;}
+  .of-row-list thead{display:none;}
+  .of-row-list tbody tr{display:block;padding:10px 12px;}
+  .of-row-list td{display:none;padding:0;}
+  .of-row-list td[data-pri="1"]{display:block;}
+  .of-row-list .meta-fold{display:block;color:var(--quiet);margin-top:4px;
+    font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);}
+  .of-queue-inner{padding:0 12px 32px;}
+}
+/* On a phone both layouts converge on the same drawer — but only ONE hamburger:
+   in top-bar mode it lives in the bar, so the page head's is suppressed. */
+@media (max-width:767px){
+  .of-app-frame[data-nav="top"] .of-top-item{display:none;}
+  .of-app-frame[data-nav="top"] .of-top-menu{display:grid;}
+  .of-app-frame[data-nav="top"] .of-menu-btn{display:none;}
+  .of-app-frame[data-nav="top"] .of-topbar{padding-left:2px;}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+</head>
+<body class="ground-bone">
+<div id="app" class="of-app-frame"></div>
+<div id="overlay"></div>
+<div id="devbar"></div>
+<script>
+/* ═════════════════════════════════════════════════════════════════════════════
+   A. DATA — one const, no fetches, no network.
+
+   Every fixture carries at least one genuinely missing value, so the "not
+   recorded" rendering is proved rather than bypassed. The status vocabulary is
+   the real one (worker/routes/ops.ts + migrations 0002/0014/0033).
+
+   FIXTURE COHERENCE RULE: valueBasis "contract" is only emitted when an order
+   exists, and once an order exists stateLabel IS the order stage label. A row
+   can never read "contract" and "Technical review" at once.
+   ═════════════════════════════════════════════════════════════════════════════ */
+const DATA = {
+  me: { name: "Gediminas Bereznevicius", email: "gb@openframe.com.au", role: "admin" },
+  summary: { activeOrders: 14, customers: 62, newEnquiries: 2, degraded: false },
+
+  projects: [
+    { id:"p-10482", ref:"OF-Q-10482", orderNo:null, title:"Brighton Residence", org:"Harbour Build Co.",
+      customerName:"Dana Whitlock", customerEmail:"ops@harbourbuild.com.au", phone:"03 9555 0182",
+      lineCount:8, value:12196, valueBasis:"estimate", phase:"Pricing", stateLabel:"Technical review",
+      statusInternal:"technical_review_required", statusCustomer:"under_review",
+      waitingOn:"Us", daysInStage:6, unresolved:3, deliverTo:"14 Cochrane St, Brighton VIC 3186",
+      lastChange:{actor:"maria", when:"14 Aug 09:12", action:"line.split"} },
+    { id:"p-10455", ref:"OF-Q-10455", orderNo:null, title:"Ashgrove Duplex", org:null,
+      customerName:"J. Petrakis", customerEmail:"jp@petrakisbuilt.com.au", phone:null,
+      lineCount:9, value:41020, valueBasis:"estimate", phase:"Intake", stateLabel:"Submitted",
+      statusInternal:"submitted", statusCustomer:"received",
+      waitingOn:"Us", daysInStage:11, unresolved:9, deliverTo:"7 Ashgrove Ct, Reservoir VIC 3073",
+      lastChange:{actor:"the system", when:"3 Aug 09:43", action:"schedule parsed (9 items, 4 to review) via ai"} },
+    { id:"p-10402", ref:"OF-Q-10402", orderNo:null, title:"Northcote Renovation", org:null,
+      customerName:null, customerEmail:null, phone:null,
+      lineCount:5, value:9140, valueBasis:"estimate", phase:"Pricing", stateLabel:"Being priced",
+      statusInternal:"estimator_assigned", statusCustomer:"under_review",
+      waitingOn:"Us", daysInStage:19, unresolved:5, deliverTo:"22 Separation St, Northcote VIC 3070",
+      lastChange:{actor:"tom", when:"26 Jul 15:20", action:"started pricing"} },
+    { id:"p-10388", ref:"OF-Q-10388", orderNo:null, title:"Sandringham Extension", org:"Kettle & Sons",
+      customerName:"Ruth Kettle", customerEmail:"ruth@kettleandsons.com.au", phone:"03 9598 4410",
+      lineCount:6, value:18740, valueBasis:"issued", phase:"Issued", stateLabel:"Quote issued",
+      statusInternal:"quote_issued", statusCustomer:"quote_ready",
+      waitingOn:"Customer", daysInStage:9, unresolved:0, deliverTo:"3 Bay Rd, Sandringham VIC 3191",
+      lastChange:{actor:"maria", when:"1 Aug 11:02", action:"issued revision 2"} },
+    { id:"p-10310", ref:"OF-Q-10310", orderNo:null, title:"Brighton Rd shopfront", org:"Vero Retail",
+      customerName:"Sam Ngo", customerEmail:"sam@veroretail.com.au", phone:"0412 883 019",
+      lineCount:4, value:22480, valueBasis:"estimate", phase:"Pricing", stateLabel:"Waiting on the customer",
+      statusInternal:"customer_clarification_required", statusCustomer:"needs_information",
+      waitingOn:"Customer", daysInStage:4, unresolved:2, deliverTo:"188 Brighton Rd, Elwood VIC 3184",
+      lastChange:{actor:"tom", when:"9 Aug 16:44", action:"requested clarification"} },
+    { id:"p-1177", ref:"OF-Q-10221", orderNo:"OF-1177", title:"Kew Terrace Stage 2", org:"Marchetti Constructions",
+      customerName:"Elio Marchetti", customerEmail:"elio@marchetti.build", phone:"03 9853 2201",
+      lineCount:14, value:88410, valueBasis:"contract", phase:"Production", stateLabel:"Manufacturing",
+      statusInternal:"manufacturing", statusCustomer:"in_production",
+      waitingOn:"Nobody", daysInStage:3, unresolved:0, deliverTo:"41 Sackville St, Kew VIC 3101",
+      lastChange:{actor:"the system", when:"12 Aug 07:30", action:"order.stage.manufacturing"} },
+    { id:"p-1183", ref:"OF-Q-10298", orderNo:"OF-1183", title:"Lloyd Residence", org:null,
+      customerName:"Priya Lloyd", customerEmail:"priya.lloyd@gmail.com", phone:"0438 220 771",
+      lineCount:7, value:31650, valueBasis:"contract", phase:"Accepted", stateLabel:"Deposit invoice issued",
+      statusInternal:"deposit_invoiced", statusCustomer:"awaiting_deposit",
+      waitingOn:"Customer", daysInStage:5, unresolved:0, deliverTo:"9 Wattle Gr, Camberwell VIC 3124",
+      lastChange:{actor:"maria", when:"10 Aug 10:15", action:"order.invoice.deposit"} },
+    { id:"p-1094", ref:null, orderNo:"OF-1094", title:"Malvern Rear Addition", org:null,
+      customerName:"Alex Duyar", customerEmail:"a.duyar@outlook.com", phone:null,
+      lineCount:5, value:19230, valueBasis:"contract", phase:"Delivered", stateLabel:"After sales",
+      statusInternal:"after_sales", statusCustomer:"delivered",
+      waitingOn:"Nobody", daysInStage:22, unresolved:0, deliverTo:"66 Wattletree Rd, Malvern VIC 3144",
+      lastChange:{actor:"the system", when:"20 Jul 09:00", action:"order.stage.after_sales"} },
+  ],
+
+  /* ── The canonical bench: OF-Q-10482, eight openings ────────────────────────
+     One composite of three units carrying two review flags; one AI-managed line
+     with a variant; one unpriced (— , never $0); one no longer in the current
+     documents; one manual line with no machine proposal at all. */
+  lines: {
+    "p-10482": [
+      { id:"l1", code:"W01", room:"Bed 1", productSlug:"amj80-sliding-window", productName:"AMJ80 Series Sliding Window",
+        width:1810, height:1210, qty:1, lineTotal:1840, status:"ready", origin:"ai_managed",
+        selectedVariantId:"V-3120", lineKind:"single", review:{}, editedFields:[],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Bracket", "Hardware":"VBH standard", "Flyscreen":"Aluminium" },
+        band:"high", basis:"schedule_specification", frameSystem:"AMJ80",
+        units:[{n:1,type:"sliding",span:1810}],
+        evidence:{ fileId:"f1", extracted:"W01 SLIDING 1810x1210 MONUMENT", origin:"explicit", modelTag:0.94 },
+        model:{ tag:"W01", room:"Bed 1", orientation:"E", projection:"600 mm", glass:"DG low-e",
+                colour:"Monument", flyscreen:"yes", conflict:null },
+        thermal:{ target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"explicit_energy_report", inherited:false,
+                  proposed:"amj80-sliding-window / V-3120", achieved:"Uw 2.38 · SHGC 0.44",
+                  achievedSource:"certified", verdict:"Meets target", tone:"pos" },
+        snapshot:{ product:"amj80-sliding-window", size:"1810 × 1210", "Colour":"Monument",
+                   "Glass":"Low-E double glazed", "Installation":"Bracket" } },
+
+      { id:"l2", code:"W03", room:"Living", productSlug:null, productName:"3-part combination opening",
+        width:2700, height:1500, qty:1, lineTotal:3780, status:"needs_review", origin:"ai_managed",
+        selectedVariantId:"V-4471", lineKind:"composite_parent", compositeAxis:"horizontal",
+        review:{ customerConfigurationChanged:true, thermalRecommendation:true },
+        editedFields:["colour"],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Bracket", "Hardware":"VBH standard", "Flyscreen":"Aluminium" },
+        band:"medium", basis:"schedule_specification", frameSystem:"AMJ80",
+        units:[{n:1,type:"fixed",span:900},{n:2,type:"awning",span:900},{n:3,type:"fixed",span:900}],
+        segments:[
+          { id:"s1", n:1, productSlug:"amj80-fixed-light", productName:"Fixed light", span:900, total:980,
+            status:"ready", changed:[], frameSystem:"AMJ80" },
+          { id:"s2", n:2, productSlug:"amj80-awning", productName:"Awning", span:900, total:1820,
+            status:"ready", changed:["flyscreen aluminium"], frameSystem:"AMJ80" },
+          { id:"s3", n:3, productSlug:"amj80-fixed-light", productName:"Fixed light", span:900, total:980,
+            status:"ready", changed:[], frameSystem:"AMJ80" }],
+        coverage:"Units span 2,700 mm — exactly the opening.",
+        evidence:{ fileId:"f1", extracted:"W03 3-part combination 2700x1500", origin:"explicit", modelTag:0.92 },
+        model:{ tag:"W03", room:"Living", orientation:"N", projection:"600 mm", glass:"DG low-e",
+                colour:"Monument", flyscreen:"yes",
+                conflict:{ field:"dimensions", resolution:"kept first and flagged",
+                           values:[{v:"2700 × 1500", file:"A601-window-schedule.pdf"},
+                                   {v:"2700 × 1450", file:"NE-energy-report.pdf"}] } },
+        thermal:{ target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"explicit_energy_report", inherited:false,
+                  proposed:"amj80-awning / V-4471", achieved:"Uw 2.41 · SHGC 0.42",
+                  achievedSource:"certified", verdict:"Meets target", tone:"pos" },
+        snapshot:{ product:"amj80-awning", size:"2700 × 1500", "Colour":"Surfmist",
+                   "Glass":"Low-E double glazed", "Installation":"Bracket" } },
+
+      { id:"l3", code:"D02", room:"Living", productSlug:"amj150t-lift-slide", productName:"AMJ150T Lift-Sliding Door",
+        width:2400, height:2100, qty:1, lineTotal:6576, status:"needs_review", origin:"ai_managed",
+        selectedVariantId:"V-8802", lineKind:"single", review:{ thermalRecommendation:true },
+        editedFields:[],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Reveal", "Hardware":"Lift-slide gear", "Flyscreen":"not set" },
+        band:"medium", basis:"energy_report", frameSystem:null,
+        units:[{n:1,type:"slidingdoor",span:1200},{n:2,type:"fixed",span:1200}],
+        evidence:{ fileId:"f1", extracted:"D02 LIFT SLIDE 2400x2100", origin:"explicit", modelTag:null },
+        model:{ tag:"D02", room:"Living", orientation:"N", projection:"600 mm", glass:"DG low-e",
+                colour:"Monument", flyscreen:null, conflict:null },
+        thermal:{ target:"Uw ≤ 2.27 · SHGC 0.37–0.41", basis:"explicit_energy_report", inherited:false,
+                  proposed:"amj150t-lift-slide / V-8802", achieved:"Uw 2.61 · SHGC 0.39",
+                  achievedSource:"estimated", verdict:"Misses target (Uw +0.34)", tone:"attn" },
+        snapshot:{ product:"amj150t-lift-slide", size:"2400 × 2100", "Colour":"Monument",
+                   "Glass":"Low-E double glazed", "Installation":"Reveal" } },
+
+      { id:"l4", code:"W04", room:"Bath", productSlug:"amj80-awning", productName:"AMJ80 Series Awning",
+        width:900, height:600, qty:1, lineTotal:null, status:"unpriced", origin:"ai_managed",
+        selectedVariantId:null, lineKind:"single", review:{ noPriceableConfiguration:true },
+        editedFields:[],
+        options:{ "Measurement basis":"Frame size", "Colour":"Surfmist", "Glass":"Obscure double glazed",
+                  "Installation":"Bracket", "Hardware":"VBH standard", "Flyscreen":"not set" },
+        band:"low", basis:"default_allowance", frameSystem:"AMJ80",
+        units:[{n:1,type:"awning",span:900}],
+        evidence:{ fileId:"f1", extracted:"W04 AWNING 900x600 OBSCURE", origin:"explicit", modelTag:0.88 },
+        model:{ tag:"W04", room:"Bath", orientation:null, projection:null, glass:"obscure DG",
+                colour:"Surfmist", flyscreen:null, conflict:null },
+        thermal:{ target:null, basis:null, inherited:false, proposed:null, achieved:null,
+                  achievedSource:null, verdict:"No target derived", tone:"mute" },
+        snapshot:null },
+
+      { id:"l5", code:"W05", room:"Bed 2", productSlug:"amj80-sliding-window", productName:"AMJ80 Series Sliding Window",
+        width:1210, height:1210, qty:2, lineTotal:2980, status:"ready", origin:"ai_managed",
+        selectedVariantId:"V-3120", lineKind:"single", review:{ noLongerInDocuments:true },
+        editedFields:["width","height"],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Bracket", "Hardware":"VBH standard", "Flyscreen":"Aluminium" },
+        band:"medium", basis:"schedule_specification", frameSystem:"AMJ80",
+        units:[{n:1,type:"sliding",span:1210}],
+        evidence:{ fileId:"f2", extracted:"W05 SLIDING 1200x1200", origin:"explicit", modelTag:0.71 },
+        model:{ tag:"W05", room:"Bed 2", orientation:"S", projection:"600 mm", glass:"DG low-e",
+                colour:"Monument", flyscreen:"yes", conflict:null },
+        thermal:{ target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"explicit_energy_report", inherited:true,
+                  proposed:"amj80-sliding-window / V-3120", achieved:"Uw 2.38 · SHGC 0.44",
+                  achievedSource:"certified", verdict:"Meets target", tone:"pos" },
+        snapshot:{ product:"amj80-sliding-window", size:"1200 × 1200", "Colour":"Monument",
+                   "Glass":"Low-E double glazed", "Installation":"Bracket" } },
+
+      { id:"l6", code:"W06", room:"Study", productSlug:"amj80-fixed-light", productName:"AMJ80 Fixed Light",
+        width:600, height:900, qty:1, lineTotal:410, status:"ready", origin:"manual",
+        selectedVariantId:null, lineKind:"single", review:{}, editedFields:["product","width","height"],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Bracket", "Hardware":"not applicable", "Flyscreen":"not set" },
+        band:null, basis:null, frameSystem:"AMJ80",
+        units:[{n:1,type:"fixed",span:600}],
+        evidence:null,
+        model:null,
+        thermal:{ target:null, basis:null, inherited:false, proposed:null, achieved:null,
+                  achievedSource:null, verdict:"No parse record", tone:"mute" },
+        snapshot:null },
+
+      { id:"l7", code:"W07", room:"Kitchen", productSlug:"amj80-awning", productName:"AMJ80 Series Awning",
+        width:1500, height:600, qty:1, lineTotal:1420, status:"ready", origin:"ai_managed",
+        selectedVariantId:"V-4471", lineKind:"single", review:{}, editedFields:[],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Bracket", "Hardware":"VBH standard", "Flyscreen":"Aluminium" },
+        band:"high", basis:"schedule_specification", frameSystem:"AMJ80",
+        units:[{n:1,type:"awning",span:1500}],
+        evidence:{ fileId:"f1", extracted:"W07 AWNING 1500x600", origin:"explicit", modelTag:0.95 },
+        model:{ tag:"W07", room:"Kitchen", orientation:"W", projection:null, glass:"DG low-e",
+                colour:"Monument", flyscreen:"yes", conflict:null },
+        thermal:{ target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"explicit_energy_report", inherited:false,
+                  proposed:"amj80-awning / V-4471", achieved:"Uw 2.41 · SHGC 0.42",
+                  achievedSource:"certified", verdict:"Meets target", tone:"pos" },
+        snapshot:{ product:"amj80-awning", size:"1500 × 600", "Colour":"Monument",
+                   "Glass":"Low-E double glazed", "Installation":"Bracket" } },
+
+      { id:"l8", code:"D03", room:"Entry", productSlug:"amj150t-hinged-door", productName:"AMJ150T Hinged Entry Door",
+        width:1020, height:2340, qty:1, lineTotal:4390, status:"needs_review", origin:"ai_managed",
+        selectedVariantId:"V-9001", lineKind:"single", review:{ mixedFrameSystems:true },
+        editedFields:[],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation":"Reveal", "Hardware":"Entry set", "Flyscreen":"not set" },
+        band:"medium", basis:"building_context", frameSystem:"AMJ150",
+        units:[{n:1,type:"hinged",span:1020}],
+        evidence:{ fileId:"f3", extracted:"D03 ENTRY 1020x2340", origin:"geometry_derived", modelTag:null },
+        model:{ tag:"D03", room:"Entry", orientation:"E", projection:null, glass:"DG low-e",
+                colour:"Monument", flyscreen:null, conflict:null },
+        thermal:{ target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"default_envelope", inherited:true,
+                  proposed:"amj150t-hinged-door / V-9001", achieved:null, achievedSource:null,
+                  verdict:"Not comparable", tone:"mute" },
+        snapshot:{ product:"amj150t-hinged-door", size:"1020 × 2340", "Colour":"Monument",
+                   "Glass":"Low-E double glazed", "Installation":"Reveal" } },
+    ],
+  },
+
+  files: {
+    "p-10482": [
+      { id:"f1", filename:"A601-window-schedule.pdf", kind:"schedule", size:2516582, virus_status:"clean",
+        uploaded:"3 Aug 2026, 09:41", scan_engine:"cf-av", scanned_at:"3 Aug 2026, 09:41" },
+      { id:"f2", filename:"NE-energy-report.pdf", kind:"energy_report", size:4718592, virus_status:"clean",
+        uploaded:"3 Aug 2026, 09:41", scan_engine:"cf-av", scanned_at:"3 Aug 2026, 09:42" },
+      { id:"f3", filename:"A102-ground-floor-plan.pdf", kind:"plan", size:11534336, virus_status:"pending",
+        uploaded:"9 Aug 2026, 14:02", scan_engine:null, scanned_at:null },
+    ],
+  },
+
+  allFiles: [
+    { id:"f1", filename:"A601-window-schedule.pdf", kind:"schedule", size:2516582, virus_status:"clean",
+      project:"Brighton Residence", customer:"Dana Whitlock", uploaded:"3 Aug 2026, 09:41", engine:"cf-av" },
+    { id:"f2", filename:"NE-energy-report.pdf", kind:"energy_report", size:4718592, virus_status:"clean",
+      project:"Brighton Residence", customer:"Dana Whitlock", uploaded:"3 Aug 2026, 09:41", engine:"cf-av" },
+    { id:"f3", filename:"A102-ground-floor-plan.pdf", kind:"plan", size:11534336, virus_status:"pending",
+      project:"Brighton Residence", customer:"Dana Whitlock", uploaded:"9 Aug 2026, 14:02", engine:null },
+    { id:"f4", filename:"duplex-schedule-rev-c.pdf", kind:"schedule", size:892, virus_status:"clean",
+      project:"Ashgrove Duplex", customer:"J. Petrakis", uploaded:"29 Jul 2026, 11:20", engine:"cf-av" },
+    { id:"f5", filename:"site-photos.zip", kind:"upload", size:38797312, virus_status:"infected",
+      project:"Ashgrove Duplex", customer:"J. Petrakis", uploaded:"29 Jul 2026, 11:22", engine:"cf-av" },
+    { id:"f6", filename:"kew-shop-drawings-r2.pdf", kind:"upload", size:7340032, virus_status:"clean",
+      project:"Kew Terrace Stage 2", customer:"Elio Marchetti", uploaded:"18 Jul 2026, 08:15", engine:"cf-av" },
+    { id:"f7", filename:"lloyd-window-schedule.pdf", kind:"schedule", size:1258291, virus_status:"clean",
+      project:"Lloyd Residence", customer:"Priya Lloyd", uploaded:"22 Jul 2026, 16:40", engine:"cf-av" },
+    { id:"f8", filename:"northcote-elevations.pdf", kind:"plan", size:5242880, virus_status:"skipped",
+      project:"Northcote Renovation", customer:null, uploaded:"24 Jul 2026, 10:05", engine:null },
+    { id:"f9", filename:"malvern-energy.pdf", kind:"energy_report", size:3355443, virus_status:"clean",
+      project:"Malvern Rear Addition", customer:"Alex Duyar", uploaded:"2 Jun 2026, 13:31", engine:"cf-av" },
+  ],
+
+  activity: {
+    "p-10482": [
+      { entity:"project", action:"line.split", actor:"maria", when:"14 Aug 2026, 09:12", id:"p-10482" },
+      { entity:"project", action:"line.unit.edit", actor:"maria", when:"14 Aug 2026, 09:14", id:"p-10482" },
+      { entity:"project", action:"started pricing", actor:"maria", when:"12 Aug 2026, 08:10", id:"p-10482" },
+      { entity:"project", action:"rescanned file → clean (cf-av)", actor:"tom", when:"9 Aug 2026, 14:06", id:"p-10482" },
+      { entity:"project", action:"schedule parsed (8 items, 3 to review) via ai", actor:"the system", when:"3 Aug 2026, 09:43", id:"p-10482" },
+      { entity:"project", action:"line.edit", actor:"tom", when:"11 Aug 2026, 15:02", id:"p-10482" },
+      { entity:"project", action:"note added", actor:"maria", when:"8 Aug 2026, 14:02", id:"p-10482" },
+      { entity:"project", action:"sent to technical review", actor:"tom", when:"11 Aug 2026, 15:40", id:"p-10482" },
+    ],
+  },
+
+  auditAll: [
+    { entity:"project", action:"line.split", actor:"maria", when:"14 Aug 2026, 09:12", id:"p-10482" },
+    { entity:"order", action:"order.stage.manufacturing", actor:"the system", when:"12 Aug 2026, 07:30", id:"p-1177" },
+    { entity:"project", action:"started pricing", actor:"maria", when:"12 Aug 2026, 08:10", id:"p-10482" },
+    { entity:"order", action:"order.invoice.deposit", actor:"maria", when:"10 Aug 2026, 10:15", id:"p-1183" },
+    { entity:"project", action:"requested clarification", actor:"tom", when:"9 Aug 2026, 16:44", id:"p-10310" },
+    { entity:"user", action:"role changed to estimator", actor:"gb", when:"8 Aug 2026, 09:30", id:"u-4" },
+    { entity:"project", action:"issued revision 2", actor:"maria", when:"1 Aug 2026, 11:02", id:"p-10388" },
+    { entity:"project", action:"rescanned file → clean (cf-av)", actor:"tom", when:"9 Aug 2026, 14:06", id:"p-10482" },
+    { entity:"order", action:"order.payment.deposit", actor:"maria", when:"7 Aug 2026, 09:12", id:"p-1177" },
+    { entity:"project", action:"schedule parsed (9 items, 4 to review) via ai", actor:"the system", when:"3 Aug 2026, 09:43", id:"p-10455" },
+    { entity:"project", action:"line.edit", actor:"tom", when:"2 Aug 2026, 12:44", id:"p-DELETED" },
+    { entity:"user", action:"signed in", actor:"gb", when:"14 Aug 2026, 07:55", id:"u-1" },
+  ],
+
+  notes: {
+    "p-10482": [
+      { body:"Confirm mullion centres with the shop before we issue.", actor:"maria", when:"8 Aug 14:02", lineId:"l2" },
+      { body:"Customer wants Monument throughout — schedule said Surfmist on W03.", actor:"tom", when:"11 Aug 15:03", lineId:null },
+    ],
+  },
+
+  payments: {
+    "p-1177": [
+      { kind:"Deposit", pct:50, amount:44205, status:"paid", ref:"EFT-4821", invoiced:"3 Mar 2026", paid:"7 Mar 2026" },
+      { kind:"Balance", pct:50, amount:44205, status:"not invoiced", ref:null, invoiced:null, paid:null },
+    ],
+    "p-1183": [
+      { kind:"Deposit", pct:50, amount:15825, status:"invoiced", ref:null, invoiced:"10 Aug 2026", paid:null },
+      { kind:"Balance", pct:50, amount:15825, status:"not invoiced", ref:null, invoiced:null, paid:null },
+    ],
+  },
+
+  revisions: {
+    "p-10388": [
+      { label:"R2", issued:"20 Jul 2026", value:18740, state:"issued", accepted:null },
+      { label:"R1", issued:"12 Jul 2026", value:17980, state:"superseded", accepted:null },
+    ],
+    "p-10482": [],
+  },
+
+  learning: {
+    "p-1094": [
+      { id:"o1", line:"W02", proposed:"amj80-awning", final:"amj80-sliding-window",
+        proposedTotal:1620, finalTotal:1840, decision:"pending",
+        diff:[["product","amj80-awning","amj80-sliding-window"],["colour","Surfmist","Monument"]] },
+    ],
+  },
+
+  enquiries: [
+    { id:"e1", ref:"ENQ-2291", kind:"appointment_request", name:"Nadia Sokolov", email:"nadia@sokolovhomes.au",
+      phone:"0401 552 118", suburb:"Ivanhoe VIC", status:"new", assigned:null, when:"13 Aug 2026, 08:22",
+      commercial:null, projectId:null, message:"Looking to book a measure for a 9-window renovation in September.",
+      handoff:{ sentTo:"partners@amjwindows.com.au", ackAt:"13 Aug 2026, 09:04" } },
+    { id:"e2", ref:"ENQ-2288", kind:"question", name:"Owen Blackwood", email:"owen.b@protonmail.com",
+      phone:null, suburb:"Geelong VIC", status:"contacted", assigned:"tom", when:"11 Aug 2026, 17:40",
+      commercial:null, projectId:"p-10402",
+      message:"Do the AMJ80 sliders come in a 150mm reveal for a double-brick opening? Our builder says the standard reveal will not cover the cavity, and we would rather not use architrave to hide it.",
+      handoff:null },
+    { id:"e3", ref:"ENQ-2240", kind:"question", name:"Hannah Reid", email:"h.reid@bigpond.com",
+      phone:"0455 900 122", suburb:"Torquay VIC", status:"closed", assigned:"maria", when:"28 Jul 2026, 12:10",
+      commercial:"order_placed", projectId:"p-1183", message:"Lead times for lift-slide doors?", handoff:null },
+  ],
+
+  customers: [
+    { id:"c1", name:"Dana Whitlock", email:"ops@harbourbuild.com.au", company:"Harbour Build Co.",
+      abn:"51 824 753 556", phone:"03 9555 0182", projects:4, orders:1 },
+    { id:"c2", name:"J. Petrakis", email:"jp@petrakisbuilt.com.au", company:null, abn:null,
+      phone:null, projects:2, orders:0 },
+    { id:"c3", name:"Elio Marchetti", email:"elio@marchetti.build", company:"Marchetti Constructions",
+      abn:"29 110 402 887", phone:"03 9853 2201", projects:6, orders:3 },
+    { id:"c4", name:"Priya Lloyd", email:"priya.lloyd@gmail.com", company:null, abn:null,
+      phone:"0438 220 771", projects:1, orders:1 },
+    { id:"c5", name:"Ruth Kettle", email:"ruth@kettleandsons.com.au", company:"Kettle & Sons",
+      abn:"77 604 221 903", phone:"03 9598 4410", projects:3, orders:0 },
+    { id:"c6", name:"Sam Ngo", email:"sam@veroretail.com.au", company:"Vero Retail", abn:null,
+      phone:"0412 883 019", projects:0, orders:0 },
+  ],
+
+  products: [
+    { slug:"amj80-sliding-window", name:"AMJ80 Series Sliding Window", family:"AMJ80", category:"Windows",
+      perim:38.40, area:214.00, min:410, example:1840, version:"v4", options:6, priced:6 },
+    { slug:"amj80-awning", name:"AMJ80 Series Awning", family:"AMJ80", category:"Windows",
+      perim:41.20, area:228.00, min:430, example:1420, version:"v4", options:6, priced:5 },
+    { slug:"amj80-fixed-light", name:"AMJ80 Fixed Light", family:"AMJ80", category:"Windows",
+      perim:29.80, area:198.00, min:280, example:980, version:"v3", options:4, priced:4 },
+    { slug:"amj150t-lift-slide", name:"AMJ150T Lift-Sliding Door", family:"AMJ150", category:"Doors",
+      perim:64.00, area:310.00, min:2400, example:6576, version:"v2", options:7, priced:6 },
+    { slug:"amj150t-hinged-door", name:"AMJ150T Hinged Entry Door", family:"AMJ150", category:"Doors",
+      perim:58.00, area:295.00, min:2100, example:4390, version:"v1-provisional", options:5, priced:5 },
+    { slug:"amj90-bifold", name:"AMJ90 Bi-fold Door", family:"AMJ90", category:"Doors",
+      perim:null, area:null, min:null, example:null, version:null, options:6, priced:4 },
+    { slug:"amj60-louvre", name:"AMJ60 Louvre Window", family:"AMJ60", category:"Windows",
+      perim:null, area:null, min:null, example:null, version:null, options:3, priced:3 },
+  ],
+
+  options: [
+    { slug:"colour:monument", label:"Colour — Monument", surcharge:0, basis:"fixed" },
+    { slug:"colour:surfmist", label:"Colour — Surfmist", surcharge:0, basis:"fixed" },
+    { slug:"colour:custom-powdercoat", label:"Colour — custom powdercoat", surcharge:340, basis:"fixed" },
+    { slug:"glass:low-e-double", label:"Glass — Low-E double glazed", surcharge:118, basis:"per_sqm" },
+    { slug:"glass:obscure-double", label:"Glass — Obscure double glazed", surcharge:131, basis:"per_sqm" },
+    { slug:"glass:acoustic-laminate", label:"Glass — Acoustic laminate", surcharge:null, basis:"per_sqm" },
+    { slug:"flyscreen:aluminium", label:"Flyscreen — Aluminium", surcharge:96, basis:"fixed" },
+    { slug:"flyscreen:stainless", label:"Flyscreen — Stainless", surcharge:null, basis:"fixed" },
+    { slug:"install:bracket", label:"Installation — Bracket", surcharge:0, basis:"fixed" },
+    { slug:"install:reveal", label:"Installation — Reveal", surcharge:210, basis:"fixed" },
+  ],
+
+  reconcile: { when:"13 Aug 2026, 02:00", checked:27, withoutCard:2, optionsMissing:3,
+               blocked:["amj80-awning · area rate still includes glass"] },
+  policy: { depositPercent: 50 },
+  compositePolicy: { tolerance: 25, joiner: 0, max: 4 },
+
+  staff: [
+    { id:"u-1", name:"Gediminas Bereznevicius", email:"gb@openframe.com.au", role:"admin" },
+    { id:"u-2", name:"Maria Ferreira", email:"maria@openframe.com.au", role:"estimator" },
+    { id:"u-3", name:"Tom Vasilenko", email:"tom@openframe.com.au", role:"estimator" },
+    { id:"u-4", name:null, email:"shop@openframe.com.au", role:"production" },
+    { id:"u-5", name:"Alina Devi", email:"alina@openframe.com.au", role:"support" },
+    { id:"u-6", name:"AMJ Partner Desk", email:"partners@amjwindows.com.au", role:"manufacturer" },
+  ],
+  roles: ["admin","estimator","production","support"],
+};
+
+/* ── The other jobs' lines ──────────────────────────────────────────────────
+   Brighton is written out in full above because it is the screen being judged.
+   The rest are expanded from a terse seed so that every LIFECYCLE state can be
+   opened and read: an issued quote (read-only, no editor), an order's contract
+   lines (flattened, all ready), a raw submission (nothing priced yet). Without
+   these the bench is only ever demonstrable in one state. */
+(function seedOtherJobs(){
+  const T = {                      /* type → [productSlug, productName] */
+    sliding:["amj80-sliding-window","AMJ80 Series Sliding Window"],
+    awning:["amj80-awning","AMJ80 Series Awning"],
+    fixed:["amj80-fixed-light","AMJ80 Fixed Light"],
+    slidingdoor:["amj150t-lift-slide","AMJ150T Lift-Sliding Door"],
+    hinged:["amj150t-hinged-door","AMJ150T Hinged Entry Door"],
+  };
+  const SEED = {
+    "p-10455": { file:"f4", status:"unpriced", band:"low", rows:[
+      ["W01","Bed 1","sliding",1800,1200],["W02","Bed 2","sliding",1800,1200],["W03","Living","fixed",2400,2100],
+      ["W04","Bath","awning",900,600],["W05","Kitchen","awning",1500,600],["W06","Ens","awning",600,600],
+      ["D01","Living","slidingdoor",3000,2100],["D02","Entry","hinged",1020,2340],["W07","Study","fixed",1200,1200]] },
+    "p-10402": { file:"f8", status:"unpriced", band:"low", rows:[
+      ["W01","Front","sliding",1500,1200],["W02","Rear","awning",1200,600],["W03","Bath","awning",600,600],
+      ["D01","Rear","slidingdoor",2400,2100],["W04","Hall","fixed",600,1800]] },
+    "p-10310": { file:null, status:"needs_review", band:"medium", rows:[
+      ["SF1","Shopfront","fixed",3000,2700],["SF2","Shopfront","fixed",3000,2700],
+      ["D01","Entry","hinged",1200,2400],["W01","Rear","awning",900,900]] },
+    "p-10388": { file:"f7", status:"ready", band:"high", rows:[
+      ["W01","Bed 1","sliding",1800,1200],["W02","Living","fixed",2400,2100],["W03","Kitchen","awning",1500,600],
+      ["W04","Bath","awning",900,600],["D01","Deck","slidingdoor",2700,2100],["D02","Entry","hinged",1020,2340]] },
+    "p-1177": { file:"f6", status:"ready", band:"high", rows:[
+      ["W01","Bed 1","sliding",1800,1200],["W02","Bed 2","sliding",1800,1200],["W03","Bed 3","sliding",1800,1200],
+      ["W04","Living","fixed",2400,2400],["W05","Living","fixed",2400,2400],["W06","Kitchen","awning",1500,600],
+      ["W07","Bath","awning",900,600],["W08","Ens","awning",900,600],["W09","Study","fixed",1200,1200],
+      ["W10","Hall","fixed",600,1800],["D01","Deck","slidingdoor",3600,2100],["D02","Side","slidingdoor",2400,2100],
+      ["D03","Entry","hinged",1020,2340],["D04","Laundry","hinged",820,2100]] },
+    "p-1183": { file:"f7", status:"ready", band:"high", rows:[
+      ["W01","Bed 1","sliding",1800,1200],["W02","Living","fixed",2700,2400],["W03","Kitchen","awning",1500,600],
+      ["W04","Bath","awning",900,600],["W05","Ens","awning",600,600],["D01","Deck","slidingdoor",3000,2100],
+      ["D02","Entry","hinged",1020,2340]] },
+    "p-1094": { file:"f9", status:"ready", band:"high", rows:[
+      ["W01","Bed 1","sliding",1500,1200],["W02","Living","fixed",2400,2100],["W03","Kitchen","awning",1200,600],
+      ["D01","Deck","slidingdoor",2400,2100],["D02","Entry","hinged",1020,2340]] },
+  };
+  Object.keys(SEED).forEach((pid) => {
+    const s = SEED[pid];
+    DATA.lines[pid] = s.rows.map((r, i) => {
+      const [code, room, type, w, h] = r;
+      const [slug, name] = T[type];
+      const area = (w/1000) * (h/1000);
+      const total = s.status === "unpriced" ? null : Math.round((380 + area * 620) / 10) * 10;
+      return {
+        id: pid + "-" + i, code, room, productSlug:slug, productName:name, width:w, height:h, qty:1,
+        lineTotal: total, status: s.status, origin:"ai_managed",
+        selectedVariantId: s.status === "unpriced" ? null : "V-" + (3000 + i * 7),
+        lineKind:"single", review: s.status === "needs_review" ? { thermalRecommendation:true }
+          : s.status === "unpriced" ? { noPriceableConfiguration:true } : {},
+        editedFields: [],
+        options:{ "Measurement basis":"Frame size", "Colour":"Monument", "Glass":"Low-E double glazed",
+                  "Installation": type === "hinged" || type === "slidingdoor" ? "Reveal" : "Bracket",
+                  "Hardware": type === "slidingdoor" ? "Lift-slide gear" : type === "hinged" ? "Entry set" : "VBH standard",
+                  "Flyscreen": type === "fixed" ? "not applicable" : "Aluminium" },
+        band: s.band, basis:"schedule_specification", frameSystem: slug.indexOf("amj150") === 0 ? "AMJ150" : "AMJ80",
+        units:[{ n:1, type, span:w }],
+        evidence: s.file ? { fileId:s.file, extracted:`${code} ${type.toUpperCase()} ${w}x${h}`,
+                             origin:"explicit", modelTag: null } : null,
+        model: s.file ? { tag:code, room, orientation:null, projection:null, glass:"DG low-e",
+                          colour:"Monument", flyscreen:null, conflict:null } : null,
+        thermal: s.status === "unpriced"
+          ? { target:null, basis:null, inherited:false, proposed:null, achieved:null, achievedSource:null,
+              verdict:"No target derived", tone:"mute" }
+          : { target:"Uw ≤ 2.60 · SHGC 0.30–0.55", basis:"explicit_energy_report", inherited:i > 0,
+              proposed:`${slug} / V-${3000 + i*7}`, achieved:"Uw 2.38 · SHGC 0.44", achievedSource:"certified",
+              verdict:"Meets target", tone:"pos" },
+        snapshot: s.status === "unpriced" ? null
+          : { product:slug, size:`${w} × ${h}`, "Colour":"Monument", "Glass":"Low-E double glazed",
+              "Installation": type === "hinged" || type === "slidingdoor" ? "Reveal" : "Bracket" },
+      };
+    });
+  });
+})();
+/* ═════════════════════════════════════════════════════════════════════════════
+   B. STORE + helpers
+   ═════════════════════════════════════════════════════════════════════════════ */
+/* A sandboxed iframe THROWS on localStorage rather than returning null, and this
+   read happens while the store is being built — unguarded, it takes the whole
+   page down before anything renders. */
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+const S = {
+  route:  { name:"work", view:"needs-us", id:null, scope:"opening", line:null, tab:"flow", sub:null },
+  /* "rail" | "top" — the open question this prototype exists to settle. L switches. */
+  nav: lsGet("of.nav") === "top" ? "top" : "rail",
+  railPinned: lsGet("of.rail") === "1",
+  collapseA:false, collapseC:false, drawerC:false,
+  hops: { 1:true, 2:true, 3:false, 4:false, 5:true, 6:true, 7:true, 8:false, 9:false, 10:false },
+  omni:{ open:false, q:"", ix:0 }, sheet:false, drawer:false, modal:null,
+  editing:null, splitting:false, confirm:null, sheetView:false,
+  flags:{ loading:false, empty:false, error:false, degraded:false, conflict:false,
+          readonly:false, manufacturer:false, missingOption:false, tripwire:false, reconcile:"ok" },
+  drafts:{}, errors:{}, busy:null, resolved:{}, toast:null,
+};
+
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const money0 = (n) => n == null ? "—" : "$" + Math.round(n).toLocaleString("en-AU");
+const money2 = (n) => n == null ? "—" : "$" + n.toLocaleString("en-AU",{minimumFractionDigits:2,maximumFractionDigits:2});
+const mm = (n) => n == null ? "—" : n.toLocaleString("en-AU");
+const bytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? Math.round(n/1024) + " KB"
+  : (n/1048576).toFixed(1) + " MB";           /* the MB tier the live Files table lacks */
+const humanise = (s) => s == null ? "" : String(s).replace(/_/g," ").replace(/^./, (c)=>c.toUpperCase());
+const plural = (n, one, many) => n === 1 ? one : many;
+const proj = (id) => DATA.projects.find(p => p.id === id);
+const linesOf = (id) => DATA.lines[id] || [];
+
+/* A count is a FILTER OVER THE ROWS, never a separate number that can drift from
+   them. The live console computes "unresolved" in SQL and the list from another
+   query, so "3 lines are unresolved" can sit above four unresolved lines. Here
+   the gate is counted from the lines the reviewer can see. */
+function unresolvedOf(p) {
+  const ls = linesOf(p.id);
+  if (!ls.length) return p.unresolved;
+  return ls.filter(l => l.status !== "ready").length;
+}
+
+/* The state word. Never colour alone — the word IS the value. */
+const STATE_WORD = { ready:["ready","pos"], needs_review:["needs review","attn"],
+                     unpriced:["unpriced","stop"], draft:["draft","mute"] };
+const stateWord = (s) => {
+  const [w,t] = STATE_WORD[s] || [humanise(s),"mute"];
+  return `<span class="of-status-word" data-tone="${t}">${esc(w)}</span>`;
+};
+
+/* Review flags → the server's own sentences (worker/routes/ops.ts reviewReasons). */
+const REVIEW_REASON = {
+  customerConfigurationChanged: "Customer split opening into three child products",
+  thermalRecommendation:        "Thermal configuration",
+  noLongerInDocuments:          "No longer in current documents",
+  noPriceableConfiguration:     "No priceable configuration was available",
+  mixedFrameSystems:            "Frames of different depth do not couple, so they cannot be joined in one opening",
+};
+const reasonsOf = (line) => Object.keys(line.review || {}).filter(k => line.review[k]).map(k => REVIEW_REASON[k] || k);
+
+/* ── The elevation ──────────────────────────────────────────────────────────
+   Drawn from the configured size and its units — NOT traced from any uploaded
+   document. The sentence under it says so, every time; that one sentence is the
+   difference between a provenance tool and a prop. */
+function elevation(line, w, h, opts) {
+  opts = opts || {};
+  const units = line.units && line.units.length ? line.units : [{n:1,type:"fixed",span:line.width||1}];
+  const total = units.reduce((a,u)=>a+(u.span||1),0) || 1;
+  const pad = opts.dims ? 30 : 3;
+  const iw = w - pad*2, ih = h - pad*2;
+  if (!line.width || !line.height) {
+    return `<svg class="of-elev" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-label="No size recorded"
+      style="opacity:.55"><rect x="${pad}" y="${pad}" width="${iw}" height="${ih}" fill="none"
+      stroke="var(--quietest)" stroke-width="1" stroke-dasharray="3 3"/></svg>`;
+  }
+  const ratio = line.height / line.width;
+  let dw = iw, dh = iw * ratio;
+  if (dh > ih) { dh = ih; dw = ih / ratio; }
+  const x0 = pad + (iw - dw)/2, y0 = pad + (ih - dh)/2;
+  let x = x0, parts = "";
+  units.forEach((u) => {
+    const uw = dw * ((u.span||1)/total);
+    parts += `<rect x="${x.toFixed(1)}" y="${y0.toFixed(1)}" width="${uw.toFixed(1)}" height="${dh.toFixed(1)}"
+      fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/>`;
+    parts += symbol(u.type, x, y0, uw, dh);
+    x += uw;
+  });
+  let dims = "";
+  if (opts.dims) {
+    const cy = y0 + dh/2;
+    dims = `
+      <line x1="${x0}" y1="${(y0+dh+12).toFixed(1)}" x2="${(x0+dw).toFixed(1)}" y2="${(y0+dh+12).toFixed(1)}"
+        stroke="var(--quiet)" stroke-width="1"/>
+      <text x="${(x0+dw/2).toFixed(1)}" y="${(y0+dh+26).toFixed(1)}" text-anchor="middle"
+        font-family="var(--font-data)" font-size="11" fill="var(--body)">${mm(line.width)} wide</text>
+      <line x1="${(x0-12).toFixed(1)}" y1="${y0}" x2="${(x0-12).toFixed(1)}" y2="${(y0+dh).toFixed(1)}"
+        stroke="var(--quiet)" stroke-width="1"/>
+      <text x="${(x0-16).toFixed(1)}" y="${cy.toFixed(1)}" text-anchor="middle"
+        font-family="var(--font-data)" font-size="11" fill="var(--body)"
+        transform="rotate(-90 ${(x0-16).toFixed(1)} ${cy.toFixed(1)})">${mm(line.height)} high</text>`;
+    units.forEach((u,i) => {
+      let ux = x0; for (let k=0;k<i;k++) ux += dw*((units[k].span||1)/total);
+      const uw = dw*((u.span||1)/total);
+      dims += `<text x="${(ux+uw/2).toFixed(1)}" y="${(y0+dh+10).toFixed(1)}" text-anchor="middle"
+        font-family="var(--font-data)" font-size="10" fill="var(--quiet)">${mm(u.span)}</text>`;
+    });
+  }
+  return `<svg class="of-elev" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"
+    role="img" aria-label="${esc(line.code)} — ${units.length} ${plural(units.length,"unit","units")},
+    ${mm(line.width)} by ${mm(line.height)} millimetres">${parts}${dims}</svg>`;
+}
+/* Opening symbols: the apex points at the hinge. Fixed lights carry none, which
+   is itself the convention — an empty panel is a fixed panel. */
+function symbol(type, x, y, w, h) {
+  const st = `stroke="var(--body)" stroke-width="1" fill="none"`;
+  const m = 2, x1 = x+m, y1 = y+m, x2 = x+w-m, y2 = y+h-m, cx = x+w/2, cy = y+h/2;
+  switch (type) {
+    case "awning":      return `<path d="M${x1} ${y2} L${cx} ${y1} L${x2} ${y2}" ${st}/>`;
+    case "casement":    return `<path d="M${x2} ${y1} L${x1} ${cy} L${x2} ${y2}" ${st}/>`;
+    case "hinged":      return `<path d="M${x1} ${y1} L${x2} ${cy} L${x1} ${y2}" ${st}/>`;
+    case "sliding":
+    case "slidingdoor": return `<path d="M${cx-w*0.22} ${cy} L${cx+w*0.22} ${cy} M${cx+w*0.22} ${cy}
+                                 l-4 -4 M${cx+w*0.22} ${cy} l-4 4" ${st}/>`;
+    default:            return "";
+  }
+}
+
+/* ── Absence — a first-class primitive ─────────────────────────────────────── */
+const absence = (t) => `<span class="of-absence">${esc(t)}</span>`;
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   C. ROUTER — every screen has a URL; back/forward and refresh all work.
+   ═════════════════════════════════════════════════════════════════════════════ */
+const VIEWS = [
+  { id:"needs-us",  label:"Needs us",         pred:r => r.waitingOn === "Us" },
+  { id:"submitted", label:"Submitted",        pred:r => r.stateLabel === "Submitted" },
+  { id:"pricing",   label:"Being priced",     pred:r => r.phase === "Pricing" },
+  { id:"ready",     label:"Ready to issue",   pred:r => r.phase === "Pricing" && unresolvedOf(r) === 0 },
+  { id:"payment",   label:"Awaiting payment",
+    pred:r => r.stateLabel === "Deposit invoice issued" || r.stateLabel === "Final balance invoice issued" },
+  { id:"customer",  label:"Awaiting customer",pred:r => r.waitingOn === "Customer" },
+  { id:"production",label:"In production",    pred:r => r.phase === "Production" || r.phase === "Accepted" },
+  { id:"open",      label:"All open",         pred:r => r.phase !== "Delivered" },
+  { id:"all",       label:"All",              pred:() => true },
+];
+
+function parseHash() {
+  const raw = (location.hash || "#/work/needs-us").replace(/^#/, "");
+  const [path, qs] = raw.split("?");
+  const q = new URLSearchParams(qs || "");
+  const seg = path.split("/").filter(Boolean);
+  const r = { name: seg[0] || "work", view:null, id:null, scope:"opening", line:null, tab:null, sub:null };
+  if (r.name === "work")      { r.view = seg[1] || "needs-us"; }
+  else if (r.name === "r")    { r.id = seg[1] || null; r.line = seg[2] || null;
+                                r.scope = q.get("scope") === "record" ? "record" : "opening";
+                                r.tab = q.get("tab") || "flow"; r.sub = q.get("view") || null; }
+  else if (r.name === "leads"){ r.view = seg[1] || "all"; r.id = seg[2] || null; }
+  else if (r.name === "customers"){ r.id = seg[1] || null; }
+  else if (r.name === "products") { r.view = seg[1] || "cards"; r.id = seg[2] || null; r.sub = q.get("q"); }
+  else if (r.name === "archive")  { r.view = seg[1] || "files"; r.sub = q.get("entity") || ""; }
+  else if (r.name === "settings") { r.view = seg[1] || "staff"; }
+  return r;
+}
+function go(hash) { location.hash = hash; }
+function syncRoute() {
+  S.route = parseHash();
+  if (S.route.name === "r" && !S.route.line && S.route.scope === "opening") {
+    const l = linesOf(S.route.id)[0]; if (l) S.route.line = l.id;
+  }
+  render();
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   D. RENDER — the shell
+   ═════════════════════════════════════════════════════════════════════════════ */
+const RAIL = [
+  { id:"work",      label:"Work",      ico:"▣", href:"#/work/needs-us" },
+  { id:"leads",     label:"Leads",     ico:"✉", href:"#/leads/all" },
+  { id:"customers", label:"Customers", ico:"◍", href:"#/customers" },
+  { id:"products",  label:"Products",  ico:"▤", href:"#/products/cards" },
+  { id:"archive",   label:"Archive",   ico:"⌸", href:"#/archive/files" },
+  { id:"settings",  label:"Settings",  ico:"⛭", href:"#/settings/staff" },
+];
+
+function railFor() {
+  /* A manufacturer partner is not a staffer: one destination, and it is the only
+     one the Worker would answer anyway. Today's console offers them eight doors
+     and slams seven. */
+  return S.flags.manufacturer ? RAIL.filter(r => r.id === "leads") : RAIL;
+}
+
+function renderRail() {
+  const items = railFor();
+  const active = S.route.name === "r" ? "work" : S.route.name;
+  const rows = DATA.projects.filter(VIEWS[0].pred).length;
+  const lane = S.route.name === "r" ? laneBlock() : "";
+  return `
+  <nav class="of-rail" data-pinned="${S.railPinned ? 1 : 0}" aria-label="Sections">
+   <div class="of-rail-inner">
+    <div class="of-rail-head">
+      <span class="of-mark t-data-sm" aria-hidden="true">OF</span>
+      <span class="of-rail-word t-bd-sm">Ops</span>
+    </div>
+    <div class="of-rail-nav">
+      ${items.map(it => `
+        <a class="of-rail-item t-bd-sm" href="${it.href}"
+           ${active === it.id ? 'aria-current="page"' : ""}>
+          <span class="of-rail-ico" aria-hidden="true">${it.ico}</span>
+          <span>${it.label}</span>
+          ${it.id === "work" && rows ? `<span class="of-rail-count">${rows}</span>` : ""}
+          ${it.id === "leads" && DATA.summary.newEnquiries ? `<span class="of-rail-count">${DATA.summary.newEnquiries}</span>` : ""}
+        </a>`).join("")}
+    </div>
+    ${lane}
+    <div class="of-rail-foot t-cap">
+      <div class="nm trunc t-bd-sm">${esc(DATA.me.name)}</div>
+      <div class="em trunc">${esc(S.flags.manufacturer ? "partners@amjwindows.com.au" : DATA.me.email)}</div>
+      <button data-act="signout"><span aria-hidden="true">⏻</span> Sign out</button>
+    </div>
+   </div>
+  </nav>`;
+}
+/* ── The same six destinations, on the other axis ──────────────────────────
+   Against today's console this wins on BOTH axes: it replaces a 224px rail and
+   a 56px sticky header that carried only the capitalised tab name. Against the
+   icon rail it is a straight trade — 48px of height off all three panes, 48px
+   of width back to pane B alone — and the tie is broken by the fact that pane A
+   is already a rail. */
+function renderTopbar() {
+  const items = railFor();
+  const active = S.route.name === "r" ? "work" : S.route.name;
+  const rows = DATA.projects.filter(VIEWS[0].pred).length;
+  return `
+  <header class="of-topbar">
+    <button class="of-top-menu" data-act="drawer" aria-label="Open menu">☰</button>
+    <span class="of-mark t-data-sm" aria-hidden="true">OF</span>
+    <nav style="display:flex;min-width:0;overflow:hidden" aria-label="Sections">
+      ${items.map(it => `<a class="of-top-item t-bd-sm" href="${it.href}"
+        ${active === it.id ? 'aria-current="page"' : ""}>${it.label}
+        ${it.id === "work" && rows ? `<span class="of-rail-count">${rows}</span>` : ""}
+        ${it.id === "leads" && DATA.summary.newEnquiries ? `<span class="of-rail-count">${DATA.summary.newEnquiries}</span>` : ""}
+      </a>`).join("")}
+    </nav>
+    <div class="of-top-right">
+      <button class="of-top-search t-cap" data-act="omni">
+        <span aria-hidden="true">⌕</span><span class="label">Search</span>
+        <span class="of-kbd" style="border-color:var(--rule-w-15)">⌘K</span></button>
+      <span class="of-top-id t-cap">
+        <span class="nm trunc">${esc(S.flags.manufacturer ? "AMJ Partner Desk" : DATA.me.name)}</span>
+        <button data-act="signout">Sign out</button></span>
+    </div>
+  </header>`;
+}
+
+/* The rail keeps your place in the lane you arrived from, so ] walks to the next
+   job without a return trip to the list. */
+function laneBlock() {
+  const list = laneRows();
+  const ix = list.findIndex(p => p.id === S.route.id);
+  const view = VIEWS.find(v => v.id === (S.lane || "needs-us")) || VIEWS[0];
+  return `<div class="of-rail-lane t-cap">
+    ${ix >= 0 ? `${ix+1} of ${list.length}` : "not in this lane"} · ${esc(view.label)}
+    <div class="of-rail-lane-btns">
+      <button data-act="lane-prev" aria-label="Previous job in this lane" class="t-cap">‹</button>
+      <button data-act="lane-next" aria-label="Next job in this lane" class="t-cap">›</button>
+    </div></div>`;
+}
+const laneRows = () => DATA.projects.filter((VIEWS.find(v => v.id === (S.lane||"needs-us")) || VIEWS[0]).pred);
+
+/* With no rail to live in, walking the lane sits beside the way back to it. */
+function laneStepper() {
+  const list = laneRows();
+  const ix = list.findIndex(p => p.id === S.route.id);
+  const view = VIEWS.find(v => v.id === (S.lane || "needs-us")) || VIEWS[0];
+  return `<span class="of-lane-step t-cap">
+    ${ix >= 0 ? `${ix+1} of ${list.length}` : "not in this lane"} · ${esc(view.label)}
+    <button data-act="lane-prev" aria-label="Previous job in this lane" ${ix <= 0 ? "disabled" : ""}>‹</button>
+    <button data-act="lane-next" aria-label="Next job in this lane" ${ix < 0 || ix >= list.length-1 ? "disabled" : ""}>›</button>
+  </span>`;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   Work — the queue
+   ═════════════════════════════════════════════════════════════════════════════ */
+function renderWork() {
+  const view = VIEWS.find(v => v.id === S.route.view) || VIEWS[0];
+  S.lane = view.id;
+  const all = S.flags.empty ? [] : DATA.projects;
+  const rows = all.filter(view.pred);
+  const withCustomer = all.filter(r => r.waitingOn === "Customer").length;
+
+  const strip = VIEWS.map(v => `
+    <button class="of-view t-cap" data-act="view" data-view="${v.id}"
+      aria-pressed="${v.id === view.id}">${v.label}<span class="n">${all.filter(v.pred).length}</span></button>`).join("")
+    /* D1 — the Dashboard's fifth "Needs us" row was enquiries. It is the one count
+       here whose rows live on another page, so it routes rather than filters. */
+    + `<button class="of-view t-cap" data-act="goto" data-href="#/leads/new">New leads<span class="n">${DATA.summary.newEnquiries}</span></button>`;
+
+  let body;
+  if (S.flags.loading) {
+    body = `<div class="of-row-list" role="status" aria-label="Loading">${
+      Array.from({length:6}).map(() => `<div style="padding:14px 12px;border-bottom:1px solid var(--rule-05)">
+        <div class="of-skel" style="width:${30+Math.round(Math.random()*50)}%"></div></div>`).join("")}</div>`;
+  } else if (S.flags.error) {
+    body = `<div class="of-state" data-kind="error">
+      <p class="t-bd-sm">Couldn't load the queue.</p>
+      <p class="hint t-cap">HTTP 500 — ops_summary_failed</p>
+      <p style="margin-top:12px"><button class="of-btn t-bd-sm" data-act="clear-flags">Retry</button></p></div>`;
+  } else if (!rows.length) {
+    body = `<div class="of-state">
+      <p class="t-bd-sm">${view.id === "needs-us" ? "Nothing is waiting on us." : "No projects match this filter."}</p>
+      ${view.id === "needs-us" ? `<p class="hint t-cap">New submissions and enquiries appear here.</p>
+        ${withCustomer ? `<p style="margin-top:8px"><button class="of-btn" data-variant="ghost" data-act="view" data-view="customer">
+          ${withCustomer} ${plural(withCustomer,"project is","projects are")} with the customer</button></p>` : ""}` : ""}
+    </div>`;
+  } else {
+    body = `<table class="of-row-list">
+      <thead><tr>
+        <th>Ref</th><th>Project</th><th>Customer</th><th class="right">Lines</th>
+        <th class="right">Value</th><th>Stage</th><th>Waiting on</th><th class="right">Days</th><th>Flags</th>
+      </tr></thead><tbody>
+      ${rows.map(r => `
+        <tr data-act="open-record" data-id="${r.id}" tabindex="0">
+          <td data-pri="1"><span class="sage-tx font-data t-data-sm">${esc(r.ref || r.id.slice(0,8))}</span>
+            ${r.orderNo ? `<span class="sub font-data">${esc(r.orderNo)}</span>` : ""}</td>
+          <td data-pri="1">${esc(r.title)}${r.org ? `<span class="sub">${esc(r.org)}</span>` : ""}
+            <span class="meta-fold">${esc(r.phase)} · ${esc(r.stateLabel)} · ${esc(r.waitingOn)} · ${r.daysInStage}d
+              ${unresolvedOf(r) ? ` · Unpriced ${unresolvedOf(r)}` : ""}</span></td>
+          <td class="quiet" data-pri="3">${r.customerName ? esc(r.customerName) : "(anonymous)"}
+            ${r.customerEmail ? `<span class="sub">${esc(r.customerEmail)}</span>` : ""}</td>
+          <td class="right font-data quiet" data-pri="3">${r.lineCount}</td>
+          <td class="right" data-pri="1"><span class="font-data">${money0(r.value)}</span>
+            <span class="sub">${r.valueBasis === "estimate" ? "est." : esc(r.valueBasis)}</span></td>
+          <td data-pri="2"><span class="t-cap" style="font-weight:600">${esc(r.phase)}</span>
+            <span class="sub">${esc(r.stateLabel)}</span></td>
+          <td data-pri="1" class="t-cap" style="color:${r.waitingOn === "Us" ? "var(--ink)" : "var(--quiet)"};
+            font-weight:${r.waitingOn === "Us" ? 600 : 400}">${esc(r.waitingOn)}</td>
+          <td class="right font-data quiet" data-pri="3" title="last touched ${esc(r.lastChange.when)}">${r.daysInStage}</td>
+          <td data-pri="2">${unresolvedOf(r) ? `<span class="of-chip" data-tone="attn">Unpriced ${unresolvedOf(r)}</span>` : ""}</td>
+        </tr>`).join("")}
+      </tbody></table>`;
+  }
+
+  return `<div class="of-queue-page"><div class="of-queue-inner">
+    <div class="of-page-head">
+      <button class="of-menu-btn" data-act="drawer" aria-label="Open menu" aria-controls="ops-nav-drawer"
+        aria-expanded="${S.drawer}">☰</button>
+      <h1>Work</h1>
+      <button class="of-search-stub t-bd-sm" data-act="omni">
+        <span aria-hidden="true">⌕</span> Search projects, orders, customers…
+        <span class="of-kbd" style="margin-left:auto">⌘K</span></button>
+    </div>
+    ${S.flags.degraded ? `<div class="of-banner t-bd-sm" data-tone="warn" style="margin-bottom:10px">
+      <span aria-hidden="true">⚠</span><span>Counts could not be computed. These are not real zeros.</span></div>` : ""}
+    <div class="of-views">${strip}</div>
+    ${body}
+    <div class="of-foot-strip t-cap">
+      ${view.id !== "customer" && withCustomer ? `${withCustomer} more ${plural(withCustomer,"project is","projects are")} with the customer.
+        <button class="of-btn" data-variant="ghost" data-act="view" data-view="customer">Awaiting customer</button><br>` : ""}
+      Sorted: waiting on us first, then longest in stage — never by last update, because a customer
+      reply must not bury our oldest obligation.<br>
+      ${DATA.summary.activeOrders} active orders · ${DATA.summary.customers} customers.
+      Showing every project the server returned — this endpoint has no pagination.
+    </div>
+  </div></div>`;
+}
+/* ═════════════════════════════════════════════════════════════════════════════
+   THE REVIEW WORKSPACE — the screen everything else is judged against.
+   264 : fluid : 360, three independent scroll contexts, a header that never
+   scrolls away from the action it gates.
+   ═════════════════════════════════════════════════════════════════════════════ */
+const PHASES = ["Intake","Pricing","Issued","Accepted","Production","Delivered"];
+const EDITABLE_STATES = ["submitted","triage_pending","estimator_assigned",
+                         "technical_review_required","customer_clarification_required"];
+const isEditable = (p) => !S.flags.readonly && EDITABLE_STATES.includes(p.statusInternal);
+
+function renderRecord() {
+  const p = proj(S.route.id);
+  if (!p) return `<div class="of-record-page"><div class="of-state" data-kind="error">
+    <p class="t-bd-sm">Couldn't load this record.</p><p class="hint t-cap">HTTP 404 — not_found</p></div></div>`;
+  const lines = linesOf(p.id);
+  const recordScope = S.route.scope === "record";
+  const line = lines.find(l => l.id === S.route.line) || lines[0];
+
+  return `<div class="of-record-page">
+    ${recordHeader(p, lines)}
+    <div class="of-pane-group" data-collapse-a="${S.collapseA?1:0}" data-collapse-c="${S.collapseC?1:0}"
+         data-drawer-c="${S.drawerC?1:0}">
+      ${paneA(p, lines, line, recordScope)}
+      ${S.sheetView ? paneSheet(p, lines, line)
+        : S.route.sub === "thermal" ? paneThermal(p, lines, line)
+        : recordScope ? paneRecordB(p, lines) : paneB(p, line)}
+      ${recordScope ? paneRecordC(p, lines) : paneC(p, line)}
+    </div>
+  </div>`;
+}
+
+/* ── The header band — fixed. The primary action and the reason it is blocked
+   must never be scrolled away from the thing that blocks it. ───────────────── */
+function recordHeader(p, lines) {
+  const hasOrder = !!p.orderNo;
+  const unresolved = unresolvedOf(p);
+  const ready = p.lineCount - unresolved;
+  const phaseIx = PHASES.indexOf(p.phase);
+  const acts = actionsFor(p);
+  const primary = acts.find(a => a.primary);
+
+  /* I14 — unresolvedLineCount counts DRAFT lines. Once an order exists those
+     rows are contract lines flattened to ready, so the ratio would divide a
+     stale draft count by a contract count. The metric changes rather than lies. */
+  const gate = hasOrder
+    ? `<div class="of-metric"><div class="k t-label">Contract lines</div>
+         <div class="v t-bd font-data">${p.lineCount}</div>
+         <div class="c t-cap">frozen at acceptance</div></div>`
+    : `<div class="of-metric"><div class="k t-label">Lines ready</div>
+         <div class="v t-bd font-data">${ready} of ${p.lineCount}</div>
+         <div class="c t-cap">${unresolved ? `${unresolved} unpriced or unresolved` : "all settled"}</div></div>`;
+
+  return `<header class="of-record-header"><div class="of-rh-inner">
+    <div class="of-rh-top">
+      <div style="min-width:0">
+        <button class="of-back t-cap" data-act="goto" data-href="#/work/${S.lane||"needs-us"}">← Work</button>
+        ${S.nav === "top" ? laneStepper() : ""}
+        <div class="of-eyebrow t-label">
+          Proposal · <b>${esc(p.ref || p.id.slice(0,8))}</b>${!p.ref ? " (no public ref — showing the id)" : ""}
+          ${hasOrder ? ` &nbsp;·&nbsp; Order · <b>${esc(p.orderNo)}</b>` : " &nbsp;·&nbsp; Order · —"}
+          <button class="of-btn" data-variant="ghost" data-act="copy" title="Copy this URL">copy link</button>
+        </div>
+        <h1 class="t-bd-lg" style="margin-top:2px">${esc(p.title)}</h1>
+        <p class="quiet t-cap">${[p.org, p.customerName, p.customerEmail].filter(Boolean).map(esc).join(" · ") || "submit-time contact only"}</p>
+      </div>
+      <div class="of-rh-metrics">
+        <div class="of-metric"><div class="k t-label">Customer</div>
+          <div class="v t-bd-sm">${esc(p.org || p.customerName || "(anonymous)")}</div></div>
+        <div class="of-metric"><div class="k t-label">Value</div>
+          <div class="v t-bd font-data">${money0(p.value)}</div>
+          <div class="c t-cap">${p.valueBasis === "estimate" ? "estimate" : esc(p.valueBasis)}</div></div>
+        ${gate}
+        <div class="of-metric"><div class="k t-label">Customer sees</div>
+          <div class="v t-bd-sm">${esc(humanise(p.statusCustomer))}</div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:flex-end">
+      <div style="flex:1;min-width:0">
+        <div class="of-ribbon" role="img" aria-label="Phase ${esc(p.phase)} of six">
+          ${PHASES.map((ph,i) => `<div class="of-ribbon-cell"
+            data-state="${i < phaseIx ? "done" : i === phaseIx ? "now" : "todo"}">${ph}</div>`).join("")}
+        </div>
+        <p class="of-ribbon-caption t-cap">Now · ${esc(p.stateLabel)} · waiting on ${p.waitingOn.toLowerCase()} ·
+          ${p.daysInStage} ${plural(p.daysInStage,"day","days")} since this record was last touched</p>
+      </div>
+      <div class="of-freshness t-cap">
+        Last audited change · ${esc(p.lastChange.actor)} · ${esc(p.lastChange.when)}<br>
+        as of 14:32 <button class="of-btn" data-variant="ghost" data-act="noop">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div class="of-action-bar">
+      ${acts.map(a => `<button class="of-btn t-bd-sm" ${a.primary ? 'data-variant="primary"' : ""}
+        ${a.blocked ? "disabled" : ""} data-act="action" data-id="${a.id}">${esc(a.label)}</button>
+        ${a.blocked ? `<span class="of-blocked t-cap">${esc(a.blocked)}</span>` : ""}`).join("")}
+      ${S.flags.conflict ? `<span class="of-blocked t-cap" style="margin-left:auto">1 error · show</span>` : ""}
+    </div>
+    ${S.confirm ? confirmInline(S.confirm) : ""}
+    ${S.flags.conflict ? `<div class="of-banner t-bd-sm" data-tone="err" style="margin-top:10px">
+      <span aria-hidden="true">⚠</span>
+      <span>Someone else changed this line — the edit that beat you may not have written an audit row.
+        Your typed values are kept below.
+        <button class="of-btn" data-variant="ghost" data-act="clear-conflict">Reload this record</button></span></div>` : ""}
+    ${unresolved && !hasOrder ? `<div class="of-banner t-bd-sm" data-tone="warn" style="margin-top:10px">
+      <span aria-hidden="true">⚠</span><span>${unresolved} ${plural(unresolved,"line is","lines are")} unpriced or unresolved —
+      a quote cannot be issued until ${plural(unresolved,"it is","they are")} settled.</span></div>` : ""}
+  </div></header>`;
+}
+
+/* Actions are derived from the state, exactly as the server derives them, and
+   a blocked primary states its reason beside itself rather than vanishing. */
+function actionsFor(p) {
+  const out = [];
+  if (p.orderNo) {
+    const stage = p.statusInternal;
+    if (stage === "deposit_invoiced") out.push({ id:"pay-deposit", label:"Record deposit payment", primary:true });
+    if (stage === "manufacturing")    out.push({ id:"qa", label:"Confirm QA and invoice the balance", primary:true });
+    if (stage === "after_sales")      out.push({ id:"close", label:"Close the job", primary:true });
+    out.push({ id:"note", label:"Add a note" });
+    return out;
+  }
+  switch (p.statusInternal) {
+    case "submitted":
+      out.push({ id:"start", label:"Start pricing", primary:true });
+      out.push({ id:"clarify", label:"Request clarification" });
+      break;
+    case "estimator_assigned":
+    case "technical_review_required":
+      out.push({ id:"issue", label:"Issue reviewed quote", primary:true,
+                 blocked: unresolvedOf(p) ? `${unresolvedOf(p)} ${plural(unresolvedOf(p),"line is","lines are")} unpriced or unresolved` : null });
+      if (p.statusInternal !== "technical_review_required")
+        out.push({ id:"tech", label:"Send to technical review" });
+      out.push({ id:"clarify", label:"Request clarification" });
+      break;
+    case "customer_clarification_required":
+      out.push({ id:"resume", label:"Resume pricing", primary:true });
+      break;
+    case "quote_issued":
+      /* Ops has no move here, and saying so is the honest state. */
+      break;
+  }
+  out.push({ id:"note", label:"Add a note" });
+  return out;
+}
+function confirmInline(c) {
+  return `<div class="of-confirm">
+    <p class="t-bd-sm">${esc(c.text)}</p>
+    ${c.field ? `<textarea placeholder="${esc(c.placeholder||"")}" data-field="confirm"></textarea>` : ""}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="of-btn t-bd-sm" data-variant="primary" data-act="confirm-yes">${esc(c.yes)}</button>
+      <button class="of-btn t-bd-sm" data-act="confirm-no">Cancel</button>
+    </div></div>`;
+}
+
+/* ── Pane A — the openings ─────────────────────────────────────────────────── */
+function paneA(p, lines, sel, recordScope) {
+  return `<div class="of-pane of-pane-a">
+    <div class="of-pane-head"><span class="t-label quiet">Openings</span><span class="n t-data-sm">${lines.length}</span></div>
+    <button class="of-record-chip t-cap" data-act="scope" data-scope="record"
+      aria-selected="${recordScope}">▤ &nbsp;RECORD — flow, files, history, payments</button>
+    ${lines.map(l => openingRow(l, !recordScope && sel && l.id === sel.id)).join("")}
+    <div class="of-pane-a-foot t-cap fold">
+      <p>No line may be added or deleted from this console. Split and merge only.</p>
+      ${unresolvedOf(p) ? `<p style="margin-top:8px" class="warn-tx">⚠ ${unresolvedOf(p)}
+        ${plural(unresolvedOf(p),"line is","lines are")} unpriced or unresolved.</p>` : ""}
+    </div>
+  </div>`;
+}
+function openingRow(l, selected) {
+  const reasons = reasonsOf(l);
+  return `<button class="of-open-row" data-act="line" data-id="${l.id}" aria-selected="${!!selected}">
+      <span aria-hidden="true">${elevation(l, 46, 34, {})}</span>
+      <span class="body-col">
+        <span style="display:flex;gap:8px;align-items:baseline">
+          <span class="code t-data-sm">${esc(l.code)}</span>
+          ${stateWord(l.status)}
+          <span class="total t-data-sm" style="margin-left:auto">${l.lineTotal == null ? "—" : money0(l.lineTotal)}</span>
+        </span>
+        <span class="trunc t-cap body-tx fold" style="display:block">${esc(l.productName)}</span>
+        <span class="t-cap quiet fold" style="display:block">${mm(l.height)} × ${mm(l.width)} mm${l.qty>1?` · ×${l.qty}`:""}</span>
+        ${reasons.map(r => `<span class="t-cap warn-tx fold" style="display:block">· ${esc(r)}</span>`).join("")}
+      </span>
+    </button>
+    ${(l.segments||[]).map(s => `<div class="of-unit-row t-cap fold">
+        <span class="ix">${s.n}</span><span class="trunc">${esc(s.productName)}</span>
+        <span style="margin-left:auto" class="font-data">${mm(s.span)}</span></div>`).join("")}`;
+}
+
+/* ── Pane B — the opening. Space follows manipulation. ─────────────────────── */
+function paneB(p, l) {
+  if (!l) return `<div class="of-pane of-pane-b"><div class="of-b-inner">
+    <div class="of-state"><p class="t-bd-sm">No lines on this project.</p></div></div></div>`;
+  const editable = isEditable(p);
+  const reasons = reasonsOf(l);
+  const isComposite = l.lineKind === "composite_parent";
+
+  return `<div class="of-pane of-pane-b"><div class="of-b-inner">
+    <div class="of-block">
+      <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+        <h2 class="t-hd3"><span class="sage-tx font-data">${esc(l.code)}</span> · ${esc(l.productName)}</h2>
+        ${editable ? `<button class="of-btn" data-variant="ghost" data-act="edit" data-id="${l.id}">edit</button>
+          ${isComposite ? `<button class="of-btn" data-variant="ghost" data-act="split">units</button>
+            <button class="of-btn" data-variant="ghost" data-act="merge">merge</button>`
+            : `<button class="of-btn" data-variant="ghost" data-act="split">split</button>`}`
+          : `<span class="quiet t-cap">read-only — this quote is ${esc(p.statusInternal === "quote_issued" ? "issued" : "not in an editable state")}</span>`}
+      </div>
+      <p class="quiet t-cap" style="margin-top:2px">${mm(l.height)} high × ${mm(l.width)} wide mm ·
+        ${stateWord(l.status)} · <span class="font-data">${l.lineTotal == null ? "—" : money0(l.lineTotal)}</span></p>
+    </div>
+
+    <div class="of-block">
+      <div class="of-elev-stage">${elevation(l, 520, 300, {dims:true})}</div>
+      <p class="of-honesty t-cap">Generated from the configured size and its units.
+        Not a copy of anything in the uploaded documents.</p>
+      ${l.coverage ? `<p class="t-cap body-tx" style="margin-top:6px">${esc(l.coverage)}</p>` : ""}
+    </div>
+
+    ${S.editing === l.id ? editorBlock(l) : ""}
+    ${S.splitting ? splitBlock(l) : ""}
+
+    <div class="of-block">
+      <div class="of-block-h t-label">How firm is this?</div>
+      <p class="t-bd-sm">${firmness(l)}</p>
+      <p class="t-cap quiet" style="margin-top:4px">Basis: ${l.basis ? esc(humanise(l.basis)) : absence("no recommendation basis recorded")}</p>
+      <p class="t-cap" style="margin-top:4px">${absence("Missing inputs are recorded on the machine's proposal, which no ops endpoint reads.")}</p>
+    </div>
+
+    <div class="of-block">
+      <div class="of-block-h t-label">Spec</div>
+      <table class="of-spec t-bd-sm">
+        ${Object.entries(l.options).map(([k,v]) => `<tr><td class="t-cap">${esc(k)}</td>
+          <td>${v === "not set" ? absence("not set") : esc(v)}</td></tr>`).join("")}
+        <tr><td class="t-cap">Quantity</td><td>${l.qty}
+          <span class="quiet t-cap">— set at submission, not editable here</span></td></tr>
+      </table>
+    </div>
+
+    ${isComposite ? unitsBlock(l, editable) : ""}
+    ${ledgerBlock(l)}
+
+    ${reasons.length ? `<div class="of-block">
+      <div class="of-block-h t-label">Review <span class="font-data">${reasons.length}</span></div>
+      ${reasons.map(r => `<p class="t-bd-sm warn-tx">· ${esc(r)}</p>`).join("")}
+      <label class="of-check t-bd-sm" style="margin-top:10px">
+        <input type="checkbox" ${S.resolved[l.id] ? "checked" : ""} data-act="resolve" data-id="${l.id}"
+          ${editable ? "" : "disabled"}>
+        <span>I checked and resolved: ${esc(reasons.join("; "))}
+          <span class="quiet t-cap" style="display:block">Leave unticked and the flags stay on the line.</span></span>
+      </label></div>` : ""}
+
+    <div class="of-block">
+      <div class="of-block-h t-label">Customer proposal line</div>
+      <p class="of-price">${l.lineTotal == null ? "—" : money2(l.lineTotal)}</p>
+      <p class="quiet t-cap">${l.lineTotal == null
+        ? "This line has no price. It is not zero — nothing priceable was found."
+        : `including GST${isComposite ? " · priced from its units" : ""}`}</p>
+    </div>
+  </div></div>`;
+}
+
+/* F.3 as corrected by the audit: the band is a CHECK-constrained three-value
+   enum. "Medium" is the residual bucket — printing a numeric cause for it would
+   invent the very derivation this screen exists to avoid. */
+function firmness(l) {
+  switch (l.band) {
+    case "high":   return "High — one candidate clearly ahead and every hard rule passed.";
+    case "medium": return "Medium — not a clear win; the reason is not recorded.";
+    case "low":    return "Low — no priceable configuration was available.";
+    default:       return "Not recorded — this line was created by hand.";
+  }
+}
+
+function unitsBlock(l, editable) {
+  const spanTotal = (l.segments||[]).reduce((a,s)=>a+s.span,0);
+  return `<div class="of-block">
+    <div class="of-block-h t-label">Units <span class="font-data">${l.segments.length} joined · side by side</span>
+      ${editable ? `<button class="of-btn" data-variant="ghost" data-act="add-unit" style="margin-left:auto">
+        ${l.segments.length >= DATA.compositePolicy.max ? `Maximum ${DATA.compositePolicy.max} units` : "+ Add unit"}</button>` : ""}
+    </div>
+    <table class="of-units t-bd-sm">
+      <thead><tr><th>#</th><th>Product</th><th>Along</th><th>State</th><th class="right">Total</th><th></th></tr></thead>
+      <tbody>${l.segments.map(s => `<tr>
+        <td class="quiet font-data">${s.n}</td>
+        <td>${esc(s.productName)}<span class="sub quiet t-cap">Spec: ${s.changed.length
+          ? `${s.changed.length} changed — ${esc(s.changed.join(", "))}` : "as the opening"}</span></td>
+        <td class="font-data">${mm(s.span)} mm</td>
+        <td>${stateWord(s.status)}</td>
+        <td class="right font-data">${money0(s.total)}</td>
+        <td class="right">${editable ? `<button class="of-btn" data-variant="ghost" data-act="noop">edit</button>
+          <button class="of-btn" data-variant="ghost" data-act="remove-unit" data-id="${s.id}">remove</button>` : ""}</td>
+      </tr>`).join("")}</tbody></table>
+    <p class="t-cap quiet" style="margin-top:6px">Units span ${mm(spanTotal)} mm of a ${mm(l.width)} mm opening
+      — tolerance ${DATA.compositePolicy.tolerance} mm, joiner ${DATA.compositePolicy.joiner} mm.</p>
+    <p class="t-cap quiet">Frame system: ${l.segments.every(s => s.frameSystem === l.segments[0].frameSystem)
+      ? `${esc(l.segments[0].frameSystem)} throughout — read from the client catalogue by product slug, not from the workspace payload.`
+      : "mixed frame systems — confirm these couple."}</p>
+  </div>`;
+}
+
+/* F.4 as corrected: the workspace DTO carries no ai_proposal_line, so a line
+   with no configuration snapshot gets a NAMED ABSENCE, never the current value
+   repeated back as though the machine had proposed it. */
+function ledgerBlock(l) {
+  if (l.origin === "manual") {
+    return `<div class="of-block"><div class="of-block-h t-label">Machine proposed / now / edited</div>
+      <p class="t-bd-sm">No machine proposal for this line — it was created by hand.</p></div>`;
+  }
+  const composite = l.lineKind === "composite_parent";
+  const now = {};
+  /* On a composite parent the product belongs to the UNITS, so there is nothing
+     to compare a single product against — the same rule the editor follows when
+     it hides the product control on a parent. Comparing the machine's product to
+     the first segment's would read as a change nobody made. */
+  if (!composite) now.product = l.productSlug;
+  now.size = `${mm(l.width)} × ${mm(l.height)}`;
+  now["Colour"] = l.options["Colour"];
+  now["Glass"] = l.options["Glass"];
+  now["Installation"] = l.options["Installation"];
+  const snap = l.snapshot;
+  /* Compare on VALUE, not on presentation. "1810 × 1210" and "1,810 × 1,210" are
+     the same size, and a thousands separator rendering as a human edit is a
+     fabricated difference — the exact failure this ledger exists to prevent. */
+  const same = (a, b) => String(a).replace(/[,\s]/g, "").toLowerCase() === String(b).replace(/[,\s]/g, "").toLowerCase();
+  const rows = Object.keys(now).map(k => {
+    const machine = snap ? (snap[k] != null ? snap[k] : null) : null;
+    const changed = snap && machine != null && !same(machine, now[k]);
+    const edited = (l.editedFields||[]).includes(String(k).toLowerCase());
+    return `<tr data-changed="${changed?1:0}">
+      <td>${snap ? (machine != null ? esc(machine) : absence("not retrievable"))
+                 : absence("machine column not available")}</td>
+      <td>${esc(now[k])}</td>
+      <td>${changed || edited ? "edited" : "—"}</td></tr>`;
+  }).join("");
+  return `<div class="of-block">
+    <div class="of-block-h t-label">Machine proposed / now / edited</div>
+    ${!snap ? `<p class="t-cap" style="margin-bottom:8px">${absence(
+      "The configuration snapshot is not returned by the workspace endpoint, so the machine column cannot be filled.")}</p>` : ""}
+    ${composite ? `<p class="t-cap quiet" style="margin-bottom:8px">The product belongs to the units, not to the
+      opening, so this ledger compares only what the parent owns.</p>` : ""}
+    <table class="of-ledger t-bd-sm">
+      <thead><tr><th>Machine proposed</th><th>Now</th><th>Edited</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    ${(l.editedFields||[]).length ? `<p class="t-cap" style="margin-top:8px">
+      Locked against re-extraction: ${esc(l.editedFields.join(", "))}. A re-upload will not overwrite
+      ${plural(l.editedFields.length,"it","them")}.</p>
+      <p class="t-cap quiet">Which fields were edited is recorded; who edited each one, and when, is not.</p>` : ""}
+  </div>`;
+}
+
+function editorBlock(l) {
+  const d = S.drafts[l.id] || {};
+  const err = S.errors[l.id];
+  return `<div class="of-editor">
+    <div class="of-block-h t-label">Edit ${esc(l.code)}</div>
+    <div class="of-grid2">
+      <label class="of-field"><span class="lbl t-cap">Width (mm)</span>
+        <input value="${d.width != null ? d.width : l.width}" data-field="width" data-id="${l.id}"></label>
+      <label class="of-field"><span class="lbl t-cap">Height (mm)</span>
+        <input value="${d.height != null ? d.height : l.height}" data-field="height" data-id="${l.id}"></label>
+    </div>
+    ${l.lineKind === "composite_parent"
+      ? `<p class="t-cap quiet">Product and options belong to the units on a composite parent, so neither is offered here.</p>`
+      : `<div class="of-grid2">
+          <label class="of-field"><span class="lbl t-cap">Colour</span>
+            <select data-field="colour" data-id="${l.id}">
+              <option${l.options.Colour==="Monument"?" selected":""}>Monument</option>
+              <option${l.options.Colour==="Surfmist"?" selected":""}>Surfmist</option>
+              <option>Custom powdercoat</option></select></label>
+          <label class="of-field"><span class="lbl t-cap">Glass</span>
+            <select data-field="glass" data-id="${l.id}">
+              <option${/Low-E/.test(l.options.Glass)?" selected":""}>Low-E double glazed</option>
+              <option${/Obscure/.test(l.options.Glass)?" selected":""}>Obscure double glazed</option>
+              <option>Acoustic laminate</option></select></label>
+        </div>`}
+    <p class="t-cap quiet">Price preview recomputes on save. Quantity is set at submission and is not editable here.</p>
+    ${err ? `<div class="of-err-inline t-bd-sm">${esc(err.msg)}
+      ${err.option ? `<br><button class="of-btn" data-variant="ghost" data-act="goto"
+        data-href="#/products/options?q=${encodeURIComponent(err.option)}">Price this option ▸</button>` : ""}
+      ${err.reload ? `<br><button class="of-btn" data-variant="ghost" data-act="clear-conflict">Reload this record</button>` : ""}
+    </div>` : ""}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="of-btn t-bd-sm" data-variant="primary" data-act="save" data-id="${l.id}">
+        ${S.busy === l.id ? "Saving…" : "Save"}</button>
+      <button class="of-btn t-bd-sm" data-act="cancel-edit">Discard</button>
+    </div></div>`;
+}
+
+function splitBlock(l) {
+  const segs = l.segments || [{n:1,span:Math.round(l.width/2)},{n:2,span:l.width - Math.round(l.width/2)}];
+  const total = segs.reduce((a,s)=>a+s.span,0);
+  const delta = total - l.width;
+  return `<div class="of-editor">
+    <div class="of-block-h t-label">Plan ${esc(l.code)} as joined frames</div>
+    <table class="of-units t-bd-sm"><tbody>
+      ${segs.map(s => `<tr><td class="quiet font-data">${s.n}</td>
+        <td><input value="${s.span}" data-field="span" style="width:90px;border:1px solid var(--line-strong);padding:4px 6px"></td>
+        <td class="quiet t-cap">mm along the opening</td></tr>`).join("")}
+    </tbody></table>
+    <p class="t-cap ${Math.abs(delta) > DATA.compositePolicy.tolerance ? "warn-tx" : "quiet"}" style="margin-top:8px">
+      ${delta === 0 ? `Units span ${mm(total)} mm — exactly the opening.`
+        : Math.abs(delta) <= DATA.compositePolicy.tolerance
+          ? `Units span ${mm(total)} mm against a ${mm(l.width)} mm opening — within the ${DATA.compositePolicy.tolerance} mm tolerance.`
+          : `Units span ${mm(total)} mm against a ${mm(l.width)} mm opening — ${mm(Math.abs(delta))} mm ${delta>0?"over":"short"}. Allowed — recorded on the line.`}</p>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="of-btn t-bd-sm" data-variant="primary" data-act="noop">Create units</button>
+      <button class="of-btn t-bd-sm" data-act="cancel-split">Cancel</button></div>
+  </div>`;
+}
+
+/* ── Pane C — the derivation. Ten hops, expansion remembered across lines. ─── */
+function paneC(p, l) {
+  if (!l) return `<div class="of-pane of-pane-c"></div>`;
+  const f = (DATA.files[p.id]||[]).find(x => l.evidence && x.id === l.evidence.fileId);
+  const H = [];
+
+  H.push(hop(1, "Source document", l.evidence ? `
+    <dl class="t-cap">
+      <dt>File</dt><dd>${f ? esc(f.filename) : absence("not linked")}</dd>
+      <dt>Kind</dt><dd>${f ? esc(f.kind) : "—"}</dd>
+      <dt>Size</dt><dd>${f ? bytes(f.size) : "—"}</dd>
+      <dt>Scan</dt><dd>${f ? esc(f.virus_status) : "—"}</dd>
+      <dt>Uploaded</dt><dd>${f ? esc(f.uploaded) : "—"}</dd>
+    </dl>
+    <p style="margin-top:8px">${!f ? "" : f.virus_status === "clean"
+      ? `<button class="of-btn t-cap" data-act="noop">Download</button>`
+      : f.virus_status === "infected" ? `<span class="quiet t-cap">Blocked</span>`
+      : `<button class="of-btn t-cap" data-act="rescan" data-id="${f.id}">Scan to unlock</button>`}</p>
+    <p class="t-cap" style="margin-top:8px">${absence("Page, sheet and region are not recorded for this fact.")}</p>`
+    : `<p class="t-cap">${absence("No source document — this line was created by hand.")}</p>`));
+
+  H.push(hop(2, "Extracted fact", l.evidence ? `
+    <p class="t-cap ink-soft">“${esc(l.evidence.extracted)}”</p>
+    <p class="t-cap quiet" style="margin-top:4px">Reconstructed by the extractor — not the verbatim source row.</p>
+    <dl class="t-cap" style="margin-top:8px"><dt>Origin</dt><dd>${esc(l.evidence.origin)}</dd></dl>
+    ${l.evidence.modelTag != null ? `<p class="t-cap" style="margin-top:6px">
+      <span class="font-data">${l.evidence.modelTag}</span> — declared by the extraction model,
+      self-reported, nothing corroborates it.</p>` : ""}`
+    : `<p class="t-cap">${absence("Nothing was extracted for this line.")}</p>`));
+
+  H.push(hop(3, "Opening in the building model", l.model ? `
+    <dl class="t-cap">
+      <dt>Tag</dt><dd>${esc(l.model.tag)}</dd>
+      <dt>Room</dt><dd>${l.model.room ? esc(l.model.room) : absence("not recorded")}</dd>
+      <dt>Orientation</dt><dd>${l.model.orientation ? esc(l.model.orientation) : absence("not recorded")}</dd>
+      <dt>Shading</dt><dd>${l.model.projection ? esc(l.model.projection) : absence("not recorded")}</dd>
+      <dt>Glass asked</dt><dd>${esc(l.model.glass)}</dd>
+      <dt>Colour asked</dt><dd>${esc(l.model.colour)}</dd>
+      <dt>Flyscreen</dt><dd>${l.model.flyscreen ? esc(l.model.flyscreen) : absence("not recorded")}</dd>
+    </dl>
+    ${l.model.conflict ? `<div class="of-banner t-cap" data-tone="warn" style="margin-top:8px">
+      <span>Conflict · ${esc(l.model.conflict.field)} — ${esc(l.model.conflict.resolution)}<br>
+      ${l.model.conflict.values.map(v => `${esc(v.v)} <span class="quiet">(${esc(v.file)})</span>`).join("<br>")}</span></div>` : ""}`
+    : `<p class="t-cap">${absence("No building model for this project.")}</p>`));
+
+  H.push(hop(4, "Requirement", l.thermal.target ? `
+    <dl class="t-cap"><dt>Band</dt><dd>${esc(l.thermal.target)}</dd>
+      <dt>Basis</dt><dd>${esc(humanise(l.thermal.basis))}</dd>
+      ${l.thermal.inherited ? `<dt>Scope</dt><dd>inherited from the opening</dd>` : ""}</dl>
+    <p class="t-cap" style="margin-top:6px">${absence(
+      "The default-envelope archetype is recorded in opening_requirements, which no ops endpoint reads.")}</p>`
+    : `<p class="t-cap">${absence("No target was derived for this opening.")}</p>`));
+
+  H.push(hop(5, "Candidates", `
+    <p class="t-cap">${absence("The candidate evaluation is recorded but no endpoint reads it.")}</p>
+    <p class="t-cap quiet" style="margin-top:6px">candidate_result holds one row per product × variant with
+      per-filter pass/fail, a human-readable reason, six score components and a rank. It is the largest
+      already-paid-for, unrendered dataset in the system.</p>
+    <p class="t-cap" style="margin-top:6px">${absence(
+      "Rule, ranker and catalogue versions are recorded in selection_run and no endpoint reads them.")}</p>`));
+
+  H.push(hop(6, "Chosen", l.origin === "manual" ? `
+    <p class="t-cap">${absence("Chosen by hand — there is no machine selection to show.")}</p>` : `
+    <dl class="t-cap">
+      <dt>Product</dt><dd>${esc(l.productSlug || (l.segments ? l.segments[0].productSlug : "—"))}</dd>
+      <dt>Variant</dt><dd>${l.selectedVariantId ? esc(l.selectedVariantId) : absence("none selected")}</dd>
+      <dt>Basis</dt><dd>${l.basis ? esc(humanise(l.basis)) : absence("not recorded")}</dd>
+    </dl>
+    <p class="t-cap quiet" style="margin-top:6px">Score components live in candidate_result — see hop 5.</p>`));
+
+  H.push(hop(7, "Thermal", `
+    <dl class="t-cap">
+      <dt>Target</dt><dd>${l.thermal.target ? esc(l.thermal.target) : absence("none derived")}</dd>
+      <dt>Proposed</dt><dd>${l.thermal.proposed ? esc(l.thermal.proposed) : absence("nothing proposed")}</dd>
+      <dt>Achieved</dt><dd>${l.thermal.achieved ? esc(l.thermal.achieved) : absence("not computed")}
+        ${l.thermal.achievedSource === "estimated" ? `<span class="quiet"> (estimated)</span>` : ""}</dd>
+    </dl>
+    <p class="t-bd-sm" style="margin-top:6px">
+      <span class="of-status-word" data-tone="${l.thermal.tone}">${esc(l.thermal.verdict)}</span></p>`));
+
+  H.push(hop(8, "Compatibility", l.lineKind === "composite_parent" ? `
+    <p class="t-cap">${l.segments.every(s => s.frameSystem === l.segments[0].frameSystem)
+      ? `All ${l.segments.length} units are ${esc(l.segments[0].frameSystem)} — they couple.`
+      : "Mixed frame systems — frames of different depth do not couple, so they cannot be joined in one opening."}</p>
+    <p class="t-cap quiet" style="margin-top:6px">Read from the client catalogue by segment product slug.
+      The frame system is not in the workspace payload.</p>
+    <p class="t-cap quiet">5 filters evaluated.</p>`
+    : `<p class="t-cap">${absence("The frame system of a single line is not recorded anywhere.")}</p>`));
+
+  H.push(hop(9, "Price", `
+    <p class="t-cap">${absence("The pricing snapshot for this line is stored and not returned by the workspace endpoint.")}</p>
+    <p class="t-cap" style="margin-top:6px"><button class="of-btn" data-variant="ghost" data-act="goto"
+      data-href="#/products/cards/${esc(l.productSlug || "amj80-awning")}">See this product's worked example ▸</button></p>`));
+
+  H.push(hop(10, "Human edits", (l.editedFields||[]).length ? `
+    <p class="t-cap">Edited: ${esc(l.editedFields.join(", "))}</p>
+    <p class="t-cap" style="margin-top:6px">These fields are locked against re-extraction.
+      A re-upload will not overwrite them.</p>
+    <p class="t-cap quiet" style="margin-top:6px">Which fields were edited is recorded; who edited each one,
+      and when, is not. Intermediate values between edits were not kept.</p>`
+    : `<p class="t-cap">${absence("No field on this line has been edited by a person.")}</p>`));
+
+  const notes = (DATA.notes[p.id]||[]).filter(n => n.lineId === l.id);
+  return `<div class="of-pane of-pane-c">
+    <div class="of-pane-head"><span class="t-label quiet">Derivation</span>
+      <span class="n t-data-sm sage-tx">${esc(l.code)}</span></div>
+    ${H.join("")}
+    <div style="padding:12px 14px">
+      <div class="of-block-h t-label">Notes <span class="font-data">${notes.length}</span>
+        <button class="of-btn" data-variant="ghost" data-act="noop" style="margin-left:auto">+ on ${esc(l.code)}</button></div>
+      ${notes.length ? notes.map(n => `<p class="t-cap ink-soft">“${esc(n.body)}”</p>
+        <p class="t-cap quiet" style="margin-bottom:8px">${esc(n.actor)} · ${esc(n.when)}</p>`).join("")
+        : `<p class="t-cap">${absence("No note on this line.")}</p>`}
+    </div>
+  </div>`;
+}
+function hop(n, title, body) {
+  const open = !!S.hops[n];
+  return `<section class="of-hop">
+    <button class="of-hop-h" data-act="hop" data-n="${n}" aria-expanded="${open}">
+      <span class="num t-data-sm">${n}</span><span class="ttl">${esc(title)}</span>
+      <span class="caret" aria-hidden="true">${open ? "▾" : "▸"}</span></button>
+    ${open ? `<div class="of-hop-body">${body}</div>` : ""}
+  </section>`;
+}
+
+/* ── Sheet view (T) — today's line table, verbatim, sharing the selection. ─── */
+function paneSheet(p, lines, sel) {
+  return `<div class="of-pane of-pane-b"><div class="of-b-inner" style="max-width:none">
+    <div class="of-block-h t-label">Every line on this job
+      <button class="of-btn" data-variant="ghost" data-act="sheet" style="margin-left:auto">Close (T)</button></div>
+    <table class="of-row-list"><thead><tr>
+      <th>Code</th><th>Product</th><th>Size</th><th class="right">Qty</th>
+      <th class="right">Line total</th><th>State</th></tr></thead><tbody>
+      ${lines.map(l => `<tr data-act="line" data-id="${l.id}" aria-selected="${sel && l.id===sel.id}">
+        <td class="sage-tx font-data">${esc(l.code)}</td><td>${esc(l.productName)}</td>
+        <td class="font-data quiet">${mm(l.height)} × ${mm(l.width)}</td>
+        <td class="right font-data">${l.qty}</td>
+        <td class="right font-data">${l.lineTotal == null ? "—" : money0(l.lineTotal)}</td>
+        <td>${stateWord(l.status)}</td></tr>`).join("")}
+    </tbody></table>
+    <p class="t-cap quiet" style="margin-top:10px">This is how you notice that two openings are the same
+      window at different prices.</p>
+  </div></div>`;
+}
+
+/* ── The whole-job thermal audit — needs the width, cannot live in a rail. ─── */
+function paneThermal(p, lines, sel) {
+  return `<div class="of-pane of-pane-b"><div class="of-b-inner" style="max-width:none">
+    <div class="of-block-h t-label">Thermal — every line
+      <button class="of-btn" data-variant="ghost" data-act="thermal" style="margin-left:auto">Close</button></div>
+    <table class="of-row-list"><thead><tr>
+      <th>Line</th><th>Size</th><th>Target</th><th>Basis</th><th>Proposed</th><th>Achieved</th><th>Result</th>
+    </tr></thead><tbody>
+      ${lines.map(l => `<tr data-act="line" data-id="${l.id}" aria-selected="${sel && l.id===sel.id}">
+        <td class="sage-tx font-data">${esc(l.code)}</td>
+        <td class="font-data quiet">${mm(l.height)} × ${mm(l.width)}</td>
+        <td class="t-cap">${l.thermal.target ? esc(l.thermal.target) : absence("none derived")}</td>
+        <td class="t-cap quiet">${l.thermal.basis ? esc(humanise(l.thermal.basis)) : "—"}
+          ${l.thermal.inherited ? "<span class='sub'>inherited from opening</span>" : ""}</td>
+        <td class="t-cap">${l.thermal.proposed ? esc(l.thermal.proposed) : absence("nothing proposed")}</td>
+        <td class="t-cap">${l.thermal.achieved ? esc(l.thermal.achieved) : absence("not computed")}
+          ${l.thermal.achievedSource === "estimated" ? "<span class='sub quiet'>estimated</span>" : ""}</td>
+        <td><span class="of-status-word" data-tone="${l.thermal.tone}">${esc(l.thermal.verdict)}</span></td>
+      </tr>`).join("")}
+    </tbody></table>
+    <p class="t-cap quiet" style="margin-top:10px">Lower Uw is better. SHGC is two-sided, so a miss carries its
+      sign. Lines with no target are shown, never hidden.</p>
+  </div></div>`;
+}
+/* ═════════════════════════════════════════════════════════════════════════════
+   RECORD SCOPE — the same three columns, a different mode. This is where the
+   order flow, files, history, payments and learning live, without a fourth pane
+   and without a second screen.
+   ═════════════════════════════════════════════════════════════════════════════ */
+const RTABS = [
+  { id:"flow", label:"Flow" }, { id:"revisions", label:"Revisions" }, { id:"thermal", label:"Thermal" },
+  { id:"teach", label:"Teach" }, { id:"history", label:"History" }, { id:"files", label:"Files" },
+];
+
+function paneRecordB(p, lines) {
+  const tab = S.route.tab || "flow";
+  const files = DATA.files[p.id] || [];
+  const learn = DATA.learning[p.id] || [];
+  const acts  = DATA.activity[p.id] || [];
+  const revs  = DATA.revisions[p.id] || [];
+  let body = "";
+
+  if (tab === "flow") body = flowList(p);
+  else if (tab === "revisions") body = revs.length ? `
+      <table class="of-row-list"><tbody>${revs.map(r => `<tr>
+        <td class="font-data sage-tx">${esc(r.label)}</td><td>issued ${esc(r.issued)}</td>
+        <td class="font-data right">${money0(r.value)}</td>
+        <td>${stateWord(r.state === "issued" ? "ready" : "draft")} ${esc(r.state)}</td></tr>`).join("")}</tbody></table>
+      <p class="t-cap quiet" style="margin-top:10px">Line detail for an issued revision is not retrievable;
+        the table on the opening side shows the live draft or the contract.</p>`
+    : `<div class="of-state"><p class="t-bd-sm">No revision has been issued.</p>
+        <p class="hint t-cap">Issuing freezes the draft and emails the customer.</p></div>`;
+  else if (tab === "thermal") body = `<table class="of-row-list"><thead><tr>
+      <th>Line</th><th>Target</th><th>Achieved</th><th>Result</th></tr></thead><tbody>
+      ${lines.map(l => `<tr><td class="font-data sage-tx">${esc(l.code)}</td>
+        <td class="t-cap">${l.thermal.target ? esc(l.thermal.target) : absence("none derived")}</td>
+        <td class="t-cap">${l.thermal.achieved ? esc(l.thermal.achieved) : absence("not computed")}</td>
+        <td><span class="of-status-word" data-tone="${l.thermal.tone}">${esc(l.thermal.verdict)}</span></td>
+      </tr>`).join("")}</tbody></table>
+      <p class="t-cap quiet" style="margin-top:8px"><button class="of-btn" data-variant="ghost" data-act="thermal">
+        Open the full seven-column audit ▸</button></p>`;
+  else if (tab === "teach") body = learn.length ? learn.map(o => `
+      <div class="card" style="padding:12px;margin-bottom:10px">
+        <p class="t-bd-sm">Line ${esc(o.line)} — the machine proposed <b>${esc(o.proposed)}</b>,
+          a person issued <b>${esc(o.final)}</b>.</p>
+        <p class="t-cap quiet">AI ${money0(o.proposedTotal)} · issued ${money0(o.finalTotal)}</p>
+        <table class="of-ledger t-bd-sm" style="margin-top:8px">
+          <thead><tr><th>Field</th><th>Proposed</th><th>Issued</th></tr></thead>
+          <tbody>${o.diff.map(d => `<tr data-changed="1"><td class="quiet">${esc(d[0])}</td>
+            <td>${esc(d[1])}</td><td>${esc(d[2])}</td></tr>`).join("")}</tbody></table>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <select style="border:1px solid var(--line-strong);padding:5px 7px">
+            <option value="">— why did it change? —</option>
+            <option>Customer changed their mind</option><option>Schedule was ambiguous</option>
+            <option>Thermal target could not be met</option><option>Pricing was unavailable</option></select>
+          <button class="of-btn t-bd-sm" data-variant="primary" data-act="noop">Approve</button>
+          <button class="of-btn t-bd-sm" data-act="noop">Reject</button>
+        </div>
+        <p class="t-cap quiet" style="margin-top:6px">A reason is required before this can be approved.</p>
+      </div>`).join("")
+    : `<div class="of-state"><p class="t-bd-sm">Nothing to teach from this job.</p>
+        <p class="hint t-cap">Outcomes appear once a quote is issued and a line differs from the machine's proposal.</p></div>`;
+  else if (tab === "history") body = acts.length ? `
+      <ol class="card">${acts.map(e => `<li style="padding:9px 12px;border-bottom:1px solid var(--rule-05);display:flex;gap:12px">
+        <span class="t-label quiet" style="width:56px;flex:0 0 56px">${esc(e.entity)}</span>
+        <span class="t-bd-sm ink-soft" style="flex:1">${esc(e.action)}</span>
+        <span class="t-cap quiet nowrap">${esc(e.actor)} · ${esc(e.when)}</span></li>`).join("")}</ol>
+      <p class="t-cap quiet" style="margin-top:8px">Server sentences and dotted keys are printed as written.
+        The payload stored with each event is not returned by the audit endpoint.</p>`
+    : `<div class="of-state"><p class="t-bd-sm">Nothing has happened yet.</p></div>`;
+  else if (tab === "files") body = files.length ? `
+      <table class="of-row-list"><thead><tr>
+        <th>File</th><th>Kind</th><th>Size</th><th>Scan</th><th>Uploaded</th><th></th></tr></thead><tbody>
+        ${files.map(f => `<tr><td>${esc(f.filename)}</td><td class="quiet t-cap">${esc(f.kind)}</td>
+          <td class="font-data">${bytes(f.size)}</td>
+          <td>${scanChip(f.virus_status)}</td>
+          <td class="quiet t-cap">${esc(f.uploaded)}${f.scanned_at ? `<span class="sub">scanned ${esc(f.scanned_at)} · ${esc(f.scan_engine)}</span>` : ""}</td>
+          <td class="right">${f.virus_status === "clean" ? `<button class="of-btn" data-variant="ghost" data-act="noop">Download</button>`
+            : f.virus_status === "infected" ? `<span class="quiet t-cap">Blocked</span>`
+            : `<button class="of-btn" data-variant="ghost" data-act="rescan" data-id="${f.id}">Scan to unlock</button>`}</td>
+        </tr>`).join("")}</tbody></table>
+      <p class="t-cap quiet" style="margin-top:8px">Uploads are customer-side only.</p>`
+    : `<div class="of-state"><p class="t-bd-sm">Nothing attached.</p></div>`;
+
+  return `<div class="of-pane of-pane-b">
+    <div class="of-tabs">${RTABS.map(t => `<button class="of-tab t-bd-sm" data-act="rtab" data-tab="${t.id}"
+      aria-selected="${t.id === tab}">${t.label}${
+        t.id === "files" && files.length ? `<span class="n">${files.length}</span>` : ""}${
+        t.id === "teach" && learn.length ? `<span class="n">${learn.length}</span>` : ""}</button>`).join("")}</div>
+    <div class="of-b-inner">${body}</div></div>`;
+}
+function scanChip(s) {
+  const st = s === "clean" ? `style="border-color:var(--rule-12);color:var(--body)"`
+    : s === "infected" ? `style="background:var(--chip-inf-bg);border-color:var(--chip-inf-bd);color:var(--chip-inf-tx)"`
+    : `style="background:var(--chip-pen-bg);border-color:var(--chip-pen-bd);color:var(--chip-pen-tx)"`;
+  return `<span class="of-chip" ${st}>${esc(s)}</span>`;
+}
+
+/* The lifecycle, with the gates named. There is no internal approval step, so
+   the screen says which gates are real and who has to move at each one.
+   Timestamps appear ONLY where the schema stamps one — everything else reads
+   "not recorded" rather than inferring a time from the audit log. */
+function flowList(p) {
+  const hasOrder = !!p.orderNo;
+  const acts = DATA.activity[p.id] || [];
+  const stamp = (needle) => { const e = acts.find(a => a.action.includes(needle)); return e ? `${e.when} · ${e.actor}` : null; };
+  const steps = [
+    { k:"submitted", label:"submitted", done:true, when:null, note:"the customer uploads documents and asks for a quote" },
+    { k:"parsed", label:"parsed", done:true, when:stamp("schedule parsed"),
+      note:"the schedule became openings", link:true },
+    { k:"pricing", label:"pricing started", done:p.phase !== "Intake", when:stamp("started pricing") },
+    { gate:true, label:"GATE · every line settled", done:unresolvedOf(p) === 0,
+      note:unresolvedOf(p) ? `${unresolvedOf(p)} ${plural(unresolvedOf(p),"line is","lines are")} unpriced or unresolved. This is what disables Issue reviewed quote.`
+        : "Every line is priced and resolved." },
+    { k:"issued", label:"issue revision", done:["Issued","Accepted","Production","Delivered"].includes(p.phase),
+      when:stamp("issued revision"), note:"freezes the draft and emails the customer" },
+    { gate:true, label:"GATE · the customer accepts, or asks for changes", done:hasOrder,
+      note:"accept → an order is raised with a deposit and a balance · changes → back to pricing, the revision is superseded" },
+    { k:"deposit", label:"deposit invoiced → we record the payment", done:hasOrder && p.statusInternal !== "deposit_invoiced" },
+    { k:"drawings", label:"shop drawings shared", done:p.statusInternal === "manufacturing" || p.phase === "Delivered" },
+    { gate:true, label:"GATE · the customer approves the drawings",
+      done:p.statusInternal === "manufacturing" || p.phase === "Delivered",
+      note:"we may record their approval by phone" },
+    { k:"mfg", label:"manufacturing → QA photos → balance invoiced", done:p.phase === "Delivered" },
+    { gate:true, label:"GATE · the customer confirms for dispatch", done:p.phase === "Delivered" },
+    { k:"out", label:"dispatched → delivered → after sales", done:p.phase === "Delivered" },
+  ];
+  return `<div class="of-block-h t-label">The journey of this job</div>
+    ${steps.map(s => `<div class="of-flow-step" data-done="${s.done?1:0}" data-gate="${s.gate?1:0}">
+      <span class="of-flow-mark" aria-hidden="true">${s.gate ? "▢" : s.done ? "✓" : "▢"}</span>
+      <span style="flex:1;min-width:0">
+        <span class="t-bd-sm ${s.gate?"warn-tx":""}">${esc(s.label)}</span>
+        ${s.note ? `<span class="t-cap quiet" style="display:block">${esc(s.note)}</span>` : ""}
+        ${s.link ? `<button class="of-btn" data-variant="ghost" data-act="scope" data-scope="opening">open the derivation →</button>` : ""}
+      </span>
+      ${!s.gate ? `<span class="of-flow-when t-cap">${s.when ? esc(s.when) : absence("not recorded")}</span>` : ""}
+    </div>`).join("")}
+    <p class="t-cap quiet" style="margin-top:12px">Every step above is a real transition in this system.
+      GATE rows are the only things that can stop it, and each names who has to move.
+      There is no internal approval step — the approval engine was retired, and what replaced it is
+      this gate list plus the per-line review flags.</p>
+    <p class="t-cap quiet" style="margin-top:6px">A time appears only where the schema stamps one.
+      “not recorded” means the event is real and its moment was never written down.</p>`;
+}
+
+function paneRecordC(p) {
+  const pay = DATA.payments[p.id] || [];
+  const acts = (DATA.activity[p.id] || []).slice(0,4);
+  const files = (DATA.files[p.id] || []).length;
+  return `<div class="of-pane of-pane-c">
+    <div class="of-pane-head"><span class="t-label quiet">The job</span></div>
+    <div style="padding:12px 14px;border-bottom:1px solid var(--rule-08)">
+      <div class="of-block-h t-label">Waiting on</div>
+      <p class="t-bd-sm">${esc(p.waitingOn)}. ${esc(p.stateLabel)}.</p>
+      <p class="t-cap quiet">${p.daysInStage} ${plural(p.daysInStage,"day","days")} since this record was touched.</p>
+    </div>
+    <div style="padding:12px 14px;border-bottom:1px solid var(--rule-08)">
+      <div class="of-block-h t-label">What the customer sees</div>
+      <dl class="t-cap" style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0">
+        <dt class="quiet">Status</dt><dd>${esc(humanise(p.statusCustomer))}</dd>
+        <dt class="quiet">Quote</dt><dd>${p.phase === "Intake" || p.phase === "Pricing" ? "not yet issued" : "issued"}</dd>
+        <dt class="quiet">Files</dt><dd>${files} on this project</dd>
+        <dt class="quiet">Next</dt><dd>${p.waitingOn === "Us" ? "we send the quote" : p.waitingOn === "Customer" ? "the customer replies" : "nothing is outstanding"}</dd>
+      </dl>
+      <p class="t-cap quiet" style="margin-top:8px">No flag records which files the customer can see.</p>
+      <p class="t-cap quiet" style="margin-top:6px">No link opens the customer's own screen: no URL addresses
+        another account's record, and a staff member signing in on the customer origin lands on their own account.</p>
+    </div>
+    <div style="padding:12px 14px;border-bottom:1px solid var(--rule-08)">
+      <div class="of-block-h t-label">Payments</div>
+      ${pay.length ? pay.map(x => `<p class="t-bd-sm">${esc(x.kind)} · ${x.pct}% · ${money0(x.amount)}
+          <span class="of-status-word" data-tone="${x.status==="paid"?"pos":x.status==="invoiced"?"attn":"mute"}"> · ${esc(x.status)}</span></p>
+        <p class="t-cap quiet" style="margin-bottom:8px">${[x.ref, x.invoiced && "invoiced "+x.invoiced, x.paid && "paid "+x.paid]
+          .filter(Boolean).map(esc).join(" · ") || absence("nothing recorded")}</p>`).join("")
+        : `<p class="t-bd-sm">Nothing invoiced yet.</p>
+           <p class="t-cap quiet">Deposit is ${DATA.policy.depositPercent}% at acceptance.</p>`}
+      ${p.orderNo ? `<p class="t-cap quiet">Order no. ${esc(p.orderNo)} · appears on invoices</p>` : ""}
+    </div>
+    <div style="padding:12px 14px;border-bottom:1px solid var(--rule-08)">
+      <div class="of-block-h t-label">Customer &amp; contact</div>
+      <p class="t-bd-sm">${esc(p.org || p.customerName || "(anonymous)")}</p>
+      <p class="t-cap quiet">${p.customerEmail ? esc(p.customerEmail) : absence("no email recorded")}</p>
+      <p class="t-cap quiet">${p.phone ? esc(p.phone) : absence("no phone recorded")}</p>
+      <p class="t-cap quiet" style="margin-top:6px">Deliver to ${esc(p.deliverTo)}</p>
+    </div>
+    <div style="padding:12px 14px">
+      <div class="of-block-h t-label">Last events</div>
+      ${acts.map(e => `<p class="t-cap ink-soft">${esc(e.action)}</p>
+        <p class="t-cap quiet" style="margin-bottom:6px">${esc(e.actor)} · ${esc(e.when)}</p>`).join("")}
+      <button class="of-btn" data-variant="ghost" data-act="rtab" data-tab="history">Show all ▸</button>
+    </div>
+  </div>`;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   THE REFERENCE SCREENS — all RowList + RecordPage, so they inherit the
+   workspace's grammar rather than inventing six new ones.
+   ═════════════════════════════════════════════════════════════════════════════ */
+function queueShell(title, viewsHtml, body, foot) {
+  return `<div class="of-queue-page"><div class="of-queue-inner">
+    <div class="of-page-head">
+      <button class="of-menu-btn" data-act="drawer" aria-label="Open menu">☰</button>
+      <h1>${esc(title)}</h1>
+      <button class="of-search-stub t-bd-sm" data-act="omni"><span aria-hidden="true">⌕</span>
+        Search…<span class="of-kbd" style="margin-left:auto">⌘K</span></button>
+    </div>
+    ${viewsHtml ? `<div class="of-views">${viewsHtml}</div>` : ""}
+    ${body}
+    ${foot ? `<div class="of-foot-strip t-cap">${foot}</div>` : ""}
+  </div></div>`;
+}
+
+function renderProducts() {
+  const tab = S.route.view === "options" ? "options" : "cards";
+  const q = (S.route.sub || "").toLowerCase();
+  const views = `
+    <button class="of-view t-cap" data-act="goto" data-href="#/products/cards" aria-pressed="${tab==="cards"}">
+      Rate cards<span class="n">${DATA.products.length}</span></button>
+    <button class="of-view t-cap" data-act="goto" data-href="#/products/options" aria-pressed="${tab==="options"}">
+      Options<span class="n">${DATA.options.length}</span></button>`;
+  const rec = DATA.reconcile;
+  const banner = `<div class="of-banner t-bd-sm" data-tone="${rec.withoutCard || rec.optionsMissing ? "warn":"info"}"
+      style="margin-bottom:12px"><span aria-hidden="true">${rec.withoutCard?"⚠":"✓"}</span><span>
+      Last checked ${esc(rec.when)} — ${rec.checked} products.
+      ${rec.withoutCard} without a rate card · ${rec.optionsMissing} chargeable options with no price.
+      ${rec.blocked.length ? `<br>Blocked: ${esc(rec.blocked.join("; "))} — trimming the area rate has no control anywhere.` : ""}
+      </span></div>`;
+
+  if (tab === "options") {
+    const rows = DATA.options.filter(o => !q || o.slug.includes(q));
+    return queueShell("Products", views, banner + `
+      ${q ? `<p class="t-cap quiet" style="margin-bottom:8px">Filtered to “${esc(q)}”.
+        <button class="of-btn" data-variant="ghost" data-act="goto" data-href="#/products/options">clear</button></p>` : ""}
+      <table class="of-row-list"><thead><tr><th>Option</th><th>Slug</th><th>Basis</th>
+        <th class="right">Surcharge</th></tr></thead><tbody>
+        ${rows.map(o => `<tr${q && o.slug.includes(q) ? ' aria-selected="true"' : ""}>
+          <td data-pri="1">${esc(o.label)}</td>
+          <td class="quiet font-data t-data-sm" data-pri="3">${esc(o.slug)}</td>
+          <td class="quiet t-cap" data-pri="3">${esc(o.basis)}</td>
+          <td class="right" data-pri="1">${o.surcharge == null
+            ? `<span class="of-chip" data-tone="attn">no price</span>`
+            : `<span class="font-data">${money2(o.surcharge)}</span>`}</td></tr>`).join("")}
+      </tbody></table>`,
+      `A chargeable option with no price makes a save fail with exact_pricing_unavailable — the failure names the slug and links here.`);
+  }
+  const rows = DATA.products;
+  return queueShell("Products", views, banner + `
+    <table class="of-row-list"><thead><tr><th>Product</th><th>Family</th><th class="right">Perim /m</th>
+      <th class="right">Area /m²</th><th class="right">Min</th><th class="right">Example</th>
+      <th>Coverage</th><th>Ver</th></tr></thead><tbody>
+      ${rows.map(p => `<tr data-act="goto" data-href="#/products/cards/${p.slug}">
+        <td data-pri="1">${esc(p.name)}<span class="sub font-data">${esc(p.slug)}</span></td>
+        <td class="quiet t-cap" data-pri="3">${esc(p.family)} · ${esc(p.category)}</td>
+        <td class="right font-data" data-pri="3">${p.perim == null ? "—" : p.perim.toFixed(2)}</td>
+        <td class="right font-data" data-pri="3">${p.area == null ? "—" : p.area.toFixed(2)}</td>
+        <td class="right font-data" data-pri="3">${p.min == null ? "—" : money0(p.min)}</td>
+        <td class="right font-data" data-pri="1">${p.example == null ? "—" : money0(p.example)}</td>
+        <td data-pri="2">${p.version == null
+          ? `<span class="of-chip" data-tone="attn">no card — prices at ‘default’</span>`
+          : p.priced < p.options ? `<span class="of-chip" data-tone="attn">${p.options - p.priced} options need a price</span>`
+          : `<span class="of-chip" data-tone="pos">priced</span>`}</td>
+        <td class="quiet t-cap" data-pri="2">${p.version == null ? "no card" : esc(p.version)}</td></tr>`).join("")}
+    </tbody></table>`,
+    `A product with no rate card has no perimeter, area, minimum, example or version — those are properties of a card, and it does not have one.`);
+}
+
+function renderCustomers() {
+  if (S.route.id) {
+    const c = DATA.customers.find(x => x.id === S.route.id);
+    const jobs = DATA.projects.filter(p => p.customerEmail === c.email);
+    return queueShell(c.name, "", `
+      <button class="of-back t-cap" data-act="goto" data-href="#/customers">← Customers</button>
+      <div class="card" style="padding:16px;margin-top:8px;max-width:720px">
+        <table class="of-spec t-bd-sm">
+          <tr><td class="t-cap">Name</td><td>${esc(c.name)}</td></tr>
+          <tr><td class="t-cap">Sign-in email</td><td>${esc(c.email)}
+            <span class="quiet t-cap">— only an admin may change this</span></td></tr>
+          <tr><td class="t-cap">Business</td><td>${c.company ? esc(c.company) : absence("no business name")}</td></tr>
+          <tr><td class="t-cap">ABN</td><td>${c.abn ? esc(c.abn) : absence("not supplied")}</td></tr>
+          <tr><td class="t-cap">Phone</td><td>${c.phone ? esc(c.phone) : absence("not supplied")}</td></tr>
+        </table>
+      </div>
+      <div class="of-block-h t-label" style="margin-top:20px">Their jobs <span class="font-data">${jobs.length}</span></div>
+      ${jobs.length ? `<table class="of-row-list"><tbody>${jobs.map(p => `
+        <tr data-act="open-record" data-id="${p.id}"><td class="sage-tx font-data" data-pri="1">${esc(p.ref||p.orderNo)}</td>
+        <td data-pri="1">${esc(p.title)}</td><td class="quiet t-cap" data-pri="2">${esc(p.phase)} · ${esc(p.stateLabel)}</td>
+        <td class="right font-data" data-pri="1">${money0(p.value)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="of-state"><p class="t-bd-sm">No jobs yet.</p></div>`}`, "");
+  }
+  return queueShell("Customers", "", `
+    <table class="of-row-list"><thead><tr><th>Name</th><th>Email</th><th>Business</th>
+      <th>ABN</th><th class="right">Jobs</th><th class="right">Orders</th></tr></thead><tbody>
+      ${DATA.customers.map(c => `<tr data-act="goto" data-href="#/customers/${c.id}">
+        <td data-pri="1">${esc(c.name)}</td>
+        <td class="quiet" data-pri="1">${esc(c.email)}</td>
+        <td data-pri="2">${c.company ? esc(c.company) : absence("none")}</td>
+        <td class="quiet font-data t-data-sm" data-pri="3">${c.abn ? esc(c.abn) : "—"}</td>
+        <td class="right font-data" data-pri="3">${c.projects}</td>
+        <td class="right font-data" data-pri="3">${c.orders}</td></tr>`).join("")}
+    </tbody></table>`, "");
+}
+
+function renderLeads() {
+  const V = [["all","All"],["new","New"],["question","Question"],["appointment","Appointment"],
+             ["contacted","Contacted"],["closed","Closed"]];
+  const v = S.route.view || "all";
+  const match = (e) => v === "all" ? true : v === "new" ? e.status === "new"
+    : v === "contacted" ? e.status === "contacted" : v === "closed" ? e.status === "closed"
+    : v === "question" ? e.kind === "question" : e.kind === "appointment_request";
+  const rows = DATA.enquiries.filter(match);
+  const views = V.map(([id,label]) => `<button class="of-view t-cap" data-act="goto"
+    data-href="#/leads/${id}" aria-pressed="${v===id}">${label}<span class="n">${DATA.enquiries.filter(e => {
+      const s=S.route.view; S.route.view=id; const m=match(e); S.route.view=s; return m; }).length}</span></button>`).join("");
+
+  if (S.route.id) {
+    const e = DATA.enquiries.find(x => x.id === S.route.id);
+    return queueShell(e.ref, views, `
+      <button class="of-back t-cap" data-act="goto" data-href="#/leads/${v}">← Leads</button>
+      <div class="card" style="padding:16px;margin-top:8px;max-width:760px">
+        <h2 class="t-hd3">${esc(e.name)} <span class="quiet t-cap">${esc(humanise(e.kind))}</span></h2>
+        <p class="t-bd-sm" style="margin-top:10px">“${esc(e.message)}”</p>
+        <table class="of-spec t-bd-sm" style="margin-top:14px">
+          <tr><td class="t-cap">Email</td><td>${esc(e.email)}</td></tr>
+          <tr><td class="t-cap">Phone</td><td>${e.phone ? esc(e.phone) : absence("not supplied")}</td></tr>
+          <tr><td class="t-cap">Suburb</td><td>${esc(e.suburb)}</td></tr>
+          <tr><td class="t-cap">Received</td><td>${esc(e.when)}</td></tr>
+          <tr><td class="t-cap">Assigned</td><td>${e.assigned ? esc(e.assigned)
+            : `${absence("nobody")} <button class="of-btn" data-variant="ghost" data-act="noop">Assign to me</button>`}</td></tr>
+          <tr><td class="t-cap">Commercial outcome</td><td>${e.commercial ? esc(humanise(e.commercial)) : absence("not recorded")}</td></tr>
+          <tr><td class="t-cap">Linked job</td><td>${e.projectId
+            ? `<button class="of-btn" data-variant="ghost" data-act="open-record" data-id="${e.projectId}">${esc(proj(e.projectId).ref || proj(e.projectId).orderNo)} ▸</button>`
+            : absence("none")}</td></tr>
+          ${e.handoff ? `<tr><td class="t-cap">Manufacturer</td><td>${esc(e.handoff.sentTo)}
+            <span class="quiet t-cap">acknowledged ${esc(e.handoff.ackAt)}</span></td></tr>` : ""}
+        </table>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="of-btn t-bd-sm" data-variant="primary" data-act="noop">Log a contact</button>
+          <button class="of-btn t-bd-sm" data-act="noop">Mark closed</button>
+        </div>
+      </div>`, "");
+  }
+  return queueShell("Leads", views, rows.length ? `
+    <table class="of-row-list"><thead><tr><th>Ref</th><th>Name</th><th>Kind</th><th>Suburb</th>
+      <th>Status</th><th>Assigned</th><th>Received</th></tr></thead><tbody>
+      ${rows.map(e => `<tr data-act="goto" data-href="#/leads/${v}/${e.id}">
+        <td class="sage-tx font-data t-data-sm" data-pri="1">${esc(e.ref)}</td>
+        <td data-pri="1">${esc(e.name)}<span class="sub">${esc(e.email)}</span></td>
+        <td class="quiet t-cap" data-pri="2">${esc(humanise(e.kind))}</td>
+        <td class="quiet t-cap" data-pri="3">${esc(e.suburb)}</td>
+        <td data-pri="2">${stateWord(e.status === "new" ? "needs_review" : e.status === "closed" ? "ready" : "draft")}
+          <span class="t-cap">${esc(e.status)}</span></td>
+        <td class="quiet t-cap" data-pri="3">${e.assigned ? esc(e.assigned) : "—"}</td>
+        <td class="quiet t-cap" data-pri="3">${esc(e.when)}</td></tr>`).join("")}
+    </tbody></table>` : `<div class="of-state"><p class="t-bd-sm">No enquiries match this filter.</p></div>`, "");
+}
+
+function renderArchive() {
+  const tab = S.route.view === "events" ? "events" : "files";
+  const views = `
+    <button class="of-view t-cap" data-act="goto" data-href="#/archive/files" aria-pressed="${tab==="files"}">
+      Files<span class="n">${DATA.allFiles.length}</span></button>
+    <button class="of-view t-cap" data-act="goto" data-href="#/archive/events" aria-pressed="${tab==="events"}">
+      Events<span class="n">${DATA.auditAll.length}</span></button>`;
+  if (tab === "events") {
+    const ent = S.route.sub || "";
+    const rows = DATA.auditAll.filter(e => !ent || e.entity === ent);
+    const chips = ["","project","order","user","rule"].map(e => `<button class="of-view t-cap"
+      data-act="goto" data-href="#/archive/events${e?`?entity=${e}`:""}" aria-pressed="${ent===e}">${e||"All"}</button>`).join("");
+    return queueShell("Archive", views, `
+      <div class="of-views">${chips}</div>
+      ${ent === "rule" && !rows.length ? `<div class="of-state"><p class="t-bd-sm">No rule events in the last 200.</p>
+        <p class="hint t-cap">The approvals engine was retired — nothing writes a rule event any more.</p></div>` : `
+      <ol class="card">${rows.map(e => `<li style="padding:9px 12px;border-bottom:1px solid var(--rule-05);display:flex;gap:12px">
+        <span class="t-label quiet" style="width:56px;flex:0 0 56px">${esc(e.entity)}</span>
+        <span class="t-bd-sm ink-soft" style="flex:1">${esc(e.action)}
+          ${proj(e.id) ? `<button class="of-btn" data-variant="ghost" data-act="open-record" data-id="${e.id}">open ▸</button>`
+            : `<span class="quiet t-cap"> — the record this names no longer exists</span>`}</span>
+        <span class="t-cap quiet nowrap">${esc(e.actor)} · ${esc(e.when)}</span></li>`).join("")}</ol>`}`,
+      `The payload stored with each event is not returned by the audit endpoint, so there is nothing to expand.`);
+  }
+  return queueShell("Archive", views, `
+    <table class="of-row-list"><thead><tr><th>File</th><th>Project</th><th>Kind</th><th>Size</th>
+      <th>Scan</th><th>Uploaded</th><th></th></tr></thead><tbody>
+      ${DATA.allFiles.map(f => `<tr>
+        <td data-pri="1">${esc(f.filename)}</td>
+        <td data-pri="2">${esc(f.project)}<span class="sub">${f.customer ? esc(f.customer) : "(anonymous)"}</span></td>
+        <td class="quiet t-cap" data-pri="3">${esc(f.kind)}</td>
+        <td class="font-data" data-pri="3">${bytes(f.size)}</td>
+        <td data-pri="1">${scanChip(f.virus_status)}</td>
+        <td class="quiet t-cap" data-pri="3">${esc(f.uploaded)}</td>
+        <td class="right" data-pri="2">${f.virus_status === "clean" ? `<button class="of-btn" data-variant="ghost" data-act="noop">Download</button>`
+          : f.virus_status === "infected" ? `<span class="quiet t-cap">Blocked</span>`
+          : `<button class="of-btn" data-variant="ghost" data-act="rescan" data-id="${f.id}">Scan to unlock</button>`}</td>
+      </tr>`).join("")}
+    </tbody></table>`, `Uploads are customer-side only. An unscanned file is withheld from download until a scanner clears it.`);
+}
+
+function renderSettings() {
+  return queueShell("Settings", "", `
+    <div style="max-width:760px">
+      <div class="of-block-h t-label">Staff &amp; roles</div>
+      <p class="t-cap quiet" style="margin-bottom:8px">Only admins can change roles.
+        A role gates almost nothing today: access is flat, and only <b>admin</b> may change a staff role
+        or a customer's sign-in email. <b>manufacturer</b> cannot be assigned here — it comes from the
+        email domain at sign-in.</p>
+      <div class="card">${DATA.staff.map(s => `<div style="padding:11px 14px;border-bottom:1px solid var(--rule-05);display:flex;gap:12px;align-items:center">
+        <div style="flex:1;min-width:0"><span class="t-bd-sm">${s.name ? esc(s.name) : absence("no name recorded")}</span>
+          <span class="sub quiet t-cap" style="display:block">${esc(s.email)}</span></div>
+        ${s.role === "manufacturer" ? `<span class="of-chip" data-tone="mute">manufacturer — set by email domain</span>`
+          : `<select style="border:1px solid var(--line-strong);padding:5px 7px">
+            ${DATA.roles.map(r => `<option${r===s.role?" selected":""}>${r}</option>`).join("")}</select>`}
+      </div>`).join("")}</div>
+
+      <div class="of-block-h t-label" style="margin-top:24px">Commercial</div>
+      <div class="card" style="padding:14px">
+        <p class="t-cap quiet">Applies to every quote and order, in every family.</p>
+        <label class="of-field" style="max-width:200px;margin-top:8px"><span class="lbl t-cap">Deposit percent</span>
+          <input value="${DATA.policy.depositPercent}"></label>
+        <p class="t-cap quiet">A ${money0(12196)} quote would invoice ${money0(12196*DATA.policy.depositPercent/100)} on acceptance.</p>
+        <p class="t-cap quiet" style="margin-top:10px">Prices are held and displayed GST-inclusive. There is no
+          GST switch here on purpose: a mode that could be flipped after quotes were issued would silently
+          restate every historical price.</p>
+      </div>
+
+      <div class="of-block-h t-label" style="margin-top:24px">Composite policy</div>
+      <div class="card" style="padding:14px">
+        <p class="t-bd-sm">Tolerance ${DATA.compositePolicy.tolerance} mm ·
+          joiner ${DATA.compositePolicy.joiner} mm · maximum ${DATA.compositePolicy.max} units.</p>
+        <p class="t-cap quiet" style="margin-top:6px">Read from the record you last opened —
+          no endpoint returns this on its own.</p>
+      </div>
+
+      <div class="of-block-h t-label" style="margin-top:24px">Catalogue</div>
+      <div class="card" style="padding:14px">
+        <p class="t-bd-sm">Words, images and product copy come from Sanity. Numbers come from this console.</p>
+        <p class="t-cap quiet" style="margin-top:6px">Open Sanity Studio ▸</p>
+      </div>
+    </div>`, "");
+}
+/* ═════════════════════════════════════════════════════════════════════════════
+   OVERLAYS — the omnibox, the shortcut sheet, the phone drawer.
+   The drawer is an overlay and never a route: the surface beneath is not
+   unmounted, so an open record, its scroll position and any half-typed field
+   survive it.
+   ═════════════════════════════════════════════════════════════════════════════ */
+function searchAll(q) {
+  q = q.trim().toLowerCase();
+  if (q.length < 2) return null;
+  const out = { Projects:[], Customers:[], Leads:[], Products:[] };
+  DATA.projects.forEach(p => {
+    if ([p.ref,p.orderNo,p.title,p.org,p.customerName].filter(Boolean).join(" ").toLowerCase().includes(q))
+      out.Projects.push({ label:`${p.ref || p.orderNo}  ${p.title}`, hint:humanise(p.statusCustomer), href:`#/r/${p.id}` });
+  });
+  DATA.customers.forEach(c => {
+    if ([c.name,c.email,c.company].filter(Boolean).join(" ").toLowerCase().includes(q))
+      out.Customers.push({ label:c.company || c.name, hint:c.email, href:`#/customers/${c.id}` });
+  });
+  DATA.enquiries.forEach(e => {
+    if ([e.ref,e.name,e.email].join(" ").toLowerCase().includes(q))
+      out.Leads.push({ label:`${e.ref}  ${e.name}`, hint:humanise(e.kind), href:`#/leads/all/${e.id}` });
+  });
+  DATA.products.forEach(p => {
+    if ([p.name,p.slug].join(" ").toLowerCase().includes(q))
+      out.Products.push({ label:p.name, hint:p.slug, href:`#/products/cards/${p.slug}` });
+  });
+  Object.keys(out).forEach(k => { out[k] = out[k].slice(0,8); if (!out[k].length) delete out[k]; });
+  return out;
+}
+function flatResults(groups) {
+  const flat = []; Object.keys(groups||{}).forEach(g => groups[g].forEach(r => flat.push(r))); return flat;
+}
+function renderOverlay() {
+  let html = "";
+  if (S.omni.open) {
+    const groups = searchAll(S.omni.q);
+    const flat = flatResults(groups);
+    let inner;
+    if (groups === null) inner = `<div class="of-omni-group"><p class="of-omni-row quiet">Keep typing…</p></div>`;
+    else if (!flat.length) inner = `<div class="of-omni-group"><p class="of-omni-row quiet">No matches for “${esc(S.omni.q)}”.</p></div>`;
+    else inner = Object.keys(groups).map(g => `<div class="of-omni-group">
+        <div class="gh">${g}</div>
+        ${groups[g].map(r => { const i = flat.indexOf(r); return `<button class="of-omni-row t-bd-sm"
+          data-act="omni-open" data-href="${r.href}" data-active="${i === S.omni.ix ? 1 : 0}">
+          <span>${esc(r.label)}</span><span class="hint t-cap">${esc(r.hint)}</span></button>`; }).join("")}
+      </div>`).join("");
+    html += `<div class="of-scrim" data-act="close-overlay"></div>
+      <div class="of-omni" role="dialog" aria-label="Search">
+        <input id="omni-input" placeholder="Search projects, orders, customers…" value="${esc(S.omni.q)}"
+          autocomplete="off" data-field="omni">
+        ${inner}
+        <div class="of-omni-foot t-cap">↑↓ move · ⏎ open · esc close</div></div>`;
+  }
+  if (S.sheet) {
+    html += `<div class="of-scrim" data-act="close-overlay"></div>
+      <div class="of-sheet" role="dialog" aria-label="Keyboard shortcuts">
+        <h2 class="t-hd3">Keyboard</h2>
+        <div class="of-banner t-bd-sm" data-tone="info" style="margin-top:12px">
+          <span aria-hidden="true">▤</span>
+          <span>Navigation is on the <b>${S.nav === "top" ? "top bar" : "left rail"}</b>.
+            Pane A is itself a rail, so a nav rail beside it stacks two; a top bar does not compete,
+            but costs 48px of height off all three panes.
+            <button class="of-btn t-bd-sm" data-variant="ghost" data-act="nav">
+              Switch to the ${S.nav === "top" ? "left rail" : "top bar"} →</button></span></div>
+        <table class="of-spec t-bd-sm" style="margin-top:12px">
+          ${[["L","switch navigation between the rail and the top bar"],
+             ["⌘K or /","open the omnibox"],["g then w / l / c / p / a / s","go to a destination"],
+             ["j / k","next / previous opening"],["1–9","select that opening"],
+             ["e","edit the selected line"],["u","units / split"],["n","note on this line"],
+             ["T","the whole line table"],["r","the record scope"],["i","back to the opening scope"],
+             ["[ / ] / \\","collapse the openings / derivation / both"],["?","this sheet"],["Esc","unwind one level"]]
+            .map(([k,v]) => `<tr><td class="t-cap"><span class="of-kbd">${esc(k)}</span></td><td>${esc(v)}</td></tr>`).join("")}
+        </table>
+        <p style="margin-top:14px"><button class="of-btn t-bd-sm" data-act="close-overlay">Close</button></p></div>`;
+  }
+  if (S.modal) {
+    html += `<div class="of-scrim" data-act="close-overlay"></div>
+      <div class="of-modal" role="dialog" aria-label="${esc(S.modal.title)}">
+        <h2 class="t-hd3">${esc(S.modal.title)}</h2>
+        <p class="t-bd-sm" style="margin-top:8px">${esc(S.modal.body)}</p>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="of-btn t-bd-sm" data-variant="primary" data-act="close-overlay">${esc(S.modal.yes)}</button>
+          <button class="of-btn t-bd-sm" data-act="close-overlay">Cancel</button></div></div>`;
+  }
+  if (S.drawer) {
+    html += `<div class="of-scrim" data-act="close-overlay"></div>
+      <aside class="of-drawer" id="ops-nav-drawer" data-open="1">
+        <div class="of-rail-head" style="justify-content:space-between">
+          <span class="of-rail-word t-bd-sm">OpenFrame Ops</span>
+          <button data-act="close-overlay" style="color:rgba(255,255,255,.6);width:44px;height:44px" aria-label="Close menu">✕</button>
+        </div>
+        <nav class="of-rail-nav">${railFor().map(it => `<a class="of-rail-item t-bd-sm" href="${it.href}"
+          data-act="close-overlay"><span class="of-rail-ico" aria-hidden="true">${it.ico}</span>${it.label}</a>`).join("")}</nav>
+        <div class="of-rail-foot t-cap"><div class="nm t-bd-sm">${esc(DATA.me.name)}</div>
+          <div class="em">${esc(DATA.me.email)}</div>
+          <button data-act="signout">Sign out</button></div></aside>`;
+  }
+  document.getElementById("overlay").innerHTML = html;
+  document.body.style.overflow = (S.omni.open || S.sheet || S.drawer || S.modal) ? "hidden" : "";
+  const inp = document.getElementById("omni-input");
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   The dev menu — every state the prototype must reach without editing code.
+   ═════════════════════════════════════════════════════════════════════════════ */
+const DEV = [
+  ["loading","Loading"],["empty","Empty view"],["error","Failed load"],["degraded","Degraded counts"],
+  ["conflict","409 + kept draft"],["readonly","Read-only record"],["manufacturer","Manufacturer role"],
+  ["missingOption","Missing option price"],
+];
+function renderDev() {
+  /* Accepts ?dev=1 before OR after the hash — opening this file from disk through
+     a preview shell can drop the query string, and the states menu is the only
+     way to reach half the screens this prototype exists to show. */
+  if (!/[?&]dev=1/.test(location.search + location.hash)) { document.getElementById("devbar").innerHTML = ""; return; }
+  document.getElementById("devbar").innerHTML = `<details class="of-devbar" open>
+    <summary>Prototype states</summary>
+    <div class="of-dev-body">
+      ${DEV.map(([k,l]) => `<button data-act="flag" data-flag="${k}" data-on="${S.flags[k]?1:0}">${l}</button>`).join("")}
+      <button data-act="goto" data-href="#/r/p-10482">Bench · Brighton</button>
+      <button data-act="goto" data-href="#/r/p-10482?scope=record">Record scope</button>
+      <button data-act="goto" data-href="#/r/p-1177?scope=record">An order · payments</button>
+      <button data-act="goto" data-href="#/r/p-1094?scope=record&tab=teach">Teach</button>
+      <button data-act="goto" data-href="#/r/p-10388">Ops has no move</button>
+      <button data-act="nav" data-on="${S.nav === "top" ? 1 : 0}">Nav: ${S.nav === "top" ? "top bar" : "left rail"}</button>
+      <button data-act="sheet">Shortcuts</button>
+      <button data-act="clear-flags">Reset</button>
+    </div></details>`;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   RENDER dispatcher
+   ═════════════════════════════════════════════════════════════════════════════ */
+function render() {
+  const r = S.route;
+  let page;
+  if (S.flags.manufacturer && r.name !== "leads") { location.hash = "#/leads/all"; return; }
+  switch (r.name) {
+    case "r":         page = renderRecord(); break;
+    case "leads":     page = renderLeads(); break;
+    case "customers": page = renderCustomers(); break;
+    case "products":  page = renderProducts(); break;
+    case "archive":   page = renderArchive(); break;
+    case "settings":  page = renderSettings(); break;
+    default:          page = renderWork();
+  }
+  const app = document.getElementById("app");
+  app.dataset.nav = S.nav;
+  app.innerHTML = (S.nav === "top" ? renderTopbar() : renderRail()) + `<div class="of-content">${page}</div>`;
+  renderOverlay(); renderDev();
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   E. ACTIONS — mutate in memory, then re-render. This mirrors the real client,
+   which awaits the server and refetches the whole workspace; there is no
+   optimistic write anywhere in the product and there is none here.
+   ═════════════════════════════════════════════════════════════════════════════ */
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-act]");
+  if (!t) return;
+  const act = t.dataset.act;
+  const id = t.dataset.id;
+  if (act !== "goto" && t.tagName !== "A") ev.preventDefault();
+
+  switch (act) {
+    case "goto": go(t.dataset.href); break;
+    case "open-record": S.route.line = null; go(`#/r/${id}`); break;
+    case "view": go(`#/work/${t.dataset.view}`); break;
+    case "line": S.editing = null; S.splitting = false;
+      go(`#/r/${S.route.id}/${id}`); break;
+    case "scope": {
+      const sc = t.dataset.scope;
+      go(`#/r/${S.route.id}${sc === "record" ? "?scope=record&tab=flow" : ""}`); break;
+    }
+    case "rtab": go(`#/r/${S.route.id}?scope=record&tab=${t.dataset.tab}`); break;
+    case "hop": S.hops[t.dataset.n] = !S.hops[t.dataset.n]; render(); break;
+    case "edit": S.editing = id; S.splitting = false; S.errors = {}; render(); break;
+    case "cancel-edit": S.editing = null; S.errors = {}; render(); break;
+    case "split": S.splitting = true; S.editing = null; render(); break;
+    case "cancel-split": S.splitting = false; render(); break;
+    case "save": doSave(id); break;
+    case "resolve": {
+      S.resolved[id] = !S.resolved[id];
+      const p = proj(S.route.id), l = linesOf(S.route.id).find(x => x.id === id);
+      if (S.resolved[id] && l && l.status === "needs_review") l.status = "ready";
+      else if (!S.resolved[id] && l && l.status === "ready" && reasonsOf(l).length) l.status = "needs_review";
+      render(); break;
+    }
+    case "add-unit": {
+      const l = linesOf(S.route.id).find(x => x.id === S.route.line);
+      if (l && l.segments && l.segments.length < DATA.compositePolicy.max) {
+        const n = l.segments.length + 1;
+        l.segments.push({ id:"s"+n, n, productSlug:"amj80-fixed-light", productName:"Fixed light",
+          span:300, total:420, status:"ready", changed:[], frameSystem:"AMJ80" });
+        l.units.push({ n, type:"fixed", span:300 });
+      }
+      render(); break;
+    }
+    case "remove-unit": {
+      S.confirm = { text:"Remove this unit? The opening will no longer be covered by its units, and that gap is recorded on the line.",
+        yes:"Remove unit", act:() => {
+          const l = linesOf(S.route.id).find(x => x.id === S.route.line);
+          if (l) { l.segments = l.segments.filter(s => s.id !== id).map((s,i) => ({...s, n:i+1}));
+                   l.units = l.segments.map(s => ({ n:s.n, type:s.productName === "Awning" ? "awning" : "fixed", span:s.span })); }
+        } };
+      render(); break;
+    }
+    case "merge": S.confirm = { text:"Merge these three units back into one opening? The per-unit specifications are discarded and cannot be recovered.",
+      yes:"Merge into one", act:() => { const l = linesOf(S.route.id).find(x => x.id === S.route.line);
+        if (l) { l.lineKind = "single"; l.segments = null; l.units = [{n:1,type:"awning",span:l.width}];
+                 l.productName = "AMJ80 Series Awning"; l.productSlug = "amj80-awning"; } } };
+      render(); break;
+    case "action": doAction(id); break;
+    case "confirm-yes": {
+      const c = S.confirm; S.confirm = null; if (c && c.act) c.act(); render(); break;
+    }
+    case "confirm-no": S.confirm = null; render(); break;
+    case "rescan": {
+      const f = (DATA.allFiles.find(x => x.id === id)); if (f) { f.virus_status = "clean"; f.engine = "cf-av"; }
+      Object.keys(DATA.files).forEach(k => DATA.files[k].forEach(x => {
+        if (x.id === id) { x.virus_status = "clean"; x.scan_engine = "cf-av"; x.scanned_at = "14 Aug 2026, 14:33"; } }));
+      render(); break;
+    }
+    case "omni": S.omni = { open:true, q:"", ix:0 }; renderOverlay(); break;
+    case "omni-open": S.omni.open = false; go(t.dataset.href); break;
+    case "sheet": if (S.route.name === "r" && !t.closest(".of-devbar")) { S.sheetView = !S.sheetView; render(); }
+      else { S.sheet = !S.sheet; renderOverlay(); } break;
+    case "thermal": go(`#/r/${S.route.id}${S.route.sub === "thermal" ? "" : "?view=thermal"}`); break;
+    case "drawer": S.drawer = true; renderOverlay(); break;
+    case "close-overlay": S.omni.open = false; S.sheet = false; S.drawer = false; S.modal = null; renderOverlay(); break;
+    case "clear-conflict": S.flags.conflict = false; S.errors = {}; render(); break;
+    case "clear-flags": Object.keys(S.flags).forEach(k => S.flags[k] = false); S.flags.reconcile = "ok"; render(); break;
+    case "nav": S.nav = S.nav === "top" ? "rail" : "top"; lsSet("of.nav", S.nav); render(); break;
+    case "flag": {
+      const f = t.dataset.flag; S.flags[f] = !S.flags[f];
+      if (f === "conflict" && S.flags.conflict) { const l = linesOf(S.route.id)[1];
+        if (l) { S.editing = l.id; S.drafts[l.id] = { width:2760, height:1500 };
+                 S.errors[l.id] = { msg:"Someone else changed this line while you were editing. Your values are kept.", reload:true }; } }
+      if (f === "missingOption" && S.flags.missingOption) { const l = linesOf(S.route.id)[0];
+        if (l) { S.editing = l.id; S.errors[l.id] = { msg:"Saved, but this configuration cannot be priced exactly: colour:custom-powdercoat has no price.",
+                 option:"colour:custom-powdercoat" }; } }
+      render(); break;
+    }
+    case "signout": S.modal = { title:"Sign out", body:"This would navigate to Cloudflare Access's logout endpoint — clearing the CF_Authorization cookie is the only thing that actually signs you out.", yes:"Understood" };
+      renderOverlay(); break;
+    case "copy": navigator.clipboard && navigator.clipboard.writeText(location.href); break;
+    case "lane-prev": case "lane-next": {
+      const list = laneRows(); const ix = list.findIndex(p => p.id === S.route.id);
+      const nx = act === "lane-next" ? ix+1 : ix-1;
+      if (list[nx]) { S.route.line = null; go(`#/r/${list[nx].id}`); }
+      break;
+    }
+    case "noop": default: break;
+  }
+});
+
+document.addEventListener("input", (ev) => {
+  const f = ev.target.dataset.field;
+  if (!f) return;
+  if (f === "omni") { S.omni.q = ev.target.value; S.omni.ix = 0; renderOverlay(); return; }
+  if (f === "width" || f === "height") {
+    const id = ev.target.dataset.id;
+    S.drafts[id] = S.drafts[id] || {};
+    S.drafts[id][f] = ev.target.value;
+  }
+});
+
+function doSave(id) {
+  const l = linesOf(S.route.id).find(x => x.id === id);
+  const d = S.drafts[id] || {};
+  const w = parseInt(d.width != null ? d.width : l.width, 10);
+  const h = parseInt(d.height != null ? d.height : l.height, 10);
+  if (!(w > 0) || !(h > 0)) { S.errors[id] = { msg:"Width and height must be whole millimetres." }; render(); return; }
+  if (w < 300 || h < 300) { S.errors[id] = { msg:"Undersize — this product cannot be made below 300 mm in either direction." }; render(); return; }
+  S.busy = id; render();
+  setTimeout(() => {
+    S.busy = null;
+    if (S.flags.missingOption) {
+      S.errors[id] = { msg:"Saved, but this configuration cannot be priced exactly: colour:custom-powdercoat has no price.",
+                       option:"colour:custom-powdercoat" };
+    } else {
+      l.width = w; l.height = h;
+      l.units = (l.units||[]).map(u => ({...u, span: Math.round(w / (l.units.length||1)) }));
+      if (l.segments) l.segments = l.segments.map(s => ({...s, span: Math.round(w / l.segments.length)}));
+      if (!(l.editedFields||[]).includes("width")) l.editedFields = (l.editedFields||[]).concat(["width"]);
+      S.editing = null; S.errors = {}; delete S.drafts[id];
+    }
+    render();
+  }, 320);
+}
+
+function doAction(id) {
+  const p = proj(S.route.id);
+  const C = {
+    start:   { text:`Start pricing on ${p.title}? The customer's view changes to "under review".`, yes:"Start pricing",
+               act:() => { p.statusInternal = "estimator_assigned"; p.stateLabel = "Being priced"; p.phase = "Pricing"; } },
+    issue:   { text:`Issue this quote to ${p.customerEmail || "the customer"}? The draft is frozen as a revision and an email is sent.`,
+               yes:"Issue the quote", act:() => { p.statusInternal = "quote_issued"; p.stateLabel = "Quote issued";
+                 p.phase = "Issued"; p.waitingOn = "Customer"; p.valueBasis = "issued"; p.statusCustomer = "quote_ready"; } },
+    tech:    { text:"Send this job to technical review?", yes:"Send to technical review",
+               act:() => { p.statusInternal = "technical_review_required"; p.stateLabel = "Technical review"; } },
+    clarify: { text:`Ask ${p.customerEmail || "the customer"} for more information? They will be emailed and the job waits on them.`,
+               yes:"Send the request", field:true, placeholder:"What do we need from them?",
+               act:() => { p.statusInternal = "customer_clarification_required";
+                 p.stateLabel = "Waiting on the customer"; p.waitingOn = "Customer"; p.statusCustomer = "needs_information"; } },
+    resume:  { text:"Resume pricing on this job?", yes:"Resume pricing",
+               act:() => { p.statusInternal = "estimator_assigned"; p.stateLabel = "Being priced"; p.waitingOn = "Us"; } },
+    "pay-deposit": { text:`Record the deposit payment for ${p.orderNo}? Enter the bank reference so the payment can be traced.`,
+               yes:"Record payment", field:true, placeholder:"EFT reference",
+               act:() => { const x = (DATA.payments[p.id]||[])[0]; if (x) { x.status = "paid"; x.ref = "EFT-5109"; x.paid = "14 Aug 2026"; }
+                 p.statusInternal = "manufacturing"; p.stateLabel = "Manufacturing"; p.phase = "Production"; p.waitingOn = "Nobody"; } },
+    qa:      { text:"Confirm QA and invoice the balance?", yes:"Confirm and invoice", act:() => {} },
+    close:   { text:"Close this job?", yes:"Close the job", act:() => {} },
+    note:    { text:"Add a note to this record. Notes are internal and are never shown to the customer.",
+               yes:"Save note", field:true, placeholder:"Note…", act:() => {} },
+  };
+  S.confirm = C[id] || null; render();
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   F. KEYBOARD — guarded against text fields. Keyboard-first is a commitment.
+   ═════════════════════════════════════════════════════════════════════════════ */
+let chord = null;
+document.addEventListener("keydown", (e) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if ((e.key === "k" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); S.omni = {open:true,q:"",ix:0}; renderOverlay(); return; }
+  if (S.omni.open) {
+    const flat = flatResults(searchAll(S.omni.q));
+    if (e.key === "Escape") { S.omni.open = false; renderOverlay(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); S.omni.ix = Math.min(S.omni.ix+1, flat.length-1); renderOverlay(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); S.omni.ix = Math.max(S.omni.ix-1, 0); renderOverlay(); }
+    else if (e.key === "Enter" && flat[S.omni.ix]) { S.omni.open = false; go(flat[S.omni.ix].href); }
+    return;
+  }
+  if (typing) { if (e.key === "Escape") { S.editing = null; render(); } return; }
+  if (e.key === "Escape") {
+    if (S.sheet || S.drawer || S.modal) { S.sheet = S.drawer = false; S.modal = null; renderOverlay(); }
+    else if (S.confirm) { S.confirm = null; render(); }
+    else if (S.editing || S.splitting) { S.editing = null; S.splitting = false; render(); }
+    else if (S.sheetView) { S.sheetView = false; render(); }
+    else if (S.route.name === "r") go(`#/work/${S.lane||"needs-us"}`);
+    return;
+  }
+  if (chord === "g") {
+    chord = null;
+    const map = { w:"#/work/needs-us", l:"#/leads/all", c:"#/customers", p:"#/products/cards",
+                  a:"#/archive/files", s:"#/settings/staff" };
+    if (map[e.key]) { e.preventDefault(); go(map[e.key]); }
+    return;
+  }
+  if (e.key === "g") { chord = "g"; setTimeout(() => chord = null, 900); return; }
+  if (e.key === "l" || e.key === "L") { S.nav = S.nav === "top" ? "rail" : "top"; lsSet("of.nav", S.nav); render(); return; }
+  if (e.key === "/") { e.preventDefault(); S.omni = {open:true,q:"",ix:0}; renderOverlay(); return; }
+  if (e.key === "?") { S.sheet = true; renderOverlay(); return; }
+
+  if (S.route.name !== "r") return;
+  const lines = linesOf(S.route.id);
+  const ix = lines.findIndex(l => l.id === S.route.line);
+  if (e.key === "j" && lines[ix+1]) go(`#/r/${S.route.id}/${lines[ix+1].id}`);
+  else if (e.key === "k" && lines[ix-1]) go(`#/r/${S.route.id}/${lines[ix-1].id}`);
+  else if (/^[1-9]$/.test(e.key) && lines[+e.key-1]) go(`#/r/${S.route.id}/${lines[+e.key-1].id}`);
+  else if (e.key === "e" && lines[ix]) { S.editing = lines[ix].id; S.splitting = false; render(); }
+  else if (e.key === "u") { S.splitting = !S.splitting; S.editing = null; render(); }
+  else if (e.key === "T") { S.sheetView = !S.sheetView; render(); }
+  else if (e.key === "r") go(`#/r/${S.route.id}?scope=record&tab=flow`);
+  else if (e.key === "i") go(`#/r/${S.route.id}`);
+  else if (e.key === "[") { S.collapseA = !S.collapseA; render(); }
+  else if (e.key === "]") { S.collapseC = !S.collapseC; render(); }
+  else if (e.key === "\\") { S.collapseA = S.collapseC = !(S.collapseA && S.collapseC); render(); }
+});
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   G. BOOT
+   ═════════════════════════════════════════════════════════════════════════════ */
+window.addEventListener("hashchange", syncRoute);
+if (!location.hash) location.hash = "#/work/needs-us";
+syncRoute();
+</script>
+</body>
+</html>

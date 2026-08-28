@@ -1,0 +1,719 @@
+// Shared regions of the record surface. Ionic components wherever Ionic has one,
+// so rows, ripples, dividers, keyboard behaviour and both palettes come from the
+// framework.
+import { useRef, useState } from "react";
+import {
+  IonItem, IonLabel, IonList, IonNote, IonBadge, IonIcon, IonButton, IonToggle,
+  IonBackButton, IonTextarea, IonToolbar, IonTitle, IonButtons, IonToast,
+} from "@ionic/react";
+import { chevronForward, download } from "ionicons/icons";
+import { Elevation } from "./elevation";
+import {
+  DELIVERY, FILES, HISTORY, LINES, PAYMENTS, PROJECTS, PROJECT_BLOCKS,
+  PROJECT_NOTES, RECORD, type FileRow, type Line,
+} from "./data";
+import { Money, mm } from "./ui";
+import type { HeaderStyle } from "./store";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE HEADER
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** The identity, and — separately — the project total, which goes in the
+ *  literal top-right CORNER: the end slot of the back bar, which is the slot the
+ *  overflow used to hold.
+ *
+ *  That corner used to hold the overflow, which read wrong beside a hamburger:
+ *  "you have action bar at the bottom already, Total amount might work better in
+ *  this corner - something that I miss from this view." So the overflow joined
+ *  the actions at the bottom, where the other actions already were, and the
+ *  money took the corner. It is now on screen at every scroll position and on
+ *  both tabs.
+ *
+ *  This is also where rule A3's GST basis now lives — stated once, under the
+ *  figure it governs, instead of eighteen times down the list. */
+
+/** D3 — the header is toolbars, not a dashboard.
+ *
+ *  "header is messed up, isn't it: back button, title, project id, price - that
+ *  is not how guidelines say it should be mobile, no?"
+ *
+ *  He is right, and the fault is structural rather than cosmetic. R1c assembled
+ *  back, ref, title, customer and total as a bespoke CSS grid INSIDE IonHeader —
+ *  a private layout wearing a standard component's name. That is the boundary
+ *  rule broken in the one place he keeps looking, and it accreted one relayed
+ *  request at a time without anyone asking whether a toolbar is where money
+ *  belongs.
+ *
+ *  The convention — iOS HIG, Material, and Ionic's own structure — is that a
+ *  toolbar is one line: `IonButtons slot="start"`, `IonTitle`, `IonButtons
+ *  slot="end"` FOR ACTIONS. A total is not an action, so it may not sit in the
+ *  end slot. Ionic's sanctioned way to carry more is a SECOND IonToolbar in the
+ *  same IonHeader, which is what this now is:
+ *
+ *    IonToolbar   [< Projects]  Wattle Grove — Lot 14
+ *    IonToolbar   OF-Q-10482 · Marchetti Constructions      $48,802.40 ex GST
+ *    IonToolbar   [ Lines · 18 ][ Project ]
+ *
+ *  Nothing here is a grid of ours. Bar 1 is start/title. Bar 2 uses the default
+ *  slot for its leading content and `slot="end"` for the figure — the component's
+ *  own API, which is the distinction that matters: extending through the
+ *  published slots, not composing a private layout inside them.
+ *
+ *  ── D1, which dissolves into this ──────────────────────────────────────────
+ *  R1c argued the title got "full width below and never truncates", while the
+ *  CSS set `text-overflow: ellipsis` three lines away. The honest fix is not to
+ *  make the claim true by wrapping — a header that grows a line on a long name
+ *  is the thing toolbars exist to prevent — it is to put each piece where its
+ *  truncation behaviour is correct:
+ *
+ *    • THE REF NEVER TRUNCATES, because it cannot: ten fixed-width characters,
+ *      on bar 2, at the leading edge. It is the identity ops reads out on a
+ *      call, so it is the piece that must always be complete, and now it
+ *      structurally is.
+ *    • THE PROJECT NAME TRUNCATES, in IonTitle, using Ionic's own ellipsis.
+ *      That is what every platform title does with a long name and it needs no
+ *      defence. The full name is never lost: the overflow sheet's header carries
+ *      `ref · title` in full and wraps.
+ *
+ *  So the claim is not deleted and not faked — the thing that must not truncate
+ *  was moved somewhere it cannot. */
+export function RecordNavBar({ cta, onMore, style = "labelled" }: {
+  cta?: { label: string; disabled?: boolean; blockedBy?: string };
+  onMore?: () => void;
+  style?: HeaderStyle;
+}) {
+  /* bare/path: the chevron carries no text, but it still NAMES ITS DESTINATION
+     to assistive technology. Visually bare, semantically labelled — the eye
+     spends nothing and a screen reader still hears where back goes. */
+  return (
+    <IonToolbar>
+      <IonButtons slot="start">
+        {/* key: ion-back-button does NOT react to `text` changing after
+            hydration — measured, once it rendered a label it kept it, and once
+            hidden it never came back. Keying on the treatment remounts it so the
+            switcher actually switches. Worth knowing beyond the mock: any runtime
+            change to a back label needs a remount. */}
+        <IonBackButton key={style} defaultHref="/projects"
+          text={style === "labelled" ? "Projects" : ""}
+          aria-label="Back to Projects" />
+      </IonButtons>
+      {/* path trades the friendly name for the ref, because the ref is what
+          composes into the deeper levels. */}
+      <IonTitle>{style === "path" ? RECORD.ref : RECORD.title}</IonTitle>
+      {/* E only. The end slot was deliberately empty (§16.1: "a toolbar is
+          allowed to have no trailing action; it is not allowed to carry a
+          total") — a CTA is an action, so it may sit here where the total may
+          not. */}
+      {cta && (
+        <IonButtons slot="end">
+          {/* THE REASON TRAVELS IN THE ACCESSIBLE NAME, not in aria-describedby.
+              Measured twice: Ionic's React wrapper drops `aria-describedby` from
+              the props, and setting it on the element through a ref does not
+              survive either — the component manages the host's aria attributes.
+              aria-label IS preserved, so the blocked action states its own reason:
+              a screen reader hears the verb and why it will not run, which is the
+              adjacency R-153 required, achieved through the one channel Ionic
+              leaves alone. The row beside it carries the same sentence visually
+              and owns the fix. */}
+          <IonButton disabled={cta.disabled}
+            aria-label={cta.disabled && cta.blockedBy
+              ? `${cta.label}. Blocked: ${cta.blockedBy}.` : cta.label}
+            className={cta.disabled ? "inert hdr-cta" : "hdr-cta"}>{cta.label}</IonButton>
+          {onMore && (
+            <IonButton onClick={onMore} aria-label="More actions for this project">···</IonButton>
+          )}
+        </IonButtons>
+      )}
+      {/* slot="end" is deliberately empty. The record's actions live in the
+          bottom action panel, where he asked for them. A toolbar is allowed to
+          have no trailing action; it is not allowed to carry a total. */}
+    </IonToolbar>
+  );
+}
+
+/** Bar 2. The identity that must stay complete, and the money — given room to be
+ *  read at 17px instead of squeezed into the ~80px an end-slot allowed. */
+export function RecordSummaryBar() {
+  return (
+    <IonToolbar className="summarybar">
+      <div className="sb-id">
+        <span className="sb-ref mono">{RECORD.ref}</span>
+        <span className="sb-cust">{RECORD.customer}</span>
+      </div>
+      <div slot="end" className="sb-total">
+        <Money cents={RECORD.totalCents} basis size="lg" />
+      </div>
+    </IonToolbar>
+  );
+}
+
+/** The lifecycle, ranked instead of run together.
+ *
+ *  It was "Now · Technical review · waiting on us · 3 days in this state" —
+ *  four facts at one weight in one dotted run, and the complaint was exactly
+ *  that: "need to read all this to understand what is it trying to say."
+ *
+ *  A dotted run gives no fact priority, so the reader has to parse all four to
+ *  find the one they wanted. Ranked, there is one thing to read at a glance and
+ *  the rest is there without being in the way:
+ *
+ *      WAITING ON US              who owes the next move — the operational fact
+ *      Technical review · 3 days  which phase, and how stale
+ *
+ *  "Now ·" is gone: it carried no information, it was scaffolding for a run that
+ *  no longer exists. The row is tappable and opens Progress, where the phase
+ *  ribbon and the move control live. */
+export function StateRow({ onOpenProgress }: { onOpenProgress: () => void }) {
+  const ours = RECORD.waitingOn === "us";
+  const owed = ours ? "Waiting on us"
+    : RECORD.waitingOn === "manufacturer" ? "With the manufacturer"
+    : "Waiting on the customer";
+  return (
+    <button type="button" className="staterow" onClick={onOpenProgress}
+      aria-label={`${owed}. ${RECORD.stateLabel}, ${RECORD.daysInState} days in this phase. Open Progress.`}>
+      <span className="sr-owed" data-ours={ours ? "" : undefined}>{owed}</span>
+      <span className="sr-rest">{RECORD.stateLabel} · {RECORD.daysInState} days</span>
+      <IonIcon icon={chevronForward} className="sr-chev" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** THE BLOCKER ROW — the record's answer to "where does the reason live when
+ *  the action is in the header?"
+ *
+ *  R-153 required a blocked primary to say why, and put the sentence "beneath it
+ *  inside the footer" because that is where the primary was. The principle is
+ *  ADJACENCY, not the footer: the action and its reason must be read together.
+ *  So when the primary moves to the header's trailing slot, the reason moves into
+ *  the header stack with it — and it did not have to be invented, because this
+ *  row already existed, already stated the blocking condition, and already
+ *  offered the fix. It was simply never connected to the button it explains.
+ *
+ *  It is now: the disabled `Issue quote` carries `aria-describedby` pointing at
+ *  this row, so assistive technology reads the action and the reason as one
+ *  thing, exactly as it did when they were stacked in the footer.
+ *
+ *  Blockers are a QUEUE, not a list. It states the leading one with the control
+ *  that clears it, and counts the rest; as each clears the next surfaces. That
+ *  is how the work is actually done, and it keeps the row at one line. */
+export function BlockerRow({ on, onToggle, onDelivery, blockers }: {
+  on: boolean;
+  onToggle: () => void;
+  onDelivery: () => void;
+  /** Ordered. The first is the one this row acts on. */
+  blockers: { key: string; text: string; action: string }[];
+}) {
+  if (blockers.length === 0) {
+    return (
+      <button type="button" className="filterrow" aria-pressed={on} onClick={onToggle}>
+        <span className="fr-dot fr-clear" aria-hidden="true" />
+        <span className="fr-text">Nothing is blocking this quote</span>
+        <span className="fr-act">{on ? "show all" : ""}</span>
+      </button>
+    );
+  }
+  const lead = blockers[0];
+  const rest = blockers.length - 1;
+  return (
+    <button type="button" id="issue-blocker" className="filterrow"
+      aria-pressed={lead.key === "unpriced" ? on : undefined}
+      onClick={lead.key === "unpriced" ? onToggle : onDelivery}>
+      <span className="fr-dot" aria-hidden="true" />
+      <span className="fr-text">
+        {on && lead.key === "unpriced" ? `Showing the ${RECORD.unpricedCount} lines with no rate` : lead.text}
+        {rest > 0 && <span className="fr-more"> · +{rest} more</span>}
+      </span>
+      <span className="fr-act">{on && lead.key === "unpriced" ? "show all" : lead.action}</span>
+    </button>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE LINES TAB
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** The xs square elevation leads every row, so the list is scannable by SHAPE
+ *  before a word is read.
+ *
+ *  Two things this review took out of the row:
+ *   • the flag SENTENCE ("!Glazing does not meet the requirement on this
+ *     elevation") — "it pollutes the screen. Highlight is enough." The row keeps
+ *     the warning rule down its leading edge and its `needs review` badge; the
+ *     sentence lives on the line itself, where the fix is.
+ *   • "ex GST" under every price — see ui.tsx. */
+export function LineList({
+  lines, selectedId, dense, onPick,
+}: {
+  lines: Line[];
+  selectedId: string | null;
+  dense?: boolean;
+  onPick: (id: string) => void;
+}) {
+  if (lines.length === 0) {
+    return (
+      <IonItem lines="none">
+        <IonLabel className="ion-text-wrap">
+          <p>No lines without a rate. Clear the filter to see all {LINES.length}.</p>
+        </IonLabel>
+      </IonItem>
+    );
+  }
+  return (
+    <IonList lines="full" className={dense ? "ion-no-padding" : undefined}>
+      {lines.map((l) => (
+        <IonItem key={l.id} button detail={false} onClick={() => onPick(l.id)}
+          aria-current={selectedId === l.id ? "true" : undefined}
+          color={selectedId === l.id ? "light" : undefined}
+          className={l.state === "needs review" ? "needs-review" : undefined}>
+          <span className="rowelev" slot="start">
+            <Elevation op={l.op} widthMm={l.widthMm} heightMm={l.heightMm}
+              parts={l.parts} axis={l.axis} size="xs" square className="elev" />
+          </span>
+          <IonLabel className="ion-text-wrap">
+            <span className="linebody">
+              <span className="l1">
+                <span className="code mono">{l.code}</span>
+                <span className="prod">{l.product}{l.withdrawn ? " — withdrawn from sale" : ""}</span>
+              </span>
+              {/* POINT 4 — the customer's note is NOT in the row.
+                  Established rather than assumed: the field is
+                  `quote_line.room_label` (migrations/0001_customer_core.sql:88,
+                  plain TEXT), whose own schema comment already calls it
+                  "Note"; it is labelled "Note (optional)" to the CUSTOMER
+                  (ItemComposer.tsx:428) who types it free-form; and it is
+                  bounded at NOTE_MAX = 500 characters (configurator.ts:327),
+                  enforced client and server. Five hundred characters is a
+                  paragraph, not a room name — "Ensuite" is the lucky case, not
+                  the contract. It cannot be in a scannable row at any length. */}
+              <span className="meta">
+                {l.widthMm > 0 ? `${mm(l.heightMm)} × ${mm(l.widthMm)} mm` : "size not read"}
+                {/* D4 — no quantity. It is retired: nothing creates a
+                    multi-quantity line any more. The unit count below is
+                    qtyPerParent, a different concept that also prints as xN and
+                    is NOT retired. */}
+                {l.parts ? ` · ${l.parts.reduce((n, p) => n + (p.qty ?? 1), 0)} joined units` : ""}
+              </span>
+            </span>
+          </IonLabel>
+          <div slot="end" className="rowend">
+            <Money cents={l.priceCents} absent="no rate" />
+            {l.state === "needs review" && <IonBadge color="warning">needs review</IonBadge>}
+          </div>
+        </IonItem>
+      ))}
+    </IonList>
+  );
+}
+
+/** The totals panel at the end of the list, which the owner called out as
+ *  working. Two changes and no more.
+ *
+ *  "estimate" is gone — his instruction, and the glossary agrees: the word is on
+ *  Quote's own _Avoid_ line because the estimator is a different concept, so it
+ *  was ambiguous as well as unwanted.
+ *
+ *  DELIVERY IS A REVIEWABLE ROW HERE, and this is the argument for the placement.
+ *  The instinct was the Project tab; the reasoning points here. Delivery is not a
+ *  setting to configure, it is a figure ops confirms and most likely updates
+ *  before the quote goes out — "functionally, it is no different from the line
+ *  review process". Three places were possible:
+ *
+ *    • In the Lines list as a row. Refused: a Line is "one configured opening"
+ *      in the glossary. A delivery row there would have no drawing, no size, no
+ *      per-line actions, would break the `Lines · 18` count and would put a
+ *      non-opening in the filmstrip of openings.
+ *    • On the Project tab. Refused: that is where a project's standing facts
+ *      live. Delivery is money on this quote, and filing it beside Files and
+ *      History puts it away from every other figure it is added to.
+ *    • HERE, in the totals panel. Taken: it is already where delivery appears,
+ *      it is where money is read, and it is what you reach after working down
+ *      the eighteen lines — so the review sequence is lines, then delivery, then
+ *      the total, in the order the eye already travels. The row carries a state
+ *      and opens the same kind of small editing surface a line does. */
+
+export function Totals({ onReviewDelivery }: { onReviewDelivery: () => void }) {
+  const confirmed = DELIVERY.finalCents !== null;
+  const shown = confirmed ? DELIVERY.finalCents : DELIVERY.proposedCents;
+  const missing = DELIVERY.proposedCents === null && !confirmed;
+  return (
+    <div className="totals">
+      <dl>
+        <dt>Goods</dt>
+        <dd><Money cents={RECORD.goodsCents} /></dd>
+
+        <dt>Delivery</dt>
+        <dd>
+          <button type="button" className="delivery-row" onClick={onReviewDelivery}
+            aria-label={missing ? "Delivery has no figure. Set it."
+              : `Delivery ${confirmed ? "confirmed" : "not confirmed yet"}. Change it.`}>
+            {missing
+              /* An error, drawn as one, and the interface is not built around it. */
+              ? <span className="d-missing">no figure — set it</span>
+              : <>
+                  <Money cents={shown} />
+                  {!confirmed && <span className="d-state">not confirmed</span>}
+                </>}
+            <IonIcon icon={chevronForward} aria-hidden="true" />
+          </button>
+        </dd>
+
+        <dt className="tot">Project total</dt>
+        <dd className="tot"><Money cents={RECORD.totalCents} /></dd>
+      </dl>
+      <p className="totals-basis">All figures {RECORD.gstMode} · this account's setting</p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PROJECT TAB   (was "Job")
+   CONTEXT.md puts "job" on Project's explicit _Avoid_ line, so the rename was
+   owed on vocabulary grounds regardless of taste.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Every row states a real fact rather than a category name. Push rows at every
+ *  width — move 1 only, no disclosure. */
+export function ProjectBlocks({ current, onOpen }: {
+  current?: string;
+  onOpen: (key: string) => void;
+}) {
+  const sub: Record<string, { text: string; absent?: boolean }> = {
+    progress: { text: `${RECORD.stateLabel} · waiting on ${RECORD.waitingOn} · ${RECORD.daysInState} days` },
+    payments: PAYMENTS.received.length === 0
+      ? { text: "Nothing received · 2 expected", absent: true }
+      : { text: `${PAYMENTS.received.length} received` },
+    files: { text: `${FILES.length} files · ${FILES.filter((f) => f.scan !== "clean").length} not downloadable yet` },
+    history: { text: `${HISTORY.length} events · last Tue 09:24` },
+    notes: { text: `${PROJECT_NOTES.length} notes on this project` },
+  };
+  return (
+    <IonList lines="full">
+      {PROJECT_BLOCKS.map((b) => (
+        <IonItem key={b.key} button detail={false} onClick={() => onOpen(b.key)}
+          aria-current={current === b.key ? "true" : undefined}
+          color={current === b.key ? "light" : undefined}>
+          <IonLabel className="ion-text-wrap">
+            <span className="pb-name">{b.name}</span>
+            <p className={sub[b.key].absent ? "absent" : undefined}>{sub[b.key].text}</p>
+          </IonLabel>
+          <IonIcon slot="end" icon={chevronForward} color="medium" aria-hidden="true" />
+        </IonItem>
+      ))}
+    </IonList>
+  );
+}
+
+const PHASES = ["Received", "Estimating", "Technical review", "Quoted", "Ordered", "Delivered"];
+
+function Progress() {
+  const [withMfr, setWithMfr] = useState(false);
+  return (
+    <div className="section">
+      {/* The ribbon's placement was called good; it stays exactly here. Six
+          phases at 320px would be ~560px in one row, so it WRAPS. */}
+      <div className="ribbon" role="img" aria-label="Phase 3 of 6, Technical review">
+        {PHASES.map((p, i) => (
+          <span key={p} className={"cell" + (i < 2 ? " passed" : i === 2 ? " current" : "")}>{p}</span>
+        ))}
+      </div>
+      <dl className="kv">
+        <div><dt>Waiting on</dt><dd>{withMfr ? "The manufacturer" : "Us"}</dd></div>
+        <div><dt>In this phase</dt><dd>{RECORD.daysInState} days · since Tue 09:05</dd></div>
+        <div><dt>Moved here by</dt><dd>Gedas</dd></div>
+      </dl>
+      {/* D10 — "with manufacturer" is orthogonal to phase and is the only
+          waitingOn value a human sets rather than one derived from lifecycle. A
+          switch, therefore, not a phase step. See the report: waiting on a
+          COURIER is the same shape, which is an argument for generalising this
+          rather than adding a second flag. */}
+      <IonItem lines="none" className="flush">
+        <IonToggle checked={withMfr} onIonChange={(e) => setWithMfr(e.detail.checked)}>
+          Waiting on the manufacturer
+        </IonToggle>
+      </IonItem>
+      <IonNote className="fact basis">
+        Shows in the queue and on the attention surface. It does not change the phase.
+      </IonNote>
+      <div className="block-act">
+        <IonButton expand="block">Move to Quoted</IonButton>
+        <IonNote className="fact basis">Nothing is locked — you can move it back.</IonNote>
+      </div>
+    </div>
+  );
+}
+
+function Payments() {
+  return (
+    <div className="section">
+      <dl className="kv">
+        <div><dt>Order no.</dt><dd>{PAYMENTS.orderNo} · appears on invoices</dd></div>
+      </dl>
+      <h3 className="sub-h">Received</h3>
+      {PAYMENTS.received.length === 0 && <p className="absent">Nothing received yet.</p>}
+      <h3 className="sub-h">Expected</h3>
+      <ul className="rows">
+        {PAYMENTS.expected.map((p) => (
+          <li key={p.what}>
+            <span className="r-name">{p.what}</span>
+            <span className="r-when">{p.when}</span>
+            <Money cents={p.cents} />
+          </li>
+        ))}
+      </ul>
+      <div className="block-act">
+        <IonButton expand="block">Record a payment</IonButton>
+        <IonNote className="fact basis">
+          Recording a payment here does not send anything to the customer.
+        </IonNote>
+      </div>
+    </div>
+  );
+}
+
+/** POINT 2 / D2 — files are downloadable from the list, and the controls ACT.
+ *
+ *  "files should be downloadable from the list, not just listed." The gap is on
+ *  the record specifically: register row 150 records the current record's Files
+ *  block as "filename + size or raw status word; no download, no kind, no dates,
+ *  no rescan". All four are carried, not a subset.
+ *
+ *  D2: R1c shipped Download as `href="#"` and Rescan with no handler, while the
+ *  report claimed the behaviour was carried. A control he taps to evaluate must
+ *  demonstrate its outcome, so both do now — and what they demonstrate agrees
+ *  with the real endpoint rather than a more generous fiction:
+ *
+ *    `GET /files/:id/download` serves `clean` ONLY, and answers 403 on
+ *    `quarantined`, 409 on `scan_pending` (register row 206).
+ *
+ *  So the download control is not rendered at all unless the file is clean.
+ *  That is deliberate: an enabled button whose server answers 403 is a worse
+ *  design than no button plus a sentence saying why. The gating is structural
+ *  here, not a check inside a handler that could drift from the endpoint.
+ *
+ *  `POST /files/:id/rescan` is register row 205, and its DEFECT — failure
+ *  swallowed — is the one thing not carried. A rescan here moves the row through
+ *  `pending` to a verdict and states the verdict either way, including when it
+ *  is still quarantined.
+ *
+ *  Honest about the mock: the download is acknowledged, no bytes transfer. */
+function scanCopy(f: FileRow) {
+  if (f.scan === "pending") return "Being checked for viruses. Download opens when it passes.";
+  if (f.scan === "quarantined") return "Quarantined by the virus check. Download is blocked.";
+  return null;
+}
+
+function FileItem({ f, onDownload, onRescan }: {
+  f: FileRow;
+  onDownload: (f: FileRow) => void;
+  onRescan: (f: FileRow) => void;
+}) {
+  const note = f.outcome ?? scanCopy(f);
+  return (
+    <li>
+      <span className="r-name">{f.name}</span>
+      <span className="r-when">{f.kind} · {f.size} · {f.when} · {f.who}</span>
+      {note && (
+        <span className={"f-note" + (f.scan === "quarantined" ? " bad" : "")}>{note}</span>
+      )}
+      <span className="f-act">
+        {/* clean only. The 403 and 409 cases get a sentence, not a button that
+            fails after the tap. */}
+        {f.scan === "clean" && (
+          <IonButton size="small" fill="outline" onClick={() => onDownload(f)}>
+            <IonIcon slot="start" icon={download} aria-hidden="true" />
+            Download
+          </IonButton>
+        )}
+        {f.scan === "pending" && (
+          /* Inert, not faded (rule A1b). The row's own copy is the reason. */
+          <IonButton size="small" fill="outline" className="inert" disabled>Checking</IonButton>
+        )}
+        {f.scan === "quarantined" && (
+          <IonButton size="small" fill="outline" color="danger"
+            onClick={() => onRescan(f)}>Rescan</IonButton>
+        )}
+      </span>
+    </li>
+  );
+}
+
+function Files() {
+  const [files, setFiles] = useState<FileRow[]>(FILES);
+  const [toast, setToast] = useState<string | null>(null);
+  const rescans = useRef<Record<string, number>>({});
+
+  const patch = (name: string, next: Partial<FileRow>) =>
+    setFiles((cur) => cur.map((f) => (f.name === name ? { ...f, ...next } : f)));
+
+  const onDownload = (f: FileRow) => {
+    /* Mirrors the endpoint's own guard rather than trusting the caller. If this
+       ever disagrees with what is rendered, the sentence is what the operator
+       sees, not a silent no-op. */
+    if (f.scan !== "clean") {
+      setToast(f.scan === "quarantined"
+        ? `${f.name} is quarantined — download refused.`
+        : `${f.name} is still being checked — download not open yet.`);
+      return;
+    }
+    setToast(`Download started — ${f.name} (${f.size})`);
+  };
+
+  const onRescan = (f: FileRow) => {
+    patch(f.name, { scan: "pending", outcome: "Rescanning…" });
+    const n = (rescans.current[f.name] = (rescans.current[f.name] ?? 0) + 1);
+    window.setTimeout(() => {
+      /* Both verdicts are reachable, because both are real. The first rescan of
+         an infected file usually finds it again — that is the case row 205
+         currently swallows, so it is the one shown first. */
+      if (n < 2) {
+        patch(f.name, { scan: "quarantined", outcome: "Rescan finished — still quarantined. Download stays blocked." });
+        setToast(`Rescan finished — ${f.name} is still quarantined.`);
+      } else {
+        patch(f.name, { scan: "clean", outcome: "Rescan finished — clean. Download is open." });
+        setToast(`Rescan finished — ${f.name} is clean.`);
+      }
+    }, 1400);
+  };
+
+  const source = files.filter((f) => f.source);
+  const rest = files.filter((f) => !f.source);
+  return (
+    <div className="section">
+      <h3 className="sub-h">The schedule this project came from</h3>
+      <ul className="rows files">
+        {source.map((f) => (
+          <FileItem key={f.name} f={f} onDownload={onDownload} onRescan={onRescan} />
+        ))}
+      </ul>
+      <h3 className="sub-h">Attached since</h3>
+      <ul className="rows files">
+        {rest.map((f) => (
+          <FileItem key={f.name} f={f} onDownload={onDownload} onRescan={onRescan} />
+        ))}
+      </ul>
+      <div className="block-act">
+        <IonButton expand="block">Add a file</IonButton>
+        <IonNote className="fact basis">
+          Every upload is virus-checked before it can be downloaded. A rescan that
+          fails says so; it does not fail quietly. In this mock the download is
+          acknowledged but no file transfers.
+        </IonNote>
+      </div>
+      <IonToast isOpen={!!toast} message={toast ?? ""} duration={2600}
+        onDidDismiss={() => setToast(null)} />
+    </div>
+  );
+}
+
+function History() {
+  return (
+    <div className="section">
+      <ul className="rows trail">
+        {HISTORY.map((h, i) => (
+          <li key={i}>
+            <span className="r-name">{h.what}</span>
+            <span className="r-when">{h.who} · {h.when}</span>
+          </li>
+        ))}
+      </ul>
+      <IonNote className="fact basis">
+        Entity, action, actor and time. It is a record, not an undo — nothing here
+        can be reversed from this screen.
+      </IonNote>
+    </div>
+  );
+}
+
+/** POINT 3 — "Add a note" should add a note.
+ *
+ *  "Add a note - should add a note, and title should be shorter. Inline form?"
+ *
+ *  Right on both counts. A button labelled "Add a note to this project" that
+ *  opens something else is a label pretending to be an action, and it was the
+ *  longest string on the block. A note is two lines of text — there is nothing
+ *  to open.
+ *
+ *  So the composer IS the affordance and it sits at the top of the notes, where
+ *  the notes are and where the eye lands: type, press Add, and the new note
+ *  appears directly beneath. The heading is one word.
+ *
+ *  This is deliberately NOT applied to the block's siblings. "Add a file" opens
+ *  a file picker and "Record a payment" needs an amount, a date and a method —
+ *  both genuinely go somewhere, so a button that says so is honest. The rule is
+ *  "an affordance that can complete in place should", not "no buttons". */
+function Notes() {
+  const [draft, setDraft] = useState("");
+  const [notes, setNotes] = useState(PROJECT_NOTES);
+  const add = () => {
+    const body = draft.trim();
+    if (!body) return;
+    setNotes([{ who: "Gedas \u00b7 just now", body }, ...notes]);
+    setDraft("");
+  };
+  return (
+    <div className="section">
+      <h3 className="sub-h">New note</h3>
+      <div className="composer">
+        <IonTextarea
+          aria-label="New note on this project"
+          placeholder="What should the next person know?"
+          autoGrow rows={2} value={draft}
+          onIonInput={(e) => setDraft(String(e.detail.value ?? ""))} />
+        <div className="composer-act">
+          <IonNote className="fact basis">On the project, not on a line.</IonNote>
+          <IonButton size="small" disabled={!draft.trim()} onClick={add}>Add</IonButton>
+        </div>
+      </div>
+
+      <h3 className="sub-h">{notes.length} {notes.length === 1 ? "note" : "notes"}</h3>
+      {notes.map((n, i) => (
+        <div key={i} className="note-item">
+          <div className="who">{n.who}</div>
+          <div className="body">{n.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProjectBlockBody({ block }: { block: string }) {
+  if (block === "progress") return <Progress />;
+  if (block === "payments") return <Payments />;
+  if (block === "files") return <Files />;
+  if (block === "history") return <History />;
+  return <Notes />;
+}
+
+export const blockName = (key: string) =>
+  PROJECT_BLOCKS.find((b) => b.key === key)?.name ?? key;
+
+/** The project list — the record's parent.
+ *
+ *  It exists because the record is NEVER the root: "even if we don't have it
+ *  yet, the navigation should not be missing." This screen is also where the
+ *  drawer opener lives; see App.tsx for why it is here and not on the record. */
+export function ProjectList({ onOpen }: { onOpen: (ref: string) => void }) {
+  return (
+    <IonList lines="full">
+      {PROJECTS.map((p) => (
+        <IonItem key={p.ref} button detail={false} onClick={() => onOpen(p.ref)}>
+          <IonLabel className="ion-text-wrap">
+            <span className="linebody">
+              <span className="l1">
+                <span className="code mono">{p.ref}</span>
+                <span className="prod">{p.title}</span>
+              </span>
+              <span className="meta">{p.customer} · {p.phase} · waiting on {p.waitingOn}</span>
+            </span>
+          </IonLabel>
+          <div slot="end" className="rowend">
+            <Money cents={p.totalCents} absent="not priced" />
+            {p.flagged && <IonBadge color="warning">needs review</IonBadge>}
+          </div>
+        </IonItem>
+      ))}
+    </IonList>
+  );
+}
