@@ -11,7 +11,9 @@ import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
-import { drawingSuffix, VIEWER_FROM_RECORD } from "./lineRoute";
+import { WhyPanel } from "./WhyPanel";
+import { useLineRationale } from "./useLineRationale";
+import { drawingSuffix, VIEWER_FROM_RECORD, WHY_SUFFIX, WHY_FROM_LINE } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
   ageLabel, cornerFigure, money, needsAttention, otherActions, pendingPrimary,
@@ -105,6 +107,13 @@ export function ProjectRecordPage() {
   // what IS shown, and to nothing when the filter leaves nothing — the canvas
   // then says so rather than holding a stale drawing (P2-AC-5).
   const selected = shown.find((l) => l.id === selectedLineId) ?? shown[0] ?? null;
+  // THE CANVAS ASKS THE SAME QUESTION THE LINE PAGE ASKS, through the same hook
+  // and the same staff-gated endpoint — for a line id this page's own record
+  // fetch already returned. Only at the desk, and only when a line is under
+  // review: on the phone the canvas does not exist, and a request for a panel
+  // nobody can see is a request nobody asked for.
+  const { load: canvasWhy, reload: reloadCanvasWhy } =
+    useLineRationale(id, selected?.id ?? "", wide && !!selected && !record?.orderNo);
 
   const run = async (action: RecordAction) => {
     if (!record) return;
@@ -440,10 +449,32 @@ export function ProjectRecordPage() {
                           The drawing viewer is wired here because VIEW-AC-5
                           says every enlargeable drawing opens it; no criterion
                           says the same about the panel. */}
+                      {/* THE PANEL IS HERE NOW, and the null it replaces was
+                          raised rather than assumed: "NO 'WHY THIS PRODUCT' ON
+                          THE CANVAS, and the null is deliberate rather than
+                          forgotten … Wiring it is a real decision about this
+                          surface". The owner took it — "not tested yet. but
+                          yes." — which also supersedes WHY-AC-43/D21, the
+                          ruling that this canvas shows no panel and issues no
+                          rationale request.
+
+                          ITS DOOR GOES TO THE LINE'S OWN `/why` ADDRESS, which
+                          is the same one door the line page opens (the route
+                          grammar allows exactly one). So the detail is the
+                          line's, reached from wherever the reader was, and
+                          back returns here. */}
                       <LineReview
                         line={selected}
                         onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
-                        why={null}
+                        why={(
+                          <WhyPanel
+                            load={canvasWhy}
+                            onOpen={() => history.push(
+                              linePath(selected.id) + WHY_SUFFIX, WHY_FROM_LINE,
+                            )}
+                            reload={reloadCanvasWhy}
+                          />
+                        )}
                       />
                     </>
                   ) : (

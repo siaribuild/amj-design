@@ -76,9 +76,19 @@ export function LinePage() {
   const isOrder = !!record && record.orderNo != null;
   const { load: rationale, reload: reloadRationale } = useLineRationale(id, lineId, !!line && !isOrder);
   // WHICH ADDRESSES THIS LINE SERVES, both of them, answered in one place.
-  // `/why` behind a line whose rationale has no detail is the same class of
-  // address as a unit ordinal this line does not have — see `./lineRoute.ts`.
-  const hasWhy = rationale.status === "ready" && rationale.dto.kind === "recommendation";
+  // `/why` behind a line with no rationale AT ALL is the same class of address
+  // as a unit ordinal this line does not have — see `./lineRoute.ts`.
+  //
+  // IT USED TO ALSO REQUIRE `kind === "recommendation"`, and that was the third
+  // place one rule lived: `panelCopy` withheld the door, `WhyDetail` refused to
+  // render, and this refused the address. Reported as "Why This product - is not
+  // clickable, does not lead to more detailed view, does not have '>'", and the
+  // owner's ruling was for exactly this reason — "for consistency and less
+  // 'what-if' scenarios in the code". Fixing two of the three would have given
+  // a door that changed the URL and opened nothing, which is worse than no
+  // door: every kind now has a detail, so a resolved rationale is a served
+  // address, whatever it resolved to.
+  const hasWhy = rationale.status === "ready";
 
   const route = parseLineRoute(
     lineSuffixOf(location.pathname),
