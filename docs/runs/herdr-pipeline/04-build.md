@@ -350,3 +350,20 @@ holdReason undefined. `holdRecord` is now the one place a hold is written —
 `holdWarm` (blocked) and `runClaude` (decisions) — and a held stage gives up
 `code`, because it is not a finished stage. Stub: `HERDR_STUB_TRANSCRIPT`
 writes a transcript for the id a fresh boot is given.
+
+## fixes — N1, N2, N3, F6
+
+- **N2** (test only, mutation-proven): `answer` on a held `review-*` label
+  reaches `afterStage`, where the round-1 regression (`STAGES.find` for
+  `stageSpec`) dies on `spec.gate`. The build-task test never got there —
+  `finished` returns first for `build-*`. Reverting the line now reddens.
+- **N3** (test only, mutation-proven both ways): `source:'codex'` is a measured
+  zero; `source:'none'` is unknown. Tightening *or* loosening `metered()` now
+  reddens.
+- **F6**: `'unknown'` is 7 chars and the turns column was 7 wide, so the
+  unmetered row printed `unknownunknown`. Figure columns widened to 9,
+  separator 55 → 57.
+- **N1**: `02-design.md` traceability split `12-15` into `12, 13, 15` plus a
+  `14 = OPEN GAP` row, with the measurement (`agent_not_idle`, alternate-screen
+  scrollback) and the note that the owner can still see a pane; the conductor
+  cannot. The inverting reasoning is recorded as withdrawn, not deleted.
