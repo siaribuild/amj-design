@@ -228,7 +228,9 @@ it representative.`,
   },
   {
     id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
-    needs: ['02-tasks.json'], produces: ['04-build.md'],
+    // Not 02-tasks.json: the fix tier has no architect to write one, and for
+    // the full tier runBuild gives a better message about its absence.
+    needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
     id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true, tiers: ['full'],
@@ -795,27 +797,46 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
 // is the one loop in the file that must never become a fan-out.
 async function runBuild(run, spec, panes) {
   const tp = join(RUNS, run.slug, '02-tasks.json')
-  if (!existsSync(tp)) die('design produced no 02-tasks.json - re-run:  conduct run design')
-  const tasks = JSON.parse(readFileSync(tp, 'utf8'))
+  // The fix tier collapses spec and design to nothing, so nobody sliced this
+  // build: the ask IS the task, and it is ONE developer session. Still
+  // test-first - Probity does not care which tier a change was sized at.
+  const tasks = existsSync(tp) ? JSON.parse(readFileSync(tp, 'utf8'))
+    : run.tier === 'fix'
+      ? [{
+          id: 't1',
+          title: 'the ask in ' + run.dir + '/00-ask.md',
+          done_when: 'the ask is satisfied, by a test that failed before the fix and passes after',
+        }]
+      : die('design produced no 02-tasks.json - re-run:  conduct run design')
   const done = new Set(run.tasksDone || [])
   for (const t of tasks) {
     if (done.has(t.id)) { process.stdout.write('  . ' + t.id + ' already done\n'); continue }
     const blocked = (t.after || []).filter((d) => !done.has(d))
     if (blocked.length) die('task ' + t.id + ' needs ' + blocked.join(', ') + ' first')
+    // A task with no files was never sliced - that is the fix tier, which has no
+    // architect. It is given the ask and the boundary in words, not a list of
+    // paths that does not exist.
+    const scope = (t.files || []).length
+      ? `FILES - these are the only files you may touch. They were located for you;
+do NOT search the repo for them and do NOT widen the scope:
+${(t.files || []).map((f) => '  ' + f).join('\n')}
+
+TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
+      : `SCOPE - read the ask and fix exactly that:
+  ${run.dir}/00-ask.md
+
+Nobody sliced this one, so the boundary is yours to hold: change what the fix
+needs and nothing else. No drive-by refactors, no widening.`
     const prompt = `Implement ONE task, test-first. Nothing else.
 
 TASK ${t.id}: ${t.title}
 DONE WHEN: ${t.done_when}
 
-FILES - these are the only files you may touch. They were located for you;
-do NOT search the repo for them and do NOT widen the scope:
-${(t.files || []).map((f) => '  ' + f).join('\n')}
+${scope}
 
-TESTS: ${(t.tests || []).join(', ') || 'see the design'}
-
-CONTEXT - read these two, nothing more:
-  ${run.dir}/02-design.md
-  ${run.dir}/04-build.md   (if it exists - what earlier tasks already landed)
+CONTEXT - read these, nothing more:
+  ${run.dir}/02-design.md   (if it exists - what this was sliced from)
+  ${run.dir}/04-build.md    (if it exists - what already landed)
 
 Probity enforces TDD on worker/**, src/data/** and scripts/tests/**: write the
 failing test, watch it fail, then implement. Work with the guardrail.

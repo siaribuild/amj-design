@@ -1940,3 +1940,24 @@ test('a third verify/fix cycle is refused - what is still open is printed instea
   assert.match(capped('fix', 'one more thing', '--severity', 'high'), /CYCLE CAP/,
     'a fix round past the cap still spent a developer session')
 })
+
+test('a fix-tier build has no design to slice it, so it is ONE session against the ask', () => {
+  // The fix tier collapses spec and design to nothing - so there is no
+  // 02-tasks.json, and a build that insists on one makes the tier unstartable.
+  const s = paneRepo('tier-fix-build', 'sess-fix-build')
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  run.tier = 'fix'
+  writeFileSync(rj, JSON.stringify(run, null, 2))
+
+  paned(s, 'run', 'build')
+
+  const started = said(s.log, 'agent', 'start').map((a) => a[2])
+  assert.deepEqual(started, ['build-t1'], 'a bounded fix is one developer session: ' + started)
+  const prompt = readFileSync(join(s.root, 'docs', 'runs', 'demo', 'prompts', 'build-t1.txt'), 'utf8')
+  assert.match(prompt, /00-ask\.md/, 'the fix session was never told what the fix is')
+  assert.match(prompt, /test-first/, 'a fix tier is not an excuse to skip red-green')
+  assert.doesNotMatch(prompt, /located for you/,
+    'the sliced-build prompt promises exact paths this tier has none of')
+  assert.deepEqual(JSON.parse(readFileSync(rj, 'utf8')).tasksDone, ['t1'])
+})

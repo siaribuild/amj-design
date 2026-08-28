@@ -116,6 +116,10 @@ Four bounds, all in the conductor:
 | `fix` | `build` + `verify` only | a bounded fix whose correct behaviour is already unambiguous |
 | `direct` | nothing — refuses to create a run | typos, copy, comments, config values, formatting |
 
+In tier `fix` there is no architect, so nothing slices the build: `00-ask.md`
+*is* the task, and `build` is one developer session against it — still
+test-first, because Probity does not care what tier a change was sized at.
+
 Membership is declared on the stage (`tiers: [...]`), not written into `next` as
 a skip: a skip at the call site is invisible from the stage table and gets
 re-derived, differently, in `plan`. `review` is in tier `full` and cannot be
