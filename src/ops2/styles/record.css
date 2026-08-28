@@ -304,47 +304,15 @@ ion-toolbar.ops2-topbar--identity {
  * ONE BLOCK, the same object the queue's list is: rows with no gap between
  * them, a hairline between each pair, and the border, corners and elevation on
  * the group. */
+/* WHAT IS LEFT OF THIS SURFACE'S LIST: the card it composes, and nothing else.
+ * The block, the hairlines, the row's gutter, the wash and the leading edge all
+ * moved to `rows.css` when the three list surfaces became one component — and
+ * the flagged edge moved WITH the wash, onto the same element, which is the
+ * whole of the reported defect. `.rl-open`'s nine declarations and the
+ * `.lp-unit__open` pairing that shared them are gone from here for the same
+ * reason: they are the row now, not a thing two selectors agree about. */
 .rl-list {
   margin: 0 0 var(--theme-spacing-md);
-  padding: 0;
-  list-style: none;
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
-  box-shadow: var(--ds-layer-raised);
-  overflow: hidden;
-}
-.rl-row + .rl-row { border-top: 1px solid var(--ds-border-subtle); }
-/* HIGHLIGHT, NOT A SENTENCE. The leading edge marks a line the reviewer still
-   has to look at; the reasons are read on that line's own page, where the fix
-   is. Every reason as its own chip is what "it pollutes the screen" was about. */
-.rl-row[data-flagged="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
-
-/* THE WHOLE ROW IS ONE TARGET. One button filling it, opening that line's page
-   — no twisty, nothing that looks pressable and answers differently.
-
-   THE LINE PAGE'S UNIT ROWS ARE THE SAME OBJECT, so they are the same selector
-   rather than a second copy of these nine declarations: a row that fills its
-   li, opens what it names, and washes on hover. `line.css` overrides only the
-   four things a unit row does differently (it is a grid, and it carries a hit
-   floor); everything a reader would expect the two to share is stated once. */
-.rl-open,
-.lp-unit__open {
-  display: flex;
-  align-items: center;
-  gap: var(--theme-spacing-sm);
-  width: 100%;
-  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
-  background: none;
-  border: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .rl-open:hover,
-  .lp-unit__open:hover { background: var(--ds-color-brand-wash); }
 }
 
 /* The drawing leads, so the list is scannable by SHAPE before a word is read.
@@ -583,8 +551,3 @@ ion-toolbar.ops2-topbar--identity {
   color: var(--ds-text-muted);
 }
 
-/* The row the canvas is showing. A tint AND a leading edge, because a rail of
-   eighteen rows where one is a few per cent lighter is not a signal — and the
-   row also says `aria-current`, so it is not colour alone. */
-.rl-row[data-selected] { background: var(--ds-color-brand-wash); }
-.rl-row[data-selected] .rl-open { box-shadow: inset 3px 0 0 var(--ds-color-brand); }

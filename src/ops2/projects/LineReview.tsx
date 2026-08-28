@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Elevation } from "../../components/quote-project/Elevation";
+import { Row, RowList } from "../chrome/RowList";
 import { Plate } from "./Plate";
 import {
   joinedUnitCount, money, needsReview, priceState, provenanceWord, sizeText,
@@ -132,15 +133,17 @@ function Units({ line, onOpenDrawing }: {
     <section className="lp-panel lp-units" data-testid="line-units"
       aria-label={`The ${units.length} units of ${line.code}`}>
       <h2 className="lp-panel__title">Made as {units.length} units</h2>
-      <ul className="lp-units__list">
+      {/* THE SAME ROW THE QUEUE AND THE RECORD USE, and this list composes NO
+          card: it already sits inside `lp-panel`, and a card inside a card is a
+          card too many. It passes no `edge` either — a unit carries no status of
+          its own; its parent line does. */}
+      <RowList className="lp-units__list">
         {units.map((u, i) => (
-          <li key={`${u.id}-${i}`} className="lp-unit">
-            <button
-              type="button"
-              className="lp-unit__open"
-              data-testid="line-unit-open"
-              onClick={() => onOpenDrawing(i + 1)}
-            >
+          <Row
+            key={`${u.id}-${i}`}
+            pressTestId="line-unit-open"
+            onActivate={() => onOpenDrawing(i + 1)}
+          >
               {/* THE PURPOSE IS NAMED, AND THE ROW'S OWN WORDS SURVIVE. An
                   `aria-label` here would replace the unit's spec, its size and
                   the customer's note with four words — and that content exists
@@ -175,10 +178,9 @@ function Units({ line, onOpenDrawing }: {
                   </span>
                 )}
               </span>
-            </button>
-          </li>
+          </Row>
         ))}
-      </ul>
+      </RowList>
       {/* IT REPORTS AND NEVER VETOES. A composite whose units overshoot its
           opening is a real thing a reviewer decides about; a refusal here would
           decide it for them. */}

@@ -529,13 +529,16 @@ test("a row says who it waits on, in words and at its leading edge", async ({ pa
   await expect(rows.nth(1)).toContainText("Waiting on the customer · 7d");
   await expect(rows.nth(2)).toContainText("Waiting on nobody · 4d");
 
-  // The edge is a real rendered edge, per row, and it distinguishes. Read from
-  // inside the shadow root because that is where `ion-item` puts the element
-  // `::part(native)` names, and `getComputedStyle` on the host would report the
-  // host's own (absent) shadow instead.
+  // The edge is a real rendered edge, per row, and it distinguishes. Read off
+  // `.ops2-row__open` — the row's single pressable, which is where the shared
+  // component paints the edge, the wash and the selection tint TOGETHER so that
+  // no state can erase another. It used to be read from inside `ion-item`'s
+  // shadow root; the queue left IonItem when these three list surfaces became
+  // one component (ADR 0014), and reaching through a shadow boundary for this
+  // is the thing that stopped being necessary.
   const shadows = await rows.evaluateAll((els) => els.map((el) => {
-    const native = (el as HTMLElement).shadowRoot?.querySelector(".item-native");
-    return native ? getComputedStyle(native).boxShadow : "";
+    const press = (el as HTMLElement).querySelector(".ops2-row__open");
+    return press ? getComputedStyle(press).boxShadow : "";
   }));
   expect(shadows[0], "ours carries an edge").toContain("inset");
   expect(shadows[1], "theirs carries a different edge").toContain("inset");

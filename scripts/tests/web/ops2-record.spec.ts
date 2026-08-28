@@ -302,12 +302,18 @@ test("a blocked action is shown, refused, and says why beside itself", async ({ 
   // than emphasis. A blocked primary in the header and its reason at the foot
   // of the page would be two facts a reader has to join up; both live in the
   // band, one under the other.
-  await expect(page.getByTestId("record-attention")).toContainText("no rate");
+  // COPY AND PLACEMENT BOTH MOVED, on the owner's ruling after testing: the
+  // tinted band inside the header is gone and a pill in the page carries the
+  // count and the filter together ("drop the yellow bar altogether — it
+  // duplicates what the pill says"). The count is now the whole sentence,
+  // because the filter covers every line needing a person and not only the
+  // unpriced ones, so "no rate" would name a subset of what it shows.
+  await expect(page.getByTestId("record-attention")).toContainText("needs attention");
   await expect(page.getByTestId("record-blocked")).toHaveCount(0);
   const bandBox = (await page.locator(".ops2-page__band").boundingBox())!;
   const rowBox = (await page.getByTestId("record-attention").boundingBox())!;
-  expect(rowBox.y, "the reason sits inside the band with the control it refuses")
-    .toBeLessThan(bandBox.y + bandBox.height);
+  expect(rowBox.y, "the pill sits in the page, under the band it used to live in")
+    .toBeGreaterThanOrEqual(bandBox.y + bandBox.height - 1);
 });
 
 test("the panel offers only what this build can actually run", async ({ page }) => {
@@ -546,8 +552,8 @@ test("the blocker is stated once, not twice in two colours", async ({ page }) =>
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);
 
-  // The attention row is saying it, and it is the one carrying the weight.
-  await expect(page.getByTestId("record-attention")).toContainText("no rate");
+  // The pill is saying it, and it is the one carrying the weight.
+  await expect(page.getByTestId("record-attention")).toContainText("needs attention");
   await expect(page.getByTestId("record-blocked")).toHaveCount(0);
 
   // A refusal the attention row CANNOT express still gets said — it is not the

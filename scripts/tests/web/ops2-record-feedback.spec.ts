@@ -100,6 +100,58 @@ const token = (page: import("@playwright/test").Page, name: string) =>
     return value;
   }, name);
 
+test("FB-AC-1 — hovering a flagged row does not erase its leading edge", async ({ page }) => {
+  // THE REPORTED DEFECT, and the reason there is now one row component.
+  //
+  // "onHover on project detail list removed left highlighted border. Same issue
+  // existed in project list previously - are we reusing components here at
+  // all???" — the answer was no. The edge was an inset shadow on the `<li>` and
+  // the wash was a background on the `<button>` filling it; a child's background
+  // paints over a parent's inset shadow, so hovering erased the one mark saying
+  // the line needed a person. The queue had already hit this, fixed it in place
+  // and written down why, and the fix could not travel because nothing carried
+  // it between the two surfaces.
+  //
+  // Both are computed on `.ops2-row__open` now, so the assertion is that the
+  // hovered row has BOTH — not that it looks right, that the two facts survive
+  // together on one element.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line(),
+      line({ id: "l2", code: "W02", status: "technical_review", review: { size: "size outside the product range" } }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(RECORD);
+
+  const flagged = page.getByTestId("record-line").nth(1);
+  await expect(flagged).toHaveAttribute("data-edge", "warning");
+  const press = flagged.locator(".ops2-row__open");
+
+  const read = () => press.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { shadow: s.boxShadow, background: s.backgroundColor };
+  });
+
+  const rest = await read();
+  expect(rest.shadow).not.toBe("none");
+
+  await flagged.hover();
+  const hovered = await read();
+
+  // The wash arrived…
+  expect(hovered.background).not.toBe(rest.background);
+  // …and the edge is still there, unchanged. This is the assertion that failed
+  // before the extraction.
+  expect(hovered.shadow).toBe(rest.shadow);
+  expect(hovered.shadow).not.toBe("none");
+
+  // AND THE TWO ARE ON ONE ELEMENT, which is what makes the above structural
+  // rather than a happy accident of paint order.
+  const onRow = await flagged.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(onRow).toBe("none");
+});
+
 test("FB-AC-13 — the pill is drawn only when something needs a person, and it carries the filter", async ({ page }) => {
   // THE OWNER DELETED THE BAND THIS REPLACES, on sight: "the large pill-like
   // area that says '2 lines have no rate' is the solution — use that design and

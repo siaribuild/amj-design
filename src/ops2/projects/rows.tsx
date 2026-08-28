@@ -1,7 +1,8 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { IonIcon, IonItem, IonLabel, IonList } from "@ionic/react";
+import { IonIcon } from "@ionic/react";
 import { alertCircleOutline, eyeOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
+import { Row, RowList } from "../chrome/RowList";
 import { browserHref } from "../shellBase";
 import {
   ageLabel, nextActionOf, priceOf, rowFlags, waitingSentence,
@@ -113,20 +114,24 @@ function openFromRow(
 export function ProjectCards({ rows }: { rows: readonly ProjectQueueRow[] }) {
   const open = useOpenRow();
   return (
-    <IonList lines="none" className="pq-cards">
+    <RowList className="pq-cards ds-surface-card">
       {rows.map((row) => {
         const price = priceOf(row);
         const age = ageLabel(row, { short: true });
         return (
-          <IonItem
+          <Row
             key={row.id}
-            button
-            detail
+            // WHAT THE EDGE MEANS IS THIS SURFACE'S TO SAY. The shared row draws
+            // a mark; the queue decides it marks WHO OWES THE NEXT MOVE, which
+            // is deliberately not `flagged` — the chips already say what is
+            // wrong, and an edge that repeats a chip earns nothing.
+            edge={row.waitingOn === "Us" ? "warning" : row.waitingOn === "Customer" ? "info" : null}
+            // A card in this list NAVIGATES, which is why it alone carries one.
+            chevron
+            onActivate={() => open(row)}
             data-testid="queue-row"
             data-waiting={row.waitingOn}
-            onClick={() => open(row)}
           >
-            <IonLabel className="ion-text-wrap">
               <span className="pq-card">
                 <span className="pq-card__top">
                   <span className="pq-ref">{row.ref}</span>
@@ -147,11 +152,10 @@ export function ProjectCards({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 </span>
                 <Flags row={row} />
               </span>
-            </IonLabel>
-          </IonItem>
+          </Row>
         );
       })}
-    </IonList>
+    </RowList>
   );
 }
 

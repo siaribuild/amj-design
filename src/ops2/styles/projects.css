@@ -362,44 +362,29 @@ ion-modal.pq-sheet--side::part(content) {
  * ONE BLOCK, NOT A STACK OF CARDS. The owner's correction, and it is the same
  * surface the desk's table already is: rows with no space between them, the
  * group carrying the border, the corners and the elevation. So a row's leading
- * edge now runs against its neighbours rather than floating, which is what
- * makes a column of them read as one queue instead of five notices. */
+ * edge runs against its neighbours rather than floating, which is what makes a
+ * column of them read as one queue instead of five notices.
+ *
+ * THE ROW ITSELF IS `rows.css`'S NOW, and so is everything this block used to
+ * spend twenty lines on: the hairline, the wash, the leading edge, and Ionic's
+ * hover overlay being switched off so the wash and the edge could share an
+ * element. That last one was the fix for exactly the defect later reported
+ * against the RECORD's list — held here as a convention, it could not travel.
+ * Held as a component, it cannot fail to (ADR 0014).
+ *
+ * What is left is the block this list composes and the card's own grammar. */
 .pq-cards {
-  padding: 0;
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-surface);
-  box-shadow: var(--ds-layer-raised);
-  overflow: hidden;
 }
-.pq-cards ion-item {
-  --background: transparent;
-  /* IONIC'S HOVER OVERLAY IS OFF. It paints `.item-native::after` across the
-     whole native element — including the leading edge, which is an INSET shadow
-     on that same element — so hovering a row erased the one mark saying who it
-     is waiting on. The wash is painted as the native's own background instead
-     (below), and an inset shadow draws above its element's background, so the
-     edge survives. */
-  --background-hover-opacity: 0;
-  --padding-start: var(--theme-spacing-md);
-  --border-radius: 0;
-}
-/* The hairline belongs to the PAIR, not to either row — a rule drawn under one
-   row's bottom edge is a rule that row appears to own, and a leading accent
-   edge two pixels away from it then reads as a corner. */
-.pq-cards ion-item + ion-item { border-top: 1px solid var(--ds-border-subtle); }
-/* The wash, on the element that also draws the status edge. */
-.pq-cards ion-item:hover::part(native) { background: var(--ds-color-brand-wash); }
-/* The edge marks WAITING ON US — the row's headline status — and not `flagged`:
-   the chips already say what is wrong, and an edge that repeats a chip earns
-   nothing. Leading edge, never the bottom divider: a divider belongs to neither
-   of the two rows it separates, so it cannot say which one it means. */
-.pq-cards ion-item[data-waiting="Us"]::part(native) {
-  box-shadow: inset 3px 0 0 var(--ds-color-warning);
-}
-.pq-cards ion-item[data-waiting="Customer"]::part(native) {
-  box-shadow: inset 3px 0 0 var(--ds-color-info);
-}
+/* THE CARD KEEPS THE HEIGHT IT HAD. A queue card is taller than a line row and
+   always was — but the height came from `IonItem`'s label carrying Ionic's own
+   block margins, so leaving IonItem took ~20px off every row and the skeleton
+   went on promising the old shape (a 74px settle on four rows, which is what
+   `ops2-projects.spec.ts`'s skeleton test measures).
+   Restated as this surface's own padding: the row's MECHANISM changed, its size
+   did not. */
+.pq-cards .ops2-row__open { padding-block: 17px; }
+
 .pq-card { display: grid; gap: 2px; width: 100%; min-width: 0; padding-block: var(--theme-spacing-2xs); }
 .pq-card__top, .pq-card__bottom {
   display: flex; align-items: baseline; justify-content: space-between;
