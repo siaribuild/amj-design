@@ -241,63 +241,6 @@ test("a composite is drawn from its units, along its own axis", () => {
   assert.equal(M.unitLabel("W04", 2), "W04C");
 });
 
-test("the attention row is a queue, and every empty case says a different thing", () => {
-  // P1-AC-15 … P1-AC-21. A list of eighteen openings with two unpriced is a
-  // SCANNING problem, and the answer is a filter rather than a flag on every
-  // row. Blockers are a QUEUE: the row states the leading one with the control
-  // that clears it and counts the rest, so it stays one line and the next
-  // surfaces as each clears.
-  const unpriced = M.parseProjectRecord(body({
-    lines: [line(), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" }),
-      line({ id: "l3", code: "W03", lineTotal: null, status: "draft" })],
-    delivery: { amount: 420, settled: true, estimate: 400 },
-  }));
-  const lead = M.attentionFor(unpriced);
-  assert.equal(lead.kind, "blockers");
-  assert.equal(lead.lead.key, "unpriced");
-  assert.equal(lead.lead.count, 2);
-  assert.equal(lead.lead.text, "2 lines have no rate");
-  assert.equal(lead.lead.action, "show only these");
-  assert.equal(lead.more, 0);
-
-  // LINES LEAD OVER DELIVERY, for the reason worker/lib/ops-actions.ts already
-  // gives about the gate: surfacing the trivial blocker while hiding the
-  // substantial one trains people to distrust it.
-  const both = M.parseProjectRecord(body({
-    lines: [line(), line({ id: "l2", lineTotal: null, status: "draft" })],
-    delivery: { amount: null, settled: false, estimate: 400 },
-  }));
-  const queue = M.attentionFor(both);
-  assert.equal(queue.lead.key, "unpriced");
-  assert.equal(queue.lead.text, "1 line has no rate");
-  assert.equal(queue.more, 1, "the rest are counted, not listed");
-
-  // A BLOCKER THIS BUILD CANNOT ACT ON CARRIES NO CONTROL. There is no delivery
-  // screen in ops2 to send anyone to, and a control wired to nothing is the
-  // defect this effort has recorded four times.
-  const deliveryOnly = M.attentionFor(M.parseProjectRecord(body({
-    lines: [line()], delivery: { amount: null, settled: false, estimate: 400 },
-  })));
-  assert.equal(deliveryOnly.lead.key, "delivery");
-  assert.equal(deliveryOnly.lead.text, "Delivery has not been set");
-  assert.equal(deliveryOnly.lead.action, null);
-  assert.equal(deliveryOnly.more, 0);
-
-  // Nothing blocking says so…
-  assert.deepEqual(M.attentionFor(M.parseProjectRecord(body({ lines: [line()] }))),
-    { kind: "clear", text: "Nothing is blocking this quote" });
-
-  // …and a record with NO LINES does not claim nothing blocks it, which would
-  // be false: a quote with no lines cannot be issued (worker/lib/issue.ts).
-  assert.deepEqual(M.attentionFor(M.parseProjectRecord(body({ lines: [] }))),
-    { kind: "no-lines", text: "No lines on this project yet" });
-
-  // The filter itself, and the empty it can produce — which is a sentence with
-  // the way back, never a blank list.
-  assert.deepEqual(M.visibleLines(unpriced, true).map((l) => l.code), ["W02", "W03"]);
-  assert.equal(M.visibleLines(unpriced, false).length, 3);
-  assert.deepEqual(M.visibleLines(M.parseProjectRecord(body({ lines: [line()] })), true), []);
-});
 
 test("FB-AC-21 — the filter means everything requiring attention, not just no rate", () => {
   // OWNER, Q4: "everything requiring attention". The filter narrowed to lines
@@ -418,43 +361,6 @@ test("the header's corner keeps a figure and names what is missing", () => {
   }), { amount: 7000, caveat: null });
 });
 
-test("the attention queue and the server's gate cannot disagree", () => {
-  // A GUARD OVER CODE THAT IS CURRENTLY CORRECT, said plainly rather than
-  // implied: there was no red phase for it.
-  //
-  // Two vocabularies read the same facts. `worker/lib/issue.ts` decides whether
-  // the quote CAN ISSUE and `ops-actions.ts` speaks one sentence about it; this
-  // file decides WHICH LINES need the reviewer and speaks a queue with a count.
-  // They are different shapes, and the danger is that they drift into
-  // disagreeing on screen — a record saying "Nothing is blocking this quote"
-  // above a disabled primary refusing it for a line with no rate.
-  //
-  // So: a record the queue calls CLEAR must carry no lines-or-delivery refusal,
-  // and one the queue calls blocked must carry the matching refusal.
-  const gated = (over, blockedReason) => M.parseProjectRecord(body({
-    ...over,
-    actions: [{ id: "issue-quote", label: "Issue reviewed quote", tier: "primary", blockedReason }],
-  }));
-  const mentionsLinesOrDelivery = (reason) => /line|deliver/i.test(reason ?? "");
-
-  const clear = gated({ lines: [line()] }, undefined);
-  assert.equal(M.attentionFor(clear).kind, "clear");
-  assert.equal(mentionsLinesOrDelivery(M.primaryAction(clear).blockedReason), false);
-
-  const unpriced = gated(
-    { lines: [line({ lineTotal: null, status: "draft" })] },
-    "1 line is unpriced or in technical review — this quote cannot be issued until it is resolved.",
-  );
-  assert.equal(M.attentionFor(unpriced).lead.key, "unpriced");
-  assert.match(M.primaryAction(unpriced).blockedReason, /line/i);
-
-  const unset = gated(
-    { lines: [line()], delivery: { amount: null, settled: false, estimate: 400 } },
-    "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel.",
-  );
-  assert.equal(M.attentionFor(unset).lead.key, "delivery");
-  assert.match(M.primaryAction(unset).blockedReason, /deliver/i);
-});
 
 test("an unpriced line makes the sum a floor, and it says so", () => {
   // A SUM OVER UNPRICED LINES IS NOT A TOTAL. Adding up the lines that happen
@@ -844,49 +750,7 @@ test("a symmetric composite is ONE segment row carrying two units", () => {
   assert.equal(M.elevationPartsFor(single), undefined);
 });
 
-test("the attention queue blocks on everything the gate blocks on", () => {
-  // The gate refuses on a NULL total OR a status in
-  // `ISSUE_BLOCKING_LINE_STATUSES` (worker/lib/issue.ts). Counting only null
-  // totals let the pinned row say "Nothing is blocking this quote" while the
-  // issue button sat disabled beside it — the console contradicting the server
-  // about its own gate, which is the drift this record has already been caught
-  // by twice.
-  const priced = M.parseProjectRecord(body({
-    lines: [line({ lineTotal: 1000, status: "technical_review" })],
-  }));
-  const att = M.attentionFor(priced);
-  assert.notEqual(att.kind, "clear", "a priced line in technical review still blocks");
-  assert.match(att.lead.text, /review/i);
 
-  // Rates lead over review when both are wrong: an unpriced line is the larger
-  // piece of work, and surfacing the smaller blocker first trains people to
-  // distrust the row.
-  const both = M.attentionFor(M.parseProjectRecord(body({
-    lines: [line({ id: "a", lineTotal: null }), line({ id: "b", lineTotal: 1000, status: "technical_review" })],
-  })));
-  assert.equal(both.lead.key, "unpriced");
-  assert.ok(both.more >= 1);
-
-  // Nothing wrong still says so.
-  assert.equal(M.attentionFor(M.parseProjectRecord(body({
-    lines: [line({ lineTotal: 1000, status: "ready" })],
-  }))).kind, "clear");
-});
-
-test("an accepted order with no contract lines is not an unstarted quote", () => {
-  // The list below says "this order has no contract lines" — a conversion
-  // fault — while the pinned row said "No lines on this project yet", which is
-  // a different thing and contradicts it on the same screen.
-  const empty = M.attentionFor(M.parseProjectRecord(body({
-    lines: [], order: { orderNo: "OF-O-2201", total: 5000 }, orderLines: [],
-  })));
-  assert.notEqual(empty.text, "No lines on this project yet");
-  assert.match(empty.text, /contract/i);
-
-  // A quote with no lines is still exactly that.
-  assert.equal(M.attentionFor(M.parseProjectRecord(body({ lines: [] }))).text,
-    "No lines on this project yet");
-});
 
 test("a price with no provenance says so rather than claiming the rate card", () => {
   // `priceOverrideAt` is discarded on accepted order lines, and a composite

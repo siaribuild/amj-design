@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IonButton, IonIcon, IonNote, IonSkeletonText,
 } from "@ionic/react";
@@ -12,8 +12,8 @@ import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
 import { WhyPanel } from "./WhyPanel";
-import { useLineRationale } from "./useLineRationale";
-import { drawingSuffix, VIEWER_FROM_RECORD, WHY_SUFFIX, WHY_FROM_LINE } from "./lineRoute";
+import { useLineRationale, type RationaleLoad } from "./useLineRationale";
+import { drawingSuffix, VIEWER_FROM_RECORD, WHY_SUFFIX, WHY_FROM_RECORD } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
   ageLabel, cornerFigure, money, needsAttention, otherActions, pendingPrimary,
@@ -112,8 +112,26 @@ export function ProjectRecordPage() {
   // fetch already returned. Only at the desk, and only when a line is under
   // review: on the phone the canvas does not exist, and a request for a panel
   // nobody can see is a request nobody asked for.
-  const { load: canvasWhy, reload: reloadCanvasWhy } =
-    useLineRationale(id, selected?.id ?? "", wide && !!selected && !record?.orderNo);
+  // ONE READ PER LINE, ACROSS THE WHOLE VISIT — not one per selection.
+  //
+  // A rail is walked up and down. One hook instance is reused as the selection
+  // moves and it keeps only the current result, so A -> B -> A read A twice:
+  // the browser test asserted "no line asked twice" and passed anyway, because
+  // it never went back. That is the waste ruling D21 avoided by not asking at
+  // all, and it is the half of the invariant that actually costs anything.
+  //
+  // Answered by not fetching rather than by fetching and discarding: a line
+  // already read disables the hook, and the panel renders what was kept. Only
+  // a resolved read is kept — an error stays live so its retry still works.
+  const seen = useRef(new Map<string, RationaleLoad>());
+  const cached = selected ? seen.current.get(selected.id) : undefined;
+  const { load: fetched, reload: reloadCanvasWhy } = useLineRationale(
+    id, selected?.id ?? "", wide && !!selected && !record?.orderNo && !cached,
+  );
+  useEffect(() => {
+    if (selected && fetched.status === "ready") seen.current.set(selected.id, fetched);
+  }, [selected, fetched]);
+  const canvasWhy = cached ?? fetched;
 
   const run = async (action: RecordAction) => {
     if (!record) return;
@@ -469,8 +487,11 @@ export function ProjectRecordPage() {
                         why={(
                           <WhyPanel
                             load={canvasWhy}
+                            // THE MARK SAYS WHICH DOOR, so back names the
+                            // record rather than the line: the reader came from
+                            // here and has not seen the line page at all.
                             onOpen={() => history.push(
-                              linePath(selected.id) + WHY_SUFFIX, WHY_FROM_LINE,
+                              linePath(selected.id) + WHY_SUFFIX, WHY_FROM_RECORD,
                             )}
                             reload={reloadCanvasWhy}
                           />

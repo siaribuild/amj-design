@@ -126,7 +126,11 @@ export function RecordLines({ lines, total, filterOn, orderNo, selectedId, onOpe
     if (filterOn) {
       return (
         <div className="rl-empty" data-testid="record-lines-filtered-empty">
-          <strong>No lines without a rate.</strong>
+          {/* THE FILTER'S OWN WORDS, and they have to name the set it actually
+              shows. It narrowed to lines with no rate; it now shows every line
+              needing a person, so this sentence was describing a subset of what
+              had just been filtered away. */}
+          <strong>No lines need attention now.</strong>
           <button type="button" className="rl-empty__back" onClick={onClearFilter}>
             Clear the filter to see all {total}.
           </button>

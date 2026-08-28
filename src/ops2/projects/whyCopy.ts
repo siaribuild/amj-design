@@ -308,9 +308,10 @@ export interface WhyPanelCopy {
   lines: PanelLine[];
   /** WHY-AC-9's absence-1 sentence, or null. */
   foot: string | null;
-  /** The accessible name of the door, or `null` when there is nothing behind
-   *  it — WHY-AC-41: a panel with no detail has no control at all. */
-  door: string | null;
+  /** The accessible name of the door. NEVER null since FB-AC-38: every kind has
+   *  a detail behind it, so the type carries no absent case for a reader to
+   *  wonder about. */
+  door: string;
 }
 
 /**
@@ -329,6 +330,14 @@ export interface WhyPanelCopy {
  * recorded" promises a record, not a comparison, and there is no comparison.
  */
 const DOOR_RECORDED = "Why this product — open what was recorded for this line";
+
+/** WHY-AC-9's second meaning, in one place. The panel says it and so does the
+ *  detail, and the two may not drift: a run that established there was nothing
+ *  to select is not a product with no published figure, and the KIND is the only
+ *  thing that tells them apart. This file's own rule — "a heading typed into JSX
+ *  is a heading the ban never looked at" — applies to it as much as to a
+ *  heading. */
+export const NO_SELECTION = "no selection was made on this line";
 
 /** UX §3.5 — an ops split shows at most three units and STATES the remainder.
  *  There is no detail behind this panel, so the units beyond the third have
@@ -362,7 +371,7 @@ export function panelCopy(dto: LineRationaleDto): WhyPanelCopy {
         // nothing to select, which is a different fact from a product with no
         // published figure — and the figures, present-and-null in both, cannot
         // tell them apart (spec §9.0).
-        { k: "This one", v: "no selection was made on this line", absent: true },
+        { k: "This one", v: NO_SELECTION, absent: true },
         chosenRow(),
       ],
       foot: null,

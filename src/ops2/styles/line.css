@@ -394,11 +394,6 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 /* ── The units of a composite ───────────────────────────────────────────────
  * Each carries its OWN drawing and its own spec: units of one opening differ,
  * and which ones differ is exactly what a reviewer is here to check. */
-.lp-units__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 /* THE ROW REACHES THE BLOCK'S EDGE. The panel's own side padding held the wash
    and the focus ring 12px in from the border, so an active row read as a band
    floating inside the panel rather than as the row itself — the same half-built

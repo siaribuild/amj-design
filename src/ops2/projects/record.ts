@@ -414,84 +414,6 @@ export function otherActions(record: ProjectRecord): RecordAction[] {
 // rather than one sentence. They read the same facts and cannot disagree; the
 // suite pins that.
 
-/** One thing standing between this record and being issued. `action` is `null`
- *  when this build has nowhere to send anyone — a control drawn for an action
- *  that cannot run is the defect this effort has recorded four times. */
-export type Blocker =
-  | { key: "unpriced"; count: number; text: string; action: "show only these" }
-  // NO ACTION ON EITHER. "Show only these" is the unpriced control, and a second
-  // filter on the same row would be two controls wearing one label; delivery is
-  // set elsewhere until ops2 has a screen for it.
-  | { key: "review"; count: number; text: string; action: null }
-  | { key: "delivery"; count: 0; text: string; action: null };
-
-export type Attention =
-  | { kind: "no-lines"; text: string }
-  | { kind: "clear"; text: string }
-  | { kind: "blockers"; lead: Blocker; more: number };
-
-/** Is delivery a settled figure? `0` is settled — a trade arranging its own
- *  freight — and only NULL is unset. Never a truthiness check. */
-const deliveryKnown = (record: ProjectRecord): boolean =>
-  record.delivery.frozen != null || record.delivery.settled;
-
-/**
- * The one row above the list that says what needs doing.
- *
- * Blockers are a QUEUE, not a list: the leading one is stated with the control
- * that clears it and the rest are counted, so the row stays one line and the
- * next surfaces as each clears. Lines lead over delivery for the reason
- * `worker/lib/ops-actions.ts` already gives about the gate — surfacing the
- * trivial blocker while hiding the substantial one trains people to distrust it.
- */
-export function attentionFor(record: ProjectRecord): Attention {
-  // NEVER "nothing is blocking this quote" ON AN EMPTY RECORD: it would be
-  // false, since a quote with no lines cannot be issued at all.
-  if (record.lines.length === 0) {
-    // AN ACCEPTED ORDER WITH NO CONTRACT LINES IS A DIFFERENT FACT — a
-    // conversion fault, not an unstarted quote — and the list below already
-    // says so. The pinned row contradicting the record body on the same screen
-    // is worse than either sentence alone.
-    return record.orderNo
-      ? { kind: "no-lines", text: "This order has no contract lines" }
-      : { kind: "no-lines", text: "No lines on this project yet" };
-  }
-
-  const unpriced = record.lines.filter((l) => l.lineTotal == null).length;
-  // THE SAME SET THE GATE REFUSES ON. `issueQuote` blocks a NULL total OR a
-  // status in `ISSUE_BLOCKING_LINE_STATUSES` (worker/lib/issue.ts), and this
-  // counted only the first — so a priced line sitting in technical review left
-  // the pinned row saying "Nothing is blocking this quote" beside a disabled
-  // issue button. The console contradicting the server about its own gate is
-  // the drift this record has already been caught by twice.
-  const inReview = record.lines.filter(
-    (l) => l.lineTotal != null && BLOCKING_STATUSES.has(l.status),
-  ).length;
-  const blockers: Blocker[] = [];
-  if (unpriced > 0) {
-    blockers.push({
-      key: "unpriced", count: unpriced, action: "show only these",
-      text: `${unpriced} line${unpriced === 1 ? " has" : "s have"} no rate`,
-    });
-  }
-  // RATES LEAD OVER REVIEW when both are wrong: an unpriced line is the larger
-  // piece of work, and surfacing the smaller blocker first is what trains
-  // people to distrust the row. No filter action — "show only these" is the
-  // unpriced control, and a second filter on one row would be two controls
-  // wearing one label.
-  if (inReview > 0) {
-    blockers.push({
-      key: "review", count: inReview, action: null,
-      text: `${inReview} line${inReview === 1 ? " is" : "s are"} in technical review`,
-    });
-  }
-  if (!deliveryKnown(record)) {
-    blockers.push({ key: "delivery", count: 0, text: "Delivery has not been set", action: null });
-  }
-  if (blockers.length === 0) return { kind: "clear", text: "Nothing is blocking this quote" };
-  return { kind: "blockers", lead: blockers[0], more: blockers.length - 1 };
-}
-
 /**
  * The lines the list shows, and the one meaning of "attention" this surface has.
  *
@@ -574,7 +496,7 @@ export function unitLabel(code: string, index: number): string {
 
 /** The statuses the server flags for a human, whatever the parser said.
  *
- *  ONE MEMBER, and the one that was removed is why this comment exists.
+ *  ONE VALUE, and the one that was removed is why this comment exists.
  *  `needs_review` is a `schedule_parse_job` status (migrations/0012) — no
  *  `quote_line` has ever carried it, on any writer or in the database. Its
  *  presence here made this set look BROADER than the blocking set below, which
@@ -584,13 +506,7 @@ export function unitLabel(code: string, index: number): string {
  *  `ready` (worker/routes/ops.ts:1159, lib/lines.ts:250, lib/parse.ts:363), and
  *  both of those block. Owner, on the distinction: "I think you're
  *  overengineering it." */
-const REVIEW_STATUSES = new Set(["technical_review"]);
-
-/** The statuses `issueQuote` REFUSES on — `worker/lib/issue.ts`'s
- *  `ISSUE_BLOCKING_LINE_STATUSES`. A narrower set than the one above: a line
- *  can want a human eye without stopping the quote, and conflating the two is
- *  how a console starts disagreeing with the gate it reports. */
-const BLOCKING_STATUSES = new Set(["technical_review", "incomplete"]);
+const REVIEW_STATUS = "technical_review";
 
 /**
  * Does this line need a reviewer's eye? ONE BOOLEAN, whatever the reason count.
@@ -601,7 +517,7 @@ const BLOCKING_STATUSES = new Set(["technical_review", "incomplete"]);
  * own page, where the fix is.
  */
 export function needsReview(line: RecordLine): boolean {
-  return Object.keys(line.review ?? {}).length > 0 || REVIEW_STATUSES.has(line.status);
+  return Object.keys(line.review ?? {}).length > 0 || line.status === REVIEW_STATUS;
 }
 
 /** What KIND of figure this line's price is. `no_rate` is the absence this

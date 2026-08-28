@@ -606,3 +606,39 @@ grammar is unchanged), no replay surface exists (GETs only).
 **None.** The IonItem question is resolved above (§1) and stays owner-vetoable through the
 spec's §13 `ASSUMED:` tag at sign-off; the second `ASSUMED:` (wording — §6's copy table,
 §9.1's three DETAIL strings and `DOOR_ABSENT`) is likewise carried to sign-off, not held open.
+
+---
+
+## 14. Conformance addendum (2026-08-28, post-implementation)
+
+Deviations accepted at review, each with the owner ruling that caused it — the sections above
+are left as designed for the record; where they conflict, this section wins:
+
+- **§5 (attention band) is superseded whole.** The owner deleted the restored band on sight;
+  an `AttentionPill` in the page body carries the count and the filter
+  (`ProjectRecordPage.tsx`), drawn only when `needsAttention` matches at least one line. No
+  clear/no-lines states. FB-AC-13…20 are discharged by the two pill tests in
+  `ops2-record-feedback.spec.ts`; FB-AC-26's "not ready to issue" sentence is gone with the
+  blocker queue — on today's writers the residual set is empty by construction (status is
+  derived `no total → incomplete`, `reasons left → technical_review`), which `record.ts`'s
+  comment now records.
+- **§3's pressed and deepened-selected-hover states were not built** — owner: "DO NOT
+  introduce additional colours … that does not exist at the moment." `:active` exists only as
+  the ripple's touch-feedback replacement.
+- **§7 (disabled CTA) superseded by the owner's pick**: the enabled control at
+  `opacity: 0.72`, no bespoke treatment. Measured and reported: the label reads 2.82:1 dimmed;
+  no dimming level clears 4.5:1. This is an owner-accepted exception to
+  `ops2-ionic-boundary.md` §1.5's requirement 1 (full-contrast disabled labels) for THIS
+  control; the refusal sentence beside it and the accessible name still carry the reason at
+  full contrast, so the fact is not withheld. WCAG 1.4.3 exempts inactive controls.
+- **§6's `needs_review` member of `REVIEW_STATUSES` was deleted**, with the schema citation
+  and a pinned negative test — it is a `schedule_parse_job` status no `quote_line` carries.
+- The queue card's height is restated as `.pq-cards .ops2-row__open { padding-block: 17px }`,
+  tuned to the pre-existing skeleton-settle test rather than chosen.
+- §9.3's `hasWhy` widening landed exactly as designed (`LinePage.tsx`); reported as a
+  divergence in error.
+- **§2.1's `chevron` prop is deleted** (post-review): one call site, always `true`. The queue
+  passes the chevron svg as children; `.ops2-row__chev` stays in `rows.css` as the one place
+  the arrow is drawn. `pressTestId` stays — `ops2-drawing-viewer.spec.ts:586-609`'s
+  no-interactive-descendant count and accessible-name assertions are real consumers of the
+  testid living on the button.

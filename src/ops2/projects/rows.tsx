@@ -126,8 +126,6 @@ export function ProjectCards({ rows }: { rows: readonly ProjectQueueRow[] }) {
             // is deliberately not `flagged` — the chips already say what is
             // wrong, and an edge that repeats a chip earns nothing.
             edge={row.waitingOn === "Us" ? "warning" : row.waitingOn === "Customer" ? "info" : null}
-            // A card in this list NAVIGATES, which is why it alone carries one.
-            chevron
             onActivate={() => open(row)}
             data-testid="queue-row"
             data-waiting={row.waitingOn}
@@ -152,6 +150,17 @@ export function ProjectCards({ rows }: { rows: readonly ProjectQueueRow[] }) {
                 </span>
                 <Flags row={row} />
               </span>
+              {/* A CARD IN THIS LIST NAVIGATES, and it is the only surface that
+                  does — a record line opens a page on the phone and selects at
+                  the desk, so a chevron there would promise one of those on the
+                  surface doing the other. Passed as a child rather than as a
+                  `chevron` prop on the row: one call site, always true, never
+                  conditional, is a flag with a story attached. The class stays
+                  in `rows.css` so the next navigating surface reuses the arrow
+                  instead of redrawing it. */}
+              <svg className="ops2-row__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
           </Row>
         );
       })}

@@ -326,3 +326,126 @@ test("FB-AC-12 — and it still sticks", async ({ page }) => {
   await expect(page.getByTestId("record-identity")).toBeVisible();
   await expect(page.getByTestId("record-tab").first()).toBeVisible();
 });
+
+test("FB-AC-2 — a row that is selected AND flagged keeps one edge, and hover changes neither", async ({ page }) => {
+  // THE CONTESTED RULING, PINNED. The ui-designer drew the flag winning; the
+  // architect ruled selection wins (design 3.1) because the flag still has
+  // words on the row — the `needs review` badge — and at the desk the canvas
+  // beside the rail is showing that line's whole reasons panel, while selection
+  // has no word a sighted reader can see. Someone will re-litigate it; without
+  // this they would re-litigate it silently.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line(),
+      line({ id: "l2", code: "W02", status: "technical_review", review: { size: "size outside the product range" } }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(RECORD);
+
+  const flagged = page.getByTestId("record-line").nth(1);
+  await flagged.click();
+  await expect(flagged).toHaveAttribute("data-selected", "true");
+  await expect(flagged).toHaveAttribute("data-edge", "warning");
+  await expect(flagged).toHaveAttribute("aria-current", "true");
+
+  const press = flagged.locator(".ops2-row__open");
+  const read = () => press.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { shadow: s.boxShadow, background: s.backgroundColor };
+  });
+
+  const rest = await read();
+  const brand = await token(page, "--ds-color-brand");
+  const warning = await token(page, "--ds-color-warning");
+  expect(rest.shadow).toContain(brand.replace(/^rgba?\(|\)$/g, "").split(",").slice(0, 3).map((n) => n.trim()).join(", "));
+  expect(rest.shadow).not.toContain(warning.replace(/^rgba?\(|\)$/g, "").split(",").slice(0, 3).map((n) => n.trim()).join(", "));
+
+  // ONE ELEMENT, so hover cannot take either of them away — the FB-AC-1
+  // invariant, on the row wearing the most state at once.
+  await flagged.hover();
+  const hovered = await read();
+  expect(hovered.shadow).toBe(rest.shadow);
+  expect(await flagged.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
+
+  // And the flag still has its words, which is the whole reason selection may
+  // take the edge.
+  await expect(flagged).toContainText("needs review");
+});
+
+test("FB-AC-5 — the three list surfaces are literally the same component", async ({ page }) => {
+  // THE OWNER'S ACTUAL ASK, reduced to one assertion: "to me - the component is
+  // the same, the content within it differ. I'd expect that other areas of Ops2
+  // will have the same component ... Same logic for displaying the list of
+  // components, not just individual ones."
+  //
+  // Three surfaces, one container class and one row class on every one of them.
+  // Without this the extraction is a claim in a commit message; with it, a
+  // fourth surface written against the old markup fails here.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineKind: "composite_parent", segments: [
+      { id: "s1", code: "A", productName: "Awning", productSlug: "amj80-series-awning-window", width: "600", height: "900", qty: 1, lineTotal: 500, options: {} },
+      { id: "s2", code: "B", productName: "Fixed", productSlug: "amj80-series-fixed-window", width: "600", height: "900", qty: 1, lineTotal: 500, options: {} },
+    ] })],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  // 1 — the queue's phone cards.
+  await page.goto(QUEUE);
+  await expect(page.locator("ul.ops2-rows").first()).toBeVisible();
+  expect(await page.getByTestId("queue-row").first().getAttribute("class")).toContain("ops2-row");
+
+  // 2 — the record's line list.
+  await page.goto(RECORD);
+  expect(await page.getByTestId("record-lines").getAttribute("class")).toContain("ops2-rows");
+  expect(await page.getByTestId("record-line").first().getAttribute("class")).toContain("ops2-row");
+
+  // 3 — the line page's unit rows.
+  await page.getByTestId("record-line").first().click();
+  await expect(page.getByTestId("line-units")).toBeVisible();
+  expect(await page.locator(".lp-units__list").getAttribute("class")).toContain("ops2-rows");
+  expect(await page.getByTestId("line-unit-open").first().getAttribute("class")).toContain("ops2-row__open");
+
+  // AND THE DESK TABLE IS NOT ONE — deliberately out of scope, so a later pass
+  // does not quietly fold column semantics into a card row.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(QUEUE);
+  await expect(page.locator("table.pq-table")).toBeVisible();
+  await expect(page.locator("table.pq-table .ops2-row")).toHaveCount(0);
+});
+
+test("FB-AC-36 — ops2 shows the break symbol under the same conditions the customer site does", async ({ page }) => {
+  // THE HALF WITH NO TEST. The paint-order fix is pinned in node
+  // (`ops2-record.test.mjs`, FB-AC-34) but the two CSS rules ported into
+  // `record.css` had nothing watching them: delete them and everything stayed
+  // green while ops2 drew a symbol the customer site hides. That is the same
+  // gap as a named-but-never-created spec file, one layer down.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ id: "lw", code: "W02", width: "3500", height: "700" })],
+  }) }));
+
+  // A phone: the drawing really has been squeezed, so the symbol is drawn.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${RECORD}/line/lw`);
+  const brk = page.locator(".lp-plate__svg .elev-break");
+  await expect(brk).toHaveCount(1);
+  expect(await brk.evaluate((el) => getComputedStyle(el).display)).toBe("block");
+
+  // A desk: it is not, so it is not — the customer theme's own breakpoint,
+  // ported rather than re-decided.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${RECORD}/line/lw`);
+  await expect(page.locator(".lp-plate__svg")).toBeVisible();
+  expect(await page.locator(".lp-plate__svg .elev-break")
+    .evaluate((el) => getComputedStyle(el).display)).toBe("none");
+
+  // AND THE FIGURE IS NEVER UNDER IT, at the width where the symbol shows.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${RECORD}/line/lw`);
+  const order = await page.locator(".lp-plate__svg").evaluate((svg) => {
+    const brk = svg.querySelector(".elev-break")!;
+    const text = [...svg.querySelectorAll("text")].find((t) => t.textContent === "3500")!;
+    return (brk.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) > 0;
+  });
+  expect(order, "the width figure paints after the symbol that would erase it").toBe(true);
+});

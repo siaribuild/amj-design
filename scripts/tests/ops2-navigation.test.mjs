@@ -26,7 +26,7 @@ await build({
   stdin: {
     contents: `
       export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
-      export { lineSuffixOf, parseLineRoute, drawingSuffix, WHY_SUFFIX, viewerDoor, whyDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD, WHY_FROM_LINE } from ${p("src/ops2/projects/lineRoute.ts")};
+      export { lineSuffixOf, parseLineRoute, drawingSuffix, WHY_SUFFIX, viewerDoor, whyDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD, WHY_FROM_LINE, WHY_FROM_RECORD } from ${p("src/ops2/projects/lineRoute.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -318,26 +318,36 @@ test("WHY-AC-44 the why screen is a sibling of the drawing, and cannot stack wit
   assert.equal(M.parseLineRoute("/why", 2, false).view, "line");
 });
 
-test("WHY-AC-7c the why screen's own history mark answers presence, and asks no door question", () => {
+test("WHY-AC-7c / FB-AC-45 the why screen's history mark names WHICH door it came through", () => {
   // The viewer has two doors and its mark's VALUE names which. The rationale has
   // exactly one — the panel on the line page — so only PRESENCE is asked: was
   // this opened from a page in this session, or pasted cold? A cold arrival
   // replaces onto the line page; a warm one pops.
-  assert.equal(M.whyDoor(M.WHY_FROM_LINE), true);
-  assert.equal(M.whyDoor(null), false, "pasted, emailed or reloaded — nothing of ours behind it");
-  assert.equal(M.whyDoor(undefined), false);
-  assert.equal(M.whyDoor({}), false);
-  assert.equal(M.whyDoor({ whyFrom: "canvas" }), false, "a door nobody has built is no door");
-  assert.equal(M.whyDoor("line"), false, "a bare string is not the state");
-  assert.equal(M.whyDoor({ whyFrom: "line", other: 1 }), true,
+  // IT ANSWERS WHICH DOOR NOW, not merely whether there was one. The record's
+  // desk canvas grew a second panel, and back names a different place through
+  // each — so a boolean could no longer carry the answer. Every caller that
+  // asks the ORIGINAL question ("was this opened from a page in this session,
+  // so is back a real pop?") still reads it for truthiness, which is why the
+  // widening did not have to reach them.
+  assert.equal(M.whyDoor(M.WHY_FROM_LINE), "line");
+  assert.equal(M.whyDoor(M.WHY_FROM_RECORD), "record");
+  assert.equal(M.whyDoor(null), null, "pasted, emailed or reloaded — nothing of ours behind it");
+  assert.equal(M.whyDoor(undefined), null);
+  assert.equal(M.whyDoor({}), null);
+  assert.equal(M.whyDoor({ whyFrom: "canvas" }), null, "a door nobody has built is no door");
+  assert.equal(M.whyDoor("line"), null, "a bare string is not the state");
+  assert.equal(M.whyDoor({ whyFrom: "line", other: 1 }), "line",
     "but a state carrying someone else's keys too is still ours");
+  // AND THE TWO DOORS ARE DISTINGUISHABLE, which is the whole reason for the
+  // widening: back named the line for a reader who arrived from the record.
+  assert.notEqual(M.whyDoor(M.WHY_FROM_LINE), M.whyDoor(M.WHY_FROM_RECORD));
 
   // THE TWO MARKS ARE NOT ONE. A drawing entry must not read as a rationale
   // entry, or a back out of an enlargement would be decided by the wrong rule —
   // and the round trip is asserted in BOTH directions, because a renamed key on
   // either end would silently turn every marked screen into a cold one.
-  assert.equal(M.whyDoor(M.VIEWER_FROM_LINE), false);
-  assert.equal(M.whyDoor(M.VIEWER_FROM_RECORD), false);
+  assert.equal(M.whyDoor(M.VIEWER_FROM_LINE), null);
+  assert.equal(M.whyDoor(M.VIEWER_FROM_RECORD), null);
   assert.equal(M.viewerDoor(M.WHY_FROM_LINE), null);
 });
 

@@ -37,12 +37,22 @@ import type { ReactNode } from "react";
  * than hidden: the queue's card loses Ionic's ripple, kept as touch feedback by
  * one `:active` declaration in `rows.css`.
  *
- * ── THREE PROPS, AND WHY THERE ARE NOT FOUR ─────────────────────────────────
- * `edge`, `selected` and `chevron` each name a real grammar difference — what
- * the leading mark MEANS, whether a rail is showing this one, whether pressing
- * navigates. None is a styling switch. A fourth would be the first mode flag,
- * and at that point this stops being one component and becomes three wearing a
+ * ── TWO GRAMMAR PROPS, AND WHY THERE ARE NOT THREE ──────────────────────────
+ * `edge` and `selected` each name a real difference in what a row MEANS — what
+ * its leading mark is a mark of, and whether a rail beside it is showing this
+ * one. Neither is a styling switch. A third would be the first mode flag, and
+ * at that point this stops being one component and becomes three wearing a
  * costume; if a surface needs one, reopen the decision rather than adding it.
+ *
+ * `chevron` WAS one and is gone: the queue passed it bare, always true, never
+ * conditionally, which is a flag with a story attached. It renders the arrow as
+ * its own child now, against the `.ops2-row__chev` class this file's stylesheet
+ * still owns so the next navigating surface reuses it.
+ *
+ * `onActivate`, `pressTestId` and the rest-spread are plumbing, not grammar.
+ * `pressTestId` lands on the BUTTON deliberately — `ops2-drawing-viewer.spec.ts`
+ * asserts a unit row contains no other control and has the opener's accessible
+ * name, and neither holds on the `<li>`.
  *
  * The desk `<table>` in `../projects/rows.tsx` is deliberately NOT built from
  * this. Column headers and row/column association are a different thing that a
@@ -65,7 +75,7 @@ export function RowList({ className = "", testId, children }: {
 }
 
 export function Row({
-  edge, selected, chevron, onActivate, pressTestId, children, ...rest
+  edge, selected, onActivate, pressTestId, children, ...rest
 }: {
   /** What the leading edge paints, or nothing. WHICH FACT it means stays the
    *  caller's: the queue maps `waitingOn`, the record maps `needsReview`, the
@@ -73,11 +83,6 @@ export function Row({
   edge?: "warning" | "info" | null;
   /** The row the desk rail's canvas is showing. */
   selected?: boolean;
-  /** Trailing chevron — for rows that NAVIGATE, which today is the queue's card
-   *  alone. A record line opens a page on the phone and selects at the desk, so
-   *  a permanent chevron would promise one of those on the surface that does the
-   *  other. */
-  chevron?: boolean;
   onActivate: () => void;
   /** Lands on the button, not the row — existing suites press it by name. */
   pressTestId?: string;
@@ -101,11 +106,6 @@ export function Row({
         onClick={onActivate}
       >
         {children}
-        {chevron && (
-          <svg className="ops2-row__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        )}
       </button>
     </li>
   );

@@ -605,6 +605,24 @@ test("FB-AC-44 the record canvas carries the panel and issues its rationale requ
   expect(new Set(asked).size, `one read per line, got ${asked.join(", ")}`)
     .toBe(asked.length);
 
+  // AND NOT WHEN THE READER COMES BACK TO IT. The version above passed while
+  // A -> B -> A read A twice, because it never went back: one hook instance is
+  // reused as the selection changes and it keeps only the current result. This
+  // is the direction that actually costs a read on a rail a reviewer walks up
+  // and down, and it is the invariant the assertion above was written for.
+  const rows = page.getByTestId("record-line");
+  await rows.nth(0).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await rows.nth(1).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await rows.nth(0).click();
+  await expect(page.getByTestId("line-review")).toBeVisible();
+  await page.waitForTimeout(800);
+
+  const revisited = calls.methods.filter((m) => m.includes("/rationale"));
+  expect(new Set(revisited).size, `one read per line across a walk, got ${revisited.join(", ")}`)
+    .toBe(revisited.length);
+
   // THE CONTROL. The same counter on the LINE page does record a call, so the
   // empty list above means "no request" rather than "the counter never worked".
   await page.goto(LINE("l1"));
@@ -1081,4 +1099,17 @@ test("FB-AC-44 — the desk canvas carries the panel, and its door opens the LIN
   await page.getByTestId("line-why-open").click();
   await expect(page.getByTestId("line-why-detail")).toBeVisible();
   await expect(page).toHaveURL(/\/line\/[^/]+\/why$/);
+
+  // FB-AC-45 — BACK NAMES THE DOOR IT CAME THROUGH. There are two doors now and
+  // this reader came through the canvas's, having never seen the line page: a
+  // control naming the line would send them somewhere they have not been. The
+  // mark carries which door (`WHY_FROM_RECORD`), so the two are distinguishable
+  // — the exact indistinguishability `lineRoute.ts` warns one shared key causes.
+  await expect(page.getByTestId("line-why-detail-back")).toContainText("OF-Q-10482");
+
+  // AND IT LANDS THERE. The name is only a promise; this is the promise kept —
+  // and the two are asserted together because a control that says "OF-Q-10482"
+  // and goes to the line page is worse than one that says "Line".
+  await page.getByTestId("line-why-detail-back").click();
+  await expect(page).toHaveURL(/\/projects\/p_rec$/);
 });

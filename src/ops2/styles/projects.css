@@ -373,19 +373,20 @@ ion-modal.pq-sheet--side::part(content) {
  * Held as a component, it cannot fail to (ADR 0014).
  *
  * What is left is the block this list composes and the card's own grammar. */
-.pq-cards {
-  border-radius: var(--ds-radius-surface);
-}
 /* THE CARD KEEPS THE HEIGHT IT HAD. A queue card is taller than a line row and
    always was — but the height came from `IonItem`'s label carrying Ionic's own
    block margins, so leaving IonItem took ~20px off every row and the skeleton
    went on promising the old shape (a 74px settle on four rows, which is what
    `ops2-projects.spec.ts`'s skeleton test measures).
-   Restated as this surface's own padding: the row's MECHANISM changed, its size
-   did not. */
-.pq-cards .ops2-row__open { padding-block: 17px; }
 
-.pq-card { display: grid; gap: 2px; width: 100%; min-width: 0; padding-block: var(--theme-spacing-2xs); }
+   ONE RULE OWNS THE NUMBER. `.pq-card` carried a `padding-block` of its own, so
+   the height was the sum of two rules and 17px was reverse-engineered against a
+   dependency that no longer exists. Folded together here; the card below sets
+   none. The radius is gone too — `ds-surface-card`, which the call site
+   composes, already sets the same value later in the cascade. */
+.pq-cards .ops2-row__open { padding-block: 19px; }
+
+.pq-card { display: grid; gap: 2px; width: 100%; min-width: 0; }
 .pq-card__top, .pq-card__bottom {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: var(--theme-spacing-sm); min-width: 0;

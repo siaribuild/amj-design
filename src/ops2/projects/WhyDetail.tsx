@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { SidePanel } from "../chrome/SidePanel";
 import type { LineRationaleDto, RationaleUnit } from "../../data/rationale";
 import {
-  DETAIL, basisLabel, candidateFigures, candidateName, chosenRowMark,
+  DETAIL, NO_SELECTION, basisLabel, candidateFigures, candidateName, chosenRowMark,
   chosenLine, comparisonVerdict, figuresText, ladderNote, rankedText, unitBandText,
   unitBasisLabel, verdictWord,
 } from "./whyCopy";
@@ -154,9 +154,7 @@ function Recorded({ dto }: { dto: Exclude<LineRationaleDto, { kind: "recommendat
               says the panel's own sentence rather than printing `not recorded`
               and claiming the wrong absence. */}
           <p className={dto.kind === "unresolved" ? "wd__reason" : "wd__reason wd__fig"}>
-            {dto.kind === "unresolved"
-              ? "no selection was made on this line"
-              : figuresText(dto.current.figures)}
+            {dto.kind === "unresolved" ? NO_SELECTION : figuresText(dto.current.figures)}
           </p>
         </Block>
       )}

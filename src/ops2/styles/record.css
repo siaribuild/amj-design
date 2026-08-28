@@ -236,7 +236,7 @@ ion-toolbar.ops2-topbar--identity {
   text-underline-offset: 2px;
 }
 @media (hover: hover) {
-  .rec-pill:hover { background: var(--ds-color-warning-subtle); filter: brightness(0.98); }
+  .rec-pill:hover { filter: brightness(0.98); }
 }
 
 /* ── The refusal, beside what it refuses ────────────────────────────────────
