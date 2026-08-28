@@ -82,6 +82,79 @@ In v2 every stage is its own top-level session, so a stage that edits code
 architecture rather than by remembering to work around it — and the explicit
 end-of-feature review still runs as the `review` stage regardless.
 
+## Proportionality — the ceremony is bounded
+
+`CLAUDE.md` has always defined three sizes of change. Until now the conductor
+implemented one: every run got all 8 stages, all 4 reviewers, and an adversarial
+verify, whatever its blast radius.
+
+Measured on the feature that built this pipeline (subagent tokens):
+
+| | tokens | share |
+|---|---|---|
+| build (9 tasks) | ~1.41M | 41% |
+| **fix rounds (6)** | **~0.92M** | **27%** |
+| testers (2) | ~0.48M | 14% |
+| architect (2) | ~0.37M | 11% |
+| PM (2) | ~0.17M | 5% |
+
+Testing was 14%. The **fix rounds were 27%** — and they were triggered by
+findings like "a test is missing for code that already works" and a
+column-alignment cosmetic. Each such finding spawns a fresh developer session,
+so a low-value finding costs more than the testing that produced it. Left
+unaddressed, that mindset makes v2 as expensive as v1 by a different route.
+
+Four bounds, all in the conductor:
+
+**1. Tier, chosen at `start`.**
+
+    conduct start <slug> "<ask>" --tier full|fix|direct
+
+| tier | runs | for |
+|---|---|---|
+| `full` (default) | every stage; `review` **mandatory** | a business rule or capability, DB schema, multiple concerns, or a question only the owner can answer |
+| `fix` | `build` + `verify` only | a bounded fix whose correct behaviour is already unambiguous |
+| `direct` | nothing — refuses to create a run | typos, copy, comments, config values, formatting |
+
+Membership is declared on the stage (`tiers: [...]`), not written into `next` as
+a skip: a skip at the call site is invisible from the stage table and gets
+re-derived, differently, in `plan`. `review` is in tier `full` and cannot be
+waived there — neither a manual override nor the conductor's judgement may
+disable it. Only `fix` is without it, and the owner selects that tier
+deliberately.
+
+**2. Verify depth follows blast radius.** The `verify` prompt branches on the
+real diff against `run.base`. Sensitive = any changed path under `worker/**`,
+`src/data/**`, `migrations/**`, or naming auth / payment / payout / session.
+
+- Sensitive → the full adversarial pass: edge cases, mutation-tested guards,
+  every negative abuse criterion executed for real.
+- Not sensitive → run the gates, walk the acceptance criteria, report; and an
+  explicit instruction **not** to mutation-test guards, **not** to hunt for
+  missing tests on code that already works, and not to raise cosmetics.
+
+It fails closed: a diff that cannot be read, or an empty one, is sensitive. The
+depth lives in the stage prompt, conditioned on the diff — not in whatever the
+operator happens to type that day, which is how the ceremony leaked in.
+
+**3. Severity gate on findings.**
+
+    conduct fix "<finding>" --severity high|medium|low|cosmetic
+
+`low` and `cosmetic` are appended to `docs/runs/<slug>/DEBT.md` and printed —
+visible, never silently dropped. `high`, `medium`, and a finding with **no**
+severity all spawn the developer session as before: the gate defers, it never
+assumes.
+
+**4. Cycle cap.** `run.json` counts verify rounds. After one verify, one fix
+round and one re-verify, a third cycle is refused: the conductor prints what is
+still open (the debt file, the last verdict) and stops. The same cap refuses a
+fix that could never be re-verified.
+
+This is a **cycle** ceiling. It is not a token, dollar or turn ceiling — the
+stage table's no-runaway-guard ruling is about the cost of a *running stage*,
+and still stands.
+
 ## Stages
 
     spec → design → [ux] → build → [polish] → verify → review → accept
