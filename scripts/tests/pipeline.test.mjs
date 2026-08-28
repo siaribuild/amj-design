@@ -1720,19 +1720,52 @@ test('answer resolves a held build-<task> label, and records the task it finishe
     'the answer re-booted a session that was already warm')
 })
 
+test('a reviewer blocked at LAUNCH is answerable - it is owed the prompt it never got', () => {
+  // The read-only refusal is about a reviewer being asked to revise something it
+  // cannot. A launch block is not that: the agent never received its prompt, so
+  // `answer` is delivering that line, not asking for an edit. Refusing here left
+  // the stage with no route at all - `conduct fix` wants a finding the reviewer
+  // never ran to produce, and `resume` only reattaches.
+  const s = reviewRepo('answer-blocked-reviewer')
+  s.env.HERDR_STUB_BLOCKED = '1'
+
+  paned(s, 'run', 'review')
+
+  const held = runJson(s).gateStage
+  assert.match(held || '', /^review-/,
+    'no reviewer was held at launch: ' + JSON.stringify(runJson(s).stages))
+  assert.equal(runJson(s).stages[held].holdReason, 'blocked-launch')
+
+  // The owner clears the startup dialog; the prompt is then handed over.
+  s.env.HERDR_STUB_BLOCKED = ''
+  const out = paned(s, 'answer')
+
+  assert.ok(!/conduct fix/.test(out), 'a launch-blocked reviewer was refused:' + NL + out)
+  const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
+  assert.ok(typed.some((l) => l.includes('docs/runs/demo/prompts/' + held + '.txt')),
+    'answer never delivered the prompt the blocked launch withheld: ' + typed.join(' | '))
+  assert.equal(runJson(s).stages[held].status, 'done')
+  assert.equal(runJson(s).gateStage, null)
+})
+
 test('answer refuses a held review-<id> label, by name and without crashing', () => {
   // Two things at once. `stageSpec` must resolve a `review-<id>` label at all -
   // `STAGES.find` alone hands back undefined and `answer` dies on `spec.gate`.
-  // And having resolved it, it must REFUSE: a reviewer boots read-only, so an
-  // answered reviewer would spend a session unable to touch its artifact.
-  // Reviewers report, only the developer fixes.
-  const s = reviewRepo('answer-held-reviewer', { HERDR_STUB_STATES: 'blocked;idle' })
+  // And having resolved it, a reviewer held on DECISIONS must REFUSE: it boots
+  // read-only, so it cannot revise its artifact or delete DECISIONS.md, and the
+  // answer would spend a session to change nothing. Reviewers report, only the
+  // developer fixes. (A launch/UI block is the other case, and is answerable -
+  // there the reviewer is owed a prompt, not asked for an edit.)
+  const s = reviewRepo('answer-held-reviewer')
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', 'DECISIONS.md'),
+    '1. Which way round?' + NL + '   Recommendation: this way.' + NL)
 
   paned(s, 'run', 'review')
 
   const held = runJson(s).gateStage
   assert.match(held || '', /^review-/,
     'no reviewer was held warm: ' + JSON.stringify(runJson(s).stages))
+  assert.equal(runJson(s).stages[held].holdReason, 'decisions')
 
   let out = ''
   try { out = paned(s, 'answer') } catch (e) { out = (e.stdout || '') + (e.stderr || '') }

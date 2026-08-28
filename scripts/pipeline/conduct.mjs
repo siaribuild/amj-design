@@ -565,7 +565,15 @@ export const answerArgs = (spec, sessionId, promptText, mcpOk = browserMcp()) =>
 // or delete DECISIONS.md: answering one would spend a session to change nothing.
 // Reviewers report, only the developer fixes - so say that instead of inventing
 // a mechanism to let a reviewer edit.
-export const answerRefusal = (spec, id) => spec.readonly
+//
+// But that is a statement about the DECISIONS gate, not about every hold. A
+// stage held at a launch or UI block is not being asked to edit anything: it is
+// owed the prompt it never received, or a cleared dialog. Refusing those left a
+// blocked reviewer with no route forward at all - `conduct fix` needs a finding
+// it never ran to produce, and `resume` only reattaches. So the refusal is
+// gated by WHY it is held, not by whether it can write.
+const BLOCK_HOLDS = new Set(['blocked-launch', 'blocked-ui'])
+export const answerRefusal = (spec, id, holdReason) => spec.readonly && !BLOCK_HOLDS.has(holdReason)
   ? id + ' is a read-only reviewer - it cannot revise anything, so an answer' +
     ' would change nothing. Route what it found to a developer instead:' +
     ' conduct fix "<finding>"'
@@ -1271,7 +1279,7 @@ const cmds = {
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
-    const refusal = answerRefusal(spec, id)
+    const refusal = answerRefusal(spec, id, st.holdReason)
     if (refusal) die(refusal)
     // The whole point of holding warm: the agent is still sitting there, so the
     // answer is one typed line into the session that asked the question. No
