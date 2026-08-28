@@ -584,12 +584,34 @@ Criterion → test mapping (the tester's checklist):
 | 32 | missing package ⇒ warning + stage runs |
 | 5-8 | stub-driven hold: settled+DECISIONS ⇒ held, agent alive, `answer` prompts same session; headless gate unchanged |
 | 9, 11 | reviewer starts all issued before any completion consumed; build tasks provably serial |
-| 12-15 | cockpit calls on start; agent named by label before "started" reported; watch loop, no sleeps; produces-warning fires; no `agent read` in any data path (stub asserts it is never called) |
+| 12, 13, 15 | cockpit calls on start; agent named by label before "started" reported; watch loop, no sleeps; produces-warning fires |
+| 14 | **OPEN GAP — not covered, not descoped.** See below. |
 | 16, 38 | prompt file byte-equal; no prompt bytes in argv; `$(...)` inert |
 | 33-36 | auto-engage / `--no-panes` / herdr-down one-liner / retry-then-fallback with verbatim error |
 | 1-4 | reattach on `status:'running'`; restore passes `--resume <sid>`; unrecoverable ⇒ explicit re-run; previousSessions summed |
 | 37, 39 | bad slug: exit ≠ 0, nothing created; bad task id rejected at `runBuild` |
 | §9.5 shim | payload without `agent_id` forwarded byte-identical; missing probity ⇒ fail-closed deny; POSIX-cwd payload still resolves the bin |
+
+**Criterion 14 — OPEN GAP, unmet and visible (owner ruling, `DECISIONS.md`
+round 4, 2026-08-27).** The criterion asks that `herdr agent read <label>`
+return a running stage's live output. It cannot today, and the measurement is
+why: herdr answers `agent_not_idle` while an agent is working, and Claude runs
+on the terminal's **alternate screen**, so rows that scroll off never enter
+herdr's host scrollback and are unrecoverable at any `--lines`. Reproduced
+repeatedly, including losing part of a probe agent's own reply.
+
+An earlier revision of this table discharged 14 by citing its own negation —
+"no `agent read` in any data path" — which answers a criterion by inverting it.
+**That reasoning is withdrawn.** The no-pane-reads rule (stub hard-fails if any
+data path calls `agent read`) is a real constraint this design meets, but it is
+a *consequence* of the gap, not evidence against it, and it discharges nothing.
+Do not close 14 by redefining it, and do not let a future acceptance pass
+silently reclassify it as out of scope.
+
+What is and is not blocked: the owner can **see** a running stage by looking at
+its pane — that part works. What is impossible is the **conductor** reading it
+programmatically. Any future solution lives in that gap, e.g. a stage streaming
+its own progress to a file the conductor can tail.
 
 **Live evidence (spec ASSUMED, tester's job at verify):** one real stage in a
 pane and one interrupt-and-resume, recorded in `06-verify.md`. Unblocked —
