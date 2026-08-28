@@ -1,0 +1,151 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE BOTTOM TAB BAR — three variants, and the inset rule that makes any of
+   them survivable.
+
+   Ionic's ion-tab-bar already handles its own safe-area padding, its own active
+   state and its own stack-per-tab behaviour. What is here is only: which variant
+   shows the bar, and who owns the home-indicator inset when two elements are
+   stacked on the same edge.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── THE INSET RULE ───────────────────────────────────────────────────────────
+   This is the fiddly bit and it is settled in one place. The action panel pads
+   for the home indicator because it is normally the bottom-most element. When a
+   TAB BAR is below it, the bar is bottom-most and the bar owns the inset — the
+   panel must drop its own or the two of them pad for the same 34px twice, which
+   is 34px of nothing between the primary action and the tabs.
+
+   Measured with the inset simulated at 34px: the double-pad cost 34px on every
+   action screen before this rule existed. */
+:root[data-tabbar="on"] .actions,
+:root[data-tabbar="on"] .reason,
+:root[data-tabbar="on"] .totals,
+:root[data-tabbar="on"] .foot {
+  padding-bottom: 8px;
+}
+:root[data-tabbar="on"] .deck .reason { padding-bottom: 10px; }
+
+/* MOCK ONLY. A desktop browser reports env(safe-area-inset-bottom) as 0, which
+   would flatter every variant equally and hide the whole problem. 34px is the
+   iPhone home-indicator value. */
+:root[data-inset="on"] { --ion-safe-area-bottom: 34px; }
+
+/* ── WHERE THE BAR SHOWS ──────────────────────────────────────────────────── */
+
+/* Desktop keeps the persistent left rail and never shows a bar — his
+   instruction, and the rail already carries every destination. */
+:root[data-width-class="desktop"] ion-tab-bar,
+:root[data-width-class="wide"] ion-tab-bar { display: none; }
+
+/* OFF — today's mock, for comparison. */
+:root[data-tabs="off"] ion-tab-bar { display: none; }
+
+/* B — hidden on the record and line planes, where a labelled back already
+   exists. The rule is applied from JS (data-tabbar) rather than by matching
+   routes in CSS, so the visibility test lives next to the route test. */
+:root[data-tabbar="off"] ion-tab-bar { display: none; }
+
+ion-tab-bar.opstabs { border-top: 1px solid var(--ops-line); }
+
+/* ── the mock's own variant switcher ─────────────────────────────────────────
+   Deliberately ugly: scaffolding for a decision, not a control anyone proposes
+   to ship.
+
+   ███ DO NOT MOVE THIS BACK TO THE TOP. It has been put there three times and
+   ███ rejected three times, because the header is where back, the title, the
+   ███ neighbour chevrons and — in variant E — the CTA itself all live. A strip
+   ███ over the header hides the exact controls the variants exist to compare.
+   ███ LEARNINGS.md 3 records the same defect a generation earlier: a floating
+   ███ dev strip covering the rate-card primary at 1366 and "Save new rates" at
+   ███ 390 — "a mock control obscuring the very action the walkthrough is about".
+   ███ The middle band is the only one not under judgement AND the only one that
+   ███ scrolls, so what it covers can be moved out from under it. Neither chrome
+   ███ edge has that property. If you are adding a row to this control, it stays
+   ███ vertically centred; grow it downward, not upward. */
+.variantswitch {
+  position: fixed; top: 50%; right: 6px; transform: translateY(-50%);
+  z-index: 99999; pointer-events: none;
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px 4px; border-radius: 999px;
+  background: rgba(0, 0, 0, .82); box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
+}
+.variantswitch > * { pointer-events: auto; }
+.variantswitch .vs-tag {
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .55); padding: 0 3px;
+}
+.variantswitch button {
+  min-width: 26px; height: 22px; padding: 0 5px; border: 0; border-radius: 999px;
+  background: transparent; color: rgba(255, 255, 255, .72);
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
+}
+.variantswitch button[aria-pressed="true"] { background: #fff; color: #111; }
+.variantswitch .vs-inset { font-size: 12px; }
+
+/* MOCK STAND-IN for the unresolved tab-selection defect — see App.tsx. Ionic
+   would normally own this entirely. */
+:root[data-tab="dashboard"] ion-tab-button[tab="dashboard"],
+:root[data-tab="projects"] ion-tab-button[tab="projects"],
+:root[data-tab="enquiries"] ion-tab-button[tab="enquiries"] {
+  color: var(--ion-color-primary);
+  --color: var(--ion-color-primary);
+}
+
+/* The split pane's main content. It exists only to carry id="main", because
+   IonTabs takes no id prop and ion-split-pane needs to find its content among
+   its DIRECT children. */
+.tabshost { flex: 1 1 auto; position: relative; display: flex; min-width: 0; }
+.tabshost > ion-tabs { flex: 1 1 auto; min-width: 0; }
+
+/* ═══ VARIANT D — scroll away ═══════════════════════════════════════════════
+   The bar slides down and OUT OF LAYOUT on scroll down, and comes back on scroll
+   up. The reclaim is real, not visual: the negative margin returns the space to
+   ion-content, and the transform takes the buttons off screen.
+
+   WHAT MOVES, AND WHAT MUST NOT. Only the bar. The action panel never moves —
+   a primary action that slides away is not a primary action.
+
+   THE INSET, IN REVERSE. Section 27's rule gave the home-indicator padding to
+   the bar and took it off the action panel, which is why the record costs 25px
+   rather than 91. If the bar left entirely, the panel would become bottom-most
+   and have to take the inset BACK — growing 34px at the exact moment the bar
+   leaves, so the panel would resize under the thumb on every scroll.
+
+   So the bar does not leave entirely: it gives up its 57px of BUTTONS and keeps
+   its 34px safe-area band. The band is the indicator gap the panel would
+   otherwise have to own, the panel never changes height, and nothing resizes
+   under the thumb. The reclaim is 57px of the 91, and that number is the honest
+   one. */
+/* HOW IT HIDES, and why not the obvious way.
+
+   ion-tab-bar CANNOT BE MOVED OR RESIZED FROM OUTSIDE. Three techniques, all
+   measured in the browser, all failed:
+     1. transform + negative margin, the idiomatic slide - computed to the
+        identity matrix even as an INLINE !important; the element carries
+        `contain: strict`.
+     2. height - computed away to Ionic own `height: 56px` at equal specificity.
+     3. height with !important - the rendered box stayed 91px regardless.
+
+   So D unmounts the bar instead. That is a pop, not a slide, and it is the
+   honest limit of what the component allows: making it slide would mean
+   replacing IonTabBar with a hand-built bar, and none of the boundary doc four
+   disqualifiers covers "the standard component will not animate the way I want".
+
+   THE INSET, IN REVERSE - the interaction the brief warned about. Section 27
+   gave the home-indicator padding to the bar and took it off the action panel.
+   If the bar simply left, the panel would become bottom-most, take the inset
+   back, and GROW 34px at the exact moment the bar vanished - resizing under the
+   thumb on every scroll. So a spacer of exactly the indicator height stays
+   behind. The panel never changes, and the reclaim is the bar 57px of buttons
+   rather than the full 91. */
+.tabspacer {
+  height: var(--ion-safe-area-bottom, 0px);
+  flex: none;
+  background: var(--ion-background-color);
+}
+
+/* Reduced motion removes the ANIMATION, not the behaviour — the space still
+   comes back, it simply arrives without the slide. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-tabs="d"] ion-tab-bar { transition: none; }
+}

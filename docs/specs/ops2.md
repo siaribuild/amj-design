@@ -1,0 +1,697 @@
+# ops2 — the staff operations console, rebuilt
+
+Branch: `design/ops2-planning`
+Status: **revision 7 — governing spec. §16 carries one open item, already with the owner.**
+Author: product-manager (pipeline stage 1)
+Date: 2026-08-17
+
+**Revision 2 — dormant capabilities.** External review found that revision 1 silently dropped the legacy console's manufacturer-only Enquiries view. It was right that the silence is a defect, and right that the deferral itself is not — the owner deferred the partner surface (GRILL-CONCLUSIONS §6, §3.3) and it is unagreed with AMJ. More importantly it named a **class the register was blind to**: capability that exists in legacy code but has never been reachable in production, because §B.4 described what the console *does*, not what it *would do if configured*. Revision 2 adds a sixth register state (`DORMANT`), an **environment** column on every register row, the three dormant capabilities a sweep found (§8.1), and two abuse criteria that stop a dormant control becoming a live hole (AC-57a, AC-66a). **No scope changed.**
+
+**Revision 3 — the owner answered all five decisions.** Roles settled as recommended (§9.7). Triage sort settled, and it turns out to be a **type and derivation change, not a sort change** (§9.10). **Divergence is wider than I proposed and its baseline moved**: the comparison is against *the original information* — including extracted opening dimensions — not merely the estimator's recommendation, and there is no field allow-list (§9.2). **The attention surface is cut to two items**, with four moved to phase 2 rather than deleted (§9.10, §6.2). Decomposition accepted unchanged.
+
+**Revision 4 — the reversal requirement is vetoed and removed.** Owner: *"We don't expect customer's changing their mind as such: we consult them and make product decisions. No need to track change history for undo purposes."* It originated as an inference during stage 0, entered GRILL-CONCLUSIONS §2 as a load-bearing design consequence and C3 as a constraint, and reached revision 1 from there — **it was never the owner's ask.** Removed from §4, §5 (I5), §9.4 (AC-17 struck) and §9.9 (AC-45a struck); added as an explicit exclusion in §6.3. The conclusions document is being corrected upstream.
+
+**Revision 5 — the veto's reach, scoped. A precision fix, not a change of position.** Revision 4 overreached: AC-7d claimed *the system* holds no record of intermediate values, which contradicted AC-40c's requirement that the audit trail stay unreduced. **Both requirements were right; only the claim's subject was wrong.** The audit trail *does* record before-and-after state for some actions — `audit_event.before_json` / `after_json` have existed since `migrations/0001_customer_core.sql:185-186`, `worker/lib/activity.ts:18` binds both, and production carries 90 events of which 8 have before-state and 22 have after-state. So AC-7d is rescoped to the **divergence record**, AC-6 is rephrased so an ordinary `audit_event` write is not a violation, and **§9.2a now holds the boundary explicitly in both directions.**
+
+**Revision 6 — corrections from the architect's design pass, plus one gap that pass revealed.** **(a)** §7.1 said "hash routing", which fails this spec's own AC-24 — ops2 uses **path routing** (ADR 0002). **(b)** URL shape and shell selection stated where they touch scope (§9.6, §12). **(c)** ADR 0003 captures the baseline at line birth with **no backfill**, so lines predating R3 have no original — and an empty divergence record for such a line would read as *"the human agreed"* when the truth is *"we never knew"*. **AC-8a** closes that. Register built at `docs/ops2/register.md`; AC-35 and AC-40a discharged.
+
+**Revision 7 — line add and hard-delete enter R1, from the owner at the mock gate.** *"yes, full capabilities to manage any record(s), including adding new or deleting"*, clarified as *"I was referring to order lines, not orders themselves: hard delete for order lines before the final quote is submitted to the customer. Once accepted, order becomes read-only."* The spec had no criteria for either; **§9.12 now pins them**, with the pre-issue boundary enforced server-side (AC-78a attempts the bypass for real), survivorship on delete asserted rather than assumed, delete-to-empty allowed-and-warned with the refusal staying at `issueQuote`, and the undersize block removed — which is I1 arriving somewhere it had not yet reached. **AC-8a is generalised**, because an ops-authored line is a second, permanent cause of the no-baseline state that AC-8a previously covered only for pre-R3 lines. **§16 is no longer empty:** the owner said read-only begins at *acceptance*, the code freezes at *issue*, and everything is designed to the code's boundary — recorded as an open item.
+
+## Inputs, and their standing
+
+| Input | Standing here |
+|---|---|
+| `docs/ops-redesign/GRILL-CONCLUSIONS.md` | **Binding**, with one correction in flight: §2's "trivial reversal" consequence and C3's "and reversals" were stage-0 inferences the owner has since vetoed (revision 4). Otherwise: D1–D19, C1–C8, §1 actors, §6 deferrals, §9 verified facts, §10 rejections. §1 is carried into §3 below **verbatim**. |
+| **The owner's answers at the revision-3, revision-4 and mock gates** | **Binding**, quoted verbatim where he gave words. Folded into §9.2, §9.7, §9.10, §9.12, §6.2, and revisions 4 and 7. |
+| **`docs/adr/0001`, `0002`, `0003`; `docs/design/ops2-r1-frame-and-record.md`** | **Architect decisions and design, binding on implementation.** Where one corrects an incidental claim in this spec — as `0002` corrects "hash routing" — the ADR wins and this spec is amended, because the acceptance criterion was always the governing statement and the mechanism was never a spec-level decision. |
+| **`docs/ops2/register.md`** | **The carry-across register**, built at the R1 design gate. The instrument §8 describes; discharges AC-35 and AC-40a. |
+| `docs/ops-redesign/UX-SPEC.md` **§B.4, left column only** | **Factual.** 291 rows describing the console that exists **today**. The basis of the completeness contract (§8) — with the blind spot §8.1 corrects. |
+| `docs/ops-redesign/UX-SPEC.md` **§B.4 right column, §A, §C–§G, `UX-AUDIT.md`, `README.md`, `mocks/`** | **Exploratory. Not a rule set.** Owner: *"that is not a set of instructions to follow. It is a good representation of what ops need to be able to do."* Mined for capability, never for rules, layouts or numbered rules. Not validated functionally — they were never built against real data. |
+| `docs/specs/referral-program.md`, `docs/design/referral-program-ux.md` | **Requirement source for §13.** In flight in the legacy console right now (D17); the requirement set may still move, and §13 says how that is handled. |
+| `CONTEXT.md` | Domain vocabulary. Terms it lacks are flagged in §14 for the architect. |
+
+**Two things this spec refuses to get wrong, stated up front because they are the two that get assumed wrong:**
+
+1. **The estimator is not authoritative.** Its purpose is to spare a human work. A human overrides anything. **No screen may block, gate, or demand justification for a human decision** (C4, §3 of the conclusions). Warnings may exist only if unobtrusive. Recording happens **once per quote, at issue** — never per save, never per line (C5).
+2. **Cloudflare Access and MFA are unchanged by this project** (C8). Access answers *who you are*. RBAC answers *what you may do*. D5 replaces domain-based **role assignment**, not authentication. Nobody reaches ops2 without passing Access first, exactly as today.
+
+---
+
+## 1. Problem statement
+
+The staff operations console is where two founders do every operational job in the business: reviewing what the estimator proposed, consulting the customer, negotiating manufacturer pricing, maintaining the catalogue and rate cards, and handling enquiries. It is 4,322 lines across 8 files, concentrated in two of them (`ProjectRecord.tsx` 1,690 lines, `Pricing.tsx` 1,346). Owner: *"Current ops console is a mess. […] it was never designed from UX perspective."*
+
+Three failures cost the business money rather than patience:
+
+- **It cannot be worked from a phone.** The desktop rail is 224px on a 375px screen; the Pricing surface is explicitly unhandled below `md`. So a request that arrives during the day waits until someone is at a desk. The owner's framing of that cost: *"Responsiveness is everything, speed is money. We can't afford waiting the whole day to open the request in the evening — that's the day lost as we would be able to follow-up with questions and contacting manufacturer only the next day."* One glance deferred is one working day lost, because both the customer follow-up and the manufacturer call slip past the point where either can happen that day.
+- **The machine's reasoning is not on screen.** `candidate_result` holds **3,989 production rows** — every product × variant evaluated, with per-filter pass/fail, a human-readable reason, six score components and a rank — and **no ops endpoint reads a single one**. `GET /projects/:id/building-model` is implemented, typed, and has **zero callers**. The reviewer is on the phone with a customer asking *"why that one?"* and *"why not the cheaper one?"*, and the answers are in the database, unread.
+- **It obstructs where it should assist, and is silent where it should speak.** Failures land in a page-level error strip rather than at the thing that failed; several code paths have no `catch` at all, so a failed write is indistinguishable from a successful one.
+
+**ops2 is a ground-up rebuild** (D1) — structure and finish both — that replaces the console and is then deleted from behind (D2), carrying every capability that works today across with it (C7).
+
+---
+
+## 2. Non-goals
+
+ops2 does not change what the business does. It changes the instrument the business is done with. Specifically: no pricing arithmetic changes, no GST arithmetic changes, no quote lifecycle changes, no new order stages, no customer-facing change of any kind, and no change to the Cloudflare Access perimeter. See §6.
+
+---
+
+## 3. Actors and their needs
+
+Carried verbatim from GRILL-CONCLUSIONS.md §1, which the owner has confirmed accurate. Quotations are his own words. Nothing in this section is inferred, and nothing has been added to it.
+
+### 3.1 Founder-operator (×2) — the only actor today
+
+> "OpenFrame at the moment is two-men show, both founders, both super-admin type users."
+
+Two people, both with unrestricted access, performing every operational task between them: reviewing machine output, consulting customers, negotiating manufacturer pricing, maintaining the catalogue and rate cards, handling enquiries. No division of labour by role — the same person is reviewer and catalogue maintainer on different days, often within the same hour.
+
+**What they need, and why:**
+
+- **To not lose a day.** The governing constraint of the entire project:
+  > "Responsiveness is everything, speed is money. We can't afford waiting the whole day to open the request in the evening — that's the day lost as we would be able to follow-up with questions and contacting manufacturer only the next day."
+
+  The cost of a delayed glance is not inconvenience; it is a working day, because both the customer follow-up and the manufacturer call slip past the point where either can be answered that day.
+
+- **To work while moving, on any device, at any width.** Many activities run in parallel; the console is used between other tasks, one-handed, on both iOS and Android, and on a foldable *held open with other apps beside it*:
+  > "use it open with apps running in parallel. it's a workhorse!!"
+
+- **To conduct a consultation, not to file records.** The estimator's output is the beginning of a conversation, not a document to approve:
+  > "We are not expecting customer to know our products. We are not expecting anyone to commit to buying products worth thousands of dollars without detailed consultation and review whatever they submitted. It is an interactive process of calling the customer, finding their needs, preferences, explaining product nuances. Then talking to manufacturer to get their final pricing set. It therefore can involves changing any parameters, any options, including pricing."
+
+- **To have the machine's reasoning on screen, ready to consume.** Not retrievable — present:
+  > "we don't want, for example, to open pdf with building drawing and search for Uw value — it should be on the screen, ready for consumption."
+
+- **To remain the authority.** The human overrides; the system never obstructs.
+
+- **To be able to hand the tool to someone with no training.** The quality bar, figuratively stated:
+  > "we aim for 'even my mum could do it' quality"
+
+### 3.2 Limited-access staff — designed for, not yet hired
+
+Growth is intended, and the permission model exists to serve it:
+
+> "identity has to move to RBAC, per user. This will also set foundation for future hires with limited access. For example, having someone to review quotes but not to have admin accesses, etc."
+
+**Need:** to perform one part of the job — reviewing quotes — without inheriting administrative reach over pricing, catalogue or users.
+
+*(The role that serves this need is settled in §9.7: **Reviewer**.)*
+
+### 3.3 Manufacturer partner (AMJ) — phase 2, boundary designed now
+
+The showrooms are the manufacturer's. Requests for physical inspection are currently forwarded to them by email:
+
+> "the showroom are owned by manufacturer, and requests for physical inspection need to be passed through to them. We are forwarding email notifications on requests, but we though it would be so much more easier for them to login and update status on what has happened. […] it also just access/visibility feature — they need to be able to see a single working area, not the rest."
+
+**Need (phase 2):** to see the appointment/inspection requests that concern them, and to record what happened — nothing else. A later ambition, explicitly raised when deep links were discussed, is direct price maintenance:
+
+> "if we could get manufacturer on board to use the platform to update pricing directly […] no more sending out emails/pdfs, no more manual reconciliation!"
+
+**Not a customer of the platform. No multi-tenancy.** Access is internal, by identity, for people the founders choose to admit.
+
+> **What serves this actor today, and is unaffected by ops2:** appointment enquiries are emailed to the manufacturer (`MANUFACTURER_TO` is configured in production), and staff record the handoff on the enquiry — `Handed off`, `Acknowledged`, `Mark acknowledged`, and two reference fields. **That staff-side handoff is live, in use, and a full carry-across obligation** (§B.4 row 189, region R5). It is a different thing from the partner logging in, which is §8.1's dormant entry D-1 and is deferred.
+
+### 3.4 The customer — present but not a user
+
+The customer never signs into ops. They are, however, **on the phone while the console is being operated**, and their questions set the pace. Design consequence: the reviewer must be able to answer "why does it say that?" and "why not the cheaper one?" without leaving the screen, and to change what they are looking at while the customer listens.
+
+---
+
+## 4. The thesis — what ops2 is an instrument for
+
+Carried from GRILL-CONCLUSIONS.md §2, because it is the frame every acceptance criterion below is written against.
+
+The brainstorm proposed: *ops adjudicates machine output against source, one line at a time, then releases.* **That is too passive.** Edits happen with the customer on the phone:
+
+> "change while on the phone. Recalling what was said discussing an order from 20-lines of products — that's a tough one to do. Taking notes — that requires another device or notebook."
+
+> "One cannot adjust anything without gathering information and requirements, which is what consultation (or questioning) is for."
+
+Adjudication is real, but it is performed conversationally and **its normal outcome is a change, not a tick.** The owner's mock-gate ruling extends that: the change may be **adding a line that was never proposed, or deleting one that should not be there** (§9.12).
+
+**Three load-bearing consequences**, each of which becomes a criterion in §9:
+
+1. Edits fast enough to keep pace with speech.
+2. A total that moves as options change — including as lines are added and removed.
+3. Per-line comments captured while the reason is still in the room — which is what the quotation above is about. The difficulty named there is *recalling what was said* across twenty lines, and a note taken at the time is the answer to it. (Per-line comments already exist in the data model and are used; `comment.line_id` is never written by the current UI.)
+
+> **A fourth consequence stood here in revisions 1–3 and is now removed.** "Trivial reversal when a customer changes their mind back" was a stage-0 inference, not the owner's ask, and he has vetoed it:
+>
+> *"We don't expect customer's changing their mind as such: we consult them and make product decisions. No need to track change history for undo purposes."*
+>
+> **ops2 builds no undo capability, and no new per-field, per-save journal to serve one.** The consultation produces a decision; the decision is saved. Recorded here rather than deleted silently, because it was load-bearing across three revisions and its absence would otherwise read as an oversight.
+>
+> **The veto's reach, stated precisely (revision 5).** It forbids *building* a new capability. It does not reach the existing `audit_event` trail, which goes on recording exactly what it records today — including the before-and-after state it already carries for some actions. Those are different things and §9.2a holds the line between them in both directions. **Note also that hard-delete of a line (§9.12) is not undo** — it is a forward decision made during consultation, not the restoration of a previous value.
+
+---
+
+## 5. The governing invariants
+
+Eight properties that every region of ops2 must hold. They are not features; they are the conditions under which any feature is acceptable. Each has criteria in §9.
+
+| # | Invariant | Source |
+|---|---|---|
+| **I1** | **Human authority is absolute.** No blocking gate, no required justification, no acknowledgement ceremony, on any human decision. Warnings only if unobtrusive. | C4, §3 |
+| **I2** | **Recording is quote-level, at issue, once.** Never per save, never per line. Internal only — no customer-facing note. | C5, D19 |
+| **I3** | **Full capability parity at every width.** Everything works on a phone; the narrowest target is the folded cover screen. | D3, C1 |
+| **I4** | **Neither failure mode.** No mobile app stretched across a desktop; no cramped desktop crushed onto a phone. Layout responds to the **width actually given, moment to moment** — never to device class. | D4, C1 |
+| **I5** | **Conversation pace.** Edits and totals keep up with speech. *(C3's "and reversals" is removed — revision 4.)* | C3 as corrected, §4 |
+| **I6** | **Failure is loud.** Connection loss and every rejected write are surfaced at the thing that failed. Nothing fails silently. Offline editing is not required. | D15 |
+| **I7** | **Two gates, not one.** Cloudflare Access admits the person; a granted role admits the capability. Neither alone is sufficient; revoking either locks someone out. | C8, D5 |
+| **I8** | **Nothing that works today disappears silently — and nothing dormant is let go silently either.** The carry-across register (§8) is the instrument, and it is a hard gate on switch-over and on deletion. | C7, D18 |
+
+**I4 has a consequence the rest of the spec does not soften.** D3 is categorical — *"everything works on the phone"* — so a surface that renders "this needs a wider screen" fails it. The exploratory UX-SPEC proposed exactly that for the rate-card editor (its row 269). **That proposal is void.** The rate-card editor is the hardest width problem in the console and it is in scope at the narrowest target. This is stated here rather than negotiated later.
+
+**I1 reaches one place it had not yet reached.** The current line editor blocks a save on an undersize dimension — `ItemComposer.tsx:704`, *"Oversize is submittable, flagged; undersize is a typo and blocks"*. A block on a human decision is exactly what C4 forbids. Revision 7 removes it: the sentence survives as a warning, the save proceeds (AC-101).
+
+---
+
+## 6. Scope
+
+### 6.1 In scope
+
+1. **All eight of today's surfaces**, rebuilt: dashboard, projects, customers, enquiries, pricing, files, audit, admin — reorganised as the design stage decides, with every capability in the carry-across register accounted for.
+2. **The record** — project and order as one plane: identity, phase, actions, lines, the line editor, composites/split/merge, notes, files, history, payments — **and full line management before issue: add a line, hard-delete a line** (§9.12).
+3. **The derivation surface** (D8) — origin, reasoning, extracted text, the requirement derived, the candidates considered. **Including the endpoints that must be added to serve it** — see §6.4.
+4. **Losing candidates, ranked, with reasons, one tap away** (D9).
+5. **RBAC, per user** (D5), with the three roles settled in §9.7 — replacing domain-based **role assignment**, with the domain path kept alive additively through soak (§12).
+6. **The "with manufacturer" state** on the work, visible in the queue (D10). Not a messaging system. *(Its landing-page surfacing is phase 2 — §6.2.)*
+7. **Deep links to every record and every line** (D11), on **paths** rather than fragments (ADR 0002) — see §9.6.
+8. **The landing page as an attention surface** (D12), carrying **two item classes in phase 1** — work requiring attention, and product catalogue gaps (§9.10).
+9. **Record-scoped Audit and Files, with the global lists retained** (D13). **The audit trail is carried unchanged, including the before/after state it already records** — §9.2a.
+10. **Installability — add-to-home-screen** (D14). Not an App Store / Play Store app.
+11. **The referral program's ops requirements**, carried across from the legacy build (D17, §13).
+12. **Switch-over, the soak fire escape, and deletion** as three separate events (D2, C7, §12).
+13. **The carry-across register** (§8), including its dormant-capability entries (§8.1) — **now built at `docs/ops2/register.md`** — discharged and closed.
+
+### 6.2 Out of scope — deferred to phase 2 or later
+
+Directly from GRILL-CONCLUSIONS.md §6:
+
+- **Manufacturer login and their single working area** (appointment/inspection status). **The boundary is designed and enforced now; the surface is phase 2.**
+
+  > **Stated plainly, because the legacy console already ships a partial version of it.** `src/ops/OpsApp.tsx:85-86` gives a `manufacturer`-role user exactly one tab — Enquiries — and lines 194–195 land them on it as their only destination. **It has never been reachable in production:** `MANUFACTURER_EMAIL_DOMAINS` is unset in `wrangler.jsonc`, `isManufacturerEmail` (`worker/lib/staff.ts:39`) matches on email domain alone, and production holds exactly three internal users, all `admin` — **no manufacturer account has ever existed.** So this is code that has never had a user, not a capability in use.
+  >
+  > **ops2 declines to carry it forward**, pending the phase-2 partner work, which is unagreed with AMJ. It is register entry **D-1** (§8.1) and the owner sees it there rather than discovering its absence. **What is not deferred is the refusal:** the manufacturer role must be refused at every ops2 endpoint from day one (AC-66, AC-66a), so a dormant role cannot become a live hole the moment someone sets an environment variable.
+
+- Manufacturer direct price maintenance.
+- Live presence — "X is looking at this now" (D16).
+- Push notifications — deliberately deferred until the console has been used for a fortnight, so *"what is worth interrupting me for"* is decided from experience. Installability (D14) is what makes iOS push possible later.
+- Extractor work to emit page number, sheet reference and region geometry. Its own feature with its own justification, **never a dependency of this redesign**.
+- Offline editing with conflict resolution — explicitly not wanted (D15).
+
+**Added at the revision-3 gate — four attention-surface items the owner moved to phase 2.** Owner: *"key information at this point is: orders requiring attention, product catalogue gaps. Everything else can be phase 2."* Recorded rather than deleted, because each is a real gap that will want raising again:
+
+- **Delivery zones configured but unpriced.** All fifteen production zones are in this state right now, and a project cannot be honestly issued without a delivery number. This was **my inference, not his ask** — correctly flagged as mine at the gate, and not taken. It remains true and remains worth raising later.
+- **Referral payouts ready, with an age flag past the promised timeframe.** See §13 — the payouts *screen* is fully in scope; only its landing-page prompt is deferred, and that becomes a register row the owner sees at R7.
+- **Work with the manufacturer, with how long it has been there.** The state itself is in scope and visible in the queue (D10); only its landing-page surfacing is deferred.
+- **Products with no rate card**, which the server already computes and nothing renders.
+
+### 6.3 Out of scope — permanently, or by another thread
+
+- **An undo capability, and any new per-field, per-save journal built to serve one** — vetoed by the owner at the revision-4 gate (§4). **Scoped precisely (revision 5): this forbids building something new. It does not touch the existing `audit_event` trail, which continues to record everything it records today, including the before-and-after state it already carries for some actions.** The two are different things and §9.2a holds the boundary. A save that writes an `audit_event` is not a violation of this exclusion. *(Nor is the write-once `line_baseline` of ADR 0003, which is captured at line birth and never per save — §9.2.)*
+- **Duplicate-a-line and reorder-lines.** Absent today (§B.4 row 92), and **deliberately still absent** — the mock-gate ruling added add and delete, and nothing else. `seq` remains derived from array index; no reorder control exists. Recorded so a later region does not read "full line management" as licence (AC-103).
+- **Deleting a project, an order, or any record above line level.** The owner's clarification is explicit: *"I was referring to order lines, not orders themselves."*
+- **Any change to Cloudflare Access, its policy, or MFA** (C8).
+- **A new hostname for ops2.** Ops is served by host prefix; Access protects that hostname and the Worker verifies a single `ACCESS_AUD`. ops2 on the **same host** under a path prefix needs no Zero Trust change and no edit to the authentication path. A new hostname would require a new audience, a list-valued `ACCESS_AUD` and widening `isOps` — security-path changes for a cosmetic reason.
+- **Multi-tenancy, ever** (C6).
+- **Any customer-facing change.** No customer surface, response body, email or price moves because of ops2.
+- **Any change to pricing arithmetic, GST arithmetic, delivery zone pricing, quote lifecycle states, or order stages.** ops2 observes them; it does not extend them.
+- **Region rendering over drawings** — rejected (D8, §10): the data does not exist, and the model is wrong regardless because provenance spans multiple pages.
+- **A parallel-running transition** — rejected (D2).
+- **Building RBAC into the legacy console first** — rejected (D5).
+- **The trade account request form** — a separate thread (referral spec D19, option c). ops2 does not build it.
+- **An order Cancel control.** No cancel endpoint exists; recorded so nobody designs the button.
+- **Backfilling an original baseline onto lines that predate R3** — rejected in ADR 0003, and rightly: inventing an original from current values would fabricate the very fact the divergence record exists to report. The consequence is stated on screen instead (AC-8a).
+- **The debug thermal endpoint** (`/api/debug/thermal`, disabled whenever `THERMAL_DEBUG_KEY` is unset — which it is). Not a console surface and not surfaced by ops2. Recorded so it is not rediscovered as a gap.
+- **Estimator engine selection** (`PARSE_ENGINE`, `AI_STAGE_CACHE`, `AI_ESCALATION_MODE`, `SCAN_ENGINE` and their companions). ops2 renders what these produce; it does not expose or change them.
+
+### 6.4 Scope the conclusions create that the exploratory documents did not
+
+**This is the single largest consequence of the conclusions overriding the mock, and it must not be lost.**
+
+The exploratory UX-SPEC resolved `candidate_result` by *stating its absence on screen* — "the candidate evaluation is recorded but no endpoint reads it" (its rows 283–284). **D9 is binding and says otherwise:**
+
+> "the customer, home owners in particular, might want to save money and choose the next-worse solution that is cheaper despite marginally failing to meet requirements."
+
+Losing candidates are **shown, one tap away, ranked, with reasons**. The data is there — 3,989 rows in production, carrying exactly rank, reason and per-filter pass/fail. **The conclusions win, so ops2 adds the read endpoint.** Likewise `GET /projects/:id/building-model`, which exists and has zero callers, is called by ops2.
+
+**Revision 3 widens this further, for one purpose.** Because the divergence baseline is *the original information* including extracted opening dimensions (§9.2), the original value per field must be **available at issue time**. That is a second, independent reason the evidence and building-model read paths are in scope, and it was R3's largest single design problem — now settled by ADR 0003 (see §9.2).
+
+What genuinely stays *unwired and stated* is only what has no data behind it, verified against production: `evidence_items.page_no`, `sheet_ref` and `region_json` are **NULL on all 1,000 rows** because the extractor never produces them (the write path binds real values; the producer does not). D8 covers this exactly: **the absent visual is stated, not blank.**
+
+---
+
+## 7. Sizing judgement — decompose, but do not wayfind
+
+**Accepted by the owner at the revision-3 gate, unchanged.** The argument is retained because the regions inherit from it.
+
+`CLAUDE.md` asks me to flag when an ask is too large for one monolithic spec and should instead be charted with `mattpocock-skills:wayfinder` — a map issue whose children are decision tickets, resolved one at a time. **My call: the effort must be decomposed, and the wayfinder route is the wrong instrument for it.** Both halves argued.
+
+**Why one monolithic spec would fail.** Eight surfaces, 291 carry-across rows, an RBAC model with a schema change and an endpoint-by-endpoint authorization sweep, a new estimator-transparency read path, a responsive system that must satisfy two contradictory-sounding constraints at once, and a PWA. No single testing pass can walk those acceptance criteria; a spec whose criteria cannot be walked is not an acceptance instrument, it is a book. And the pipeline's decision gates would batch questions across regions that have nothing to do with each other.
+
+**Why wayfinder is nonetheless the wrong shape.** Wayfinder exists for an effort whose *route is not visible* — foggy, with an open frontier of unresolved decisions. **Stage 0 already did that work and emptied the frontier**: 19 decisions settled, 8 constraints fixed, the conclusions document closing with *"The frontier is empty. No decisions remain outstanding."* Generating decision tickets now would produce tickets asking questions the owner has already answered, at a real cost in his time and mine, to manage a risk that no longer exists. The owner's standing guidance is explicit on this point:
+
+> "Let's just build the best one from the get go, and I will be a judge and a guide along the way." … *Do not spend effort hedging against hypothetical better versions of the work, and do not design process to manage that risk.*
+
+**So: this document is the spine, and the build is decomposed into eight regions.** The spine owns the actors, the invariants, the scope boundary, the abuse cases and the carry-across register — because **coherence is the entire point of the rebuild and it is the one thing that cannot be delegated to eight independent regions.** The console being replaced is what happens when each surface is decided locally. Each region then runs the full pipeline as a normally-sized feature, inheriting §5 and §8 unchanged and adding only its own design.
+
+**Tracker use.** One tracking issue on `siaribuild/apertly` with the eight regions as sub-issues, so the register is discharged in public and progress is visible without reading eight spec documents. It carries the region list, not decision tickets — the `wayfinder:map` label does not apply and would misrepresent what it is.
+
+### 7.1 The regions, and their order
+
+D7 fixes the first: *"Workplace first; we won't switch until everything is done though."*
+
+| # | Region | Contains | Why here |
+|---|---|---|---|
+| **R1** | **The frame and the record** | The responsive layout system; **path routing and deep links** (D11, ADR 0002); boot, brand, sign-in, error boundary; loud-failure handling (I6); the record — identity, phase ribbon, action bar, line table, line editor, composites, split/merge, save, **line add and hard-delete** (§9.12). | **D7.** Also the tracer bullet: sign in → open a record → change a line → watch the total move → issue. It is the thinnest slice that proves I3, I4, I5, I6 and I1 all at once, and the only honest place to discover that the layout system does not work. |
+| **R2** | **Identity and permission** | RBAC per user, three roles (§9.7); role assignment moved off email domain; per-endpoint authorization; the staff administration screen; the additive migration; the rollback drill. | Second, so **every region after it is built against the final gate** and the abuse battery in §10 is executed once against a stable surface rather than re-run after each new screen. R1 ships against the existing role resolution, which stays live regardless (§12). |
+| **R3** | **Derivation** | The derivation surface (D8); losing candidates ranked with reasons (D9); the `candidate_result` and `building-model` read paths (§6.4); thermal audit; learning/teach; evidence; **the divergence record at issue and the `line_baseline` capture** (I2, §9.2, ADR 0003). | The record's other half, and the highest-value unmet need in §3.1 — *"it should be on the screen, ready for consumption."* Depends on R1's record. **Revision 3 made this the heaviest region** — see §9.2. |
+| **R4** | **Work** | The landing page as an attention surface, two item classes (D12, §9.10); the merged queue and its saved views; the "with manufacturer" state and the four-value triage sort (D10). | The front door needs records to point at, so it follows them. |
+| **R5** | **People and archive** | Customers, enquiries/leads **including the live manufacturer handoff panel** (§3.3), the global Files list, the global Events list, record-scoped Files and Audit (D13). | Independent of R1–R4 once the frame exists; sequenced here because R6 is harder. |
+| **R6** | **Catalogue and commerce** | Products, rate cards, options, the worked-example trace, reconciliation, Settings (Commercial, Policy, Catalogue, Staff-facing policy). | **The hardest width problem in the console** (I4's consequence) — it benefits from the layout system being proven across five prior regions. |
+| **R7** | **Referrals** | The referral program's ops requirements, re-satisfied in ops2 (§13). | Sequenced after the legacy referral work settles, so the requirement set is stable when it is carried (D17). |
+| **R8** | **Installable, switched over, deleted** | Installability (D14); the switch-over deploy; the soak fire escape; the deletion commit (D2, C7, §12). | Last by definition. |
+
+**R1 does not exit design review until the carry-across register exists and every one of its rows is assigned to a region.** *(Discharged: `docs/ops2/register.md`, AC-35 and AC-40a.)* That is what stops region 7 discovering that nobody owned rows 233–272.
+
+---
+
+## 8. The completeness instrument — the carry-across register
+
+D18 gives quality to the owner: *"I will be accepting that and I consider myself competent in UX."* That is his to judge, and this spec does not attempt to score it. **What this spec carries instead is completeness**, and completeness needs an instrument that can fail.
+
+**The register lives at `docs/ops2/register.md`.** It is a table with one row per capability that exists in the console today. Its rows come from **`UX-SPEC.md` §B.4's left column only** — the 291-row inventory of current behaviour, which is factual — **plus §8.1's dormant entries**, which §B.4 could not see. Its right column (the exploratory proposal of where each lands) is discarded, along with the rest of that document's rules.
+
+Each row carries: the capability, its verbatim copy where copy is part of it, its region, **the environment in which it is exercisable**, its state, and — where let go — the owner's decision.
+
+**Environment:** `PROD` where the capability is exercisable in production, `NON-PROD` where it is only exercisable locally or in staging. This column exists because the deletion gate (AC-89) asks whether a capability has been *exercised on real work*, and for a `NON-PROD` row that question has no production answer — the evidence has to come from the environment the capability actually runs in. Without the column, those rows either block deletion forever or get waved through.
+
+**States:**
+
+| State | Meaning | Evidence required |
+|---|---|---|
+| `CARRIED` | The capability exists in ops2 and has been exercised. | The tester performed it in ops2, in the row's environment, and recorded the result. |
+| `REPAIRED` | The capability exists, and a defect in it was fixed. The capability is still there. | As `CARRIED`, plus the defect demonstrated absent. |
+| `RESTATED` | Data or a limit that today is silent or invisible; ops2 states it in words instead of showing it. | The sentence is present on the named screen. |
+| `DROPPED` | A **working** capability, deliberately not carried. | **An owner-visible entry naming what is lost and why. Nothing may be `DROPPED` without the owner seeing it.** |
+| `DORMANT` | Present in legacy code but **never reachable in production**; not carried into ops2. | **The same owner-visible entry as `DROPPED`** — plus the evidence of dormancy (the unset variable, the absent user, the guard), and the named deferral where one exists. |
+| `DEAD` | Unreachable code today — not a capability, and not configurable into one. Removal is not a loss. | Proof of unreachability (no call sites / no route / no reachable branch). |
+
+**A row may also record a capability the rebuild *adds*.** Rows 92, 98 and 105 are annotated rather than merely discharged: row 92's "no add-line, delete-line, duplicate or reorder" becomes *add and delete built, duplicate and reorder deliberately still absent* (§9.12, AC-103); rows 98 and 105 record the undersize guard leaving `canSave` (AC-101). The register's job is that nothing disappears unnoticed — a row whose behaviour *widens* is not a regression, but it must still be visible.
+
+**Why `DORMANT` is its own state and must not be collapsed back into `DEAD` or `DROPPED`.** `DEAD` asserts *removal is not a loss*, which understates a surface the owner intends to build in phase 2. `DROPPED` implies *a working thing was cut*, which overstates code that has never had a user and would misdirect the owner's attention when he reviews the list. The distinction is the whole point of the class: **dormant code is a decision the owner has already made about the future, not a regression and not rubbish.** Collapsing it loses that.
+
+**Not carry-across obligations, recorded separately so they are not re-discovered as gaps:** §B.4.15 (endpoints that reach no pixel today), §B.4.16 (persisted data with no reader). These are not capabilities today, so losing them is not a regression — but §6.4 promotes two of them into scope deliberately.
+
+**The register is a gate, twice:**
+
+- **Switch-over may not happen while any row is unaccounted for** — every row in one of the six states, and every `DROPPED` and `DORMANT` row seen by the owner.
+- **Deletion may not happen while any row is `CARRIED`/`REPAIRED` but not yet exercised** in its recorded environment. Owner's basis for deletion is judgement, not a fixed soak (O2 closed) — but the register says what he is judging.
+
+### 8.1 The register's blind spot — dormant capabilities
+
+**The defect this subsection fixes.** `UX-SPEC.md` §B.4 was compiled by reading the console's behaviour. Behaviour is only visible where it is reachable, so **any capability standing behind an unset environment variable, an absent user, or an environment guard is invisible to it** — and therefore invisible to a register built from it, and therefore silently dropped by a rebuild scoped from that register. That is not a hypothetical: it is exactly how revision 1 lost the manufacturer Enquiries view without a word.
+
+A sweep of the Worker's environment surface (`worker/types.ts`, `wrangler.jsonc`, and the guards that read them) against production data found **three**. Each gets its own register row.
+
+| # | Dormant capability | Evidence it is dormant | State | Environment | Disposition |
+|---|---|---|---|---|---|
+| **D-1** | **The manufacturer-only Enquiries view.** `tabsFor` (`src/ops/OpsApp.tsx:85-86`) gives a `manufacturer`-role user exactly one tab; `OpsShell` (`:194-195`) lands them on it as their only destination. | `MANUFACTURER_EMAIL_DOMAINS` unset in `wrangler.jsonc`; `isManufacturerEmail` (`worker/lib/staff.ts:39`) matches on email domain alone; production internal users are **three, all `admin`** — no manufacturer has ever existed. | `DORMANT` | `NON-PROD` (constructible locally only) | **Not carried.** Deferred with the phase-2 partner surface (GRILL-CONCLUSIONS §6, §3.3), which is unagreed with AMJ. **The refusal is carried in full and from day one** — AC-66, AC-66a. |
+| **D-2** | **The ops OTP sign-in screen** — work-email field, `Send code`, the six-digit field, `Invalid code, or this email isn't authorised for the ops console.`, the dev-code banner, `← Change email`, and the rest of §B.4 rows 5–13. | `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are **both set in production** (`wrangler.jsonc:115`), so `accessIsConfigured` is true and the OTP routes **404 by deliberate design** (`worker/routes/ops.ts:172-189`). In production the screen is never rendered and the routes are not part of the deployment's surface. | `CARRIED` | **`NON-PROD`** | **Carried in full.** It is live and load-bearing in local and staging, which is where every developer signs in. Its rows are exercised there, not in production — which is what the environment column now records. **The production 404 guard is itself carried and tested** (AC-57a): it closed a real hole and a rebuild is exactly where it gets reopened. |
+| **D-3** | **External AV scanning of uploads**, behind `SCAN_ENGINE` = `remote`/`both`. | `SCAN_ENGINE` unset ⇒ defaults to `structural`; `SCAN_ENDPOINT` and `SCAN_AUTH` unset. So the on-stack structural scanner runs and the AV path never does. | `CARRIED` | `PROD` (structural), `NON-PROD` (AV path) | **Carried as-is.** ops2 changes no scanning behaviour. The consequence for the console is a rendering one and is criterion AC-85a: the scanner **fails closed** — `unknown` and `scanner_misconfigured` are never clean — so ops2 must render those verdicts distinctly and must never present an unscanned or unknown file as safe. |
+
+**Two things this sweep did not turn up, recorded so the next reviewer does not redo it.** `STAFF_EMAIL_DOMAINS` has a live default (`openframe.com.au`) and is set in production, so nothing behind it is dormant. `MANUFACTURER_TO` **is** set in production, so the manufacturer email handoff and the staff-side handoff panel on an enquiry are live capabilities and ordinary carry-across obligations (§3.3, region R5) — **not** part of D-1's deferral. Conflating those two is the easiest mistake available here.
+
+- **AC-40a** `[R1]` — **discharged.** Every row in `docs/ops2/register.md` carries an environment value, and §8.1's three entries are present with the states and dispositions recorded above.
+- **AC-40b** `[R1]` **Given** the sweep method in §8.1, **when** the register is created, **then** the sweep has been repeated over the then-current `worker/types.ts`, `wrangler.jsonc` and production role data, and any capability it finds that is not D-1, D-2 or D-3 is added as its own row rather than left to scope silence. *(Partly discharged: the configuration half is recorded in the register's sweep note and found nothing new. **The production role-data half remains outstanding for R1 implementation** — a read-only query under the deploy protocol.)*
+
+---
+
+## 9. Acceptance criteria
+
+Every criterion is Given–When–Then and independently verifiable. `[Rn]` marks the region that owns it; `[all]` means every region is tested against it. The **negative criteria are in §10** and are verified by attempting the forbidden action, not by inspection.
+
+### 9.1 Human authority (I1)
+
+- **AC-1** `[R1, R3]` **Given** a line whose selected configuration diverges from the estimator's proposal or fails a derived requirement, **when** staff save the line, **then** the save succeeds, the chosen values persist, and no confirmation step, justification field, acknowledgement checkbox or second click is required.
+- **AC-2** `[all]` **Given** any divergence between an estimator proposal and a human decision, **when** the screen renders, **then** any warning shown does not take keyboard focus, does not appear in an element with `role="dialog"` or `role="alertdialog"`, does not disable the primary action, and does not require dismissal before the work can continue.
+- **AC-3** `[R3]` **Given** the losing candidates for a line, ranked with reasons, **when** staff select a candidate the estimator ranked below its own selection — including one that marginally fails a requirement — **then** it is selectable, it saves, and the line prices on it.
+- **AC-4** `[all]` **Given** any ops2 surface, **when** the full set of controls is enumerated, **then** no control is disabled, hidden or made conditional on a human agreeing with the estimator.
+- **AC-5** `[R3]` **Given** the derivation surface, **when** it renders estimator output, **then** that output is labelled as a proposal, and no copy presents it as a decision, a requirement or an approval.
+
+### 9.2 The divergence record — decided at the revision-3 gate (I2)
+
+**Owner, verbatim:**
+
+> "any line that differs in any way from the original information. It may be proposed product, its parameters, options, or even extracted dimensions of an opening."
+
+**This is wider than revision 1 proposed, in two ways that both matter.**
+
+1. **There is no field allow-list.** Revision 1 enumerated five fields. That is replaced by a rule: **every line field that carries an original value is in the comparison set.** A spec that names five fields is a spec that silently stops recording the sixth.
+2. **The baseline is the original information, not the estimator's recommendation.** A dimension read off a schedule *is* original information, so **correcting an extracted opening dimension is a divergence and is recorded** — even though the estimator never "proposed" it in the recommendation sense.
+
+**What is unchanged:** one record per quote, written at issue, never per save and never per line (C5). Internal only (D19).
+
+> **It is a two-point comparison, not a history — and it must not be built as one.** The record compares **two values at one moment**: the original information, and what is being issued. **The divergence record** requires no journal of intermediate edits, no per-save snapshots and no change log of its own, and nothing in this spec may be read as asking for one. If a line was edited nine times between parse and issue, the record still holds a single pair of values for each differing field.
+>
+> **What other subsystems record independently is not this record's business** (revision 5). The `audit_event` trail goes on doing what it does; the estimator's own tables go on holding what they hold. This paragraph constrains **how the divergence record is built**, not what the rest of the system may log.
+
+**How the baseline is obtained — settled by ADR 0003.** Resolving it from live tables at issue time fails on the schema's facts: `opening_instance` is updated in place by re-extraction, and a customer-configured `quote_line` is edited in place with no prior-value journal. So the baseline is a **write-once `line_baseline` row captured when a line first receives values from a non-staff source** — proposal application, schedule-parse application, or customer submission (spec A-9) — read and written only by `worker/lib/original.ts`. **This is not the journal §6.3 forbids:** it is one frozen fact per line, written once at birth, never per save.
+
+**Two consequences of §9.12's line management, recorded here so R3 does not rediscover them.** A **staff-added line has no baseline row at all** — nobody proposed it, so there is nothing to diverge from (AC-7b), and it must never read as agreement (AC-8a). And `line_baseline` declares a deliberate `ON DELETE CASCADE` onto `quote_line`, so **deleting a line drops its baseline** — correct, because a deleted line has no divergence to report.
+
+- **AC-6** `[R3]` **Given** a quote of three lines, two of which differ from their original information, each edited five times, **when** every edit is saved, **then** **no** divergence record is written by any save, **and no new per-field, per-save journal is written by any save.** *(Neither an `audit_event` nor the write-once `line_baseline` is a violation — the first is a different thing carried unchanged, §9.2a; the second is written at line birth, not by these saves.)*
+- **AC-7** `[R3]` **Given** that same quote, **when** it is issued, **then** exactly **one** divergence record is written for the quote, enumerating **every line field whose issued value differs from its original value**, with both values, and no per-line or per-save record exists anywhere.
+- **AC-7a** `[R3]` **Given** a line whose opening dimensions were extracted from an uploaded schedule and then corrected by staff, **when** the quote is issued, **then** that correction appears in the divergence record, with the **extracted** value as the original — demonstrating that the baseline is the original information and not only the product recommendation.
+- **AC-7b** `[R3]` **Given** a line field for which no original value exists — nothing was extracted, submitted or proposed for it — **when** the quote is issued, **then** it is **not** reported as a divergence. Absence of a baseline entry is not a difference.
+- **AC-7c** `[R3]` **Given** a field is added to a line in some future change, **when** it carries an original value and the issued value differs, **then** it appears in the divergence record without this spec being amended — the rule is "every field present in the baseline", not a list.
+- **AC-7d** `[R3]` **Given** a line edited nine times between parse and issue, **and** re-extraction or re-estimation having run in between, **when** the quote is issued, **then** **the divergence record** holds exactly one original/issued pair for each differing field, measured against the value the line was *born* with, and carries no intermediate values.
+- **AC-8** `[R3]` **Given** a quote all of whose lines have a baseline and none of which differ from it, **when** it is issued, **then** a divergence record is written recording none, and it is distinguishable from a quote that was never issued. `ASSUMED:` an explicit empty record rather than no record.
+- **AC-8a** `[R3]` **A line with no baseline must never read as agreement.** **Given** a line with no `line_baseline` row — **for either reason: created before baseline capture shipped** (ADR 0003 deliberately does no backfill, so such lines exist among in-flight quotes) **or authored by staff during consultation** (§9.12, a permanent and ordinary case) — **when** the quote is issued, **then** the divergence record marks that line as **having no recorded original**, in a state distinct from "matched its original", and the derivation surface says the same on screen. *(Without this, the third state collapses into the second and the record would assert the human agreed with a proposal that never existed. That is the one way this record could state something false.)*
+- **AC-9** `[R3]` **Given** a quote issued, returned to pricing, and issued again, **when** the second issue occurs, **then** a new divergence record is written for that issue and the prior one is retained. `ASSUMED:` supersede-and-retain rather than overwrite.
+- **AC-10** `[R3]` **Given** a quote with a divergence record, **when** any customer-facing response body, email or PDF for that quote is produced, **then** no divergence text, flag or count appears in it (D19).
+
+### 9.2a Three different things, and the boundaries between them
+
+**Why this subsection exists.** Revision 4 removed undo and per-edit change history, and revision 5 found that the removal had been phrased too widely — AC-7d claimed *the system* kept no intermediate values, which contradicted the audit trail's carry-across obligation. **The two misreadings run in opposite directions and this section guards both:** "no change history for undo" must not become licence to thin the trail, and "the audit trail is unreduced" must not become an argument for building the per-field journal the owner vetoed.
+
+| | Purpose | Granularity | Consulted to revert? | Status in ops2 |
+|---|---|---|---|---|
+| **Undo / a per-field, per-save journal** | Let an operator put a value back | Per edit, per field | Yes — that is its whole point | **Not built.** Building it is vetoed (§4, §6.3). |
+| **`line_baseline`** | Hold what a line was born with, so divergence is measurable | One frozen row per line, written once | No | **In scope** (ADR 0003). |
+| **Divergence record** | Say where the human differed from the original, once, at issue | One record per quote per issue | No | **In scope** (§9.2). |
+| **Audit trail** | Say who did what to which entity, when — accountability | **Per event, not per field** | **No, never** | **Carried unchanged**, including its before/after state. |
+
+**What the audit trail actually is, verified rather than assumed.** `audit_event` has carried `before_json` and `after_json` since the very first migration (`migrations/0001_customer_core.sql:185-186`), and `worker/lib/activity.ts:18` binds both on every insert. In production it holds **90 events, of which 8 carry before-state and 22 carry after-state** — so it is emphatically **event-level, not field-level**, and it has never been a complete per-edit history of everything. The code says why in its own comment: `before` matters *"wherever the question is 'what did it change FROM' — money, above all"*, and the column went unused until the ops Pricing screen made rate edits a routine act rather than a migration.
+
+**So the veto does not reach it, and could not have.** What the owner declined was **building an undo capability and a new journal to serve it**. He said nothing about `audit_event`, and was never asked to — it is not a change-history-for-reverting, it is a record of what happened, kept for accountability and never consulted to put a value back. **A save in ops2 that writes an `audit_event` with before-and-after state is doing exactly what today's console does, and is required to keep doing it.**
+
+- **AC-40c** `[R5, all]` **Given** the audit trail as it exists today, **when** ops2 is complete, **then** every event kind still written is still written, the record-scoped History block and the global Events list both still render, the actor and timestamp are still shown, and **no event kind, field or retention is reduced** relative to the legacy console. Removing undo removes nothing from this trail.
+- **AC-40d** `[R6, R5]` **Given** the actions that today record before-and-after state — a rate-card edit above all — **when** ops2 performs the same action, **then** an `audit_event` is still written with the same `before_json` and `after_json` content, and the ops Pricing change history that reads it still renders.
+
+### 9.3 Width, and the two failure modes (I3, I4)
+
+- **AC-11** `[all]` **Given** the console at the narrowest target width (the folded cover screen), **when** each capability owned by the region is attempted, **then** every one is reachable and completable — including editing a rate card (R6) and adding and deleting a line (R1) — and no surface presents "use a wider screen", hides a capability, or redirects to another device.
+- **AC-12** `[R1, then all]` **Given** a browser window resized continuously from the narrowest target to full desktop width, **when** the width crosses every layout change point, **then** no in-progress edit is lost, no focused field loses focus, and no scroll position resets.
+- **AC-13** `[R1]` **Given** a desktop browser sized to the narrowest target width and a phone at the same width, **when** the same screen is rendered on both, **then** the rendered layout is the same — layout is selected by available width alone. Verified additionally by the absence of any user-agent, platform or device-class branch in layout code.
+- **AC-14** `[all]` **Given** a viewport of 1440px or wider, **when** a record is opened, **then** the openings list and the derivation content are usable simultaneously without navigating away from either, and no primary content column is confined to a phone-width measure.
+- **AC-15** `[all]` **Given** the reference devices — a late-model iPhone and a Galaxy Fold 7, per C2 — **when** each region's criteria are walked, **then** they pass on both, on the Fold both folded and unfolded, and when the Fold is unfolded mid-task.
+
+### 9.4 Conversation pace (I5)
+
+- **AC-16** `[R1]` **Given** a line editor open on a reference device over a mobile connection, **when** staff change an option, **then** the updated line total and the updated quote total are both visible within **1200 ms at p95** from the input event. `ASSUMED:` the budget; the requirement that both totals move together is not assumed.
+- **AC-17** — **struck at the revision-4 gate.** It required the pre-edit value to stay visible so a change could be reversed without relying on memory. The reversal requirement is vetoed (§4).
+- **AC-18** `[R1]` **Given** a record with twenty lines, **when** staff attach a comment to one line while the reason is still in the conversation, **then** the comment is stored against that line and is shown against that line thereafter.
+- **AC-19** `[R1]` **Given** any editable line, **when** an option changes, **then** the quote total on screen reflects it without a page reload and without the operator navigating away.
+
+### 9.5 Loud failure (I6)
+
+- **AC-20** `[R1, then all]` **Given** an edit with unsaved values on screen, **when** the connection is lost and staff save, **then** an error is rendered **at the control that failed**, the entered values remain on screen, and no surface presents the unsaved value as saved.
+- **AC-21** `[all]` **Given** any write in ops2, **when** the server rejects it, **then** the rejection is rendered with a sentence naming the cause; a rejected write never resolves without a rendered error.
+- **AC-22** `[R1]` **Given** a failed save and restored connectivity, **when** staff retry, **then** the save succeeds with the values still on screen.
+- **AC-23** `[R1]` **Given** a quote that another operator issued while this operator had the line editor open, **when** save is attempted, **then** it fails with a sentence naming the real cause — the quote is now issued — and offers a reload, rather than a generic failure or a silent 404.
+
+### 9.6 Deep links (D11)
+
+**Routing is path-based, not fragment-based** (ADR 0002). AC-24 is why: a URL fragment is never sent to the server, so Cloudflare Access's stored redirect cannot carry a deep-link target through a cold interactive sign-in.
+
+**One URL-shape constraint that is a scope fact, not a design preference:** `worker/index.ts` intercepts `GET /r/<CODE>` **on every host** for referral redirects, ahead of the ops shell. **ops2 therefore never uses a `/r/…` path**; records live at `/record/…`.
+
+- **AC-24** `[R1]` **Given** a URL addressing a specific record, **when** it is opened cold in a browser with no ops session and no Access session, **then** Cloudflare Access authenticates interactively, and after authentication **the same record opens** — the target survives sign-in. *(The half that must be verified in production, since it exercises the real Access redirect.)*
+- **AC-25** `[R1]` **Given** a URL addressing a specific line within a record, **when** it is opened, **then** that record opens with that line in view.
+- **AC-26** `[all]` **Given** any destination in ops2, **when** it is reached by navigation, **then** the address bar carries a URL that reproduces it, the browser back control returns to the prior destination, and **reloading that URL directly returns the console rather than a 404**.
+
+### 9.7 Permission — the roles, decided (I7, D5)
+
+**Settled at the revision-3 gate: three roles ship, and the three label roles are retired.** Today four role values exist (`estimator`, `technical_reviewer`, `manager`, `admin`) but only `admin` gates anything at all; production holds three users, all `admin`. *(Where the grant is stored is ADR 0001's decision, not this spec's.)*
+
+| Role | May | May not |
+|---|---|---|
+| **Admin** | Everything, including roles, rate cards, option pricing, catalogue configuration, policy and referral payouts. | — |
+| **Reviewer** | Records, lines, options, **per-line price overrides, adding and deleting lines before issue**, issue a quote, notes, enquiries, customers. | Rate cards, option pricing, catalogue configuration, program settings, referral payouts, roles. |
+| **Manufacturer partner** | Sign in, see their own identity, sign out. **Nothing else in phase 1.** | **Every data endpoint** (AC-66, AC-66a). Their working area is phase 2 (§6.2, register entry D-1). |
+
+**Why Reviewer keeps price overrides and line management.** §4 records that consultation *"can involve changing any parameters, any options, including pricing"*, and the owner's mock-gate ruling adds *"full capabilities to manage any record(s), including adding new or deleting"*. A Reviewer who cannot do those cannot do the job the role exists for. "Not admin" means **the rate cards and the roles**, not the content of a quote.
+
+- **AC-27** `[R2]` **Given** a person admitted to the Cloudflare Access policy with **no role granted**, **when** they open ops2, **then** they are authenticated, every capability is refused, and the console states that they have no role rather than rendering an empty or broken console.
+- **AC-28** `[R2]` **Given** a Reviewer, **when** they work, **then** they can open records, edit lines, change options, **set a per-line price override, add a line and delete a line before issue**, and issue quotes; and every rate-card, option-pricing, catalogue-configuration, program-settings, referral-payout and role-administration endpoint refuses them.
+- **AC-28a** `[R2]` **Given** the three retired label roles (`estimator`, `technical_reviewer`, `manager`), **when** the migration runs, **then** every existing holder is mapped to one of the three shipping roles, no account is left role-less by the migration, and no account gains reach it did not have.
+- **AC-29** `[R2]` **Given** an admin changes another person's role, **when** that person makes their next request, **then** the new role applies without them re-authenticating.
+- **AC-30** `[R2]` **Given** the only remaining admin, **when** they attempt to remove their own admin role, **then** it is refused and the role is unchanged.
+- **AC-31** `[R2]` **Given** a database with no admin at all, **when** a staff member signs in, **then** exactly one is promoted to admin — the existing lockout self-heal — and **given** any admin exists, **then** no promotion occurs.
+- **AC-32** `[R2]` **Given** the manufacturer role, **when** it is assigned, **then** it is assigned **per user in ops2**, not derived from the email address, and a partner on an `@openframe.com.au` address is distinguishable from a founder.
+- **AC-33** `[R2]` **Given** the RBAC migration applied to a copy of production data, **when** it is applied, **then** no row in any table is deleted, no `ON DELETE CASCADE` fires, and row counts for `order_line`, `payment`, `quote_line`, `referral*` and `user` are unchanged before and after. *(The `d1-migration-safety` skill is loaded before the migration is written; a clean local run proves nothing.)*
+- **AC-34** `[R2]` **Given** the RBAC migration applied and the previous Worker version redeployed, **when** a founder opens the old console, **then** they authenticate, open a record, **and write to it** — authorization is verified, not just sign-in.
+
+### 9.8 Completeness (I8)
+
+- **AC-35** `[R1]` — **discharged.** The register exists at `docs/ops2/register.md` with one row per capability in `UX-SPEC.md` §B.4's left column (rows 1–272) plus §8.1's dormant entries and the appendix of non-obligations, every row assigned to a region.
+- **AC-36** `[all]` **Given** a region's implementation is complete, **when** the tester walks the register rows assigned to it, **then** every row is in one of the six states with the evidence that state requires, exercised in the environment the row records, and no row is left unassigned or unevidenced.
+- **AC-37** `[all]` **Given** a row moving to `DROPPED` or `DORMANT`, **when** it is proposed, **then** an owner-visible entry names what is let go and why, and the row is not closed until the owner has seen it.
+- **AC-38** `[R8]` **Given** the register, **when** switch-over is proposed, **then** no row is unaccounted for and every `DROPPED` and `DORMANT` row has been seen by the owner.
+- **AC-39** `[all]` **Given** copy recorded verbatim in the register, **when** the corresponding ops2 surface renders, **then** that copy is present as recorded, or the row is let go under AC-37.
+- **AC-40** `[all]` **Given** the set of API endpoints the legacy console calls, **when** ops2 is complete, **then** each is either called by ops2 or recorded as deliberately unsurfaced with a reason.
+- **AC-40a**, **AC-40b** — see §8.1. **AC-40c**, **AC-40d** — see §9.2a.
+
+### 9.9 Derivation (D8, D9) `[R3]`
+
+- **AC-41** **Given** a line the estimator produced, **when** staff open its derivation without leaving the record, **then** it presents: the origin file, the extracted text, the requirement derived, the reasoning, and the candidates considered.
+- **AC-42** **Given** the candidates for a line, **when** they are shown, **then** each carries its rank and its human-readable reason as recorded in `candidate_result`, and the losing candidates are reachable in one action from the line.
+- **AC-43** **Given** evidence rows whose `page_no`, `sheet_ref` and `region_json` are NULL — which is all of them in production — **when** the derivation renders, **then** the absence is stated in words on screen, and the section is neither blank nor omitted.
+- **AC-44** **Given** the derivation surface, **when** it renders, **then** every value shown is present in the data; no candidate, reason, score or page reference is invented or inferred for display.
+- **AC-45** **Given** a customer on the phone asking "why that one, and why not the cheaper one?", **when** the reviewer answers, **then** both answers are readable from the record without opening a file, a PDF, or another destination.
+- **AC-45a** — **struck at the revision-4 gate.** *(AC-8a does require the derivation surface to state the **absence** of a baseline — a different and narrower thing.)*
+
+### 9.10 Work — the attention surface and the triage sort (D12, D10) `[R4]`
+
+**The attention surface carries two item classes in phase 1**, decided at the revision-3 gate. Owner: *"key information at this point is: orders requiring attention, product catalogue gaps. Everything else can be phase 2."*
+
+> `ASSUMED:` **"orders requiring attention" is read in the general sense of jobs/work** — the existing five "needs us" groups spanning quotes and orders both — **not solely committed orders.**
+
+- **AC-46** **Given** catalogue products missing pricing information, **when** the landing page opens, **then** those products are named on it, with a route to the screen that fixes them.
+- **AC-46a** **Given** work requiring attention — the five "needs us" groups as they exist today — **when** the landing page opens, **then** each non-empty group is present with its count and its exact singular/plural copy, and selecting one applies the matching filter on the queue rather than merely switching destination.
+- **AC-47** — **struck at the revision-3 gate.** Delivery zones configured but unpriced moved to phase 2 (§6.2).
+- **AC-48** **Given** nothing at all needing attention, **when** the landing page opens, **then** it says so in a sentence rather than rendering empty regions.
+- **AC-49** **Given** the landing page, **when** it renders, **then** it carries no lifetime-revenue or total-money-earned metric (D12).
+- **AC-49a** **Given** the landing page in phase 1, **when** its content is enumerated, **then** it carries **only** the two decided item classes, and none of the four phase-2 items appears.
+- **AC-50** **Given** a record, **when** staff mark it as with the manufacturer, **then** the record shows that state and its queue row shows it.
+- **AC-50a** **Given** a queue containing work in every waiting state, **when** it is sorted, **then** the order is **Us → Manufacturer → Customer → Nobody**, then by longest waiting, and the sort is not user-overridable.
+- **AC-51** **Given** a record marked with the manufacturer, **when** staff clear the mark, **then** it clears everywhere it was shown, with no further consequence.
+- **AC-52** **Given** the "with manufacturer" state, **when** it is set or cleared, **then** no message, email or notification is sent to anyone, and no messaging surface exists anywhere in ops2 (D10).
+
+**A note for the architect, because this is not the sort change it looks like.** `waitingOn` is today a three-value union (`worker/lib/lifecycle.ts:56`) **derived** from lifecycle state (`:72`), and ranked Us 0 / Customer 1 / Nobody 2 (`worker/routes/ops.ts:398`). "Nobody" is the after-sales bucket and stays last. Adding "Manufacturer" is **a type change and a derivation change**: unlike the other three it is *set by a human*, so `lifecycleOf` gains an input it does not currently take.
+
+### 9.11 Installability (D14) `[R8]`
+
+- **AC-53** **Given** ops2 on each reference device, **when** the add-to-home-screen flow is used, **then** it installs and launches into the console, passing Cloudflare Access as it does in the browser.
+- **AC-54** **Given** an installed instance and a newer version deployed, **when** it is launched, **then** it runs the newer version.
+- **AC-55** **Given** an installed instance with no connectivity, **when** it is launched, **then** it fails loudly per I6 and does not present cached data as current.
+- **AC-56** **Given** ops2 installed, **when** its capabilities are enumerated, **then** it requests no push permission and registers no push subscription (deferred, §6.2).
+
+### 9.12 Line management — add, hard-delete, and the pre-issue boundary `[R1]`
+
+**Settled by the owner at the mock gate**, and this section pins it rather than deciding it:
+
+> "yes, full capabilities to manage any record(s), including adding new or deleting"
+
+clarified, when asked what "record" meant:
+
+> "I was referring to order lines, not orders themselves: hard delete for order lines before the final quote is submitted to the customer. Once accepted, order becomes read-only."
+
+**The boundary is the five editable states**, `worker/routes/ops.ts:814` — `submitted`, `triage_pending`, `estimator_assigned`, `technical_review_required`, `customer_clarification_required` — every one of which is pre-issue. **It is enforced on the endpoints, not in the UI**, for the reason the code already gives itself: *"the record plane renders inputs only in these states, because the server accepts edits only in these states — a Save that silently 404s is worse than no Save."* Endpoints, the `quoteTotals` return and the 404/409 `not_editable` split are in `docs/design/ops2-r1-frame-and-record.md` rev 3; the criteria below govern.
+
+**Survivorship is the part most likely to be got wrong**, so it is asserted rather than assumed. Verified against the schema: **units cascade** (`0028_composite_lines.sql:28`, `parent_line_id … ON DELETE CASCADE`), and **everything else referencing `quote_line` is `SET NULL`** — comments (`0003_ops.sql:17`), schedule-parse linkage (`0012:55`), opening instances and the learning tables (`0022:13`, `:49`, `:90`), recommendation outcomes (`0047:108`). **So a note written during a call survives the deletion of the line it was about**, and so does the provenance.
+
+- **AC-95** **Given** a record in any of the five editable states, **when** staff add a line, **then** the line is created, appears in the line list, and the quote totals returned by the call reflect it — no page reload, no separate refresh (I5).
+- **AC-96** **Given** a record in any of the five editable states, **when** staff delete a line, **then** the line is removed, the line list reflects it, and the quote totals returned by the call reflect it.
+- **AC-97** **Given** a composite opening with units, **when** its parent line is deleted, **then** its units are deleted with it and none is left orphaned.
+- **AC-98** **Survivorship.** **Given** a line carrying a note, schedule-parse linkage, an opening instance and learning rows, **when** the line is deleted, **then** the line and its units are gone, **and every one of those related records still exists** with its line reference cleared rather than removed. *(A note taken during a consultation is not collateral damage of a line deletion.)*
+- **AC-99** **Delete-to-empty is allowed — warned, never blocked** (I1). **Given** a record with exactly one line, **when** staff delete it, **then** the deletion succeeds, the quote is left with no lines, and any caution shown is unobtrusive and does not prevent the action.
+- **AC-100** **Given** a quote left with no lines, **when** staff attempt to issue it, **then** it is refused **at `issueQuote`** — the refusal that has always existed there, unmoved and unduplicated. *(One place per fact: emptiness is checked where issuing is decided, not at the delete endpoint.)*
+- **AC-101** **Undersize no longer blocks** (I1). **Given** a line whose dimensions are below the product's range — which `ItemComposer.tsx:704` today treats as *"a typo"* that blocks the save — **when** staff save it, **then** the save succeeds, and the undersize sentence renders as an unobtrusive warning that neither disables the control nor requires dismissal.
+- **AC-102** **Given** an oversize line, **when** staff save it, **then** it saves as it does today and keeps its flag — oversize never blocked, and does not start.
+- **AC-103** **Given** the ops2 line list and line editor, **when** their controls are enumerated, **then** there is **no duplicate-a-line and no reorder control** — both absent today and deliberately still absent (§6.3, register row 92).
+
+*(Register rows 92, 98 and 105 are annotated for these changes — see §8. The R3 consequences of a staff-added line and of deletion are in §9.2.)*
+
+---
+
+## 10. Abuse cases — the forbidden actions, and the attempts that prove they fail
+
+**Why this section exists.** ops2 reaches financial PII (payout bank details, ABNs), customer pricing, and every project in the business, behind an authentication boundary this project must not weaken. `CLAUDE.md` requires negative criteria for such a surface, specified up front rather than discovered at review.
+
+**Binding on the tester: a criterion in this section verified by code inspection alone is NOT verified.** The forbidden action must be attempted against a running system and the denial recorded — status, body, and the absence of any state change. **Where a criterion concerns an identity that does not exist in production — the manufacturer role most of all — the tester constructs it and attempts the action anyway.** A refusal that has never been tried is not a control.
+
+**Two general rules for every criterion below.** A refusal changes nothing. And where the requester is not a founder — a partner, or a role without reach — a refusal must not disclose whether the thing exists: "not yours" and "no such thing" answer identically.
+
+### 10.1 The Access boundary (C8 — must be unchanged, and must stay closed)
+
+- **AC-57** `[R2]` **Given** Cloudflare Access is configured, **when** a request reaches the Worker with **no** `Cf-Access-Jwt-Assertion` header, **then** it is refused, and no internal-session fallback authenticates it.
+- **AC-57a** `[R2]` **Given** production configuration (Access configured), **when** the ops OTP sign-in routes are called directly — including `POST /api/ops/auth/verify` **on the customer hostname**, which is served by the same Worker — **then** each returns **404**, no staff row is created, no existing customer row is flipped to `type='internal'`, and the admin bootstrap does not fire. **Given** a non-production configuration with Access unset, **then** the same routes work and the sign-in screen renders. *(This guard closed a real hole: before it existed the route reached `findOrCreateInternalUser` with no assertion at all. It is register entry D-2, it is invisible in production, and a rebuild is exactly where it gets reopened.)*
+- **AC-58** `[R2]` **Given** a validly signed Access assertion issued for a **different Access application**, **when** it is presented to ops2, **then** it is refused.
+- **AC-59** `[R2]` **Given** an assertion that is expired, not-yet-valid, signed by an unknown key, signed with `alg: none`, or bearing a different issuer, **when** each is presented, **then** each is refused.
+- **AC-60** `[R2]` **Given** a real customer's `apertly_session` cookie, **when** it is presented to any `/api/ops/*` endpoint under production configuration, **then** it is refused and no ops data is returned.
+- **AC-61** `[R2]` **Given** a person removed from the Access policy whose ops2 role row still exists, **when** they attempt to reach ops2, **then** they are refused at the perimeter. **And given** a person still on the Access policy whose role has been revoked, **then** every capability is refused. **Either revocation alone is sufficient** (I7).
+- **AC-62** `[R2, R8]` **Given** the ops2 deploy, **when** the Access configuration is compared before and after, **then** the policy, the audience, the team domain and the MFA requirement are byte-for-byte unchanged.
+
+### 10.2 Permission — privilege and elevation
+
+- **AC-63** `[R2]` **Given** a signed-in non-admin staff member, **when** they call the role-assignment endpoint directly, **then** 403, and no `role` value changes in the database.
+- **AC-64** `[R2]` **Given** any staff member, **when** they submit a `role` or `permissions` field inside a request body for an endpoint that is not the role-assignment endpoint, **then** the field is ignored or rejected, and their role is unchanged.
+- **AC-65** `[R2]` **Given** a Reviewer, **when** they request each rate-card, option-pricing, catalogue-configuration, program-settings, referral-payout and staff-administration endpoint by direct URL — bypassing the console's navigation entirely — **then** each returns 403 and no data from the refused surface appears in any response body.
+- **AC-66** `[R2]` **Given** a manufacturer-role identity, **when** they request every ops2 data endpoint, **then** each returns 403 and no project, quote, price, customer, payout or catalogue data is returned.
+- **AC-66a** `[R2]` **A dormant role must not become a live hole.** **Given** no manufacturer account exists in production and none ever has, **when** the tester **creates one** and signs in as it, **then** every ops2 data endpoint refuses it, and **given** a future deployment sets `MANUFACTURER_EMAIL_DOMAINS` or an admin grants the role deliberately, **then** the same refusals hold without any further change. **And given** ops2's navigation, **then** the absence of a destination for that role is never the thing doing the refusing.
+- **AC-67** `[R2]` **Given** a manufacturer-role identity, **when** they open ops2, **then** the console offers only what their role permits — **and** the refusal in AC-66 holds regardless, because hiding a destination is not a control.
+- **AC-68** `[R2]` **Given** a deep link to a record a role may not read, **when** it is opened by that role, **then** it is refused, and the refusal does not disclose whether the record exists.
+- **AC-69** `[R2]` **Given** any endpoint added anywhere in ops2, **when** it is reached by an identity with no role, **then** it refuses — endpoints are staff-gated by default and open only by explicit opt-in.
+
+### 10.3 Financial PII (payout details, ABNs)
+
+- **AC-70** `[R7]` **Given** a Reviewer, or any role without payout permission, **when** they request the referral payouts screen or any of its endpoints, **then** 403, and no BSB, account number or account name appears in any response body.
+- **AC-71** `[R7]` **Given** the referrals list screen, **when** its response body is inspected in full, **then** it contains no BSB and no account number for anyone.
+- **AC-72** `[R7]` **Given** an Admin reading payout details on the payouts screen, **when** the read occurs, **then** a `payout_details_access` row is written with `actor_user_id ≠ subject_user_id`, and the row records the fact of access and never the value.
+- **AC-73** `[R7]` **Given** any ops2 request that touches payout details, **when** Worker logs and any telemetry for that request are inspected, **then** no BSB and no account number appears in them.
+- **AC-74** `[R7]` **Given** the `payout_details_access` log, **when** every ops2 route, screen, report, export and filter is enumerated, **then** none reads it.
+- **AC-75** `[all]` **Given** any ops2 surface other than the payouts screen, **when** its response bodies are inspected, **then** no full bank account number is returned.
+
+### 10.4 Data-scoping, integrity and injection
+
+- **AC-76** `[all]` **Given** any ops2 list or record endpoint that accepts an identifier, **when** an identifier is supplied for an entity of a different type, a malformed identifier, or one belonging to a record the role may not reach, **then** the request is refused and no data is returned.
+- **AC-77** `[R6]` **Given** a Reviewer, **when** they attempt a rate-card write by replaying a captured admin request with their own identity, **then** 403 and the rate card is unchanged, at the same version.
+- **AC-78** `[all]` **Given** any free-text field in ops2 — a note, a void reason, a bank reference, a rule label — **when** text containing script or markup is stored and later rendered, **then** it renders as text and does not execute.
+- **AC-78a** `[R1]` **The pre-issue boundary is a server control, and the tester must prove it.** **Given** each of an **issued quote**, a **record with an order**, and a **paid record**, **when** `POST /projects/:id/lines` and `DELETE /lines/:id` are called **directly against the endpoints, bypassing the console entirely**, **then** each is refused with the `not_editable` 404/409 split, **no line is created, no line is removed**, and the quote totals are unchanged. *(The UI not rendering the control is not the control. This is the criterion that catches a boundary enforced only in React.)*
+
+---
+
+## 11. Edge cases
+
+**GST inc/ex.** The house rule binds customer surfaces; ops is not a customer surface — but the reviewer is reading numbers aloud to a customer looking at their own quote in their own mode. So: **ops2 shows the project owner's GST mode as the primary figure, always labelled**, and any view toggle the reviewer uses is a view only. `ASSUMED:` this reading of the house rule for ops.
+- **AC-79** `[R1]` **Given** a project whose account is in `ex` mode, **when** its record is opened, **then** the primary money figures are ex-GST and labelled as such; and **given** an account in `inc` mode, they are GST-inclusive and labelled.
+- **AC-80** `[R1]` **Given** a reviewer switches the ops view between inc and ex, **when** they do, **then** the customer's stored `price_gst_mode` is unchanged and no customer surface moves.
+
+**Quote lifecycle.** Only the editable states render an editor, so a save can never silently 404. An issued quote is read-only, and the read-only bar must name the real cause.
+- **AC-81** `[R1]` **Given** a quote in a state outside the editable set, **when** its record opens, **then** no line editor renders, **no add-line or delete-line control renders**, and the surface names the actual cause and what returns it to editable.
+
+**Offerability.** Two separate completeness bars — configuration and pricing — that must never be merged, and `[]` is a different fact from `NULL`. Glazing is optional.
+- **AC-82** `[R6]` **Given** a product incomplete on configuration and a product incomplete on pricing, **when** the products surface reports coverage, **then** the two are reported as distinct facts and never collapsed into one flag.
+- **AC-83** `[R6]` **Given** an option list stored as `[]` and one stored as `NULL`, **when** each renders, **then** "none apply" and "not yet authored" are shown as different states.
+- **AC-84** `[R1]` **Given** a line configured with a product that has since become non-offerable or withdrawn, **when** the record opens, **then** the line still opens, still prices, and the product's state is named on it.
+
+**Delivery zones.** A zone with NULL rates is *unpriced* — distinct from missing. All fifteen production zones are in that state.
+- **AC-85** `[R1]` **Given** a project whose zone resolved as `unpriced_table`, **when** its delivery figure renders, **then** it reads as unpriced, distinctly from `$0` and from an unresolved zone, and the zone basis is stated.
+
+**File scanning fails closed, and the console must not undo that.** Register entry D-3.
+- **AC-85a** `[R5]` **Given** files with each scan verdict — clean, infected, pending, and `unknown` / `scanner_misconfigured` — **when** each renders, **then** each is shown distinctly, no unknown or unscanned file is presented as safe or offered for download, and the scanner's `reason` is rendered where one exists.
+
+**Composites.** The coverage sentences are never a veto, and incompatible frames stay selectable and marked.
+- **AC-86** `[R1]` **Given** units that span more or less than the opening, **when** staff save, **then** the save succeeds and the span difference is recorded on the line rather than blocked. *(The existing per-line coverage note, not the divergence record of §9.2.)*
+
+**Dates and identity.** One date format across the console. The public reference is the anchor and is never renamed; the order number renders alongside where an order exists; an anonymous submitter's submit-time contact details still render.
+
+**The manufacturer boundary at phase 1.**
+- **AC-87** `[R2]` **Given** a manufacturer-role identity constructed for the test, **when** they sign in to ops2, **then** they reach a coherent screen that states they have no working area yet, they can see their identity, and they can sign out — and every data endpoint still refuses them (AC-66a).
+
+---
+
+## 12. Rollout, the fire escape, and deletion `[R8]`
+
+D2 is the owner's decision and is not reopened. No parallel running as a way of working — which is not the same as no fire escape during the changeover.
+
+**The mechanism is one function.** Shell selection lives in a single `opsShellFor()` in `worker/index.ts` — the successor to today's `const shell = isOps ? "/ops.html" : "/index.html"` — with **three states**, each flip a one-line, versions-revertible deploy (ADR 0002):
+
+1. **Build** — legacy at the ops root, ops2 reachable at `/ops2`. Nobody's daily work moves.
+2. **Switch-over** — ops2 at the root, **legacy at `/legacy`**: the fire escape, unadvertised, used only if ops2 fails at something. Nobody works in it.
+3. **Deletion** — legacy gone from the bundle, along with its Vite entry and the domain-based identity path.
+
+- **Switch-over and deletion are two events**, different commits, different deploys, separated by a soak.
+- **Rollback is a deploy, not a rebuild.** `wrangler versions upload` for a preview that does not move production traffic, then `wrangler versions deploy` to promote.
+- **The one real hazard is RBAC, and C8 narrows it.** Authentication does not change, so no rollback can leave anyone unable to *sign in*. What changes is role **assignment**. So the migration must be **additive**: the existing domain-based role path keeps working, untouched, for as long as the old console exists. Removing it is part of **deletion**, not switch-over. This is why AC-34 tests a **write**, not a sign-in.
+
+- **AC-88** **Given** switch-over is deployed, **when** a founder opens `/legacy`, **then** the old console loads and works.
+- **AC-89** **Given** the soak, **when** deletion is proposed, **then** the register's gate (AC-38) has passed and the owner has judged ops2 ready. No fixed soak period is imposed (O2, closed).
+- **AC-90** **Given** deletion is deployed, **when** the domain-based role path is removed, **then** every ops2 identity resolves by granted role alone and no capability is lost — including the manufacturer role, whose refusals are unchanged (AC-66a).
+
+---
+
+## 13. The referral program's ops surface
+
+The referral program's ops screens are being built **into the legacy console right now, as disposable work** (D17). **ops2 carries the referral program's *requirements*, not its screens.**
+
+| Requirement | Source | ops2 disposition |
+|---|---|---|
+| **Program configuration** — every number, the On/Off switch, the two side switches, a live restatement, a stale-save refusal, and the switch-off confirmation stating that nothing already promised is withdrawn. | spec §8.4a, ux §8.1 | In scope, Admin only. |
+| **Referrals list** — filter, search, per-row void with a mandatory reason and un-void, the referred order linked to its record, review-flag detail. **No banking on this screen.** | spec §8.4b, ux §8.2 | In scope, Admin only. |
+| **Payouts** — grouped per referrer, deadline-flagged, per-row record-payment with a bank reference, per-row reversal with a required reason, payments-made history with frozen bank details, CSV export. **The one screen where an actor sees another person's banking.** | spec §8.4c, ux §8.3 | In scope, **Admin only** (AC-70). |
+| **The referral link action at account creation** — takes a **code and nothing else**, calls the same `recordReferral` gates, shows each refusal with its reason, records `source: 'manual'`. | spec §8.4d | In scope. |
+| **Attention-surface row** — referral payouts ready. | ux §8.4, spec AC-46 | **Deferred to phase 2** (§6.2). A `DROPPED` register row the owner sees at R7. **The payouts screen is unaffected** — only its landing-page prompt is deferred. |
+| **On the record** — the referral discount and its review flags visible **before** a reviewer issues. | spec AC-58, ux §8.5 | In scope, visible to Reviewer. |
+
+**Its abuse criteria are AC-70 to AC-75**, restating the referral spec's AC-102, AC-103, AC-104 and AC-82 against ops2's permission model. Referral spec AC-103's refusal of manufacturer partners is carried by AC-66a.
+
+- **AC-91** `[R7]` **Given** R7 begins, **when** its design starts, **then** the referral requirement set is pinned to a named commit of both referral documents, recorded in the carry-across register.
+- **AC-92** `[R7, R8]` **Given** the pinned set and the then-current documents at switch-over, **when** they are compared, **then** every difference is either satisfied in ops2 or recorded as let go under AC-37.
+- **AC-93** `[R7]` **Given** ops2's referral surface, **when** the referral spec's ops criteria (AC-38 to AC-47, AC-58) are executed against it, **then** each passes against ops2 — not against the legacy screens. **Except its AC-46's dashboard row**, deferred above.
+- **AC-94** `[R8]` **Given** the legacy console is deleted, **when** the weekly payout run is performed, **then** it is performed entirely in ops2, with no recourse to the fire escape.
+
+---
+
+## 14. Domain vocabulary the architect must add to `CONTEXT.md`
+
+| Term | What it must capture |
+|---|---|
+| **Record** | The merged plane of a project and its order, addressed as one thing in ops — at `/record/…`, never `/r/…`, which the Worker intercepts for referrals on every host. `Project` remains the container; `Record` is what ops opens. |
+| **Derivation** | The chain from an uploaded schedule to a proposed line: origin, extracted text, requirement derived, candidates considered, selection. Words and data, never drawings (D8). |
+| **Candidate** | One evaluated product × variant for an opening, carrying per-filter pass/fail, a reason, six score components and a rank. Recorded in `candidate_result`. **A losing candidate is a first-class thing ops shows** (D9). |
+| **Original information** | The value a line field first carried, whatever its origin — extracted, customer-submitted, or estimator-proposed. **The baseline the divergence record compares against.** Held as a write-once `line_baseline` captured at line birth (ADR 0003) — **not a running journal**. **A line may have none** — a staff-added line never had a proposal, and lines predating capture were not backfilled — and that absence is its own state (AC-8a). |
+| **Divergence record** | The single fact recorded on a quote **at issue** naming every line field whose issued value differs from its original information. **A two-point comparison, not a history.** One per issue, never customer-facing (C5, D19). |
+| **Audit trail** *(sharpen)* | Who did what to which entity, when — the existing `audit_event` stream, **event-level rather than field-level**, carrying `before_json` / `after_json` where "what did it change from" matters. **Different from both the divergence record and an undo journal**, never consulted to revert, carried into ops2 unchanged (§9.2a). |
+| **Editable states** | The five internal states in which a line may be created, changed or deleted — all pre-issue (`ops.ts:814`). **The boundary is server-side**; the UI mirrors it, never defines it (§9.12). |
+| **With manufacturer** | A state on the work meaning it is waiting on the manufacturer. **Orthogonal to `Phase`.** The fourth value of `waitingOn`, and **the only one set by a human rather than derived**. |
+| **Attention surface** | The console's landing page: what needs doing or is critically wrong. Not a metrics dashboard (D12). Two item classes in phase 1. |
+| **Role** | A per-user grant — **Admin, Reviewer, or Manufacturer partner** (§9.7). **Distinct from Cloudflare Access**, which decides who they are. Both required; either revocation locks someone out (C8). |
+| **Manufacturer partner** | Admitted through the same Access policy but **not staff**: refused every data endpoint, enforced per endpoint rather than by hiding a destination. Working area is phase 2; refusal is now. |
+| **Dormant capability** | Code implementing a capability never reachable in production — an unset variable, a guard, no user of the required kind. **Not dead code and not a regression** — a decision about the future that must be visible rather than left to scope silence (§8.1). |
+| **Staff** *(sharpen)* | Staff-ness no longer implies uniform capability once RBAC ships. |
+
+---
+
+## 15. Assumptions
+
+| Tag | Assumption | Where |
+|---|---|---|
+| A-1 | A quote issued with no divergences writes an explicit empty divergence record. | AC-8 |
+| A-2 | Re-issuing a quote writes a new divergence record and retains the prior one. | AC-9 |
+| A-3 | The conversation-pace budget is p95 ≤ 1200 ms from input to both totals updated, on the reference devices. | AC-16 |
+| A-4 | **"Orders requiring attention" is read as jobs/work in general** — the five "needs us" groups spanning quotes and orders both, not solely committed orders. | §9.10, AC-46a |
+| A-5 | Ops shows the project owner's GST mode as primary, labelled, with any reviewer toggle being a view only. | AC-79, AC-80 |
+| A-6 | The tracking issue carries build regions as sub-issues and is **not** labelled `wayfinder:map`. | §7 |
+| A-7 | `DORMANT` is a distinct register state, carrying `DROPPED`'s owner-visibility requirement. | §8 |
+| A-8 | The manufacturer Enquiries view (D-1) is let go rather than carried. **The owner sees this as a register entry; it is his to reverse.** | §8.1 |
+| A-9 | For a line the customer configured themselves, the **original information** is the customer's submitted values. | §9.2, ADR 0003 |
+| A-10 | The referral payouts **landing-page row** is deferred; the payouts **screen** stays fully in scope. | §13 |
+| A-11 | **The undo veto does not reach the existing `audit_event` trail.** If he intended the trail to shrink too, this is the tag to pull. | §4, §6.3, §9.2a |
+| A-12 | **Lines with no baseline — pre-R3, and every staff-added line — issue as "no recorded original" rather than as agreement.** The alternative would make the record assert something false. | AC-8a, §6.3 |
+| A-13 | **Delete-to-empty warns rather than blocks, and the empty-quote refusal stays at `issueQuote`.** Consistent with I1 and with one-place-per-fact; the owner said delete is allowed pre-issue and did not carve out the last line. | AC-99, AC-100 |
+
+---
+
+## 16. Decisions needed
+
+**One open item, already with the owner — not raised by me, recorded so the spec is honest about it.**
+
+### O-1 — Read-only begins at *issue*, not at *acceptance*
+
+The owner described the boundary as acceptance: *"Once accepted, order becomes read-only."* **The code freezes at issue**, and has since quote revisions were deliberately removed — `EDITABLE_STATES` (`ops.ts:814`) contains five states, all pre-issue, and nothing between issue and acceptance is editable.
+
+**Everything in this spec is designed to the code's boundary**, because that is where the enforcement actually is: §9.12's add and delete, AC-81's read-only surface, AC-78a's bypass attempts, and §9.2's recording-at-issue all assume the freeze happens at issue. If the owner meant that a quote should remain editable *between* issue and acceptance, that is a lifecycle change — reopening a window the revisions removal closed on purpose — and it is considerably larger than it sounds. **My reading is that he was describing the commercial moment rather than specifying a state machine**, and that the code's boundary is what he wants. But it is his sentence and the two do not coincide, so it is recorded rather than assumed away.
+
+*(This is with the owner already; it is not a question I am asking afresh.)*
+
+**Four things to watch at review rather than decide now**, all tagged in §15:
+
+- **A-4** — my reading of "orders requiring attention" as work in general.
+- **A-10** — deferring the referral payouts landing-page row, the one place the attention-surface cut meets a live carry-across obligation.
+- **A-11** — that the undo veto stops at the audit trail.
+- **A-12** — that lines with no baseline, including every staff-added line, issue as "no recorded original".
