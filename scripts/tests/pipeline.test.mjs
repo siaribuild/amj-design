@@ -1654,6 +1654,29 @@ test('answer resolves a held build-<task> label, and records the task it finishe
     'the answer re-booted a session that was already warm')
 })
 
+test('answer resolves a held review-<id> label too - the other half of the same crash', () => {
+  // The build-task test above cannot catch a `stageSpec` regression: `finished`
+  // returns before `afterStage` for a `build-*` label, so `spec` is never
+  // dereferenced on that path. A held REVIEWER goes straight through
+  // afterStage, where `STAGES.find` would hand it undefined and it dies on
+  // `spec.gate`. Criterion 7 covers both labels; so must the guard.
+  const s = reviewRepo('answer-held-reviewer', { HERDR_STUB_STATES: 'blocked;idle' })
+
+  paned(s, 'run', 'review')
+
+  const held = runJson(s).gateStage
+  assert.match(held || '', /^review-/,
+    'no reviewer was held warm: ' + JSON.stringify(runJson(s).stages))
+
+  let out = ''
+  try { out = paned(s, 'answer') } catch (e) { out = (e.stdout || '') + (e.stderr || '') }
+
+  assert.ok(!/TypeError/.test(out), 'answer crashed on a reviewer label:' + NL + out)
+  const r = runJson(s)
+  assert.equal(r.stages[held].status, 'done', held + ' was answered but never finished: ' + out)
+  assert.equal(r.gateStage, null, 'the gate was never cleared')
+})
+
 // --- the Probity shim (design 9.5) -----------------------------------------
 //
 // The shim is the TDD gate's entry point, so these run it as a child process
