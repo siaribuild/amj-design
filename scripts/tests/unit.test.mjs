@@ -19,6 +19,7 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
+      export { backstopBasis } from ${p("src/data/useProjectDocuments.ts")};
       export { readingMessage, stepsFor, stepDurationMs } from ${p("src/components/DocumentProgress.tsx")};
       export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
@@ -1754,4 +1755,19 @@ test("the drawing step's clock ticks, and never invents a duration it cannot kno
     M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing, index: schedule }),
     2000,
   );
+});
+
+test("the client backstop is measured from when the SERVER started working", () => {
+  // Codex [P2]. The poll's clock starts on upload; the server's 300s deadline
+  // starts when the queue actually delivers the job. Debounce plus queue delay
+  // sits between them, so a run still inside its server budget could trip the
+  // client's own backstop and be shown as failed — the exact bug the backstop
+  // was just raised to fix, reintroduced by measuring from the wrong instant.
+  //
+  // Until the run is seen running, the upload instant is all there is, and that
+  // is correct: it is what catches a job that never starts at all.
+  assert.equal(M.backstopBasis(1000, null), 1000, "before it starts, the clock is the upload");
+  assert.equal(M.backstopBasis(1000, 45_000), 45_000, "once it runs, the clock is the server's start");
+  // And it does not drift later on every tick — the FIRST sighting is the basis.
+  assert.equal(M.backstopBasis(1000, 45_000), 45_000);
 });

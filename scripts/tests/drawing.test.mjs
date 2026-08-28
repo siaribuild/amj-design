@@ -743,24 +743,48 @@ test("a printed width survives only when the sheet printed it", () => {
   assert.equal(out.units[1].widthMm, null, "absent stays absent, it is not computed");
 });
 
-test("the elevation inventory never names or matches anything", () => {
-  // Pass A looks at a sheet and reports window-shaped things. Asking it to also
-  // say WHICH opening each one is invites it to invent a tag, and a tag is the
-  // join key — a wrong one attaches a real reading to the wrong window.
-  // REFUSED, not stripped — the same rule as a family name on a composition, for
-  // the same reason. A model told "do not identify which window is which" that
-  // identifies one anyway has ignored the instruction, and its regions and panel
-  // counts may then be shaped by what it thinks each window IS rather than by
-  // what is drawn. Discarding the tag keeps that reading and hides the fault.
-  assert.equal(S.elevationInventory.validate({
+test("the elevation inventory reads the tag, and null is an answer", () => {
+  // REVERSED 2026-08-28, and the old assertion is worth stating because it was
+  // not silly: Pass A used to be forbidden from naming anything, because a model
+  // asked "which window is this" always answers, and a wrong tag attaches a real
+  // reading to the wrong window. The join was arithmetic instead.
+  //
+  // Production settled it. Four sheets, eighteen windows found, TWO openings of
+  // nineteen assigned — a house's windows share proportions, so the arithmetic
+  // refused nearly everything and every refused row fell back to the platform's
+  // even split. Owner ruling 2026-08-27: the model reads the tag, including one
+  // on a leader line, because that is the thing a person reads too.
+  //
+  // What did NOT change: it may not GUESS. Null is a first-class answer and
+  // drops that window back to the arithmetic, so an illegible sheet is no worse
+  // off than it was before the question was asked.
+  const named = S.elevationInventory.validate({
     windows: [
       { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false], tag: "W1" },
     ],
-  }), null, "a volunteered tag refuses the sheet");
+  });
+  assert.equal(named.windows[0].tag, "W1", "the label it read is the join key, kept");
+
+  const unnamed = S.elevationInventory.validate({
+    windows: [
+      { region: [0.1, 0.1, 0.2, 0.2], proportion: 1.4, panelCount: 1, panelsWithSymbol: [true], tag: null },
+      { region: [0.3, 0.1, 0.4, 0.2], proportion: 1.4, panelCount: 1, panelsWithSymbol: [true], tag: "   " },
+    ],
+  });
+  assert.equal(unnamed.windows[0].tag, null, "null survives as null");
+  assert.equal(unnamed.windows[1].tag, null, "blank is null, not a tag made of spaces");
+
+  // An unasked key still refuses the whole sheet — that rule is untouched, and
+  // it is what stops a model shaping its boxes around a belief nobody can see.
+  assert.equal(S.elevationInventory.validate({
+    windows: [
+      { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false], tag: "W1", family: "awning" },
+    ],
+  }), null, "a volunteered FAMILY still refuses the sheet");
 
   const out = S.elevationInventory.validate({
     windows: [
-      { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false] },
+      { region: [0.57, 0.29, 0.62, 0.36], proportion: 1.4, panelCount: 2, panelsWithSymbol: [true, false], tag: null },
     ],
   });
   assert.equal(out.windows.length, 1);
@@ -855,8 +879,8 @@ test("EVERY skill in this module refuses an unknown top-level key, including one
 // Pure arithmetic over Pass A's boxes and the schedule the platform already has.
 // No model, no I/O — which is what lets the interesting cases be pinned exactly.
 
-const box = (region, panelCount, panelsWithSymbol, proportion) =>
-  ({ region, panelCount, panelsWithSymbol, proportion });
+const box = (region, panelCount, panelsWithSymbol, proportion, tag = null) =>
+  ({ region, panelCount, panelsWithSymbol, proportion, tag });
 const row = (tag, w, h, extra = {}) => ({ tag, widthMm: w, heightMm: h, typeText: null, ...extra });
 
 test("a uniquely-sized row takes the box whose proportion matches", () => {
@@ -1062,4 +1086,241 @@ test("a whole-sheet box one pixel larger than the render is not a failed sheet",
   // — that is a real fault and must not be turned into a 1×1 crop of a corner.
   assert.equal(M.clampToImage({ left: 9000, top: 0, width: 50, height: 50 }, 3571, 2525), null);
   assert.equal(M.clampToImage({ left: 0, top: 9000, width: 50, height: 50 }, 3571, 2525), null);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE TAG IS THE JOIN KEY, AND THE MODEL READS IT
+//
+// Owner ruling, 2026-08-27: "1. parse the schedule — that gives full list of
+// openings and their types. 2. foreach item on the schedule, find orientation,
+// elevation, split compositions." And on why not to compute the join:
+// "sometimes id is next to the window diagram, sometimes it further away with a
+// connecting line. I don't want to reinvent that and all edge cases if the
+// result can be achieved by utilising more clever and expensive at runtime
+// model."
+//
+// It was built the other way — Pass A forbidden from reading labels, the Worker
+// matching boxes to rows by width÷height within 4% — and production measured the
+// cost on 2026-08-28: four elevation sheets inventoried, eighteen windows found,
+// and TWO openings out of nineteen assigned. A house's windows share
+// proportions, so the arithmetic refuses almost every row as ambiguous, and
+// every refused row falls back to the platform's even split.
+//
+// Proportion does not stop being useful; it stops being the JOIN. It is a check
+// on a tag that was read, which is a different job with a different failure.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("a box carrying its tag is assigned by the tag, not by arithmetic", () => {
+  // Two boxes of IDENTICAL proportion — the case the matcher must refuse and the
+  // tag settles outright.
+  const out = M.assign({
+    rows: [row("W14", 2050, 2000), row("W16", 2050, 2000)],
+    boxes: [
+      box([0.10, 0.10, 0.20, 0.20], 2, [true, false], 1.025, "W16"),
+      box([0.57, 0.19, 0.63, 0.26], 2, [true, false], 1.025, "W14"),
+    ],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.get("W14")?.boxIndex, 1);
+  assert.equal(out.assigned.get("W16")?.boxIndex, 0);
+  assert.equal(out.notRead.length, 0, "nothing is refused when the sheet says which is which");
+});
+
+test("a tag read on two boxes is refused — the drawing contradicts itself", () => {
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100)],
+    boxes: [
+      box([0.10, 0.10, 0.20, 0.20], 1, [true], 0.976, "W1"),
+      box([0.50, 0.10, 0.60, 0.20], 1, [true], 0.976, "W1"),
+    ],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.size, 0);
+  assert.equal(out.notRead[0].state, "not_read");
+  // Its own sub-reason since the merge needs to tell this apart from arithmetic
+  // failing to choose — see "a duplicate tag on a later sheet…" below.
+  assert.equal(out.notRead[0].subReason, "duplicate_tag");
+});
+
+test("an untagged sheet still resolves by proportion — the arithmetic is a floor, not a casualty", () => {
+  // The old path, unchanged: a model that reads no labels (a sheet where they
+  // are illegible) must behave exactly as it does today rather than regress to
+  // nothing.
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100), row("W2", 3500, 700)],
+    boxes: [
+      box([0.10, 0.10, 0.20, 0.20], 1, [false], 5.0, null),
+      box([0.57, 0.29, 0.62, 0.36], 2, [true, false], 0.976, null),
+    ],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.get("W1")?.boxIndex, 1);
+  assert.equal(out.assigned.get("W2")?.boxIndex, 0);
+});
+
+test("a tag the schedule does not have is ignored, never invented into a row", () => {
+  // A model reading "W7" off a sheet where the schedule has no W7 must not
+  // create one, and must not steal the box from the row that fits it.
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100)],
+    boxes: [box([0.57, 0.29, 0.62, 0.36], 2, [true, false], 0.976, "W7")],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.size, 0, "W1 does not take a box labelled as another opening");
+  assert.equal(out.notRead[0].tag, "W1");
+});
+
+test("the inventory's prompt version moved with its contract", () => {
+  // Codex [P1]. runStage's idempotency key is pipeline + stage + promptVersion +
+  // model + payload, NOT the prompt text. The prompt and schema changed to ask
+  // for a tag; leaving the version at v1 lets a cached pre-change result for the
+  // same sheet replay, validate as `tag: null`, and take the arithmetic path —
+  // so the fix would do nothing on precisely the projects that have been
+  // re-parsed most, which are the ones being debugged.
+  assert.notEqual(S.elevationInventory.promptVersion, "v1",
+    "asking a different question requires a different key");
+});
+
+test("a tag decided on one sheet is not overturned by arithmetic on another", () => {
+  // Codex [P2]. assign() runs per sheet, so `decidedByTag` only protects a row
+  // within the sheet that named it. A row tagged on sheet A and merely
+  // proportion-shaped on sheet B was being claimed twice and then DELETED as
+  // ambiguous_sheet — the fix actively losing a correct location.
+  //
+  // The merge needs to know HOW each assignment was reached, so it carries that.
+  const tagged = M.assign({
+    rows: [row("W1", 2050, 2100)],
+    boxes: [box([0.10, 0.10, 0.20, 0.20], 2, [true, false], 0.976, "W1")],
+    elevation: "A",
+  });
+  assert.equal(tagged.assigned.get("W1")?.by, "tag");
+
+  const guessed = M.assign({
+    rows: [row("W1", 2050, 2100)],
+    boxes: [box([0.10, 0.10, 0.20, 0.20], 2, [true, false], 0.976, null)],
+    elevation: "B",
+  });
+  assert.equal(guessed.assigned.get("W1")?.by, "proportion");
+});
+
+test("a tag on a box the wrong shape is assigned AND contradicted", () => {
+  // Codex [P1]. The delta was recorded and read by nobody, which is the dead
+  // field this repo keeps paying for. The label still wins — it is the join —
+  // but a box whose shape contradicts the schedule must say so, or a composition
+  // read off the wrong window is accepted in silence.
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100)],                      // proportion 0.976
+    boxes: [box([0.10, 0.10, 0.60, 0.20], 1, [true], 3.4, "W1")],
+    elevation: "A",
+  });
+  const a = out.assigned.get("W1");
+  assert.equal(a?.boxIndex, 0, "the sheet's own label still decides");
+  assert.equal(a?.proportionContradicts, true,
+    "and the contradiction is stated, not left in a number nobody reads");
+});
+
+test("precedence when two sheets claim one row: a read label beats a fitting shape", () => {
+  // The merge rule read.ts applies, lifted out so it can be stated once and
+  // tested. Codex [P2]: without it, a row tagged on sheet A and coincidentally
+  // proportioned on sheet B was deleted as ambiguous_sheet, losing the correct
+  // location the tag had given it.
+  const tag = { by: "tag" }, prop = { by: "proportion" };
+  assert.equal(M.preferLocation(tag, prop), "keep", "a label outranks a shape that merely fits");
+  assert.equal(M.preferLocation(prop, tag), "replace", "…in either order");
+  assert.equal(M.preferLocation(tag, tag), "ambiguous", "two sheets that both NAME it genuinely conflict");
+  assert.equal(M.preferLocation(prop, prop), "ambiguous", "and two shapes that both fit are today's rule, unchanged");
+});
+
+test("a row three sheets all name stays refused, not handed to the last one", () => {
+  // Codex [P2]. The merge deleted the row from `located` on the second
+  // conflicting claim, so the THIRD claim found nothing held, cleared the
+  // ambiguity and installed itself — an arbitrary sheet winning a contest that
+  // had already been declared undecidable. Once refused, refused.
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "tag" }, conflicted: null }), "take");
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "tag" }, conflicted: "tag" }), "ignore",
+    "a settled TAG conflict is not reopened by the next sheet to speak");
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "proportion" }, conflicted: "tag" }), "ignore");
+  // And the two-claim rules from before are unchanged.
+  assert.equal(M.locationVerdict({ held: { by: "tag" }, incoming: { by: "proportion" }, conflicted: null }), "keep");
+  assert.equal(M.locationVerdict({ held: { by: "proportion" }, incoming: { by: "tag" }, conflicted: null }), "take");
+  assert.equal(M.locationVerdict({ held: { by: "tag" }, incoming: { by: "tag" }, conflicted: null }), "conflict");
+});
+
+test("a tag still rescues a row two weak claims had already given up on", () => {
+  // Codex [P1]. The conflict flag was source-blind: two PROPORTION claims
+  // conflicting first made the row final, so a later sheet that actually read
+  // its tag was ignored. Whether an opening located at all then depended on the
+  // order the sheets happen to sit in the PDF, and the strongest evidence lost
+  // to the weakest for arriving late.
+  //
+  // Only a tag disagreeing with a tag is final — that is the drawing
+  // contradicting itself. Two shapes that both fit is a failure of arithmetic,
+  // and arithmetic yields to the label.
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "tag" }, conflicted: "proportion" }), "take");
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "tag" }, conflicted: "tag" }), "ignore");
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "proportion" }, conflicted: "proportion" }), "ignore");
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "proportion" }, conflicted: "tag" }), "ignore");
+  // Unconflicted behaviour is unchanged.
+  assert.equal(M.locationVerdict({ held: undefined, incoming: { by: "tag" }, conflicted: null }), "take");
+  assert.equal(M.locationVerdict({ held: { by: "tag" }, incoming: { by: "tag" }, conflicted: null }), "conflict");
+  assert.equal(M.locationVerdict({ held: { by: "tag" }, incoming: { by: "proportion" }, conflicted: null }), "keep");
+});
+
+test("a tag is matched the way the whole platform matches tags", () => {
+  // Codex [P1]. The local key only stripped whitespace, so a sheet printing
+  // "W-04" against a schedule holding "W04" produced two different keys: the row
+  // went unlocated AND the box was excluded from the proportion fallback for
+  // belonging to somebody else. The output spec is explicit that separators and
+  // case are noise, and normalizeOpeningRef is the platform's primitive for it.
+  const out = M.assign({
+    rows: [row("W04", 2050, 2100)],
+    boxes: [box([0.10, 0.10, 0.20, 0.20], 2, [true, false], 0.976, "W-04")],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.get("W04")?.boxIndex, 0);
+  assert.equal(out.assigned.get("W04")?.by, "tag");
+
+  const lower = M.assign({
+    rows: [row("D1", 900, 2100)],
+    boxes: [box([0.10, 0.10, 0.20, 0.20], 1, [true], 0.43, " d1 ")],
+    elevation: "A",
+  });
+  assert.equal(lower.assigned.get("D1")?.by, "tag");
+});
+
+test("a duplicate tag on a later sheet contradicts a location already held", () => {
+  // Codex [P2]. One elevation locates W1 cleanly; a later one prints W1 against
+  // TWO windows. assign() refused it on that sheet, but the refusal was dropped
+  // during the merge because the row was already located — so the earlier crop
+  // was read and applied as though the second drawing had never disagreed.
+  //
+  // The refusal has to be distinguishable from "two boxes happened to fit", so
+  // it carries its own sub-reason rather than being lumped in with arithmetic.
+  const out = M.assign({
+    rows: [row("W1", 2050, 2100)],
+    boxes: [
+      box([0.10, 0.10, 0.20, 0.20], 1, [true], 0.976, "W1"),
+      box([0.50, 0.10, 0.60, 0.20], 1, [true], 0.976, "W1"),
+    ],
+    elevation: "B",
+  });
+  assert.equal(out.notRead[0].subReason, "duplicate_tag",
+    "a drawing contradicting itself is not the same fault as arithmetic being unable to choose");
+});
+
+test("two schedule rows that are one identity take no box at all", () => {
+  // Codex [P2]. Tags are compared normalised, so a schedule holding both "W04"
+  // and "W-04" gives two rows with ONE key — and the tag loop happily handed the
+  // same single box to both. One physical window read twice and applied to two
+  // openings is precisely the confident wrong answer this file exists to refuse;
+  // the spec says those spellings are one identity, so two rows carrying them is
+  // input we cannot act on, not input to guess at.
+  const out = M.assign({
+    rows: [row("W04", 2050, 2100), row("W-04", 2050, 2100)],
+    boxes: [box([0.10, 0.10, 0.20, 0.20], 2, [true, false], 0.976, "W04")],
+    elevation: "A",
+  });
+  assert.equal(out.assigned.size, 0, "neither row takes it");
+  assert.deepEqual(out.notRead.map((n) => n.tag).sort(), ["W-04", "W04"]);
+  for (const n of out.notRead) assert.equal(n.subReason, "ambiguous_row");
 });

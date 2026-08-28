@@ -30,7 +30,7 @@ import { getDocumentProxy } from "unpdf";
 import type { Env } from "../../types";
 import { runStage } from "../ai/stage";
 import { elevationInventory, openingComposition, type CompositionReading } from "../estimator/skills/drawingRead";
-import { assign, type ElevationBox, type ScheduleRow } from "./assign";
+import { assign, locationVerdict, type ElevationBox, type ScheduleRow } from "./assign";
 import { buildCropRequest, MAX_CROPS_PER_CALL, type CropIntent } from "./container";
 import { callPlanParse, type CropFailureReason } from "./containerClient";
 import { cropBoxFor, MIN_CROP_WIDTH_PX } from "./crop";
@@ -245,19 +245,85 @@ export async function readDrawings(env: Env, args: {
   }
 
   // ── Assign, per sheet, in arithmetic ───────────────────────────────────────
-  const located = new Map<string, { sheet: ElevationSheet; region: Region }>();
+  const located = new Map<string, {
+    sheet: ElevationSheet;
+    region: Region;
+    /** How this row reached this box — see preferLocation. */
+    by: "tag" | "proportion";
+    /** The sheet named it, and named a box the wrong shape for it. Carried into
+     *  the composition outcome so the contradiction reaches a reviewer instead
+     *  of dying in a number nobody reads.
+     *
+     *  (Worded around the marker strings the structural pins in
+     *  ai-pipeline.test.mjs slice this file on — they are load-bearing.) */
+    contradicts: boolean;
+  }>();
   const unlocated = new Map<string, string>();
+  // Rows two sheets both claimed, and WHAT KIND of claim it was. A refusal is
+  // a conclusion, not an absence, so `located` cannot hold one — and the kind
+  // matters, because only a tag contradicting a tag is final.
+  const sheetConflict = new Map<string, "tag" | "proportion">();
   for (const sheet of sheets) {
     const boxes = boxesBySheet.get(sheet.pageNo);
     if (!boxes?.length) continue;
     const result = assign({ rows: args.rows, boxes, elevation: sheet.label });
     for (const [tag, a] of result.assigned) {
-      // First sheet to own a row keeps it. A row two SHEETS both claim is the
-      // same fault as a box two rows claim, and is caught by the same rule.
-      if (located.has(tag)) { unlocated.set(tag, "ambiguous_sheet"); located.delete(tag); continue; }
-      if (!unlocated.has(tag)) located.set(tag, { sheet, region: boxes[a.boxIndex].region });
+      const incoming = {
+        sheet, region: boxes[a.boxIndex].region,
+        by: a.by, contradicts: a.proportionContradicts === true,
+      };
+      // A row two SHEETS both claim is the same fault as a box two rows claim —
+      // UNLESS one read the label off the paper and the other merely found a
+      // shape that fits. locationVerdict states the whole rule once, including
+      // the case a `located` lookup cannot express: a row already refused holds
+      // NOTHING, so without `sheetConflict` the next sheet to claim it would
+      // find an empty slot and install itself.
+      switch (locationVerdict({ held: located.get(tag), incoming, conflicted: sheetConflict.get(tag) ?? null })) {
+        case "conflict":
+          sheetConflict.set(tag, incoming.by);
+          unlocated.set(tag, "ambiguous_sheet");
+          located.delete(tag);
+          break;
+        case "take":
+          // A refusal on ANOTHER sheet does not outrank a name on this one: "I
+          // could not tell which of these is W12" is not evidence against a
+          // sheet that says so. A refusal on this row's own contest does, and
+          // that is what sheetConflict holds.
+          //
+          // Cleared, because this claim SETTLED that contest. Left standing, a
+          // proportion conflict rescued by a tag would still read as conflicted,
+          // and the next tag to arrive would replace this one without the two
+          // ever being compared — two labels disagreeing, resolved by whichever
+          // sheet came last.
+          sheetConflict.delete(tag);
+          unlocated.delete(tag);
+          located.set(tag, incoming);
+          break;
+        // "keep" and "ignore": what is held already outranks this, or the row
+        // was settled as undecidable and is not reopened.
+      }
     }
-    for (const n of result.notRead) if (!located.has(n.tag)) unlocated.set(n.tag, n.subReason);
+    for (const n of result.notRead) {
+      // A DUPLICATE TAG OUTRANKS A LOCATION ALREADY HELD. Every other refusal is
+      // this sheet failing to identify the row, which says nothing about a sheet
+      // that succeeded; this one is a drawing printing the same label on two
+      // windows, and it contradicts the earlier answer rather than merely
+      // failing to reproduce it. Dropping it because the row was already located
+      // meant the first crop was read and applied as though the second drawing
+      // had never disagreed.
+      if (n.subReason === "duplicate_tag") {
+        sheetConflict.set(n.tag, "tag");
+        located.delete(n.tag);
+        unlocated.set(n.tag, "ambiguous_sheet");
+        continue;
+      }
+      // A LATER SHEET MERELY FAILING TO LOCATE THE ROW does not overwrite a
+      // recorded contradiction with "unlocated". sheetConflict already stops it
+      // being reassigned; without this the ops-visible reason still decayed into
+      // the weaker one and the drawing conflict vanished from view. (Codex.)
+      if (sheetConflict.has(n.tag)) continue;
+      if (!located.has(n.tag)) unlocated.set(n.tag, n.subReason);
+    }
   }
 
   // ── Crop only what is located. Nothing reaches the model unlocated ──────────
@@ -316,11 +382,33 @@ export async function readDrawings(env: Env, args: {
         const place_outcome = (o: OpeningOutcome) => { ordered[i] = o; };
         const place = located.get(row.tag);
     const crop = crops.get(row.tag);
+
+    // THE LOCATING STEP CAN DISAGREE WITH THE SCHEDULE TOO, and it used to do so
+    // into a number nobody read: the sheet names this box W12, and the box is the
+    // wrong shape for W12. The label still won — it is the join — so without this
+    // a composition read off the wrong window arrived looking clean.
+    //
+    // Built HERE, above the FIRST outcome path rather than beside the successful
+    // read. Every early return is an opening a reviewer has least else to go on,
+    // and each one was dropping this: a crop the renderer could not produce does
+    // not un-know what locating already found. (Codex, twice.)
+    const locationDisagreements: Disagreement[] = place?.contradicts
+      ? [{
+          check: "tag_shape",
+          detail: `the sheet labels this window ${row.tag}, but its drawn shape does not match ${row.widthMm}x${row.heightMm}`,
+        }]
+      : [];
+    const withLocation = (rest: Disagreement[]): Disagreement[] | undefined => {
+      const all = [...locationDisagreements, ...rest];
+      return all.length ? all : undefined;
+    };
+
     if (!place || !crop) {
       place_outcome({
         tag: row.tag,
         state: "not_read",
         subReason: cropFailed.get(row.tag) ?? unlocated.get(row.tag) ?? "unlocated",
+        disagreements: withLocation([]),
       });
       await advance();
       continue;
@@ -378,7 +466,10 @@ export async function readDrawings(env: Env, args: {
     }
 
     if (!run.ok || !run.data) {
-      const outcome: OpeningOutcome = { tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey };
+      const outcome: OpeningOutcome = {
+        tag: row.tag, state: "not_read", subReason: "invalid_output", cropKey,
+        disagreements: withLocation([]),
+      };
       place_outcome(outcome);
       if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
@@ -387,7 +478,10 @@ export async function readDrawings(env: Env, args: {
 
     const reading = run.data;
     if (reading.outcome !== "read") {
-      const outcome: OpeningOutcome = { tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading };
+      const outcome: OpeningOutcome = {
+        tag: row.tag, state: reading.outcome, subReason: reading.reason, cropKey, reading,
+        disagreements: withLocation([]),
+      };
       place_outcome(outcome);
       if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
       await advance();
@@ -401,7 +495,7 @@ export async function readDrawings(env: Env, args: {
       reading,
       cropKey,
       // Surfaced, never resolved — the reviewer decides.
-      disagreements: verified.agrees ? undefined : verified.disagreements,
+      disagreements: withLocation(verified.agrees ? [] : verified.disagreements),
     };
     place_outcome(outcome);
     if (!run.cached) await recordOutcome(env, args.aiRunId, run.stageRunId, outcome);
@@ -605,12 +699,27 @@ export async function recordDrawingProgress(env: Env, args: {
   done: number;
   total: number;
 }): Promise<void> {
+  // MAX, not assignment: four openings are read concurrently and each writes its
+  // own count, so the writes can land out of order. Taking the LAST one to
+  // arrive lets the counter go backwards, and lets a run that read all nineteen
+  // finish displaying seventeen. Which number survives is controllable; the
+  // order the four land in is not.
+  //
+  // …except the ANNOUNCE. done=0 is the one write that means "a new attempt
+  // begins", and it has to be able to lower the number: a retry reuses this row,
+  // so without the CASE the previous attempt's mark survives and the customer
+  // watches "19 of 19" from the first second of a run that has read nothing.
+  //
+  // The rationale sits HERE rather than in `--` lines inside the statement: the
+  // bind-arity scan in figure-capture.test.mjs parses this SQL, and a comment
+  // block inside it left the scan seeing one placeholder against six binds.
   await env.DB.prepare(
     `UPDATE ai_job_claim
-        SET drawings_done=?, drawings_total=?, updated_at=datetime('now')
+        SET drawings_done=CASE WHEN ?=0 THEN 0 ELSE MAX(COALESCE(drawings_done, 0), ?) END,
+            drawings_total=?, updated_at=datetime('now')
       WHERE project_id=? AND source_generation=? AND status='processing'
         AND processing_token=?`,
-  ).bind(args.done, args.total, args.projectId, args.sourceGeneration, args.processingToken).run();
+  ).bind(args.done, args.done, args.total, args.projectId, args.sourceGeneration, args.processingToken).run();
 }
 
 export { RENDER_SCALE, MIN_CROP_WIDTH_PX, MAX_CROPS_PER_CALL };

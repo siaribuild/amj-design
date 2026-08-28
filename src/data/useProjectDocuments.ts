@@ -196,6 +196,35 @@ export interface ProjectDocuments {
   resetDocuments: () => void;
 }
 
+/** Which instant the client's give-up clock is measured from.
+ *
+ *  The poll starts when the customer uploads; the server's deadline starts when
+ *  the queue delivers the job, which is a debounce plus a delivery later. Timing
+ *  the client from the upload therefore fails runs that are still comfortably
+ *  inside the server's budget — the very bug the backstop was raised to fix,
+ *  reintroduced by measuring from the wrong instant. (Codex.)
+ *
+ *  Before the run is seen running there is nothing else to measure from, and the
+ *  upload instant is the right answer there: it is what catches a job that never
+ *  starts at all. */
+export function backstopBasis(uploadedAt: number, processingSince: number | null): number {
+  return processingSince ?? uploadedAt;
+}
+
+// KNOWN AND ACCEPTED: `processingSince` is when this CLIENT first saw the job
+// running, not when the server started it. A suspended tab or a network outage
+// therefore hands an already-stalled run a fresh window. (Codex raised it; not
+// fixed, deliberately.)
+//
+// There is no true processing-start timestamp to use — the status endpoint's
+// `startedAt` is the claim's created_at, which is closer to the upload than to
+// the work — so an honest fix means a new column, a migration and an API field,
+// for a net beneath a net. The exposure needs BOTH the tab to have been
+// suspended AND the server to never publish a terminal state, while the server
+// already fails the job itself at 300s and the client reads that as terminal.
+// Worth revisiting if a stalled-run report ever appears; not worth a migration
+// on speculation.
+
 export function useProjectDocuments(
   quote: QuoteState,
   user: { email: string } | null,
@@ -321,6 +350,18 @@ export function useProjectDocuments(
     } catch { /* leave the card up — resolving again is safe */ }
   };
 
+  // THE CLIENT BACKSTOP MUST OUTLAST THE SERVER'S DEADLINE, or a healthy run is
+  // reported as a failure by the only party the customer can see. It did, on
+  // 2026-08-28: the server deadline went 120s → 300s and this stayed at 150s, so
+  // a run that finished in 2m15s with all 19 openings read showed "AI refinement
+  // was interrupted" while it was still working.
+  //
+  // The server is the authority on failure (`run.status==='failed'` above). This
+  // is only the net for a status endpoint that never returns a terminal state at
+  // all, so it belongs strictly OUTSIDE the server's own ceiling — 330s, the
+  // same number the job's lease uses for the same reason.
+  const CLIENT_BACKSTOP_MS = 330_000;
+
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollEpoch = useRef(0);
   const stopPolling = () => {
@@ -336,22 +377,25 @@ export function useProjectDocuments(
     setStageLog([]);            // fresh timeline for this run
     setAiPhase({ kind: "reading", docs, stage: "queued" });
     let sawRun = false;
+    // When the SERVER started, first sighting only — see backstopBasis.
+    let processingSince: number | null = null;
     let lastDiagnostic: SafeDiagnostic | null = null;
     let lastStage: AiProgressStage | undefined;
     const tick = async (n: number) => {
       if (epoch !== pollEpoch.current) return;
       let inFlight = false;
       // Duration is NOT failure. The client backstop is generous (past the
-      // server's 120s job ceiling); the server is the authority on actual
+      // server's 300s job ceiling); the server is the authority on actual
       // failure. We only give up on our own if the whole run window elapses with
       // no terminal status at all — a stall is surfaced as concern, not death.
-      const windowElapsed = Date.now() - t0 >= 150_000;
       try {
         const { run, basis } = await extractionStatus();
         if (epoch !== pollEpoch.current) return;
         if (basis) setBasisMap(basis);
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
+          // The server's own clock starts here, not at upload.
+          if (run.status === "running" && processingSince === null) processingSince = Date.now();
           inFlight = true;
           lastDiagnostic = run.diagnostic ?? null;
           if (run.progressStage !== lastStage) { lastStage = run.progressStage; }
@@ -386,9 +430,15 @@ export function useProjectDocuments(
         // does a network failure become the visible bounded failure state.
       }
       // Only the CLIENT backstop fails here; a healthy-but-slow run keeps its
-      // checklist and its live timer. The server fails the job at 120s and we
+      // checklist and its live timer. The server fails the job at 300s and we
       // read that as run.status==='failed' above — this is just the net for a
       // status endpoint that never returns a terminal state at all.
+      // COMPUTED HERE, not before the status call. On the tick that FIRST sees a
+      // long-queued job start running, a value computed at the top of the tick
+      // was measured from the upload and could already be over — so the poll
+      // failed a job in the second it began. The reset has to land before the
+      // question is asked. (Codex.)
+      const windowElapsed = Date.now() - backstopBasis(t0, processingSince) >= CLIENT_BACKSTOP_MS;
       if (windowElapsed) {
         setAiPhase({
           kind: "failed",
@@ -397,7 +447,7 @@ export function useProjectDocuments(
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, 150_000 - (Date.now() - t0));
+      const remaining = Math.max(250, CLIENT_BACKSTOP_MS - (Date.now() - backstopBasis(t0, processingSince)));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);

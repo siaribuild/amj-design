@@ -41,7 +41,15 @@ const MAX_AUTOMATIC_ATTEMPTS = 1;
 // 15-minute wall. Raised from 55s: quality-first 'medium' thinking is allowed to
 // finish rather than being severed to fit an arbitrary minute. The UI no longer
 // treats duration as failure — it shows per-step progress and flags only a stall.
-const AI_JOB_DEADLINE_MS = 120_000;
+// TEMPORARY, AND THE OWNER SAID SO WHEN HE RAISED IT (2026-08-28): the job
+// should take "a minute or two", and 300s exists so the drawing read can be
+// evaluated at all, not because five minutes is an acceptable wait. The read
+// alone measured ~100s for 19 openings on the reference set, which left no room
+// under the old 120s for ingest, schedule extraction, selection and pricing —
+// so the feature could not finish, and every opening fell back to the even
+// split. PERFORMANCE IS THE REAL FIX; this is the number that lets it be
+// measured. See docs/estimator/drawing-parse-design.md.
+const AI_JOB_DEADLINE_MS = 300_000;
 
 class AiJobFault extends Error {
   constructor(
@@ -445,7 +453,7 @@ export async function processAiExtractionJob(
     `UPDATE ai_job_claim
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
-            retry_after=NULL, lease_expires_at=datetime('now','+135 seconds'),
+            retry_after=NULL, lease_expires_at=datetime('now','+330 seconds'),
             progress_stage='reading_documents', updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
@@ -479,13 +487,13 @@ export async function processAiExtractionJob(
   }
 
   // Keep ownership while useful work is progressing. The lease must OUTLAST the
-  // job deadline (120s), or a lagging heartbeat lets the reaper cancel a run that
+  // job deadline (300s), or a lagging heartbeat lets the reaper cancel a run that
   // is still inside its allowed budget — which, with the old 75s lease, it did.
-  // 135s > 120s, renewed every 15s; the 120s job deadline stays the authority.
+  // 330s > 300s, renewed every 15s; the 300s job deadline stays the authority.
   let heartbeatLost = false;
   const heartbeat = setInterval(() => {
     void env.DB.prepare(
-      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+135 seconds'),
+      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+330 seconds'),
           updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=?`,

@@ -27,7 +27,12 @@ import type { CompositionReading } from "../estimator/skills/drawingRead";
 import type { ScheduleRow } from "./assign";
 
 export interface Disagreement {
-  check: "schedule_cross_check" | "dimension_agreement";
+  /** `tag_shape` is raised by LOCATING, not by reading: the sheet printed this
+   *  opening's label against a box whose drawn shape does not match the
+   *  schedule's dimensions. The label still decides which box is read — it is
+   *  the join — so this is the only thing that stops a composition taken off the
+   *  wrong window from arriving indistinguishable from a good one. */
+  check: "schedule_cross_check" | "dimension_agreement" | "tag_shape";
   /** Both claims, in words a reviewer can act on without reopening the PDF. */
   detail: string;
 }

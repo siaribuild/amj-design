@@ -29,7 +29,7 @@ export type {
 } from "./types";
 
 export type { ScheduleRow, ElevationBox, Assignment, Unassigned, AssignResult } from "./assign";
-export { assign } from "./assign";
+export { assign, preferLocation, locationVerdict } from "./assign";
 
 export type { Disagreement, Verification } from "./verifyReading";
 export { verifyReading } from "./verifyReading";

@@ -1658,12 +1658,14 @@ test("the drawing counter is written only by the worker that still holds the lea
   });
 
   assert.match(sql, /UPDATE ai_job_claim/);
-  assert.match(sql, /drawings_done=\?/);
+  // The assignment form moved to a high-water mark (see the concurrency test
+  // below); what this test is about — the guard — did not.
+  assert.match(sql, /drawings_done=CASE WHEN \? ?= ?0 THEN 0 ELSE MAX\(/);
   assert.match(sql, /drawings_total=\?/);
   assert.match(sql, /WHERE project_id=\?\s+AND source_generation=\?\s+AND status='processing'\s+AND processing_token=\?/,
     "the full guard, not a subset of it");
   assert.doesNotMatch(sql, /progress_stage/, "the stage vocabulary is untouched — its CHECK would need a rebuild");
-  assert.deepEqual(args, [7, 20, "p1", 3, "tok-1"]);
+  assert.deepEqual(args, [7, 7, 20, "p1", 3, "tok-1"]);
 });
 
 test("the counter's denominator is every opening, and an unread one still advances it", async () => {
@@ -2216,4 +2218,69 @@ test("a proposal that CAN price the opening retires the reason saying it could n
     "the patch must SAY something about `product` — silence leaves the old sentence in place");
   assert.equal(patch.product, null,
     "null is how json_patch deletes a key: the line has a product and a price, so the reason is retired");
+});
+
+test("the drawing counter never moves backwards under concurrent readers", async () => {
+  // Codex [P2]. Four openings are read at once and each writes its own count, so
+  // the D1 writes can land out of order — done=19 committing before a slower
+  // done=17 leaves the customer's counter BELOW the work actually finished, and
+  // a run can end reading "17 of 19" having read all nineteen.
+  //
+  // The write keeps the larger value rather than the latest one. Ordering
+  // between four concurrent callers is not something this can control; which
+  // number survives is.
+  let sql = "";
+  let args = [];
+  const env = { DB: { prepare(q) { sql = q; return { bind: (...a) => { args = a; return { run: async () => ({}) }; } }; } } };
+  await recordDrawingProgress(env, {
+    projectId: "p1", sourceGeneration: 3, processingToken: "tok-1", done: 7, total: 20,
+  });
+  assert.match(sql, /MAX\(COALESCE\(drawings_done, ?0\), ?\?\)/,
+    "the counter keeps the high-water mark, not the last write to land");
+  // The guard and the denominator are unchanged.
+  assert.match(sql, /AND processing_token=\?/);
+  assert.deepEqual(args, [7, 7, 20, "p1", 3, "tok-1"]);
+});
+
+test("a retry's counter starts at nothing, not at the last attempt's high-water mark", async () => {
+  // Codex [P2]. The high-water mark that stops concurrent writes going backwards
+  // also survives a RETRY: retryCurrentAiExtraction resets the claim but leaves
+  // drawings_done, so the new attempt's opening `onProgress(0, total)` cannot
+  // lower it and the customer watches "19 of 19" from the first second of a run
+  // that has read nothing.
+  //
+  // The announce is the one write that means "a new attempt begins", so it is
+  // the one write allowed to lower the number.
+  let sql = "";
+  let args = [];
+  const env = { DB: { prepare(q) { sql = q; return { bind: (...a) => { args = a; return { run: async () => ({}) }; } }; } } };
+  await recordDrawingProgress(env, {
+    projectId: "p1", sourceGeneration: 3, processingToken: "tok-2", done: 0, total: 19,
+  });
+  assert.match(sql, /CASE WHEN \? ?= ?0 THEN 0/,
+    "the announce resets the bar; every later write keeps the high-water mark");
+  assert.match(sql, /MAX\(COALESCE\(drawings_done, ?0\), ?\?\)/, "…and the concurrency guard survives");
+  assert.deepEqual(args, [0, 0, 19, "p1", 3, "tok-2"]);
+});
+
+test("a tag/shape contradiction survives an outcome that is not a clean read", async () => {
+  // Codex [P2]. The location disagreement — the sheet labels this box W12 and
+  // the box is the wrong shape for W12 — was built only on the successful-read
+  // path, so a composition that came back not_stated, not_read or malformed
+  // returned before it existed and the contradiction never reached recordOutcome
+  // or the review flags. The output spec requires dimension mismatches to stay
+  // review-visible regardless of what else the reading concluded.
+  const src = await readFile(join(projectRoot, "worker/lib/drawing/read.ts"), "utf8");
+  const build = src.indexOf("locationDisagreements");
+  const branch = src.indexOf('if (reading.outcome !== "read")');
+  assert.ok(build > 0 && branch > 0, "both landmarks exist");
+  assert.ok(build < branch,
+    "the contradiction is constructed before the outcome is branched on, or the early paths lose it");
+  // And EVERY outcome attaches it, not just the read one: invalid output,
+  // not_stated/not_read, and the clean read are three separate constructions.
+  assert.equal((src.match(/disagreements: withLocation\(/g) ?? []).length, 4,
+    "every outcome path carries it — no crop, invalid output, declined read, clean read");
+  // …and it is built above the EARLIEST of them, not just the last.
+  assert.ok(build < src.indexOf("if (!place || !crop)"),
+    "a crop the renderer could not produce does not un-know what locating found");
 });
