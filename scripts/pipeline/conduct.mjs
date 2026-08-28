@@ -1213,16 +1213,20 @@ If you believe the finding is wrong, say so and change nothing.`
     const tk = rows.reduce((a, [, s]) => a + (metered(s) ? (s.contextTokens || 0) : 0), 0)
     const to = rows.reduce((a, [, s]) => a + (metered(s) ? (s.outputTokens || 0) : 0), 0)
     console.log('\n  ' + run.slug + ' - ' + rows.length + ' stage runs\n')
+    // Every figure column is 9 wide or more, because "unknown" is 7 and a
+    // column no wider than its widest value is not a column: at 7 the turns
+    // figure ran straight into the output one ("unknownunknown"), on the one
+    // row whose whole job is to be noticed.
     console.log('  ' + 'stage'.padEnd(20) + 'context'.padStart(11) +
-      'output'.padStart(9) + 'turns'.padStart(7) + 'time'.padStart(8))
-    console.log('  ' + '-'.repeat(55))
+      'output'.padStart(9) + 'turns'.padStart(9) + 'time'.padStart(8))
+    console.log('  ' + '-'.repeat(57))
     for (const [k, s] of rows)
       console.log('  ' + k.padEnd(20) + (metered(s)
         ? fmt(s.contextTokens || 0).padStart(11) + fmt(s.outputTokens || 0).padStart(9) +
-          String(s.turns || 0).padStart(7)
-        : 'unknown'.padStart(11) + 'unknown'.padStart(9) + 'unknown'.padStart(7)) +
+          String(s.turns || 0).padStart(9)
+        : 'unknown'.padStart(11) + 'unknown'.padStart(9) + 'unknown'.padStart(9)) +
         ((s.seconds || 0) + 's').padStart(8))
-    console.log('  ' + '-'.repeat(55))
+    console.log('  ' + '-'.repeat(57))
     console.log('  ' + 'TOTAL'.padEnd(20) + fmt(tk).padStart(11) + fmt(to).padStart(9))
     printWindow()
     console.log('\n  conductor overhead: 0 tokens - this script is not a model.\n')

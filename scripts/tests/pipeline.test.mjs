@@ -332,6 +332,28 @@ test('a measured zero and an unmeasured stage are not the same row', () => {
     'an unmetered stage rendered as a measured zero: ' + row('review-ponytail'))
 })
 
+test('the stage table stays in columns at every width, unknown and billions alike', () => {
+  // "unknown" is exactly 7 characters and the turns column was 7 wide, so the
+  // one row whose whole purpose is to be noticed rendered as "unknownunknown".
+  // A column has to be wider than its widest value or it is not a column.
+  const projects = tmp('report-columns-projects')
+  const { root } = seedRun('report-columns-run', {
+    spec: { code: 0, contextTokens: 4.16e9, outputTokens: 5.1e6, turns: 12069, source: 'transcript', seconds: 8 },
+    design: { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, source: 'none', seconds: 0 },
+  })
+
+  const out = conduct(root, projects, 'report')
+  const lines = out.split(NL)
+  const header = lines.findIndex((l) => l.includes('stage') && l.includes('context'))
+  const fields = (l) => l.trim().split(/\s{2,}/)
+
+  assert.deepEqual(fields(lines[header]), ['stage', 'context', 'output', 'turns', 'time'])
+  for (const label of ['spec', 'design']) {
+    const row = lines.slice(header).find((l) => l.trim().startsWith(label)) || ''
+    assert.equal(fields(row).length, 5, 'columns collided on the ' + label + ' row: "' + row + '"')
+  }
+})
+
 test('plan heals the same way and reports tokens, not money', () => {
   const projects = tmp('plan-projects')
   seedTranscript(projects, 'proj-a', 'sess-plan', ['r1', 'r2'], 2)
