@@ -184,22 +184,6 @@ export function streamTotals(file) {
   return b
 }
 
-/** Sum streamTotals over every stage log in a v2 run directory. */
-export function runDirTotals(logsDir) {
-  const b = { ctx: 0, out: 0, cost: 0, models: new Set(), turns: 0, stages: {} }
-  let files
-  try { files = readdirSync(logsDir) } catch { return b }
-  for (const f of files.filter((f) => f.endsWith('.jsonl'))) {
-    const t = streamTotals(join(logsDir, f))
-    if (!t) continue
-    b.ctx += t.ctx; b.out += t.out; b.cost += t.cost; b.turns += t.turns
-    t.models.forEach((m) => b.models.add(m))
-    b.stages[f.replace(/\.jsonl$/, '')] = t
-  }
-  b.models = [...b.models]
-  return b
-}
-
 const FIVE_HOURS = 5 * 3600 * 1000
 const SEVEN_DAYS = 7 * 24 * 3600 * 1000
 
