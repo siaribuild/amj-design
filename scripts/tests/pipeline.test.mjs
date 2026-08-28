@@ -1912,3 +1912,31 @@ test('a low-severity finding lands in the debt file and spawns no developer sess
   assert.equal(isDeferred('low'), true)
   assert.equal(isDeferred('cosmetic'), true)
 })
+
+test('a third verify/fix cycle is refused - what is still open is printed instead', () => {
+  // This pipeline's own build ran two verifies and SIX fix rounds. The third
+  // cycle is where the loop stops paying for itself.
+  const { root, runJson } = seedRun('cycle-cap', { verify: { code: 0 } })
+  const dir = join(root, 'docs', 'runs', 'demo')
+  const run = JSON.parse(readFileSync(runJson, 'utf8'))
+  run.verifyRounds = 2
+  writeFileSync(runJson, JSON.stringify(run, null, 2))
+  writeFileSync(join(dir, '04-build.md'), '# build' + NL)
+  writeFileSync(join(dir, 'DEBT.md'), '- [cosmetic] the report columns are misaligned' + NL)
+  const env = { ...process.env, CONDUCT_CLAUDE_BIN: join(root, 'no-such-claude') }
+  const capped = (...a) => execFileSync(process.execPath, [CONDUCT, ...a],
+    { cwd: root, encoding: 'utf8', env })
+
+  const out = capped('run', 'verify')
+
+  assert.match(out, /CYCLE CAP/, 'a third verify round started')
+  assert.match(out, /columns are misaligned/, 'the cap must print what is still open, not just stop')
+  assert.match(out, /06-verify\.md/, 'the cap never says where the last verdict is')
+  assert.equal(existsSync(join(dir, 'logs')), false, 'the capped verify still spawned a tester')
+  assert.equal(JSON.parse(readFileSync(runJson, 'utf8')).verifyRounds, 2,
+    'a refused cycle must not itself burn a round')
+
+  // A fix that can never be re-verified is the other half of the same loop.
+  assert.match(capped('fix', 'one more thing', '--severity', 'high'), /CYCLE CAP/,
+    'a fix round past the cap still spent a developer session')
+})

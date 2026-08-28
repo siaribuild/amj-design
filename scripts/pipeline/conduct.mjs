@@ -243,6 +243,7 @@ WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
     id: 'verify', agent: 'tester', worktree: true, compact: 120000, tiers: ['full', 'fix'],
+    cycle: true,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
   },
@@ -951,6 +952,32 @@ function decisionsOpen(run) {
   return true
 }
 
+/**
+ * The verify/fix loop is bounded: one verify, one fix round, one re-verify.
+ * This pipeline's own build ran two verifies and six fix rounds, and that loop -
+ * not the building and not the testing - was 27% of the feature's tokens.
+ *
+ * A third cycle is refused, not deferred: what is still open is printed and the
+ * human decides. That is a CYCLE ceiling, not a token or dollar one - the stage
+ * table's "no runaway guard" ruling is about the cost of a running stage, and
+ * still stands.
+ */
+const CYCLE_CAP = 2
+
+function cycleCapped(run) {
+  if ((run.verifyRounds || 0) < CYCLE_CAP) return false
+  console.log('\n  == CYCLE CAP - ' + run.verifyRounds + ' verify rounds have already run.')
+  console.log('     A third verify/fix cycle costs more than the findings it returns.')
+  console.log('\n     Still open:')
+  const debt = join(RUNS, run.slug, 'DEBT.md')
+  if (existsSync(debt))
+    console.log(readFileSync(debt, 'utf8').trimEnd().split('\n').map((l) => '       ' + l).join('\n'))
+  else console.log('       (nothing deferred)')
+  console.log('\n     Last verdict:  ' + run.dir + '/06-verify.md')
+  console.log('     It is yours to judge now - ship it, or fix it by hand.\n')
+  return true
+}
+
 function afterStage(run, spec) {
   const r = loadRun(run.slug)
   if (spec.gate || decisionsOpen(r)) {
@@ -1090,10 +1117,14 @@ const cmds = {
     const run = loadRun(activeSlug())
     const spec = STAGES.find((s) => s.id === id)
     if (!spec) die('unknown stage "' + id + '" - one of: ' + STAGES.map((s) => s.id).join(', '))
+    if (spec.cycle && cycleCapped(run)) return
     for (const n of spec.needs || []) {
       if (!existsSync(join(RUNS, run.slug, n)))
         die('stage "' + id + '" needs ' + run.dir + '/' + n + ', which does not exist yet')
     }
+    // Counted once the stage's preconditions hold and it is really about to
+    // start - a typo that dies on a missing artifact must not burn a round.
+    if (spec.cycle) { run.verifyRounds = (run.verifyRounds || 0) + 1; saveRun(run) }
     if (spec.ui) mkdirSync(join(ROOT, 'docs', 'mocks'), { recursive: true })
     // Decided once, above every stage shape: the sliced build and the parallel
     // review each run panes of their own, so neither can be reached through the
@@ -1239,6 +1270,8 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
   async fix(...args) {
     const run = loadRun(activeSlug())
     const { severity, rest: finding } = parseSeverity(args)
+    // A fix that can never be re-verified is the other half of the same loop.
+    if (cycleCapped(run)) return
     if (!finding.length)
       die('usage: conduct fix "<finding, or a path to the review file>" [--severity high|medium|low|cosmetic]')
     if (isDeferred(severity)) {
