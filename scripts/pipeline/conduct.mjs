@@ -60,8 +60,33 @@ const metered = (s) => s.source
 const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/
 const checkSlug = (s) => SLUG.test(s) ? s : die('slug must match ' + SLUG + ' - got "' + s + '"')
 
+// --- tiers ------------------------------------------------------------------
+//
+// CLAUDE.md has always defined three sizes of change; the conductor implemented
+// one. Running all 8 stages and 4 reviewers over a bounded fix is how v2 ends up
+// as expensive as v1 - measured on the feature that built this pipeline, the fix
+// rounds alone (0.92M subagent tokens, 27%) cost more than all the testing.
+//
+// Membership is declared on the stage, not decided at the call sites: a skip
+// written into `next` is invisible from the stage table and gets re-derived,
+// differently, in `plan`.
+
+const TIERS = ['full', 'fix', 'direct']
+
+export function parseTier(args) {
+  const i = args.indexOf('--tier')
+  if (i < 0) return { tier: 'full', rest: args }
+  const tier = args[i + 1]
+  if (!TIERS.includes(tier))
+    die('--tier must be one of ' + TIERS.join(', ') + ' - got "' + (tier ?? '') + '"')
+  return { tier, rest: [...args.slice(0, i), ...args.slice(i + 2)] }
+}
+
+export const inTier = (spec, run) => spec.tiers.includes(run.tier || 'full')
+
 // --- stage table -----------------------------------------------------------
 // compact: context window cap, in tokens.
+// tiers:   which tier sizes run this stage.
 //
 // There is deliberately NO runaway guard here - no dollar ceiling, no token
 // ceiling, no turn ceiling. Owner ruling: no threshold is defensible, the
@@ -72,7 +97,7 @@ const checkSlug = (s) => SLUG.test(s) ? s : die('slug must match ' + SLUG + ' - 
 
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', compact: 120000,
+    id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
     needs: ['00-ask.md'], produces: ['01-spec.md'],
     prompt: (r) => `Write the spec for this feature.
 
@@ -99,7 +124,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', compact: 120000,
+    id: 'design', agent: 'architect', compact: 120000, tiers: ['full'],
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -137,7 +162,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 100000, mcp: true,
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 100000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -156,11 +181,11 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, compact: 120000,
+    id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
     needs: ['02-tasks.json'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true,
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -171,7 +196,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', worktree: true, compact: 120000,
+    id: 'verify', agent: 'tester', worktree: true, compact: 120000, tiers: ['full', 'fix'],
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => `Independently verify this feature. Assume nothing reported is true.
 
@@ -191,10 +216,13 @@ with its evidence, and every finding with the exact command that reproduces it.
 Findings go back to a developer, not to you - do not fix code.`,
   },
   {
-    id: 'review', parallel: true, needs: ['04-build.md'], produces: [],
+    // MANDATORY for tier full - CLAUDE.md is explicit that neither a manual
+    // override nor the conductor's judgement may disable it. Only the fix tier,
+    // which the owner selects deliberately for a bounded change, is without it.
+    id: 'review', parallel: true, tiers: ['full'], needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000,
+    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000, tiers: ['full'],
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -912,12 +940,20 @@ const cmds = {
     // becomes a filesystem path, a git worktree name and a herdr label, and a
     // rejected one must leave the disk exactly as it found it.
     checkSlug(slug)
+    // Also before anything is created: `direct` is the tier that has no run.
+    const { tier, rest } = parseTier(ask)
+    if (tier === 'direct')
+      die('tier "direct" is not a run - a typo, copy, comment, config value or\n' +
+        '  formatting change is cheaper edited than conducted. Edit the file.\n' +
+        '  Nothing was created.')
+    ask = rest
     const panes = await paneMode(ask)
     ask = ask.filter((a) => a !== '--no-panes')
     const dir = join(RUNS, slug)
     mkdirSync(dir, { recursive: true })
     const run = {
       slug,
+      tier,
       base: sh('git rev-parse HEAD').slice(0, 8),
       branch: sh('git rev-parse --abbrev-ref HEAD'),
       ui: false,
@@ -976,6 +1012,7 @@ const cmds = {
       .find(([, s]) => s.status === 'running' || s.status === 'held')
     if (live) return cmds.resume(live[0], ...flags)
     for (const spec of STAGES) {
+      if (!inTier(spec, run)) continue
       if (spec.ui && !run.ui) continue
       if (run.stages[spec.id]?.code === 0) continue
       return cmds.run(spec.id, ...flags)
@@ -1163,9 +1200,10 @@ If you believe the finding is wrong, say so and change nothing.`
     const live = (s) => s?.status === 'held' ? 'held: ' + (s.holdReason || 'gate')
       : s?.status === 'running' ? 'running' : null
     console.log('\n  ' + run.slug + '   base ' + run.base + ' on ' + run.branch +
-      (run.ui ? '   (UI feature)' : ''))
+      '   tier ' + (run.tier || 'full') + (run.ui ? '   (UI feature)' : ''))
     console.log('\n  STAGES')
     for (const spec of STAGES) {
+      if (!inTier(spec, run)) continue
       if (spec.ui && !run.ui) continue
       const s = run.stages[spec.id]
       const done = s?.code === 0
@@ -1244,7 +1282,10 @@ function main() {
     console.log(`
   pipeline v2 conductor - same agents, same gates, no orchestrator
 
-    conduct start <slug> "<ask>"   begin a run
+    conduct start <slug> "<ask>"   begin a run  [--tier full|fix|direct]
+                                     full   every stage (default)
+                                     fix    build + verify only, for a bounded fix
+                                     direct just edit the file - no run at all
     conduct ui on|off              this feature adds/changes UI
     conduct next                   run the next stage
     conduct run <stage>            run or re-run one stage

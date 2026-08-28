@@ -1817,3 +1817,47 @@ test('the shim carries no subagent transcript rewrite, and still invokes the bin
     assert.ok(src.includes(c), 'root candidate dropped: ' + c)
   }
 })
+
+// --- proportionality ---------------------------------------------------------
+//
+// Measured on the feature that built this pipeline: build 1.41M, fix rounds
+// 0.92M (27%), testing 0.48M (14%). The ceremony, not the work, was the cost.
+
+test('a fix-tier run collapses to build + verify - no ux, polish, review or accept', () => {
+  const s = stubbedRepo('tier-fix')
+  s.env.CONDUCT_CLAUDE_BIN = join(s.root, 'no-such-claude')
+  const start = (...a) => execFileSync(process.execPath, [CONDUCT, ...a],
+    { cwd: s.root, encoding: 'utf8', env: s.env })
+  start('start', 'demo', 'a bounded fix', '--tier', 'fix', '--no-panes')
+
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  assert.equal(run.tier, 'fix', 'the tier was not recorded in run.json')
+
+  const listed = start('plan').split(NL)
+    .map((l) => (l.match(/^\s+\[[ x>]\] (\S+)/) || [])[1]).filter(Boolean)
+  assert.deepEqual(listed, ['build', 'verify'],
+    'the fix tier still plans the full ceremony: ' + listed.join(' '))
+
+  // Even with UI on, and with the two tier stages already green, `next` must
+  // find nothing left - not walk into ux, polish, review or accept.
+  run.ui = true
+  run.stages = { build: { code: 0 }, verify: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(run, null, 2))
+  assert.match(start('next', '--no-panes'), /all stages complete/,
+    'a fix-tier run ran a stage that is not in its tier')
+})
+
+test('a direct-tier start refuses, and creates nothing at all', () => {
+  const s = stubbedRepo('tier-direct')
+  const before = readdirSync(s.root).sort()
+
+  const r = startFails(s, 'demo', 'fix a typo in a comment', '--tier', 'direct')
+
+  assert.ok(r, 'a direct-tier change was given a run directory and a pipeline')
+  assert.notEqual(r.status, 0)
+  assert.match(r.out, /direct/, 'the refusal must say which tier it refused')
+  assert.deepEqual(readdirSync(s.root).sort(), before, 'a refused start left something behind')
+  assert.equal(existsSync(join(s.root, 'docs')), false, 'a refused start created docs/')
+  assert.equal(existsSync(s.log), false, 'a refused start still went to herdr')
+})
