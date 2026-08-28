@@ -1,3 +1,12 @@
+> **ARCHIVED 2026-08-29 — superseded by [`00-ask.md`](00-ask.md).**
+>
+> This document is downstream of a render-and-crop architecture that grew *around*
+> the SKILL.md method rather than from it. Its coordinate-space and Pass A/B
+> machinery is not the method; steps 5 and 6 of the method are. The re-grill
+> restated the method as binding and the container as kept — see `00-ask.md` §3-§4.
+>
+> Kept for its reasoning and its traceability, not as an instruction.
+
 # Plan parse — conformance to the prescribed locating method
 
 **Status:** specification for owner review. It constrains the implementation of
