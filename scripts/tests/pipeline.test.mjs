@@ -309,6 +309,29 @@ test('report heals a zero-token stage from the transcript, once, and prints unkn
   assert.equal(saved.stages.design.source, undefined)
 })
 
+test('a measured zero and an unmeasured stage are not the same row', () => {
+  // review-codex is another vendor's model: it really does burn zero Claude
+  // tokens, and that zero is a READING. An unmetered stage is not zero, it is
+  // unknown. `source: 'codex'` exists to tell the two apart - and nothing
+  // pinned it, so tightening metered() to transcript/result only left the
+  // suite green while a measured zero started reporting as unmeasured.
+  const projects = tmp('codex-zero-projects')
+  const { root } = seedRun('codex-zero-run', {
+    'review-codex': { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, source: 'codex', seconds: 4 },
+    'review-ponytail': { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, source: 'none', seconds: 6 },
+  })
+
+  const out = conduct(root, projects, 'report')
+  const row = (label) => out.split(NL).find((l) => l.includes(label)) || ''
+
+  assert.ok(!/unknown/.test(row('review-codex')),
+    'a measured zero rendered as unmeasured: ' + row('review-codex'))
+  assert.match(row('review-codex'), /\s0\s+0\s+0\s/,
+    'a measured zero must print as 0: ' + row('review-codex'))
+  assert.match(row('review-ponytail'), /unknown/,
+    'an unmetered stage rendered as a measured zero: ' + row('review-ponytail'))
+})
+
 test('plan heals the same way and reports tokens, not money', () => {
   const projects = tmp('plan-projects')
   seedTranscript(projects, 'proj-a', 'sess-plan', ['r1', 'r2'], 2)
