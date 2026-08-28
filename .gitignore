@@ -59,3 +59,7 @@ docs/runs/*/logs/
 
 # pipeline v2 stage prompts (written per stage, reproducible from the run)
 docs/runs/*/prompts/
+
+# which run this machine's `conduct` is pointed at -- a per-machine cursor,
+# not a fact about the branch.
+docs/runs/.active
