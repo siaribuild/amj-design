@@ -208,9 +208,9 @@ const SEVEN_DAYS = 7 * 24 * 3600 * 1000
  *
  * MACHINE-WIDE means this reads other projects' transcripts, so it is a trust
  * boundary: those files contain whatever those sessions read. Only `usage`,
- * `timestamp`, `requestId`/`uuid` and `sessionId` are ever touched, `sessionId`
- * only to be counted, and the return value is numbers and one boolean. No
- * session id, path, file name or message content can leave this function.
+ * `timestamp` and `requestId`/`uuid` are ever touched, and the return value is
+ * numbers and one boolean. No session id, path, file name or message content
+ * can leave this function.
  *
  * The window is ANCHORED when a `rate_limit_event` reset time still lies in the
  * future - then the window began five hours before it. With no such anchor the
@@ -222,10 +222,9 @@ export function windowTotals({ anchorResetMs = null, now = Date.now() } = {}) {
   const anchored = !!anchorResetMs && anchorResetMs > now
   const windowStart = (anchored ? anchorResetMs : now) - FIVE_HOURS
   const weekStart = now - SEVEN_DAYS
-  const window = { ctx: 0, out: 0, turns: 0, sessions: 0, anchored, resetsAtMs: anchored ? anchorResetMs : null }
-  const week = { ctx: 0, out: 0, turns: 0, sessions: 0 }
+  const window = { ctx: 0, out: 0, turns: 0, anchored, resetsAtMs: anchored ? anchorResetMs : null }
+  const week = { ctx: 0, out: 0, turns: 0 }
   const seen = new Set()
-  const windowSessions = new Set(), weekSessions = new Set()
 
   for (const file of transcriptFiles(weekStart)) {
     let text
@@ -243,15 +242,9 @@ export function windowTotals({ anchorResetMs = null, now = Date.now() } = {}) {
       const ctx = ctxOf(d.message.usage)
       const out = d.message.usage.output_tokens || 0
       week.ctx += ctx; week.out += out; week.turns++
-      weekSessions.add(d.sessionId || '?')
-      if (t >= windowStart) {
-        window.ctx += ctx; window.out += out; window.turns++
-        windowSessions.add(d.sessionId || '?')
-      }
+      if (t >= windowStart) { window.ctx += ctx; window.out += out; window.turns++ }
     }
   }
-  window.sessions = windowSessions.size
-  week.sessions = weekSessions.size
   return { window, week }
 }
 
@@ -263,8 +256,8 @@ export function windowTotals({ anchorResetMs = null, now = Date.now() } = {}) {
  * `resetsAt` (UNIX **seconds**) and `rateLimitType` and NO QUOTA FIGURE of any
  * kind, which is why nothing downstream may render a percentage or a remaining.
  *
- * Only the two window fields are returned: the event also carries a `session_id`
- * and a `uuid`, and neither is anyone's business outside this function.
+ * Only the reset time is returned: the event also carries a `session_id` and a
+ * `uuid`, and neither is anyone's business outside this function.
  */
 export function latestRateLimitAnchor(runsDir) {
   const files = []
@@ -290,7 +283,7 @@ export function latestRateLimitAnchor(runsDir) {
       let d
       try { d = JSON.parse(line) } catch { continue }
       const i = d.type === 'rate_limit_event' ? d.rate_limit_info : null
-      if (i && i.resetsAt) found = { resetsAtMs: i.resetsAt * 1000, rateLimitType: i.rateLimitType || null }
+      if (i && i.resetsAt) found = { resetsAtMs: i.resetsAt * 1000 }
     }
     if (found) return found
   }

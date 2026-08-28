@@ -167,7 +167,6 @@ test('latestRateLimitAnchor returns the last reset time and nothing that identif
 
   const a = latestRateLimitAnchor(runs)
   assert.equal(a.resetsAtMs, 1787737200 * 1000, 'resetsAt is UNIX seconds and must be scaled')
-  assert.equal(a.rateLimitType, 'five_hour')
   assert.ok(!JSON.stringify(a).includes('SECRETSESSION'), 'anchor leaked a session id: ' + JSON.stringify(a))
   assert.equal(latestRateLimitAnchor(join(runs, 'no-such-dir')), null, 'no logs must mean no anchor')
 })
@@ -198,10 +197,8 @@ test('windowTotals buckets machine-wide spend into the anchored 5h window and th
   assert.equal(t.window.turns, 3, 'window must dedupe by requestId and include subagent turns')
   assert.equal(t.window.ctx, 3000)
   assert.equal(t.window.out, 30)
-  assert.equal(t.window.sessions, 1)
   assert.equal(t.week.turns, 5, '7-day total must include the 6h-old session but not the 8-day-old one')
   assert.equal(t.week.ctx, 5000)
-  assert.equal(t.week.sessions, 2)
 })
 
 test('windowTotals falls back to a trailing 5 hours when no future reset is known', () => {
@@ -246,7 +243,6 @@ test('windowTotals reports counts only: nothing from another project escapes it'
   const t = windowTotals({ anchorResetMs: null, now })
 
   assert.equal(t.window.turns, 1, "another project's spend still counts toward the window")
-  assert.equal(t.window.sessions, 1)
   const dump = JSON.stringify(t)
   for (const leak of ['FOREIGNSECRET', 'FOREIGNSESSION', 'FOREIGNREQ', 'FOREIGNUUID', 'someone-elses-repo'])
     assert.ok(!dump.includes(leak), 'windowTotals leaked ' + leak + ': ' + dump)

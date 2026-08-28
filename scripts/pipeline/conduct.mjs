@@ -51,10 +51,7 @@ const die = (m) => { console.error('\n  ' + m + '\n'); process.exit(1) }
 const sh = (c) => execSync(c, { cwd: ROOT, encoding: 'utf8' }).trim()
 // A row whose figures are real. A stage that was never metered prints "unknown",
 // never 0 - a zero has to mean measured zero, or the instrument lies quietly.
-// Records written before `source` existed are judged by their own numbers.
-const metered = (s) => s.source
-  ? s.source !== 'none'
-  : ((s.contextTokens || 0) + (s.outputTokens || 0) + (s.turns || 0)) > 0
+const metered = (s) => !!s.source && s.source !== 'none'
 // Slugs become filesystem paths and git worktree names. Constrain them at the
 // boundary rather than trusting every later interpolation.
 const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/
@@ -529,7 +526,6 @@ const PANE_PERMISSION = 'acceptEdits'
 function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
-  if (spec.model) a.push('--model', spec.model)
   // Lever 1. Context tokens are the sum of context re-sent per turn; an
   // uncapped 1M window is what turns a long run into 182M.
   a.push('--autocompact', String(spec.compact || 120000))
