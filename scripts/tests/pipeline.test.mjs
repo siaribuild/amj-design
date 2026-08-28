@@ -14,7 +14,7 @@ import { join, resolve } from 'node:path'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
   STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, browserMcp, mcpAdvisory,
-  verifyPrompt, sensitiveDiff, isDeferred,
+  verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -1960,4 +1960,32 @@ test('a fix-tier build has no design to slice it, so it is ONE session against t
   assert.doesNotMatch(prompt, /located for you/,
     'the sliced-build prompt promises exact paths this tier has none of')
   assert.deepEqual(JSON.parse(readFileSync(rj, 'utf8')).tasksDone, ['t1'])
+})
+
+test('fix sessions are capped too - the expensive half of the loop, not just the verifies', () => {
+  // The cap that counted only verifies capped the cheap half. Six fix rounds on
+  // this pipeline's own build were 27% of the feature - more than testing.
+  const { root, runJson } = seedRun('fix-cap', { verify: { code: 0 } })
+  const dir = join(root, 'docs', 'runs', 'demo')
+  const run = JSON.parse(readFileSync(runJson, 'utf8'))
+  run.fixRounds = FIX_CAP - 1
+  writeFileSync(runJson, JSON.stringify(run, null, 2))
+  writeFileSync(join(dir, 'DEBT.md'), '- [low] the totals row is off by a pixel' + NL)
+  const fix = (bin, ...a) => execFileSync(process.execPath, [CONDUCT, 'fix', ...a],
+    { cwd: root, encoding: 'utf8', env: { ...process.env, CONDUCT_CLAUDE_BIN: bin } })
+
+  // The last session inside the budget still runs - and is counted.
+  fix(process.execPath, 'the last one that fits', '--severity', 'high')
+  assert.equal(JSON.parse(readFileSync(runJson, 'utf8')).fixRounds, FIX_CAP,
+    'a spent developer session was never counted, so the budget could never run out')
+
+  const out = fix(join(root, 'no-such-claude'), 'one more thing', '--severity', 'high')
+
+  assert.match(out, /CYCLE CAP/, 'a fix session past the budget still spawned a developer')
+  assert.match(out, /off by a pixel/, 'the cap must print what is still open, not just stop')
+  assert.match(out, /06-verify\.md/, 'the cap never says where the last verdict is')
+  const after = JSON.parse(readFileSync(runJson, 'utf8'))
+  assert.equal(after.fixRounds, FIX_CAP, 'a refused fix must not itself burn a round')
+  assert.equal(Object.keys(after.stages).filter((k) => k.startsWith('fix-')).length, 1,
+    'the refused fix still cost a developer session')
 })

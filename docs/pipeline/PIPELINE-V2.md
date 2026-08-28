@@ -150,10 +150,18 @@ visible, never silently dropped. `high`, `medium`, and a finding with **no**
 severity all spawn the developer session as before: the gate defers, it never
 assumes.
 
-**4. Cycle cap.** `run.json` counts verify rounds. After one verify, one fix
-round and one re-verify, a third cycle is refused: the conductor prints what is
-still open (the debt file, the last verdict) and stops. The same cap refuses a
-fix that could never be re-verified.
+**4. Cycle cap.** `run.json` counts **both halves** of the loop: `verifyRounds`
+and `fixRounds`. The budget for a run is 2 verifies and 3 fix sessions — one
+verify, the fixes its findings need, one re-verify. Whichever runs out first,
+the next session of that kind is refused: the conductor prints what is still
+open (the debt file, the last verdict) and stops.
+
+Counting only the verifies would cap the cheap half. A verify is one tester; a
+round of findings is one developer *each*, and the six fix rounds on this
+pipeline's own build were 27% of the feature — more than testing itself. Three
+is what one verify's worth of high/medium findings takes on a bounded change;
+the fourth is the signal to stop and look. A fix session is counted before it
+starts, so one that crashes has still spent its budget.
 
 This is a **cycle** ceiling. It is not a token, dollar or turn ceiling — the
 stage table's no-runaway-guard ruling is about the cost of a *running stage*,

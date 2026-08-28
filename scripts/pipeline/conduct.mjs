@@ -974,21 +974,36 @@ function decisionsOpen(run) {
 }
 
 /**
- * The verify/fix loop is bounded: one verify, one fix round, one re-verify.
- * This pipeline's own build ran two verifies and six fix rounds, and that loop -
- * not the building and not the testing - was 27% of the feature's tokens.
+ * The verify/fix loop is bounded: one verify, up to three fix sessions, one
+ * re-verify. This pipeline's own build ran two verifies and SIX fix rounds, and
+ * that loop - not the building and not the testing - was 27% of the feature's
+ * tokens. The fix sessions are the expensive half: a verify is one tester, a
+ * round of findings is one developer EACH. Capping only the verifies bounded
+ * the cheap half and left the costly one open.
  *
- * A third cycle is refused, not deferred: what is still open is printed and the
+ * Both budgets are totals for the run, not per cycle. Three fixes is what one
+ * verify's worth of high/medium findings takes on a bounded change; the fourth
+ * is the signal to stop and look rather than to keep paying.
+ *
+ * A spent budget is refused, not deferred: what is still open is printed and the
  * human decides. That is a CYCLE ceiling, not a token or dollar one - the stage
  * table's "no runaway guard" ruling is about the cost of a running stage, and
  * still stands.
  */
 const CYCLE_CAP = 2
+export const FIX_CAP = 3
 
-function cycleCapped(run) {
-  if ((run.verifyRounds || 0) < CYCLE_CAP) return false
-  console.log('\n  == CYCLE CAP - ' + run.verifyRounds + ' verify rounds have already run.')
-  console.log('     A third verify/fix cycle costs more than the findings it returns.')
+const CAPS = {
+  verify: { cap: CYCLE_CAP, field: 'verifyRounds', what: 'verify rounds' },
+  fix: { cap: FIX_CAP, field: 'fixRounds', what: 'fix sessions' },
+}
+
+function cycleCapped(run, kind = 'verify') {
+  const c = CAPS[kind]
+  const spent = run[c.field] || 0
+  if (spent < c.cap) return false
+  console.log('\n  == CYCLE CAP - ' + spent + ' ' + c.what + ' have already run.')
+  console.log('     More of this verify/fix cycle costs more than the findings it returns.')
   console.log('\n     Still open:')
   const debt = join(RUNS, run.slug, 'DEBT.md')
   if (existsSync(debt))
@@ -1304,7 +1319,11 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
     // Below the cap check on purpose: recording debt costs nothing, so a
     // deferred finding is still written past the cap. Only the developer
     // session is refused - a fix that could never be re-verified.
-    if (cycleCapped(run)) return
+    if (cycleCapped(run, 'fix') || cycleCapped(run)) return
+    // Counted before the session, the way a verify round is: a fix that crashes
+    // has still spent its developer, and an uncounted spend is an uncapped loop.
+    run.fixRounds = (run.fixRounds || 0) + 1
+    saveRun(run)
     const prompt = `A reviewer raised this finding. Fix it test-first.
 
 FINDING: ${finding.join(' ')}
