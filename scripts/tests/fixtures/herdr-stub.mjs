@@ -30,8 +30,14 @@
 //   HERDR_STUB_SNAPSHOT  a file to copy aside on the FIRST call of each
 //                        subcommand, so a test can see the world as it was at
 //                        that moment (e.g. run.json when the agent is prompted)
+//   HERDR_STUB_TRANSCRIPT a Claude Code project directory. On a FRESH `agent
+//                        start` (one carrying --session-id) write a transcript
+//                        for the id the boot was given, the way the real claude
+//                        does. A conductor that names its own session can then
+//                        be metered without the test knowing the id in advance.
 
-import { appendFileSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 const argv = process.argv.slice(2)
 const log = process.env.HERDR_STUB_LOG
@@ -125,11 +131,29 @@ switch (sub) {
       },
     })
   }
-  case 'agent start':
+  case 'agent start': {
+    // 2 requestIds x 2 content blocks x (100 + 900 ctx, 10 out) - the same
+    // shape the suite seeds by hand, so a boot metered here reads 2000/20/2.
+    const dir = process.env.HERDR_STUB_TRANSCRIPT
+    const booted = flag('--session-id')
+    if (dir && booted) {
+      mkdirSync(dir, { recursive: true })
+      const lines = []
+      for (const id of ['req-1', 'req-2']) for (let n = 0; n < 2; n++) lines.push(JSON.stringify({
+        type: 'assistant', sessionId: booted, requestId: id, uuid: id + '-block' + n,
+        timestamp: new Date().toISOString(), cwd: process.cwd(),
+        message: {
+          model: 'claude-opus-5',
+          usage: { input_tokens: 100, cache_read_input_tokens: 900, output_tokens: 10 },
+        },
+      }))
+      writeFileSync(join(dir, booted + '.jsonl'), lines.join('\n') + '\n')
+    }
     ok({
       type: 'agent_started', name: argv[2], pane_id: flag('--pane'),
       agent_status: 'idle', interactive_ready: true,
     })
+  }
   case 'agent get':
     if (process.env.HERDR_STUB_NOAGENT && priorCalls('agent', 'start') === 0)
       err('agent_not_found', 'no agent named ' + argv[2])
@@ -139,9 +163,13 @@ switch (sub) {
         agent: 'claude', name: argv[2], agent_status: 'idle', pane_id: 'w9:p3',
         agent_session: {
           agent: 'claude', kind: 'id', source: 'herdr:claude',
-          // By default herdr reports back the very id the boot was given.
+          // By default herdr reports back the very id the boot was given -
+          // whether it claimed a fresh one or resumed an existing one.
+          // HERDR_STUB_SESSION overrides it, which is how a pane whose record
+          // outlived a killed agent is modelled.
           value: process.env.HERDR_STUB_SESSION ||
-            (before.match(/"--session-id","([^"]+)"/g) || []).pop()?.split('","')[1]?.slice(0, -1) ||
+            (before.match(/"--(?:session-id|resume)","([^"]+)"/g) || []).pop()
+              ?.split('","')[1]?.slice(0, -1) ||
             'stub-session',
         },
       },

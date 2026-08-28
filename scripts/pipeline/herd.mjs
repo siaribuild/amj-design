@@ -160,9 +160,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 /**
  * Boot a stage's claude in a pane and hand it its prompt.
  *
- * Returns { session, adopted } on success, or null when herdr could not start
- * the agent twice running - the caller then falls back to headless for this
- * stage (criterion 36: never abort, never skip).
+ * Returns { session } on success - plus `herdrSession` when herdr disagrees
+ * about which session this pane is on - or null when herdr could not start the
+ * agent twice running, and the caller falls back to headless for this stage
+ * (criterion 36: never abort, never skip).
  */
 export async function launchStage({ paneId, label, sessionId, argv, promptPath, settleMs = 2000, onSession, line }) {
   checkLabel(label)
@@ -187,18 +188,24 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
         return null
       }
     }
-    // Cross-check the identity herdr will resume this pane with. If an
-    // interactive boot ignored --session-id, herdr's is the true one and
-    // adopting it keeps per-stage attribution exact either way.
+    // Cross-check the identity herdr thinks this pane is on - and do not adopt
+    // it. Measured live (herdr 0.8.2): a pane whose agent had been killed and
+    // reused still reported the DEAD agent's session, while the boot really ran
+    // as the id we passed - that id is the one with a transcript on disk. The
+    // boot id is causal, herdr's agent_session is metadata that can outlive its
+    // agent, so the boot id stands and the disagreement is said out loud: a
+    // wrong session id would prompt and --resume a session nobody is in.
     const info = await herd('agent', 'get', label)
     const reported = info.agent?.agent_session?.value
-    const adopted = !!reported && reported !== sessionId
-    if (adopted)
-      console.log('  .. ' + label + ' booted as session ' + reported + ' (adopted from herdr)')
+    const herdrSession = reported && reported !== sessionId ? reported : undefined
+    if (herdrSession)
+      console.log('  !! ' + label + ': herdr says this pane is session ' + herdrSession +
+        ', but it was booted as ' + sessionId + '. Using the boot id - herdr can hold a' +
+        ' killed agent\'s id for a reused pane. Check `herdr agent list` if it misbehaves.')
     // Between the identity and the prompt is where the caller records the
     // stage: after this line an agent is working, and a reboot a second later
     // must find a stage run.json can resume rather than an invisible orphan.
-    if (onSession) await onSession(reported || sessionId, { adopted })
+    if (onSession) await onSession(sessionId, { herdrSession })
     // The ONLY thing typed into the pane. The prompt itself never transits a
     // TTY or a shell - it is on disk, and this is the path to it.
     const text = line || 'Read ' + promptPath + ' and do exactly what it says.'
@@ -211,9 +218,9 @@ export async function launchStage({ paneId, label, sessionId, argv, promptPath, 
       // human IS present to clear it. The caller holds it warm instead, and
       // `pendingLine` is what the agent is still owed.
       if (e.code !== 'agent_blocked') throw e
-      return { session: reported || sessionId, adopted, blocked: true, pendingLine: text }
+      return { session: sessionId, herdrSession, blocked: true, pendingLine: text }
     }
-    return { session: reported || sessionId, adopted }
+    return { session: sessionId, herdrSession }
   }
   return null
 }

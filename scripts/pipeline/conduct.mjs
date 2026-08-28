@@ -646,10 +646,15 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
     argv: resume ? resumeArgs(spec, resume, mcpOk) : paneArgs(spec, sessionId, mcpOk),
     line: resume && 'You were interrupted. Re-read ' + promptPath +
       ' and continue - the work already on disk stands.',
-    onSession: (session) => {
+    // `herdrSession` is only ever present when herdr disagreed about which
+    // session this pane is on. It is kept because the printed warning scrolls
+    // away and run.json does not - a human diagnosing a stage that answered
+    // nothing needs the id herdr is holding.
+    onSession: (session, { herdrSession } = {}) => {
       run.stages[label] = {
         status: 'running', mode: 'pane', session, pane: paneId,
         source: 'none', startedAt: new Date().toISOString(),
+        ...(herdrSession && { herdrSession }),
         ...(previousSessions && { previousSessions }),
       }
       saveRun(run)

@@ -800,8 +800,8 @@ test('launchStage checks the pane is at a shell, then boots claude with native a
   assert.deepEqual(start.slice(start.indexOf('--')), ['--', ...argv],
     'native claude args must follow -- verbatim: ' + start.join(' '))
 
-  assert.equal(r.session, 'sess-uuid', 'herdr reported the id it was given; nothing to adopt')
-  assert.equal(r.adopted, false)
+  assert.equal(r.session, 'sess-uuid', 'herdr reported the id it was given; nothing to disagree about')
+  assert.equal(r.herdrSession, undefined, 'agreement must not be reported as a mismatch')
   assert.equal(existsSync(s.log + '.readcalled'), false, 'the launch path read a pane')
 })
 
@@ -830,20 +830,6 @@ test('launchStage types ONE line - the path - and never a byte of the prompt', a
   const dump = JSON.stringify(calls(s.log))
   for (const frag of ['PWNED', '$(', 'touch ', 'done'])
     assert.ok(!dump.includes(frag), 'prompt content reached a herdr argv: ' + frag)
-})
-
-test('launchStage adopts the session id herdr reports when the boot did not take ours', async () => {
-  const s = stubbed('adopt', { HERDR_STUB_SESSION: 'herdr-chosen-uuid' })
-
-  const r = await launchStage({
-    paneId: 'w9:p3', label: 'spec', sessionId: 'ours-uuid',
-    argv: ['--session-id', 'ours-uuid'], promptPath: 'docs/runs/demo/prompts/spec.txt',
-  })
-
-  assert.equal(r.session, 'herdr-chosen-uuid',
-    'attribution follows the session herdr will resume, not the one we asked for')
-  assert.equal(r.adopted, true)
-  assert.ok(said(s.log, 'agent', 'get').length >= 1, 'the reported identity was never cross-checked')
 })
 
 /** Run fn with console.log captured; returns [result, lines]. */
@@ -934,13 +920,15 @@ test('agent_not_ready is a live agent on a dialog, not a failed launch', async (
 // --- pane-mode stage execution ----------------------------------------------
 
 /**
- * A repo with a cockpit already built, a seeded transcript for the session the
- * stub will report, and a CLAUDE that does not exist: any headless fallback then
- * dies loudly instead of quietly booting the developer's real claude.
+ * A repo with a cockpit already built, a seeded transcript for `session` (the id
+ * an interrupted stage is recorded under), a stub that writes a transcript for
+ * whatever id a FRESH boot is handed - the way a real claude does - and a CLAUDE
+ * that does not exist, so any headless fallback dies loudly instead of quietly
+ * booting the developer's real claude.
  */
 function paneRepo(name, session, extra = {}) {
   const projects = tmp(name + '-projects')
-  const s = stubbedRepo(name, { HERDR_STUB_SESSION: session, ...extra })
+  const s = stubbedRepo(name, { HERDR_STUB_TRANSCRIPT: join(projects, 'proj-pane'), ...extra })
   seedTranscript(projects, 'proj-pane', session, ['req-1', 'req-2'], 2)
   s.env.CLAUDE_PROJECTS_DIR = projects
   s.env.CONDUCT_CLAUDE_BIN = join(s.root, 'no-such-claude')
@@ -955,6 +943,42 @@ const paned = (s, ...args) =>
 
 const runJson = (s) =>
   JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
+
+/** The session id a stage was actually booted with, read off herdr's own argv. */
+const bootId = (log, label) => {
+  const a = said(log, 'agent', 'start').find((c) => c[2] === label) || []
+  return a[a.indexOf('--session-id') + 1]
+}
+
+test('a stale agent_session from a reused pane never displaces the id the stage booted with', () => {
+  // Live, herdr 0.8.2, right after `spec` hit its decision gate:
+  //   herdr agent list -> spec | pane w5:p3 | session 604dafed...
+  //   run.json         -> spec.session = ad806d75...
+  // 604dafed was an EARLIER agent, killed in that pane; the pane was then reused
+  // and the boot really ran as ad806d75 - its transcript is on disk and metered
+  // (100,306 ctx / 4,732 out / 3 calls). herdr's agent_session is metadata that
+  // outlived the agent it described. The boot id is causal: it is what claude
+  // was launched with, and what --resume, `answer` and metering all address.
+  // So the boot id stands - and the disagreement is SAID rather than silently
+  // resolved, because prompting or resuming a dead id is exactly the class of
+  // silent wrongness this pipeline keeps getting bitten by.
+  const s = paneRepo('stale-session', 'sess-stale', { HERDR_STUB_SESSION: 'dead-agent-uuid' })
+
+  const out = paned(s, 'run', 'spec')
+
+  const booted = bootId(s.log, 'spec')
+  assert.match(booted, /^[0-9a-f-]{36}$/, 'the stage booted without an id of its own: ' + booted)
+  const st = runJson(s).stages.spec
+  assert.equal(st.session, booted,
+    'run.json took herdr stale id - `answer` and `--resume` would then talk to a dead session')
+  assert.equal(st.herdrSession, 'dead-agent-uuid',
+    'the disagreement was not recorded anywhere that outlives the scrollback')
+  assert.match(out, /dead-agent-uuid/, 'a session mismatch was resolved silently')
+  assert.ok(out.includes(booted), 'the mismatch report never names the id actually in use')
+  // The id it kept is the one a transcript exists under, so metering still lands.
+  assert.equal(st.source, 'transcript')
+  assert.equal(st.turns, 2)
+})
 
 test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pane open', () => {
   // `unknown` is herdr saying it does not know, not herdr saying "finished" -
@@ -976,7 +1000,7 @@ test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pan
   const st = runJson(s).stages.spec
   assert.equal(st.status, 'done')
   assert.equal(st.mode, 'pane')
-  assert.equal(st.session, 'sess-pane-1')
+  assert.equal(st.session, bootId(s.log, 'spec'))
   assert.equal(st.code, 0, 'code 0 is what conduct next scans for; a pane stage must set it')
   assert.match(String(st.pane), /^w9:p\d+$/)
   // Metered from the transcript by recorded id - 2 requestIds x (100 + 900).
@@ -987,7 +1011,7 @@ test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pan
   // run.json knows the session BEFORE the agent is prompted: a reboot one
   // second later must find a stage it can resume, not an invisible orphan.
   const atPrompt = JSON.parse(readFileSync(s.log + '.snap.agent-prompt', 'utf8')).stages.spec
-  assert.equal(atPrompt.session, 'sess-pane-1')
+  assert.equal(atPrompt.session, bootId(s.log, 'spec'))
   assert.equal(atPrompt.status, 'running')
   assert.equal(atPrompt.mode, 'pane')
   assert.ok('source' in atPrompt, 'a running stage still declares how it was metered')
@@ -1039,7 +1063,8 @@ test('a settled stage with open DECISIONS holds warm, and answer costs no second
   assert.equal(typed[2], '/exit')
 
   const after = runJson(s)
-  assert.equal(after.stages.spec.session, 'sess-hold', 'exactly one session id across the whole cycle')
+  assert.equal(after.stages.spec.session, bootId(s.log, 'spec'),
+    'exactly one session id across the whole cycle')
   assert.equal(after.stages.spec.status, 'done')
   assert.equal(after.stages.spec.holdReason, undefined)
   assert.equal(after.gateStage, null)
@@ -1082,7 +1107,7 @@ test('a stage blocked at LAUNCH holds warm - the conductor must never die on it'
   assert.equal(st.status, 'held', 'a launch block must hold, not crash:' + NL + out)
   assert.equal(st.holdReason, 'blocked-launch')
   assert.equal(st.code, undefined, 'a held stage is not done - conduct next must not skip it')
-  assert.equal(st.session, 'sess-blocked-launch', 'a live agent must stay attributable')
+  assert.equal(st.session, bootId(s.log, 'spec'), 'a live agent must stay attributable')
   assert.equal(runJson(s).gateStage, 'spec')
   assert.match(out, /HELD WARM \(blocked-launch\)/)
   assert.match(out, /answer/i, 'the operator must be told to clear it, then run conduct answer')
@@ -1102,7 +1127,7 @@ test('a stage blocked at LAUNCH holds warm - the conductor must never die on it'
   assert.equal(typed[2], '/exit')
   const after = runJson(s)
   assert.equal(after.stages.spec.status, 'done')
-  assert.equal(after.stages.spec.session, 'sess-blocked-launch',
+  assert.equal(after.stages.spec.session, bootId(s.log, 'spec'),
     'exactly one session id across the whole cycle - a block must cost no second boot')
   assert.equal(after.gateStage, null)
 })
@@ -1476,7 +1501,7 @@ test('an unrecoverable session is said out loud, kept in previousSessions, and r
   const st = runJson(s).stages.spec
   assert.deepEqual(st.previousSessions, ['sess-vanished'],
     'the dead session was dropped, and everything it spent dropped with it')
-  assert.equal(st.session, 'sess-new', 'the re-run is a new session, recorded as such')
+  assert.equal(st.session, bootId(s.log, 'spec'), 'the re-run is a new session, recorded as such')
 })
 
 test('a restored stage totals the sessions the interruption killed as well as its own', () => {
