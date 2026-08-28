@@ -62,46 +62,6 @@ export function run(command, args, options = {}) {
   });
 }
 
-/** Is this command on PATH and runnable?
- *
- *  `run` REJECTS on a non-zero exit and resolves with `{stdout, stderr}` — there
- *  is no `code` on the resolved value. A caller that checks `r.code === 0` reads
- *  undefined and gets false for a command that is present, which is how a build
- *  gate came to skip its own container build on every machine including the one
- *  runner that could do it. */
-export function commandExists(command, args = ["--version"]) {
-  // `run` already encodes the answer: it resolves only on exit 0 and rejects
-  // otherwise, so resolving IS "present and runnable".
-  return run(command, args).then(() => true).catch(() => false);
-}
-
-/** Stub workerd's own built-ins so Worker code can be bundled for node.
- *
- *  `cloudflare:workers` exists only inside workerd. Nothing here imported one
- *  until the plan-parse container arrived — `@cloudflare/containers` extends
- *  `DurableObject` from it — and esbuild cannot resolve it for a node platform,
- *  which fails the BUILD rather than the assertion.
- *
- *  Stubbed rather than marked external: external leaves a real import in the
- *  output, which then fails at load time in node for the same reason. Nothing in
- *  these suites instantiates a Durable Object; the class only has to exist.
- *
- *  WHEN YOU NEED IT: any suite bundling worker code whose import graph now
- *  reaches worker/lib/drawing/containerClient.ts. The failure is an esbuild
- *  "Could not resolve cloudflare:workers", which says nothing about the cause —
- *  four suites have hit it as the graph grew. Add this plugin; it is a no-op for
- *  a bundle that imports no workerd built-in, so it is never wrong to include. */
-export const workerdBuiltins = {
-  name: "workerd-builtins",
-  setup(build) {
-    build.onResolve({ filter: /^cloudflare:/ }, (args) => ({ path: args.path, namespace: "workerd" }));
-    build.onLoad({ filter: /.*/, namespace: "workerd" }, () => ({
-      contents: "export class DurableObject {}; export class WorkerEntrypoint {};",
-      loader: "js",
-    }));
-  },
-};
-
 export function start(command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: projectRoot,

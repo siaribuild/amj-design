@@ -321,11 +321,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 }
 
-// The plan-parse container's only entry point. Exported here because a Durable
-// Object class must be reachable from the Worker's main module for wrangler to
-// bind it.
-export { PlanParseContainer } from "./lib/drawing/PlanParseContainer";
-
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);

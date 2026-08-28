@@ -45,49 +45,6 @@
     { "binding": "FILES", "bucket_name": "apertly-files" }
   ],
 
-  // Local `wrangler dev` does NOT build or run the container. It requires a
-  // Docker daemon, and on Windows wrangler refuses outright — "Local development
-  // with containers is currently not supported on Windows. You should use WSL
-  // instead." Nothing in this repo develops the container through `wrangler dev`:
-  // its logic is exercised directly by containers/plan-parse/verify.mjs, and its
-  // HTTP surface by running server.mjs. Deploying still builds the image, on a
-  // machine that deploys.
-  "dev": { "enable_containers": false },
-
-  // ── The plan-parse container ────────────────────────────────────────────────
-  // Renders a plan page and cuts one rectangle per opening. It holds NO
-  // credentials: the Worker owns R2, D1 and the vision call, and the PDF goes in
-  // over the wire while the crops come back the same way.
-  //
-  // Reachable ONLY through the PLAN_PARSE Durable Object below. There is
-  // deliberately no route, service binding or hostname for it — which is what
-  // makes "unreachable from the internet" a property of this file rather than a
-  // promise in a comment, and scripts/tests/drawing.test.mjs fails if a route
-  // ever names the class.
-  //
-  // instance_type basic (1/4 vCPU, 1 GiB), not lite: an A3 sheet at working DPI
-  // does not sit comfortably in 256 MiB. Image size sets the 1-3s cold start,
-  // which is why the image is Node with prebuilt binaries and no build toolchain.
-  "containers": [
-    {
-      "class_name": "PlanParseContainer",
-      "image": "./containers/plan-parse/Dockerfile",
-      "instance_type": "basic",
-      "max_instances": 3
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      { "name": "PLAN_PARSE", "class_name": "PlanParseContainer" }
-    ]
-  },
-  // A Durable Object migration tag is a ONE-WAY DOOR: the class cannot be renamed
-  // later without a fresh tag. new_sqlite_classes, not new_classes, because a
-  // container-backed DO requires the SQLite storage backend.
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["PlanParseContainer"] }
-  ],
-
   // Workers AI — the schedule-parse ACCURACY tier (toMarkdown + LLM / vision).
   // Optional: the default on-stack deterministic extractor runs without it. Bind
   // the account's Workers AI and, if desired, route it through an AI Gateway for

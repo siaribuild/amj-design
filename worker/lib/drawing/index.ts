@@ -28,20 +28,6 @@ export type {
   RecognitionDecision, RecognitionResult,
 } from "./types";
 
-export type { ScheduleRow, ElevationBox, Assignment, Unassigned, AssignResult } from "./assign";
-export { assign, preferLocation, locationVerdict } from "./assign";
-
-export type { Disagreement, Verification } from "./verifyReading";
-export { verifyReading } from "./verifyReading";
-
-export type { CropBox } from "./crop";
-export type { CropIntent, CropPage, CropRequest } from "./container";
-export { buildCropRequest, MAX_CROPS_PER_CALL } from "./container";
-
-export type { CropFailureReason, DecodedCrop, DecodedCropResponse } from "./containerClient";
-export { encodeCropRequest, decodeCropResponse, callPlanParse } from "./containerClient";
-export { cropBoxFor, clampToImage, MIN_CROP_WIDTH_PX } from "./crop";
-
 export type { SymbolProfile, ApexMeaning, ViewBasis } from "./profile";
 export { DEFAULT_PROFILE, classify, refineOperable, MISMATCH_QUORUM } from "./profile";
 

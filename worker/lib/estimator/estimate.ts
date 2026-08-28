@@ -17,7 +17,7 @@ import type { CatalogueCandidate, OpeningInput } from "./types";
 import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
 import { splitLine, loadCompositePolicy } from "../composite";
-import { type SplitHint, type SplitProposal } from "./split";
+import { type SplitHint } from "./split";
 
 // Schedule TYPE text → structured operation (the delivered parser records the raw
 // schedule term; the estimator needs the operation vocabulary the catalogue uses).
@@ -405,7 +405,7 @@ export async function materialiseSelectedSplit(env: Env, pl: ProposalSelection):
     // boolean discriminant does not narrow the union.
     const why = ("errors" in res ? res.errors : []).join(" ");
     const warning = `${label}: the ${specs.length}-unit make-up `
-      + `${sourcePhrase(split.proposalBasis)}`
+      + `${split.proposalBasis === "schedule_comment" ? "from the schedule comment " : ""}`
       + `could not be built as a composite — ${why} Left as a single unit for human review.`;
     warnings.push(warning);
     await flagForReview(env, quoteLineId, warning);
@@ -414,27 +414,10 @@ export async function materialiseSelectedSplit(env: Env, pl: ProposalSelection):
 
   const warning = split.proposalBasis === "energy_report"
     ? `${label}: built as ${specs.length} report-defined components; confirm the document reconciliation during human review.`
-    : split.proposalBasis === "drawing"
-    ? `${label}: read from the drawing as ${specs.length} joined units — the elevation shows this make-up. Confirm against the drawing at review.`
     : `${label}: ${pl.opening.widthMm ?? "stated"} mm width proposed as ${specs.length} joined units for human review.`;
   warnings.push(warning);
   await flagForReview(env, quoteLineId, warning);
   return warnings;
-}
-
-/** Where a make-up came from, in the reviewer's own sentence.
- *
- *  A `basis` field that only the type system sees is not provenance. This warning
- *  is written to `quote_line.review_json` and gathered into the staff
- *  reconciliation note, and it named the schedule comment while saying nothing at
- *  all about a drawing — so the readings that most need checking arrived with the
- *  least said about them. A reviewer weighs "an architect wrote this down"
- *  against "a model read this off an elevation" completely differently. */
-function sourcePhrase(basis: SplitProposal["basis"] | undefined): string {
-  if (basis === "schedule_comment") return "from the schedule comment ";
-  if (basis === "drawing") return "read from the drawing ";
-  if (basis === "energy_report") return "from the energy report ";
-  return "";
 }
 
 /** A composite the machine proposed is never a finished answer — the line says

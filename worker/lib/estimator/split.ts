@@ -125,30 +125,11 @@ const MAX_HINT_UNITS = 12;
  *  and the opening keeps the caller's default. */
 const STACKED = /\b(above|below|over|under|beneath|highlight|high[- ]?light|toplight|sub[- ]?light)\b/;
 
-/** The granularity a manufactured unit lands on. No window is made ending in
- *  anything but 0 or 5.
- *
- *  ponytail: a constant, not a policy read. Output spec §1.2 says the right home
- *  is `composite_policy` in D1 — it is a property of what can be MADE, not of a
- *  drawing, it already holds max_segments and tolerance_mm, and it is already
- *  loaded where the split is proposed. Move it there when a second value exists
- *  or ops needs to turn it; layoutFromHint would take it as an argument. */
-const SPLIT_STEP_MM = 5;
-
 export interface SplitUnitHint {
   operation: string;
   count: number;
   /** Explicit per-unit width from the comment, when given. */
   widthMm: number | null;
-  /** This unit's share of the opening along the division axis, 0..1, three
-   *  decimals — a drawing-derived hint's primary size signal.
-   *
-   *  A proportion, not a measurement, because the AUTHORITATIVE total comes from
-   *  the schedule and the drawing's job is to say how that total divides. It also
-   *  survives an uncertain page scale, where an absolute figure does not. A
-   *  STATED widthMm still outranks it (§6) — a person wrote that number and meant
-   *  it exactly. */
-  ratio?: number | null;
   /** Exact height and source facts exist on report-defined components. */
   heightMm?: number | null;
   ref?: string | null;
@@ -160,7 +141,7 @@ export interface SplitUnitHint {
 export interface SplitHint {
   units: SplitUnitHint[];
   raw: string;
-  source?: "schedule_comment" | "energy_report" | "drawing";
+  source?: "schedule_comment" | "energy_report";
   /** The energy report's components, carried alongside a PLAN-derived hint that
    *  won the geometry. Owner rule: the plan is the architectural contract and
    *  decides how an opening is divided; the report is the only document that
@@ -239,7 +220,7 @@ export interface SplitProposal {
   segments: ProposedSegment[];
   /** Always 'vertical' here: coupled units partition the WIDTH, full height each. */
   axis: "vertical" | "horizontal";
-  basis: "energy_report" | "drawing" | "schedule_comment" | "learned" | "default_pairing" | "default_even";
+  basis: "energy_report" | "schedule_comment" | "learned" | "default_pairing" | "default_even";
   /** ALWAYS true — a proposed split is a starting point, never a final answer. */
   reviewRequired: true;
   note: string;
@@ -266,65 +247,6 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
   // 1300mm limit.
   const derivedFits = (op: string, widthMm: number): boolean =>
     !(maxWidthMm && maxWidthMm > 0) || op === "fixed" || op !== fallbackOp || widthMm <= maxWidthMm;
-  // ── A drawing-derived layout ────────────────────────────────────────────────
-  // Ordered units with shares, and the order is the point: `awning | fixed` and
-  // `fixed | awning` are different windows, and no fallback can recover which
-  // jamb the operable unit sits against. That exists only in the drawing.
-  //
-  // Output spec §1.2's rounding rule: round every unit but the LAST to the step,
-  // and give the last what remains. The last unit absorbs the rounding so the
-  // units always partition the opening EXACTLY — validateSplit computes a
-  // coverage delta and flags it, so snapping every unit to the step would break
-  // whenever the opening itself is not a multiple of one.
-  if (hint.source === "drawing" && hint.units.some((u) => typeof u.ratio === "number")) {
-    const units = hint.units.flatMap((u) => Array.from({ length: Math.max(1, u.count) }, () => u));
-    if (!units.length) return null;
-    const along = hint.axis === "horizontal" ? heightMm : totalWidthMm;
-
-    // A STATED width is honoured before anything is shared out (§6, owner
-    // 2026-08-07): the drawing supplies the SHAPE — which units, in what order —
-    // and a stated dimension supplies the SIZE. Where only some are stated, the
-    // rest scale to what is left rather than to the whole.
-    const stated = units.map((u) => (typeof u.widthMm === "number" && u.widthMm > 0 ? u.widthMm : null));
-    const statedTotal = stated.reduce((n: number, w) => n + (w ?? 0), 0);
-    const free = units.map((_, i) => i).filter((i) => stated[i] === null);
-    const remainder = along - statedTotal;
-    if (remainder < 0 || (free.length === 0 && remainder !== 0)) return null;
-
-    const sizes = stated.slice() as (number | null)[];
-    if (free.length) {
-      const shares = free.map((i) => Math.max(0, units[i].ratio ?? 0));
-      const shareTotal = shares.reduce((a, b) => a + b, 0);
-      let used = 0;
-      free.forEach((i, k) => {
-        if (k === free.length - 1) { sizes[i] = remainder - used; return; }
-        const exact = shareTotal > 0 ? remainder * shares[k] / shareTotal : remainder / free.length;
-        const snapped = Math.round(exact / SPLIT_STEP_MM) * SPLIT_STEP_MM;
-        sizes[i] = snapped;
-        used += snapped;
-      });
-    }
-    if (sizes.some((w) => w === null || (w as number) <= 0)) return null;
-
-    // A stacked opening divides its HEIGHT: every unit spans the full width and
-    // takes a share of the height. Giving both dimensions the share — which this
-    // did — produces a unit whose width is a fraction of the opening's height,
-    // and it would have reached validateSplit as a coverage failure on an axis
-    // nobody was watching. fitReportComponentsToOpening already swaps along and
-    // across correctly; this branch simply did not.
-    const stacked = hint.axis === "horizontal";
-    return units.map((u, i) => ({
-      operation: u.operation || fallbackOp,
-      widthMm: stacked ? totalWidthMm : (sizes[i] as number),
-      heightMm: stacked ? (sizes[i] as number) : heightMm,
-      ref: u.ref ?? null,
-      requirement: u.requirement ?? null,
-      performanceTypeId: u.performanceTypeId ?? null,
-      performanceDescription: u.performanceDescription ?? null,
-      glazingNote: u.glazingNote ?? null,
-    })) as ProposedSegment[];
-  }
-
   // An explicit report component schedule owns row order, operations and each
   // component's thermal facts. Architectural documents own the total opening
   // dimensions. Preserve primary-operation sizes where possible and absorb a
@@ -536,19 +458,10 @@ export function proposeSplit(
       return {
         segments,
         axis: hint.axis ?? "vertical",
-        // PROVENANCE IS NOT DECORATION. This mapped every non-report hint to
-        // "schedule_comment", so a split a model read off a drawing would tell a
-        // reviewer an architect had written it in words. Those are the two things
-        // a reviewer weighs differently, and this is the surface the whole
-        // zero-wrong-readings bar depends on.
-        basis: hint.source === "energy_report" ? "energy_report"
-          : hint.source === "drawing" ? "drawing"
-          : "schedule_comment",
+        basis: hint.source === "energy_report" ? "energy_report" : "schedule_comment",
         reviewRequired: true,
         note: hint.source === "energy_report"
           ? `Built from the energy report's authoritative component schedule (${hint.raw}) — confirm document discrepancies at review.`
-          : hint.source === "drawing"
-          ? `Read from the drawing (${hint.raw}) — the elevation shows this make-up. Confirm the split at review.`
           : `Proposed from the schedule comment "${hint.raw}" — confirm the split at review.`,
       };
     }

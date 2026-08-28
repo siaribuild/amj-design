@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeRunDir, projectRoot, workerdBuiltins } from "./helpers.mjs";
+import { makeRunDir, projectRoot } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("ai-jobs");
@@ -30,7 +30,6 @@ await build({
   platform: "node",
   outfile,
   logLevel: "silent",
-  plugins: [workerdBuiltins],
 });
 
 const {

@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { makeRunDir, projectRoot, removeRunDir , workerdBuiltins } from "./helpers.mjs";
+import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("unit");
@@ -19,8 +19,6 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
-      export { backstopBasis } from ${p("src/data/useProjectDocuments.ts")};
-      export { readingMessage, stepsFor, stepDurationMs } from ${p("src/components/DocumentProgress.tsx")};
       export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -1439,7 +1437,6 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
       resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
-    plugins: [workerdBuiltins],
   });
   const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 
@@ -1637,137 +1634,4 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
-});
-
-// ─── t6: the drawing-read counter the customer watches ───────────────────────
-
-test("a counted drawing read replaces the phase label, whatever the stage says", () => {
-  // The owner's sketch: "20 openings discovered" then "reading opening 1 out of
-  // 20". The counter is driven by the COUNTS, not by a stage name — §7.1
-  // withdrew the new progress_stage value, because that column carries a CHECK
-  // constraint and extending it means rebuilding ai_job_claim, the recipe that
-  // once cascade-deleted production rows here.
-  //
-  // So the stage stays whatever the pipeline last set, and the presence of a
-  // total is what switches the label.
-  assert.equal(
-    M.readingMessage({ stage: "extracting_schedule", drawingsDone: 0, drawingsTotal: 20 }),
-    "Reading the drawings…",
-    "the count itself belongs to the SCHEDULE step; this line is the no-stage fallback",
-  );
-  assert.equal(
-    M.readingMessage({ stage: "extracting_schedule", drawingsDone: 7, drawingsTotal: 20 }),
-    "Reading opening 7 of 20…",
-  );
-  assert.equal(
-    M.readingMessage({ stage: "matching_and_pricing", drawingsDone: 20, drawingsTotal: 20 }),
-    "Reading opening 20 of 20…",
-    "the stage is irrelevant while a count is present",
-  );
-});
-
-test("without counts the existing label is untouched", () => {
-  // Every project that predates drawing reading, every set with no plans, and
-  // every run whose columns are still null. The counters are nullable precisely
-  // so this stays true.
-  assert.equal(
-    M.readingMessage({ stage: "reading_documents" }),
-    "Reading document text, tables and images…",
-  );
-  assert.equal(
-    M.readingMessage({ stage: "reading_documents", drawingsDone: 3, drawingsTotal: null }),
-    "Reading document text, tables and images…",
-    "a numerator without a denominator is not a counter",
-  );
-  assert.equal(M.readingMessage({}), "Reading and refining your schedule…");
-});
-
-test("the counter says nothing about openings it could not read", () => {
-  // Owner, 2026-08-27: a gap is not a customer's to resolve — they cannot add a
-  // split, an orientation or a head height to an opening that did not parse, and
-  // inviting an action the interface does not support is worse than silence.
-  // A `not_read` still ADVANCES the counter, so the bar never stalls on it.
-  for (const done of [0, 7, 20]) {
-    const msg = M.readingMessage({ drawingsDone: done, drawingsTotal: 20 });
-    for (const forbidden of [/unread/i, /could not/i, /fail/i, /skip/i, /missing/i, /upload/i]) {
-      assert.doesNotMatch(msg, forbidden, `"${msg}" must not mention ${forbidden}`);
-    }
-  }
-});
-
-test("a project with no drawings has no drawing step to tick off", () => {
-  // A step that never ran must not render as done. The step was inserted into
-  // the checklist unconditionally, so on a schedule-only project — or any run
-  // predating drawing reading — "Extracting opening details" would show a tick
-  // the moment the stage moved past it, claiming work that never happened.
-  const withDrawings = M.stepsFor({ kind: "reading", docs: 1, drawingsDone: 3, drawingsTotal: 19 });
-  const without = M.stepsFor({ kind: "reading", docs: 1 });
-
-  assert.ok(withDrawings.some((s) => s.label === "Extracting opening details"));
-  assert.ok(!without.some((s) => s.label === "Extracting opening details"),
-    "no counts, no step — not a step shown as done");
-
-  // The rest of the checklist is untouched, in order.
-  assert.deepEqual(
-    without.map((s) => s.stage),
-    ["queued", "reading_documents", "extracting_schedule", "building_envelope", "matching_and_pricing", "preparing_quote"],
-  );
-  assert.equal(withDrawings.length, without.length + 1);
-  // And it sits between the schedule and the thermal check, which is the whole
-  // point of the owner's correction.
-  assert.equal(withDrawings.findIndex((s) => s.stage === null),
-    withDrawings.findIndex((s) => s.stage === "extracting_schedule") + 1);
-});
-
-test("the drawing step's clock ticks, and never invents a duration it cannot know", () => {
-  // Codex: permanently 0s. The step has no stage, so it borrows
-  // building_envelope's start — and the NEXT step IS building_envelope, so
-  // `nextStart - start` was the same timestamp minus itself. Zero, always.
-  //
-  // The honest answer is that stageLog cannot time this step: the drawing read
-  // runs INSIDE building_envelope, so that phase's start is a real start but its
-  // end is not the drawing step's end. So: tick live while it runs, and show
-  // nothing once it is done rather than a number that is wrong.
-  const steps = M.stepsFor({ kind: "reading", docs: 1, drawingsDone: 3, drawingsTotal: 19 });
-  const drawing = steps.findIndex((s) => s.stage === null);
-  const log = [
-    { stage: "queued", at: 1000 },
-    { stage: "reading_documents", at: 2000 },
-    { stage: "extracting_schedule", at: 3000 },
-    { stage: "building_envelope", at: 5000 },
-  ];
-
-  // In progress: elapsed since the phase it runs inside began.
-  assert.equal(
-    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing, index: drawing }),
-    4000,
-    "it ticks",
-  );
-  // Not current any more, and no end time exists for it — so no number.
-  assert.equal(
-    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing + 1, index: drawing }),
-    null,
-    "a duration we cannot know is not reported as one",
-  );
-  // A real staged step is unaffected: schedule ran 3000→5000.
-  const schedule = steps.findIndex((s) => s.stage === "extracting_schedule");
-  assert.equal(
-    M.stepDurationMs({ steps, stageLog: log, nowTick: 9000, current: drawing, index: schedule }),
-    2000,
-  );
-});
-
-test("the client backstop is measured from when the SERVER started working", () => {
-  // Codex [P2]. The poll's clock starts on upload; the server's 300s deadline
-  // starts when the queue actually delivers the job. Debounce plus queue delay
-  // sits between them, so a run still inside its server budget could trip the
-  // client's own backstop and be shown as failed — the exact bug the backstop
-  // was just raised to fix, reintroduced by measuring from the wrong instant.
-  //
-  // Until the run is seen running, the upload instant is all there is, and that
-  // is correct: it is what catches a job that never starts at all.
-  assert.equal(M.backstopBasis(1000, null), 1000, "before it starts, the clock is the upload");
-  assert.equal(M.backstopBasis(1000, 45_000), 45_000, "once it runs, the clock is the server's start");
-  // And it does not drift later on every tick — the FIRST sighting is the basis.
-  assert.equal(M.backstopBasis(1000, 45_000), 45_000);
 });
