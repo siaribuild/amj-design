@@ -1270,8 +1270,6 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
   async fix(...args) {
     const run = loadRun(activeSlug())
     const { severity, rest: finding } = parseSeverity(args)
-    // A fix that can never be re-verified is the other half of the same loop.
-    if (cycleCapped(run)) return
     if (!finding.length)
       die('usage: conduct fix "<finding, or a path to the review file>" [--severity high|medium|low|cosmetic]')
     if (isDeferred(severity)) {
@@ -1282,6 +1280,10 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
       console.log('  recorded in ' + run.dir + '/DEBT.md - visible, not dropped.\n')
       return
     }
+    // Below the cap check on purpose: recording debt costs nothing, so a
+    // deferred finding is still written past the cap. Only the developer
+    // session is refused - a fix that could never be re-verified.
+    if (cycleCapped(run)) return
     const prompt = `A reviewer raised this finding. Fix it test-first.
 
 FINDING: ${finding.join(' ')}
