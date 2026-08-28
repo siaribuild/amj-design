@@ -516,6 +516,11 @@ function runClaude(spec, promptText, run, label) {
       }
       run.stages[label] = s
       saveRun(run)
+      // The headless half of settleStage. A stage that stopped to ask the owner
+      // something is held whichever mode it ran in - without this the record
+      // carried no status, no mode and no reason, and the gate existed only as
+      // a DECISIONS.md the plan pane happened to read.
+      if (decisionsPending(run)) holdRecord(run, label, 'decisions', 'headless')
       process.stdout.write('  ok ' + label + '  ' + (metered(s)
         ? 'ctx ' + fmt(s.contextTokens) + '  out ' + fmt(s.outputTokens) + '  ' + s.turns + ' calls'
         : 'metering unknown') + '  ' + s.seconds + 's\n')
@@ -550,14 +555,27 @@ async function rolePane(run, role, cwd) {
   return panes[role]
 }
 
-/** Hold the agent alive and tell the operator where it is. No /exit, no re-boot. */
-async function holdWarm(run, label, reason, started) {
-  const s = run.stages[label]
-  Object.assign(s, {
-    status: 'held', holdReason: reason, seconds: Math.round((Date.now() - started) / 1000),
-  })
+/**
+ * The record a hold leaves, whichever of the two triggers fired it: herdr saw a
+ * blocked UI, or the stage left DECISIONS.md unanswered. Both mean one thing -
+ * the stage stopped for the owner and is NOT finished - so both must write the
+ * same record, or `next`, `plan` and the durability paths can only see one of
+ * them. `code` is what marks a stage complete everywhere in this file, so a
+ * stage that exited with questions still open gives it up here.
+ */
+function holdRecord(run, label, reason, mode, extra = {}) {
+  const s = run.stages[label] || (run.stages[label] = {})
+  Object.assign(s, { status: 'held', holdReason: reason, mode: s.mode || mode }, extra)
+  delete s.code
   run.gateStage = label
   saveRun(run)
+  return s
+}
+
+/** Hold the agent alive and tell the operator where it is. No /exit, no re-boot. */
+async function holdWarm(run, label, reason, started) {
+  const s = holdRecord(run, label, reason, 'pane',
+    { seconds: Math.round((Date.now() - started) / 1000) })
   const where = 'workspace ' + (run.herdr?.workspace || '?') + '  pane ' + s.pane + '  agent ' + label
   console.log('\n  == HELD WARM (' + reason + ') - ' + label + ' is alive in its pane.')
   console.log('     attach:  ' + where)

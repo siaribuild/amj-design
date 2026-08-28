@@ -1071,6 +1071,39 @@ test('a settled stage with open DECISIONS holds warm, and answer costs no second
   assert.match(answered, /same session/i)
 })
 
+test('a stage that stops with questions is HELD in the record, headless as much as in a pane', () => {
+  // Live: `spec` stopped at its decision gate and run.json carried
+  //   status: undefined   mode: undefined   holdReason: undefined
+  // The plan pane still said DECISION GATE OPEN, but only because it reads
+  // DECISIONS.md directly - the stage record itself said nothing, so `next`
+  // could not tell a held stage from an unstarted one, durability could not
+  // reattach it, and criterion 1 held only by that side-channel. A hold is ONE
+  // concept with two triggers: herdr saw a blocked UI, or the stage left
+  // questions open. The headless finaliser must write the same record the pane
+  // one does; `mode` is what still says whether an agent is warm.
+  const s = stubbedRepo('headless-hold')
+  s.env.CONDUCT_CLAUDE_BIN = process.execPath
+  paned(s, 'start', 'demo', 'an ask', '--no-panes')
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', 'DECISIONS.md'),
+    '1. Which way round?' + NL + '   Recommendation: this way.' + NL)
+
+  const out = paned(s, 'run', 'spec', '--no-panes')
+
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'held', 'the headless path bypassed the hold record entirely')
+  assert.equal(st.holdReason, 'decisions')
+  assert.equal(st.mode, 'headless', 'a hold must say whether there is a live agent to answer into')
+  assert.equal(st.code, undefined, 'a stage waiting on the owner is not a finished stage')
+  assert.equal(runJson(s).gateStage, 'spec')
+  assert.match(out, /DECISION GATE/, 'the questions must still be put in front of the operator')
+
+  // Criterion 1, without the DECISIONS.md side-channel: the pane the cockpit
+  // re-runs every 5 seconds must show it as waiting, not as done or unstarted.
+  const row = paned(s, 'plan').split(NL).find((l) => l.includes('spec')) || ''
+  assert.match(row, /\[>\]/, 'a held stage rendered as finished or unstarted: ' + row)
+  assert.match(row, /held/i)
+})
+
 test('a herdr-blocked stage holds warm too - nothing was written, and the agent lives', () => {
   // herdr recognised a permission or question UI. There is no DECISIONS.md and
   // no artifact; killing the agent here would re-boot it to ask the same thing.
