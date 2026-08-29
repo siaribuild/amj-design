@@ -21,13 +21,15 @@ await build({
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationInventorySkill, validateFloorplanRead, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
+      export { applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
+      export { enrichOpenings } from ${p("worker/lib/drawing/enrich.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -342,6 +344,102 @@ async function walk(dir) {
   return out;
 }
 const FORBIDDEN_BYTES = /\.(png|jpe?g|pdf)$/i;
+
+// ── readings.ts (§3.5) — model application, pure ───────────────────────────
+test("applyDrawingOrientation: writes wallOrientation + source 'plan', a plain assignment (wins over the later ??=)", () => {
+  const model = { openings: [{ externalRef: "W1", wallOrientation: null, wallOrientationSource: null }] };
+  applyDrawingOrientation(model, [{ externalRef: "W1", orientationState: "value", orientation: "N" }]);
+  assert.equal(model.openings[0].wallOrientation, "N");
+  assert.equal(model.openings[0].wallOrientationSource, "plan");
+});
+
+test("applyDrawingRoom: writes room_label only where the line's is currently empty — a human's label is never overwritten", async () => {
+  const calls = [];
+  const fakeDb = { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) };
+  await applyDrawingRoom({ DB: fakeDb }, "proj_1", [{ externalRef: "W1", roomState: "value", roomLabel: "BEDROOM 1" }]);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /room_label IS NULL OR room_label=''/);
+  assert.deepEqual(calls[0].args, ["BEDROOM 1", "proj_1", "W1"]);
+});
+
+test("conflictReason: names both sides — a general channel for AC-9 and AC-15 alike (§14a open loop resolved by generalising, not two channels)", () => {
+  assert.equal(conflictReason("drawing shows operating unit", "schedule types FIXED"), "drawing shows operating unit | schedule types FIXED");
+  assert.equal(conflictReason("plans show 2 units", "energy report shows 3 units"), "plans show 2 units | energy report shows 3 units");
+});
+
+// ── enrich.ts — the orchestrator. Failure containment (R6, AC-28, AC-G5) is
+// the one property tested here that MUST hold: any failure anywhere in the
+// six steps degrades to zero readings + a report note, never a thrown error
+// that could take the estimate down with it. ──
+test("enrichOpenings: a failing container call degrades to zero readings and a noted gap — never throws (AC-28)", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const deps = {
+    inspect: async () => { throw new Error("container unreachable"); },
+    render: async () => { throw new Error("unreachable"); },
+    runElevation: async () => null,
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(result.readings.length, 0);
+  assert.equal(result.report.files.length, 1);
+  assert.ok(result.report.files[0].steps.read.attempted === 0);
+});
+
+test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const inventory = {
+    pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false,
+    pages: [
+      { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ],
+  };
+  const inspected = {
+    inventory,
+    pages: [
+      { pageNo: 1, text: "ELEVATION A", words: [] },
+      { pageNo: 2, text: "GROUND FLOOR PLAN", words: [] },
+    ],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: 150 }),
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }),
+    runFloorplan: async () => ({ placements: { W1: { elevation: "A", orderOnWall: 1, roomLabel: "BEDROOM 1" } }, facings: { A: { facing: "N" } }, issues: [], discardedTags: [] }),
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(result.readings.length, 1);
+  assert.equal(result.readings[0].splitState, "value");
+  assert.equal(result.readings[0].elevation, "A");
+  assert.equal(result.report.files[0].steps.read.returned, 1);
+});
+
+test("persistReadings: one INSERT per reading, batched, against the migration 0060 columns", async () => {
+  const batched = [];
+  const fakeDb = {
+    prepare: (sql) => ({ bind: (...args) => ({ sql, args }) }),
+    batch: async (stmts) => { batched.push(...stmts); },
+  };
+  await persistReadings({ DB: fakeDb }, "proj_1", "run_1", [
+    { externalRef: "W1", splitState: "not_read", split: null, orientationState: "not_stated", orientation: null,
+      elevationState: "value", elevation: "A", roomState: "not_stated", roomLabel: null,
+      gapCode: "unplaced", gapNote: null, cropKey: null, pageNo: null, sheetRef: null, regionJson: null, sourceFileId: "f1" },
+  ]);
+  assert.equal(batched.length, 1);
+  assert.match(batched[0].sql, /INSERT INTO drawing_reading/);
+  assert.equal(batched[0].args[1], "proj_1");
+  assert.equal(batched[0].args[2], "run_1");
+});
 
 test("AB-9: no image/pdf bytes under scripts/tests/fixtures/drawing or containers/", async () => {
   const files = [
