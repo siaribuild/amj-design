@@ -1232,6 +1232,14 @@ test("resolveMakeUp: a drawing reading wins the shape over a schedule comment (A
   assert.equal(result.hint.units.length, 2);
 });
 
+test("resolveMakeUp: a single-unit drawing reading is NOT a split hint — a correctly-read single window must never be fabricated into a composite (Codex P1)", () => {
+  const result = resolveMakeUp("W1", {
+    reading: { splitState: "value", units: [{ role: "operable", ratio: 1 }], axis: "vertical" },
+    commentHint: null, typeText: "AWNING", fallbackOp: "awning", energyComponents: null, energyAxis: "vertical",
+  });
+  assert.equal(result.hint, null, "one unit is not a split, exactly as a one-unit comment is not (existing rule, now applied to readings too)");
+});
+
 test("proposeSplit: a plans hint lays out by RATIO, not an even split (output spec §1.2)", () => {
   const hint = {
     units: [{ operation: "awning", count: 1, widthMm: null, ratio: 0.634 }, { operation: "fixed", count: 1, widthMm: null, ratio: 0.366 }],

@@ -373,7 +373,7 @@ test("conflictReason: names both sides — a general channel for AC-9 and AC-15 
 // six steps degrades to zero readings + a report note, never a thrown error
 // that could take the estimate down with it. ──
 test("enrichOpenings: a failing container call degrades to zero readings and a noted gap — never throws (AC-28)", async () => {
-  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const deps = {
     inspect: async () => { throw new Error("container unreachable"); },
     render: async () => { throw new Error("unreachable"); },
@@ -413,7 +413,7 @@ test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs 
   };
   const env = {
     AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb,
-    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) },
+    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} },
   };
   const deps = {
     inspect: async () => ({ inventory: { pageCount: 0, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] }),
@@ -431,7 +431,7 @@ test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs 
 
 test("runDrawingEnrichmentStage: onProgress passes through to the real enrichment call", async () => {
   const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }) }) };
-  const env = { AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb, FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const env = { AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb, FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const inspected = {
     inventory: { pageCount: 1, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [{ pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 }] },
     pages: [{ pageNo: 1, text: "some text, no title-block keyword", words: [] }],
@@ -452,7 +452,7 @@ test("runDrawingEnrichmentStage: onProgress passes through to the real enrichmen
 });
 
 test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {
-  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const inventory = {
     pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false,
     pages: [
@@ -485,8 +485,140 @@ test("enrichOpenings: a full happy path produces a value reading for a matched, 
   assert.equal(result.report.files[0].steps.read.returned, 1);
 });
 
+test("enrichOpenings: the elevation letter comes from the sheet's own printed text, not page draw order (Codex P1)", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  // Sheet B is drawn FIRST (page 1); sheet A is drawn second (page 2).
+  // Draw-order lettering would call page 1 "A" and page 2 "B" — backwards.
+  const inspected = {
+    inventory: {
+      pageCount: 3, producer: "t", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [
+        { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 3, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      ],
+    },
+    pages: [
+      { pageNo: 1, text: "ELEVATION B", words: [] },
+      { pageNo: 2, text: "ELEVATION A", words: [] },
+      { pageNo: 3, text: "GROUND FLOOR PLAN", words: [] },
+    ],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async (namespace, projectId, bytes, req) => ({
+      images: [{ pngB64: Buffer.from(`page${req.pageNo}`).toString("base64"), widthPx: 10, heightPx: 10 }], dpi: 150,
+    }),
+    // Sheet A (page 2) has the box; sheet B (page 1) has none.
+    runElevation: async (imageDataUrl) => imageDataUrl.endsWith(Buffer.from("page2").toString("base64"))
+      ? { boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }
+      : { boxes: [] },
+    runFloorplan: async () => ({ placements: { W1: { elevation: "A", orderOnWall: 1, roomLabel: null } }, facings: { A: { facing: "N" }, B: { facing: "S" } }, issues: [], discardedTags: [] }),
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }, { role: "passive", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(result.readings[0].splitState, "value", "W1 was placed on sheet A (page 2), which has the box");
+  assert.equal(result.readings[0].elevation, "A");
+  assert.equal(result.readings[0].pageNo, 2, "the render call must target page 2 — the sheet actually labelled A");
+});
+
+test("enrichOpenings: a matched, read opening carries the floor plan's orientation and room label (Codex P1)", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: { pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }, { pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: 150 }),
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }),
+    runFloorplan: async () => ({ placements: { W1: { elevation: "A", orderOnWall: 1, roomLabel: "BEDROOM 1" } }, facings: { A: { facing: "SE" } }, issues: [], discardedTags: [] }),
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }, { role: "passive", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(result.readings[0].orientationState, "value");
+  assert.equal(result.readings[0].orientation, "SE");
+  assert.equal(result.readings[0].roomState, "value");
+  assert.equal(result.readings[0].roomLabel, "BEDROOM 1");
+});
+
+test("enrichOpenings: a matched, read opening's crop is written to R2 and its key persisted (Codex P1 — the gate walk needs it)", async () => {
+  const puts = [];
+  const env = {
+    FILES: {
+      get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }),
+      put: async (key, bytes) => { puts.push({ key, bytes }); },
+    },
+  };
+  const inspected = {
+    inventory: { pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }, { pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: 150 }),
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }),
+    runFloorplan: async () => ({ placements: { W1: { elevation: "A", orderOnWall: 1, roomLabel: null } }, facings: {}, issues: [], discardedTags: [] }),
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }, { role: "passive", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(puts.length, 1);
+  assert.equal(puts[0].key, cropKey("proj_1", "run_1", "W1"));
+  assert.equal(result.readings[0].cropKey, cropKey("proj_1", "run_1", "W1"));
+  assert.equal(result.report.files[0].steps.renderCrop.cropsMade, 1);
+});
+
+test("enrichOpenings: a schedule tag and a differently-punctuated drawn tag still match (Codex P1 — case/hyphen presentation is not identity)", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: { pageCount: 3, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 3, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [
+      { pageNo: 1, text: "ELEVATION A", words: [] },
+      { pageNo: 2, text: "WINDOW SCHEDULE\nW04 600x1200 AWNING", words: [] },
+      { pageNo: 3, text: "GROUND FLOOR PLAN", words: [] },
+    ],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: 150 }),
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }),
+    // The model answers with the tag AS PRINTED ON THE FLOOR PLAN, which may
+    // differ in case/punctuation from the schedule's own spelling.
+    runFloorplan: async () => ({ placements: { "w-04": { elevation: "A", orderOnWall: 1, roomLabel: null } }, facings: {}, issues: [], discardedTags: [] }),
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }, { role: "passive", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W-04", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(result.readings[0].splitState, "value", "W-04 (schedule) and w-04 (floor plan) are the same opening");
+});
+
 test("enrichOpenings: onProgress advances the numerator per opening, against a denominator that never shortens", async () => {
-  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const inspected = {
     inventory: { pageCount: 1, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [{ pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 }] },
     pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],

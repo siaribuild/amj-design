@@ -6,6 +6,7 @@
 import type { Skill } from "../estimator/skills/types";
 import { parseModelJson } from "../estimator/skills/json";
 import type { Orientation, SplitAxis, SplitRole, SplitUnit } from "./contract";
+import { normalizeOpeningRef } from "../ai/energyMap";
 
 function safeJson(raw: unknown): any {
   return typeof raw === "string" ? parseModelJson(raw) : raw;
@@ -111,11 +112,15 @@ const FLOORPLAN_RULES =
 export function validateFloorplanRead(raw: unknown, tagVocabulary: string[]): FloorplanReadOutput | null {
   const payload = safeJson(raw);
   if (!payload || typeof payload !== "object") return null;
-  const vocabSet = new Set(tagVocabulary.map((t) => t.toUpperCase()));
+  // Case and drawing separators are presentation, not identity — the same
+  // normalizeOpeningRef every other schedule/drawing tag join in this
+  // codebase uses (Codex review finding: a plain .toUpperCase() here still
+  // let "W-04" printed on the floor plan miss a vocabulary built as "W04").
+  const vocabSet = new Set(tagVocabulary.map((t) => normalizeOpeningRef(t)).filter((t): t is string => !!t));
   const placements: Record<string, FloorplanPlacement> = {};
   const discardedTags: string[] = [];
   for (const [tag, v] of Object.entries<any>(payload.placements ?? {})) {
-    const upper = tag.toUpperCase();
+    const upper = normalizeOpeningRef(tag) ?? tag.toUpperCase();
     if (!vocabSet.has(upper)) { discardedTags.push(upper); continue; }
     placements[upper] = {
       elevation: typeof v?.elevation === "string" ? v.elevation.trim().slice(0, 4) || null : null,

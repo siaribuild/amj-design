@@ -9,6 +9,7 @@
 //   frame_ambiguous for BOTH candidates — never does one take the other's
 //   (spec §13, twin-openings row).
 import type { CropBoxPt } from "./contract";
+import { normalizeOpeningRef } from "../ai/energyMap";
 
 export interface ScheduleRow {
   tag: string;
@@ -51,10 +52,18 @@ export function assignOpenings(
   // position) makes every row sharing it ambiguous — computed per elevation
   // BEFORE any row is matched, so neither of a tied pair can slip through
   // by iteration order.
+  // Case and drawing separators are presentation, not identity: the schedule
+  // keeps a tag's printed spelling exactly, but a placement's key came from
+  // the model reading the SAME tag off a different sheet — normalized the
+  // same way every other schedule/drawing join in this codebase is (Codex
+  // review finding: an exact-match lookup here silently unplaced any tag
+  // whose case or punctuation differed between the two documents).
+  const placementFor = (tag: string): Placement | undefined => placements[normalizeOpeningRef(tag) ?? tag];
+
   const tiedTags = new Set<string>();
   const seenOrder = new Map<string, Map<number, string[]>>(); // elevation -> order -> tags
   for (const row of rows) {
-    const placement = placements[row.tag];
+    const placement = placementFor(row.tag);
     if (!placement?.elevation || placement.orderOnWall == null) continue;
     const byOrder = seenOrder.get(placement.elevation) ?? new Map<number, string[]>();
     const tags = byOrder.get(placement.orderOnWall) ?? [];
@@ -69,7 +78,7 @@ export function assignOpenings(
   }
 
   return rows.map((row): AssignOutcome => {
-    const placement = placements[row.tag];
+    const placement = placementFor(row.tag);
     if (!placement?.elevation) return { tag: row.tag, outcome: "not_read", gapCode: "unplaced" };
     if (tiedTags.has(row.tag) || placement.orderOnWall == null) {
       return { tag: row.tag, outcome: "not_read", gapCode: "frame_ambiguous" };
