@@ -8,6 +8,14 @@ output contract (`docs/estimator/plan-parse-output-spec.md`), ADR 0013 (points
 built on. The reverted scaffold (`a1162db1`) and the reverted implementation
 (`0f63fe6a^`) were read as evidence only; nothing here inherits them.
 
+**Owner descope, relayed 2026-08-29, folded in below:** nothing new in ops
+(the drawing-readings endpoint and record panel are cut -- see §6), and the
+customer progress counter is a state addition to the shipped
+`DocumentProgress` concept, not a UI change. **No mock gate applies to this
+feature** (§6.4). Consequently this design has **7 build slices**, and one
+schema column and one shared-types file that existed only for the cut surface
+are removed (§6.1, §8).
+
 **Companion records written with this design:**
 - `docs/adr/0016-plan-parse-runs-the-proven-poppler-python-method.md` — the
   execution-vehicle ruling (supersedes ADR 0013's point-2 "Node" detail).
@@ -133,7 +141,7 @@ Customer upload → queue → jobs.ts consumer → pipeline.ts runAiExtraction
 | `containers/plan-parse/tests/test_steps.py` | pytest over a synthetic generated PDF (§12) |
 | `containers/plan-parse/README.md` | the six steps verbatim (recover from `a1162db1`), updated status |
 | `.github/workflows/container-build.yml` | build + start-smoke + pytest + **push to Cloudflare registry** on `containers/plan-parse/**` change (old workflow at `git show 0f63fe6a^:.github/workflows/container-build.yml` built but never pushed — add the push step, `CLOUDFLARE_API_TOKEN` secret) |
-| `worker/lib/drawing/contract.ts` | container wire types + caps (`MAX_PDF_BYTES`, `MAX_PAGES`, `MAX_CROPS_PER_PAGE`, `MAX_DPI`), render DPI constants |
+| `worker/lib/drawing/contract.ts` | container wire types + caps (`MAX_PDF_BYTES`, `MAX_PAGES`, `MAX_CROPS_PER_PAGE`, `MAX_DPI`), render DPI constants, and the reading/report types (four facts x three states, gap codes) -- worker-internal; no `src/` code reads them after the ops descope (§6.1) |
 | `worker/lib/drawing/containerClient.ts` | `inspectPdf`, `renderPage` over the `PLAN_PARSE` DO binding (`idFromName(projectId)`); enforces caps BEFORE any container call (AB-6); stable failure codes; accepts the namespace as an argument so tests inject a fake |
 | `worker/lib/drawing/selectPages.ts` | step 4, pure: inventory + page text/words → `{selected: {pageNo, tier, reason}[], tagVocabulary}` |
 | `worker/lib/drawing/skills.ts` | the three vision skills (§3.2), same `Skill` shape as `worker/lib/estimator/skills/schedule.ts` (vision input via `imageDataUrl`, runner already supports it — `runner.ts:85-93`) |
@@ -141,7 +149,6 @@ Customer upload → queue → jobs.ts consumer → pipeline.ts runAiExtraction
 | `worker/lib/drawing/enrich.ts` | the orchestrator: the six steps in order, per file; produces `{readings, gaps, report}`; progress callback per opening |
 | `worker/lib/drawing/readings.ts` | persistence + application: `drawing_reading` rows, `ai_runs.drawing_report_json`, model mutation (orientation/room), conflicts + review flags, splitHint derivation input |
 | `worker/lib/drawing/crops.ts` | `cropKey(projectId, runId, tag)` and `purgeProjectCrops(env, projectId)` — the ONE place the crop prefix and its lifecycle live (§7) |
-| `src/data/drawingReading.ts` | shared DTO: the four facts × three states, gap codes, disagreement shape — read by ops UI and worker |
 | `migrations/0060_drawing_reading.sql` | §8 |
 | `scripts/tests/drawing-enrichment.test.mjs` | §12 |
 | `scripts/drawing-gate.mjs` | §12 — the re-runnable gate comparator (AC-G4) |
@@ -160,11 +167,8 @@ Customer upload → queue → jobs.ts consumer → pipeline.ts runAiExtraction
 | `worker/routes/parse.ts` | pending-claim SELECT (~line 370) and its response (~line 400) | add `j.drawings_done, j.drawings_total` → `drawingsDone`/`drawingsTotal` (the `src/data/api.ts:601` fields already exist and are documented); `POST /projects/current/clear` (~line 159) calls `purgeProjectCrops` beside the existing R2 cleanup (~line 254) |
 | `worker/routes/files.ts` | `DELETE /api/files/:id` cleanup (~line 526-529) | add `purgeProjectCrops` beside the existing `runs/` prefix purge |
 | `worker/lib/issue.ts` | `issueQuote` success path | call `purgeProjectCrops` after the issue commits (trigger #2, §7) |
-| `worker/routes/ops.ts` | near `/projects/:id/thermal` (~line 2028) | `GET /api/ops/projects/:id/drawing-readings` (§6) |
-| `src/ops/api.ts` | fetchers | `opsDrawingReadings(projectId)` |
-| `src/ops/ProjectRecord.tsx` | beside the ThermalAudit section (~line 351) | "Drawing readings" panel (§6) |
 | `src/data/useProjectDocuments.ts` | poll mapping (~line 349) | pass `drawingsDone`/`drawingsTotal` through into `AiPhase` |
-| `src/components/DocumentProgress.tsx` | step detail (~line 100) | the per-opening counter detail — recover placement from `git show f0714fec -- src/components/DocumentProgress.tsx` and the correction in `827a8a32` (counter on the right step); reference only, re-typed against today's file |
+| `src/components/DocumentProgress.tsx` | step detail (~line 100) | **a state addition within the shipped concept, not a UI change** (owner: *"there's no UI here, utilise the same concept, just add additional states"*) -- the per-opening counter detail; recover placement from `git show f0714fec -- src/components/DocumentProgress.tsx` and the correction in `827a8a32` (counter on the right step); reference only, re-typed against today's file |
 | `scripts/tests/helpers.mjs` | end | esbuild alias plugin stubbing `cloudflare:workers` (and `@cloudflare/containers` if needed) so `unit.test.mjs`'s `worker/index.ts` bundle (~line 1434) still builds — the constraint the stub's own comment documents |
 | `package.json` | `test:pure` (~line 17), new `test:drawing-enrichment` script, `devDependencies`/`dependencies` | wire `scripts/tests/drawing-enrichment.test.mjs`; add `@cloudflare/containers` |
 | `.gitignore` (root) | end | `containers/plan-parse/out/` — at the ROOT, never nested (the #26/#27 lesson); asserted by test, not only by the rule (AB-9) |
@@ -286,7 +290,13 @@ status `technical_review` → blocks issue via `ISSUE_BLOCKING_LINE_STATUSES`
   (`AND (room_label IS NULL OR room_label='')`) — a human's label is never
   overwritten.
 - Schedule-type disagreement (schedule `FIXED`, drawing shows an operating
-  unit) → `model.conflicts` entry naming both sides + `flagOpening` → AC-9.
+  unit) → `model.conflicts` entry naming both sides + `flagOpening` with a
+  reason string that itself **names both sides** (e.g. `drawing shows
+  operating unit | schedule types FIXED`). After the ops descope (§6) that
+  string, rendered by the existing line review display
+  (`src/ops/ProjectRecord.tsx:67` `reviewReasons`), IS how AC-9's "naming both
+  sides" reaches the reviewer -- so a test pins its content, not just its
+  presence.
 - Sizes are **never** written from readings; a drawn overall dimension that
   disagrees with the schedule is a conflict entry only (spec §10.1,
   `ASSUMED:` §11-B). AC-4.
@@ -294,10 +304,13 @@ status `technical_review` → blocks issue via `ISSUE_BLOCKING_LINE_STATUSES`
 ### 3.6 The run report (AC-11…AC-14, AC-24)
 
 Assembled by `enrich.ts`, persisted by `readings.ts` into
-`ai_runs.drawing_report_json` (new additive column, §8) — an **ops-only**
-extension of the per-run diagnostics; the customer status endpoint never
-selects it (AC-25/AB-8 depend on this separation; `summary_json`, which the
-customer poll DOES receive, gains nothing drawing-related). Per file:
+`ai_runs.drawing_report_json` (new additive column, §8) — an operator-read
+extension of the per-run diagnostics: read by the tester and owner at
+verification and at the gate walk, via D1 and `scripts/drawing-gate.mjs`
+tooling (no product surface reads it after the ops descope -- §6.1). The
+customer status endpoint never selects it (AC-25/AB-8 depend on this
+separation; `summary_json`, which the customer poll DOES receive, gains
+nothing drawing-related). Per file:
 
 ```json
 { "files": [{ "fileId": "…",
@@ -365,37 +378,84 @@ applied to production, currently unread) are re-wired, restoring what
 - `useProjectDocuments.ts` passes them into `AiPhase`; `DocumentProgress.tsx`
   renders "reading openings · n of N" as the active-step detail. The customer
   sees the counter and nothing else: no unread counts, no lists, no error state
-  for partials (AC-25) — unread openings surface to ops only (§6).
+  for partials (AC-25) — and never a request to fix anything. Unread openings
+surface to nobody at runtime after the ops descope; the shortfall is named in
+§6.2 and ticketed.
 
 `progress_stage` vocabulary is untouched (0059's own rationale: extending the
 CHECK is a table rebuild; the counts carry the information).
 
 ---
 
-## 6. The ops surface
+## 6. Ops — nothing new (owner descope, relayed 2026-08-29)
 
-**Endpoint** — `GET /api/ops/projects/:id/drawing-readings` (`worker/routes/ops.ts`,
-beside `/projects/:id/thermal`):
+**Owner ruling, verbatim:** *"there should be nothing new in ops. Ops2 has Why
+this product panel, the parsing will feed into it by building more accurate
+thermal modelling but that does not change UI. No display of crops at this
+point."*
 
-- Auth: `resolveStaff` — denies manufacturer-role users by predicate
-  (`worker/lib/staff.ts:157`), AB-4.
-- Scoping: readings `WHERE project_id = ?1` bound to the path param, joined to
-  the project's **latest** `ai_runs` row (`AND ai_run_id = (SELECT id FROM
-  ai_runs WHERE project_id = ?1 ORDER BY started_at DESC LIMIT 1)`); report
-  from that run's `drawing_report_json`. Staff access is deliberately flat
-  (owner 2026-07-28), so `project_id` is the whole scope — stated here so
-  nobody "adds" an account filter that contradicts the staff model.
-- Returns: per-opening rows (four facts × three states, gap codes,
-  disagreements, `cropKey` **as an identifier only** — no route serves crop
-  bytes in this scope, AB-2), plus the method report.
+The `GET /api/ops/projects/:id/drawing-readings` endpoint and the
+`ProjectRecord.tsx` "Drawing readings" panel this design carried in draft are
+**cut**, with everything that existed only to serve them.
 
-**Panel** — `src/ops/ProjectRecord.tsx`, same load-on-expand pattern as the
-ThermalAudit section (~line 351): a "Drawing readings" table — tag | split |
-orientation | elevation | room, each cell a value or an explicit *not stated* /
-*not read* chip (visually distinct — AC-3's "distinguishable without opening a
-file"), disagreement rows naming both sides (AC-9), and the six-step report
-block underneath (AC-11). A `cropKey` whose object was purged (§7) renders as
-"evidence expired (quote issued)" — a state, not an error.
+### 6.1 The consumer map — every enrichment output and its post-cut reader
+
+Stated fully because a field written and never read is a defect this repo has
+recorded five times by name, and cutting the viewer must not create a sixth.
+
+| Output | Post-cut consumer |
+|---|---|
+| Split reading | `resolveMakeUp` → `proposeSplit` → the priced composite + the "confirm at review" flag on the line (AC-1, AC-5…7, AC-10) |
+| Orientation | `wallOrientation` + source `plan` → `thermalInputsFor` → `computeThermalBand` → product selection; its basis reaches ops through the **existing** thermal audit / Why-this-product surfaces (AC-8, AC-17…19) |
+| Room label | `quote_line.room_label` where empty — already shown on every line view |
+| Schedule disagreement | `model.conflicts` in `building_models.model_json` (the existing structured home) + the both-sides review-reason string on the line (§3.5) → `technical_review` blocks issue (AC-9, AC-10) |
+| `drawing_reading` rows — four facts × three states, evidence pointers (output spec §5), `crop_key` | the **release gate**: `scripts/drawing-gate.mjs` + the walked REF comparison (AC-G1…G4), read via D1; and the future ops view the shortfall ticket buys — the table is shaped so that view is a SELECT away |
+| `ai_runs.drawing_report_json` | §5.2's anti-divergence visibility: the tester/owner at verification and the gate walk (AC-11…AC-14, AC-24), via D1/gate tooling |
+| Crops in R2 | review-window evidence: the gate walk checks a reading against its pixels via `crop_key` (AC-14); purged per §7 |
+| Elevation | input to `assign` (the locate join) and a gate-scored fact on the reading row |
+
+**Two things had the cut panel as their only reader — removed with it:**
+
+- `drawing_reading.disagreement_json` — **cut from §8's schema.** Structured
+  conflicts already live in `model.conflicts`; the reason string carries them
+  to the reviewer. A duplicate column with no reader would have been the sixth
+  entry on the write-only list.
+- `src/data/drawingReading.ts` — **not created.** The reading types move to
+  `worker/lib/drawing/contract.ts`; no `src/` code reads them any more.
+
+Nothing else in the enrichment's output had the ops surface as its only
+consumer.
+
+### 6.2 The named gap
+
+After this cut, ops sees a **flagged line** through the existing review
+mechanism but has **no view of what a reading said, which openings were read
+or not read, or where readings disagreed as a list**. `CONTEXT.md`'s *Drawing
+reading* entry — "ops sees gaps and disagreements" — states the intent and is
+deliberately **not** softened to match; the shortfall is ticketed by the
+orchestrator.
+
+### 6.3 Criteria orphaned by the cut — for the PM to mark descoped, not unmet
+
+- **AC-2** — the data exists (rows carry the four facts with explicit states)
+  but "inspected in the ops console" has no surface.
+- **AC-3** — the two absences stay distinct in the schema (CHECK'd states),
+  but no screen tells them apart.
+- **AB-4** — the readings half is vacuous: no HTTP surface serves readings to
+  anyone, staff included; the crop half remains covered by AB-2/AB-3's route
+  enumeration.
+- Spec **§2.1's "ops-visible output"** scope bullet.
+
+Not orphaned, stated so nobody re-litigates: AC-8/AC-17/AC-18/AC-19 (existing
+thermal surfaces), AC-9 (existing review-reason display, with the both-sides
+string pinned by test — §3.5), AC-11…AC-14/AC-24 (the spec says "when the run
+report is read", deliberately naming no ops screen).
+
+### 6.4 No mock gate applies to this feature
+
+Stated so a later reader does not conclude the gate was skipped: the ops
+surface is cut, and §5's counter is a state addition within the shipped
+`DocumentProgress` concept — there is no new visual for the owner to approve.
 
 ---
 
@@ -448,9 +508,10 @@ there rather than in R2. Consequences, stated:
   walked and when review happens.
 - A labelling corpus can never be production crops by default; it is a
   deliberate copy made before issue (owner's ruling as relayed).
-- After purge, `drawing_reading.crop_key` dangles by design; readers treat a
-  404 as "evidence expired" (§6). No tombstone column — the project's status
-  already says whether crops are expected. `// ponytail: dangling key with
+- After purge, `drawing_reading.crop_key` dangles by design; the gate walk
+  happens inside the review window, before purge, and any future reader treats
+  a missing object as evidence-expired. No tombstone column — the project's
+  status already says whether crops are expected. `// ponytail: dangling key with
   documented meaning; add a purged_at column only if a viewer ever needs to
   distinguish expired from failed-write.`
 - Crops are never written for a project in a terminal state (spec §13): the
@@ -488,7 +549,6 @@ CREATE TABLE drawing_reading (
   room_label         TEXT,
   gap_code           TEXT,                    -- unplaced|frame_ambiguous|division_unreadable|scanned|refused_contract|model_declined|render_failed
   gap_note           TEXT,
-  disagreement_json  TEXT,                    -- [{field, schedule, reading}]
   crop_key           TEXT,                    -- R2 identifier; §7 lifecycle; dangles after purge by design
   page_no            INTEGER,
   sheet_ref          TEXT,
@@ -541,15 +601,16 @@ in the report (file ids only).
 
 | Route | Caller | Exact scoping |
 |---|---|---|
-| `GET /api/ops/projects/:id/drawing-readings` (new) | staff only — `resolveStaff` (manufacturer role denied by predicate, AB-4) | every query `WHERE project_id = ?` bound to the path param; latest-run subquery also bound to the same id. Staff scope is flat by owner decision — no account filter exists to forget |
 | `GET /api/projects/current/extraction-status` (changed) | the customer | project resolved from the **session** (`resolveCurrentProject`) — the two new columns ride the existing claim row lookup, which never takes a client-supplied project id (AB-1). Adds two integers; adds no unread counts, no lists (AC-25) |
 | `POST /api/projects/current/clear` (changed) | the customer | unchanged session-resolved project + draft-only guard; the added purge uses that same resolved id |
 | `DELETE /api/files/:id` (changed) | the file's owner | unchanged `ownedProject` check; purge keyed on `fa.project_id` from the verified row |
 | Container endpoints | the Worker only, via DO binding | no public surface exists (AB-5) |
 | Crop bytes | **nobody** | no route serves them in this scope; AB-2 is verified by enumerating routes, and the guest grant reaches only `file_asset`-backed downloads, which crops are not (AB-3) |
+| Readings (`drawing_reading`, `drawing_report_json`) | **nobody over HTTP** | the ops endpoint was descoped (§6); no route serves readings to any caller, which makes AB-4's readings half vacuous rather than unenforced. Access is D1 tooling under Cloudflare credentials |
 
 **Abuse cases → controls:** AB-1 session-resolution (above, tested); AB-2/AB-3
-no-crop-route property test; AB-4 `resolveStaff` predicate test; AB-5
+no-crop-route property test (which now also proves no readings route — AB-4's
+readings half is vacuous, §6.3); AB-5
 config+dependency assertions; AB-6 dual-layer caps with stable failure codes,
 refused before rendering; AB-7 refusing validators + mandatory review flag;
 AB-8 report/log contract (identifiers and counts only; container access log
@@ -603,8 +664,9 @@ slice that creates or extends it. Probity: each slice starts red with its
 named tests.
 
 **S1 — Contracts, migration, crop lifecycle core.**
-Files: `migrations/0060_drawing_reading.sql`, `src/data/drawingReading.ts`,
-`worker/lib/drawing/crops.ts`, `worker/lib/drawing/contract.ts`,
+Files: `migrations/0060_drawing_reading.sql`,
+`worker/lib/drawing/crops.ts`, `worker/lib/drawing/contract.ts` (including
+the reading/report types — §6.1),
 `scripts/tests/drawing-enrichment.test.mjs` (created), `package.json`
 (`test:pure` + `test:drawing-enrichment`).
 Verify: migration applies locally (`npm run db:migrate:local`); state enums,
@@ -646,7 +708,8 @@ Verify: AC-27 spy test (mode `auto` touches nothing); fake-container +
 fake-model pipeline run produces readings, report, conflicts, flags, unchanged
 sizes; split arithmetic per AC-5/6/7.
 
-**S6 — Progress to the customer.**
+**S6 — Progress to the customer (a state addition to shipped UI, not a UI
+change — §6.4).**
 Files: `worker/routes/parse.ts` (status SELECT/response),
 `worker/lib/ai/jobs.ts` (`setDrawingProgress`),
 `src/data/useProjectDocuments.ts`, `src/components/DocumentProgress.tsx`,
@@ -656,14 +719,9 @@ counter; re-typed, not cherry-picked).
 Verify: counter fields in the poll; denominator never shortens; AC-25 response
 shape (no unread detail).
 
-**S7 — The ops surface.**
-Files: `worker/routes/ops.ts` (drawing-readings endpoint), `src/ops/api.ts`,
-`src/ops/ProjectRecord.tsx`, extends `scripts/tests/api.test.mjs` (staff 200 +
-scoping, non-staff 403, manufacturer 403 — AB-4).
-Verify: three-state cells distinguishable; disagreement rows; report block;
-purged-crop state renders as "evidence expired".
+*(The former S7 — the ops surface — is cut by the owner's descope, §6.)*
 
-**S8 — Retention triggers, the gate runner, and the records.**
+**S7 — Retention triggers, the gate runner, and the records.**
 Files: `worker/lib/issue.ts`, `worker/routes/parse.ts` (clear),
 `worker/routes/files.ts` (delete), extends `scripts/tests/unit.test.mjs`
 (each wired trigger provably calls `purgeProjectCrops`, and a signature test
@@ -674,7 +732,7 @@ ticketed outside this feature by the orchestrator).
 Verify: trigger tests; `node scripts/drawing-gate.mjs readings.json
 labels.json` produces the per-opening comparison deterministically (AC-G4).
 
-After S8: the REF walk (tester + owner): label sheet assembled → owner
+After S7: the REF walk (tester + owner): label sheet assembled → owner
 confirms once (D-2, spec §9 gap 2) → labels fixture committed under AB-9's
 content rule → gate scored 19-of-19 (AC-G1…G4) → owner flips the var.
 
@@ -683,7 +741,7 @@ content rule → gate scored 19-of-19 (AC-G1…G4) → owner flips the var.
 ## 12. Test plan — file → proves → criterion
 
 **New: `scripts/tests/drawing-enrichment.test.mjs`** (wired into `test:pure`
-and `test:drawing-enrichment`; created in S1, grown through S8):
+and `test:drawing-enrichment`; created in S1, grown through S7):
 
 | Proves | Criteria |
 |---|---|
@@ -706,9 +764,9 @@ REF's shape) — raw REF text would itself violate AB-9.
 | File | Proves | Criteria |
 |---|---|---|
 | `scripts/tests/estimator-split.test.mjs` | plans-source hint: ratio→mm round-all-but-last on the policy step, last unit absorbs remainder; printed width verbatim + never invented; horizontal axis divides height not width | AC-5, AC-6, AC-7 |
-| `scripts/tests/ai-pipeline.test.mjs` | mode `auto`: byte-identical path, spy container/skills untouched; mode `auto_drawings` with fakes: readings persisted + applied, sizes identical to schedule, disagreement → conflict + review flag, no reading → line identical to no-enrichment run, whole-file failure → estimate proceeds on schedule, orientation reaches thermal inputs with source `plan`, report lands in `drawing_report_json` and NOT in `summary_json` | AC-1's mechanism, AC-2, AC-4, AC-8, AC-9, AC-10, AC-27, AC-28, AC-29, AC-25's server half |
+| `scripts/tests/ai-pipeline.test.mjs` | mode `auto`: byte-identical path, spy container/skills untouched; mode `auto_drawings` with fakes: readings persisted + applied, sizes identical to schedule, disagreement → conflict + a review-reason string naming both sides (§3.5), no reading → line identical to no-enrichment run, whole-file failure → estimate proceeds on schedule, orientation reaches thermal inputs with source `plan`, report lands in `drawing_report_json` and NOT in `summary_json` | AC-1's mechanism, AC-2, AC-4, AC-8, AC-9, AC-10, AC-27, AC-28, AC-29, AC-25's server half |
 | `scripts/tests/ai-jobs.test.mjs` | deadline 240 s only under `auto_drawings`; mid-flight switch-off leaves no half-enriched quote (generation supersede path) | AC-24's envelope, §13 edge |
-| `scripts/tests/api.test.mjs` | status poll carries `drawingsDone/Total` via session-resolved project (never a client-supplied id); ops drawing-readings: staff 200 scoped `WHERE project_id=?`, anonymous 403, manufacturer 403; no route serves crop bytes (route enumeration); guest grant enumeration reaches no crop/reading | AB-1, AB-2, AB-3, AB-4, AC-22's transport |
+| `scripts/tests/api.test.mjs` | status poll carries `drawingsDone/Total` via session-resolved project (never a client-supplied id); no route serves crop bytes **or readings** (route enumeration — also makes AB-4's readings half vacuous, §6.3); guest grant enumeration reaches no crop/reading | AB-1, AB-2, AB-3, AB-4 (vacuous half), AC-22's transport |
 | `scripts/tests/unit.test.mjs` | `issueQuote`, `/projects/current/clear`, `DELETE /files/:id` each reach `purgeProjectCrops`; the function's interface stays `(env, projectId)`-only so a scheduled void can call it (one-function rule, future-caller seam) | §7 owner ruling |
 | `scripts/tests/web/customer.spec.ts` | counter renders and advances "n of N"; partial failure shows nothing to fix, no error state | AC-22, AC-23, AC-25 |
 | `containers/plan-parse/tests/test_steps.py` (CI) | inventory/text/words/render/crop against a generated synthetic PDF; crop pixels match requested points at DPI | R1's mechanical half |
@@ -755,10 +813,34 @@ Nothing survives commented out.
 | Page selection in the container (scaffold's `select_pages`) | a judgement in Python is untestable without Docker on this repo's machines; moving it to the Worker preserves the step, its order and its inputs, and AC-12 pins the order (§1) |
 | A new env var for the switch (`AI_DRAWING_ENRICHMENT`) | the spec names `AI_EXTRACTION_MODE` as the switch; a second var is a second place for one fact |
 | Enrichment on under the existing `auto` value | flipping on at deploy, before the gate is scored, is exactly the "release decision" the switch exists to avoid; `auto_drawings` makes turning-on a deliberate act (§4) |
-| Readings stored only in `building_models.model_json` + `evidence_items` | AC-2/AC-3 need per-field three-state queries the ops surface can rely on; burying states in a JSON blob invites the collapse the output spec §4 forbids; a dedicated child table keeps the schema honest |
+| Readings stored only in `building_models.model_json` + `evidence_items` | the gate comparator (AC-G1…G4) and the ticketed future ops view need per-field three-state queries; burying states in a JSON blob invites the collapse the output spec §4 forbids; a dedicated child table keeps the schema honest. Re-checked after the §6 descope: the table's readers are the gate and the ticket, named in §6.1 |
 | Crops under the existing `runs/` prefix (inherit the file-delete purge) | covers one retention trigger of three and couples crop lifetime to stage-archive lifetime; the owner's ruling needs one function called from three places, which needs a dedicated prefix (§7) |
 | Whole-set proportion matching as a fallback for unplaced openings | explicitly forbidden — ADR 0015, spec §10.4 |
 | Extending `progress_stage`'s CHECK for a "reading openings" stage | table rebuild in a 52-cascade schema; 0059's counters already carry the information |
+
+---
+
+## 14a. OPEN LOOP FOR THE BUILD — AC-15's disagreement channel
+
+Raised by the product-manager during the descope pass and **not yet answered by this design.**
+
+The ops readings view is gone, so AC-9's schedule-vs-drawing disagreement now reaches the reviewer
+through the review-flag string itself, which §3.5 requires to name both sides
+(`drawing shows operating unit | schedule types FIXED`).
+
+**AC-15 has the same dependency and a different pair.** Its disagreement is
+**plans vs energy report** — the architectural ladder against the thermal one — and it was routed
+down the same channel by the PM on the assumption that the channel is general.
+
+**The build must confirm that before it relies on it**, and the slice that touches §3.5 owns the
+question:
+
+- does the flag string's shape carry *any* two sides, or only schedule-vs-drawing?
+- if only the latter, either generalise it or give AC-15 its own named channel — do not leave a
+  criterion whose only route to a human is a string that cannot express it.
+
+Whichever way it resolves, the test that pins the string's content (§12) must cover both pairs.
+A criterion that cannot be tested is not met, and this one currently reads as met.
 
 ---
 
@@ -777,6 +859,5 @@ Nothing survives commented out.
   is out of scope here; it attaches to `purgeProjectCrops(env, projectId)` —
   an interface deliberately callable from `scheduled()` — when it is built.
   Tracked as its own ticket by the orchestrator.
-- **Mock gate:** the customer-facing UI change is the restoration of an
-  already-shipped counter (recommend: no new mock); the ops readings panel is
-  new staff UI — the orchestrator decides whether the mock gate applies to it.
+- **No mock gate applies** (§6.4): the ops surface is cut and the counter is
+  a state addition to shipped UI — there is no new visual to approve.

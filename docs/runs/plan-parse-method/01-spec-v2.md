@@ -8,6 +8,14 @@ is the binding input, together with `DECISIONS.md` (D-1…D-4). Everything in th
 downstream of those two. Where this document says something they do not, it is marked either
 **decided here** (§10) or **`ASSUMED:`** (§11) — never buried.
 
+**Amended 2026-08-29: the ops-facing half of this feature is descoped by owner ruling.** See **§2.3**
+for the ruling, the criteria it affects and the shortfall it leaves. Affected criteria are **marked
+DESCOPED in place, never deleted**, so a later reader sees a decision rather than a gap.
+
+**No mock gate applies to this feature.** With the readings panel cut and the progress counter
+reduced to additional states on already-shipped UI, there is no new visual for the owner to approve.
+This is recorded so nobody later reads a skipped gate: the gate does not apply, it was not waived.
+
 **Inputs treated as settled and not reopened**
 
 | Document | Standing |
@@ -86,13 +94,16 @@ exist for that and nothing else.
 - **The two priority ladders** (00-ask §6) applied where this feature touches them: architectural
   facts and thermal facts have different sources of truth.
 - **Progress the customer watches** — per opening, advancing on unread openings too, inside a
-  ~2-minute budget, with a partial-failure message that asks nothing of them.
+  ~2-minute budget, with a partial-failure message that asks nothing of them. *Additional states on
+  the shipped progress surface; no new UI (owner ruling, §2.3).*
 - **`AI_EXTRACTION_MODE` as the switch**: off, the schedule table and the default split carry the
   quote exactly as today.
-- **The ops-visible output**: per opening, what was read, what was not, and where a reading disagrees
-  with the schedule.
+- ~~**The ops-visible output**: per opening, what was read, what was not, and where a reading
+  disagrees with the schedule.~~ **DESCOPED 2026-08-29** — owner ruling, §2.3. *"There should be
+  nothing new in ops."* What survives of it: a drawing/schedule disagreement still reaches the
+  reviewer through the **existing review-flag mechanism** (AC-9), which is not new UI.
 - **Crop evidence persisted from the first job** (`CONTEXT.md` — *Crop evidence*), retained under the
-  rule §12 D-1 settles.
+  rule §12 D-1 settles. **No crop is displayed anywhere** (owner ruling, §2.3).
 - **The release gate**: 19 of 19 on the reference set, judged against a label sheet the owner has
   confirmed once.
 
@@ -102,12 +113,54 @@ exist for that and nothing else.
 |---|---|
 | **The deploy-unblock slice** (00-ask §4.1) | **Already shipped on `main`.** `PlanParseContainer` is a held-open stub (`worker/lib/drawing/PlanParseContainer.ts`), the `PLAN_PARSE` binding and the `v1` migration are in `wrangler.jsonc:55-62`, and no `containers` block is declared. Nothing here re-does it. |
 | Re-deriving the openings list | The schedule parser is authoritative for what openings exist and what they measure. This pass enriches that list; it never rebuilds it. |
-| A crop viewer in the ops console | The owner checks readings against his own plan set, which he has. A viewer is a convenience over an existing capability. Crops are still stored from job one so the viewer, and the labelling campaign it enables, can be built later against real evidence. `ASSUMED:` §11-A. |
+| **Any new ops surface — a readings endpoint, a readings panel, a crop viewer** | **Owner ruling 2026-08-29, §2.3.** Not an assumption any more: *"there should be nothing new in ops… No display of crops at this points."* |
 | Generalising to other drafters' label conventions | DECISIONS.md, taken on the PM's recommendation: a set with no recognised elevation labels reports that it has none. The second real plan set is what says what the second convention is. |
 | OCR of scanned/raster-only sets | The method's own step 2 stops on a scanned set and names the gap. Making it read one is a different effort. |
 | Removing or weakening the human review gate | Every drawing-derived composite still lands in technical review. Changing that has its own evidence bar. |
 | Thermal certification | The platform uses target Uw and solar gain for **product selection**. It is not becoming certification software (00-ask §6). |
 | New customer-facing surfaces | The enrichment is invisible to the customer except as a progress counter and a better-chosen product. |
+
+### 2.3 DESCOPED 2026-08-29 — the ops-facing half
+
+**Owner ruling, verbatim:**
+
+> *"there should be nothing new in ops. Ops2 has Why this product panel, the parsing will feed into
+> it by building more accurate thermal modelling but that does not change UI. No display of crops at
+> this points."*
+
+and, on the progress counter:
+
+> *"there's no UI here, utilise the same concept, just add additional states."*
+
+**What is cut:** the readings endpoint, the "Drawing readings" panel, and any rendering of a crop.
+The architect has folded this through `02-design-v2.md` (7 slices; §6 is the design-side descope
+record).
+
+**Criteria marked DESCOPED in place — not deleted:**
+
+| Item | Status |
+|---|---|
+| **AC-2** — the four enriched facts shown per opening in ops | DESCOPED. No ops surface renders them. |
+| **AC-3** — *not stated* and *not read* told apart on the screen | DESCOPED **as a screen criterion**. The distinction itself is **not** descoped: it stays a data contract (output spec §4), it is scored by the release gate (AC-G1, AC-G2) and reported by AC-11. |
+| **AB-4** — manufacturer partner cannot reach readings **or** crops | **Readings half DESCOPED** (there is no readings surface to attack). **Crop half stands**, and is verified the same way AB-2 and AB-3 are: by enumerating the Worker's routes and finding that none serves crop bytes to anyone. |
+| **§2.1 "ops-visible output" bullet** | DESCOPED, struck above. |
+
+**Explicitly not orphaned by the cut, and untouched:**
+
+- **AC-8, AC-17, AC-18, AC-19** — they land on the **existing** thermal surfaces ("Why this
+  product?"), which the ruling names as the place this work lands.
+- **AC-11 … AC-14, AC-24** — they name the **run report**, never an ops screen. AC-14's
+  "retrievable" means the stored crop is findable from the run record; it never meant a viewer.
+- **AC-9** — **strengthened, not dropped.** The architect requires the review-flag string to carry
+  both sides itself (`drawing shows operating unit | schedule types FIXED`), rendered by the existing
+  `reviewReasons` display, with a test pinning the string's content.
+
+**The gap the cut leaves — known, ticketed, and not papered over.** Ops will see a *flagged line*
+through the existing review mechanism, but no view of what a reading said or where it disagreed.
+`CONTEXT.md`'s *Drawing reading* entry still says *"ops sees gaps AND disagreements"* and **stays as
+written** — it describes the intent. The shortfall against that intent is ticketed by the
+orchestrator. **The criteria are not adjusted to match what got built**; they are marked, and the
+distance between them and the build is the ticket.
 
 ---
 
@@ -137,7 +190,8 @@ this"* is a first-class answer and must stay easy for the model to give; a visio
 silently where geometry fails loudly, and that asymmetry is the whole risk of the chosen route.
 
 **R5 — a conflict is represented, never silently resolved.** Existing house rule. Where two sources
-disagree, the reviewer is told; nothing is quietly rewritten to agree.
+disagree, the reviewer is told; nothing is quietly rewritten to agree. *After §2.3 the channel for
+this is the existing review flag (AC-9), not a new panel.*
 
 **R6 — the customer's journey is never blocked by this.** A parse failure of any kind still lets the
 customer submit; a human reviews; the fallback carries the estimate as it does today.
@@ -172,6 +226,12 @@ Evidence: 00-ask §2 (*"the reviewer who sees which openings were read, which we
 reading disagrees with the schedule"*) and §6 (*ops2 shows one value — not a set of competing ones —
 and how it matches the thermal properties of the product offered*).
 
+> **Partly served after §2.3.** The thermal half of this need is met on the existing "Why this
+> product?" surface (AC-17, AC-18, AC-19). The disagreement half is met only as far as the existing
+> review flag carries it (AC-9). *Which openings were read and which were not* is **not** served by
+> any screen in this effort. The need is recorded as stated — it is not rewritten down to what got
+> built — and the shortfall is the ticket named in §2.3.
+
 **Owner** — as product owner, and as the only person who can score the release gate.
 
 > *"100% accuracy is internal target. If it is not accurate, inconsistent or even worse — misleading,
@@ -182,7 +242,8 @@ Evidence: 00-ask §8, and the grill's closing constraint on how this spec is wri
 
 **Manufacturer partner** — **no need. This feature must be invisible to them.** `CONTEXT.md` puts
 manufacturer partners categorically outside customer data; readings and crops are fragments of a
-customer's drawings. This actor appears here only as an abuse case (AB-4).
+customer's drawings. This actor appears here only as an abuse case (AB-4, whose readings half is
+descoped with the surface it defended).
 
 **Visitor** — **no need.** The estimator serves signed-in customers; a visitor never reaches this
 path.
@@ -194,7 +255,9 @@ path.
 ## 5. Acceptance criteria
 
 **45 criteria in all:** 29 in this section (AC-1 … AC-29), 10 abuse cases in §6 (AB-1 … AB-10), and 6
-bar criteria in §7 (AC-G1 … AC-G6). Each is independently verifiable and maps onto a test the
+bar criteria in §7 (AC-G1 … AC-G6). **Two are DESCOPED (AC-2, AC-3) and one is half-descoped (AB-4)
+by the owner ruling of 2026-08-29 (§2.3); they are marked in place, not removed, so the count does
+not silently shrink.** Each remaining criterion is independently verifiable and maps onto a test the
 developer can write and the tester can walk. Criteria naming **REF** mean the reference plan set —
 the set already used for every test run, held in R2, deliberately not in the repository (§9, gap 1).
 
@@ -206,14 +269,21 @@ the set already used for every test run, held in R2, deliberately not in the rep
 *Then* opening **W1** is quoted as an operating unit and a fixed unit side by side, in that drawn
 order, and no longer as two equal awnings.
 
-**AC-2 — the four enriched facts appear for every opening the drawings show.**
+**AC-2 — the four enriched facts appear for every opening the drawings show. — DESCOPED 2026-08-29**
+> *Owner ruling (§2.3): "there should be nothing new in ops."* No ops surface renders per-opening
+> readings, so this criterion has no surface to be true on. Retained for the record.
+
 *Given* REF parsed with the enrichment on,
 *When* the project's openings are inspected in the ops console,
 *Then* each opening shows its split, its orientation, the elevation it was read from and its room
 label — or, for any of those four, an explicit *not stated* or *not read*, never a blank that could
 mean either.
 
-**AC-3 — the two absences are told apart on the screen, not in a log.**
+**AC-3 — the two absences are told apart on the screen, not in a log. — DESCOPED 2026-08-29**
+> *Owner ruling (§2.3), as a **screen** criterion only.* **The distinction is not descoped**: *not
+> stated* and *not read* remain a data contract (output spec §4 — collapsing them once already cost
+> this product a fixed-glass reading), scored by AC-G1/AC-G2 and reported by AC-11.
+
 *Given* one opening whose sheet is readable and simply does not divide it, and one opening whose
 sheet could not be read,
 *When* both are inspected in the ops console,
@@ -246,14 +316,19 @@ for it.
 **AC-8 — orientation reaches the product choice.**
 *Given* an opening the enrichment read as facing east or west,
 *When* the product is selected,
-*Then* the opening carries the compass value and the cooling cap that value implies, and the ops
-console shows that its thermal requirement was derived from this project's documents.
+*Then* the opening carries the compass value and the cooling cap that value implies, and the existing
+"Why this product?" surface shows that its thermal requirement was derived from this project's
+documents. *Not affected by §2.3 — this is the surface the ruling names.*
 
 **AC-9 — a disagreement with the schedule is shown, not resolved.**
 *Given* an opening the schedule types `FIXED` and the drawing shows with an operating unit,
 *When* parsing completes,
-*Then* the ops console shows the disagreement, naming both sides,
+*Then* the reviewer sees the disagreement, naming both sides,
 *And* the line is in technical review before it can be issued.
+> *Strengthened, not dropped, by §2.3:* the channel is the **existing review-flag mechanism**, and the
+> flag string must carry both sides itself — `drawing shows operating unit | schedule types FIXED` —
+> rendered by the existing `reviewReasons` display, with a test pinning the string's content. No new
+> panel, and no reduction in what the reviewer is told.
 
 **AC-10 — nothing drawing-derived escapes human review.**
 *Given* any line whose make-up came from the drawings,
@@ -265,14 +340,17 @@ from a drawing reading to an issued quote without a person.
 
 *These exist because the previous attempt diverged from the method silently and every other check
 passed while it did. The run report already carries per-run diagnostics; it names the method's steps
-too, so a person can see which one produced what.*
+too, so a person can see which one produced what. **None of these is an ops screen** — §2.3 does not
+touch them.*
 
 **AC-11 — the report names the six steps and their outcomes.**
 *Given* any completed enrichment run,
 *When* the run report is read,
 *Then* it states, in order: what the inventory found, which strategy was chosen, that the text layer
 was read, **which pages were selected and how many of how many**, how many crops were made, and how
-many opening reads were attempted and returned.
+many opening reads were attempted and returned;
+*And* each opening's outcome is recorded as *read*, *not stated* or *not read* — the three never
+collapsed (this is where AC-3's distinction is now verified).
 
 **AC-12 — pages are selected before anything is rendered.**
 *Given* REF (14 pages),
@@ -290,7 +368,9 @@ stated gap, no opening is marked read, and the quote proceeds on the schedule ta
 *Given* a completed run on REF,
 *When* the run report is read,
 *Then* the number of opening reads attempted equals the number of openings the pass located, each
-read names the opening it was for, and the crop it was shown is retrievable for it afterwards.
+read names the opening it was for, and the crop it was shown is retrievable **from storage** for it
+afterwards. *"Retrievable" means findable from the run record by someone with storage access; it has
+never meant a viewer, and §2.3 rules a viewer out.*
 
 ### 5.3 The two priority ladders
 
@@ -298,7 +378,8 @@ read names the opening it was for, and the crop it was shown is retrievable for 
 *Given* a project with both plans and an energy report describing the same opening's make-up,
 *When* the line is quoted,
 *Then* the make-up — how many units, in what order, which operate, which axis — is the one the plans
-show, and the disagreement with the report is shown to ops.
+show, and the disagreement with the report reaches the reviewer through the same existing review-flag
+channel as AC-9, naming both sides.
 
 **AC-16 — no plans, the energy report supplies the make-up.**
 *Given* a project with an energy report and no plans,
@@ -309,12 +390,12 @@ does not.
 **AC-17 — the energy report always wins on thermal.**
 *Given* an opening whose energy report states a target Uw and solar-gain figure, and for which the
 enrichment also supplied an orientation,
-*When* the opening's thermal requirement is inspected in ops,
+*When* the opening's thermal requirement is inspected on the existing "Why this product?" surface,
 *Then* the requirement is the report's, its basis says so, and the calculated value has not replaced
 it.
 
 **AC-18 — one thermal value, never a set.**
-*Given* any opening in the ops console,
+*Given* any opening on the existing "Why this product?" surface,
 *When* its thermal requirement is inspected,
 *Then* exactly one target is shown, with where it came from, and how the offered product matches it —
 not a list of competing values from different sources.
@@ -341,6 +422,8 @@ the run report names which pages were treated as which.
 made invisible by the file-level label.
 
 ### 5.5 Progress the customer watches
+
+*Per the owner's ruling (§2.3): additional states on the existing progress surface, not a new one.*
 
 **AC-22 — the counter is per opening and it moves.**
 *Given* a customer who has uploaded REF and is watching the progress panel,
@@ -410,8 +493,8 @@ lookup key in place of A's own session-resolved project.
 **AB-2 — a customer cannot reach a crop.**
 *Given* a signed-in customer and any identifier for a crop of their **own** project,
 *When* they attempt to fetch it through any route the Worker serves,
-*Then* no crop bytes are returned. *In this scope no route serves crop bytes at all; the criterion is
-verified by enumerating the Worker's routes and finding none.*
+*Then* no crop bytes are returned. *After §2.3 this is stronger, not weaker: no route serves crop
+bytes to anyone, and the criterion is verified by enumerating the Worker's routes and finding none.*
 
 **AB-3 — a guest grant cannot reach a crop or a reading.**
 *Given* a guest-grant session on a project that has crops,
@@ -420,7 +503,11 @@ verified by enumerating the Worker's routes and finding none.*
 *Rationale: the guest-OTP weakness is ticketed HIGH and already reaches customer files. This feature
 must not widen what that grant reaches.*
 
-**AB-4 — a manufacturer partner cannot reach readings or crops.**
+**AB-4 — a manufacturer partner cannot reach readings or crops. — READINGS HALF DESCOPED 2026-08-29**
+> *Owner ruling (§2.3): there is no readings surface, so there is nothing of that kind to attack.*
+> **The crop half stands** and is verified exactly as AB-2 and AB-3 are — by enumerating the Worker's
+> routes and finding that none serves crop bytes to any actor, partner included.
+
 *Given* an authenticated manufacturer-partner session,
 *When* it requests a project's readings or any crop,
 *Then* it is denied by the staff predicate — being an authenticated partner is not sufficient — and
@@ -447,7 +534,8 @@ order, their shares, the axis, an orientation, an elevation, a room — no famil
 unit dimension the sheet did not print;
 *And* the resulting composite still lands in technical review.
 *Residual risk, named and accepted: a poisoned proportion inside the plausible range survives to
-review. The human review gate is the control.*
+review. The human review gate is the control — and after §2.3 it is the **only** control a person
+operates, since no screen shows what the reading said.*
 
 **AB-8 — nothing sensitive is logged by value.**
 *Given* a complete run, including a failing one,
@@ -482,6 +570,9 @@ openings, the elevation it is drawn on (or *"not drawn on any elevation"*), its 
 position on that elevation, its true composition, its orientation and its room. The tester assembles
 it; **the owner confirms it once, before the gate is scored.** A gate scored against an unconfirmed
 truth table measures agreement with ourselves.
+
+*After §2.3 the gate is scored from the run report and the stored readings, not from a screen. That
+is the whole reason §5.2 and the stored reading record still exist — see §9, gap 6.*
 
 **AC-G1 — 19 of 19.**
 *Given* the confirmed label sheet,
@@ -531,6 +622,10 @@ audit-logged on access, never on a customer-facing surface** (`CONTEXT.md` — *
 title block additionally carries a client name, a site address and a project number: identifying
 information about a third party who is not our customer.
 
+**After §2.3, crops are stored and displayed nowhere.** That narrows the attack surface — there is no
+crop route to defend, which is what AB-2/AB-3/AB-4 now verify by enumeration — and it sharpens the
+retention question (§12 D-1), because bytes that nothing reads still sit at rest.
+
 **Trust boundaries.** Three, and each has a criterion above:
 
 1. **Upload → parse.** The document is untrusted input. Text printed in it may be adversarial (AB-7).
@@ -555,7 +650,8 @@ is not proposed here; the recommended action is to stop the spread.
 
 ## 9. Known gaps inherited — and what each means for the criteria
 
-From `00-ask.md` §11. Each is stated with its consequence rather than assumed away.
+From `00-ask.md` §11 (gaps 1–5), plus one the descope surfaced (gap 6). Each is stated with its
+consequence rather than assumed away.
 
 1. **The reference PDF is not in the repository, by design.** Consequence: every criterion naming REF
    is executed by a person with access to the R2 object, not by CI. The gate (§7.1) is *walked*, and
@@ -564,8 +660,8 @@ From `00-ask.md` §11. Each is stated with its consequence rather than assumed a
 2. **`labels.json` does not exist.** Consequence: **§7.1 cannot be scored until it does and until the
    owner confirms it.** It is a precondition, listed as such, and the pipeline must not report a
    verdict on the release gate before it exists. Nothing else in §5 depends on it.
-3. **Orientation is in scope.** Consequence: it appears in AC-2, AC-8, AC-19 and the gate. The
-   archived spec's exclusion of it does not apply.
+3. **Orientation is in scope.** Consequence: it appears in AC-8, AC-19 and the gate. (It also
+   appeared in AC-2, which §2.3 descoped.) The archived spec's exclusion of it does not apply.
 4. **Two dangling references in the archived spec.** Consequence: none here. The archived documents
    are not inputs to the build.
 5. **The container source is reverted** (recoverable from `a1162db1`). Consequence: no criterion
@@ -573,14 +669,24 @@ From `00-ask.md` §11. Each is stated with its consequence rather than assumed a
    is the architect's call under 00-ask §5, with the owner's tie-break recorded: *reuse the stack, but
    not at the expense of results.* R1 binds either way, and §7.1 is what says whether a substitution
    reproduced the step.
+6. **After the §2.3 descope, `drawing_reading` and `ai_runs.drawing_report_json` have no
+   product-runtime reader.** Surfaced by the architect and recorded here so nobody later finds a
+   table that is written and never selected and assumes it is dead. **Their readers are real spec
+   bars, not speculation:** the release gate (AC-G1…AC-G4 are scored from them), the anti-divergence
+   verification of §5.2 (AC-11…AC-14), and the ops view that §2.3's ticket covers. This is a
+   justified state, not an oversight — but it *is* the shape that `ponytail-review` and the
+   architect's conformance pass are entitled to challenge, so the justification is written down here
+   rather than left to be re-derived. If the gate is ever retired and the ops view never built, this
+   storage stops earning its place.
 
 ---
 
 ## 10. Decided here — not the owner's, recorded so nobody re-derives them
 
 1. **The schedule keeps the sizes.** The enrichment divides an opening; it does not restate how big
-   the opening is. A drawn overall dimension disagreeing with the schedule is a disagreement shown to
-   ops (AC-9's channel), not an overwrite. `ASSUMED:` §11-B, because R2 could be read the other way.
+   the opening is. A drawn overall dimension disagreeing with the schedule is a disagreement shown
+   through AC-9's channel, not an overwrite. `ASSUMED:` §11-B, because R2 could be read the other
+   way.
 2. **The drawing says *operates* or *does not*; the schedule names the family.** A drawing shows an
    operating symbol, not a product family. The drawing therefore decides which units operate and in
    what order (R2 — plans win on types, at the granularity a drawing can support) and the schedule
@@ -593,16 +699,17 @@ From `00-ask.md` §11. Each is stated with its consequence rather than assumed a
    delivers every opening it could read.
 6. **The label sheet is a precondition of the gate, not an output of it.**
 7. **The run report is the method's visibility** (§5.2). It is an extension of the per-run
-   diagnostics that already exist, not a new surface.
+   diagnostics that already exist, not a new surface — and after §2.3 it is the only place the
+   three states are observable.
 
 ---
 
 ## 11. `ASSUMED:` tags — all vetoable
 
-**`ASSUMED:` §11-A — no crop viewer in this effort.** Crops are stored from job one; nothing renders
-them yet. The owner scores the gate against his own plan set, which he has. If he would rather check
-readings against the exact pixels the model saw, this becomes a small ops-console addition and the
-abuse criteria AB-2/AB-4 gain a route to be tested against.
+**`ASSUMED:` §11-A — no crop viewer in this effort. — RESOLVED 2026-08-29 by owner ruling.** No
+longer an assumption: *"No display of crops at this points."* Kept in place so the trail from
+assumption to ruling is visible. The consequence — crops written and never displayed — is now
+recorded as §9 gap 6 and sharpens §12 D-1.
 
 **`ASSUMED:` §11-B — the schedule keeps the overall sizes** (§10.1). R2 says plans win on size; this
 spec applies that to *how an opening divides* and not to *how big it is*, because 00-ask §1 makes the
@@ -618,14 +725,39 @@ on REF. AC-24 gates the larger number and records the smaller.
 
 ## 12. Decisions needed
 
-**D-1 — How long do we keep the crops?**
-Crops are fragments of a customer's drawings at rest in R2, and this feature starts producing them on
-every parsed job. Retention was raised before this effort and has never been answered.
-*Recommendation:* **crops live and die with the project's files** — deleted when the customer's
-documents are, no separate lifetime. If a crop is ever wanted as a labelling fixture, it is copied
-deliberately at that moment: review evidence and a training corpus are different retentions and must
-not share a default. The consequence of choosing this is one ticket for the R2 prefix cleanup, which
-is already missing for other stage archives.
+**None outstanding.** One decision was raised here and has since been answered by the owner; it is
+recorded below rather than deleted, because the answer is tighter than the recommendation was and a
+later reader must not re-derive the looser one.
+
+### D-1 — crop retention. ANSWERED (owner, 2026-08-29)
+
+This section previously recommended keeping crops "with the project's lifetime". **The owner ruled
+otherwise, and shorter.** Crops die at whichever of these comes first:
+
+1. **the draft is cleared** — the customer's *"Clear all items and uploaded documents"* control;
+2. **the quote is submitted to the client for acceptance**;
+3. **the quote is voided, cancelled or deleted.**
+
+The consequential clause is (2). Crops exist only for the **internal review window** — from the
+parse until the quote goes out — not for the life of the project's files. They are evidence for the
+reviewer, not a record kept with the job.
+
+Three things follow, and the design (`02-design-v2.md` §7) is built to them:
+
+- **No long-lived retention policy is needed.** Nothing here outlives an issued quote.
+- **A labelling corpus cannot come from production crops** unless it is copied deliberately before
+  submission. Review evidence and a training set are different retentions; the ruling makes that
+  structural rather than a matter of care.
+- **Trigger (3) has no mechanism.** There is no void, cancel or delete route for a quote. The owner:
+  *"even if that is not build yet, that we will need mechanism to void quote that clients are not
+  accepting after some time. either manually or automatically."* It is ticketed (#37) and NOT built
+  here; the design names the scheduled seam it will attach to and `purgeProjectCrops(env, projectId)`
+  deliberately takes no request context so that seam is one line. **One third of this retention rule
+  is therefore unenforced today**, and that is stated rather than left to be discovered.
+
+The alternative this section once offered — persisting crops only under the gate harness — is
+**not** what was chosen: the first wrong reading in production is still checkable against what the
+model actually saw, for as long as the quote has not gone out.
 
 ---
 
@@ -633,12 +765,12 @@ is already missing for other stage archives.
 
 | Case | Required behaviour | Criterion |
 |---|---|---|
-| A readable sheet that simply does not divide the opening | *Not stated* — a truthful answer, distinct from *not read* | AC-3 |
-| A single-unit opening (e.g. `FIXED`) | A composition of one unit is a valid reading, not a decline; the line is not split | AC-2, AC-29 |
+| A readable sheet that simply does not divide the opening | *Not stated* — a truthful answer, distinct from *not read* | AC-11 (AC-3 descoped, §2.3) |
+| A single-unit opening (e.g. `FIXED`) | A composition of one unit is a valid reading, not a decline; the line is not split | AC-29, AC-G1 (AC-2 descoped) |
 | A stacked opening (highlight over a fixed pane) | The height divides, not the width | AC-7 |
 | An opening whose size is not a multiple of the manufacturing step | The last unit absorbs the remainder; the partition is still exact | AC-5 |
 | Two openings of identical size on one elevation | Each takes the one the drawings place there, or both are refused — in no case does one take the other's | AC-G2 |
-| An opening the schedule lists that no elevation draws | *Not read*, naming that it is not drawn; never matched elsewhere | AC-2, AC-G3 |
+| An opening the schedule lists that no elevation draws | *Not read*, naming that it is not drawn; never matched elsewhere | AC-11, AC-G3 (AC-2 descoped) |
 | Elevation labels in a form this set does not recognise | The run report says no elevation labels were recognised; every opening is *not read*; the quote proceeds | AC-13's shape, §2.2 |
 | A page that is both a floor plan and an elevation sheet | Used in both roles; page kinds are not exclusive | AC-21 |
 | An energy report with plans bundled inside it | Both kinds read from the one file | AC-20 |
@@ -657,14 +789,15 @@ is already missing for other stage archives.
 ## 14. What "done" means
 
 The platform reads each opening's split, orientation, elevation and room from the customer's plans,
-feeds them into the split and the product selection it already builds, and a reviewer can see which
-openings the drawings told us about, which they did not, and where a reading disagrees with the
-schedule — with the evidence retained. The customer sees a counter that moves and a better-chosen
-product, and never a request for something they cannot give.
+and feeds them into the split and the product selection it already builds. The customer sees a
+counter that moves and a better-chosen product, and never a request for something they cannot give.
+The reviewer sees a flagged line where a reading disagrees with the schedule, on the review surface
+that already exists.
 
-Concretely: **AC-1 … AC-29 and AB-1 … AB-10 met**, and **AC-G1 … AC-G6 walked once on REF against a
-label sheet the owner has confirmed**.
+Concretely: **AC-1 and AC-4 … AC-29 met** (AC-2 and AC-3 descoped, §2.3), **AB-1 … AB-10 met** (AB-4
+on its crop half), and **AC-G1 … AC-G6 walked once on REF against a label sheet the owner has
+confirmed**.
 
-Explicitly not done, and not pretending to be: the crop viewer, the labelling campaign beyond REF,
-generalisation to other drafters' conventions, OCR of scanned sets, and any relaxation of the human
-review gate.
+Explicitly not done, and not pretending to be: **any ops view of what a reading said or where it
+disagreed** (§2.3, ticketed), the crop viewer, the labelling campaign beyond REF, generalisation to
+other drafters' conventions, OCR of scanned sets, and any relaxation of the human review gate.
