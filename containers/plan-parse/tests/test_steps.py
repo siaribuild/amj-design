@@ -110,6 +110,16 @@ def test_inspect_document_does_not_enumerate_cad_lines_or_rectangles():
     source = inspect.getsource(steps.inspect_document)
     assert "page.lines" not in source
     assert "page.rects" not in source
+    assert "pdfplumber" not in source
+
+
+def test_document_words_uses_one_poppler_bbox_layout_pass_not_python_operator_parsing():
+    import inspect
+    import steps
+
+    source = inspect.getsource(steps._document_text_and_words)
+    assert '"-bbox-layout"' in source
+    assert "pdfplumber" not in source
 
 
 def test_inspect_document_is_the_only_inventory_text_word_entrypoint():

@@ -117,6 +117,28 @@ test("elevationRegions: multiple printed labels partition a shared sheet without
   assert.ok(Math.abs(grouped.B[0].box[2] - ((800 - 440) / 560)) < 1e-9);
 });
 
+test("elevationRegions: REF-style stacked titles survive intervening tokens and content-stream order", () => {
+  const words = [
+    { text: "A", x0: 265, x1: 275, top: 300, bottom: 320 },
+    { text: "ELEVATION", x0: 150, x1: 230, top: 301, bottom: 319 },
+    { text: "SCALE", x0: 235, x1: 260, top: 301, bottom: 319 },
+    { text: "ELEVATION", x0: 180, x1: 260, top: 650, bottom: 670 },
+    { text: "1:100", x0: 265, x1: 300, top: 650, bottom: 670 },
+    { text: "B", x0: 305, x1: 315, top: 651, bottom: 669 },
+  ];
+  const regions = elevationRegions(words, 1000, 800);
+  assert.deepEqual(regions, [
+    { label: "A", region: [0, 0, 1000, 310] },
+    { label: "B", region: [0, 310, 1000, 660] },
+  ]);
+  const grouped = boxesByRegion([
+    { box: [0.2, 0.2, 0.3, 0.3], unitProportions: [1] },
+    { box: [0.2, 0.6, 0.3, 0.7], unitProportions: [1] },
+  ], regions, 1000, 800);
+  assert.equal(grouped.A.length, 1);
+  assert.equal(grouped.B.length, 1);
+});
+
 test("elevationRegions: no printed label returns no region — draw order is never treated as evidence", () => {
   assert.deepEqual(elevationRegions([], 1000, 800), []);
 });
@@ -229,17 +251,19 @@ test("elevationInventorySkill.validate: accepts in-range boxes, drops an out-of-
   assert.deepEqual(out.boxes[0].box, [0.1, 0.2, 0.3, 0.4]);
 });
 
-test("validateFloorplanRead: a tag outside the closed vocabulary is discarded and counted, never placed (ADR 0015 point 2 / D-4)", () => {
+test("validateFloorplanRead: tag and elevation joins both use closed vocabularies", () => {
   const out = validateFloorplanRead({
     placements: {
       W1: { elevation: "A", orderOnWall: 1, roomLabel: "BEDROOM 1" },
       W99: { elevation: "A", orderOnWall: 2, roomLabel: "BEDROOM 2" }, // not in vocabulary
+      D1: { elevation: "FRONT", orderOnWall: 1, roomLabel: "ENTRY" }, // not a detected elevation key
     },
     facings: { A: { facing: "N" }, B: { facing: "sideways" } }, // "sideways" not in the 8-point vocab
     issues: [],
-  }, ["W1", "D1"]);
-  assert.deepEqual(Object.keys(out.placements), ["W1"]);
+  }, ["W1", "D1"], ["A", "B"]);
+  assert.deepEqual(Object.keys(out.placements), ["W1", "D1"]);
   assert.deepEqual(out.discardedTags, ["W99"]);
+  assert.equal(out.placements.D1.elevation, null);
   assert.equal(out.facings.A.facing, "N");
   assert.equal(out.facings.B.facing, null);
 });
@@ -699,7 +723,7 @@ test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs 
   assert.equal(result.report.files.length, 1);
 });
 
-test("runDrawingEnrichmentStage: progress starts at zero before inspect", async () => {
+test("runDrawingEnrichmentStage: progress names page-wide work before opening reads", async () => {
   const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }) }) };
   const env = { AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb, FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const inspected = {
@@ -716,9 +740,13 @@ test("runDrawingEnrichmentStage: progress starts at zero before inspect", async 
     projectId: "proj_1", aiRunId: "run_1",
     planPdfDocs: [{ fileId: "f1" }],
     scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
-    onProgress: async (done, total) => { calls.push([done, total]); },
+    onProgress: async (done, total, phase) => { calls.push([done, total, phase]); },
   }, deps);
-  assert.deepEqual(calls, [[0, 1], [1, 1]]);
+  assert.deepEqual(calls.map((call) => call[2]), [
+    "inventory", "elevation_inventory", "floorplan_location",
+    "render_crops", "opening_read", "opening_read",
+  ]);
+  assert.deepEqual(calls.at(-1), [1, 1, "opening_read"]);
 });
 
 test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {
@@ -829,6 +857,10 @@ test("enrichOpenings: the elevation letter comes from the sheet's own printed te
   assert.equal(result.readings[0].splitState, "value", "W1 was placed on sheet A (page 2), which has the box");
   assert.equal(result.readings[0].elevation, "A");
   assert.equal(result.readings[0].pageNo, 2, "the render call must target page 2 — the sheet actually labelled A");
+  assert.deepEqual(result.report.files[0].steps.elevationRegions, [
+    { pageNo: 1, labels: ["B"] },
+    { pageNo: 2, labels: ["A"] },
+  ]);
 });
 
 test("enrichOpenings: a matched, read opening carries the floor plan's orientation and room label (Codex P1)", async () => {
@@ -943,10 +975,13 @@ test("enrichOpenings: onProgress advances the numerator per opening, against a d
       { tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
       { tag: "W2", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
     ],
-    onProgress: async (done, total) => { calls.push([done, total]); },
+    onProgress: async (done, total, phase) => { calls.push([done, total, phase]); },
   }, deps);
   assert.equal(result.readings.length, 2);
-  assert.deepEqual(calls, [[0, 2], [1, 2], [2, 2]]);
+  assert.deepEqual(
+    calls.filter((call) => call[2] === "opening_read").map((call) => call.slice(0, 2)),
+    [[0, 2], [1, 2], [2, 2]],
+  );
 });
 
 test("enrichOpenings: one opening model failure preserves the other reading and already-known fields", async () => {

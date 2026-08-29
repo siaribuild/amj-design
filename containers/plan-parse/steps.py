@@ -5,10 +5,11 @@ pages) are Worker judgements, not mechanics, and are not here
 no model credentials (§9 AB-5).
 
 Every command is the one the method names: `pdfinfo`, `pdffonts`,
-`pdfimages -list`, `pdfdetach -list`, `pdftotext -layout`, `pdftoppm`.
-`pdfplumber` supplies per-word coordinates (step 3) and, cheaply, exact
-per-page point dimensions — one library call rather than a second poppler
-subprocess per page for a number `pdfinfo` does not report per-page anyway.
+`pdfimages -list`, `pdfdetach -list`, `pdftotext -bbox-layout`, `pdftoppm`.
+`pdftotext -bbox-layout` supplies layout text, per-word coordinates and page dimensions in
+one native Poppler call. Do not replace it with pdfminer/pdfplumber: CAD PDFs
+can contain hundreds of thousands of drawing operators, which made the same
+word pass take 107 seconds on the reference set.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import re
 import subprocess
 import time
 import math
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,18 +75,69 @@ class Word:
     bottom: float
 
 
-def _document_text(pdf_path: str, page_count: int) -> list[str]:
-    raw = _run(["pdftotext", "-layout", pdf_path, "-"])
-    pages = raw.split("\f")
-    if len(pages) > page_count and not pages[-1].strip():
-        pages.pop()
-    if len(pages) < page_count:
-        pages.extend([""] * (page_count - len(pages)))
-    return pages[:page_count]
+def _document_text_and_words(
+    pdf_path: str,
+    page_count: int,
+) -> tuple[list[str], list[list[Word]], list[tuple[float, float]]]:
+    """Read layout text and positioned words with Poppler's native engine.
+
+    The XHTML page/word boxes use the same top-left coordinate convention the
+    Worker contract already expects. Page elements are emitted even when a page
+    has no words, so scanned pages retain their exact dimensions.
+    """
+    raw = _run(["pdftotext", "-bbox-layout", "-enc", "UTF-8", pdf_path, "-"])
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        raise StepError("not_a_pdf", "pdftotext word-box output was malformed") from error
+    page_nodes = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "page"]
+    if len(page_nodes) != page_count:
+        raise StepError("not_a_pdf", "pdftotext word-box page count mismatch")
+
+    texts: list[str] = []
+    words_by_page: list[list[Word]] = []
+    page_sizes: list[tuple[float, float]] = []
+    for page in page_nodes:
+        try:
+            page_sizes.append((float(page.attrib["width"]), float(page.attrib["height"])))
+        except (KeyError, ValueError) as error:
+            raise StepError("not_a_pdf", "pdftotext omitted a page dimension") from error
+        words: list[Word] = []
+        for node in page.iter():
+            if node.tag.rsplit("}", 1)[-1] != "word":
+                continue
+            text = "".join(node.itertext()).strip()
+            if not text:
+                continue
+            try:
+                words.append(Word(
+                    text=text,
+                    x0=float(node.attrib["xMin"]),
+                    top=float(node.attrib["yMin"]),
+                    x1=float(node.attrib["xMax"]),
+                    bottom=float(node.attrib["yMax"]),
+                ))
+            except (KeyError, ValueError) as error:
+                raise StepError("not_a_pdf", "pdftotext emitted an invalid word box") from error
+        words_by_page.append(words)
+        lines: list[str] = []
+        for line in page.iter():
+            if line.tag.rsplit("}", 1)[-1] != "line":
+                continue
+            line_words = [
+                "".join(node.itertext()).strip()
+                for node in line.iter()
+                if node.tag.rsplit("}", 1)[-1] == "word"
+            ]
+            rendered = " ".join(word for word in line_words if word)
+            if rendered:
+                lines.append(rendered)
+        texts.append("\n".join(lines) if lines else " ".join(word.text for word in words))
+    return texts, words_by_page, page_sizes
 
 
 def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Word]], dict[str, int]]:
-    """One inspect pass: metadata tools once, pdftotext once, pdfplumber once.
+    """One inspect pass: metadata tools once, then one Poppler text/word pass.
 
     This is the sole inventory/text/word implementation. Keeping the tests
     on this seam prevents a slower legacy path from drifting back in.
@@ -125,33 +178,24 @@ def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Wor
             images_by_page.setdefault(page_no, []).append(((width_px / x_ppi) * 72, (height_px / y_ppi) * 72))
     inventory_ms = round((time.perf_counter() - inventory_started) * 1000)
 
-    text_started = time.perf_counter()
-    texts = _document_text(pdf_path, page_count)
-    text_ms = round((time.perf_counter() - text_started) * 1000)
-
     words_started = time.perf_counter()
-    import pdfplumber
-
     pages: list[PageFacts] = []
-    words_by_page: list[list[Word]] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for i, page in enumerate(pdf.pages, start=1):
-            raw_words = page.extract_words()
-            words = [Word(text=w["text"], x0=w["x0"], top=w["top"], x1=w["x1"], bottom=w["bottom"]) for w in raw_words]
-            words_by_page.append(words)
-            image_rects = images_by_page.get(i, [])
-            image_area = sum(width * height for width, height in image_rects)
-            page_area = max(page.width * page.height, 1.0)
-            pages.append(PageFacts(
-                page_no=i,
-                width_pt=float(page.width),
-                height_pt=float(page.height),
-                rotation=int(page.rotation or 0),
-                text_chars=sum(len(word.text) for word in words),
-                image_count=len(image_rects),
-                image_area_fraction=min(image_area / page_area, 1.0),
-            ))
+    texts, words_by_page, page_sizes = _document_text_and_words(pdf_path, page_count)
+    for i, (words, (width_pt, height_pt)) in enumerate(zip(words_by_page, page_sizes), start=1):
+        image_rects = images_by_page.get(i, [])
+        image_area = sum(width * height for width, height in image_rects)
+        page_area = max(width_pt * height_pt, 1.0)
+        pages.append(PageFacts(
+            page_no=i,
+            width_pt=width_pt,
+            height_pt=height_pt,
+            rotation=0,
+            text_chars=sum(len(word.text) for word in words),
+            image_count=len(image_rects),
+            image_area_fraction=min(image_area / page_area, 1.0),
+        ))
     words_ms = round((time.perf_counter() - words_started) * 1000)
+    text_ms = 0  # Text and word boxes share the single measured Poppler pass.
     total_ms = round((time.perf_counter() - total_started) * 1000)
     return (
         Inventory(page_count=page_count, producer=producer, fonts=fonts, has_attachments=has_attachments, pages=pages),

@@ -21,6 +21,7 @@ import { type QuoteState } from "./configurator";
 
 export type SafeDiagnostic = NonNullable<ExtractionRun["diagnostic"]>;
 export type AiProgressStage = NonNullable<ExtractionRun["progressStage"]>;
+export type DrawingProgressPhase = NonNullable<ExtractionRun["drawingsPhase"]>;
 
 export type AiPhase =
   | null
@@ -28,7 +29,7 @@ export type AiPhase =
       kind: "reading"; docs: number; stage?: AiProgressStage;
       /** Present only while a drawing read is running (§5) — the customer
        *  sees a counter, never which openings could not be read. */
-      drawingsDone?: number; drawingsTotal?: number;
+      drawingsDone?: number; drawingsTotal?: number; drawingsPhase?: DrawingProgressPhase;
     }
   | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
   | { kind: "done"; refined: number }
@@ -61,10 +62,33 @@ const BASE_STEPS: { key: AiProgressStage; label: string }[] = [
  *  (f0714fec, then the correction in 827a8a32) had to learn by shipping it
  *  wrong first. */
 export function documentChecklist(
-  phase: { stage?: AiProgressStage; drawingsDone?: number; drawingsTotal?: number } | undefined,
+  phase: {
+    stage?: AiProgressStage;
+    drawingsDone?: number;
+    drawingsTotal?: number;
+    drawingsPhase?: DrawingProgressPhase;
+  } | undefined,
 ): { steps: DocumentChecklistStep[]; current: number } {
   const total = phase?.drawingsTotal;
   const done = phase?.drawingsDone ?? 0;
+  const drawingDetail = (): string => {
+    if (total == null) return "";
+    switch (phase?.drawingsPhase) {
+      case "inventory": return ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+      case "elevation_inventory": return " · finding elevation views";
+      case "floorplan_location": return ` · locating ${total} opening${total === 1 ? "" : "s"}`;
+      case "orientation": return " · checking drawing orientation";
+      case "render_crops": return " · preparing opening details";
+      case "opening_read": {
+        const currentOpening = Math.min(total, done + (done < total ? 1 : 0));
+        return ` · opening ${currentOpening} of ${total}`;
+      }
+      default:
+        return done > 0
+          ? ` · opening ${Math.min(done, total)} of ${total}`
+          : ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+    }
+  };
   const steps: DocumentChecklistStep[] = [];
   for (const s of BASE_STEPS) {
     steps.push({
@@ -78,7 +102,7 @@ export function documentChecklist(
       steps.push({
         key: "reading_openings",
         label: "Reading your drawings",
-        detail: ` · opening ${done} of ${total}`,
+        detail: drawingDetail(),
       });
     }
   }
@@ -410,7 +434,10 @@ export function useProjectDocuments(
           recordStage(run.progressStage);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-            : { kind: "reading", docs, stage: run.progressStage, drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal });
+            : {
+                kind: "reading", docs, stage: run.progressStage,
+                drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal, drawingsPhase: run.drawingsPhase,
+              });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
@@ -485,7 +512,10 @@ export function useProjectDocuments(
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase(run.diagnostic
           ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-          : { kind: "reading", docs, stage: run.progressStage, drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal });
+          : {
+              kind: "reading", docs, stage: run.progressStage,
+              drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal, drawingsPhase: run.drawingsPhase,
+            });
         pollExtraction(docs);
       } else if (docs > 0 && run?.status === "failed") {
         setAiPhase({ kind: "failed", diagnostic: run.diagnostic });

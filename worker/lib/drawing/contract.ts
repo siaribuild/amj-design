@@ -10,6 +10,14 @@ export const MAX_PAGES = 60;
 export const MAX_CROPS_PER_PAGE = 12;
 export const MAX_DPI = 300;
 
+export type DrawingProgressPhase =
+  | "inventory"
+  | "elevation_inventory"
+  | "floorplan_location"
+  | "orientation"
+  | "render_crops"
+  | "opening_read";
+
 export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed" | "timeout";
 
 export interface PageInventory {
@@ -147,6 +155,7 @@ export interface DrawingRunStepCounts {
   strategy: "text_vector" | "text_raster" | "scanned";
   text: { pagesRead: number };
   selectPages: { selected: { pageNo: number; tier: string; reason: string }[]; of: number };
+  elevationRegions: { pageNo: number; labels: string[] }[];
   renderCrop: { pagesRendered: number; cropsMade: number };
   read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number };
   placements: { fromText: number; fromModelFallback: number; unplaced: number };
