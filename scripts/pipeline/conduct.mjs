@@ -254,7 +254,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', worktree: true, compact: 120000, tiers: ['full', 'fix'],
+    id: 'verify', agent: 'tester', compact: 120000, tiers: ['full', 'fix'],
     cycle: true,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
@@ -1148,6 +1148,12 @@ function cycleCapped(run, kind = 'verify') {
   return true
 }
 
+// Returns true only when the stage genuinely finished with everything it
+// promised. `next`'s auto-advance loop uses this, not just `code`, to decide
+// whether to continue - a stage that reports code:0 but never wrote what it
+// was supposed to (live incident: a worktree-mode agent that could not find
+// its own prompt file, reported the blocker in prose, and stopped cleanly)
+// is NOT a clean pass, and the loop must not declare the run complete over it.
 function afterStage(run, spec) {
   const r = loadRun(run.slug)
   if (spec.gate || decisionsOpen(r)) {
@@ -1155,25 +1161,25 @@ function afterStage(run, spec) {
     // stage reaches here AFTER one of its own agents held warm under a
     // `build-<task>` / `review-<id>` label, and naming the wrapper instead
     // points `answer` at a stage that has no session and no agent.
-    if (decisionsOpen(r)) { r.gateStage = r.gateStage || spec.id; saveRun(r); return }
+    if (decisionsOpen(r)) { r.gateStage = r.gateStage || spec.id; saveRun(r); return false }
   }
-  for (const f of spec.produces || []) {
-    if (!existsSync(join(RUNS, r.slug, f)))
-      console.log('  !! stage "' + spec.id + '" did not write ' + r.dir + '/' + f +
-        ' - it was supposed to. Re-run it before continuing.')
-  }
+  const missing = (spec.produces || []).filter((f) => !existsSync(join(RUNS, r.slug, f)))
+  for (const f of missing)
+    console.log('  !! stage "' + spec.id + '" did not write ' + r.dir + '/' + f +
+      ' - it was supposed to. Re-run it before continuing.')
   if (spec.gate === 'mock') {
     console.log('\n  == MOCK GATE - implementation does not start until you approve the look.\n')
     console.log('     Open:     docs/mocks/' + r.slug + '.html')
     console.log('     Changes?  say what you want in ' + r.dir + '/03-ux.md, then: conduct run ux')
     console.log('     Happy?    node scripts/pipeline/conduct.mjs next\n')
-    return
+    return false
   }
   if (spec.gate === 'signoff') {
     console.log('\n  == SIGN-OFF - read ' + r.dir + '/08-accept.md, then it is yours to ship.\n')
-    return
+    return false
   }
-  console.log('     next:  node scripts/pipeline/conduct.mjs next\n')
+  if (!missing.length) console.log('     next:  node scripts/pipeline/conduct.mjs next\n')
+  return !missing.length
 }
 
 /**
@@ -1311,12 +1317,15 @@ const cmds = {
         console.log('\n  all stages complete -  node scripts/pipeline/conduct.mjs report\n')
         return
       }
-      await cmds.run(spec.id, ...flags)
+      const clean = await cmds.run(spec.id, ...flags)
       // A gate, a hold, a cycle-cap refusal or a real failure already reported
-      // itself and is where a human decides next - the only stage worth
-      // looping past is one that finished clean with nothing open.
+      // itself and is where a human decides next. `clean` catches the fourth
+      // case: code:0 but the stage never wrote what it promised (a worktree
+      // agent that could not find its own prompt file said so and stopped -
+      // that is not a pass, and the loop must not call the run complete over
+      // it). The only stage worth looping past is one that is actually clean.
       const st = loadRun(activeSlug()).stages[spec.id]
-      if (st?.code !== 0 || spec.gate) return
+      if (st?.code !== 0 || spec.gate || !clean) return
     }
   },
 
@@ -1345,15 +1354,15 @@ const cmds = {
     panes = panes && !!run.herdr
     if (spec.sliced) { await runBuild(run, spec, panes); return afterStage(run, spec) }
     if (spec.parallel) { await runReviews(run, panes); return afterStage(run, spec) }
-    if (spec.worktree) {
-      // A tester mutating beside a developer makes red tests nobody can attribute.
-      const wt = join(ROOT, '..', checkSlug(run.slug) + '-verify')
-      // No shell: the slug is validated, but the path still reaches git as an
-      // argument, not as a piece of a command string.
-      if (!existsSync(wt)) execFileSync('git', ['worktree', 'add', wt, 'HEAD'], { cwd: ROOT, stdio: 'inherit' })
-      spec.cwd = wt
-      console.log('  verifying in an isolated worktree: ' + wt)
-    }
+    // verify used to run in its own git worktree - "a tester mutating beside a
+    // developer makes red tests nobody can attribute." Owner ruling: no
+    // parallel development, one directory, one branch at a time, sequential
+    // stages within a run too - so that scenario cannot arise anywhere, and
+    // the worktree was only ever defending against it. Removed outright rather
+    // than patched: it cost two live defects on its own (docs/runs/<slug>/*
+    // besides 04-build.md is untracked and invisible in a worktree checkout;
+    // node_modules is never provisioned there, which also breaks the Probity
+    // shim's own resolution, denying every Bash call regardless of target).
     if (panes) {
       const s = await runPaneStage(spec, spec.prompt(run), run, spec.id)
       // A held stage has not produced anything yet, so the produces check would
@@ -1362,7 +1371,7 @@ const cmds = {
       if (s) return afterStage(run, spec)
     }
     await runClaude(spec, spec.prompt(run), run, spec.id)
-    afterStage(run, spec)
+    return afterStage(run, spec)
   },
 
   /**
