@@ -70,6 +70,7 @@ export interface RationaleCandidate {
 export type UnitRequirementBasis =
   | "explicit_energy_report"   // this lite carried its own band in the report
   | "energy_report"            // the opening's report decided the split
+  | "plans"                    // the drawings said how the opening divides
   | "schedule_comment"         // the schedule asked for it in words
   | "learned"                  // how this pairing has been reviewed before
   | "default_pairing"          // the platform's own pairing rule

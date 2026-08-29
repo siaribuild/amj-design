@@ -400,11 +400,12 @@ test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () =
   // What `splitCandidates.ts:374` actually stores: its own literal when a lite
   // carried its own band, and the split proposal's basis otherwise.
   assert.deepEqual(
-    ["explicit_energy_report", "energy_report", "schedule_comment", "learned", "default_pairing", "default_even"]
+    ["explicit_energy_report", "energy_report", "plans", "schedule_comment", "learned", "default_pairing", "default_even"]
       .map((b) => M.unitBasisLabel(b)),
     [
       "from this lite's own reference in the energy report",
       "from the opening's energy report",
+      "read from the drawings",
       "from the schedule's own comment",
       "from how this pairing has been reviewed before",
       "a default pairing the platform applies",
@@ -450,8 +451,9 @@ test("WHY-AC-34 a lite's origin label is the vocabulary the WRITER stores", () =
   // This number is NON-VACUITY, not the guard — the guard is the loop below,
   // which checks every writer spelling against the reader's union. Bump it when
   // a basis is genuinely added, which is the one edit that should make you check
-  // the loop still passes. (Back to 5 with the drawing basis reverted.)
-  assert.equal(writerUnion.length, 5, `SplitProposal["basis"] read as ${JSON.stringify(writerUnion)}`);
+  // the loop still passes. Bumped to 6 for "plans" (02-design-v2.md §3.4 —
+  // the drawing-reading basis).
+  assert.equal(writerUnion.length, 6, `SplitProposal["basis"] read as ${JSON.stringify(writerUnion)}`);
   assert.ok(writerLiteral.length >= 1, "splitCandidates' own literal was not found");
 
   for (const spelling of [...writerUnion, ...writerLiteral]) {

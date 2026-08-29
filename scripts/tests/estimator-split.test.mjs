@@ -14,7 +14,7 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } from ${p("worker/lib/estimator/split.ts")};
+      export { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, resolveMakeUp } from ${p("worker/lib/estimator/split.ts")};
       export { splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs } from ${p("worker/lib/estimator/splitCandidates.ts")};
       export { materialiseSelectedSplit } from ${p("worker/lib/estimator/estimate.ts")};
     `,
@@ -22,7 +22,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs, materialiseSelectedSplit } = await import(pathToFileURL(outfile).href);
+const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw, resolveMakeUp, splitsAreEligible, selectWithSplits, resolvePairing, splitSegmentSpecs, materialiseSelectedSplit } = await import(pathToFileURL(outfile).href);
 // This suite never cleaned up, and left 70 stale run directories behind — the
 // only one of the three that omitted it, invisible because .codex-tmp is ignored.
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
@@ -1211,4 +1211,57 @@ test("A20 a split that cannot be built is EXCLUDED, and says why it was rejected
     assert.equal(r.selected.candidateOutcome.tier, "meets");
     assert.equal(r.selectedSplit, null);
   });
+});
+
+// ── resolveMakeUp (§3.4) — the shape ladder: reading > comment > energy > none ──
+test("resolveMakeUp: a drawing reading wins the shape over a schedule comment (AC-15/AC-16)", () => {
+  const commentHint = parseSplitHint("AWNING + FIXED + AWNING"); // schedule_comment: 3 units
+  const result = resolveMakeUp("W1", {
+    reading: {
+      splitState: "value",
+      units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], // drawing: 2 units
+      axis: "vertical",
+    },
+    commentHint,
+    typeText: "AWNING",
+    fallbackOp: "awning",
+    energyComponents: null,
+    energyAxis: "vertical",
+  });
+  assert.equal(result.hint.source, "plans");
+  assert.equal(result.hint.units.length, 2);
+});
+
+test("proposeSplit: a plans hint lays out by RATIO, not an even split (output spec §1.2)", () => {
+  const hint = {
+    units: [{ operation: "awning", count: 1, widthMm: null, ratio: 0.634 }, { operation: "fixed", count: 1, widthMm: null, ratio: 0.366 }],
+    raw: "drawing: 2 unit(s)", source: "plans", axis: "vertical",
+  };
+  const proposal = proposeSplit({ operationType: "awning", widthMm: 2050, heightMm: 2100 }, hint);
+  assert.equal(proposal.basis, "plans");
+  // Worked example from the output spec: round(1299.7/5)*5 = 1300, remainder 750.
+  assert.deepEqual(proposal.segments.map((s) => s.widthMm), [1300, 750]);
+  assert.ok(proposal.segments.every((s) => s.heightMm === 2100));
+});
+
+test("proposeSplit: a plans hint with axis 'horizontal' divides the HEIGHT — a highlight-over-fixed opening (AC-7)", () => {
+  const hint = {
+    units: [{ operation: "awning", count: 1, widthMm: null, ratio: 0.3 }, { operation: "fixed", count: 1, widthMm: null, ratio: 0.7 }],
+    raw: "drawing: 2 unit(s)", source: "plans", axis: "horizontal",
+  };
+  const proposal = proposeSplit({ operationType: "awning", widthMm: 1800, heightMm: 2000 }, hint);
+  assert.equal(proposal.axis, "horizontal");
+  assert.deepEqual(proposal.segments.map((s) => s.heightMm), [600, 1400]); // divides height, not width
+  assert.ok(proposal.segments.every((s) => s.widthMm === 1800)); // full width, each
+});
+
+test("resolveMakeUp: a count mismatch is a conflict, and the drawing's shape still stands (R5, spec §13)", () => {
+  const commentHint = parseSplitHint("AWNING + FIXED + AWNING"); // comment: 3 units
+  const result = resolveMakeUp("W1", {
+    reading: { splitState: "value", units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" }, // drawing: 2
+    commentHint, typeText: "AWNING", fallbackOp: "awning", energyComponents: null, energyAxis: "vertical",
+  });
+  assert.match(result.conflict, /comment describes 3.*drawing shows 2/);
+  assert.equal(result.hint.source, "plans"); // the drawing's shape stands
+  assert.equal(result.hint.units.length, 2);
 });

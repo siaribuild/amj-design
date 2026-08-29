@@ -130,6 +130,9 @@ export interface SplitUnitHint {
   count: number;
   /** Explicit per-unit width from the comment, when given. */
   widthMm: number | null;
+  /** Plans-sourced units only: this unit's share of the opening along the
+   *  division axis (output spec §1.2), 0-1. Absent for comment/energy units. */
+  ratio?: number;
   /** Exact height and source facts exist on report-defined components. */
   heightMm?: number | null;
   ref?: string | null;
@@ -141,7 +144,7 @@ export interface SplitUnitHint {
 export interface SplitHint {
   units: SplitUnitHint[];
   raw: string;
-  source?: "schedule_comment" | "energy_report";
+  source?: "schedule_comment" | "energy_report" | "plans";
   /** The energy report's components, carried alongside a PLAN-derived hint that
    *  won the geometry. Owner rule: the plan is the architectural contract and
    *  decides how an opening is divided; the report is the only document that
@@ -220,7 +223,7 @@ export interface SplitProposal {
   segments: ProposedSegment[];
   /** Always 'vertical' here: coupled units partition the WIDTH, full height each. */
   axis: "vertical" | "horizontal";
-  basis: "energy_report" | "schedule_comment" | "learned" | "default_pairing" | "default_even";
+  basis: "plans" | "energy_report" | "schedule_comment" | "learned" | "default_pairing" | "default_even";
   /** ALWAYS true — a proposed split is a starting point, never a final answer. */
   reviewRequired: true;
   note: string;
@@ -252,6 +255,9 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
   // dimensions. Preserve primary-operation sizes where possible and absorb a
   // size disagreement into supplementary components (for example the fixed lite
   // in awning + fixed + awning).
+  if (hint.source === "plans") {
+    return layoutPlansHint(hint, totalWidthMm, heightMm);
+  }
   if (hint.source === "energy_report") {
     const expanded = hint.units.flatMap((unit) => Array.from({ length: Math.max(1, unit.count) }, () => ({
       operation: unit.operation || fallbackOp,
@@ -366,6 +372,52 @@ function proportionalParts(source: number[], target: number): number[] {
   return out;
 }
 
+/** Sizes land on a configurable step (default 5mm — no window ends in
+ *  anything but 0 or 5); all but the last are rounded to it, and the last
+ *  absorbs whatever remains so the partition is always exact (output spec
+ *  §1.2). `// ponytail: step is a constant, not composite_policy-configurable —
+ *  the spec names composite_policy as the eventual home; add a column only
+ *  if a manufacturer ever needs a different granularity.` */
+const DIVISION_STEP_MM = 5;
+
+function sizesFromRatios(ratios: number[], totalAlong: number, stepMm: number): number[] {
+  if (!ratios.length) return [];
+  const sizes = ratios.map((r) => Math.round((totalAlong * r) / stepMm) * stepMm);
+  const lastIndex = sizes.length - 1;
+  const allButLast = sizes.slice(0, lastIndex).reduce((s, v) => s + v, 0);
+  sizes[lastIndex] = totalAlong - allButLast;
+  return sizes;
+}
+
+/** The "plans" source: units carry a ratio (always) and, only when the sheet
+ *  prints it, a widthMm (§1.2). A printed width beats a measured ratio for
+ *  the units it names; the rest scale to the remainder among themselves —
+ *  the same stated-width-overlay precedent as the comment branch above (the
+ *  W4 rule), generalised to ratios instead of even shares. */
+function layoutPlansHint(hint: SplitHint, totalWidthMm: number, heightMm: number): ProposedSegment[] | null {
+  if (hint.units.length < 2) return null;
+  const horizontal = hint.axis === "horizontal";
+  const totalAlong = horizontal ? heightMm : totalWidthMm;
+  const totalAcross = horizontal ? totalWidthMm : heightMm;
+  const statedTotal = hint.units.reduce((s, u) => s + (u.widthMm ?? 0), 0);
+  const unstated = hint.units.filter((u) => u.widthMm == null);
+  const remainder = totalAlong - statedTotal;
+  const unstatedRatioTotal = unstated.reduce((s, u) => s + (u.ratio ?? 0), 0) || 1;
+  const unstatedSizes = unstated.length
+    ? sizesFromRatios(unstated.map((u) => (u.ratio ?? 0) / unstatedRatioTotal), remainder, DIVISION_STEP_MM)
+    : [];
+  let n = 0;
+  return hint.units.map((u): ProposedSegment => {
+    const along = u.widthMm ?? unstatedSizes[n++];
+    return {
+      operation: u.operation,
+      widthMm: horizontal ? totalAcross : along,
+      heightMm: horizontal ? along : totalAcross,
+      ref: u.ref ?? null,
+    };
+  });
+}
+
 function fitReportComponentsToOpening(
   segments: ProposedSegment[],
   axis: "vertical" | "horizontal",
@@ -458,10 +510,12 @@ export function proposeSplit(
       return {
         segments,
         axis: hint.axis ?? "vertical",
-        basis: hint.source === "energy_report" ? "energy_report" : "schedule_comment",
+        basis: hint.source === "energy_report" ? "energy_report" : hint.source === "plans" ? "plans" : "schedule_comment",
         reviewRequired: true,
         note: hint.source === "energy_report"
           ? `Built from the energy report's authoritative component schedule (${hint.raw}) — confirm document discrepancies at review.`
+          : hint.source === "plans"
+          ? `Read from the drawings (${hint.raw}) — confirm the division at review.`
           : `Proposed from the schedule comment "${hint.raw}" — confirm the split at review.`,
       };
     }
@@ -563,4 +617,74 @@ function areaWeighted<T extends { widthMm: number; heightMm: number }>(
     weighted += area * v;
   }
   return areaSum > 0 ? weighted / areaSum : null;
+}
+
+// ── resolveMakeUp (02-design-v2.md §3.4) — the ONE place the shape ladder
+// lives, replacing the two inline seeding loops pipeline.ts carried before
+// (~720-733, ~784-795; their owner-rule comments moved here, not deleted). ──
+
+export interface MakeUpReading {
+  splitState: "value" | "not_stated" | "not_read";
+  /** role/ratio per unit, drawn order; printedWidthMm only when the sheet
+   *  prints that unit's dimension (output spec §1.2 — never back-calculated). */
+  units: { role: "operable" | "passive"; ratio: number; printedWidthMm?: number | null }[];
+  axis: "vertical" | "horizontal";
+}
+
+export interface MakeUpResult {
+  hint: SplitHint | null;
+  /** Set when the comment and the drawing describe a different unit COUNT.
+   *  The drawing's shape still stands (R5) — this is what turns into the
+   *  both-sides review-reason string (§3.5), never a silent resolution. */
+  conflict: string | null;
+}
+
+export function resolveMakeUp(
+  tag: string,
+  args: {
+    reading?: MakeUpReading | null;
+    commentHint: SplitHint | null;
+    /** The schedule's own TYPE text — the only source for what an
+     *  "operable" unit's operation actually is; the drawing tells us WHICH
+     *  units operate, never what family they are (README: "never a family
+     *  name — the family comes from the schedule"). */
+    typeText: string | null;
+    fallbackOp: string;
+    energyComponents: SplitUnitHint[] | null;
+    energyAxis: "vertical" | "horizontal";
+  },
+): MakeUpResult {
+  const operableOp = findOperation(args.typeText ?? "") ?? args.fallbackOp;
+  let hint: SplitHint | null = null;
+  let conflict: string | null = null;
+
+  if (args.reading?.splitState === "value" && args.reading.units.length > 0) {
+    const units: SplitUnitHint[] = args.reading.units.map((u) => ({
+      operation: u.role === "passive" ? "fixed" : operableOp,
+      count: 1,
+      widthMm: u.printedWidthMm ?? null,
+      ratio: u.ratio,
+    }));
+    hint = { units, raw: `drawing: ${units.length} unit(s)`, source: "plans", axis: args.reading.axis };
+    if (args.commentHint) {
+      const commentCount = args.commentHint.units.reduce((s, u) => s + u.count, 0);
+      if (commentCount !== units.length) {
+        conflict = `comment describes ${commentCount} unit(s) | drawing shows ${units.length}`;
+      }
+    }
+  } else if (args.commentHint) {
+    hint = args.commentHint;
+  } else if (args.energyComponents?.length) {
+    hint = { units: args.energyComponents, raw: args.energyComponents.map((c) => c.ref ?? "").join(" + "), source: "energy_report", axis: args.energyAxis };
+  }
+
+  // Energy components ride along on whatever shape won, EXCEPT when the
+  // energy report is itself what won (nothing to attach to) — the plan wins
+  // the geometry (owner rule, 2026-08-06), the report only ever supplies
+  // targets, never lays units out.
+  if (hint && hint.source !== "energy_report" && args.energyComponents?.length) {
+    hint.components = args.energyComponents;
+  }
+
+  return { hint, conflict };
 }
