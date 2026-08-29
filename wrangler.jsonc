@@ -64,12 +64,15 @@
   ],
   // Image is built and pushed by .github/workflows/container-build.yml — no
   // development machine needs Docker to deploy (02-design-v2.md §1, §10).
-  // The tag is bumped rarely and by hand, once a build is known good; CI
-  // itself only ever pushes per-commit-sha tags, never this one.
+  // CI only ever pushes per-commit-sha tags; bumping the tag THIS config
+  // names is a deliberate, by-hand act once a build is confirmed good —
+  // this one is apertly@main's d3c2ee1 (2026-08-29), the first image built
+  // from the real Python/poppler container, confirmed pushed via
+  // `wrangler containers images list`.
   "containers": [
     {
       "class_name": "PlanParseContainer",
-      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:v2",
+      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:d3c2ee176ac23e914771b02d061eea5c721bf2ae",
       "instance_type": "basic",
       "max_instances": 5
     }
