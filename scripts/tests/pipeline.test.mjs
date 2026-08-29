@@ -394,6 +394,105 @@ test('plan shows an interrupted stage as in progress, never as not-started', () 
   assert.match(row('t1  '), /held|blocked/i)
 })
 
+test('tree links tasks to the criteria they claim, and never smears an overall verdict onto one it did not measure', () => {
+  // The epic/story view: acceptance criteria as the stories, tasks nested
+  // under whichever they claim via 02-tasks.json's "criteria" field. The
+  // defect this guards against was caught building it, against a REAL
+  // verify.md: an overall FAIL (from 5 of 42 criteria) painted all 42 red
+  // when applied per-criterion - a report that was wrong is worse than one
+  // that admits it does not know.
+  const projects = tmp('tree-projects')
+  const { root } = seedRun('tree-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '01-spec.md'), [
+    '## 2. Acceptance criteria',
+    '',
+    '1. **Given** a widget, **when** clicked, **then** it opens',
+    '2. **Given** it is open, **when** dismissed, **then** it closes',
+  ].join(NL))
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'wire the open handler', criteria: ['1'], after: [] },
+    { id: 't2', title: 'unrelated cleanup', after: [] },
+  ]))
+  // No parseable per-criterion table - only an overall verdict line, the
+  // shape a real report had when this was caught.
+  writeFileSync(join(dir, '06-verify.md'), '**Verdict: FAIL.** 1 of 2 failed.\n')
+  const run = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8'))
+  run.tasksDone = ['t1']
+  writeFileSync(join(dir, 'run.json'), JSON.stringify(run))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /overall verdict: FAIL/i, 'the overall verdict must appear, once, clearly labelled')
+  const ac1 = out.split(NL).find((l) => l.includes('AC 1:'))
+  const ac2 = out.split(NL).find((l) => l.includes('AC 2:'))
+  assert.doesNotMatch(ac1, /\bFAIL\b/, 'AC 1 must not be painted with the overall verdict: ' + ac1)
+  assert.doesNotMatch(ac2, /\bFAIL\b/, 'AC 2 must not be painted with the overall verdict: ' + ac2)
+  assert.match(ac1, /not broken down/i)
+
+  const t1Line = out.split(NL).find((l) => l.includes('t1  '))
+  assert.match(t1Line, /\[x\]/, 'a done task must show done under its criterion')
+  assert.match(out, /UNLINKED TASKS/)
+  assert.ok(out.indexOf('t2') > out.indexOf('UNLINKED TASKS'),
+    'an untagged task must fall into UNLINKED, not silently vanish')
+})
+
+test('confirm-exhaustion on a GATED stage never prints the gate for an unfinished agent', () => {
+  // Codex stop-gate finding: settleStage's exhaustion return (status:
+  // "running", genuinely truthy) still flowed into afterStage at the caller -
+  // which prints MOCK GATE / SIGN-OFF unconditionally for a gated stage. An
+  // operator would be told "review the mock" while the ux-designer session
+  // that would produce it is still actively running. The SAME shape return
+  // already existed for "lost track of the agent" - this was latent before
+  // the confirm-exhaustion path added a second way to trigger it.
+  const s = paneRepo('gate-exhausted', 'sess-gate-exhausted', { HERDR_STUB_TRANSCRIPT: '' })
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = runJson(s)
+  run.ui = true
+  run.stages = { spec: { code: 0 }, design: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(run))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
+
+  // Every confirmation finds the agent still working - never settles for real.
+  s.env.HERDR_STUB_STATES = 'idle;idle;idle;idle;idle;idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;working;working;working;working'
+
+  const out = paned(s, 'run', 'ux')
+
+  assert.doesNotMatch(out, /MOCK GATE/,
+    'the mock gate must never be shown for a stage that has not actually finished: ' + out)
+  assert.equal(runJson(s).stages.ux.status, 'running',
+    'an unconfirmed stage must stay running, not be treated as reaching its gate')
+})
+
+test('tree still shows the overall verdict when a per-criterion table exists too', () => {
+  // Codex stop-gate finding: the overall verdict printed ONLY when no table
+  // parsed at all - so a report with a real (even partial) table suppressed
+  // it entirely, contradicting "shown once, separately" (it was shown zero
+  // times whenever a table existed). The two are different information: one
+  // is the report's own top-level conclusion, the other is per-criterion
+  // detail. Neither should silence the other.
+  const projects = tmp('tree-verdict-projects')
+  const { root } = seedRun('tree-verdict-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '01-spec.md'),
+    '1. **Given** a widget, **when** clicked, **then** it opens' + NL)
+  writeFileSync(join(dir, '06-verify.md'), [
+    '**Verdict: PASS.** No findings.',
+    '',
+    '| # | Criterion | Evidence | Result |',
+    '| --- | --- | --- | --- |',
+    '| 1 | opens on click | test:12 | PASS |',
+  ].join(NL))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /overall verdict: PASS/i,
+    'a real per-criterion table must not silence the report\'s own top-level verdict: ' + out)
+  const ac1 = out.split(NL).find((l) => l.includes('AC 1:'))
+  assert.match(ac1, /\bPASS\b/, 'the per-criterion detail must still show too: ' + ac1)
+})
+
 test('report prints machine-wide window totals, anchored when a future reset is known', () => {
   const projects = tmp('report-window-projects')
   const now = Date.now()
@@ -590,7 +689,8 @@ function stubbed(name, extra = {}) {
     // These two were the hole in "every knob is reset": stubbed() writes into
     // process.env, so a lifecycle script or an error code set by one test was
     // inherited by every test after it that did not happen to override it.
-    HERDR_STUB_BLOCKED: '', HERDR_STUB_STATES: 'idle', HERDR_STUB_ERRCODE: '', ...extra,
+    HERDR_STUB_BLOCKED: '', HERDR_STUB_STATES: 'idle', HERDR_STUB_ERRCODE: '',
+    HERDR_STUB_CONFIRM_STATES: 'idle', ...extra,
   }
   Object.assign(process.env, env)
   return { root, log, env: { ...process.env, ...env } }
@@ -768,7 +868,7 @@ test('conduct start validates the slug BEFORE it creates anything', () => {
   }
 })
 
-test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane, and nothing else', () => {
+test('conduct start builds the cockpit: plan, diff, and a full-height tree pane on the right', () => {
   const s = stubbedRepo('cockpit')
 
   const out = execFileSync(process.execPath, [CONDUCT, 'start', 'demo', 'an ask'],
@@ -776,10 +876,22 @@ test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane
 
   const argvs = calls(s.log)
   assert.equal(said(s.log, 'workspace', 'create').length, 1, 'no workspace for the run')
-  assert.equal(said(s.log, 'pane', 'split').length, 1,
-    'the skeleton is plan + diff; stage panes are split on demand, not at start')
-  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both cockpit panes must be given their watch loop')
+  assert.equal(said(s.log, 'pane', 'split').length, 2,
+    'the skeleton is plan + diff + tree; stage panes are split on demand, not at start')
+  assert.equal(said(s.log, 'pane', 'run').length, 3, 'all three cockpit panes must be given their watch loop')
   assert.equal(said(s.log, 'agent', 'start').length, 0, 'start must boot no agent - no stage has run yet')
+
+  // The tree is split FIRST, off the root pane, right/ratio 0.5 - full height,
+  // not a third row squeezed under plan/diff. Only then does the root pane
+  // (now the left half) get subdivided into plan (top) and diff (bottom).
+  const splits = said(s.log, 'pane', 'split')
+  assert.equal(splits[0][splits[0].indexOf('--direction') + 1], 'right',
+    'the tree pane must be split off BEFORE plan/diff subdivide the root, or it is not full height')
+  assert.equal(splits[0][splits[0].indexOf('--ratio') + 1], '0.5')
+  assert.equal(splits[1][splits[1].indexOf('--direction') + 1], 'down')
+
+  const runs = said(s.log, 'pane', 'run').map((a) => a[3])
+  assert.ok(runs.some((cmd) => cmd.includes('conduct.mjs tree')), 'the tree pane never got its watch loop')
 
   const ws = said(s.log, 'workspace', 'create')[0]
   assert.equal(ws[ws.indexOf('--label') + 1], 'demo')
@@ -788,8 +900,10 @@ test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane
     assert.ok(split.includes('--no-focus'), 'a split must never steal focus')
 
   const run = JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
-  assert.equal(run.herdr.planPane, 'w9:p1')
-  assert.equal(run.herdr.diffPane, 'w9:p2')
+  assert.equal(run.herdr.planPane, 'w9:p1', 'the root pane IS the plan pane, no extra split for it')
+  // Split order: tree (right) before diff (down) - geometry, not run order.
+  assert.equal(run.herdr.treePane, 'w9:p2')
+  assert.equal(run.herdr.diffPane, 'w9:p3')
   assert.equal(run.herdr.workspace, 'w9')
 
   // The diff loop is the one command string with a variable in it. It carries
@@ -849,8 +963,10 @@ test('a herdr command that answers with nothing is a success, not a parse error'
   const c = await ensureCockpit({ slug: 'demo', base: 'abc1234', root: s.root })
 
   assert.equal(c.planPane, 'w9:p1')
-  assert.equal(c.diffPane, 'w9:p2', 'the split after a payload-less pane run must still land')
-  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both watch loops must have been sent')
+  // Split order: tree (right) before diff (down) - geometry, not run order.
+  assert.equal(c.treePane, 'w9:p2', 'the split after a payload-less pane run must still land')
+  assert.equal(c.diffPane, 'w9:p3')
+  assert.equal(said(s.log, 'pane', 'run').length, 3, 'all three watch loops must have been sent')
 })
 
 test('launchStage checks the pane is at a shell, then boots claude with native args', async () => {
@@ -1052,6 +1168,58 @@ test('a stale agent_session from a reused pane never displaces the id the stage 
   assert.equal(st.turns, 2)
 })
 
+test('a momentary idle blip is confirmed before the stage is finalized', () => {
+  // Live incident: watch() trusts a SINGLE idle/done observation and
+  // finalizes immediately - sends /exit, moves on. That one observation can
+  // be a screen-render blip between two tool calls, not real completion:
+  // `verify` was finalized this way while the tester was still mid-task, and
+  // later hit a real permission dialog nobody was watching for any more.
+  const s = paneRepo('confirm-blip', 'sess-confirm')
+  // agent wait: idle both times watch() is asked to settle.
+  s.env.HERDR_STUB_STATES = 'idle;idle'
+  // The confirmation re-check (agent get, independent of agent wait). The
+  // FIRST 'agent get' overall is launchStage's own pre-prompt session check,
+  // not a confirmation - 'idle' there is irrelevant filler. The second call
+  // (the first real confirm) catches the agent still 'working' - the blip -
+  // the third finds it genuinely idle.
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;idle'
+
+  const out = paned(s, 'run', 'spec')
+
+  const waits = said(s.log, 'agent', 'wait')
+  assert.equal(waits.length, 2,
+    'a caught blip must re-watch, not finalize on the first observation: ' + out)
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'done')
+  const exits = said(s.log, 'agent', 'prompt').filter((a) => a[3] === '/exit')
+  assert.equal(exits.length, 1, '/exit must only be sent once genuine settle is confirmed')
+})
+
+test('five confirmed-still-working cycles must never finalize an unconfirmed observation', () => {
+  // Codex stop-gate finding: the confirm loop only confirmed the first
+  // CONFIRM_RETRIES observations, then finalized the NEXT one unconditionally
+  // - recreating the exact premature-completion bug the confirm step exists
+  // to prevent, just delayed instead of removed. A sustained false-idle
+  // signal must never be trusted just because it has repeated a few times.
+  const s = paneRepo('confirm-exhausted', 'sess-exhausted')
+  // watch() settles idle every time it is asked - the false signal is sustained.
+  s.env.HERDR_STUB_STATES = 'idle;idle;idle;idle;idle;idle'
+  // agent get: one filler for launchStage's own pre-prompt check, then
+  // 'working' every single confirmation - the agent never actually settles.
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;working;working;working;working'
+
+  const out = paned(s, 'run', 'spec')
+
+  const exits = said(s.log, 'agent', 'prompt').filter((a) => a[3] === '/exit')
+  assert.equal(exits.length, 0,
+    '/exit must never be sent while every confirmation still finds the agent working: ' + out)
+  const st = runJson(s).stages.spec
+  assert.notEqual(st.status, 'done', 'a stage must not be marked done on an unconfirmed observation')
+  assert.equal(st.status, 'running', 'left exactly where an unconfirmable stage already was')
+  assert.match(out, /still (active|working)|check it|next again/i,
+    'the operator must be told this stage could not be confirmed, not left silent')
+})
+
 test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pane open', () => {
   // `unknown` is herdr saying it does not know, not herdr saying "finished" -
   // treating it as settled would finalize a stage that is still working.
@@ -1060,10 +1228,14 @@ test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pan
   const out = paned(s, 'run', 'spec')
 
   const seq = calls(s.log).map((a) => a.slice(0, 2).join(' '))
+  // The trailing `agent get` is the settle CONFIRMATION: a single idle/done
+  // observation from `agent wait` can be a screen-render blip between two
+  // tool calls, not real completion, so it is re-checked once before /exit is
+  // sent - see 'a momentary idle blip is confirmed before finalizing' above.
   assert.deepEqual(seq.slice(seq.indexOf('agent start')),
     ['agent start', 'agent get', 'agent prompt',
-      'agent wait', 'agent wait', 'agent wait', 'agent prompt'],
-    'the stage lifecycle is start -> prompt -> watch -> /exit: ' + seq.join(' | '))
+      'agent wait', 'agent wait', 'agent wait', 'agent get', 'agent prompt'],
+    'the stage lifecycle is start -> prompt -> watch -> confirm -> /exit: ' + seq.join(' | '))
 
   // Completion comes from herdr settling, asked for in bounded slices.
   for (const w of said(s.log, 'agent', 'wait'))
@@ -1330,7 +1502,7 @@ test('a role gets ONE pane, reused - a run must not end with a dozen idle shells
   const afterFirst = said(s.log, 'pane', 'split').length
   paned(s, 'run', 'spec')
 
-  assert.equal(afterFirst, 2, 'cockpit diff pane + one pane for the product-manager role')
+  assert.equal(afterFirst, 3, 'cockpit tree pane + diff pane + one pane for the product-manager role')
   assert.equal(said(s.log, 'pane', 'split').length, afterFirst,
     'the role pane was back at a shell after /exit and must be reused, not re-split')
   assert.equal(said(s.log, 'agent', 'start').length, 2,

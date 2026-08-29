@@ -154,13 +154,19 @@ switch (sub) {
       agent_status: 'idle', interactive_ready: true,
     })
   }
-  case 'agent get':
+  case 'agent get': {
     if (process.env.HERDR_STUB_NOAGENT && priorCalls('agent', 'start') === 0)
       err('agent_not_found', 'no agent named ' + argv[2])
+    // Independent of HERDR_STUB_STATES (which drives `agent wait`): a
+    // settle-confirmation re-check calls `agent get` moments after `agent
+    // wait` already reported idle/done, and needs to be able to disagree with
+    // it - that disagreement is the whole scenario being modelled.
+    const confirmStates = (process.env.HERDR_STUB_CONFIRM_STATES || 'idle').split(';').filter(Boolean)
+    const confirmStatus = confirmStates[Math.min(priorCalls('agent', 'get'), confirmStates.length - 1)]
     ok({
       type: 'agent_info',
       agent: {
-        agent: 'claude', name: argv[2], agent_status: 'idle', pane_id: 'w9:p3',
+        agent: 'claude', name: argv[2], agent_status: confirmStatus, pane_id: 'w9:p3',
         agent_session: {
           agent: 'claude', kind: 'id', source: 'herdr:claude',
           // By default herdr reports back the very id the boot was given -
@@ -174,6 +180,7 @@ switch (sub) {
         },
       },
     })
+  }
   case 'agent prompt':
     ok({ type: 'ok' })
   case 'agent wait': {

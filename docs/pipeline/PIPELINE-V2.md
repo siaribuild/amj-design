@@ -352,11 +352,16 @@ stage is silently falling back to headless, check this first.
 `conduct start` builds a skeleton workspace and nothing more (panes cost RAM; a
 pane per stage would leave ~13 idle claude processes alive by the end of a run):
 
-| pane | what runs there |
-|---|---|
-| **plan** | `conduct plan` on a 5-second loop — the run's state |
-| **diff** | `git --no-pager diff --stat <base>...HEAD` on the same loop |
-| **role panes** | created on demand, **one per agent role**, reused |
+| pane | where | what runs there |
+|---|---|---|
+| **plan** | top-left | `conduct plan` on a 5-second loop — the run's state |
+| **diff** | bottom-left | `git --no-pager diff --stat <base>...HEAD` on the same loop |
+| **tree** | right half, full height | `conduct tree` on the same loop — the epic/story view |
+| **role panes** | split off plan | created on demand, **one per agent role**, reused |
+
+Split order matters for the tree: it splits off the root pane FIRST, right,
+ratio 0.5, before the root is subdivided into plan/diff — that is what makes it
+one pane spanning the full height rather than a third row squeezed underneath.
 
 A role pane is reused, never re-prompted: the next stage for that role always
 boots a *new* claude with a *new* session id, so context stays isolated and
@@ -432,8 +437,42 @@ be restored, and the conductor tells you so rather than guessing. And restore is
 pane-only: with herdr down, `resume` exits and points you at
 `conduct run <label>`.
 
-`conduct plan` does **not** yet show a stage that is currently running. It is
-display-only and no criterion asked for it; the pane itself is the live view.
+## The epic/story view — `conduct tree`
+
+`conduct plan` shows *process* progress: which pipeline stage is where. It
+answers "where is the machine in its own workflow", not "how is the feature
+actually progressing" — a different axis, and the one an operator watching a
+run actually wants. `conduct tree` answers that one, by wiring together three
+artifacts that already existed and never talked to each other:
+
+- **`01-spec.md`**'s numbered acceptance criteria — the story backlog, already
+  written. Extracted by the one anchor every spec-writing prompt actually
+  enforces ("numbered Given-When-Then"): a line matching `\d+\.\s+**Given**`,
+  regardless of which heading text wraps the section — heading text has
+  drifted across real spec files, that anchor hasn't.
+- **`02-tasks.json`**'s `criteria` field — which numbered criterion (or
+  criteria) each task claims to address. Many-to-many, not always 1:1: one
+  criterion can need two tasks (backend + frontend), one task can partially
+  satisfy two criteria. A task with no `criteria` tag renders under **UNLINKED
+  TASKS** rather than silently vanishing — usually a design written before this
+  field existed, or an architect that didn't tag it.
+- **`06-verify.md`**'s verdict — read for real once verify finishes, never
+  live while it runs (same limit as everything else: a pane can't be read
+  mid-turn). Real reports vary a lot in shape — one strict per-criterion
+  table, another pure prose — so a table is parsed as best-effort detail, and
+  the **overall** verdict is shown once, separately, clearly labelled. It is
+  never smeared across individual criteria the report never actually broke
+  down: caught live, building this — an overall FAIL from 5 of 42 failing
+  criteria would have painted all 42 red if applied per-criterion. A wrong
+  number is worse than an honest "not broken down."
+
+`fix`/`direct` tier runs have no spec — `00-ask.md` is treated as the whole
+story, with `build`'s one synthetic task under it.
+
+`conduct plan` **does** show a stage that is currently running or held (`[>]`,
+with the reason) — it is not display-only in that sense; the pane just cannot
+show a stage's turn-by-turn progress while that turn is in flight, same limit
+`tree` inherits for verify's per-criterion detail.
 
 ## A full feature, start to finish
 
