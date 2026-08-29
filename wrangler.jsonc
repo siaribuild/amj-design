@@ -66,15 +66,16 @@
   // development machine needs Docker to deploy (02-design-v2.md §1, §10).
   // CI only ever pushes per-commit-sha tags; bumping the tag THIS config
   // names is a deliberate, by-hand act once a build is confirmed good —
-  // this one is apertly@main's acd6c1f (2026-08-30), the remediation image
-  // (single-pass inspection, page lines, render threshold, darkness
-  // profile), confirmed pushed via `wrangler containers images list`.
-  // The Worker REQUIRES this image or newer: the previous tag serves no
-  // page lines and no profile, which reads as every tag unplaced.
+  // this one is apertly@main's 815fb67 (2026-08-30), the drawing-read fix on
+  // top of the remediation image (single-pass inspection, page lines, render
+  // threshold, darkness profile), confirmed pushed via
+  // `wrangler containers images list`.
+  // The Worker REQUIRES this image or newer: an older tag serves no page
+  // lines and no profile, which reads as every tag unplaced.
   "containers": [
     {
       "class_name": "PlanParseContainer",
-      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:acd6c1f143b23fe650b7de0b2b9b5e7ea599b029",
+      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:815fb673b893adbab667857df53ca7cbc2661dda",
       "instance_type": "basic",
       "max_instances": 5
     }
