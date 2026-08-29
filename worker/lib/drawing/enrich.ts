@@ -9,12 +9,14 @@
 // surface, because nothing in here is allowed to throw past this file's
 // own try/catch.
 import type { Env } from "../../types";
-import type { DrawingFileReport, DrawingReading, DrawingReport, GapCode } from "./contract";
+import type { DrawingFileReport, DrawingReading, DrawingReport, GapCode, Orientation } from "./contract";
 import { inspectPdf, renderPage } from "./containerClient";
+import { cropKey } from "./crops";
 import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type OpeningReadResult } from "./skills";
 import { runStage } from "../ai/stage";
+import { normalizeOpeningRef } from "../ai/energyMap";
 
 export interface EnrichFile {
   fileId: string;
@@ -109,7 +111,18 @@ async function enrichFile(
 
     const boxesByElevation: Record<string, { box: [number, number, number, number] }[]> = {};
     const geometryByElevation: Record<string, { widthPt: number; heightPt: number }> = {};
-    const elevationLetters = elevationPages.map((p, i) => String.fromCharCode(65 + i)); // A, B, C… by drawn order
+    // The letter must be the one PRINTED on the sheet, not the page's draw
+    // order — floorplan_read's placements/facings are keyed by the letter it
+    // read off the floor plan, which has no notion of PDF page order. A set
+    // with sheet B before sheet A silently cross-wired every opening on it
+    // (Codex review finding). Falls back to draw-order lettering only when
+    // no letter is printed on the sheet — a defensible last resort, not the
+    // common case.
+    const ELEVATION_LETTER = /\bELEVATION\s*[-:]?\s*([A-Z])\b/i;
+    const elevationLetters = elevationPages.map((p, i) => {
+      const text = inspected.pages.find((pg) => pg.pageNo === p.pageNo)?.text ?? "";
+      return ELEVATION_LETTER.exec(text)?.[1]?.toUpperCase() ?? String.fromCharCode(65 + i);
+    });
 
     for (let i = 0; i < elevationPages.length; i++) {
       const page = elevationPages[i];
@@ -126,8 +139,8 @@ async function enrichFile(
       if (boxes) boxesByElevation[letter] = boxes.boxes;
     }
 
-    const placements: Record<string, Placement> = {};
-    let facingByElevation: Record<string, { facing: string | null }> = {};
+    const placements: Record<string, Placement & { roomLabel: string | null }> = {};
+    let facingByElevation: Record<string, { facing: Orientation | null }> = {};
     for (const page of floorplanPages) {
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150 });
       report.containerCalls++;
@@ -138,7 +151,7 @@ async function enrichFile(
       report.modelCalls++;
       if (!read) continue;
       for (const [tag, p] of Object.entries(read.placements)) {
-        placements[tag] = { elevation: p.elevation, orderOnWall: p.orderOnWall };
+        placements[normalizeOpeningRef(tag) ?? tag] = { elevation: p.elevation, orderOnWall: p.orderOnWall, roomLabel: p.roomLabel };
       }
       facingByElevation = { ...facingByElevation, ...read.facings };
     }
@@ -162,7 +175,7 @@ async function enrichFile(
       }
       const [x0, y0, x1, y1] = outcome.boxPt;
       // The elevation this box came from — needed to render the right page.
-      const elevationLetter = Object.entries(placements).find(([t]) => t === outcome.tag)?.[1].elevation;
+      const elevationLetter = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag]?.elevation;
       const page = elevationPages[elevationLetters.indexOf(elevationLetter ?? "")];
       if (!page) { readings.push(notReadRow(row, "render_failed", "elevation page lost between assign and render")); await tick(); continue; }
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150, crops: [[x0, y0, x1, y1]] });
@@ -178,16 +191,27 @@ async function enrichFile(
         continue;
       }
       report.steps.read.returned++;
+      const facing = elevationLetter ? (facingByElevation[elevationLetter]?.facing ?? null) : null;
+      const roomLabel = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag]?.roomLabel ?? null;
+      // The crop evidence itself (§7): the gate walk checks a reading
+      // against its own pixels via this key, and it must exist for that to
+      // be possible at all. Best-effort — a write failure here degrades to
+      // a dangling key (§7's own documented, acceptable failure mode), never
+      // to losing the reading.
+      const key = cropKey(args.projectId, args.aiRunId, row.tag);
+      const stored = await env.FILES.put(key, Uint8Array.from(atob(crop.pngB64), (c) => c.charCodeAt(0)))
+        .then(() => true).catch(() => false);
+      if (stored) report.steps.renderCrop.cropsMade++;
       readings.push({
         id: "", projectId: "", aiRunId: "", sourceFileId: args.file.fileId, externalRef: row.tag,
         splitState: "value", split: { units: read.units, axis: read.axis },
-        orientationState: "not_stated", orientation: null,
+        orientationState: facing ? "value" : "not_stated", orientation: facing,
         elevationState: "value", elevation: elevationLetter ?? null,
-        roomState: "not_stated", roomLabel: null,
-        gapCode: null, gapNote: null, cropKey: null, pageNo: page.pageNo, sheetRef: null,
+        roomState: roomLabel ? "value" : "not_stated", roomLabel,
+        gapCode: null, gapNote: null, cropKey: stored ? key : null, pageNo: page.pageNo, sheetRef: null,
         regionJson: [x0, y0, x1, y1],
       });
-      report.perOpening.push({ tag: outcome.tag, outcome: "read", cropKey: null, pageNo: page.pageNo });
+      report.perOpening.push({ tag: outcome.tag, outcome: "read", cropKey: stored ? key : null, pageNo: page.pageNo });
       await tick();
     }
     report.steps.read.declined = report.steps.read.attempted - report.steps.read.returned - assigned.filter((a) => a.outcome === "not_read").length;

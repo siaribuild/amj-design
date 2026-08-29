@@ -658,7 +658,10 @@ export function resolveMakeUp(
   let hint: SplitHint | null = null;
   let conflict: string | null = null;
 
-  if (args.reading?.splitState === "value" && args.reading.units.length > 0) {
+  // ONE unit is not a split — same rule as a one-unit comment (line 174-178
+  // above): a correctly-read single-panel window must never be turned into
+  // a fabricated composite (Codex review finding).
+  if (args.reading?.splitState === "value" && args.reading.units.length > 1) {
     const units: SplitUnitHint[] = args.reading.units.map((u) => ({
       operation: u.role === "passive" ? "fixed" : operableOp,
       count: 1,

@@ -2,6 +2,7 @@
 // judgements, both pure, both Worker-side (02-design-v2.md §1, §2). Step 4
 // runs BEFORE any rendering, from step 3's text/word output (AC-12).
 import type { Inventory, PageText } from "./contract";
+import { normalizeOpeningRef } from "../ai/energyMap";
 
 export type PageTier = "elevation" | "floorplan" | "schedule" | "siteplan";
 
@@ -45,13 +46,21 @@ function classify(text: string): { tier: PageTier; reason: string } | null {
 export function selectPages(_inv: Inventory, pages: PageText[]): { selected: SelectedPage[]; tagVocabulary: string[] } {
   const selected: SelectedPage[] = [];
   const tags = new Set<string>();
-  const TAG_PATTERN = /\b([WD]\d{1,3}[A-Za-z]?)\b/g;
+  // A separator between the letter and the digits ("W-04", "W 04") is
+  // presentation, same as the schedule extractor's own tags — normalized
+  // through the SAME function (normalizeOpeningRef) other joins across this
+  // codebase already use, so "W-04" and "w04" land in the vocabulary as one
+  // tag rather than two (Codex review finding).
+  const TAG_PATTERN = /\b([WD])[\s-]?(\d{1,3}[A-Za-z]?)\b/g;
   for (const page of pages) {
     const hit = classify(page.text);
     if (!hit) continue;
     selected.push({ pageNo: page.pageNo, tier: hit.tier, reason: hit.reason });
     if (hit.tier === "schedule") {
-      for (const m of page.text.matchAll(TAG_PATTERN)) tags.add(m[1].toUpperCase());
+      for (const m of page.text.matchAll(TAG_PATTERN)) {
+        const normalized = normalizeOpeningRef(`${m[1]}${m[2]}`);
+        if (normalized) tags.add(normalized);
+      }
     }
   }
   return { selected, tagVocabulary: [...tags] };
