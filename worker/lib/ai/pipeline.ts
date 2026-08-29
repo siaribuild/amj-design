@@ -25,6 +25,7 @@ import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/t
 import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
 import { runDrawingEnrichmentStage } from "../drawing/enrich";
+import { setDrawingProgress } from "./jobs";
 import { applyDrawingOrientation, applyDrawingRoom, persistReadings, conflictReason } from "../drawing/readings";
 import type { DrawingReading } from "../drawing/contract";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
@@ -770,7 +771,10 @@ export async function runAiExtraction(
     const scheduleRows = merged.lines
       .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
       .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null }));
-    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows });
+    const onProgress = opts.processingToken
+      ? async (done: number, total: number) => setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total)
+      : undefined;
+    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
     drawingReadings = result.readings;
     drawingReport = result.report;
     applyDrawingOrientation(model, drawingReadings);

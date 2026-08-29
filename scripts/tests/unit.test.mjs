@@ -40,6 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
+      export { documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1635,4 +1636,24 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
+});
+
+test("documentChecklist: a drawing read gets its own row, driven by counts, between extracting_schedule and building_envelope (§5)", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 7, drawingsTotal: 20 });
+  const keys = steps.map((s) => s.key);
+  assert.deepEqual(keys, [
+    "queued", "reading_documents", "extracting_schedule", "reading_openings",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
+  assert.match(steps[current].detail, /opening 7 of 20/);
+});
+
+test("documentChecklist: no drawings counts — today's six steps, unchanged, current on the real stage", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope" });
+  assert.deepEqual(steps.map((s) => s.key), [
+    "queued", "reading_documents", "extracting_schedule",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps[current].key, "building_envelope");
 });

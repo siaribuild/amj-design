@@ -68,7 +68,10 @@ function notReadRow(row: EnrichScheduleRow, gapCode: GapCode, gapNote: string | 
 
 async function enrichFile(
   env: Env,
-  args: { projectId: string; aiRunId: string; file: EnrichFile; scheduleRows: EnrichScheduleRow[] },
+  args: {
+    projectId: string; aiRunId: string; file: EnrichFile; scheduleRows: EnrichScheduleRow[];
+    onProgress?: (done: number, total: number) => Promise<void>;
+  },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
   const startedAt = Date.now();
@@ -142,28 +145,36 @@ async function enrichFile(
 
     const assigned = assignOpenings(args.scheduleRows, placements, boxesByElevation, geometryByElevation);
     const readings: DrawingReading[] = [];
+    // Denominator is the located-openings count, set once — it never
+    // shortens, and a not_read still advances the numerator (§5): a
+    // customer watching this must not see it stall on what it could not
+    // read, or lie by shrinking to reach 100%.
+    let doneCount = 0;
+    const tick = async () => { doneCount++; if (args.onProgress) await args.onProgress(doneCount, assigned.length); };
     for (const outcome of assigned) {
       const row = args.scheduleRows.find((r) => r.tag === outcome.tag)!;
       report.steps.read.attempted++;
       if (outcome.outcome === "not_read") {
         readings.push(notReadRow(row, outcome.gapCode, null));
         report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: null });
+        await tick();
         continue;
       }
       const [x0, y0, x1, y1] = outcome.boxPt;
       // The elevation this box came from — needed to render the right page.
       const elevationLetter = Object.entries(placements).find(([t]) => t === outcome.tag)?.[1].elevation;
       const page = elevationPages[elevationLetters.indexOf(elevationLetter ?? "")];
-      if (!page) { readings.push(notReadRow(row, "render_failed", "elevation page lost between assign and render")); continue; }
+      if (!page) { readings.push(notReadRow(row, "render_failed", "elevation page lost between assign and render")); await tick(); continue; }
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150, crops: [[x0, y0, x1, y1]] });
       report.containerCalls++;
       const crop = rendered.images[0];
-      if (!crop) { readings.push(notReadRow(row, "render_failed", null)); continue; }
+      if (!crop) { readings.push(notReadRow(row, "render_failed", null)); await tick(); continue; }
       const read = await deps.runOpening(`data:image/png;base64,${crop.pngB64}`, row);
       report.modelCalls++;
       if (!read || "decline" in read) {
         readings.push(notReadRow(row, "model_declined", read && "decline" in read ? read.decline.reason : null));
         report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page.pageNo });
+        await tick();
         continue;
       }
       report.steps.read.returned++;
@@ -177,6 +188,7 @@ async function enrichFile(
         regionJson: [x0, y0, x1, y1],
       });
       report.perOpening.push({ tag: outcome.tag, outcome: "read", cropKey: null, pageNo: page.pageNo });
+      await tick();
     }
     report.steps.read.declined = report.steps.read.attempted - report.steps.read.returned - assigned.filter((a) => a.outcome === "not_read").length;
     report.wallMs = Date.now() - startedAt;
@@ -197,7 +209,10 @@ async function enrichFile(
  *  the AC-27 property. */
 export async function runDrawingEnrichmentStage(
   env: Env,
-  args: { projectId: string; aiRunId: string; planPdfDocs: { fileId: string }[]; scheduleRows: EnrichScheduleRow[] },
+  args: {
+    projectId: string; aiRunId: string; planPdfDocs: { fileId: string }[]; scheduleRows: EnrichScheduleRow[];
+    onProgress?: (done: number, total: number) => Promise<void>;
+  },
   /** Test-only: overrides the real container/runStage deps. Production
    *  never passes this — see the default branch below. */
   depsOverride?: EnrichDeps,
@@ -237,13 +252,16 @@ export async function runDrawingEnrichmentStage(
     },
   };
 
-  const result = await enrichOpenings(env, { projectId: args.projectId, aiRunId: args.aiRunId, files, scheduleRows: args.scheduleRows }, deps);
+  const result = await enrichOpenings(env, { projectId: args.projectId, aiRunId: args.aiRunId, files, scheduleRows: args.scheduleRows, onProgress: args.onProgress }, deps);
   return result;
 }
 
 export async function enrichOpenings(
   env: Env,
-  args: { projectId: string; aiRunId: string; files: EnrichFile[]; scheduleRows: EnrichScheduleRow[] },
+  args: {
+    projectId: string; aiRunId: string; files: EnrichFile[]; scheduleRows: EnrichScheduleRow[];
+    onProgress?: (done: number, total: number) => Promise<void>;
+  },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingReport }> {
   const readings: DrawingReading[] = [];

@@ -428,6 +428,28 @@ test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs 
   assert.equal(result.report.files.length, 1);
 });
 
+test("runDrawingEnrichmentStage: onProgress passes through to the real enrichment call", async () => {
+  const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }) }) };
+  const env = { AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb, FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const inspected = {
+    inventory: { pageCount: 1, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [{ pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "some text, no title-block keyword", words: [] }],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [], dpi: 150 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+  };
+  const calls = [];
+  await runDrawingEnrichmentStage(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+    onProgress: async (done, total) => { calls.push([done, total]); },
+  }, deps);
+  assert.deepEqual(calls, [[1, 1]]);
+});
+
 test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {
   const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
   const inventory = {
@@ -460,6 +482,33 @@ test("enrichOpenings: a full happy path produces a value reading for a matched, 
   assert.equal(result.readings[0].splitState, "value");
   assert.equal(result.readings[0].elevation, "A");
   assert.equal(result.report.files[0].steps.read.returned, 1);
+});
+
+test("enrichOpenings: onProgress advances the numerator per opening, against a denominator that never shortens", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) } };
+  const inspected = {
+    inventory: { pageCount: 1, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [{ pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: 150 }),
+    runElevation: async () => ({ boxes: [] }), // no boxes located — both rows resolve not_read (unplaced)
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+  };
+  const calls = [];
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [
+      { tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
+    ],
+    onProgress: async (done, total) => { calls.push([done, total]); },
+  }, deps);
+  assert.equal(result.readings.length, 2);
+  assert.deepEqual(calls, [[1, 2], [2, 2]]);
 });
 
 test("persistReadings: one INSERT per reading, batched, against the migration 0060 columns", async () => {
