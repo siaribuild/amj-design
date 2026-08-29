@@ -590,7 +590,8 @@ function stubbed(name, extra = {}) {
     // These two were the hole in "every knob is reset": stubbed() writes into
     // process.env, so a lifecycle script or an error code set by one test was
     // inherited by every test after it that did not happen to override it.
-    HERDR_STUB_BLOCKED: '', HERDR_STUB_STATES: 'idle', HERDR_STUB_ERRCODE: '', ...extra,
+    HERDR_STUB_BLOCKED: '', HERDR_STUB_STATES: 'idle', HERDR_STUB_ERRCODE: '',
+    HERDR_STUB_CONFIRM_STATES: 'idle', ...extra,
   }
   Object.assign(process.env, env)
   return { root, log, env: { ...process.env, ...env } }
@@ -1052,6 +1053,33 @@ test('a stale agent_session from a reused pane never displaces the id the stage 
   assert.equal(st.turns, 2)
 })
 
+test('a momentary idle blip is confirmed before the stage is finalized', () => {
+  // Live incident: watch() trusts a SINGLE idle/done observation and
+  // finalizes immediately - sends /exit, moves on. That one observation can
+  // be a screen-render blip between two tool calls, not real completion:
+  // `verify` was finalized this way while the tester was still mid-task, and
+  // later hit a real permission dialog nobody was watching for any more.
+  const s = paneRepo('confirm-blip', 'sess-confirm')
+  // agent wait: idle both times watch() is asked to settle.
+  s.env.HERDR_STUB_STATES = 'idle;idle'
+  // The confirmation re-check (agent get, independent of agent wait). The
+  // FIRST 'agent get' overall is launchStage's own pre-prompt session check,
+  // not a confirmation - 'idle' there is irrelevant filler. The second call
+  // (the first real confirm) catches the agent still 'working' - the blip -
+  // the third finds it genuinely idle.
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;idle'
+
+  const out = paned(s, 'run', 'spec')
+
+  const waits = said(s.log, 'agent', 'wait')
+  assert.equal(waits.length, 2,
+    'a caught blip must re-watch, not finalize on the first observation: ' + out)
+  const st = runJson(s).stages.spec
+  assert.equal(st.status, 'done')
+  const exits = said(s.log, 'agent', 'prompt').filter((a) => a[3] === '/exit')
+  assert.equal(exits.length, 1, '/exit must only be sent once genuine settle is confirmed')
+})
+
 test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pane open', () => {
   // `unknown` is herdr saying it does not know, not herdr saying "finished" -
   // treating it as settled would finalize a stage that is still working.
@@ -1060,10 +1088,14 @@ test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pan
   const out = paned(s, 'run', 'spec')
 
   const seq = calls(s.log).map((a) => a.slice(0, 2).join(' '))
+  // The trailing `agent get` is the settle CONFIRMATION: a single idle/done
+  // observation from `agent wait` can be a screen-render blip between two
+  // tool calls, not real completion, so it is re-checked once before /exit is
+  // sent - see 'a momentary idle blip is confirmed before finalizing' above.
   assert.deepEqual(seq.slice(seq.indexOf('agent start')),
     ['agent start', 'agent get', 'agent prompt',
-      'agent wait', 'agent wait', 'agent wait', 'agent prompt'],
-    'the stage lifecycle is start -> prompt -> watch -> /exit: ' + seq.join(' | '))
+      'agent wait', 'agent wait', 'agent wait', 'agent get', 'agent prompt'],
+    'the stage lifecycle is start -> prompt -> watch -> confirm -> /exit: ' + seq.join(' | '))
 
   // Completion comes from herdr settling, asked for in bounded slices.
   for (const w of said(s.log, 'agent', 'wait'))

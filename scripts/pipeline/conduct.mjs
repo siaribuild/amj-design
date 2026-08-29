@@ -750,19 +750,44 @@ async function finalizePane(run, label, started) {
   return s
 }
 
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+
+// A single idle/done observation from `agent wait` can be a screen-render
+// blip between two tool calls, not real completion - herdr's detection is
+// screen-based, and a brief pause mid-turn can render exactly like settled.
+// Live incident: a stage was finalized (and /exit sent) on one such
+// observation while the tester was still mid-task; it later hit a real
+// permission dialog with nobody watching for it any more. Bounded so a
+// genuinely flapping agent still finalizes eventually rather than looping.
+const CONFIRM_MS = 2000
+const CONFIRM_RETRIES = 5
+
 /** Wait for the agent to settle, then hold it warm or finish it off. */
 async function settleStage(run, label, started) {
-  const r = await watch(label)
-  if (r.state === 'lost') {
-    console.log('  !! lost track of ' + label + ' (' + r.error + ') - it stays "running";' +
-      ' pick it up with:  node scripts/pipeline/conduct.mjs next')
-    return run.stages[label]
+  for (let attempt = 0; ; attempt++) {
+    const r = await watch(label)
+    if (r.state === 'lost') {
+      console.log('  !! lost track of ' + label + ' (' + r.error + ') - it stays "running";' +
+        ' pick it up with:  node scripts/pipeline/conduct.mjs next')
+      return run.stages[label]
+    }
+    // herdr saw a permission or question UI. Nothing was written; the agent is
+    // waiting on a human, and killing it here is precisely the cost this avoids.
+    if (r.state === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
+
+    // r.state === 'settled' (idle/done). Confirm it a moment later before
+    // trusting it - unless we have already confirmed CONFIRM_RETRIES times,
+    // in which case a flapping agent is treated as settled rather than
+    // watched forever.
+    if (attempt < CONFIRM_RETRIES) {
+      await sleep(CONFIRM_MS)
+      const info = await agentInfo(label)
+      if (info?.agent_status === 'working') continue
+      if (info?.agent_status === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
+    }
+    if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
+    return finalizePane(run, label, started)
   }
-  // herdr saw a permission or question UI. Nothing was written; the agent is
-  // waiting on a human, and killing it here is precisely the cost this avoids.
-  if (r.state === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
-  if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
-  return finalizePane(run, label, started)
 }
 
 /**
@@ -925,6 +950,17 @@ already told.
 
 Probity enforces TDD on worker/**, src/data/** and scripts/tests/**: write the
 failing test, watch it fail, then implement. Work with the guardrail.
+
+TESTING SCOPE, overriding your own general instinct here: run ONLY the tests
+this task owns (npm run typecheck:gate, the specific test file(s) above, the
+Playwright spec if this touched UI) - never the full \`npm test\`. The verify
+stage runs the full battery next and would only repeat it. Measured: one
+sliced task ran the full ~700s suite anyway, and it cost real turns twice over
+- once for the redundant run, again because it was BACKGROUNDED and then
+polled for completion (repeated sleep/tail/check, each one re-paying this
+session's whole accumulated context). Run tests in the FOREGROUND and wait for
+them to return - one blocking call costs one turn; polling a backgrounded one
+costs many.
 
 Commit when the task is green. Do not hold work for a final commit - a killed
 session must leave its work behind.
