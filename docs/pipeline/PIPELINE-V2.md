@@ -430,10 +430,12 @@ display-only and no criterion asked for it; the pane itself is the live view.
 
 ## A full feature, start to finish
 
-**1. Grill it** — in a pane of your own:
+**1. Grill it** — in a pane of your own. `--autocompact` caps the window the
+same way every conducted stage does; a long interactive grill with none would
+grow toward the default and resend it every turn:
 
 ```bash
-claude
+claude --autocompact 100000
 ```
 
 Then `/grilling` and paste the ask. Stress-test the idea, and pin down which

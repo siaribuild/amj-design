@@ -201,6 +201,15 @@ WRITE TWO FILES.
     file your design names MUST appear in some task's "files" - a
     named-but-never-created test file is v1's most-repeated failure.
 
+    A LARGE FILE IN MANY TASKS' "files" IS A COST BUG, not a convenience.
+    Measured: a 9-task slice that put a 2000-line file in 8 tasks made 8 fresh
+    sessions each pay to read it - 5.66x more lines read than exist. If a large
+    shared file (a big test file, this conductor, a generated lockfile) needs
+    touching by more than 2-3 tasks, either give each task the EXACT line range
+    it edits (not the bare path), or restructure the split so the file is
+    touched once. Never list a path "for context" - only list what a task
+    actually edits or the exact test it must pass.
+
 Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
@@ -315,13 +324,16 @@ const REVIEWERS = [
     id: 'conformance', agent: 'architect', compact: 100000,
     prompt: (r) => `Design-conformance review.
 
-READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the branch diff:
-git diff ${r.base}...HEAD
+READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the paths that
+actually changed:
+git diff --name-status ${r.base}...HEAD
 
-Structure only - this is not a second bug hunt. Report divergences between what
-was designed and what was built. Conformance includes ABSENCE: a file the design
-named that the diff never created is a divergence, and it is the one a
-diff-reading review always misses. Check every path in 02-tasks.json exists.
+Structure only - this is not a second bug hunt, so the path list is enough for
+most of the job: does every path 02-tasks.json named exist, was anything the
+design named never created (ABSENCE is a divergence too, and the one a
+diff-reading review always misses), was anything built the design never named.
+Open a specific file's content ONLY if the path list alone can't answer a
+structural question - never the whole diff up front.
 
 WRITE ${r.dir}/07-review-conformance.md.`,
   },
@@ -823,6 +835,22 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
 // 04-build.md the predecessor writes, so it re-discovers what was already
 // established - which is the re-read cost this pipeline exists to remove. This
 // is the one loop in the file that must never become a fan-out.
+// Only the notes from tasks THIS task actually depends on - never the whole
+// growing file. Measured cause: 04-build.md hit 369 lines against its own
+// "under 15 lines per task" rule, and every later task paid to read all of it,
+// which is the quadratic handoff cost slicing exists to remove. Notes are
+// short by design, so the relevant ones are inlined directly - nothing left
+// for the session to open and read wholesale.
+function notesFor(run, afterIds) {
+  if (!afterIds?.length) return null
+  const p = join(RUNS, run.slug, '04-build.md')
+  if (!existsSync(p)) return null
+  const wanted = new Set(afterIds)
+  const sections = readFileSync(p, 'utf8').split(/^(?=## )/m)
+    .filter((sec) => wanted.has((sec.match(/^## (\S+)/) || [])[1]))
+  return sections.length ? sections.join('\n').trim() : null
+}
+
 async function runBuild(run, spec, panes) {
   const tp = join(RUNS, run.slug, '02-tasks.json')
   // The fix tier collapses spec and design to nothing, so nobody sliced this
@@ -855,16 +883,23 @@ TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
 
 Nobody sliced this one, so the boundary is yours to hold: change what the fix
 needs and nothing else. No drive-by refactors, no widening.`
+    const priorNotes = notesFor(run, t.after)
     const prompt = `Implement ONE task, test-first. Nothing else.
 
 TASK ${t.id}: ${t.title}
 DONE WHEN: ${t.done_when}
 
 ${scope}
-
-CONTEXT - read these, nothing more:
-  ${run.dir}/02-design.md   (if it exists - what this was sliced from)
-  ${run.dir}/04-build.md    (if it exists - what already landed)
+${priorNotes ? `
+NOTES FROM THE TASKS THIS ONE DEPENDS ON (already everything they left you -
+do not go looking for more):
+${priorNotes}
+` : ''}
+DONE_WHEN above is written to be enough on its own. Read ${run.dir}/02-design.md
+ONLY if you hit something DONE_WHEN doesn't cover - a shared type, a decision
+that spans files - never to re-derive what you were already told. Do not read
+04-build.md; anything from an earlier task that matters to you is already
+inlined above.
 
 Probity enforces TDD on worker/**, src/data/** and scripts/tests/**: write the
 failing test, watch it fail, then implement. Work with the guardrail.
@@ -1188,9 +1223,11 @@ const cmds = {
     console.log('\n  run started: ' + slug + '   base ' + run.base + ' on ' + run.branch + `
 
   Next - the grill. It is the one stage that talks to you, so it does not run
-  here. In its own herdr pane, in this directory:
+  here. In its own herdr pane, in this directory (--autocompact caps the
+  window the same way every conducted stage does - a long interactive grill
+  with none would grow toward the default and resend it on every turn):
 
-      claude
+      claude --autocompact 100000
       > /grilling      (then paste the ask)
 
   Put its conclusions, and the actors-and-needs section, into
