@@ -28,7 +28,7 @@ await build({
   stdin: {
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
-      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
+      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, buildSplitHints } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
@@ -47,7 +47,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
+  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, buildSplitHints, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
@@ -338,6 +338,27 @@ test("ingest: a clear schedule photo is routed to multimodal schedule extraction
 });
 
 // ── §9.3 parent/child tags ───────────────────────────────────────────────────
+test("buildSplitHints: a drawing reading wins the shape over a schedule comment, and flags the same channel as before (§3.4)", () => {
+  const lines = [{ tag: "W1", widthMm: 3200, heightMm: 2100, typeText: "AWNING", notes: "AWNING + FIXED + AWNING", split: null }];
+  const readings = [{
+    externalRef: "W1", splitState: "value",
+    split: { units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" },
+  }];
+  const { splitHints, flags } = buildSplitHints(lines, readings);
+  assert.equal(splitHints.get("W1").source, "plans");
+  assert.ok(flags.get("W1").some((f) => f.startsWith("proposed split (confirm at review):")));
+});
+
+test("buildSplitHints: schedule says FIXED but the drawing shows an operating unit — flagged, naming both sides (AC-9)", () => {
+  const lines = [{ tag: "W2", widthMm: 900, heightMm: 1200, typeText: "FIXED", notes: null, split: null }];
+  const readings = [{
+    externalRef: "W2", splitState: "value",
+    split: { units: [{ role: "operable", ratio: 1 }], axis: "vertical" },
+  }];
+  const { flags } = buildSplitHints(lines, readings);
+  assert.ok(flags.get("W2").some((f) => f === "drawing shows operating unit | schedule types FIXED"));
+});
+
 test("parentTagOf: thermal children map to their architectural parent", () => {
   assert.equal(parentTagOf("W04A"), "W04");
   assert.equal(parentTagOf("D03B"), "D03");

@@ -22,14 +22,14 @@ await build({
       export { elevationInventorySkill, validateFloorplanRead, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
       export { applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
-      export { enrichOpenings } from ${p("worker/lib/drawing/enrich.ts")};
+      export { enrichOpenings, runDrawingEnrichmentStage } from ${p("worker/lib/drawing/enrich.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -388,6 +388,44 @@ test("enrichOpenings: a failing container call degrades to zero readings and a n
   assert.equal(result.readings.length, 0);
   assert.equal(result.report.files.length, 1);
   assert.ok(result.report.files[0].steps.read.attempted === 0);
+});
+
+// ── runDrawingEnrichmentStage — the pipeline.ts call site's own unit, so the
+// wiring itself (mode gate, R2-key lookup, deps construction) is under test
+// without needing a full runAiExtraction/D1 harness (AC-27). ──
+test("runDrawingEnrichmentStage: mode 'auto' touches nothing — no DB call, empty result (AC-27)", async () => {
+  const env = { AI_EXTRACTION_MODE: "auto", DB: { prepare() { throw new Error("must not be called in auto mode"); } } };
+  const result = await runDrawingEnrichmentStage(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  });
+  assert.deepEqual(result.readings, []);
+  assert.equal(result.report, null);
+});
+
+test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs the real enrichment", async () => {
+  const fakeDb = {
+    prepare: (sql) => ({
+      bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }),
+    }),
+  };
+  const env = {
+    AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb,
+    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) },
+  };
+  const deps = {
+    inspect: async () => ({ inventory: { pageCount: 0, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] }),
+    render: async () => ({ images: [], dpi: 150 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+  };
+  const result = await runDrawingEnrichmentStage(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.ok(result.report);
+  assert.equal(result.report.files.length, 1);
 });
 
 test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {

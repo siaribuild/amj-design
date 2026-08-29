@@ -22,7 +22,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
   const wranglerLog = join(runDir, "wrangler.log");
   let server;
   try {
-    const wranglerEnv = { WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
+    const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
     // ops2 is a SECOND graph, not a third entry — it rides React Router 5 with
     // Ionic while these two stay on 7, and the alias that keeps them apart

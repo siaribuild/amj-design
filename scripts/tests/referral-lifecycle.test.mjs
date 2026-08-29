@@ -61,7 +61,7 @@ const EXPECTED_COLUMNS = {
 test("referral program — migration 0051", { timeout: 600_000 }, async (t) => {
   const runDir = await makeRunDir("referral-lifecycle");
   const state = join(runDir, "state");
-  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
   try {
     // A migrations directory frozen at 0050, plus a throwaway wrangler config
     // pointing at it. This is how "before" is reached without touching the
@@ -478,7 +478,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
   const runDir = await makeRunDir("referral-t3");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
-  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
   let server;
   try {
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);

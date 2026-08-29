@@ -13,7 +13,8 @@ import type { DrawingFileReport, DrawingReading, DrawingReport, GapCode } from "
 import { inspectPdf, renderPage } from "./containerClient";
 import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type Placement } from "./assign";
-import type { ElevationInventoryOutput, FloorplanReadOutput, OpeningReadResult } from "./skills";
+import { elevationInventorySkill, makeFloorplanReadSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type OpeningReadResult } from "./skills";
+import { runStage } from "../ai/stage";
 
 export interface EnrichFile {
   fileId: string;
@@ -187,6 +188,57 @@ async function enrichFile(
     report.wallMs = Date.now() - startedAt;
     return { readings: [], report };
   }
+}
+
+/** pipeline.ts's whole enrichment stage, as one testable unit: the mode
+ *  gate, the R2-key lookup and the real EnrichDeps construction, so the
+ *  integration itself is under test without a full runAiExtraction/D1
+ *  harness. Off (anything but 'auto_drawings'): no DB call, empty result —
+ *  the AC-27 property. */
+export async function runDrawingEnrichmentStage(
+  env: Env,
+  args: { projectId: string; aiRunId: string; planPdfDocs: { fileId: string }[]; scheduleRows: EnrichScheduleRow[] },
+  /** Test-only: overrides the real container/runStage deps. Production
+   *  never passes this — see the default branch below. */
+  depsOverride?: EnrichDeps,
+): Promise<{ readings: DrawingReading[]; report: DrawingReport | null }> {
+  if ((env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() !== "auto_drawings") {
+    return { readings: [], report: null };
+  }
+  if (!args.planPdfDocs.length || !args.scheduleRows.length) return { readings: [], report: null };
+
+  const placeholders = args.planPdfDocs.map(() => "?").join(",");
+  const keys = await env.DB.prepare(
+    `SELECT id, r2_key FROM file_asset WHERE project_id=? AND id IN (${placeholders})`,
+  ).bind(args.projectId, ...args.planPdfDocs.map((d) => d.fileId)).all<{ id: string; r2_key: string }>();
+  const r2KeyByFileId = new Map((keys.results ?? []).map((r) => [r.id, r.r2_key]));
+  const files = args.planPdfDocs
+    .map((d) => ({ fileId: d.fileId, r2Key: r2KeyByFileId.get(d.fileId) ?? "" }))
+    .filter((f) => f.r2Key);
+  if (!files.length) return { readings: [], report: null };
+
+  const deps = depsOverride ?? {
+    inspect: inspectPdf,
+    render: renderPage,
+    async runElevation(imageDataUrl: string) {
+      const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: elevationInventorySkill, input: { imageDataUrl } });
+      return res.data;
+    },
+    async runFloorplan(imageDataUrl: string, tagVocabulary: string[]) {
+      const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: makeFloorplanReadSkill(tagVocabulary), input: { imageDataUrl, tagVocabulary } });
+      return res.data;
+    },
+    async runOpening(imageDataUrl: string, row: EnrichScheduleRow) {
+      const res = await runStage(env, {
+        aiRunId: args.aiRunId, projectId: args.projectId, skill: openingReadSkill,
+        input: { imageDataUrl, tag: row.tag, widthMm: row.widthMm, heightMm: row.heightMm, typeText: row.typeText },
+      });
+      return res.data;
+    },
+  };
+
+  const result = await enrichOpenings(env, { projectId: args.projectId, aiRunId: args.aiRunId, files, scheduleRows: args.scheduleRows }, deps);
+  return result;
 }
 
 export async function enrichOpenings(

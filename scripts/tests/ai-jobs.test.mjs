@@ -18,6 +18,7 @@ await build({
         customerSafeJobDiagnostic,
         dispatchAiExtractionJob,
         retryCurrentAiExtraction,
+        aiJobDeadlineMs,
       } from ${p("worker/lib/ai/jobs.ts")};
       export { completeAiRun } from ${p("worker/lib/ai/runs.ts")};
     `,
@@ -38,8 +39,15 @@ const {
   customerSafeJobDiagnostic,
   dispatchAiExtractionJob,
   retryCurrentAiExtraction,
+  aiJobDeadlineMs,
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
+
+test("aiJobDeadlineMs: 240s under auto_drawings (base 120s + the enrichment's own 120s gate), 120s otherwise (§10)", () => {
+  assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto_drawings" }), 240_000);
+  assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto" }), 120_000);
+  assert.equal(aiJobDeadlineMs({}), 120_000);
+});
 
 test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {
   const sends = [];
