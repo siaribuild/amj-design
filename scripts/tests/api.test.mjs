@@ -22,7 +22,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
   const wranglerLog = join(runDir, "wrangler.log");
   let server;
   try {
-    const wranglerEnv = { WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
+    const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
     // ops2 is a SECOND graph, not a third entry — it rides React Router 5 with
     // Ionic while these two stay on 7, and the alias that keeps them apart
@@ -131,6 +131,40 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         method: "PUT", json: { items: [{ ...line(1200), serverId: wide.body.items[0].id }] },
       });
       assert.equal(narrow.body.items[0].lineTotal, 510, "at exactly 1200 the modifier must not fire");
+    });
+
+    // 02-design-v2.md §5: the drawing-read counter rides the existing poll,
+    // present only while a drawing read is actually running.
+    await t.test("extraction-status: drawingsDone/drawingsTotal ride the poll only while a drawing read is running (§5)", async () => {
+      const s = new Session(baseUrl);
+      const created = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Drawing-progress project", items: [{
+          code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+          width: "1200", height: "900", qty: 1,
+          options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+          lineTotal: 1,
+        }] },
+      });
+      const pid = created.body.project.id;
+      const gen = (await sql(`SELECT ai_generation FROM project WHERE id='${pid}'`))[0].ai_generation;
+      await sql(
+        `INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status, progress_stage, drawings_done, drawings_total)
+         VALUES ('${pid}', ${gen}, 'test-token', 'processing', 'building_envelope', 7, 20)`,
+      );
+      const withCounts = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal(withCounts.body.run.drawingsDone, 7);
+      assert.equal(withCounts.body.run.drawingsTotal, 20);
+
+      // A run with no drawings carries neither field — a numerator without a
+      // denominator is not a counter, and this is AC-25's shape check: no
+      // unread/gap detail rides along either.
+      await sql(`UPDATE ai_job_claim SET drawings_total=NULL, drawings_done=NULL WHERE project_id='${pid}'`);
+      const withoutCounts = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal("drawingsDone" in withoutCounts.body.run, false);
+      assert.equal("drawingsTotal" in withoutCounts.body.run, false);
+
+      await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });
 
     await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {

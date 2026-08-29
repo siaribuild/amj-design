@@ -132,7 +132,7 @@ The per-opening answer read from a plan set's elevations by a vision model: how 
 _Avoid_: drawing parse result (a reading is per opening, not per document), detection
 
 **Drawing enrichment**:
-The pass that goes back into the plans, per opening the schedule already found, for what the schedule cannot carry — accurate split, orientation, elevation, room. It never re-derives the schedule and never contradicts it: the schedule owns the size, the drawing owns the division. Invisible to the customer, who sees only openings, dimensions and the product selected; its value is a better-chosen product, and *better accuracy* means *higher estimate accuracy*. Off is a supported state (`AI_EXTRACTION_MODE`), and with it off the schedule table and the default split carry the quote exactly as before.
+The pass that goes back into the plans, per opening the schedule already found, for what the schedule cannot carry — accurate split, orientation, elevation, room. It never re-derives the schedule and never contradicts it: the schedule owns the size, the drawing owns the division. Invisible to the customer, who sees only openings, dimensions and the product selected; its value is a better-chosen product, and *better accuracy* means *higher estimate accuracy*. Off is a supported state — and the default: the enrichment runs only when `AI_EXTRACTION_MODE` is `auto_drawings`; under `auto` the schedule table and the default split carry the quote exactly as before.
 _Avoid_: drawing parse (that is the schedule parse), advanced parse (owner shorthand, not a surface)
 
 **Architectural priority**:
@@ -144,7 +144,8 @@ Which source wins on target Uw and solar gain: the **energy report**, then value
 _Avoid_: thermal source of truth (there is a ladder, not a single source)
 
 **Crop evidence**:
-The exact image the model was shown for a drawing reading, stored per stage run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface.
+The exact image the model was shown for a drawing reading, stored per run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface. It exists only during the internal review window (owner ruling 2026-08-29): crops die at whichever comes first of the draft being cleared, the quote being issued to the client, or the quote being voided — review evidence, never a record kept with the project. A labelling corpus is a deliberate copy made before issue, never a shared default.
+_Avoid_: training data (a crop is review evidence; a corpus is a separate, deliberate copy)
 
 **Estimator (the subsystem)**:
 Distinct from the Estimator persona above — one word, two senses, both live. The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.

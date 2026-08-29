@@ -27,7 +27,7 @@ import type { Env } from "../../types";
 /** The stored spellings, from the contract's own union — never a second list.
  *  A basis this build does not know is `null` rather than a guess. */
 const UNIT_BASES: readonly UnitRequirementBasis[] = [
-  "explicit_energy_report", "energy_report", "schedule_comment",
+  "explicit_energy_report", "energy_report", "plans", "schedule_comment",
   "learned", "default_pairing", "default_even",
 ];
 

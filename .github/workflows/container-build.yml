@@ -1,0 +1,102 @@
+# Builds, tests and (on main) pushes the plan-parse container image.
+#
+# This is the ONLY thing that builds it before a deploy. No development
+# machine needs Docker to deploy this feature (02-design-v2.md §1, §10):
+# `wrangler.jsonc` names the image by Cloudflare-registry URI, and this
+# workflow is what puts an image at that URI. Delete this file and the image
+# is unvalidated and unpublished.
+
+name: container-build
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "containers/plan-parse/**"
+      - ".github/workflows/container-build.yml"
+  pull_request:
+    paths:
+      - "containers/plan-parse/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest against real poppler
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: poppler-utils (the mechanical steps' whole command-line half)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - name: Install
+        run: pip install -r containers/plan-parse/requirements.txt pytest
+      - name: "pytest — steps 1/3/5 against a synthetic PDF (AB-9: never a real drawing)"
+        run: python -m pytest containers/plan-parse/tests -v
+
+  build:
+    name: plan-parse image builds and answers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t plan-parse:ci containers/plan-parse
+
+      # Building proves the Dockerfile resolves. Starting proves it can
+      # actually run — a missing COPY or an unresolvable import only shows up
+      # here, and that exact bug shipped once already (0f63fe6a^).
+      - name: It starts, and answers ready
+        run: |
+          docker run -d --name pp -p 8080:8080 plan-parse:ci
+          for i in $(seq 1 30); do
+            if curl -fsS localhost:8080 >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS localhost:8080 | tee /dev/stderr | grep -q '"ready": *true'
+
+      - name: It refuses a non-PDF /inspect body
+        run: |
+          printf '{"maxPages":60}\nnot a pdf' \
+            | curl -s -o body.txt -w '%{http_code}' -XPOST --data-binary @- localhost:8080/inspect \
+            | grep -q '^422$'
+          grep -q 'not_a_pdf' body.txt
+
+      - name: It refuses an oversized request
+        run: |
+          # One byte over the 40MB PDF cap PLUS the 4KB header allowance —
+          # the container's own copy of the Worker's cap (AB-6, defence in
+          # depth). The Content-Length check fires before framing is even
+          # parsed, so this is deliberately not valid `{json}\n<bytes>`.
+          head -c 41947137 /dev/zero \
+            | curl -s -o body.txt -w '%{http_code}' -XPOST --data-binary @- localhost:8080/inspect \
+            | grep -q '^413$'
+
+      - name: Container log (always, so a failure is diagnosable)
+        if: always()
+        run: docker logs pp || true
+
+  push:
+    name: push to the Cloudflare registry
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build for push
+        run: docker build --platform linux/amd64 -t "registry.cloudflare.com/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/plan-parse:${{ github.sha }}" containers/plan-parse
+
+      # Pushed per-commit, always — this does NOT touch the tag
+      # wrangler.jsonc's `containers` block names (design §1: "the registry
+      # tag is bumped rarely and by hand"). Bumping the deployed tag to a
+      # given commit's image is a deliberate, separate act.
+      - name: Push
+        run: |
+          echo "${{ secrets.CLOUDFLARE_API_TOKEN }}" | docker login registry.cloudflare.com -u "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" --password-stdin
+          docker push "registry.cloudflare.com/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/plan-parse:${{ github.sha }}"

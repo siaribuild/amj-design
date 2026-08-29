@@ -55,6 +55,7 @@ export function basisLabel(basis: string | null | undefined): string | null {
 const UNIT_BASIS_LABELS: Record<UnitRequirementBasis, string> = {
   explicit_energy_report: "from this lite's own reference in the energy report",
   energy_report: "from the opening's energy report",
+  plans: "read from the drawings",
   schedule_comment: "from the schedule's own comment",
   learned: "from how this pairing has been reviewed before",
   default_pairing: "a default pairing the platform applies",

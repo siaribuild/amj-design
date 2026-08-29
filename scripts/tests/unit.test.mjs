@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { cloudflareWorkersShimPlugin, makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("unit");
@@ -40,6 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
+      export { documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1437,6 +1438,7 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
       resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+    plugins: [cloudflareWorkersShimPlugin],
   });
   const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 
@@ -1634,4 +1636,51 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
+});
+
+test("documentChecklist: a drawing read gets its own row, driven by counts, between extracting_schedule and building_envelope (§5)", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 7, drawingsTotal: 20 });
+  const keys = steps.map((s) => s.key);
+  assert.deepEqual(keys, [
+    "queued", "reading_documents", "extracting_schedule", "reading_openings",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
+  assert.match(steps[current].detail, /opening 7 of 20/);
+});
+
+test("documentChecklist: no drawings counts — today's six steps, unchanged, current on the real stage", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope" });
+  assert.deepEqual(steps.map((s) => s.key), [
+    "queued", "reading_documents", "extracting_schedule",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps[current].key, "building_envelope");
+});
+
+// §7 — every crop-lifecycle trigger provably calls purgeProjectCrops. A live
+// R2 proof for the clear trigger lives in api-edge.test.mjs (real objects,
+// real deletion); this is the structural pin for all three call sites at
+// once, read straight off the source the way this suite already reads
+// SplitProposal["basis"] off split.ts (ai-pipeline/ops2-why precedent).
+test("§7: issueQuote, /projects/current/clear and DELETE /files/:id each call purgeProjectCrops", async () => {
+  const issue = await readFile(join(projectRoot, "worker/lib/issue.ts"), "utf8");
+  const issueBody = issue.slice(issue.indexOf("export async function issueQuote"));
+  assert.match(issueBody, /purgeProjectCrops\(env, projectId\)/, "issueQuote's success path must purge crops");
+
+  const parse = await readFile(join(projectRoot, "worker/routes/parse.ts"), "utf8");
+  const clearBody = parse.slice(parse.indexOf('parse.post("/projects/current/clear"'));
+  assert.match(clearBody.slice(0, clearBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, project\.id\)/,
+    "the clear route must purge crops");
+
+  const files = await readFile(join(projectRoot, "worker/routes/files.ts"), "utf8");
+  const deleteBody = files.slice(files.indexOf('files.delete("/files/:id"'));
+  assert.match(deleteBody.slice(0, deleteBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, fa\.project_id\)/,
+    "DELETE /files/:id must purge crops");
+});
+
+test("§7: purgeProjectCrops keeps the (env, projectId)-only signature the future void sweep depends on", async () => {
+  const crops = await readFile(join(projectRoot, "worker/lib/drawing/crops.ts"), "utf8");
+  assert.match(crops, /export async function purgeProjectCrops\(env: Env, projectId: string\)/,
+    "a third parameter would break the scheduled()-callable seam §7 designed for");
 });

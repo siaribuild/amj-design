@@ -23,7 +23,11 @@ import { computeThermalBand } from "../estimator/thermal/computedBand";
 import { readSourced, type CompassPoint, type ThermalModelInputs } from "../estimator/thermal/contract";
 import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
 import { coerceCoherent } from "../estimator/thermal/precedence";
-import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
+import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
+import { runDrawingEnrichmentStage } from "../drawing/enrich";
+import { setDrawingProgress } from "./jobs";
+import { applyDrawingOrientation, applyDrawingRoom, persistReadings, conflictReason } from "../drawing/readings";
+import type { DrawingReading } from "../drawing/contract";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
@@ -148,6 +152,57 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     ],
     conflicts: merged.conflicts,
   };
+}
+
+// ── WS5 + 02-design-v2.md §3.4: one place that turns a merged schedule line
+// (plus, when enrichment ran, its drawing reading) into a split hint and the
+// review flags it earns. Pure — extracted so the make-up ladder is tested
+// directly rather than only through the full runAiExtraction pipeline. ──
+export function buildSplitHints(
+  lines: MergedLine[],
+  drawingReadings: DrawingReading[],
+): { splitHints: Map<string, SplitHint>; flags: Map<string, string[]> } {
+  const readingByTag = new Map(drawingReadings
+    .filter((r) => r.splitState === "value" && r.split)
+    .map((r) => [r.externalRef, { splitState: r.splitState, units: r.split!.units, axis: r.split!.axis }] as const));
+  const splitHints = new Map<string, SplitHint>();
+  const flags = new Map<string, string[]>();
+  const flag = (tag: string, reason: string) => {
+    const list = flags.get(tag) ?? [];
+    list.push(reason);
+    flags.set(tag, list);
+  };
+  for (const l of lines) {
+    if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
+    const reading = readingByTag.get(l.tag) ?? null;
+    // AC-9: schedule says FIXED, the drawing shows an operating unit — the
+    // reason string names both sides, the same channel a split proposal
+    // uses (§3.5), so it reaches the reviewer with zero new machinery.
+    if (reading && (l.typeText ?? "").trim().toLowerCase() === "fixed" && reading.units.some((u) => u.role === "operable")) {
+      flag(l.tag, conflictReason("drawing shows operating unit", "schedule types FIXED"));
+    }
+    const commentHint: SplitHint | null = l.split?.operable?.length
+      ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
+      : parseSplitHint(l.notes);
+    const { hint, conflict } = resolveMakeUp(l.tag, {
+      reading,
+      commentHint,
+      typeText: l.typeText ?? null,
+      fallbackOp: (l.typeText ?? "").toLowerCase() || "awning",
+      energyComponents: null,
+      energyAxis: "vertical",
+    });
+    if (!hint) continue;
+    splitHints.set(l.tag, hint);
+    const proposal = proposeSplit(
+      { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
+      hint,
+    );
+    const layout = proposal.segments.map((s) => `${s.operation} ${s.widthMm}mm`).join(" + ");
+    flag(l.tag, `proposed split (confirm at review): ${layout}`);
+    if (conflict) flag(l.tag, conflict);
+  }
+  return { splitHints, flags };
 }
 
 export function applyPlanContext(
@@ -702,6 +757,31 @@ export async function runAiExtraction(
   await setProgress("building_envelope");
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
+
+  // Plan-parse enrichment (02-design-v2.md §4) — runDrawingEnrichmentStage
+  // owns the mode gate, the R2-key lookup and the container/model wiring
+  // (worker/lib/drawing/enrich.ts, unit-tested there — it never throws;
+  // this try/catch only covers the schedule-row mapping around the call).
+  // Applied BEFORE applyPlanContext so its wallOrientation ??= (the
+  // text-derived fallback) cannot override a reading (§3.5).
+  let drawingReadings: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["readings"] = [];
+  let drawingReport: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["report"] = null;
+  try {
+    const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
+    const scheduleRows = merged.lines
+      .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
+      .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null }));
+    const onProgress = opts.processingToken
+      ? async (done: number, total: number) => setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total)
+      : undefined;
+    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
+    drawingReadings = result.readings;
+    drawingReport = result.report;
+    applyDrawingOrientation(model, drawingReadings);
+  } catch (err) {
+    warnings.push(`drawing_enrichment_failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   applyPlanContext(model, planContexts);
   const technicalReviewReasons = new Map<string, Set<string>>();
   const flagOpening = (externalRef: string, reason: string) => {
@@ -724,20 +804,11 @@ export async function runAiExtraction(
   // offset one, and the estimator has no other copy of the wording.
   const scheduleTypes = new Map<string, string>();
   for (const l of merged.lines) {
-    if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
-    if (l.typeText) scheduleTypes.set(l.tag, l.typeText);
-    const hint: SplitHint | null = l.split?.operable?.length
-      ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
-      : parseSplitHint(l.notes);
-    if (!hint) continue;
-    splitHints.set(l.tag, hint);
-    const proposal = proposeSplit(
-      { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
-      hint,
-    );
-    const layout = proposal.segments.map((s) => `${s.operation} ${s.widthMm}mm`).join(" + ");
-    flagOpening(l.tag, `proposed split (confirm at review): ${layout}`);
+    if (l.tag && l.typeText) scheduleTypes.set(l.tag, l.typeText);
   }
+  const built = buildSplitHints(merged.lines, drawingReadings);
+  for (const [tag, hint] of built.splitHints) splitHints.set(tag, hint);
+  for (const [tag, reasons] of built.flags) for (const reason of reasons) flagOpening(tag, reason);
 
   // Path 1 (§10.1): report configuration/performance is authoritative, while
   // architectural dimensions describe the constructed opening. Map both onto
@@ -782,7 +853,10 @@ export async function runAiExtraction(
         // along in `components` so the thermal targets they carry can still be
         // attached to whatever the plan produced (plans do not carry targets).
         const planHint = splitHints.get(o.externalRef);
-        if (planHint && planHint.source === "schedule_comment") {
+        // "plans" (a drawing reading) wins the geometry same as
+        // "schedule_comment" always has (§3.4 point 4) — only when nothing
+        // but the energy report proposed a shape does the report supply one.
+        if (planHint && planHint.source !== "energy_report") {
           planHint.components = componentUnits;
         } else {
           splitHints.set(o.externalRef, {
@@ -992,6 +1066,24 @@ export async function runAiExtraction(
     sourceManifestHash,
     processingToken: opts.processingToken,
   }, { splitHints, scheduleTypes });
+
+  // Persist the drawing readings and their run report AFTER lines exist —
+  // room_label's guard (§3.5) needs a row to check, and the release-gate
+  // unit (§6.1) is the whole run's worth, not seeded mid-pipeline. Wrapped:
+  // a persistence failure here must not cost the estimate the customer
+  // already has (R6).
+  if (drawingReadings.length) {
+    try {
+      await persistReadings(env, projectId, run.id, drawingReadings);
+      await applyDrawingRoom(env, projectId, drawingReadings);
+    } catch (err) {
+      warnings.push(`drawing_readings_persist_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (drawingReport) {
+    await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
+      .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
+  }
 
   phase("estimate_and_pricing", {
     openings: estimate.openings,

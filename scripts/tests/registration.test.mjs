@@ -32,7 +32,7 @@ test("user registration — creation values, the submission gate, and its abuse 
   const runDir = await makeRunDir("registration");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
-  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
   let server;
   try {
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);

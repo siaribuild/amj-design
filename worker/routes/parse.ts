@@ -13,6 +13,7 @@ import {
 import { uuid } from "../lib/util";
 import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { derivedKeys } from "../lib/ai/ingest";
+import { purgeProjectCrops } from "../lib/drawing/crops";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -254,6 +255,10 @@ parse.post("/projects/current/clear", async (c) => {
     c.env.FILES.delete(f.r2_key),
     c.env.FILES.delete(derivedKeys(project.id, f.id).markdown),
   ])).catch(() => { /* D1 is authoritative; unreachable R2 objects are lifecycle cleanup */ });
+  // Trigger #1 of crop retention (§7): the draft is cleared, so crops
+  // derived from its documents are invalidated — an auto re-parse
+  // regenerates them if the customer starts again.
+  await purgeProjectCrops(c.env, project.id).catch(() => {});
   return c.json({ ok: true });
 });
 
@@ -368,7 +373,8 @@ parse.get("/projects/current/extraction-status", async (c) => {
   }
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
-            j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at
+            j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at,
+            j.drawings_done, j.drawings_total
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -383,6 +389,8 @@ parse.get("/projects/current/extraction-status", async (c) => {
     progress_stage: string;
     created_at: string;
     updated_at: string;
+    drawings_done: number | null;
+    drawings_total: number | null;
   }>().catch(() => null);
   if (pending) {
     const diagnostic = (pending.status === "failed" || pending.failure_class === "quota")
@@ -398,6 +406,10 @@ parse.get("/projects/current/extraction-status", async (c) => {
         summary: null,
         diagnostic,
         progressStage: pending.progress_stage,
+        // Present only while a drawing read is running (§5) — absent on
+        // every job that predates this feature and on any run with no
+        // drawings. No unread/gap detail rides along either (AC-25).
+        ...(pending.drawings_total != null ? { drawingsDone: pending.drawings_done ?? 0, drawingsTotal: pending.drawings_total } : {}),
       },
       basis: {},
     });

@@ -24,10 +24,65 @@ export type AiProgressStage = NonNullable<ExtractionRun["progressStage"]>;
 
 export type AiPhase =
   | null
-  | { kind: "reading"; docs: number; stage?: AiProgressStage }
+  | {
+      kind: "reading"; docs: number; stage?: AiProgressStage;
+      /** Present only while a drawing read is running (§5) — the customer
+       *  sees a counter, never which openings could not be read. */
+      drawingsDone?: number; drawingsTotal?: number;
+    }
   | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
   | { kind: "done"; refined: number }
   | { kind: "failed"; diagnostic?: SafeDiagnostic | null };
+
+export interface DocumentChecklistStep {
+  key: AiProgressStage | "reading_openings";
+  label: string;
+  detail: string;
+}
+
+const BASE_STEPS: { key: AiProgressStage; label: string }[] = [
+  { key: "queued", label: "Preparing document review" },
+  { key: "reading_documents", label: "Reading the documents" },
+  { key: "extracting_schedule", label: "Extracting the schedule" },
+  { key: "building_envelope", label: "Checking thermal requirements" },
+  { key: "matching_and_pricing", label: "Matching products and prices" },
+  { key: "preparing_quote", label: "Preparing your recommendations" },
+];
+
+/** The checklist the customer sees, plus which row is current — computed
+ *  once so the component only renders it.
+ *
+ *  A drawing read gets its OWN row, driven by counts rather than a stage:
+ *  there is no `reading_openings` progress_stage and there will not be one
+ *  (0059's own rationale — extending the CHECK is a table rebuild). It runs
+ *  inside the same DB window as "building the envelope" but is conceptually
+ *  a different job, so it earns its own row rather than hiding under
+ *  "Checking thermal requirements" — the placement lesson two prior sessions
+ *  (f0714fec, then the correction in 827a8a32) had to learn by shipping it
+ *  wrong first. */
+export function documentChecklist(
+  phase: { stage?: AiProgressStage; drawingsDone?: number; drawingsTotal?: number } | undefined,
+): { steps: DocumentChecklistStep[]; current: number } {
+  const total = phase?.drawingsTotal;
+  const done = phase?.drawingsDone ?? 0;
+  const steps: DocumentChecklistStep[] = [];
+  for (const s of BASE_STEPS) {
+    steps.push({ key: s.key, label: s.label, detail: "" });
+    if (s.key === "extracting_schedule" && total != null) {
+      steps.push({
+        key: "reading_openings",
+        label: "Reading your drawings",
+        detail: done > 0
+          ? ` · opening ${done} of ${total}`
+          : ` · ${total} opening${total === 1 ? "" : "s"} found`,
+      });
+    }
+  }
+  const stillReadingDrawings = phase?.stage === "building_envelope" && total != null && done < total;
+  const currentKey = stillReadingDrawings ? "reading_openings" : phase?.stage;
+  const current = steps.findIndex((s) => s.key === currentKey);
+  return { steps, current: current < 0 ? 0 : current };
+}
 
 export type StageLogEntry = { stage: AiProgressStage; at: number };
 export type UploadNotice = { type: "success" | "error"; message: string };
@@ -348,7 +403,7 @@ export function useProjectDocuments(
           recordStage(run.progressStage);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-            : { kind: "reading", docs, stage: run.progressStage });
+            : { kind: "reading", docs, stage: run.progressStage, drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
@@ -423,7 +478,7 @@ export function useProjectDocuments(
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase(run.diagnostic
           ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-          : { kind: "reading", docs, stage: run.progressStage });
+          : { kind: "reading", docs, stage: run.progressStage, drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal });
         pollExtraction(docs);
       } else if (docs > 0 && run?.status === "failed") {
         setAiPhase({ kind: "failed", diagnostic: run.diagnostic });

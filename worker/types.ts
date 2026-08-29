@@ -69,8 +69,11 @@ export interface Env {
   AI_ESCALATION_MODE?: string;
   /** 'auto' (default): AI extraction fires automatically on every clean upload
    *  (owner decision 2026-07-25 — no ops button-clicking; deterministic checks
-   *  only GATE, the AI tier interprets). 'manual': ops-triggered only (tests,
-   *  or an emergency spend kill-switch). */
+   *  only GATE, the AI tier interprets); no drawing enrichment.
+   *  'auto_drawings': 'auto' plus the plan-parse enrichment stage
+   *  (02-design-v2.md §4) — flipped on only after the release gate scores
+   *  19/19. 'manual': ops-triggered only (tests, or an emergency spend
+   *  kill-switch), unchanged. */
   AI_EXTRACTION_MODE?: string;
   /** 'on' restores the stage replay archive. Anything else (the default) forces
    *  every stage to call the model, so a re-parse tests extraction rather than

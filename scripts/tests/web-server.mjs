@@ -39,7 +39,7 @@ await mkdir(base, { recursive: true });
 const runDir = await mkdtemp(join(base, "web-"));
 const assets = join(runDir, "assets");
 const state = join(runDir, "state");
-const env = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+const env = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
 
 // Build WITHOUT the Turnstile site key (.env.production bakes the real one in;
 // process env overrides it): the real key can't verify on localhost, which would

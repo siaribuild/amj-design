@@ -3,6 +3,14 @@
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker/index.ts",
+  // Local dev with Containers is unsupported on Windows (wrangler 4.111.0:
+  // "Local development with containers is currently not supported on
+  // Windows. You should use WSL instead."). This is the fallback the error
+  // itself names — verified 2026-08-29 on this machine — and it is enough:
+  // `AI_EXTRACTION_MODE=auto` in dev vars means enrichment never fires
+  // locally anyway, so a dev container fetch was never a supported path
+  // either way (02-design-v2.md §10).
+  "dev": { "enable_containers": false },
   // Bound synchronous PDF work without giving a runaway invocation the paid
   // plan's five-minute maximum. Model/network wait is wall time, not CPU time.
   "limits": { "cpu_ms": 60000 },
@@ -38,16 +46,10 @@
       "migrations_dir": "migrations"
     }
   ],
-  // ── The plan-parse Durable Object, held open ────────────────────────────────
-  // Its implementation was reverted (#25) and is being rewritten; the class is a
-  // stub. It stays bound because Cloudflare refuses a version that drops a class
-  // its live objects depend on, and that refusal blocked every deploy of this
-  // Worker — not only the drawing feature's.
-  //
-  // NO `containers` BLOCK YET, and that is the point. The Dockerfile path that
-  // used to sit there made a Docker daemon a prerequisite for every deploy by
-  // every person. When the container returns it will be named by registry URI,
-  // built once in CI (docs/runs/plan-parse-method/00-ask.md §4).
+  // ── The plan-parse Durable Object ───────────────────────────────────────────
+  // Fronts the container below. No route, no service binding, no hostname
+  // exists for it (§9 AB-5) — `worker/lib/drawing/containerClient.ts` is the
+  // only caller, and it enforces size/page/crop/DPI caps before every call.
   //
   // The `v1` tag is the one this class was created under and is re-declared
   // unchanged — applied tags are tracked remotely, so this is a no-op against
@@ -59,6 +61,18 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["PlanParseContainer"] }
+  ],
+  // Image is built and pushed by .github/workflows/container-build.yml — no
+  // development machine needs Docker to deploy (02-design-v2.md §1, §10).
+  // The tag is bumped rarely and by hand, once a build is known good; CI
+  // itself only ever pushes per-commit-sha tags, never this one.
+  "containers": [
+    {
+      "class_name": "PlanParseContainer",
+      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:v2",
+      "instance_type": "basic",
+      "max_instances": 5
+    }
   ],
 
   "kv_namespaces": [
@@ -107,8 +121,12 @@
     // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
     // by default; override with AI_PRIMARY_MODEL without a code change.
     "AI_GATEWAY_ID": "openframe-estimator",
-    // AI extraction fires automatically on every clean upload ('auto'); set to
-    // 'manual' only as an emergency kill-switch (ops button still works).
+    // 'auto' (current): extraction fires on upload, no drawing enrichment —
+    // deploying this feature changes nothing until this flips.
+    // 'auto_drawings': extraction fires AND the plan-parse enrichment stage
+    // runs (02-design-v2.md §4) — flipped only after the release gate scores
+    // 19/19 (docs/runs/plan-parse-method §7.1).
+    // 'manual': emergency kill-switch, ops-triggered only, unchanged.
     "AI_EXTRACTION_MODE": "auto",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an

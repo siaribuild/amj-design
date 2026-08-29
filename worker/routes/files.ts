@@ -10,6 +10,7 @@ import { autoExtractionEnabled } from "../lib/ai/versions";
 import { dispatchAiExtractionJob, type AiExtractionJob } from "../lib/ai/jobs";
 import { sha256hex } from "../lib/ai/hash";
 import { derivedKeys } from "../lib/ai/ingest";
+import { purgeProjectCrops } from "../lib/drawing/crops";
 import { deriveSubject } from "../lib/parse";
 
 export const files = new Hono<{ Bindings: Env }>();
@@ -46,7 +47,10 @@ async function rejectUploadReservation(
   ]).catch(() => { /* pending row remains fail-closed and customer-removable */ });
 }
 
-async function purgeR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
+// Exported: `worker/lib/drawing/crops.ts` reuses this rather than a second
+// list-and-delete loop (this is the same list/delete pattern the crop
+// lifecycle needs, only the prefix differs).
+export async function purgeR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
   let cursor: string | undefined;
   do {
     const page = await bucket.list({ prefix, cursor, limit: 500 });
@@ -527,6 +531,9 @@ files.delete("/files/:id", async (c) => {
     c.env.FILES.delete(derivedKeys(fa.project_id, fa.id).markdown),
     purgeR2Prefix(c.env.FILES, `projects/${fa.project_id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80)}/runs/`),
   ]).catch(() => { /* DB is authoritative; lifecycle cleanup can retry orphaned derivatives */ });
+  // Trigger #1 of crop retention (§7): deleting a source document
+  // invalidates crops derived from it — an auto re-parse regenerates them.
+  await purgeProjectCrops(c.env, fa.project_id).catch(() => {});
 
   // The remaining documents re-establish the project's evidence (registered
   // users; same auto path as upload).

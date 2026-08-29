@@ -74,3 +74,9 @@ docs/runs/*/prompts/
 # which run this machine's `conduct` is pointed at -- a per-machine cursor,
 # not a fact about the branch.
 docs/runs/.active
+
+# containers/plan-parse's Python artifacts (first Python in this repo) —
+# reproducible from source, same reasoning as node_modules/ above.
+__pycache__/
+*.pyc
+.pytest_cache/

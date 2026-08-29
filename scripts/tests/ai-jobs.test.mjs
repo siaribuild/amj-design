@@ -18,6 +18,8 @@ await build({
         customerSafeJobDiagnostic,
         dispatchAiExtractionJob,
         retryCurrentAiExtraction,
+        aiJobDeadlineMs,
+        setDrawingProgress,
       } from ${p("worker/lib/ai/jobs.ts")};
       export { completeAiRun } from ${p("worker/lib/ai/runs.ts")};
     `,
@@ -38,8 +40,26 @@ const {
   customerSafeJobDiagnostic,
   dispatchAiExtractionJob,
   retryCurrentAiExtraction,
+  aiJobDeadlineMs,
+  setDrawingProgress,
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
+
+test("aiJobDeadlineMs: 240s under auto_drawings (base 120s + the enrichment's own 120s gate), 120s otherwise (§10)", () => {
+  assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto_drawings" }), 240_000);
+  assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto" }), 120_000);
+  assert.equal(aiJobDeadlineMs({}), 120_000);
+});
+
+test("setDrawingProgress: writes the counts guarded by the exact processing token, same shape as setProgress", async () => {
+  const calls = [];
+  const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
+  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?/);
+  assert.match(calls[0].sql, /WHERE project_id=\? AND source_generation=\? AND status='processing'\s+AND processing_token=\?/);
+  assert.deepEqual(calls[0].args, [7, 20, "proj_1", 3, "tok-abc"]);
+});
 
 test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {
   const sends = [];

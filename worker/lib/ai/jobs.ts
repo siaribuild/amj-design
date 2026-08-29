@@ -42,6 +42,31 @@ const MAX_AUTOMATIC_ATTEMPTS = 1;
 // finish rather than being severed to fit an arbitrary minute. The UI no longer
 // treats duration as failure — it shows per-step progress and flags only a stall.
 const AI_JOB_DEADLINE_MS = 120_000;
+// 02-design-v2.md §10: the base budget stays owner-approved; only the
+// switched-on drawing-enrichment mode pays more — its own ~90s target on
+// top, not the reverted attempt's blanket 300s for every job.
+export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
+  return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 240_000 : AI_JOB_DEADLINE_MS;
+}
+
+/** Per-opening progress, same shape and same token guard as pipeline.ts's
+ *  own setProgress: it never writes past the token that owns the lease
+ *  (§5, migration 0059). Denominator is set once, from the located-openings
+ *  count, and is never shortened — a gap still advances the numerator. */
+export async function setDrawingProgress(
+  env: Pick<Env, "DB">,
+  projectId: string,
+  sourceGeneration: number,
+  processingToken: string,
+  drawingsDone: number,
+  drawingsTotal: number,
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, updated_at=datetime('now')
+      WHERE project_id=? AND source_generation=? AND status='processing'
+        AND processing_token=?`,
+  ).bind(drawingsDone, drawingsTotal, projectId, sourceGeneration, processingToken).run().catch(() => {});
+}
 
 class AiJobFault extends Error {
   constructor(
@@ -514,7 +539,7 @@ export async function processAiExtractionJob(
       new Promise<never>((_resolve, reject) => {
         deadlineTimer = setTimeout(
           () => reject(new AiJobFault("ai_processing_deadline_exceeded", "transient")),
-          AI_JOB_DEADLINE_MS,
+          aiJobDeadlineMs(env),
         );
       }),
     ]).finally(() => {

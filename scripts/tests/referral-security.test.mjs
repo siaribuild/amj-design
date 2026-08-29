@@ -41,7 +41,7 @@ test("referral program — §10A abuse cases", { timeout: 1_800_000 }, async (t)
   const runDir = await makeRunDir("referral-security");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
-  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
   let server;
   try {
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
