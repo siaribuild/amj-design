@@ -55,6 +55,7 @@
     "test:ops2": "node --test scripts/tests/ops2-deps.test.mjs scripts/tests/ops2-frame.test.mjs scripts/tests/ops2-navigation.test.mjs scripts/tests/ops2-projects.test.mjs scripts/tests/ops2-record.test.mjs scripts/tests/ops2-why.test.mjs scripts/tests/ops2-dev-server.test.mjs"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@ionic/react": "8.8.18",

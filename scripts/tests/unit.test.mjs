@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { cloudflareWorkersShimPlugin, makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("unit");
@@ -1437,6 +1437,7 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
       resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+    plugins: [cloudflareWorkersShimPlugin],
   });
   const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 

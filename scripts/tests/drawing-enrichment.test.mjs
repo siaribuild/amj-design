@@ -17,13 +17,92 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } from ${p("worker/lib/drawing/contract.ts")};
+      export { inspectPdf, renderPage, ContainerClientError } from ${p("worker/lib/drawing/containerClient.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError } = await import(pathToFileURL(outfile).href);
+
+// ── containerClient (AB-6) — caps enforced Worker-side BEFORE any container
+// call. A namespace whose get()/fetch() throws proves the refusal never
+// dispatches. ──
+function explodingNamespace() {
+  return {
+    idFromName() { throw new Error("must not be called — caps refuse first"); },
+    get() { throw new Error("must not be called — caps refuse first"); },
+  };
+}
+
+test("containerClient.inspectPdf: refuses an oversized PDF before any DO call", async () => {
+  const oversized = new Uint8Array(MAX_PDF_BYTES + 1);
+  await assert.rejects(
+    () => inspectPdf(explodingNamespace(), "proj_1", oversized),
+    (err) => err instanceof ContainerClientError && err.code === "too_large",
+  );
+});
+
+test("containerClient.renderPage: refuses a DPI above the cap before any DO call", async () => {
+  await assert.rejects(
+    () => renderPage(explodingNamespace(), "proj_1", new Uint8Array([1]), { pageNo: 1, dpi: MAX_DPI + 1 }),
+    (err) => err instanceof ContainerClientError && err.code === "bad_request",
+  );
+});
+
+test("containerClient.renderPage: refuses too many crop boxes for one page before any DO call", async () => {
+  const crops = Array.from({ length: MAX_CROPS_PER_PAGE + 1 }, () => [0, 0, 10, 10]);
+  await assert.rejects(
+    () => renderPage(explodingNamespace(), "proj_1", new Uint8Array([1]), { pageNo: 1, dpi: 150, crops }),
+    (err) => err instanceof ContainerClientError && err.code === "bad_request",
+  );
+});
+
+// ── Below the caps: the actual DO round trip. A fake stub records what it
+// was sent and hands back a canned response, so the framing (one JSON line,
+// \n, raw bytes) and the idFromName(projectId) construction rule are both
+// under test. ──
+function recordingNamespace(responseBody) {
+  const calls = { idFromName: [], fetch: [] };
+  return {
+    calls,
+    idFromName(name) { calls.idFromName.push(name); return { toString: () => name }; },
+    get(id) {
+      return {
+        async fetch(url, init) {
+          calls.fetch.push({ url, body: init.body });
+          return new Response(JSON.stringify(responseBody), { status: 200 });
+        },
+      };
+    },
+  };
+}
+
+test("containerClient.inspectPdf: builds the DO id from projectId and frames the request as one JSON line + bytes", async () => {
+  const inv = { inventory: { pageCount: 1, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] };
+  const ns = recordingNamespace(inv);
+  const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
+  const result = await inspectPdf(ns, "proj_42", pdfBytes);
+  assert.deepEqual(ns.calls.idFromName, ["proj_42"]);
+  assert.equal(ns.calls.fetch.length, 1);
+  const sent = new Uint8Array(ns.calls.fetch[0].body);
+  const newline = sent.indexOf(10);
+  const header = JSON.parse(new TextDecoder().decode(sent.slice(0, newline)));
+  assert.deepEqual(header, { maxPages: MAX_PAGES });
+  assert.deepEqual([...sent.slice(newline + 1)], [...pdfBytes]);
+  assert.deepEqual(result, inv);
+});
+
+test("containerClient.renderPage: sends pageNo/dpi/crops and returns the parsed images", async () => {
+  const rendered = { images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: 150 };
+  const ns = recordingNamespace(rendered);
+  const result = await renderPage(ns, "proj_7", new Uint8Array([0x25, 0x50, 0x44, 0x46]), { pageNo: 3, dpi: 150, crops: [[0, 0, 10, 10]] });
+  const sent = new Uint8Array(ns.calls.fetch[0].body);
+  const header = JSON.parse(new TextDecoder().decode(sent.slice(0, sent.indexOf(10))));
+  assert.deepEqual(header, { pageNo: 3, dpi: 150, crops: [[0, 0, 10, 10]] });
+  assert.deepEqual(result, rendered);
+});
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
 // ── A minimal fake R2Bucket — list/delete only, the subset purgeR2Prefix
