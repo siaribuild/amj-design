@@ -203,12 +203,16 @@ WRITE TWO FILES.
 
     A LARGE FILE IN MANY TASKS' "files" IS A COST BUG, not a convenience.
     Measured: a 9-task slice that put a 2000-line file in 8 tasks made 8 fresh
-    sessions each pay to read it - 5.66x more lines read than exist. If a large
-    shared file (a big test file, this conductor, a generated lockfile) needs
-    touching by more than 2-3 tasks, either give each task the EXACT line range
-    it edits (not the bare path), or restructure the split so the file is
-    touched once. Never list a path "for context" - only list what a task
-    actually edits or the exact test it must pass.
+    sessions each pay to read it - 5.66x more lines read than exist. "files" is
+    a path allowlist, not a place for ranges - every entry must be a real,
+    exact repo path, nothing else, or both the developer's scope and the
+    conformance reviewer's existence check break on it. If a large shared file
+    (a big test file, this conductor, a generated lockfile) needs touching by
+    more than 2-3 tasks, either restructure the split so it is touched once, or
+    put the exact line range IN "done_when" ("edit only lines 120-180 of
+    worker/foo.ts") so the path stays real while the scope stays narrow. Never
+    list a path "for context" - only what a task actually edits or the exact
+    test it must pass.
 
 Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
@@ -884,22 +888,35 @@ TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
 Nobody sliced this one, so the boundary is yours to hold: change what the fix
 needs and nothing else. No drive-by refactors, no widening.`
     const priorNotes = notesFor(run, t.after)
+    // Fail LOUD, not closed: a task with real dependencies whose notes could
+    // not be extracted (missing section, malformed heading, a predecessor that
+    // never appended one) must never be told nothing was missed - that is a
+    // silently lost handoff, worse than the wasteful full-file read it replaced.
+    const notesBlock = priorNotes
+      ? `
+NOTES FROM THE TASKS THIS ONE DEPENDS ON (already everything they left you -
+do not go looking for more):
+${priorNotes}
+`
+      : (t.after || []).length
+        ? `
+This task depends on ${t.after.join(', ')}, but their notes could not be found
+automatically in ${run.dir}/04-build.md (missing section, or a predecessor that
+never appended one). Read that file yourself and find their sections before
+starting - do not assume nothing was recorded.
+`
+        : ''
     const prompt = `Implement ONE task, test-first. Nothing else.
 
 TASK ${t.id}: ${t.title}
 DONE WHEN: ${t.done_when}
 
 ${scope}
-${priorNotes ? `
-NOTES FROM THE TASKS THIS ONE DEPENDS ON (already everything they left you -
-do not go looking for more):
-${priorNotes}
-` : ''}
-DONE_WHEN above is written to be enough on its own. Read ${run.dir}/02-design.md
-ONLY if you hit something DONE_WHEN doesn't cover - a shared type, a decision
-that spans files - never to re-derive what you were already told. Do not read
-04-build.md; anything from an earlier task that matters to you is already
-inlined above.
+${notesBlock}
+DONE_WHEN above is written to be enough on its own for what this task touches.
+Read ${run.dir}/02-design.md ONLY if you hit something DONE_WHEN doesn't cover -
+a shared type, a decision that spans files - never to re-derive what you were
+already told.
 
 Probity enforces TDD on worker/**, src/data/** and scripts/tests/**: write the
 failing test, watch it fail, then implement. Work with the guardrail.
