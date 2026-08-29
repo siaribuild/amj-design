@@ -1222,8 +1222,10 @@ const cmds = {
     if (!existsSync(join(dir, '00-ask.md')))
       writeFileSync(join(dir, '00-ask.md'),
         '# ' + slug + '\n\n' + (ask.join(' ') || '(fill in the ask)') +
-        '\n\n## Actors and needs\n\n(from the grill - who this is for, and what they need in their own terms)\n' +
-        '\n## Grill conclusions\n\n(paste them here, or delete this section if no grill was run)\n')
+        (tier === 'full'
+          ? '\n\n## Actors and needs\n\n(from the grill - who this is for, and what they need in their own terms)\n' +
+            '\n## Grill conclusions\n\n(paste them here, or delete this section if no grill was run)\n'
+          : '\n'))
     writeFileSync(join(RUNS, '.active'), slug)
     // The skeleton only: a plan pane and a diff pane. Stage panes are split on
     // demand, so a run never opens a shell for a stage that may never run.
@@ -1237,7 +1239,8 @@ const cmds = {
       }
     }
     saveRun(run)
-    console.log('\n  run started: ' + slug + '   base ' + run.base + ' on ' + run.branch + `
+    console.log('\n  run started: ' + slug + '   base ' + run.base + ' on ' + run.branch +
+      (tier === 'full' ? `
 
   Next - the grill. It is the one stage that talks to you, so it does not run
   here. In its own herdr pane, in this directory (--autocompact caps the
@@ -1252,7 +1255,13 @@ const cmds = {
 
   Then:            node scripts/pipeline/conduct.mjs next
   UI feature?      node scripts/pipeline/conduct.mjs ui on
-`)
+`
+        : `
+
+  Tier "` + tier + `" has no grill - the ask above is the whole spec.
+
+  Then:            node scripts/pipeline/conduct.mjs next
+`))
   },
 
   async ui(state) {
