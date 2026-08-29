@@ -202,6 +202,26 @@ test("the attention row names what is blocking, and filters to it", async ({ pag
   await expect(page.getByTestId("record-line")).toHaveCount(3);
 });
 
+test("the attention pill is scoped to the Lines tab, not drawn on Project", async ({ page }) => {
+  // The ask (docs/runs/attention-pill-tab-scope/00-ask.md): the pill is a
+  // filter for the Lines list, drawn above the tab switch, so it also showed
+  // on the Project tab where there is no list for it to filter.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [
+      line({ id: "l1", code: "W01", lineTotal: 1000 }),
+      line({ id: "l2", code: "W02", lineTotal: null, status: "draft" }),
+    ],
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await expect(page.getByTestId("record-attention")).toBeVisible();
+  await page.getByTestId("record-tab").nth(1).click();
+  await expect(page.getByTestId("record-attention")).toHaveCount(0);
+  await page.getByTestId("record-tab").nth(0).click();
+  await expect(page.getByTestId("record-attention")).toBeVisible();
+});
+
 test("the totals name the absence rather than captioning a number", async ({ page }) => {
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [line({ lineTotal: 1000 }), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" })],
