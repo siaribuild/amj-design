@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops2 record — testing feedback: the three new decisions</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS — copied verbatim from src/ops2/theme/*.css and src/ops2/styles/tokens.css.
+   Nothing below invents a colour. No --ion-color-step-* anywhere.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-400:#7dab8e;
+  --theme-sage-500:#5a7a6a; --theme-sage-600:#4a6858; --theme-sage-700:#3c5548;
+  --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+  --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb; --theme-neutral-400:#b5b2ab;
+  --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+  --theme-ink-900:#161412; --theme-ink-800:#2a2826;
+  --theme-positive-500:#2c7a54; --theme-positive-50:#f1f7f3;
+  --theme-warning-50:#fdf9f0; --theme-warning-500:#8a6a2a; --theme-warning-700:#624410;
+  --theme-attention-50:#fdf4f3; --theme-attention-500:#c0392b; --theme-attention-700:#82261d;
+  --theme-info-500:#4c6a88;
+
+  --ds-color-brand:var(--theme-sage-500); --ds-color-brand-hover:var(--theme-sage-600);
+  --ds-color-brand-subtle:var(--theme-sage-100); --ds-color-brand-wash:var(--theme-sage-50);
+  --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+  --ds-text-muted:var(--theme-neutral-500); --ds-text-disabled:var(--theme-neutral-400);
+  --ds-text-inverse:var(--theme-neutral-0); --ds-text-link:var(--theme-sage-600);
+  --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+  --ds-surface-sunken:var(--theme-neutral-100); --ds-surface-brand:var(--theme-sage-500);
+  --ds-border-subtle:var(--theme-neutral-200); --ds-border-default:var(--theme-neutral-300);
+  --ds-border-strong:var(--theme-neutral-400); --ds-border-focus:var(--theme-sage-500);
+  --ds-color-success:var(--theme-positive-500);
+  --ds-color-warning:var(--theme-warning-500); --ds-color-warning-subtle:var(--theme-warning-50);
+  --ds-color-warning-text:var(--theme-warning-700);
+  --ds-color-error:var(--theme-attention-500); --ds-color-error-subtle:var(--theme-attention-50);
+  --ds-color-error-text:var(--theme-attention-700);
+  --ds-color-info:var(--theme-info-500);
+  --ds-layer-raised:0 1px 3px rgba(42,40,38,.06), 0 1px 2px rgba(42,40,38,.04);
+  --ds-radius-surface:5px; --ds-radius-control:3px;
+
+  --theme-spacing-2xs:.125rem; --theme-spacing-xs:.25rem; --theme-spacing-sm:.5rem;
+  --theme-spacing-md:.75rem; --theme-spacing-lg:1rem; --theme-spacing-xl:1.5rem;
+  --theme-spacing-2xl:2rem;
+  --theme-font-display:'Space Grotesk','Inter',system-ui,sans-serif;
+  --theme-font-sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --theme-font-weight-regular:400; --theme-font-weight-medium:500;
+  --theme-font-weight-semibold:600; --theme-font-weight-bold:700;
+  --theme-font-size-xs:.75rem; --theme-font-size-sm:.8125rem; --theme-font-size-base:.9375rem;
+  --theme-font-size-md:1rem; --theme-font-size-lg:1.125rem; --theme-font-size-xl:1.3125rem;
+  --theme-letter-spacing-wider:.05em;
+}
+
+/* ── The mock page's own chrome. Not product. ───────────────────────────────*/
+*{box-sizing:border-box}
+body{margin:0;background:#e9e7e2;font-family:var(--theme-font-sans);color:var(--ds-text-primary)}
+.doc{max-width:1180px;margin:0 auto;padding:32px 20px 80px}
+.doc h1{font-family:var(--theme-font-display);font-size:1.5rem;margin:0 0 6px}
+.doc>p.lede{margin:0 0 28px;max-width:62ch;font-size:.875rem;color:#55524d;line-height:1.55}
+.sec{margin:44px 0 0;padding-top:22px;border-top:2px solid #cfccc6}
+.sec>h2{font-family:var(--theme-font-display);font-size:1.125rem;margin:0 0 4px}
+.sec>p.note{margin:0 0 18px;max-width:70ch;font-size:.8125rem;color:#55524d;line-height:1.55}
+.row-of-frames{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.frame{background:var(--ds-surface-page);border:1px solid #c4c1bb;border-radius:6px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.frame--phone{width:375px;flex:none}
+.frame--desk{width:100%;max-width:1080px}
+.cap{font-size:.6875rem;letter-spacing:.04em;text-transform:uppercase;color:#6a6660;margin:0 0 6px;font-weight:600}
+.cap em{text-transform:none;letter-spacing:0;font-style:normal;font-weight:400;color:#55524d}
+.stack{display:flex;flex-direction:column;gap:16px}
+.bad{border-color:var(--theme-attention-500)}
+.badge-x{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;background:var(--theme-attention-50);color:var(--theme-attention-700);font-size:.625rem;font-weight:700;letter-spacing:.04em}
+.badge-ok{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;background:var(--theme-positive-50);color:#1f5c3e;font-size:.625rem;font-weight:700;letter-spacing:.04em}
+.ptr{position:relative}
+.ptr::after{content:attr(data-ptr);position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  font-size:.625rem;color:#55524d;background:#fff;border:1px dashed #a9a5a0;border-radius:3px;padding:1px 5px;pointer-events:none;z-index:2}
+/* the annotation gets its own gutter so it never covers a price or a badge */
+.ptr > .ops2-row__open{padding-right:92px}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRODUCT SURFACE — ops2's own vocabulary.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ops2{font-size:var(--theme-font-size-base)}
+.ops2-page__band{background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:var(--theme-spacing-lg) var(--theme-spacing-lg) 0}
+.ops2-page__body{padding:var(--theme-spacing-lg)}
+.ops2-page__back{display:inline-flex;align-items:center;gap:4px;font-size:var(--theme-font-size-sm);color:var(--ds-text-link);margin-bottom:var(--theme-spacing-2xs)}
+.rec-h1{margin:0;font-family:var(--theme-font-display);font-size:var(--theme-font-size-xl);font-weight:var(--theme-font-weight-semibold);letter-spacing:-.01em}
+
+/* head row */
+.rec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--theme-spacing-md);
+  padding:var(--theme-spacing-sm) var(--theme-spacing-lg);background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.rec-head__title{font-family:var(--theme-font-display);font-size:var(--theme-font-size-md);font-weight:600}
+.rec-cta{display:flex;align-items:center;gap:var(--theme-spacing-2xs)}
+.btn{appearance:none;font:inherit;font-size:var(--theme-font-size-sm);font-weight:var(--theme-font-weight-medium);
+  height:38px;padding:0 14px;border-radius:var(--ds-radius-control);border:0;cursor:pointer;white-space:nowrap}
+/* enabled: #ffffff on --ds-surface-brand #5a7a6a = 4.74:1, above the 4.5 floor. */
+.rec-cta__primary{background:var(--ds-surface-brand);color:var(--ds-text-inverse);border:1px solid var(--ds-surface-brand)}
+
+/* ▼ THE NEW DECISION — the refused primary.
+   Shared by both candidates: sunken fill, quiet ink, full opacity, no error
+   family anywhere on the control (FB-AC-29/31). */
+.rec-cta__primary.is-disabled,
+.rec-cta__primary.is-disabled--ux{
+  background:var(--ds-surface-sunken);
+  color:var(--ds-text-secondary);   /* n600 on n100 = 4.75:1 — above the 4.5 floor (FB-AC-31) */
+  opacity:1;                        /* Ionic's .5 is overridden, not inherited */
+  cursor:not-allowed;
+}
+/* ux-designer's edge, drawn as proposed. --ds-border-strong #b5b2ab measures
+   2.12:1 against the white toolbar it must separate from and 1.92:1 against its
+   own sunken fill; the fill itself is 1.10:1 against that toolbar. FB-AC-30 asks
+   the control be distinguishable from the toolbar by fill OR border — at these
+   numbers neither half carries it, and the named regression (a control that
+   reads as a line of text in a bar) comes back in beige. */
+.rec-cta__primary.is-disabled--ux{border:1px solid var(--ds-border-strong)}
+/* ui-designer's edge — the only value changed. --ds-text-muted #8b8880 is
+   3.54:1 against the white toolbar and 3.22:1 against its own fill: both clear
+   the 3:1 floor for a control boundary, and it is still the quietest ops2 token
+   that does. (No neutral --ds-border-* token reaches 3:1 on white; this is why
+   a text token carries the edge.) */
+.rec-cta__primary.is-disabled{border:1px solid var(--ds-text-muted)}
+/* ▼ what is being replaced, drawn once so the difference is visible */
+.rec-cta__primary.is-disabled--old{
+  background:var(--ds-surface-card);color:var(--ds-color-error-text);
+  border:1px solid var(--ds-color-error);opacity:.9;
+}
+.rec-cta__more{background:none;border:1px solid transparent;color:var(--ds-text-secondary);padding:0 10px}
+
+.rec-refusal{display:flex;align-items:center;gap:var(--theme-spacing-2xs);margin:0 0 var(--theme-spacing-md);
+  padding:var(--theme-spacing-xs) var(--theme-spacing-sm);background:var(--ds-color-error-subtle);
+  border:1px solid var(--ds-color-error);border-radius:var(--ds-radius-control);
+  font-size:var(--theme-font-size-sm);font-weight:var(--theme-font-weight-medium);color:var(--ds-color-error-text)}
+.rec-refusal .ic{flex:none;width:15px;height:15px}
+
+/* identity */
+.rec-ident{display:flex;align-items:baseline;justify-content:space-between;gap:var(--theme-spacing-md);padding:var(--theme-spacing-2xs) 0 var(--theme-spacing-xs)}
+.rec-ident__ref{font-family:var(--theme-font-display);font-size:var(--theme-font-size-sm);font-weight:600;font-variant-numeric:tabular-nums}
+.rec-ident__cust{font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary);margin-left:8px}
+.rec-ident__money strong{font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;font-variant-numeric:tabular-nums}
+.rec-ident__caveat{font-size:var(--theme-font-size-xs);color:var(--ds-color-warning-text);margin-left:6px}
+
+/* tab rail */
+.rec-tabs{display:flex;gap:var(--theme-spacing-lg);margin:0 calc(-1 * var(--theme-spacing-lg));padding:0 var(--theme-spacing-lg)}
+.rec-tabs button{appearance:none;background:none;border:0;font:inherit;font-size:var(--theme-font-size-sm);
+  font-weight:var(--theme-font-weight-medium);color:var(--ds-text-secondary);padding:8px 0 9px;border-bottom:2px solid transparent;cursor:pointer}
+.rec-tabs button[aria-selected="true"]{color:var(--ds-text-primary);border-bottom-color:var(--ds-color-brand)}
+
+/* ── The attention row — RESTORED FROM THE APPROVED MOCK (.filterrow) ───────
+   Not a new decision. Drawn here only so the refused CTA and the row states
+   are seen in their real context. */
+.rec-attention{display:flex;align-items:center;gap:var(--theme-spacing-xs);width:100%;
+  min-height:40px;margin:0 calc(-1 * var(--theme-spacing-lg));
+  padding:6px var(--theme-spacing-lg);
+  border:0;border-bottom:1px solid var(--ds-border-subtle);
+  background:var(--ds-color-warning-subtle);
+  font:inherit;font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary);text-align:left;cursor:pointer;
+  width:calc(100% + 2 * var(--theme-spacing-lg))}
+.rec-attention__dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ds-color-warning)}
+.rec-attention[data-kind="clear"] .rec-attention__dot{background:var(--ds-color-success)}
+.rec-attention[data-kind="no-lines"] .rec-attention__dot{background:var(--ds-border-strong)}
+.rec-attention__text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ds-text-primary)}
+.rec-attention__more{color:var(--ds-text-secondary)}
+.rec-attention__act{flex:none;font-size:var(--theme-font-size-xs);font-weight:var(--theme-font-weight-bold);
+  color:var(--ds-text-primary);text-decoration:underline;text-underline-offset:2px}
+.rec-attention[aria-pressed="true"] .rec-attention__text{font-weight:var(--theme-font-weight-semibold)}
+
+/* ═══ THE SHARED ROW AND LIST — the second new decision ═════════════════════ */
+.ops2-rows{margin:0 0 var(--theme-spacing-md);padding:0;list-style:none;
+  background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised);overflow:hidden}
+.ops2-row + .ops2-row{border-top:1px solid var(--ds-border-subtle)}
+.ops2-row__open{display:flex;align-items:center;gap:var(--theme-spacing-sm);width:100%;min-height:44px;
+  padding:var(--theme-spacing-sm) var(--theme-spacing-md);
+  background:var(--ds-surface-card);border:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+/* EDGE AND WASH ON ONE ELEMENT. An inset shadow paints above its own element's
+   background, so no state can erase another. */
+/* Selection is declared FIRST and the edge rules AFTER, so a flagged selected
+   row keeps the WARNING edge — selection is the tint, the flag is the edge, and
+   aria-current says selection in words either way. This is spec §15.2's table;
+   the design's §3 CSS comment orders these the other way round and lets the
+   brand edge win. Flagged for the architect — the drawing follows the spec. */
+.ops2-row[data-edge="warning"] > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-warning)}
+/* SELECTION WINS THE EDGE when a row is both, so this rule follows the flag's.
+   Architect ruling, design 3.1: the flag already has words on this row (the
+   `needs review` badge) and, at the desk, the canvas beside the rail is showing
+   that line's whole reasons panel. Selection has no word a sighted reader can
+   see, and this console has recorded that its 4% tint is not a signal alone. */
+.ops2-row[data-selected]       > .ops2-row__open{background:var(--ds-color-brand-wash);box-shadow:inset 3px 0 0 var(--ds-color-brand)}
+.ops2-row[data-edge="info"]    > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-info)}
+.ops2-row.is-hover > .ops2-row__open{background:var(--ds-color-brand-wash)}
+/* Hover on an already-selected row deepens NOTHING. Spec §15.2 asked for
+   --ds-color-brand-subtle here, but n600 secondary ink (.rl-sub, .pq-meta)
+   measures 4.45:1 on sage100 — under the 4.5 floor, and unlike a press this is
+   a resting state a mouse can sit in. Selection already tints the row and
+   aria-current names it; the cursor is the hover signal. */
+.ops2-row.is-focus > .ops2-row__open{outline:2px solid var(--ds-border-focus);outline-offset:-2px}
+/* Press keeps the deeper wash: transient, nothing is read during it. */
+.ops2-row.is-press > .ops2-row__open{background:var(--ds-color-brand-subtle)}
+.ops2-row__chev{flex:none;width:16px;height:16px;color:var(--ds-text-secondary)}
+
+/* what a record row puts inside the shared row */
+.rl-elev{flex:none;display:grid;place-items:center;width:40px;height:40px;color:var(--ds-text-secondary)}
+.rl-main{flex:1 1 auto;min-width:0}
+.rl-top{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);min-width:0}
+.rl-code{flex:none;min-width:3.25rem;font-family:var(--theme-font-display);font-size:var(--theme-font-size-sm);font-weight:600;font-variant-numeric:tabular-nums}
+.rl-name{flex:1 1 auto;min-width:0;font-size:var(--theme-font-size-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rl-sub{display:flex;flex-wrap:wrap;gap:0 var(--theme-spacing-sm);margin-top:2px;font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary);font-variant-numeric:tabular-nums}
+.rl-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.rl-money{font-family:var(--theme-font-display);font-size:var(--theme-font-size-sm);font-weight:600;font-variant-numeric:tabular-nums}
+.rl-money[data-priced="false"]{color:var(--ds-color-warning-text);font-weight:500}
+.rl-badge{font-size:.625rem;letter-spacing:.02em;padding:1px 5px;border-radius:3px;background:var(--ds-color-warning-subtle);color:var(--ds-color-warning-text);  /* was a raw hex (#eadfc6). Same weight, mixed from the tokens instead —
+     warn700 on warn50 is 8.49:1, so the border is trim, not the signal. */
+  border:1px solid color-mix(in srgb, var(--ds-color-warning) 35%, var(--ds-color-warning-subtle));white-space:nowrap}
+
+/* what a queue card puts inside the same shared row */
+.pq-card{display:grid;gap:2px;flex:1 1 auto;min-width:0}
+.pq-card__top,.pq-card__bottom{display:flex;align-items:baseline;justify-content:space-between;gap:var(--theme-spacing-sm);min-width:0}
+.pq-ref{font-family:var(--theme-font-display);font-size:var(--theme-font-size-xs);font-weight:600;color:var(--ds-text-secondary);font-variant-numeric:tabular-nums}
+.pq-title{font-size:var(--theme-font-size-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pq-meta{font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary)}
+.pq-money{font-family:var(--theme-font-display);font-size:var(--theme-font-size-sm);font-weight:600;font-variant-numeric:tabular-nums}
+.pq-status{font-size:.625rem;padding:1px 5px;border-radius:3px;background:var(--ds-surface-sunken);color:var(--ds-text-secondary);border:1px solid var(--ds-border-subtle)}
+
+/* what a unit row puts inside the same shared row */
+.ops2-row--unit > .ops2-row__open{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:var(--theme-spacing-sm)}
+.lp-unit__code{font-family:var(--theme-font-display);font-size:var(--theme-font-size-sm);font-weight:600}
+.lp-unit__note{font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary);margin-top:2px}
+
+/* the record's empty states */
+.rl-empty{display:grid;gap:var(--theme-spacing-xs);padding:var(--theme-spacing-xl) var(--theme-spacing-lg);
+  text-align:center;background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised);font-size:var(--theme-font-size-sm)}
+.rl-empty strong{font-size:var(--theme-font-size-base)}
+.rl-empty__back{background:none;border:0;font:inherit;font-size:var(--theme-font-size-sm);color:var(--ds-text-link);text-decoration:underline;cursor:pointer}
+
+/* ═══ "WHY THIS PRODUCT" — the third new decision ═══════════════════════════ */
+.lp-panel{padding:var(--theme-spacing-sm) var(--theme-spacing-md);background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised)}
+.lp-panel__title{margin:0 0 var(--theme-spacing-xs);font-size:var(--theme-font-size-xs);font-weight:500;
+  letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--ds-text-secondary)}
+.lp-panel--door{position:relative}
+.lp-panel--door.is-hover{background:var(--ds-color-brand-wash)}
+.lp-panel--door.is-focus{outline:2px solid var(--ds-border-focus);outline-offset:2px}
+.lp-panel__head{display:flex;align-items:center;justify-content:space-between;gap:var(--theme-spacing-sm)}
+.lp-panel__head > .lp-panel__title{margin-bottom:0}
+.lp-panel__chev{flex:none;width:16px;height:16px;color:var(--ds-text-secondary)}
+.lp-panel__lines{display:grid;grid-template-columns:minmax(6rem,auto) 1fr;gap:var(--theme-spacing-2xs) var(--theme-spacing-md);
+  margin:var(--theme-spacing-xs) 0 0;font-size:var(--theme-font-size-sm)}
+.lp-panel__lines dt{color:var(--ds-text-secondary)}
+.lp-panel__lines dd{margin:0;color:var(--ds-text-primary)}
+.lp-panel__more{margin:var(--theme-spacing-xs) 0 0;font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary)}
+/* A NAMED ABSENCE IS THE ANSWER TO THE QUESTION, so it is readable text.
+   Drawn first at --ds-text-muted #8b8880 = 3.54:1 on card — the exact value the
+   approved mock's rule A1 (ops2.css:60-67) rejects by name, and the sentence it
+   would have made unreadable is the whole point of this screen. --ds-text-secondary
+   is 5.23:1 on card, 4.88:1 on the panel's brand-wash hover. Italic still
+   separates an absence from a value; only the colour moved. */
+.ops2-absent{font-style:italic;color:var(--ds-text-secondary)}
+/* An absence that occupies a whole section gets its own quiet slot, so a section
+   with nothing to report still reads as a section someone filled in — the
+   failure mode here is a screen that looks like it failed to load. The leading
+   edge is the same 3px mark the row uses; at --ds-text-muted on sunken it is
+   3.22:1, above the 3:1 floor for a mark (sunken alone is 1.10:1 on card —
+   invisible without it). */
+.wd__reason.ops2-absent{padding:var(--theme-spacing-sm) var(--theme-spacing-md);
+  background:var(--ds-surface-sunken);border-radius:var(--ds-radius-control);
+  box-shadow:inset 3px 0 0 var(--ds-text-muted)}
+.lp-why__warn{color:var(--ds-color-warning-text)}
+/* .lp-panel__lines dd and .wd__kv dd outrank a bare class, so inside a panel
+   every absence and every warning line was rendering as ordinary ink — an
+   absence that looks exactly like a value is the failure this section exists to
+   prevent. Restated at matching specificity. */
+.lp-panel__lines dd.ops2-absent,.wd__kv dd.ops2-absent{color:var(--ds-text-secondary)}
+.lp-panel__lines dd.lp-why__warn,.wd__kv dd.lp-why__warn{color:var(--ds-color-warning-text)}
+.lp-why__unit{display:flex;gap:var(--theme-spacing-sm)}
+.lp-why__unit-code{font-family:var(--theme-font-display);font-weight:600;min-width:2.5rem}
+
+/* the detail screen, inside SidePanel's phone form */
+.sp{background:var(--ds-surface-page);height:100%}
+.sp__bar{display:flex;align-items:center;gap:var(--theme-spacing-sm);min-height:52px;padding:0 var(--theme-spacing-md);
+  background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.sp__back{display:inline-flex;align-items:center;gap:4px;background:none;border:0;font:inherit;
+  font-size:var(--theme-font-size-sm);color:var(--ds-text-link);cursor:pointer;padding:0}
+.sp__title{font-size:var(--theme-font-size-sm);font-weight:600;margin-left:auto;margin-right:auto;color:var(--ds-text-primary)}
+.wd{display:grid;gap:var(--theme-spacing-xl);padding:var(--theme-spacing-md)}
+.wd__lede{margin:0;font-size:var(--theme-font-size-base);color:var(--ds-text-primary);line-height:1.45}
+.wd__lede .lbl{display:block;font-size:var(--theme-font-size-xs);font-weight:500;letter-spacing:var(--theme-letter-spacing-wider);
+  text-transform:uppercase;color:var(--ds-text-secondary);margin-bottom:2px}
+.wd__blk{display:grid;gap:var(--theme-spacing-xs)}
+.wd__blk-h{margin:0;font-size:var(--theme-font-size-xs);font-weight:500;letter-spacing:var(--theme-letter-spacing-wider);
+  text-transform:uppercase;color:var(--ds-text-secondary)}
+.wd__kv{display:grid;grid-template-columns:minmax(4rem,auto) 1fr;gap:var(--theme-spacing-2xs) var(--theme-spacing-md);margin:0;font-size:var(--theme-font-size-sm)}
+.wd__kv dt{color:var(--ds-text-secondary)}
+.wd__kv dd{margin:0;color:var(--ds-text-primary)}
+.wd__reason{margin:0;font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary);line-height:1.5}
+.wd__closing{color:var(--ds-text-secondary);font-size:var(--theme-font-size-xs)}
+.wd__unit{display:grid;gap:2px;padding-block:var(--theme-spacing-xs);border-top:1px solid var(--ds-border-subtle);font-size:var(--theme-font-size-sm)}
+.wd__unit:first-child{border-top:0}
+.wd__unit-top{display:flex;gap:var(--theme-spacing-sm);align-items:baseline}
+.wd__unit-code{font-family:var(--theme-font-display);font-weight:600;min-width:2.5rem}
+
+/* desk canvas */
+.desk{display:grid;grid-template-columns:340px 1fr;min-height:420px}
+.desk__rail{border-right:1px solid var(--ds-border-subtle);background:var(--ds-surface-page);padding:var(--theme-spacing-md)}
+.desk__canvas{padding:var(--theme-spacing-lg);display:grid;gap:var(--theme-spacing-md);align-content:start}
+.desk__canvas h3{margin:0;font-family:var(--theme-font-display);font-size:var(--theme-font-size-md)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>ops2 project record — testing feedback</h1>
+<p class="lede">
+This mock draws only the <strong>three genuinely new visual decisions</strong> in the defect fix.
+Defects 3, 4 and the attention row's placement are <em>restoring the already-approved
+<code>ops2-r1-ionic</code> mock</em> — they appear here as context, not as proposals, and are not up
+for redesign. Single-column (375&nbsp;px) is the width that must be right; desk appears only where a
+new decision lands there. Every colour is an ops2 token.
+</p>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     1. THE REFUSED PRIMARY
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>1 &middot; The primary action, refused</h2>
+  <p class="note">
+    Today the disabled <code>Issue reviewed quote</code> is card-white with an error-red border and
+    error-red text. Red is for destructive and error; a refused control is neither &mdash; but the
+    problem the red was solving is real, and Ionic's default (a flat grey wash at
+    <code>opacity:.5</code>) reads as a line of text in a toolbar. Both candidates below keep the
+    button's <em>shape and weight</em> and drop every error semantic: sunken fill, secondary ink at
+    full opacity &mdash; 4.75:1, above the 4.5 floor. The error family stays on
+    <code>.rec-refusal</code>, which is what P1-AC-39 actually asked for.
+  </p>
+  <p class="note">
+    <strong>They differ in one value: the edge.</strong> FB-AC-30 asks that the control be
+    distinguishable from the toolbar by its fill <em>or</em> its border. The sunken fill is
+    <strong>1.10:1</strong> against the white toolbar &mdash; it cannot carry that on its own, so the
+    border has to. <code>--ds-border-strong</code> (#b5b2ab) measures <strong>2.12:1</strong> against
+    the toolbar and <strong>1.92:1</strong> against its own fill, both under the 3:1 floor for a
+    control boundary; at those numbers the named regression returns in beige rather than grey.
+    <code>--ds-text-muted</code> (#8b8880) is <strong>3.54:1</strong> and <strong>3.22:1</strong> and
+    is still the quietest ops2 token that clears 3:1 &mdash; no <code>--ds-border-*</code> token does
+    on white. Nothing else about the control changes. <strong>Owner picks.</strong>
+  </p>
+
+  <div class="row-of-frames">
+
+    <div>
+      <p class="cap">a &middot; enabled <em>— for reference</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="rec-head">
+          <span class="rec-head__title">OF-Q-20013</span>
+          <span class="rec-cta">
+            <button class="btn rec-cta__primary">Issue reviewed quote</button>
+            <button class="btn rec-cta__more" aria-label="More actions">&#8942;</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">b &middot; refused <em>— ux-designer's edge, <code>--ds-border-strong</code></em></p>
+      <div class="frame frame--phone ops2">
+        <div class="rec-head">
+          <span class="rec-head__title">OF-Q-20013</span>
+          <span class="rec-cta">
+            <button class="btn rec-cta__primary is-disabled--ux" disabled
+              aria-describedby="refusal-0">Issue reviewed quote</button>
+            <button class="btn rec-cta__more" aria-label="More actions">&#8942;</button>
+          </span>
+        </div>
+        <div class="ops2-page__body" style="padding-bottom:0">
+          <p class="rec-refusal" id="refusal-0">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v4.2M8 11.2v.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            2 lines have no rate. This quote cannot be issued.
+          </p>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:8px"><em>The concept is right &mdash; but the edge is 2.12:1
+        against the bar and the fill is 1.10:1, so the shape thins out at arm's length.</em></p>
+    </div>
+
+    <div>
+      <p class="cap">c &middot; refused <span class="badge-ok">ui-designer proposes</span></p>
+      <div class="frame frame--phone ops2">
+        <div class="rec-head">
+          <span class="rec-head__title">OF-Q-20013</span>
+          <span class="rec-cta">
+            <button class="btn rec-cta__primary is-disabled" disabled
+              aria-describedby="refusal-1">Issue reviewed quote</button>
+            <button class="btn rec-cta__more" aria-label="More actions">&#8942;</button>
+          </span>
+        </div>
+        <div class="ops2-page__body" style="padding-bottom:0">
+          <p class="rec-refusal" id="refusal-1">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v4.2M8 11.2v.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            2 lines have no rate. This quote cannot be issued.
+          </p>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:8px"><em>Same control, one value changed. The button says the
+        action exists and is held; the sentence keeps all the error weight.</em></p>
+    </div>
+
+    <div>
+      <p class="cap">d &middot; today <span class="badge-x">being replaced</span></p>
+      <div class="frame frame--phone ops2 bad">
+        <div class="rec-head">
+          <span class="rec-head__title">OF-Q-20013</span>
+          <span class="rec-cta">
+            <button class="btn rec-cta__primary is-disabled--old" disabled>Issue reviewed quote</button>
+            <button class="btn rec-cta__more" aria-label="More actions">&#8942;</button>
+          </span>
+        </div>
+        <div class="ops2-page__body" style="padding-bottom:0">
+          <p class="rec-refusal">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v4.2M8 11.2v.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            2 lines have no rate. This quote cannot be issued.
+          </p>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:8px"><em>Two red objects competing; the button is the louder
+        one, and it is not the fault.</em></p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     2. THE SHARED ROW AND LIST
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>2 &middot; One row, one list &mdash; every state</h2>
+  <p class="note">
+    One <code>.ops2-row</code> and one <code>.ops2-rows</code> serve the queue's phone card, the
+    record's line list and the line page's unit rows. The defect (FB-AC-1) is the last pair below:
+    today the flag edge is an inset shadow on the <code>&lt;li&gt;</code> and the hover wash is a
+    background on the <code>&lt;button&gt;</code> inside it, so hovering paints the edge out.
+    <strong>Both move onto <code>.ops2-row__open</code></strong> &mdash; the single pressable &mdash;
+    and an inset shadow always draws above its own element's background, so no state can erase
+    another. Hover states are shown here as static classes.
+  </p>
+
+  <div class="row-of-frames">
+
+    <div>
+      <p class="cap">the state matrix <em>— record line list, 375&nbsp;px</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <ul class="ops2-rows">
+
+            <li class="ops2-row ptr" data-ptr="default">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M20 6v28" stroke="currentColor" stroke-width="1"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W01</span><span class="rl-name">Sliding window 2-panel</span></span>
+                  <span class="rl-sub"><span>1200 &times; 900 mm</span></span>
+                </span>
+                <span class="rl-end"><span class="rl-money" data-priced="true">$1,248.00</span></span>
+              </button>
+            </li>
+
+            <li class="ops2-row is-hover ptr" data-ptr="hover">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M6 20h28" stroke="currentColor" stroke-width="1"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W02</span><span class="rl-name">Awning window</span></span>
+                  <span class="rl-sub"><span>3500 &times; 700 mm</span></span>
+                </span>
+                <span class="rl-end"><span class="rl-money" data-priced="true">$2,190.00</span></span>
+              </button>
+            </li>
+
+            <li class="ops2-row" data-edge="warning">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M6 6l14 14 14-14" fill="none" stroke="currentColor" stroke-width="1"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">D01</span><span class="rl-name">Hinged door, single</span></span>
+                  <span class="rl-sub"><span>2100 &times; 870 mm</span></span>
+                </span>
+                <span class="rl-end">
+                  <span class="rl-money" data-priced="true">$3,410.00</span>
+                  <span class="rl-badge">needs review</span>
+                </span>
+              </button>
+            </li>
+
+            <li class="ops2-row is-hover ptr" data-edge="warning" data-ptr="the defect">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M6 34l14-14 14 14" fill="none" stroke="currentColor" stroke-width="1"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">D02</span><span class="rl-name">Sliding door, 3-panel</span></span>
+                  <span class="rl-sub"><span>2100 &times; 2700 mm</span><span>3 joined units</span></span>
+                </span>
+                <span class="rl-end">
+                  <span class="rl-money" data-priced="false">No rate</span>
+                  <span class="rl-badge">needs review</span>
+                </span>
+              </button>
+            </li>
+
+            <li class="ops2-row is-focus ptr" data-ptr="focus-visible">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W03</span><span class="rl-name">Fixed lite</span></span>
+                  <span class="rl-sub"><span>600 &times; 600 mm</span></span>
+                </span>
+                <span class="rl-end"><span class="rl-money" data-priced="true">$318.00</span></span>
+              </button>
+            </li>
+
+            <li class="ops2-row is-press ptr" data-ptr="pressed">
+              <button class="ops2-row__open">
+                <span class="rl-elev">
+                  <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+                    <rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M20 6v28" stroke="currentColor" stroke-width="1"/>
+                  </svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W04</span><span class="rl-name">Awning window</span></span>
+                  <span class="rl-sub"><span>900 &times; 600 mm</span></span>
+                </span>
+                <span class="rl-end"><span class="rl-money" data-priced="true">$742.00</span></span>
+              </button>
+            </li>
+
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">selected <em>— desk rail only</em></p>
+      <div class="frame frame--phone ops2" style="width:340px">
+        <div class="ops2-page__body">
+          <ul class="ops2-rows">
+            <li class="ops2-row" data-selected aria-current="true">
+              <button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M20 6v28" stroke="currentColor" stroke-width="1"/></svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W01</span><span class="rl-name">Sliding window</span></span>
+                  <span class="rl-sub"><span>1200 &times; 900 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money">$1,248.00</span></span>
+              </button>
+            </li>
+            <li class="ops2-row is-press ptr" data-selected aria-current="true" data-ptr="selected + pressed">
+              <button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 20h28" stroke="currentColor" stroke-width="1"/></svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">W02</span><span class="rl-name">Awning window</span></span>
+                  <span class="rl-sub"><span>3500 &times; 700 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money">$2,190.00</span></span>
+              </button>
+            </li>
+            <li class="ops2-row ptr" data-selected data-edge="warning" aria-current="true" data-ptr="selected + flagged">
+              <button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+                <span class="rl-main">
+                  <span class="rl-top"><span class="rl-code">D01</span><span class="rl-name">Hinged door</span></span>
+                  <span class="rl-sub"><span>2100 &times; 870 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money">$3,410.00</span><span class="rl-badge">needs review</span></span>
+              </button>
+            </li>
+          </ul>
+          <p class="cap" style="margin-top:-4px"><em>Selection takes the brand edge, and
+            <strong>keeps it</strong> when the row is also flagged &mdash; the flag still has its
+            <code>needs review</code> badge and, at the desk, the canvas is showing that line's
+            reasons; selection has no word a sighted reader can see. Hover on an
+            already-selected row deepens nothing: the deeper wash spec&nbsp;&sect;15.2 asked for puts
+            the 12&nbsp;px sub-line at 4.45:1, under the floor, and a mouse can rest there. Press
+            still deepens &mdash; nothing is read during it.</em></p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="row-of-frames" style="margin-top:26px">
+    <div>
+      <p class="cap">same row, queue phone card <em>— content differs, object does not; no
+        <code>IonItem</code>, so no ripple &mdash; the pressed wash above is what replaces it</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <ul class="ops2-rows">
+            <li class="ops2-row" data-edge="warning">
+              <button class="ops2-row__open">
+                <span class="pq-card">
+                  <span class="pq-card__top"><span class="pq-ref">OF-Q-20013</span><span class="pq-status">In review</span></span>
+                  <span class="pq-card__top"><span class="pq-title">Kingsley Rd &mdash; stage 2</span></span>
+                  <span class="pq-card__bottom"><span class="pq-meta">Harrow Build &middot; 5 lines</span><span class="pq-money">$11,908.00</span></span>
+                </span>
+                <svg class="ops2-row__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+            </li>
+            <li class="ops2-row is-hover ptr" data-edge="info" data-ptr="waiting: customer">
+              <button class="ops2-row__open">
+                <span class="pq-card">
+                  <span class="pq-card__top"><span class="pq-ref">OF-Q-20014</span><span class="pq-status">Sent</span></span>
+                  <span class="pq-card__top"><span class="pq-title">Fairview Ave</span></span>
+                  <span class="pq-card__bottom"><span class="pq-meta">Delta Homes &middot; 2 lines</span><span class="pq-money">$4,120.00</span></span>
+                </span>
+                <svg class="ops2-row__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">same row, line page unit rows <em>— grid inside, no edge</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <section class="lp-panel" style="padding-inline:0">
+            <h2 class="lp-panel__title" style="padding-inline:var(--theme-spacing-md)">Its units</h2>
+            <ul class="ops2-rows" style="border:0;border-radius:0;box-shadow:none;margin:0">
+              <li class="ops2-row ops2-row--unit">
+                <button class="ops2-row__open">
+                  <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+                  <span>
+                    <span class="rl-top"><span class="lp-unit__code">U1</span><span class="rl-name">Awning lite</span></span>
+                    <span class="rl-sub"><span>900 &times; 700 mm</span></span>
+                    <span class="lp-unit__note">Left of the mullion</span>
+                  </span>
+                </button>
+              </li>
+              <li class="ops2-row ops2-row--unit is-hover ptr" data-ptr="hover">
+                <button class="ops2-row__open">
+                  <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 20h28" stroke="currentColor" stroke-width="1"/></svg></span>
+                  <span>
+                    <span class="rl-top"><span class="lp-unit__code">U2</span><span class="rl-name">Fixed lite</span></span>
+                    <span class="rl-sub"><span>1800 &times; 700 mm</span></span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </section>
+          <p class="cap" style="margin-top:10px"><em>The gutter is the row's, never the container's
+            &mdash; the wash and the focus ring reach the block's inner edge (FB-AC-6).</em></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     3. WHY THIS PRODUCT — THE THREE KINDS WITH NO DETAIL BEHIND THEM
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>3 &middot; "Why this product" &mdash; the door is always there</h2>
+  <p class="note">
+    For <code>unresolved</code>, <code>unrecorded</code> and <code>human</code> the API returns only
+    the line's own figures &mdash; no requirement, no candidates. Nothing new is fetched. The panel
+    now carries a chevron and a door on every kind, and the detail keeps its three headings and
+    <strong>names each absence</strong> instead of hiding the block &mdash; never a dash, never a
+    zero.
+  </p>
+  <p class="note">
+    An absence is a sentence someone has to read, so it is <em>readable</em> text: italic, at
+    <code>--ds-text-secondary</code>, <strong>5.23:1</strong> on card. It was drawn at
+    <code>--ds-text-muted</code> &mdash; <strong>3.54:1</strong>, the exact value the approved mock's
+    rule A1 rejects by name. Where an absence fills a whole section it sits in a sunken slot with
+    the row's 3&nbsp;px leading mark, so the section reads as one someone <em>filled in</em>. That is
+    the difference between a screen that is complete-and-empty and one that looks broken, and it is
+    what the <code>unrecorded</code> detail below is asking you to approve.
+  </p>
+
+  <div class="row-of-frames">
+
+    <div>
+      <p class="cap">panel &middot; unrecorded <span class="badge-ok">door is new</span></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <section class="lp-panel lp-panel--door" aria-label="Why this product">
+            <span class="lp-panel__head">
+              <h2 class="lp-panel__title">Why this product</h2>
+              <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </span>
+            <dl class="lp-panel__lines">
+              <dt>This one</dt><dd>Uw 2.10 &middot; SHGC 0.45</dd>
+              <dt>Chosen</dt><dd class="ops2-absent">recorded by an earlier model, whose reasoning was not kept</dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">panel &middot; unresolved <em>— hover</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <section class="lp-panel lp-panel--door is-hover" aria-label="Why this product">
+            <span class="lp-panel__head">
+              <h2 class="lp-panel__title">Why this product</h2>
+              <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </span>
+            <dl class="lp-panel__lines">
+              <dt>This one</dt><dd class="ops2-absent">no selection was made on this line</dd>
+              <dt>Chosen</dt><dd class="lp-why__warn">the platform evaluated this opening and selected nothing</dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">panel &middot; human, split <em>— focus-visible</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body">
+          <section class="lp-panel lp-panel--door is-focus" aria-label="Why this product">
+            <span class="lp-panel__head">
+              <h2 class="lp-panel__title">Why this product</h2>
+              <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </span>
+            <dl class="lp-panel__lines">
+              <dt>These ones</dt>
+              <dd>
+                <span class="lp-why__unit"><span class="lp-why__unit-code">U1</span><span>Uw 2.30 &middot; SHGC 0.41</span></span>
+                <span class="lp-why__unit"><span class="lp-why__unit-code">U2</span><span class="ops2-absent">not recorded</span></span>
+              </dd>
+              <dt>Chosen</dt><dd>a person decided this split</dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="row-of-frames" style="margin-top:26px">
+
+    <div>
+      <p class="cap">detail &middot; unrecorded <span class="badge-ok">the case to approve</span></p>
+      <div class="frame frame--phone ops2">
+        <div class="sp">
+          <div class="sp__bar">
+            <button class="sp__back">&#8249;&nbsp;W02</button>
+            <span class="sp__title">Why this product</span>
+            <span style="width:44px"></span>
+          </div>
+          <div class="wd">
+            <p class="wd__lede">
+              <span class="lbl">Chosen</span>
+              <span class="ops2-absent">recorded by an earlier model, whose reasoning was not kept</span>
+            </p>
+
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What it had to meet</h3>
+              <p class="wd__reason ops2-absent">Not recorded for this line.</p>
+            </section>
+
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">This line's figures</h3>
+              <dl class="wd__kv">
+                <dt>Uw</dt><dd>2.10</dd>
+                <dt>SHGC</dt><dd>0.45</dd>
+              </dl>
+            </section>
+
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What else was considered</h3>
+              <p class="wd__reason ops2-absent">No alternatives were recorded for this line.</p>
+            </section>
+
+            <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">detail &middot; unresolved <em>— and figures never recorded</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="sp">
+          <div class="sp__bar">
+            <button class="sp__back">&#8249;&nbsp;D02</button>
+            <span class="sp__title">Why this product</span>
+            <span style="width:44px"></span>
+          </div>
+          <div class="wd">
+            <p class="wd__lede">
+              <span class="lbl">Chosen</span>
+              <span class="lp-why__warn">the platform evaluated this opening and selected nothing</span>
+            </p>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What it had to meet</h3>
+              <p class="wd__reason ops2-absent">Not recorded for this line.</p>
+            </section>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">This line's figures</h3>
+              <p class="wd__reason ops2-absent">no selection was made on this line</p>
+            </section>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What else was considered</h3>
+              <p class="wd__reason ops2-absent">No alternatives were recorded for this line.</p>
+            </section>
+            <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">detail &middot; human split <em>— figures block becomes the units</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="sp">
+          <div class="sp__bar">
+            <button class="sp__back">&#8249;&nbsp;D01</button>
+            <span class="sp__title">Why this product</span>
+            <span style="width:44px"></span>
+          </div>
+          <div class="wd">
+            <p class="wd__lede">
+              <span class="lbl">Chosen</span>
+              a person decided this split
+            </p>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What it had to meet</h3>
+              <p class="wd__reason ops2-absent">Not recorded for this line.</p>
+            </section>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">Each unit's own band</h3>
+              <div>
+                <div class="wd__unit">
+                  <span class="wd__unit-top"><span class="wd__unit-code">U1</span><span>Awning lite &mdash; AWS 604</span></span>
+                  <span class="wd__reason">Uw 2.30 &middot; SHGC 0.41</span>
+                </div>
+                <div class="wd__unit">
+                  <span class="wd__unit-top"><span class="wd__unit-code">U2</span><span>Fixed lite &mdash; AWS 401</span></span>
+                  <span class="wd__reason ops2-absent">Its band was not recorded.</span>
+                </div>
+              </div>
+            </section>
+            <section class="wd__blk">
+              <h3 class="wd__blk-h">What else was considered</h3>
+              <p class="wd__reason ops2-absent">No alternatives were recorded for this line.</p>
+            </section>
+            <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     4. DESK — only where a new decision lands there
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>4 &middot; Desk &mdash; the canvas gets the panel</h2>
+  <p class="note">
+    Desk has no owner feedback yet and no layout change is proposed. Two things land here anyway:
+    the canvas now carries the "Why this product" panel (today it passes <code>why={null}</code>),
+    and the rail's selected row uses the shared row's selected state.
+  </p>
+  <div class="frame frame--desk ops2">
+    <div class="rec-head">
+      <span class="rec-head__title">OF-Q-20013 &middot; Kingsley Rd &mdash; stage 2</span>
+      <span class="rec-cta">
+        <button class="btn rec-cta__primary is-disabled" disabled>Issue reviewed quote</button>
+        <button class="btn rec-cta__more" aria-label="More actions">&#8942;</button>
+      </span>
+    </div>
+    <button class="rec-attention" aria-pressed="false" style="margin:0;width:100%">
+      <span class="rec-attention__dot" aria-hidden="true"></span>
+      <span class="rec-attention__text">3 lines need attention<span class="rec-attention__more"> &middot; +1 more</span></span>
+      <span class="rec-attention__act">show only these</span>
+    </button>
+    <div class="desk">
+      <div class="desk__rail">
+        <ul class="ops2-rows">
+          <li class="ops2-row" data-selected aria-current="true">
+            <button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 20h28" stroke="currentColor" stroke-width="1"/></svg></span>
+              <span class="rl-main">
+                <span class="rl-top"><span class="rl-code">W02</span><span class="rl-name">Awning window</span></span>
+                <span class="rl-sub"><span>3500 &times; 700 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money">$2,190.00</span></span>
+            </button>
+          </li>
+          <li class="ops2-row" data-edge="warning">
+            <button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+              <span class="rl-main">
+                <span class="rl-top"><span class="rl-code">D01</span><span class="rl-name">Hinged door</span></span>
+                <span class="rl-sub"><span>2100 &times; 870 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money">$3,410.00</span><span class="rl-badge">needs review</span></span>
+            </button>
+          </li>
+          <li class="ops2-row" data-edge="warning">
+            <button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M20 6v28" stroke="currentColor" stroke-width="1"/></svg></span>
+              <span class="rl-main">
+                <span class="rl-top"><span class="rl-code">D02</span><span class="rl-name">Sliding door, 3-panel</span></span>
+                <span class="rl-sub"><span>2100 &times; 2700 mm</span><span>3 joined units</span></span></span>
+              <span class="rl-end"><span class="rl-money" data-priced="false">No rate</span><span class="rl-badge">needs review</span></span>
+            </button>
+          </li>
+        </ul>
+      </div>
+      <div class="desk__canvas">
+        <h3>W02 &middot; Awning window</h3>
+        <section class="lp-panel">
+          <h2 class="lp-panel__title">Specification</h2>
+          <dl class="lp-panel__lines">
+            <dt>Product</dt><dd>AWS 604 awning</dd>
+            <dt>Size</dt><dd>3500 &times; 700 mm</dd>
+            <dt>Glazing</dt><dd>Double, clear</dd>
+          </dl>
+        </section>
+        <section class="lp-panel lp-panel--door" aria-label="Why this product">
+          <span class="lp-panel__head">
+            <h2 class="lp-panel__title">Why this product</h2>
+            <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+          <dl class="lp-panel__lines">
+            <dt>This one</dt><dd>Uw 2.10 &middot; SHGC 0.45</dd>
+            <dt>Chosen</dt><dd class="ops2-absent">recorded by an earlier model, whose reasoning was not kept</dd>
+          </dl>
+        </section>
+        <section class="lp-panel">
+          <h2 class="lp-panel__title">Price</h2>
+          <dl class="lp-panel__lines">
+            <dt>Line total</dt><dd>$2,190.00</dd>
+          </dl>
+        </section>
+      </div>
+    </div>
+  </div>
+  <p class="cap" style="margin-top:8px"><em>The panel sits between the specification (or the units)
+    and the price, exactly where the line page puts it. Its door navigates to
+    <code>/projects/:id/line/:lineId/why</code>; back returns to this record and names it.</em></p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     5. CONTEXT — not proposals
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>5 &middot; In context <em style="font-weight:400;font-size:.8125rem;color:#55524d">— restoration, not a new decision</em></h2>
+  <p class="note">
+    The whole 375&nbsp;px header, so the three decisions above are seen where they land. The
+    attention row here is the approved mock's <code>.filterrow</code> restored: warning tint under
+    the rail, full bleed, 40&nbsp;px floor, 14&nbsp;px inline padding, bottom border, bold underlined
+    ink action. It is not moved and it is not a tab.
+  </p>
+  <div class="row-of-frames">
+    <div>
+      <p class="cap">record, lines tab, filter off</p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__band">
+          <span class="ops2-page__back">&#8249;&nbsp;Projects</span>
+          <h1 class="rec-h1">Kingsley Rd &mdash; stage 2</h1>
+          <div class="rec-ident">
+            <span><span class="rec-ident__ref">OF-Q-20013</span><span class="rec-ident__cust">Harrow Build</span></span>
+            <span class="rec-ident__money"><strong>$11,908</strong><span class="rec-ident__caveat">2 with no rate</span></span>
+          </div>
+          <div class="rec-tabs" role="tablist">
+            <button role="tab" aria-selected="true">Lines</button>
+            <button role="tab" aria-selected="false">Totals</button>
+            <button role="tab" aria-selected="false">Activity</button>
+          </div>
+          <button class="rec-attention" aria-pressed="false">
+            <span class="rec-attention__dot" aria-hidden="true"></span>
+            <span class="rec-attention__text">3 lines need attention<span class="rec-attention__more"> &middot; +1 more</span></span>
+            <span class="rec-attention__act">show only these</span>
+          </button>
+        </div>
+        <div class="ops2-page__body">
+          <p class="rec-refusal">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v4.2M8 11.2v.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            2 lines have no rate. This quote cannot be issued.
+          </p>
+          <ul class="ops2-rows">
+            <li class="ops2-row"><button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M20 6v28" stroke="currentColor" stroke-width="1"/></svg></span>
+              <span class="rl-main"><span class="rl-top"><span class="rl-code">W01</span><span class="rl-name">Sliding window 2-panel</span></span>
+              <span class="rl-sub"><span>1200 &times; 900 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money">$1,248.00</span></span></button></li>
+            <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 20h28" stroke="currentColor" stroke-width="1"/></svg></span>
+              <span class="rl-main"><span class="rl-top"><span class="rl-code">W02</span><span class="rl-name">Awning window</span></span>
+              <span class="rl-sub"><span>3500 &times; 700 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money">$2,190.00</span><span class="rl-badge">needs review</span></span></button></li>
+            <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+              <span class="rl-main"><span class="rl-top"><span class="rl-code">D01</span><span class="rl-name">Hinged door, single</span></span>
+              <span class="rl-sub"><span>2100 &times; 870 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money">$3,410.00</span><span class="rl-badge">needs review</span></span></button></li>
+            <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M20 6v28" stroke="currentColor" stroke-width="1"/></svg></span>
+              <span class="rl-main"><span class="rl-top"><span class="rl-code">D02</span><span class="rl-name">Sliding door, 3-panel</span></span>
+              <span class="rl-sub"><span>2100 &times; 2700 mm</span><span>3 joined units</span></span></span>
+              <span class="rl-end"><span class="rl-money" data-priced="false">No rate</span><span class="rl-badge">needs review</span></span></button></li>
+            <li class="ops2-row"><button class="ops2-row__open">
+              <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+              <span class="rl-main"><span class="rl-top"><span class="rl-code">W03</span><span class="rl-name">Fixed lite</span></span>
+              <span class="rl-sub"><span>600 &times; 600 mm</span></span></span>
+              <span class="rl-end"><span class="rl-money" data-priced="false">No rate</span></span></button></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">filter on &mdash; and the filtered-empty state</p>
+      <div class="stack">
+        <div class="frame frame--phone ops2">
+          <div class="ops2-page__band">
+            <span class="ops2-page__back">&#8249;&nbsp;Projects</span>
+            <h1 class="rec-h1">Kingsley Rd &mdash; stage 2</h1>
+            <div class="rec-ident">
+              <span><span class="rec-ident__ref">OF-Q-20013</span><span class="rec-ident__cust">Harrow Build</span></span>
+              <span class="rec-ident__money"><strong>$11,908</strong></span>
+            </div>
+            <div class="rec-tabs" role="tablist">
+              <button role="tab" aria-selected="true">Lines</button>
+              <button role="tab" aria-selected="false">Totals</button>
+              <button role="tab" aria-selected="false">Activity</button>
+            </div>
+            <button class="rec-attention" aria-pressed="true">
+              <span class="rec-attention__dot" aria-hidden="true"></span>
+              <span class="rec-attention__text">Showing 4 lines that need attention</span>
+              <span class="rec-attention__act">show all</span>
+            </button>
+          </div>
+          <div class="ops2-page__body">
+            <ul class="ops2-rows">
+              <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 20h28" stroke="currentColor" stroke-width="1"/></svg></span>
+                <span class="rl-main"><span class="rl-top"><span class="rl-code">W02</span><span class="rl-name">Awning window</span></span>
+                <span class="rl-sub"><span>3500 &times; 700 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money">$2,190.00</span><span class="rl-badge">needs review</span></span></button></li>
+              <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+                <span class="rl-main"><span class="rl-top"><span class="rl-code">D01</span><span class="rl-name">Hinged door, single</span></span>
+                <span class="rl-sub"><span>2100 &times; 870 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money">$3,410.00</span><span class="rl-badge">needs review</span></span></button></li>
+              <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M20 6v28" stroke="currentColor" stroke-width="1"/></svg></span>
+                <span class="rl-main"><span class="rl-top"><span class="rl-code">D02</span><span class="rl-name">Sliding door</span></span>
+                <span class="rl-sub"><span>2100 &times; 2700 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money" data-priced="false">No rate</span><span class="rl-badge">needs review</span></span></button></li>
+              <li class="ops2-row"><button class="ops2-row__open">
+                <span class="rl-elev"><svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect x="6" y="6" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></span>
+                <span class="rl-main"><span class="rl-top"><span class="rl-code">W03</span><span class="rl-name">Fixed lite</span></span>
+                <span class="rl-sub"><span>600 &times; 600 mm</span></span></span>
+                <span class="rl-end"><span class="rl-money" data-priced="false">No rate</span></span></button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="frame frame--phone ops2">
+          <div class="ops2-page__band" style="padding-top:var(--theme-spacing-sm)">
+            <div class="rec-tabs" role="tablist">
+              <button role="tab" aria-selected="true">Lines</button>
+              <button role="tab" aria-selected="false">Totals</button>
+              <button role="tab" aria-selected="false">Activity</button>
+            </div>
+            <button class="rec-attention" data-kind="clear" aria-pressed="true">
+              <span class="rec-attention__dot" aria-hidden="true"></span>
+              <span class="rec-attention__text">Nothing is blocking this quote</span>
+              <span class="rec-attention__act">show all</span>
+            </button>
+          </div>
+          <div class="ops2-page__body">
+            <div class="rl-empty">
+              <strong>No lines need attention now.</strong>
+              <button class="rl-empty__back">Clear the filter to see all 5.</button>
+            </div>
+          </div>
+          <p class="cap" style="padding:0 12px 12px"><em>The tint stays in the clear state; the dot
+            carries the status, not the presence of the band.</em></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

@@ -106,19 +106,31 @@ export const VIEWER_FROM_RECORD = { viewerFrom: "record" } as const;
  *  indistinguishable, and each one's back would then be decided by the other's
  *  rule. */
 export const WHY_FROM_LINE = { whyFrom: "line" } as const;
+/** THE SECOND DOOR, and the reason this key stopped being a boolean.
+ *
+ *  The record's desk canvas grew its own panel (FB-AC-44) and pushed the LINE's
+ *  mark, so back named the line while the reader had come from the record — the
+ *  mark lying about its own door, which is precisely what the note above says
+ *  one shared key would cause. Two doors, two values, one reader. */
+export const WHY_FROM_RECORD = { whyFrom: "record" } as const;
 
-type ViewerDoor = "line" | "record";
+type Door = "line" | "record";
 
 /** The door this viewer was opened through, or `null` for a cold arrival that
  *  used no door at all. One reader, because it is one fact. */
-export function viewerDoor(state: unknown): ViewerDoor | null {
+export function viewerDoor(state: unknown): Door | null {
   const from = (state as { viewerFrom?: unknown } | null | undefined)?.viewerFrom;
   return from === "record" || from === "line" ? from : null;
 }
 
-/** Was this rationale entry opened from the panel, or arrived at cold? */
-export function whyDoor(state: unknown): boolean {
-  return (state as { whyFrom?: unknown } | null | undefined)?.whyFrom === "line";
+/** WHICH panel this rationale entry was opened through, or `null` for a cold
+ *  arrival that used no door. It answered presence only while there was one
+ *  door; the canvas is the second, and back names a different place through
+ *  each. Every existing caller tests it for truthiness, which still means
+ *  "opened from a page in this session, so back is a real pop". */
+export function whyDoor(state: unknown): Door | null {
+  const from = (state as { whyFrom?: unknown } | null | undefined)?.whyFrom;
+  return from === "record" || from === "line" ? from : null;
 }
 
 /** The address an opener sends the reviewer to. The parser accepts what this

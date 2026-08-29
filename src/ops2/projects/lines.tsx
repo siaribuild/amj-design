@@ -1,4 +1,5 @@
 import { Elevation } from "../../components/quote-project/Elevation";
+import { Row, RowList } from "../chrome/RowList";
 import {
   elevationPartsFor, joinedUnitCount, money, needsReview, sizeText,
   type RecordLine,
@@ -46,17 +47,17 @@ function LineRow({ line, selected, onOpen }: {
   const flagged = needsReview(line);
   const units = joinedUnitCount(line);
   return (
-    <li
-      className="rl-row"
-      data-flagged={flagged}
-      data-selected={selected || undefined}
+    <Row
+      edge={flagged ? "warning" : null}
+      selected={selected}
+      onActivate={() => onOpen(line.id)}
       data-testid="record-line"
-      // CURRENT, SAID RATHER THAN SHADED. A tint is the whole signal otherwise,
-      // and a rail of eighteen rows where one is 4% lighter is not a signal at
-      // all for a reader who cannot see it.
-      aria-current={selected ? "true" : undefined}
+      // KEPT, and not because anything styles it: `data-flagged` is what the
+      // existing browser suites assert a marked row by, and the mark's MEANING
+      // is this surface's to state. `data-edge` says a mark is drawn; this says
+      // what it is a mark of.
+      data-flagged={flagged}
     >
-      <button type="button" className="rl-open" onClick={() => onOpen(line.id)}>
         {/* DECORATIVE TO ASSISTIVE TECHNOLOGY, and the row's own text still
             carries the code, the product, the size and the flag — so the
             drawing adds nothing a non-sighted reviewer loses. `aria-hidden` is
@@ -98,8 +99,7 @@ function LineRow({ line, selected, onOpen }: {
           </span>
           {flagged && <span className="rl-badge">needs review</span>}
         </span>
-      </button>
-    </li>
+    </Row>
   );
 }
 
@@ -126,7 +126,11 @@ export function RecordLines({ lines, total, filterOn, orderNo, selectedId, onOpe
     if (filterOn) {
       return (
         <div className="rl-empty" data-testid="record-lines-filtered-empty">
-          <strong>No lines without a rate.</strong>
+          {/* THE FILTER'S OWN WORDS, and they have to name the set it actually
+              shows. It narrowed to lines with no rate; it now shows every line
+              needing a person, so this sentence was describing a subset of what
+              had just been filtered away. */}
+          <strong>No lines need attention now.</strong>
           <button type="button" className="rl-empty__back" onClick={onClearFilter}>
             Clear the filter to see all {total}.
           </button>
@@ -158,7 +162,7 @@ export function RecordLines({ lines, total, filterOn, orderNo, selectedId, onOpe
     );
   }
   return (
-    <ul className="rl-list" data-testid="record-lines">
+    <RowList className="rl-list ds-surface-card" testId="record-lines">
       {lines.map((line) => (
         <LineRow
           key={line.id}
@@ -167,6 +171,6 @@ export function RecordLines({ lines, total, filterOn, orderNo, selectedId, onOpe
           onOpen={onOpen}
         />
       ))}
-    </ul>
+    </RowList>
   );
 }

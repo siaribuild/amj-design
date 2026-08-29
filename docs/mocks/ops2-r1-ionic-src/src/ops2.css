@@ -1,0 +1,548 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ops2 — the layer on top of Ionic's default theme
+//
+   THE THEME IS IONIC'S. There is no palette here, no font stack, no radii, no
+   shadows, no type ramp. Hues, spacing and shape are Ionic's to decide, light
+   and dark both, and the dark palette is Ionic's own dark.system.css rather than
+   anything written here.
+
+   What this file contains is only:
+
+     A. THREE FUNCTIONAL RULES that are not branding and must survive any theme.
+     B. LAYOUT for the four things Ionic has no component for — the drawing
+        plate, the line scroller, the desktop rail/canvas split, and the docked
+        edit panel.
+
+   Everything is expressed in Ionic's own stepped palette variables
+   (--ion-color-step-*, which Ionic interpolates between its background and text
+   colours), so every value below tracks the theme instead of pinning a colour.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── DERIVED TOKENS ───────────────────────────────────────────────────────────
+   Ionic defines almost nothing as a variable on the LIGHT palette. Measured in
+   the browser: on light, --ion-text-color, --ion-background-color and
+   --ion-text-color-rgb all resolve EMPTY — core.css hardcodes #000/#fff in its
+   own rules and only sets those variables in dark.system.css. Two consequences
+   bit in sequence and both are worth recording, because anyone building on Ionic
+   will hit them:
+
+     1. --ion-color-step-* does not exist in this stylesheet set at all. Relying on
+        it put "not priced" at 3.26:1 on dark — the exact defect rule A1 exists to
+        prevent.
+     2. rgba(var(--ion-text-color-rgb), .68) is invalid whenever that variable is
+        undefined, so on LIGHT every quiet role silently rendered full-strength
+        black. Contrast passed and the hierarchy was gone.
+
+   So the quiet inks are mixed from a text/background pair that ALWAYS resolves,
+   with literal fallbacks for the palette that defines neither. color-mix gives an
+   opaque result, so it composites predictably over any surface:
+
+     --ops-quiet  68% ink  →  #575757 on white (7.0:1) · #ADADAD on #121212 (10.9:1)
+     --ops-ink    90% ink  →  #1A1A1A on white (17:1)  · #E6E6E6 on #121212 (15:1)
+
+   Both clear 4.5:1 in both palettes, which is the whole of rule A1. This is not a
+   palette — there is still no hue chosen here — it is six mixes of Ionic's own
+   two ends. */
+:root {
+  --ops-text: var(--ion-text-color, #000000);
+  --ops-bg: var(--ion-background-color, #ffffff);
+  --ops-quiet:        color-mix(in srgb, var(--ops-text) 68%, var(--ops-bg));
+  --ops-ink:          color-mix(in srgb, var(--ops-text) 90%, var(--ops-bg));
+  --ops-surface:      color-mix(in srgb, var(--ops-text)  4%, var(--ops-bg));
+  --ops-surface-2:    color-mix(in srgb, var(--ops-text)  8%, var(--ops-bg));
+  --ops-line:         color-mix(in srgb, var(--ops-text) 14%, var(--ops-bg));
+  --ops-line-strong:  color-mix(in srgb, var(--ops-text) 22%, var(--ops-bg));
+  --ops-warn-tint:    color-mix(in srgb, var(--ion-color-warning, #ffc409) 14%, var(--ops-bg));
+  --ops-primary-tint: color-mix(in srgb, var(--ion-color-primary, #3880ff) 10%, var(--ops-bg));
+}
+
+/* ═══ A. THE THREE FUNCTIONAL RULES ════════════════════════════════════════ */
+
+/* A1 — LEGIBILITY FLOOR. Text that carries a fact is readable text, whatever
+   role it plays. Ionic's `medium` (#92949c) lands at ~3.0:1 on its light
+   background, which is how the previous generation shipped "not priced" at
+   3.5:1: an operator could see something was unavailable without being able to
+   read why. step-600 is ~5.7:1 on light and ~7:1 on dark. */
+.absent, .basis, .cap, ion-note.fact {
+  color: var(--ops-quiet) !important;
+}
+
+/* A1b — A BLOCKED CONTROL IS INERT, NOT FADED. Ionic's disabled opacity of .5
+   takes the label under 3:1, so the one thing the operator needs to read — WHY
+   they cannot proceed — is the thing that goes first. Full opacity, a surface
+   that plainly is not a button, and a label at full contrast. */
+/* Ionic paints the disabled state as `opacity: .5` on the HOST via
+   .button-disabled, not through a variable, so the override has to name that
+   class. Everything else here is the "inert surface" treatment: a control that
+   plainly is not pressable, with its label at full contrast. */
+ion-button.inert.button-disabled { opacity: 1; }
+ion-button.inert {
+  --opacity: 1;
+  --background: var(--ops-surface-2);
+  --background-hover: var(--ops-surface-2);
+  --color: var(--ops-ink);
+  --border-color: var(--ops-line-strong);
+  --border-width: 1px;
+  --border-style: solid;
+  --box-shadow: none;
+}
+
+/* A2 — WARNING vs DANGER, kept sharp. Amber is ours to resolve and stops
+   nobody; red is nothing proceeds. Mapped onto Ionic's own `warning` and
+   `danger` rather than invented, and the two never share a treatment: warning
+   is a bordered note in flowing text, danger is a filled control. Collapsing
+   them would make the machine look like it is objecting to a human decision,
+   which is the one thing it may never do. */
+.note-warning {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ion-color-warning-shade);
+  border-left-width: 4px;
+  border-radius: 4px;
+  background: var(--ops-warn-tint);
+  color: var(--ops-ink);
+  font-size: .875rem;
+  line-height: 1.4;
+}
+.note-warning b { color: var(--ops-ink); }
+.note-warning ul { margin: 6px 0 0; padding-left: 20px; }
+.note-warning .lede { display: block; margin-bottom: 2px; }
+
+/* A3 — EVERY MONEY FIGURE CARRIES ITS GST BASIS, on the figure, at legible
+   size. Not a column heading and not a footnote. */
+.money { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.money .amt {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-weight: 600;
+}
+.money .basis {
+  font-size: .6875rem;      /* 11px — small, but at step-600 it is readable */
+  line-height: 1.2;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.money.absent .amt { font-weight: 400; }
+.money-inline { display: inline; }
+.money-inline .basis { font-size: .75rem; margin-left: .4em; }
+
+/* ═══ B. LAYOUT ════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; }
+/* Nothing widens its own container. Grid and flex items default to their
+   min-content width, which is how one wide row once dragged a whole surface off
+   frame while every scroller inside reported nothing to scroll. */
+:where(ion-header, ion-footer, ion-content, .zones, .zone, .zones > *, .deck, .deck > *) {
+  min-width: 0;
+}
+
+.ident { display: flex; flex-direction: column; min-width: 0; padding: 4px 0; }
+.ident h1 {
+  margin: 0; font-size: .9375rem; line-height: 1.3; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ident .sub {
+  font-size: .75rem; line-height: 1.35; color: var(--ops-quiet);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mono { font-variant-numeric: tabular-nums slashed-zero; }
+
+/* ── THE DRAWING PLATE (R-17) ─────────────────────────────────────────────────
+   `--paper` and `--ink` are what the Elevation generator writes into the leader
+   halo and the break-line mask. They are bound to IONIC's background and text
+   colours, so the drawing is a line drawing on both palettes without this file
+   choosing either colour. */
+.plate {
+  --paper: var(--ion-background-color);
+  --ink: var(--ion-text-color);
+  margin: 0; padding: 14px 12px 10px;
+  background: var(--paper); color: var(--ink);
+  border-bottom: 1px solid var(--ops-line);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.plate-face {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: 0; border: 0; background: none; color: inherit;
+  cursor: zoom-in;
+}
+.plate-face-static { cursor: default; }
+.plate[data-size="hero"] .plate-face { min-height: 248px; }
+.plate[data-size="md"] .plate-face { min-height: 188px; }
+.plate[data-size="sm"] .plate-face { min-height: 120px; }
+.plate .elev { max-width: 100%; height: auto; }
+/* R-49 — the unsized fallback draws faint and carries no leaders. */
+.plate .elev[data-unsized] { opacity: .45; }
+.plate figcaption {
+  font-size: .75rem; line-height: 1.3; text-align: center;
+  font-variant-numeric: tabular-nums slashed-zero;
+  color: var(--ops-quiet);
+}
+.plate figcaption .cap { display: inline; }
+
+/* R-18 — the pinned strip. 56px, and it NEVER disappears: it is the plate in a
+   second state, owned by this one rule, so no other selector can hide it too. */
+.plate-strip {
+  --paper: var(--ion-background-color);
+  --ink: var(--ion-text-color);
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 56px; padding: 0 12px; border: 0;
+  border-bottom: 1px solid var(--ops-line);
+  background: var(--paper); color: var(--ink); cursor: pointer; text-align: left;
+}
+.plate-strip .elev { height: 34px; width: auto; flex: none; }
+.plate-strip .elev[data-unsized] { opacity: .45; }
+.plate-strip .sid {
+  font-size: .8125rem; font-weight: 600; flex: none;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.plate-strip .sdim {
+  font-size: .75rem; color: var(--ops-quiet); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.plate-strip .shint { margin-left: auto; flex: none; color: var(--ops-quiet); }
+
+.plate-big { padding: 16px; display: grid; gap: 20px; justify-items: center; }
+.plate-big .plate { border: 1px solid var(--ops-line); border-radius: 6px; width: 100%; }
+.plate-parts, .elev-legend { width: 100%; max-width: 460px; }
+.elev-legend { margin: 0; display: grid; gap: 4px; }
+.elev-legend > div { display: flex; gap: 12px; font-size: .75rem; line-height: 1.5; }
+.elev-legend dt { min-width: 88px; font-weight: 600; }
+.elev-legend dd { margin: 0; color: var(--ops-quiet); }
+
+/* ── THE LINE SCROLLER (the bottom deck) ──────────────────────────────────────
+   The scroller and the action footer are ONE composition, not two bars stacked:
+   the deck is 44 + 56 = 100px and it is the only chrome at the bottom edge. */
+.deck { display: flex; flex-direction: column; }
+.scroller {
+  display: flex; align-items: stretch; height: 44px;
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+}
+/* The fixed position label. It never scrolls, so "where am I in the run" is
+   answered without counting pills, and it is the route to the whole list. */
+.scroller-at {
+  flex: none; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-width: 60px; padding: 0 8px;
+  border: 0; border-right: 1px solid var(--ops-line);
+  background: none; cursor: pointer;
+}
+.scroller-at .n {
+  font-size: .75rem; font-weight: 600;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.scroller-at .of { font-size: .625rem; color: var(--ops-quiet); }
+.scroller-at:focus-visible, .pill:focus-visible {
+  outline: 2px solid var(--ion-color-primary); outline-offset: -2px;
+}
+/* The run itself. This is the ONE place in ops2 that scrolls sideways, and it is
+   content — eighteen openings being worked through — not a fixed set of
+   destinations that must all be reachable. Snap so a flick lands on a line. */
+.scroller-run {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: stretch; gap: 0;
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroller-run::-webkit-scrollbar { display: none; }
+.pill {
+  flex: none; scroll-snap-align: center;
+  display: flex; align-items: center; gap: 4px;
+  min-width: 52px; height: 100%; padding: 0 10px;
+  border: 0; border-right: 1px solid var(--ops-surface-2);
+  background: none; cursor: pointer;
+  font-size: .75rem; font-weight: 500;
+  font-variant-numeric: tabular-nums slashed-zero;
+  color: var(--ops-ink);
+}
+.pill[aria-current="true"] {
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  font-weight: 700;
+}
+.pill .dot {
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--ion-color-warning-shade);
+}
+.pill[aria-current="true"] .dot { background: var(--ion-color-primary-contrast); }
+.scroller-empty {
+  flex: 1 1 auto; display: flex; align-items: center; padding: 0 12px;
+  font-size: .75rem; color: var(--ops-quiet);
+}
+
+/* The action footer (R-153) — one primary taking the width, ⋯ for everything
+   else, and the blocked primary's reason beneath it INSIDE the footer. */
+.actions {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  padding-bottom: calc(6px + var(--ion-safe-area-bottom, 0px));
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+}
+.actions ion-button { flex: 1 1 auto; min-width: 0; margin: 0; }
+.actions ion-button.more { flex: none; }
+.reason {
+  margin: 0; padding: 0 12px 8px;
+  padding-bottom: calc(8px + var(--ion-safe-area-bottom, 0px));
+  background: var(--ops-surface);
+  font-size: .75rem; line-height: 1.3;
+  color: var(--ops-ink);
+}
+.actions + .reason { padding-top: 0; }
+.deck .actions { padding-bottom: 6px; }
+.deck .reason { padding-bottom: calc(8px + var(--ion-safe-area-bottom, 0px)); }
+
+/* ── The line list ────────────────────────────────────────────────────────── */
+/* CRITIQUE 3 — the xs drawing leads every row, at every width, so the list is
+   scannable by SHAPE before a word is read. */
+.rowelev {
+  --ink: var(--ion-text-color);
+  flex: none; width: 46px; display: flex; justify-content: center;
+  align-self: flex-start; margin-top: 2px; color: var(--ink);
+}
+.rowelev .elev[data-unsized] { opacity: .45; }
+.linebody { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.linebody .l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.linebody .code { font-weight: 600; font-variant-numeric: tabular-nums slashed-zero; }
+.linebody .prod {
+  font-size: .8125rem; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.linebody .meta {
+  font-size: .75rem; color: var(--ops-quiet);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.linebody .flag { font-size: .75rem; color: var(--ops-ink); }
+.linebody .flag::before { content: "! "; font-weight: 700; }
+/* POINT 5 — the flagged-row mark.
+   It used to be `--border-color`, which under `lines="full"` recolours the
+   item's BOTTOM DIVIDER: a rule drawn BETWEEN two rows, so it belongs to
+   neither and cannot say which of the two it is about. That is a structural
+   ambiguity, not a matter of taste, and the owner read it exactly right.
+
+   It moves to the LEADING EDGE, which is unambiguous because it is visibly
+   attached to one row's start and terminates at that row's own bounds.
+
+   Painted with an inset box-shadow on `::part(native)` — ion-item's documented
+   shadow part, the element that also carries the row's background — so the bar
+   lands ON the background rather than behind it. The row stays a plain
+   `IonItem`; no boundary rule is engaged and nothing goes bespoke.
+
+   NOT a background tint: selection already owns background, and two states
+   competing for one channel is how you get a row that is either selected or
+   flagged but never legibly both.
+
+   It survives greyscale on its own: the bar is a 4px SHAPE at the row's start,
+   and the `needs review` badge states the same thing in words beside it —
+   colour agrees with the mark, it does not carry it. */
+ion-item.needs-review::part(native) {
+  box-shadow: inset 4px 0 0 var(--ion-color-warning-shade);
+}
+
+/* ── The verdict list — what the rejected chip strip was actually FOR ─────────
+   Five headlines at once, stacked and wrapping, never scrolling sideways and
+   never hiding anything: the full section is below in the flow, so this is an
+   index, not a disclosure. */
+.verdicts {
+  margin: 0; padding: 10px 12px;
+  display: grid; gap: 2px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  border-bottom: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+}
+.verdicts a {
+  display: flex; align-items: baseline; gap: 8px;
+  min-height: 30px; padding: 2px 0; text-decoration: none;
+  color: inherit; border-bottom: 1px dotted var(--ops-line);
+}
+.verdicts .vn { font-size: .8125rem; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.verdicts .vv {
+  margin-left: auto; flex: none; font-size: .75rem; font-weight: 600;
+  color: var(--ops-quiet);
+}
+.verdicts a[data-tone="warning"] .vv { color: var(--ops-ink); }
+.verdicts a[data-tone="warning"] { background: var(--ops-warn-tint);
+  padding-inline: 6px; margin-inline: -6px; }
+.verdicts a[data-tone="danger"] .vv { color: var(--ion-color-danger-shade); }
+
+/* ── The line sections — open, always, in one column ──────────────────────── */
+.section { padding: 14px 16px 18px; border-bottom: 1px solid var(--ops-line); }
+.section > h2 {
+  margin: 0 0 10px; font-size: .6875rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ops-quiet);
+  display: flex; align-items: baseline; gap: 8px;
+}
+.section > h2 .sv {
+  margin-left: auto; letter-spacing: 0; text-transform: none;
+  font-size: .75rem; color: var(--ops-ink);
+}
+.section[data-tone="warning"] > h2 .sv { color: var(--ops-ink); }
+.section[data-tone="danger"] > h2 .sv { color: var(--ion-color-danger-shade); }
+.section p { margin: 0 0 8px; font-size: .875rem; line-height: 1.45; }
+.section p:last-child { margin-bottom: 0; }
+.quote {
+  margin: 10px 0 0; padding-left: 12px;
+  border-left: 3px solid var(--ops-line-strong);
+  font-size: .875rem; line-height: 1.45; color: var(--ops-ink);
+}
+.kv { margin: 0; display: grid; gap: 8px 16px; }
+.kv > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 2px 12px; }
+.kv dt {
+  font-size: .6875rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ops-quiet); line-height: 1.5;
+}
+.kv dd {
+  margin: 0; font-size: .875rem; line-height: 1.4;
+  font-variant-numeric: tabular-nums slashed-zero; overflow-wrap: anywhere;
+}
+/* R-69 — at a narrow measure this reflows to label-over-value. Reflow, never
+   truncation, and never a sideways scroll. */
+@media (max-width: 400px) {
+  .kv > div { grid-template-columns: minmax(0, 1fr); }
+}
+.units { margin: 0; padding-left: 20px; font-size: .875rem; line-height: 1.6;
+  font-variant-numeric: tabular-nums slashed-zero; }
+
+/* D9 — the losing candidates. Ranked, with reasons, and VISIBLE: it used to be
+   a <details>, which is the disclosure pattern that is now out. Four rows cost
+   less than the click did. */
+.cands { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.cands caption {
+  text-align: left; font-size: .6875rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ops-quiet); padding-bottom: 6px;
+}
+.cands th { text-align: left; font-weight: 600; font-size: .6875rem;
+  color: var(--ops-quiet); padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--ops-line); }
+.cands td { padding: 6px 8px 6px 0; vertical-align: top;
+  border-bottom: 1px solid var(--ops-surface-2); line-height: 1.35; }
+.cands tr[data-chosen] { background: var(--ops-primary-tint); }
+.cands .r { width: 1.6rem; font-variant-numeric: tabular-nums;
+  color: var(--ops-quiet); }
+.cands .v { white-space: nowrap; font-weight: 600; }
+.cands tr[data-fails] .v { color: var(--ops-ink); }
+.cands .why { color: var(--ops-quiet); }
+
+.note-item { padding-left: 12px; border-left: 3px solid var(--ion-color-primary);
+  margin: 0 0 12px; }
+.note-item .who { font-size: .75rem; color: var(--ops-quiet); }
+.note-item .body { font-size: .875rem; line-height: 1.45; }
+
+/* ── Totals ───────────────────────────────────────────────────────────────── */
+.totals { padding: 12px 16px calc(12px + var(--ion-safe-area-bottom, 0px));
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface); }
+.totals dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; }
+.totals dt { font-size: .875rem; }
+.totals dd { margin: 0; text-align: right; }
+
+/* ── The editor form ──────────────────────────────────────────────────────── */
+.form { padding: 0 0 20px; }
+.form ion-list { padding-top: 0; }
+.informdraw {
+  --paper: var(--ion-background-color);
+  --ink: var(--ion-text-color);
+  padding: 12px; background: var(--paper); color: var(--ink);
+  border-bottom: 1px solid var(--ops-line);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.informdraw[data-size="xs"] { flex-direction: row; justify-content: flex-start;
+  padding: 8px 16px; }
+.informdraw .elev { max-width: 100%; height: auto; }
+.informdraw .elev[data-unsized] { opacity: .45; }
+.informdraw p { margin: 0; font-size: .75rem; line-height: 1.3; text-align: center;
+  font-variant-numeric: tabular-nums slashed-zero; color: var(--ops-quiet); }
+.informdraw[data-size="xs"] p { text-align: left; }
+/* R-50 — while unsaved figures exist the plate SAYS whose they are. */
+.dirty { font-weight: 700; color: var(--ops-ink) !important; }
+
+/* R-159 — the read-back strip, pinned above the deck. */
+.readback { padding: 10px 16px; border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface); }
+.readback .r { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; font-size: .875rem; }
+.readback .was { text-decoration: line-through; color: var(--ops-quiet);
+  font-weight: 400; margin-right: 8px; font-variant-numeric: tabular-nums; }
+
+/* ── The nav drawer ───────────────────────────────────────────────────────── */
+.nav { display: flex; flex-direction: column; min-height: 100%; }
+.nav ion-list { flex: 1 1 auto; }
+.nav .account { border-top: 1px solid var(--ops-line); padding: 12px 16px; }
+.nav .account .who { font-size: .8125rem; font-weight: 600; }
+.nav .account .mail { font-size: .75rem; color: var(--ops-quiet); }
+
+/* ── Job progress ribbon ──────────────────────────────────────────────────── */
+/* Six phases at 320px would be ~560px in one row, so the ribbon WRAPS. */
+.ribbon { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 2px; margin: 0 0 14px; }
+.ribbon .cell { padding: 7px 4px; text-align: center; font-size: .6875rem;
+  background: var(--ops-surface-2); color: var(--ops-quiet); }
+.ribbon .cell.passed { background: var(--ops-primary-tint);
+  color: var(--ops-ink); }
+.ribbon .cell.current { background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast); font-weight: 700; }
+
+/* ── ≥1024: rail + canvas ─────────────────────────────────────────────────── */
+ion-content.ws { --overflow: hidden; }
+.zones { display: grid; grid-template-columns: var(--rail-w, 340px) minmax(0, 1fr);
+  height: 100%; }
+/* ≥1280 with the editor open: a third column. min(88vw, 520px) is the frontpage's
+   own cap, kept here so the panel is the same width whether it overlays or docks. */
+.zones[data-editing] { grid-template-columns: 300px minmax(0, 1fr) min(88vw, 520px); }
+.zone.editorpane { display: flex; flex-direction: column;
+  border-left: 1px solid var(--ops-line); background: var(--ion-background-color); }
+.zone.editorpane > ion-content { flex: 1 1 auto; min-height: 0; }
+.zone { min-width: 0; overflow: hidden; }
+.zone.rail { border-right: 1px solid var(--ops-line); overflow-y: auto; }
+/* Flex, not a fixed grid-template: the plate strip appears and disappears with
+   the scroll position, and a template with a row count silently reassigns every
+   child when one goes away — which put the action footer in the flexible row
+   and squeezed it to 1px. */
+.zone.canvas { display: flex; flex-direction: column; }
+.zone.canvas > * { flex: none; }
+.zone.canvas > .canvas-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.canvas-ident { display: flex; align-items: baseline; gap: 10px; min-width: 0;
+  padding: 10px 16px; border-bottom: 1px solid var(--ops-line);
+  background: var(--ops-surface); }
+.canvas-ident h2 { margin: 0; font-size: .9375rem; font-weight: 600; }
+.canvas-ident .sub { font-size: .75rem; color: var(--ops-quiet);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-empty { padding: 48px 24px; text-align: center; font-size: .875rem;
+  color: var(--ops-quiet); }
+:root[data-width-class="wide"] { --rail-w: 380px; }
+
+/* ── CRITIQUE 4 — the docked editor panel ─────────────────────────────────────
+   OpeningDrawer.tsx:199 in Ionic's vocabulary:
+     fixed inset-0 md:inset-y-0 md:left-auto md:right-0 md:w-[min(88vw,520px)]
+   Below 768 the editor is a pushed plane and this class is never mounted; at 768
+   and above the modal docks to the right edge at min(88vw, 520px), full height,
+   square, over Ionic's own scrim. The framework keeps the focus trap, Esc, the
+   inert background and the animation. */
+ion-modal.editordock {
+  --width: min(88vw, 520px);
+  --height: 100%;
+  --max-height: 100%;
+  --border-radius: 0;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+ion-modal.editordock::part(content) { position: absolute; inset: 0 0 0 auto; }
+
+/* Reduced motion — Ionic's transition is replaced by our own animation builder,
+   which reads the preference itself; this catches everything else. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
+
+/* Ionic's split-pane side defaults to min-width 270px / max-width 28%, which is
+   403px on a 1440 laptop — three columns plus that left the canvas 137px and the
+   plate undrawable. Eight destinations do not need 403px; 260 is pinned so the
+   width budget is spent on the work rather than on the menu. Layout, not
+   branding: the menu's colours, rows and dividers are still Ionic's. */
+ion-split-pane {
+  --side-width: 260px;
+  --side-min-width: 260px;
+  --side-max-width: 260px;
+}

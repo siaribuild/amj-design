@@ -54,6 +54,17 @@ backup-*.sql
 # content -- keep them locally, never in the repo.
 sanity/backups/
 
+# Rendered pages and crops of customer drawings. These are fragments of a
+# customer's own plan set and must never enter git.
+#
+# The rule lives HERE, at the root, because the last one did not: a .gitignore
+# inside containers/plan-parse/ was the only thing keeping three crops out, and
+# when a revert deleted that directory's .gitignore the crops stopped being
+# ignored and `git add -A` committed them (0f63fe6a, removed in #26 — still in
+# history). A guard one deletion away from failing is not a guard.
+containers/**/out/
+**/plan-parse/out/
+
 # pipeline v2 raw stage transcripts (large, reproducible)
 docs/runs/*/logs/
 

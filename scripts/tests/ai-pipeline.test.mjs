@@ -36,7 +36,7 @@ await build({
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { planContextExtractor } from ${p("worker/lib/estimator/skills/plan.ts")};
-      export { proposalVerdict, proposalSeed } from ${p("worker/lib/ai/proposal.ts")};
+      export { proposalVerdict, proposalSeed, publishAiProposal } from ${p("worker/lib/ai/proposal.ts")};
       export { parentRepresentative } from ${p("worker/lib/estimator/select.ts")};
       export { persistSelection } from ${p("worker/lib/estimator/persist.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
@@ -52,7 +52,7 @@ const {
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
   computeThermalBand,
-  proposalVerdict, proposalSeed, persistSelection, parentRepresentative,
+  proposalVerdict, publishAiProposal, proposalSeed, persistSelection, parentRepresentative,
 } = await import(pathToFileURL(outfile).href);
 
 // The dial every pipeline test runs against. TB-18: it deliberately does NOT
@@ -133,6 +133,87 @@ test("page routing: one architectural set can supply plan context and a schedule
   assert.match(textForPages([
     "GROUND FLOOR PLAN", "WINDOW SCHEDULE W01", "NORTH ELEVATION",
   ], roles.schedule), /page 2[\s\S]*WINDOW SCHEDULE/);
+});
+
+test("page routing: a real title block splits Scale from its value, and the drawing sheets still route", () => {
+  // Shaped from the reference set, structure preserved and identifying text
+  // removed. The title block is the point: a CAD title block emits its header
+  // LABELS as one run and their VALUES as another, so "Scale" is followed by the
+  // date, never by "1 : 100". Every real drawing sheet in that 14-page set
+  // scored ONE plan signal and the only two pages scoring two were a 1:20 stair
+  // detail and an NCC compliance sheet, both of which say "SECTION" and carry an
+  // inline "SCALE 1:20". The router therefore selected exactly the two wrong
+  // pages and rejected all four right ones, and the plan skill was handed a
+  // stair detail on every architectural upload.
+  const TITLE_BLOCK = "Proposed Residence Sheet Date Scale Drawn by Job No. 01/05/2025 1 : 100 A5";
+  const pages = [
+    `FIRST FLOOR PLAN ${TITLE_BLOCK} W7 S08 W8 S08 W9 S08 W10 S08 W11 S08 W12 S08`,
+    `ELEVATION A ELEVATION B ${TITLE_BLOCK}`,
+    `ELEVATION C ELEVATION D WINDOW SCHEDULE ${TITLE_BLOCK}`,
+    `RAMP (86MM STEPDOWN) SCALE 1:20 SECTION THROUGH GARAGE ${TITLE_BLOCK}`,
+    `NCC 2022 COMPLIANCE SECTION J ${TITLE_BLOCK} SCALE 1:20`,
+  ];
+  const roles = classifyPageRoles(pages, "architectural-set.pdf");
+  // The floor plan and both elevation sheets, and NOT the 1:20 construction
+  // detail or the NCC sheet — which are the two the old rule picked.
+  assert.deepEqual(roles.plans, [1, 2, 3]);
+});
+
+test("page routing: the word elevation is not a drawing sheet; an elevation TITLE is", () => {
+  // "elevation" is one of the most common incidental words in a set, and making
+  // it sufficient on its own meant any page mentioning it routed as a drawing.
+  // All four of these are real forms. The last is from the reference set's own
+  // 1:20 stair detail, which reads "REFER TO ELEVATIONS FOR ROOF MATERIALS AND
+  // PITCH" — the exact page the old two-signal rule already picked by mistake.
+  for (const incidental of [
+    "WINDOW SCHEDULE W1 2050 2100 SEE ELEVATION FOR HEAD HEIGHT",
+    "SITE SURVEY SPOT ELEVATION 42.15 AHD BENCHMARK",
+    "GROUND FLOOR PLAN FINISHED FLOOR ELEVATION RL 0.000",
+    "DRAWING INDEX A4 - FIRST FLOOR PLAN A5 - ELEVATIONS A6 - ELEVATIONS",
+    "SHEET METAL ROOF FLASHING REFER TO ELEVATIONS FOR ROOF MATERIALS AND PITCH",
+  ]) {
+    assert.deepEqual(
+      classifyPageRoles([incidental]).plans, [],
+      `mentioning an elevation is not being one: ${incidental.slice(0, 44)}`,
+    );
+  }
+  // A cover sheet's drawing INDEX names every sheet in the set, so it matches
+  // "floor plan" as readily as the floor plan does — and unlike the elevation
+  // case, one incidental match plus any corroborating signal is enough. A cover
+  // sheet commonly carries the site plan and therefore a north point. Naming
+  // three different drawing types is what an index does and what a drawing never
+  // does.
+  assert.deepEqual(
+    classifyPageRoles([
+      "DRAWING INDEX A2 - SITE PLAN A4 - FIRST FLOOR PLAN A5 - ELEVATIONS "
+      + "A7 - SECTIONS NORTH POINT",
+    ]).plans,
+    [],
+    "an index is not a drawing, even carrying a north point",
+  );
+
+  // A drawing TITLE, in both forms a set actually uses.
+  assert.deepEqual(classifyPageRoles(["ELEVATION A ELEVATION B"]).plans, [1]);
+  assert.deepEqual(classifyPageRoles(["WEST ELEVATION"]).plans, [1]);
+});
+
+test("page routing: counting opening tags is bounded, over text a customer controls", () => {
+  // classifyPageRoles runs over text extracted from an uploaded PDF, and every
+  // other signal in it uses RegExp.test — constant memory. Counting tags with
+  // `hay.match(/g)` was not: it materialises one string per match BEFORE the Set
+  // dedupes them, and a page decompressing to a megabyte of "w1 w1 w1 ..." fits
+  // easily inside the upload cap. Measured at +21 MB of retained heap for a
+  // single 1.2 MB page, against a 128 MB Worker.
+  //
+  // Both properties are asserted because either alone is passable: one distinct
+  // tag is not three however often it is printed, AND finding that out must not
+  // cost the heap.
+  const flood = `GROUND FLOOR PLAN ${"w1 ".repeat(400_000)}`;
+  const before = process.memoryUsage().heapUsed;
+  const roles = classifyPageRoles([flood]);
+  const grewMb = (process.memoryUsage().heapUsed - before) / 1e6;
+  assert.deepEqual(roles.plans, [], "one distinct tag is not three, however many times it appears");
+  assert.ok(grewMb < 12, `tag counting retained ${grewMb.toFixed(1)} MB; it must not accumulate matches`);
 });
 
 test("ingestion queries scan-clean files only; legacy skipped files never reach AI", async () => {
@@ -1513,4 +1594,79 @@ test("A18 fallout: the proposal seed is the best PRICEABLE single, not merely ra
   // And when nothing single-unit can be priced at all there is still no seed —
   // the empty-line branch is the honest outcome, not a line with no price.
   assert.equal(proposalSeed({ ...result, evaluated: [unpriceable] }), null);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A REVIEW REASON IS A CLAIM ABOUT THE LINE AS IT STANDS
+//
+// Reported on opening W1, 2026-08-28: a re-parse priced the opening, the line
+// went `ready`, and it still carried "We found this opening but could not select
+// and exactly price a suitable configuration." beside its price.
+//
+// The cause is that every writer PATCHES review_json, and json_patch adds keys
+// without ever removing one — so a sentence about a generation that failed
+// outlives the generation that succeeded. `thermalRecommendation` and
+// `energyMapping` already retire themselves by patching null; `product` never
+// did, so it was the one reason that could not be taken back.
+// ─────────────────────────────────────────────────────────────────────────────
+function proposalDb({ reviewJson }) {
+  const calls = [];
+  const first = (sql) => {
+    if (/FROM project WHERE id/.test(sql)) return { ai_generation: 3, status_customer: "draft" };
+    if (/FROM quote_line WHERE id/.test(sql)) {
+      return { id: "q1", origin: "ai", edited_fields: null, line_total: null, review_json: reviewJson, edit_version: 7 };
+    }
+    if (/MAX\(position\)/.test(sql)) return { n: 0 };
+    return null;
+  };
+  const prepare = (sql) => ({
+    sql,
+    bind(...args) { calls.push({ sql, args }); return this; },
+    async first() { return first(sql); },
+    async run() { return { success: true }; },
+    async all() { return { results: [] }; },
+  });
+  return { calls, env: { DB: { prepare, async batch() { return []; } } } };
+}
+
+test("a proposal that CAN price the opening retires the reason saying it could not", async () => {
+  const priced = {
+    candidate: { slug: "amj80-series-awning-window", sanityProductId: "sp1", catalogueRevision: "r1" },
+    selectedVariant: null,
+    price: { ok: true, total: 1234, pricingPolicyVersion: "pp1" },
+    outcome: { status: "meets" },
+    candidateOutcome: { rank: 1, fit: { fits: true } },
+  };
+  const { calls, env } = proposalDb({
+    reviewJson: JSON.stringify({
+      product: "We found this opening but could not select and exactly price a suitable configuration.",
+    }),
+  });
+  await publishAiProposal(env, {
+    projectId: "p1", aiRunId: "run1", buildingModelId: "bm1",
+    sourceGeneration: 3, sourceManifestHash: "h1",
+    lines: [{
+      openingId: "o1", quoteLineId: "q1", externalRef: "W1",
+      opening: { widthMm: 900, heightMm: 1200, qty: 1, family: "awning" },
+      result: {
+        selected: priced, evaluated: [priced], selectedSplit: null,
+        selection: { competingTier: "meets", requirement: { absent: false } },
+        catalogueVersion: "cv1", selectionVersion: "sv1",
+      },
+    }],
+  });
+
+  const update = calls.find((c) => /UPDATE quote_line SET\s+product_slug/.test(c.sql));
+  assert.ok(update, "the priced line is written back to the cart");
+  // The review payload is the argument that is valid JSON with review keys.
+  const patch = update.args
+    .filter((a) => typeof a === "string" && a.startsWith("{"))
+    .map((a) => { try { return JSON.parse(a); } catch { return null; } })
+    .find((o) => o && "thermalRecommendation" in o);
+  assert.ok(patch, "the update patches review_json");
+  assert.equal("product" in patch, true,
+    "the patch must SAY something about `product` — silence leaves the old sentence in place");
+  assert.equal(patch.product, null,
+    "null is how json_patch deletes a key: the line has a product and a price, so the reason is retired");
 });

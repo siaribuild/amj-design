@@ -127,6 +127,25 @@ A customer-uploaded document (plans, window schedule) listing openings to be quo
 **Schedule parse**:
 Turning an uploaded schedule into proposed lines. Parsed lines carry their origin and stay reviewable — a parse proposes, a person confirms.
 
+**Drawing reading**:
+The per-opening answer read from a plan set's elevations by a vision model: how the opening *divides* — operations, their order, the division axis, and the ratio each unit takes. Three states, never collapsed (plan-parse output spec §4): a value, *not stated* (readable drawings that simply do not say), *not read* (we could not tell). A reading claims operable-or-not, never a family — the schedule names the family — and a stated width always beats a measured ratio. Every reading carries its crop as evidence. The customer sees successes only; ops sees gaps and disagreements, because only ops can act on them.
+_Avoid_: drawing parse result (a reading is per opening, not per document), detection
+
+**Drawing enrichment**:
+The pass that goes back into the plans, per opening the schedule already found, for what the schedule cannot carry — accurate split, orientation, elevation, room. It never re-derives the schedule and never contradicts it: the schedule owns the size, the drawing owns the division. Invisible to the customer, who sees only openings, dimensions and the product selected; its value is a better-chosen product, and *better accuracy* means *higher estimate accuracy*. Off is a supported state (`AI_EXTRACTION_MODE`), and with it off the schedule table and the default split carry the quote exactly as before.
+_Avoid_: drawing parse (that is the schedule parse), advanced parse (owner shorthand, not a surface)
+
+**Architectural priority**:
+Which source wins on size, splits and types: **plans** (drawing enrichment), then the **energy report** where no plans exist, then the **schedule table**. Plans are a binding build contract, so they win on every architectural fact.
+_Avoid_: parse precedence
+
+**Thermal priority**:
+Which source wins on target Uw and solar gain: the **energy report**, then values **calculated** by the platform's thermal modelling, then **system defaults** from the project's location (Melbourne only for the MVP). The calculated tier is *advisory, not authoritative* — the platform is not thermal certification software and uses these values for product selection. Ops sees **one** value and how the offered product matches it, never a set of competing ones.
+_Avoid_: thermal source of truth (there is a ladder, not a single source)
+
+**Crop evidence**:
+The exact image the model was shown for a drawing reading, stored per stage run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface.
+
 **Estimator (the subsystem)**:
 Distinct from the Estimator persona above — one word, two senses, both live. The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
 _Avoid_: quote (an estimator output is not a quote)
@@ -193,11 +212,15 @@ The opening drawn to true proportion — panel arrangement, mullions, opening sy
 _Avoid_: icon, thumbnail, pictogram
 
 **Line page**:
-The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** and **"Why this product?"** attach here when built. Its line is always resolved from its project's own record — never fetched by bare line id.
+The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** attaches here when built. **"Why this product?"** is live: every rationale kind carries a door to the detail at `…/why`, which states what was recorded and names what was not — the record's desk canvas carries the same panel. Its line is always resolved from its project's own record — never fetched by bare line id.
 
 **Attention filter**:
-The record's blocker row. It names the leading blocker with the control that clears it and counts the rest (`+N more`) — a queue, not a list. Its "show only these" filters the line list to the lines with no rate. It is a scanning aid over the list the console already holds; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`).
-_Avoid_: warning banner, error list
+The record's pill — drawn only when at least one line needs attention, never as a permanent status line (owner: "no pill when the filter is cleared"). One predicate, `needsAttention` (`src/ops2/projects/record.ts`): `needsReview` or no rate — the same test that paints a row's leading edge and prints its badge, so the pill's count, the filter's set and the list's marks cannot disagree. Pressing it toggles the line list down to exactly those rows. It is a scanning aid; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`), whose refusal renders separately and never at the same time as the pill.
+_Avoid_: warning banner, error list, blocker queue, attention band
+
+**List row**:
+The one pressable row and its list container (`src/ops2/chrome/RowList.tsx` — `ops2-row` / `ops2-rows`), shared by the queue's phone cards, the record's line list and the line page's unit rows. The component is the same; the content within differs per surface, and so does what the leading edge means — waiting-on for the queue, needs-review for the record, nothing for units. Structural rule (ADR 0014): the leading edge, the selection tint and the hover wash all paint on the row's single button, so no state can erase another. The queue's desk `<table>` is not one of these.
+_Avoid_: card list, IonItem
 
 ### Referrals
 

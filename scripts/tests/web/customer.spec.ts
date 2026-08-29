@@ -486,3 +486,9 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   const halfTotal = Math.round(total / 2);
   await expect(page.getByText(new RegExp(`\\$${halfTotal.toLocaleString("en-AU")}`)).first()).toBeVisible();
 });
+
+// The drawing-read progress checklist lives in drawing-progress.spec.ts. It was
+// written here first and did not render: something in this file's fixtures stops
+// the progress block appearing, and the same stubs in a file of their own render
+// fine. Rather than assert around that, the test moved to where it actually
+// exercises the feature.

@@ -16,6 +16,36 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
+// EVERY PARSE ERROR IS FATAL, and the question it answers is "does this file
+// parse", not "is this style preferred".
+//
+// Promoted 2026-08-28 after the gate printed "no fatal type errors" over a file
+// that could not be parsed at all: a SQL comment inside a template literal wrote
+// a word in backticks and closed the string. esbuild caught it four minutes
+// later, as a 300s suite timeout that looked like slowness.
+//
+// It took two corrections from Codex to get the boundary right, and both are
+// worth keeping written down:
+//
+//   * four listed codes is not the family — `const x = ;` is TS1109, which the
+//     list missed, so unbuildable source still passed;
+//   * the TS1xxx prefix alone is not the family either. It is over-inclusive
+//     (TS1205 and its isolatedModules siblings are a CONFIG rule about
+//     re-export syntax — esbuild strips the import and the build succeeds) and
+//     under-inclusive (a malformed JSX tag is TS17002, five digits).
+//
+// So: the syntactic bands, minus the config-driven codes that live inside one.
+const ISOLATED_MODULES = new Set([
+  "TS1205", // Re-exporting a type requires `export type`
+  "TS1203", // Export assignment cannot be used when targeting ES modules
+  "TS1284", // Ambient const enum not allowed
+  "TS1286", // Ambient const enum
+  "TS1287", // A top-level export modifier
+  "TS1288", // An export declaration
+]);
+const isParseError = (code) =>
+  (/^TS1\d{3}$/.test(code) || /^TS17\d{3}$/.test(code)) && !ISOLATED_MODULES.has(code);
+
 // Codes that always denote broken code, never a strictness preference.
 const FATAL = new Set([
   "TS2304", // Cannot find name — the setRec class: undefined identifier
@@ -29,6 +59,12 @@ const FATAL = new Set([
   // above `const product = …` in ProductDetailPage and threw on every render,
   // blanking the page in production. tsc reported it; the gate did not, because
   // this code was not listed. A temporal-dead-zone read is never a preference.
+  // SYNTAX. Promoted 2026-08-28 after the gate printed "no fatal type errors"
+  // over a file that could not be parsed at all: a SQL comment inside a template
+  // literal said `product` in backticks, which closed the string. esbuild caught
+  // it — four minutes later, as "Expected \")\" but found \"product\"", after a
+  // 300s suite timeout that looked like slowness. A file that does not parse is
+  // never a strictness preference, which is this set's whole criterion.
   "TS2448", // Block-scoped variable used before its declaration
   "TS2454", // Variable is used before being assigned
   // Promoted after its single occurrence was fixed. estimate.ts passed `offset`
@@ -59,12 +95,12 @@ if (!fatalOnly) {
   for (const l of lines) { const m = l.match(/error (TS\d+)/); if (m) byCode[m[1]] = (byCode[m[1]] ?? 0) + 1; }
   console.log(`\n${lines.length} error(s)`);
   for (const [code, n] of Object.entries(byCode).sort((a, b) => b[1] - a[1])) {
-    console.log(`  ${code.padEnd(8)} ${String(n).padStart(3)}${FATAL.has(code) ? "   ← gated" : ""}`);
+    console.log(`  ${code.padEnd(8)} ${String(n).padStart(3)}${FATAL.has(code) || isParseError(code) ? "   ← gated" : ""}`);
   }
   process.exit(0);   // informational
 }
 
-const fatal = lines.filter((l) => { const m = l.match(/error (TS\d+)/); return m && FATAL.has(m[1]); });
+const fatal = lines.filter((l) => { const m = l.match(/error (TS\d+)/); return m && (FATAL.has(m[1]) || isParseError(m[1])); });
 if (fatal.length) {
   console.error(`✗ ${fatal.length} fatal type error(s) — code that cannot run:\n`);
   for (const l of fatal) console.error(`  ${l}`);

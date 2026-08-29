@@ -12,9 +12,12 @@ import {
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
-// 300s, raised from 180s (2026-08-14) — same reasoning as api.test.mjs, and
-// this file has already timed out once on load in the same way.
-test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
+// 420s, raised from 300s (2026-08-28), which was raised from 180s (2026-08-14)
+// — same reasoning as api.test.mjs, and this file has already timed out once on
+// load in the same way. The three review-reason tests below each shell out to
+// `wrangler d1 execute` to seed a row state no endpoint will produce, and a
+// wrangler spawn costs several seconds apiece.
+test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
   const runDir = await makeRunDir("api-edge");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
@@ -1220,6 +1223,204 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       });
       assert.ok(healed.body.items[0].lineTotal > 0, "a stranded NULL is refilled by the next save");
       assert.ok(pid, "project resolved");
+    });
+
+    await t.test("a reason the customer has already answered does not survive their edit", async () => {
+      // Reported from production, 2026-08-28, on opening D1: the AI could not
+      // select a product, so the line carried "We found this opening but could
+      // not select and exactly price a suitable configuration." The customer
+      // then picked one themselves and it priced — and the line went on saying
+      // we could not price it, beside a price.
+      //
+      // The cause is that every writer PATCHES review_json. json_patch adds a
+      // key and never removes one, so reasons accumulate: a sentence written
+      // about a configuration that no longer exists outlives it. The owner's
+      // objection is the right one — "this was true initially, but I just
+      // selected one myself" — a review reason is a claim about the CURRENT
+      // state of the line, not a log of everything that was ever true of it.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "stale-reason@example.com");
+      const line = {
+        code: "D1", location: "Entry", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const serverId = saved.body.items[0].id;
+
+      // Exactly how the proposal's no-product branch leaves a line.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET origin='ai', line_total=NULL, status='incomplete', `
+        + `review_json='{"product":"We found this opening but could not select and exactly price a suitable configuration.",`
+        + `"thermalRecommendation":"We selected the closest available glazing to the energy requirement and will confirm the final glass and performance during technical review."}' `
+        + `WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      const edited = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...line, serverId, options: { ...line.options, colour: "Dover White" } }] },
+      });
+      const after = edited.body.items[0];
+      assert.ok(after.lineTotal > 0, "the customer's own selection prices");
+      assert.equal(after.review?.product, undefined,
+        "the sentence saying we could not price this opening is gone once the customer has priced it");
+      assert.equal(after.review?.thermalRecommendation, undefined,
+        "a recommendation about the AI's glazing choice does not outlive that choice");
+      // What must NOT be lost: staff still confirm the customer's substitution.
+      assert.ok(after.review?.customerConfigurationChanged, "the edit still raises the technical flag");
+      assert.equal(after.status, "Needs review");
+    });
+
+    await t.test("an edit that still cannot be priced keeps the reason that blocks it", async () => {
+      // Codex, on the fix above: retiring `product` unconditionally was wrong.
+      // `product` is ERROR severity and `customerConfigurationChanged` is a
+      // WARNING, and the client gate is
+      //
+      //   block ⇔ an error reason is present ∨ (unpriced ∧ no warning explains it)
+      //
+      // so deleting the error from an edit that did NOT resolve pricing left a
+      // warning behind, the browser stopped blocking, and the server went on
+      // rejecting the submission as `incomplete_lines`. A line that looks
+      // submittable and is refused is worse than the stale sentence.
+      //
+      // The sentence is also still TRUE while the line is unpriced: we could not
+      // price this opening. It is retired when that stops being so, not before.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "stale-unpriced@example.com");
+      const line = {
+        code: "D2", location: "Entry", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const serverId = saved.body.items[0].id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET origin='ai', line_total=NULL, status='incomplete', `
+        + `review_json='{"product":"We found this opening but could not select and exactly price a suitable configuration."}' `
+        + `WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // The customer changes something, but the line still has no product to price.
+      const edited = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...line, serverId, productSlug: "", width: "950" }] },
+      });
+      const after = edited.body.items[0];
+      assert.equal(after.lineTotal ?? null, null, "the edit did not resolve pricing");
+      assert.ok(after.review?.product,
+        "the blocking reason survives an edit that did not fix what it is about");
+    });
+
+    await t.test("the repair save that finally prices the line also retires the reason", async () => {
+      // Codex [P1], on the commit above. A line repaired over SEVERAL autosaves
+      // — pick a product, then a width, then a height — has its edited_fields
+      // set by the first one, so every later save lands in the REPAIR branch:
+      // it fills line_total through COALESCE and never touches review_json.
+      //
+      // So the reason retained on the partial saves outlived the save that
+      // fixed it, the client kept blocking an opening that now prices, and
+      // nothing the customer did next would clear it. Keeping a blocking reason
+      // is only defensible while it is still true.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "stale-repair@example.com");
+      const line = {
+        code: "D3", location: "Entry", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const serverId = saved.body.items[0].id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE quote_line SET origin='ai' WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // First save: a material edit, which sets edited_fields.
+      const edit = { ...line, serverId, options: { ...line.options, colour: "Dover White" } };
+      await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [edit] } });
+
+      // The state the earlier commits leave behind mid-repair: unpriced, and
+      // carrying the error that correctly blocks while that is so.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET line_total=NULL, `
+        + `review_json='{"product":"We found this opening but could not select and exactly price a suitable configuration.",`
+        + `"customerConfigurationChanged":"You changed an AI-priced configuration; we will confirm its thermal suitability and price."}' `
+        + `WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // The next autosave touches the SAME field groups, so it lands in the
+      // repair branch rather than the material-edit one.
+      const repaired = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT", json: { items: [edit] },
+      });
+      const after = repaired.body.items[0];
+      assert.ok(after.lineTotal > 0, "the repair fills the price");
+      assert.equal(after.review?.product, undefined,
+        "the reason that blocked it does not outlive the save that priced it");
+      assert.ok(after.review?.customerConfigurationChanged,
+        "the warning that staff still confirm the substitution is untouched");
+    });
+
+    await t.test("the repair does not retire the blocker for a price it did not store", async () => {
+      // Codex [P1], on the commit above. The repair branch writes a price
+      // computed from the INCOMING fields but persists none of them — by design,
+      // so that an autosave cannot overwrite the AI's configuration with a
+      // second opinion. `editedFieldsAfterSave` returns the UNION of the groups
+      // ever edited, so a SECOND change to a group already listed leaves
+      // `edited === stored.edited_fields` and lands here too.
+      //
+      // Retiring the blocking reason there would publish a line whose price was
+      // calculated for a configuration the row does not hold, and let it be
+      // submitted. The blocker is retired only when the price belongs to the
+      // configuration actually stored.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "stale-mismatch@example.com");
+      const line = {
+        code: "D4", location: "Entry", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const serverId = saved.body.items[0].id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE quote_line SET origin='ai' WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // First edit: a SIZE change, so `dims_json` is the group on the record.
+      await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT", json: { items: [{ ...line, serverId, width: "950" }] },
+      });
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET line_total=NULL, `
+        + `review_json='{"product":"We found this opening but could not select and exactly price a suitable configuration."}' `
+        + `WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // Second size change: same group, so this lands in the repair branch and
+      // the new width is NOT written to the row.
+      const repaired = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT", json: { items: [{ ...line, serverId, width: "1150" }] },
+      });
+      const after = repaired.body.items[0];
+      assert.ok(after.review?.product,
+        "a price for a configuration the row does not hold does not retire the blocker");
+      // The premise, pinned rather than argued: the second width is NOT stored.
+      // This is a PRE-EXISTING defect of the repair branch, separate from the
+      // review reason and deliberately not fixed under this one — a repeat edit
+      // to an already-edited field group is silently discarded. It is asserted
+      // here so the write-up rests on observed behaviour, and so that whoever
+      // fixes it is told by a failing test that this reasoning has moved.
+      assert.equal(after.width, "950",
+        "PRE-EXISTING: the repair branch does not persist a repeat edit to an already-edited group");
     });
 
     // The role-based RBAC test that lived here is gone. Roles were flattened

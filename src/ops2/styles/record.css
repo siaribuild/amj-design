@@ -32,6 +32,25 @@
   --paper: var(--ds-surface-page);
 }
 
+/* ── AND THE BREAK SYMBOL'S GATE, which is the other half of the same debt ───
+ * `Elevation` emits a "not to scale" break through the width leader whenever an
+ * opening is wider than 2.4:1, and the CUSTOMER theme then decides when it is
+ * actually drawn (`src/styles/theme.css:904-907`): never by default, and only
+ * on a phone, where the drawing really has been squeezed. ops2 does not load
+ * that file, so the symbol showed at EVERY width here — on a 3500 x 700 opening
+ * it was the reported defect, because its leader-erasing rect used to paint over
+ * the number. The paint order is fixed in the component now and the symbol is
+ * legible either way; this is the second half, so the two consoles draw the same
+ * opening the same way rather than agreeing only by accident.
+ *
+ * The pair is copied whole rather than simplified to the component's own `wide`
+ * test: collapsing the two gates into one changes what the CUSTOMER site draws
+ * at desk width, which is a decision nobody has taken. */
+svg[data-elevation] .elev-break { display: none; }
+@media (max-width: 767px) {
+  svg[data-elevation][data-wide="1"] .elev-break { display: block; }
+}
+
 /* ── The head row's controls ────────────────────────────────────────────────*/
 .rec-cta {
   display: flex;
@@ -50,15 +69,27 @@
   --background-hover: var(--ds-color-brand-hover);
   --color: var(--ds-text-inverse);
 }
-.rec-cta__primary.button-disabled {
-  --background: var(--ds-surface-card);
-  --color: var(--ds-color-error-text);
-  border: 1px solid var(--ds-color-error);
-  border-radius: var(--ds-radius-control);
-}
-/* Ionic's default disabled opacity takes it to the edge of legibility, and this
-   control is disabled precisely when the reader most needs to read it. */
-.rec-cta__primary.button-disabled { opacity: 0.9; }
+/* REFUSED IS THE SAME BUTTON, DIMMED. Nothing else.
+ *
+ * It carried `border: 1px solid var(--ds-color-error)` and error-red text. That
+ * traces to P1-AC-39, which says the primary is shown disabled "with the
+ * server's own reason on screen adjacent to it, drawn as an error" — the
+ * criterion colours THE REASON. The implementation coloured the button, so the
+ * loudest red object on the screen was the control rather than the fault, and
+ * red means destructive everywhere else. Owner: "Not red, that's for sure",
+ * and then, on the two replacements drawn for him, neither — the enabled
+ * treatment, dimmed.
+ *
+ * So no bespoke background, no bespoke border, no bespoke colour: the sage
+ * button at reduced opacity, which still reads as a button and cannot be
+ * mistaken for a live one. The error weight stays where the criterion put it,
+ * on `.rec-refusal`.
+ *
+ * The opacity is stated rather than left to Ionic's 0.5, and it is the one
+ * number here: at 0.5 the inverse label on the dimmed sage drops under the
+ * legibility floor, and this control is refused at exactly the moment its
+ * label matters most. */
+.rec-cta__primary.button-disabled { opacity: 0.72; }
 .rec-cta__more {
   margin: 0;
   --color: var(--ds-text-secondary);
@@ -132,55 +163,80 @@ ion-toolbar.ops2-topbar--identity {
 
 /* The band stays on screen while the openings scroll under it — it carries the
    total, the tabs and the attention row, and a reviewer twelve lines down still
-   needs all three. Desk width already has this: there it is a header. */
+   needs all three. Desk width already has this: there it is a header.
+
+   THE OFFSET IS THE BAND'S OWN PULL, NEGATED — never `0`.
+
+   The band is dragged up by `margin-top: calc(-1 * var(--ops2-band-top))`
+   (projects.css) so the white bleeds under the status bar. Its resting top is
+   therefore NEGATIVE, and a sticky offset of `0` is above that: the constraint
+   binds at rest, on a page that has not been scrolled at all, and clamps the
+   bleed away. Every child moved down by exactly the inset — measured at 390 and
+   900, queue and line page at -16, the record alone at 0 — which is the record's
+   header "sitting lower" than the two surfaces beside it.
+
+   It jumped, too, because `bandPinned` is gated on the record having arrived:
+   the clamp landed with the data, in front of the reader.
+
+   Matching the pull means the pin changes nothing until the band would actually
+   leave the top of the scrollport, which is the only thing it was ever for. */
 .ops2-page__band--pinned {
   position: sticky;
-  top: 0;
+  top: calc(-1 * var(--ops2-band-top));
   z-index: 2;
 }
 
-/* ── The attention row ──────────────────────────────────────────────────────
- * One line, inside the band, under the tabs. It names the leading blocker and
- * offers the control that clears it; the rest are counted. */
-.rec-attention {
+/* ── THE PILL — what still needs a person, and the control that shows it ────
+ *
+ * It replaces a tinted row that lived inside the band under the tabs. The owner
+ * deleted that row on sight: "the large pill-like area that says '2 lines have
+ * no rate' is the solution — use that design and incorporate quick filter in
+ * it. Drop the yellow bar altogether — it duplicates what the pill says. no
+ * pill when the filter is cleared."
+ *
+ * So this wears `.rec-refusal`'s shape — the object he was pointing at — and
+ * carries the filter the band was carrying. It is a control, so it also has to
+ * look like one: the action word is the underlined ink the approved mock chose
+ * for exactly this reason (its own note measured the brand hue at 4.34:1 on a
+ * warning ground and rejected it), and the whole pill washes on hover.
+ *
+ * NOT DRAWN WHEN THERE IS NOTHING TO DRAW IT FOR. There is no "nothing is
+ * blocking this quote" state: a permanent line reporting the absence of news is
+ * one the eye learns to skip, and it was the other half of the duplication. */
+.rec-pill {
   display: flex;
   align-items: center;
   gap: var(--theme-spacing-xs);
   width: 100%;
-  margin: 0;
-  padding: var(--theme-spacing-xs) 0;
-  border: 0;
-  border-top: 1px solid var(--ds-border-subtle);
-  background: none;
+  margin: 0 0 var(--theme-spacing-md);
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: var(--ds-color-warning-subtle);
+  border: 1px solid var(--ds-color-warning);
+  border-radius: var(--ds-radius-control);
   font: inherit;
   font-size: var(--theme-font-size-sm);
-  color: var(--ds-text-secondary);
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-color-warning-text);
   text-align: left;
+  cursor: pointer;
 }
-.rec-attention--button { cursor: pointer; }
-@media (hover: hover) {
-  .rec-attention--button:hover { color: var(--ds-text-primary); }
-}
-.rec-attention__dot {
-  flex: none;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--ds-color-warning);
-}
-.rec-attention[data-kind="clear"] .rec-attention__dot { background: var(--ds-color-success); }
-.rec-attention[data-kind="no-lines"] .rec-attention__dot { background: var(--ds-border-strong); }
-.rec-attention__text {
+.rec-pill ion-icon { flex: none; font-size: 1rem; }
+.rec-pill__text {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--ds-text-primary);
 }
-.rec-attention__more { color: var(--ds-text-muted); }
-/* The control word, in the brand — it is the one thing on this row that acts. */
-.rec-attention__act {
+/* The control word. Ink and an underline rather than the brand hue, which has
+   to fight the tint behind it — the approved mock's own measurement. */
+.rec-pill__act {
   flex: none;
-  color: var(--ds-text-link);
-  font-weight: var(--theme-font-weight-medium);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-bold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (hover: hover) {
+  .rec-pill:hover { filter: brightness(0.98); }
 }
 
 /* ── The refusal, beside what it refuses ────────────────────────────────────
@@ -248,47 +304,15 @@ ion-toolbar.ops2-topbar--identity {
  * ONE BLOCK, the same object the queue's list is: rows with no gap between
  * them, a hairline between each pair, and the border, corners and elevation on
  * the group. */
+/* WHAT IS LEFT OF THIS SURFACE'S LIST: the card it composes, and nothing else.
+ * The block, the hairlines, the row's gutter, the wash and the leading edge all
+ * moved to `rows.css` when the three list surfaces became one component — and
+ * the flagged edge moved WITH the wash, onto the same element, which is the
+ * whole of the reported defect. `.rl-open`'s nine declarations and the
+ * `.lp-unit__open` pairing that shared them are gone from here for the same
+ * reason: they are the row now, not a thing two selectors agree about. */
 .rl-list {
   margin: 0 0 var(--theme-spacing-md);
-  padding: 0;
-  list-style: none;
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
-  box-shadow: var(--ds-layer-raised);
-  overflow: hidden;
-}
-.rl-row + .rl-row { border-top: 1px solid var(--ds-border-subtle); }
-/* HIGHLIGHT, NOT A SENTENCE. The leading edge marks a line the reviewer still
-   has to look at; the reasons are read on that line's own page, where the fix
-   is. Every reason as its own chip is what "it pollutes the screen" was about. */
-.rl-row[data-flagged="true"] { box-shadow: inset 3px 0 0 var(--ds-color-warning); }
-
-/* THE WHOLE ROW IS ONE TARGET. One button filling it, opening that line's page
-   — no twisty, nothing that looks pressable and answers differently.
-
-   THE LINE PAGE'S UNIT ROWS ARE THE SAME OBJECT, so they are the same selector
-   rather than a second copy of these nine declarations: a row that fills its
-   li, opens what it names, and washes on hover. `line.css` overrides only the
-   four things a unit row does differently (it is a grid, and it carries a hit
-   floor); everything a reader would expect the two to share is stated once. */
-.rl-open,
-.lp-unit__open {
-  display: flex;
-  align-items: center;
-  gap: var(--theme-spacing-sm);
-  width: 100%;
-  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
-  background: none;
-  border: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .rl-open:hover,
-  .lp-unit__open:hover { background: var(--ds-color-brand-wash); }
 }
 
 /* The drawing leads, so the list is scannable by SHAPE before a word is read.
@@ -527,8 +551,3 @@ ion-toolbar.ops2-topbar--identity {
   color: var(--ds-text-muted);
 }
 
-/* The row the canvas is showing. A tint AND a leading edge, because a rail of
-   eighteen rows where one is a few per cent lighter is not a signal — and the
-   row also says `aria-current`, so it is not colour alone. */
-.rl-row[data-selected] { background: var(--ds-color-brand-wash); }
-.rl-row[data-selected] .rl-open { box-shadow: inset 3px 0 0 var(--ds-color-brand); }

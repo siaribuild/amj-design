@@ -11,11 +11,20 @@
 //
 // ─── Where this sits in the precedence chain ──────────────────────────────────
 //
-//   energy report components   authoritative — an engineer stated the make-up
-//   drawing-derived split      read from submitted plans + elevations
-//   schedule comment           the architect's own words
+//   drawing-derived split      THE ARCHITECTURAL CONTRACT. Wins every time.
+//   energy report components   enumerates components where a schedule is silent
+//   schedule comment           the architect's own words, when there are any
 //   FAMILY DEFAULT ← here      the fallback, when nothing above is available
 //   even split                 N equal units — the floor, when no rule is authored
+//
+// The report sat at the TOP of this list, described as authoritative because "an
+// engineer stated the make-up". That is the wrong reason for a real ranking, and
+// the wrong reason made it look deliberate when the drawings arrived below it.
+// The report is not an architectural authority — it earned its place over a
+// SCHEDULE because a schedule typically says "AWNING" and nothing about how the
+// opening divides, while the report enumerates components. Given only a schedule
+// it remains a good fallback. Given drawings, the drawings win (owner,
+// 2026-08-27; output spec §6).
 //
 // It is deliberately the weakest claim: it applies only when nothing states the
 // layout.

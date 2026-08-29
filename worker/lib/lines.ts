@@ -322,14 +322,37 @@ export interface EditableSnapshot { product_slug: string | null; options_json: s
 /** The union of previously-edited groups and whatever this save actually changed
  *  on a schedule-origin line. Returns the JSON to store (null when nothing has
  *  ever been edited — keeps rows clean for the importer's fast path). */
+/** Which of the four priced field groups this save actually changes.
+ *
+ *  ONE place asks that question, because two call sites now need it and they
+ *  need opposite halves of the answer: `editedFieldsAfterSave` wants the names
+ *  so it can union them onto the record, and `sameConfiguration` wants only
+ *  whether the list is empty. */
+function changedGroups(stored: EditableSnapshot, incoming: Awaited<ReturnType<typeof itemFields>>): string[] {
+  const out: string[] = [];
+  if ((stored.product_slug ?? "") !== incoming.product_slug) out.push("product_slug");
+  if (!jsonEq(stored.options_json, incoming.options_json)) out.push("options_json");
+  if (!dimsEq(stored.dims_json, incoming.dims_json)) out.push("dims_json");
+  if ((stored.qty ?? null) !== incoming.qty) out.push("qty");
+  return out;
+}
+
+/** Does the incoming save describe the configuration the row already holds?
+ *
+ *  The repair branch prices the INCOMING fields and persists none of them, on
+ *  purpose — an autosave must not overwrite the AI's configuration with a second
+ *  opinion. Because the record keeps the UNION of every group ever edited, a
+ *  second change to a listed group lands there too, and its price then belongs
+ *  to a configuration the row does not hold. Anything that would publish or
+ *  unblock such a line has to ask this first. */
+export function sameConfiguration(stored: EditableSnapshot, incoming: Awaited<ReturnType<typeof itemFields>>): boolean {
+  return changedGroups(stored, incoming).length === 0;
+}
+
 export function editedFieldsAfterSave(stored: EditableSnapshot, incoming: Awaited<ReturnType<typeof itemFields>>): string | null {
   let prior: string[] = [];
   try { const v = JSON.parse(stored.edited_fields || "[]"); if (Array.isArray(v)) prior = v.filter((x) => typeof x === "string"); } catch { /* none */ }
-  const now = new Set(prior);
-  if ((stored.product_slug ?? "") !== incoming.product_slug) now.add("product_slug");
-  if (!jsonEq(stored.options_json, incoming.options_json)) now.add("options_json");
-  if (!dimsEq(stored.dims_json, incoming.dims_json)) now.add("dims_json");
-  if ((stored.qty ?? null) !== incoming.qty) now.add("qty");
+  const now = new Set([...prior, ...changedGroups(stored, incoming)]);
   return now.size ? JSON.stringify([...now]) : null;
 }
 

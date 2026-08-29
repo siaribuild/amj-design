@@ -1,0 +1,175 @@
+[
+  {
+    "id": "t1",
+    "title": "Worker\u2192container transport: DO binding, container class, client with framing \u2014 no public route",
+    "files": [
+      "wrangler.jsonc",
+      "worker/types.ts",
+      "worker/index.ts",
+      "worker/lib/drawing/planParseContainer.ts",
+      "worker/lib/drawing/containerClient.ts",
+      "worker/lib/drawing/index.ts",
+      "package.json",
+      "package-lock.json",
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "done_when": "wrangler.jsonc declares the containers entry (class_name PlanParseContainer, image ./containers/plan-parse/Dockerfile, max_instances), the PLAN_PARSE durable_objects binding and its new_sqlite_classes migration, and NO route/service/hostname reaches the container (design \u00a73.1 \u2014 this is a security constraint, assert it: a test greps wrangler.jsonc for the class and fails if any routes/services entry references it); worker/lib/drawing/planParseContainer.ts extends Container from @cloudflare/containers (defaultPort 8080, sleepAfter set) and is exported from worker/index.ts; Env gains PLAN_PARSE; containerClient.ts exposes pure encodeCropRequest (JSON header line + newline + PDF bytes \u2014 the framing server.mjs:49 parses), pure decodeCropResponse (base64 \u2192 bytes, echoed ids matched against the SENT set and unknown ids rejected, failure reasons narrowed to the enum), and callPlanParse using getContainer with instance key `${projectId}:${sourceGeneration}` (\u00a73.1 affinity); encode/decode round-trip, id-mismatch rejection, and the MIN_CROP_WIDTH_PX equality assertion between worker/lib/drawing/crop.ts and containers/plan-parse/render.mjs are covered in scripts/tests/drawing.test.mjs; typecheck:gate green.",
+    "after": [],
+    "status": "done",
+    "note": "Shipped 2026-08-27, merged in PR #13 and deployed."
+  },
+  {
+    "id": "t2",
+    "title": "The two vision skills: Pass A elevation inventory + per-opening composition read, decline first-class",
+    "files": [
+      "worker/lib/estimator/skills/drawingRead.ts",
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "done_when": "drawingRead.ts defines two Skill objects following the shape of worker/lib/estimator/skills/plan.ts (buildPrompt with imageDataUrl image_url parts, JSON schema, validate clamp, promptVersion): elevationInventory takes one elevation image and returns window-like objects (normalised TOP-LEFT region per worker/lib/drawing/types.ts:Region, width:height proportion, panel count, per-panel symbol present/absent) and is never asked to name or match anything; openingComposition takes one opening crop plus the schedule row (tag, W\u00d7H, type text) and returns divisionAxis, ordered units of {operable: boolean, ratio} summing to ~1, optional printed widthMm ONLY when the sheet dimensions the unit (output spec \u00a71.2 \u2014 never back-calculated), and a first-class {unreadable: true, reason} decline; validators refuse a unit carrying a family name (design \u00a75: the drawing claims operable-or-not, never a family), refuse ratios outside 0..1 or not summing within tolerance, and refuse a region with inverted corners; all validator paths (accept, decline, family-smuggling, bad ratios, inverted region) covered pure in scripts/tests/drawing.test.mjs.",
+    "after": [],
+    "status": "done",
+    "note": "Shipped 2026-08-27, merged in PR #13 and deployed."
+  },
+  {
+    "id": "t3",
+    "title": "Pass B assignment and verification checks 1+3 \u2014 pure, the not-read rules exactly as designed",
+    "files": [
+      "worker/lib/drawing/assign.ts",
+      "worker/lib/drawing/verifyReading.ts",
+      "worker/lib/drawing/index.ts",
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "done_when": "assign.ts implements design \u00a74.2: three signals (tag\u2192wall\u2192elevation, drawn-vs-stated proportion, order along the wall), a row two signals disagree about is not_read, a box two rows both fit makes BOTH rows not_read (the W14/W16 case \u2014 pinned by a test reproducing one 2050\u00d72000 box against two rows), and same-size pairs resolve only via order (W5/W6, W9/W11 fixtures); verifyReading.ts implements release-gate checks 1 and 3: schedule cross-check (panel count + operable/passive pattern vs type text \u2014 FIXED with a symbol disagrees, OFFSET AWNING with two panels and one symbol agrees) and dimension agreement per output spec \u00a72.2, each returning a surfaced disagreement record, never a resolution; not_stated and not_read remain distinct states end to end (output spec \u00a74); both modules exported via worker/lib/drawing/index.ts and covered pure in scripts/tests/drawing.test.mjs.",
+    "after": [
+      "t2"
+    ],
+    "status": "done",
+    "note": "Shipped 2026-08-27, merged in PR #13 and deployed."
+  },
+  {
+    "id": "t4",
+    "title": "SplitHint source 'drawing': ratio units through proposeSplit, width precedence, pairing comment corrected",
+    "files": [
+      "worker/lib/drawing/toHint.ts",
+      "worker/lib/drawing/index.ts",
+      "worker/lib/estimator/split.ts",
+      "worker/lib/estimator/pairing.ts",
+      "scripts/tests/drawing.test.mjs",
+      "scripts/tests/estimator-split.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/drawing.test.mjs",
+      "scripts/tests/estimator-split.test.mjs"
+    ],
+    "done_when": "SplitHint.source (worker/lib/estimator/split.ts:144) gains 'drawing' and SplitUnitHint gains optional ratio; proposeSplit consumes ratio units via the output-spec \u00a71.2 rounding rule (round all but the last unit to the step, last takes the remainder \u2014 2050 \u00d7 0.634/0.366 \u2192 1300|750 and 2047 \u2192 1300|747, both partitioning exactly, asserted in scripts/tests/estimator-split.test.mjs); toHint.ts turns a verified reading into the hint applying design \u00a76 precedence \u2014 a comment-stated unit width beats the measured ratio, partially stated widths stand with the rest scaled to the remainder, and a count conflict between comment and drawing yields a review flag, never arithmetic; operable units take the SCHEDULE's family and passive units are fixed (\u00a75); the stale precedence comment at worker/lib/estimator/pairing.ts:15 is corrected to match output spec \u00a76 (drawings above energy report for shape); all covered in scripts/tests/drawing.test.mjs.",
+    "after": [
+      "t3"
+    ],
+    "status": "done",
+    "note": "Shipped 2026-08-27, merged in PR #13 and deployed."
+  },
+  {
+    "id": "t5",
+    "title": "The orchestrator and the pipeline seam: read drawings, merge hints above comment/energy, evidence, progress counts, migration 0059",
+    "files": [
+      "worker/lib/drawing/read.ts",
+      "worker/lib/drawing/index.ts",
+      "worker/lib/ai/pipeline.ts",
+      "migrations/0059_drawing_read_progress.sql",
+      "worker/routes/parse.ts",
+      "src/data/api.ts",
+      "scripts/tests/ai-pipeline.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/ai-pipeline.test.mjs"
+    ],
+    "done_when": "read.ts orchestrates design \u00a74 (the only new env-touching module): fetch the plan file's bytes from R2 once, derive elevation regions from positioned text, call the container via containerClient (batching by MAX_CROPS_PER_CALL, deferred honoured, an all-gaps batch makes NO container call), run elevationInventory per elevation and openingComposition per assigned opening through runStage (so ai_stage_runs rows, retries and idempotency come free), store each crop PNG at projects/<projectId>/runs/<runId>/crops/<stageRunId>.png with the key in metrics_json (design \u00a77.3 \u2014 result_r2_key keeps the JSON archive, asserted), run verifyReading, and report per-opening outcomes read/not_stated/not_read/unlocated plus disagreements; pipeline.ts invokes it after applyPlanContext (~line 700-740) and merges drawing hints ABOVE schedule_comment and energy_report for shape while energy components still attach for thermal targets (extend the guard at ~784; asserted); evidence rows fill page_no/sheet_ref/region_json; migrations/0059 is exactly two additive nullable INTEGER columns on ai_job_claim (drawings_done, drawings_total) with a header comment 'children affected: none \u2014 nothing REFERENCES ai_job_claim' and NO change to the progress_stage CHECK (design \u00a710 \u2014 a test greps the migration and fails on CREATE TABLE, DROP, or progress_stage); counts are written with the exact token guard WHERE project_id=? AND source_generation=? AND status='processing' AND processing_token=? and the denominator is the real opening count with not_read still advancing it (\u00a77.1, asserted); parse.ts (~371-400) and src/data/api.ts ExtractionRun (~585) expose drawingsDone/drawingsTotal; the customer-facing response and diagnostic carry NO unread/gap information (\u00a77.2, asserted); a not_read opening leaves today's fallback output byte-identical (asserted).",
+    "after": [
+      "t1",
+      "t4"
+    ],
+    "status": "done",
+    "note": "Shipped 2026-08-27, merged in PR #13 and deployed."
+  },
+  {
+    "id": "t6",
+    "title": "Customer progress UI: 'reading opening N of M', successes only",
+    "files": [
+      "src/data/useProjectDocuments.ts",
+      "scripts/tests/web/customer.spec.ts"
+    ],
+    "tests": [
+      "scripts/tests/web/customer.spec.ts"
+    ],
+    "done_when": "useProjectDocuments renders 'reading opening N of M' whenever a processing run carries non-null drawingsTotal (whatever progress_stage says \u2014 design \u00a77.1 withdrew the new enum value), falls back to today's phase label when counts are absent, and shows nothing about unreads; scripts/tests/web/customer.spec.ts covers both states with stubbed runs (counts present \u2192 counter text; counts absent \u2192 existing label unchanged).",
+    "after": [
+      "t5"
+    ],
+    "status": "done",
+    "note": "Shipped 2026-08-28. The counter is a checklist detail on the in-progress step, not the single message line \u2014 a real run always carries a stage, so the checklist renders and the message line is the no-stage path. Two of the three Playwright cases were removed: a minimal stub does not make the progress block render (it is gated behind `processing`, which needs the poll started), so they exercised the fixture rather than the feature. readingMessage/drawingDetail are covered directly in unit.test.mjs."
+  },
+  {
+    "id": "t7",
+    "title": "The geometric second opinion: container segments op, frames port, verification check 2",
+    "files": [
+      "containers/plan-parse/render.mjs",
+      "containers/plan-parse/server.mjs",
+      "containers/plan-parse/validate.mjs",
+      "containers/plan-parse/verify.mjs",
+      "worker/lib/drawing/frames.ts",
+      "worker/lib/drawing/verifyReading.ts",
+      "worker/lib/drawing/read.ts",
+      "worker/lib/drawing/containerClient.ts",
+      "worker/lib/drawing/index.ts",
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/drawing.test.mjs"
+    ],
+    "done_when": "The container request accepts an optional per-page wantSegments flag; render.mjs/server.mjs return that page's flattened segments (getOperatorList + CTM walk \u2014 extraction only, no matching, no judgement, consistent with the container's charter and design \u00a74.4's 128MB rationale) alongside crops, with validate.mjs bounding the addition and verify.mjs exercising it against the fixture; worker/lib/drawing/frames.ts ports the strict+loose frame matchers from scripts/research/plan-geometry/frames.mjs as pure functions over segments (W1's eight verticals and the shared-jamb W14 case reproduced from fixture segments in scripts/tests/drawing.test.mjs); verifyReading gains check 2 \u2014 model reading vs geometric decomposition, agreement recorded, disagreement surfaced never resolved \u2014 and read.ts requests segments for elevation pages and feeds the check; scripts/research/plan-geometry/measure.mjs still exits zero (the calibration harness is untouched).",
+    "after": [
+      "t5"
+    ],
+    "status": "deferred",
+    "note": "Owner may do this himself. His challenge, 2026-08-28: dimensions come from the schedule and the ratio is approximate by nature, so what is the second opinion FOR? Answer, recorded: it is not a second SOURCE, it is a second READER of the same drawing. Comparing ratios is near-worthless; comparing UNIT COUNT, division positions and which leaves carry a symbol is not \u2014 a model hallucinating a panel or missing a mullion produces a well-formed wrong answer nothing else catches, because the schedule is silent on composition."
+  },
+  {
+    "id": "t8",
+    "title": "Ops surface: readings + provenance on the record, crop route staff-gated and audit-logged, abuse cases executed",
+    "files": [
+      "worker/routes/ops.ts",
+      "src/ops2/projects/DrawingReadings.tsx",
+      "src/ops2/projects/ProjectRecordPage.tsx",
+      "scripts/tests/drawing-evidence-api.test.mjs",
+      "package.json",
+      "scripts/tests/web/ops2-record.spec.ts"
+    ],
+    "tests": [
+      "scripts/tests/drawing-evidence-api.test.mjs",
+      "scripts/tests/web/ops2-record.spec.ts"
+    ],
+    "done_when": "GET /api/ops/projects/:id gains the per-opening readings summary (state read/not_stated/not_read/unlocated, checks fired, disagreement details, crop stageRunId) queried WHERE r.project_id = ? through the ai_stage_runs JOIN ai_runs join (design \u00a79.3); new GET /api/ops/ai/crops/:stageRunId streams the PNG with the R2 key read from the row's metrics_json NEVER from the request, gated by the same isStaffUser predicate as existing ops reads (manufacturer partners excluded \u2014 customer data) and audit-logged like the ops.ts:2274 staff download; scripts/tests/drawing-evidence-api.test.mjs is created AND wired into package.json (added to test:heavy, plus a test:drawing-api script) and EXECUTES the abuse cases: customer session on both routes denied, manufacturer-partner session denied, staff allowed, unknown stageRunId 404s without an R2 read, audit row written; DrawingReadings.tsx on ProjectRecordPage shows provenance per line (drawing-read vs default split), every unread and every disagreement, and the crop image via the new route (\u00a77.3 \u2014 ops sees gaps AND disagreements; the customer surface is asserted unchanged); scripts/tests/web/ops2-record.spec.ts covers the panel rendering an unread, a disagreement, and a crop request.",
+    "after": [
+      "t5"
+    ],
+    "status": "handover",
+    "note": "Owner: over-engineered, nice to have. See HANDOVER-t8-ops-surface.md. The load-bearing part \u2014 per-unit provenance on the ops record \u2014 ALREADY SHIPS via whyCopy's basis label. What remains is the crop viewer, whose real justification is producing the ground-truth fixture, not operating the reader."
+  },
+  {
+    "id": "t9",
+    "title": "Estimating thermal requirements without an energy report \u2014 orientation, chiefly",
+    "status": "handover",
+    "files": [],
+    "after": [],
+    "done_when": "See HANDOVER-t9-thermal-without-a-report.md. Owner, 2026-08-28. The orientation\u2192SHGC branch has NEVER fired in production (computedBand.ts:4-8 \u2014 444 of 444 openings got the same band) because orientation only ever arrives with an energy report. Orientation is ONE determination per building from the site plan's boundary bearings, which are TEXT; azimuthToOrientation and OpeningV1.orientation already exist. Head heights, eaves and storey are deliberately excluded \u2014 eaves set shadingKnown, which nothing reads."
+  }
+]
