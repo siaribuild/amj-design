@@ -991,6 +991,11 @@ async function runReviews(run, panes) {
     return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
   await Promise.all([...jobs, runCodex(run), runCodexArchitecture(run)])
+  // Same bookkeeping runBuild does for 'build': mark the parent stage done so
+  // `next` advances past it instead of re-running all four reviewers on a
+  // second call - review has no single session of its own to report.
+  run.stages['review'] = { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, rollup: true }
+  saveRun(run)
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
     '     conduct fix "<finding>"\n')
 }
@@ -1218,7 +1223,12 @@ const cmds = {
    * to before this loop existed.
    */
   async next(...flags) {
-    const run = loadRun(activeSlug())
+    // Resolved once. .active can change under a long stage - a second
+    // `conduct start` for another feature while this one is mid-build - and
+    // the loop must keep advancing the run it was asked about, never silently
+    // pick up whatever is active by the time a stage finishes.
+    const slug = activeSlug()
+    const run = loadRun(slug)
     if (decisionsOpen(run)) return
     // An interrupted stage is picked up BEFORE anything new is started. A held
     // or running stage has no `code`, so the scan below would otherwise start a
@@ -1227,7 +1237,7 @@ const cmds = {
       .find(([, s]) => s.status === 'running' || s.status === 'held')
     if (live) return cmds.resume(live[0], ...flags)
     for (;;) {
-      const r = loadRun(activeSlug())
+      const r = loadRun(slug)
       const spec = STAGES.find((s) => inTier(s, r) && (!s.ui || r.ui) && r.stages[s.id]?.code !== 0)
       if (!spec) {
         console.log('\n  all stages complete -  node scripts/pipeline/conduct.mjs report\n')
