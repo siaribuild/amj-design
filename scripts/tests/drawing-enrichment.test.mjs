@@ -6,6 +6,8 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { readFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("drawing-enrichment");
@@ -93,4 +95,41 @@ test("caps: sane, positive bounds", () => {
   assert.ok(MAX_PAGES > 0);
   assert.ok(MAX_CROPS_PER_PAGE > 0);
   assert.ok(MAX_DPI > 0 && MAX_DPI <= 600);
+});
+
+// ── AB-9 — repo hygiene. No customer drawing bytes ever enter git — the
+// crops rule already burned this repo once (0f63fe6a, #26). ──
+async function walk(dir) {
+  let out = [];
+  let entries;
+  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) out = out.concat(await walk(full));
+    else out.push(full);
+  }
+  return out;
+}
+const FORBIDDEN_BYTES = /\.(png|jpe?g|pdf)$/i;
+
+test("AB-9: no image/pdf bytes under scripts/tests/fixtures/drawing or containers/", async () => {
+  const files = [
+    ...(await walk(join(projectRoot, "scripts/tests/fixtures/drawing"))),
+    ...(await walk(join(projectRoot, "containers"))),
+  ];
+  const offenders = files.filter((f) => FORBIDDEN_BYTES.test(f));
+  assert.deepEqual(offenders, []);
+});
+
+test("AB-9: root .gitignore carries the crops rule", async () => {
+  const gi = await readFile(join(projectRoot, ".gitignore"), "utf8");
+  assert.match(gi, /plan-parse\/out\//);
+});
+
+test("AB-5: containers/plan-parse/requirements.txt holds no credential-bearing client", async () => {
+  const reqPath = join(projectRoot, "containers/plan-parse/requirements.txt");
+  assert.ok(existsSync(reqPath), "requirements.txt must exist");
+  const deps = (await readFile(reqPath, "utf8")).split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join("\n");
+  assert.doesNotMatch(deps, /\bboto3\b/i);
+  assert.doesNotMatch(deps, /\banthropic\b/i);
 });
