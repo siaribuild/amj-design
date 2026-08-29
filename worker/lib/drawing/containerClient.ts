@@ -5,14 +5,14 @@
 //
 // The namespace is an argument, not an import of `env.PLAN_PARSE` — so a
 // test can inject a fake that proves a refused call never dispatches.
-import type { ContainerFailureCode, CropBoxPt, InspectResponse, RenderResponse } from "./contract";
+import type { ContainerFailureCode, InspectResponse, RenderRequest, RenderResponse } from "./contract";
 import { MAX_CROPS_PER_PAGE, MAX_DPI, MAX_PAGES, MAX_PDF_BYTES } from "./contract";
 
-// A stalled DO call must not silently burn the whole job lease (2026-08-29
-// incident: a hung fetch consumed the full 240s auto_drawings deadline with
-// nothing persisted). 600s while the freshly-provisioned container is being
-// tested — tighten once cold-start behaviour is known-good.
-export const CONTAINER_CALL_TIMEOUT_MS = 600_000;
+// Each endpoint must fail with enough lease left to persist the attributable
+// gap and continue the estimate. Inspect is heavier than a page render, but
+// neither may consume the 600 s job deadline by itself.
+export const INSPECT_TIMEOUT_MS = 120_000;
+export const RENDER_TIMEOUT_MS = 60_000;
 
 export class ContainerClientError extends Error {
   code: ContainerFailureCode;
@@ -72,7 +72,7 @@ export async function inspectPdf(
   projectId: string,
   pdfBytes: Uint8Array,
   maxPages: number = MAX_PAGES,
-  timeoutMs: number = CONTAINER_CALL_TIMEOUT_MS,
+  timeoutMs: number = INSPECT_TIMEOUT_MS,
 ): Promise<InspectResponse> {
   if (pdfBytes.byteLength > MAX_PDF_BYTES) throw new ContainerClientError("too_large");
   return callContainer(namespace, projectId, "/inspect", { maxPages: Math.min(maxPages, MAX_PAGES) }, pdfBytes, timeoutMs) as Promise<InspectResponse>;
@@ -82,11 +82,14 @@ export async function renderPage(
   namespace: DurableObjectNamespace,
   projectId: string,
   pdfBytes: Uint8Array,
-  req: { pageNo: number; dpi: number; crops?: CropBoxPt[] },
-  timeoutMs: number = CONTAINER_CALL_TIMEOUT_MS,
+  req: RenderRequest,
+  timeoutMs: number = RENDER_TIMEOUT_MS,
 ): Promise<RenderResponse> {
   if (pdfBytes.byteLength > MAX_PDF_BYTES) throw new ContainerClientError("too_large");
   if (req.dpi > MAX_DPI) throw new ContainerClientError("bad_request", "dpi exceeds cap");
   if (req.crops && req.crops.length > MAX_CROPS_PER_PAGE) throw new ContainerClientError("bad_request", "too many crops requested");
-  return callContainer(namespace, projectId, "/render", { pageNo: req.pageNo, dpi: req.dpi, crops: req.crops }, pdfBytes, timeoutMs) as Promise<RenderResponse>;
+  if (req.threshold != null && (!Number.isInteger(req.threshold) || req.threshold < 0 || req.threshold > 255)) {
+    throw new ContainerClientError("bad_request", "threshold outside 0..255");
+  }
+  return callContainer(namespace, projectId, "/render", { pageNo: req.pageNo, dpi: req.dpi, crops: req.crops, threshold: req.threshold }, pdfBytes, timeoutMs) as Promise<RenderResponse>;
 }

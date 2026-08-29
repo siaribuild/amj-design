@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 function valueOf(reading, field) {
   if (!reading) return undefined;
   const stateKey = `${field}_state`;
+  if (reading[stateKey] === "not_read") return "__NOT_READ__";
   if (reading[stateKey] !== "value") return null;
   if (field === "split") return reading.split_json ? JSON.parse(reading.split_json) : null;
   if (field === "room") return reading.room_label ?? null;
@@ -33,24 +34,30 @@ function deepEqual(a, b) {
 
 const FIELDS = ["split", "orientation", "elevation", "room"];
 
-/** One opening's verdict: 'match' | 'mismatch' | 'not_read' | 'not_drawn'. */
+/** One opening's verdict: every labelled field is scored independently. */
 export function compareOpening(reading, label) {
-  if (label && label.drawn === false) {
-    return { verdict: "not_drawn", note: "not drawn on any elevation" };
-  }
-  if (!reading || reading.gap_code) {
+  if (!reading) {
     return { verdict: "not_read", gapCode: reading?.gap_code ?? null };
   }
   const fields = {};
   let allMatch = true;
   for (const field of FIELDS) {
+    if (field === "split" && label?.drawn === false) {
+      fields[field] = "not_drawn";
+      continue;
+    }
     const readingVal = valueOf(reading, field);
     const labelVal = label ? label[field] ?? null : null;
     const match = deepEqual(readingVal, labelVal);
     fields[field] = match ? "match" : "mismatch";
     if (!match) allMatch = false;
   }
-  return { verdict: allMatch ? "match" : "mismatch", fields };
+  if (label && Object.hasOwn(label, "pageNo")) {
+    const pageMatch = reading.page_no === label.pageNo;
+    fields.pageNo = pageMatch ? "match" : "mismatch";
+    if (!pageMatch) allMatch = false;
+  }
+  return { verdict: allMatch ? "match" : "mismatch", fields, ...(label?.drawn === false ? { note: "split not drawn on any elevation" } : {}) };
 }
 
 /** Deterministic per-opening verdicts across the union of both files'
@@ -64,9 +71,8 @@ export function runGate(readings, labels) {
     externalRef,
     ...compareOpening(byRef.get(externalRef), labels[externalRef]),
   }));
-  const scored = perOpening.filter((o) => o.verdict !== "not_drawn");
   const matched = perOpening.filter((o) => o.verdict === "match").length;
-  return { perOpening, summary: { total: perOpening.length, of: scored.length, matched } };
+  return { perOpening, summary: { total: perOpening.length, of: perOpening.length, matched } };
 }
 
 // CLI entry — only when run directly, not when imported by the test suite.

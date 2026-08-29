@@ -576,10 +576,12 @@ export async function runAiExtraction(
   // Never log filenames, document text or model output (§21.1).
   const runStartedAt = Date.now();
   let phaseMark = runStartedAt;
+  let lastPhase = "start";
   const phase = (
     label: string,
     fields: Record<string, string | number | boolean | null> = {},
   ) => {
+    lastPhase = label;
     const now = Date.now();
     console.log({
       event: "ai_pipeline_phase",
@@ -770,7 +772,7 @@ export async function runAiExtraction(
     const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
     const scheduleRows = merged.lines
       .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
-      .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null }));
+      .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null, commentText: l.notes ?? null }));
     const onProgress = opts.processingToken
       ? async (done: number, total: number) => setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total)
       : undefined;
@@ -778,8 +780,28 @@ export async function runAiExtraction(
     drawingReadings = result.readings;
     drawingReport = result.report;
     applyDrawingOrientation(model, drawingReadings);
+    if (drawingReport) {
+      await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
+        .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
+      const files = drawingReport.files;
+      console.log({
+        event: "drawing_enrichment", aiRunId: run.id, projectId,
+        filesTried: files.length,
+        containerCalls: files.reduce((sum, file) => sum + file.containerCalls, 0),
+        modelCalls: files.reduce((sum, file) => sum + file.modelCalls, 0),
+        readingsProduced: drawingReadings.length,
+        notReadCount: drawingReadings.filter((reading) => reading.splitState !== "value").length,
+        wallMs: files.reduce((sum, file) => sum + file.wallMs, 0),
+        inspectTimings: files.map((file) => file.inspectTimings ?? null),
+      });
+    }
+    if (drawingReadings.length) {
+      await persistReadings(env, projectId, run.id, drawingReadings).catch((error) => {
+        warnings.push(`drawing_readings_persist_failed:${error instanceof Error ? error.name : "Error"}`);
+      });
+    }
   } catch (err) {
-    warnings.push(`drawing_enrichment_failed: ${err instanceof Error ? err.message : String(err)}`);
+    warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
   }
 
   applyPlanContext(model, planContexts);
@@ -1067,22 +1089,15 @@ export async function runAiExtraction(
     processingToken: opts.processingToken,
   }, { splitHints, scheduleTypes });
 
-  // Persist the drawing readings and their run report AFTER lines exist —
-  // room_label's guard (§3.5) needs a row to check, and the release-gate
-  // unit (§6.1) is the whole run's worth, not seeded mid-pipeline. Wrapped:
-  // a persistence failure here must not cost the estimate the customer
-  // already has (R6).
+  // Room application stays after estimate because quote_line rows do not
+  // exist earlier. Readings/report were persisted immediately after
+  // enrichment so a later estimate failure cannot erase diagnostics.
   if (drawingReadings.length) {
     try {
-      await persistReadings(env, projectId, run.id, drawingReadings);
       await applyDrawingRoom(env, projectId, drawingReadings);
     } catch (err) {
       warnings.push(`drawing_readings_persist_failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-  if (drawingReport) {
-    await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
-      .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
   }
 
   phase("estimate_and_pricing", {
@@ -1108,6 +1123,12 @@ export async function runAiExtraction(
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
   } catch (error) {
+    console.log({
+      event: "ai_pipeline_error", aiRunId: run.id, projectId,
+      name: error instanceof Error ? error.name : "Error",
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      phase: lastPhase,
+    });
     const stale = error instanceof Error && error.message === "ai_job_stale_before_publish";
     const failureKind = stale ? "stale_generation" : dominantFailure(stageFailures);
     const errorCode = stale ? "STALE_GENERATION" : (failureKind ? errorCodeForFailure(failureKind) : "PIPELINE_INTERNAL_ERROR");

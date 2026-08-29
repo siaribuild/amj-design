@@ -17,9 +17,15 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } from ${p("worker/lib/drawing/contract.ts")};
-      export { inspectPdf, renderPage, ContainerClientError, CONTAINER_CALL_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
+      export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
-      export { elevationInventorySkill, validateFloorplanRead, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
+      export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
+      export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
+      export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
+      export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
+      export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
+      export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
+      export { elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
       export { applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
       export { enrichOpenings, runDrawingEnrichmentStage } from ${p("worker/lib/drawing/enrich.ts")};
@@ -30,7 +36,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, CONTAINER_CALL_TIMEOUT_MS, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -60,19 +66,135 @@ test("selectPages: tags each page's tier from its title-block text, with a state
   assert.ok(selected.every((s) => s.reason.length > 0));
 });
 
-test("selectPages: tagVocabulary is the closed set of W/D tags on schedule pages only, not floor plan chatter", () => {
-  const pages = [
-    pt(1, "WINDOW SCHEDULE\nW1 600x1200 AWNING\nW2 900x1200 FIXED\nD1 820x2040 HINGED"),
-    pt(2, "GROUND FLOOR PLAN\nBEDROOM 1 W1\nLOT 42"), // "LOT" and room labels must not become tags
-  ];
-  const { tagVocabulary } = selectPages(inv(pages.map((p) => pageFacts({ pageNo: p.pageNo }))), pages);
-  assert.deepEqual([...tagVocabulary].sort(), ["D1", "W1", "W2"]);
+test("selectPages: returns classification only; authoritative schedule rows own vocabulary", () => {
+  const result = selectPages(inv([pageFacts({ pageNo: 1 })]), [pt(1, "WINDOW SCHEDULE\nW1")]);
+  assert.deepEqual(Object.keys(result), ["selected"]);
 });
 
 test("selectPages: a page matching no tier is not selected — nobody asked to read it", () => {
   const pages = [pt(1, "COVER SHEET — Project Overview")];
   const { selected } = selectPages(inv(pages.map((p) => pageFacts({ pageNo: p.pageNo }))), pages);
   assert.deepEqual(selected, []);
+});
+
+test("selectPages: a shared schedule/elevation page emits both tiers", () => {
+  const pages = [pt(1, "WINDOW SCHEDULE\nELEVATION A")];
+  const { selected } = selectPages(inv([pageFacts({ pageNo: 1 })]), pages);
+  assert.deepEqual(selected.map((s) => s.tier), ["schedule", "elevation"]);
+});
+
+test("selectPages: a floor-plan legend mentioning an elevation marker is not an elevation sheet", () => {
+  const pages = [pt(1, "GROUND FLOOR PLAN\nA denotes elevation marker")];
+  const { selected } = selectPages(inv([pageFacts({ pageNo: 1 })]), pages);
+  assert.deepEqual(selected.map((s) => s.tier), ["floorplan"]);
+});
+
+test("elevationRegions: multiple printed labels partition a shared sheet without inventing labels", () => {
+  const words = [
+    { text: "ELEVATION", x0: 100, x1: 180, top: 700, bottom: 715 },
+    { text: "A", x0: 185, x1: 195, top: 700, bottom: 715 },
+    { text: "ELEVATION", x0: 600, x1: 680, top: 700, bottom: 715 },
+    { text: "B", x0: 685, x1: 695, top: 700, bottom: 715 },
+  ];
+  const regions = elevationRegions(words, 1000, 800);
+  assert.deepEqual(regions, [
+    { label: "A", region: [0, 0, 440, 800] },
+    { label: "B", region: [440, 0, 1000, 800] },
+  ]);
+  const grouped = boxesByRegion([
+    { box: [0.1, 0.1, 0.2, 0.2], unitProportions: [1] },
+    { box: [0.7, 0.1, 0.8, 0.2], unitProportions: [1] },
+  ], regions, 1000, 800);
+  assert.equal(grouped.A.length, 1);
+  assert.equal(grouped.B.length, 1);
+  assert.ok(Math.abs(grouped.B[0].box[0] - ((700 - 440) / 560)) < 1e-9);
+  assert.ok(Math.abs(grouped.B[0].box[2] - ((800 - 440) / 560)) < 1e-9);
+});
+
+test("elevationRegions: no printed label returns no region — draw order is never treated as evidence", () => {
+  assert.deepEqual(elevationRegions([], 1000, 800), []);
+});
+
+test("elevationRegions: ignores named facades until floor-plan placement can join them", () => {
+  const regions = elevationRegions([
+    { text: "FRONT", x0: 100, x1: 150, top: 20, bottom: 40 },
+    { text: "ELEVATION", x0: 160, x1: 240, top: 20, bottom: 40 },
+  ], 1000, 800);
+  assert.deepEqual(regions, []);
+});
+
+test("locateFloorplanPage: vector footprint + printed marker place tags without vision", () => {
+  const page = {
+    pageNo: 2,
+    text: "GROUND FLOOR PLAN",
+    lines: [
+      { x0: 200, top: 200, x1: 800, bottom: 200 },
+      { x0: 200, top: 600, x1: 800, bottom: 600 },
+      { x0: 200, top: 200, x1: 200, bottom: 600 },
+      { x0: 800, top: 200, x1: 800, bottom: 600 },
+    ],
+    words: [
+      { text: "A", x0: 80, x1: 90, top: 390, bottom: 410 },
+      { text: "W1", x0: 170, x1: 190, top: 290, bottom: 310 },
+      { text: "W2", x0: 170, x1: 190, top: 490, bottom: 510 },
+      { text: "BEDROOM", x0: 260, x1: 340, top: 300, bottom: 320 },
+      { text: "STUDY", x0: 260, x1: 320, top: 500, bottom: 520 },
+    ],
+  };
+  const result = locateFloorplanPage(page, { widthPt: 1000, heightPt: 800 }, ["W1", "W2"]);
+  assert.deepEqual(result.placements.W1, { elevation: "A", orderOnWall: 1, roomLabel: "BEDROOM", storey: "ground" });
+  assert.deepEqual(result.placements.W2, { elevation: "A", orderOnWall: 2, roomLabel: "STUDY", storey: "ground" });
+  assert.equal(result.unplaced.length, 0);
+});
+
+test("locateFloorplanPage: missing vector geometry returns an attributable fallback set", () => {
+  const result = locateFloorplanPage({ pageNo: 2, text: "GROUND FLOOR PLAN", words: [], lines: [] }, { widthPt: 1000, heightPt: 800 }, ["W1"]);
+  assert.deepEqual(result.placements, {});
+  assert.deepEqual(result.markerEdges, {});
+  assert.deepEqual(result.unplaced, ["W1"]);
+});
+
+test("orientationsFromNorth: marker edges become eight-point compass faces by one rule", () => {
+  assert.deepEqual(orientationsFromNorth({ A: "left", B: "top", C: "right", D: "bottom" }, 0), {
+    A: { facing: "W" }, B: { facing: "N" }, C: { facing: "E" }, D: { facing: "S" },
+  });
+  assert.equal(orientationsFromNorth({ A: "right" }, 45).A.facing, "NE");
+});
+
+test("elevationOrderKey: outside-view mirroring is explicit for all cardinal faces", () => {
+  assert.ok(elevationOrderKey("E", 10, 100) > elevationOrderKey("E", 90, 100));
+  assert.ok(elevationOrderKey("W", 10, 100) < elevationOrderKey("W", 90, 100));
+  assert.ok(elevationOrderKey("S", 90, 100) < elevationOrderKey("S", 10, 100));
+  assert.ok(elevationOrderKey("N", 90, 100) > elevationOrderKey("N", 10, 100));
+});
+
+test("resolveNorth: explicit site-plan text resolves before vision; absence stays null", () => {
+  assert.deepEqual(resolveNorth([{
+    pageNo: 3, text: "SITE PLAN", words: [
+      { text: "NORTH", x0: 45, x1: 55, top: 10, bottom: 20 },
+      { text: "COMPASS", x0: 40, x1: 60, top: 50, bottom: 60 },
+    ],
+  }]), { northArrowDegrees: 0, source: "page 3 compass label" });
+  assert.equal(resolveNorth([{ pageNo: 4, text: "GROUND FLOOR PLAN", words: [] }]), null);
+});
+
+test("northArrowSkill: normalises supported bearings and refuses unsupported output", () => {
+  assert.deepEqual(northArrowSkill.validate({ northArrowDegrees: 450, source: "arrow" }), { northArrowDegrees: 90, source: "arrow" });
+  assert.equal(northArrowSkill.validate({ northArrowDegrees: "right", source: "arrow" }), null);
+});
+
+test("mapPool: caps concurrency and preserves input order", async () => {
+  let inFlight = 0;
+  let highWater = 0;
+  const result = await mapPool([...Array(12).keys()], 5, async (value) => {
+    inFlight++;
+    highWater = Math.max(highWater, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    inFlight--;
+    return value * 2;
+  });
+  assert.equal(highWater, 5);
+  assert.deepEqual(result, [...Array(12).keys()].map((value) => value * 2));
 });
 
 // ── Skills (§3.2) — validators refuse, never repair (AB-7) ────────────────
@@ -108,34 +230,88 @@ test("openingReadSkill.validate: a decline is a first-class answer, not a failur
   assert.deepEqual(out, { decline: { reason: "crop too dark to read the division" } });
 });
 
-test("openingReadSkill.validate: a well-formed division is accepted, and near-1 ratios are renormalised to exactly 1", () => {
+test("openingReadSkill.validate: accepts classifications but no model-measured ratios", () => {
   const out = openingReadSkill.validate({
-    units: [{ role: "operable", ratio: 0.49 }, { role: "passive", ratio: 0.5 }], // sums to 0.99 — within tolerance
-    axis: "vertical", confidence: "high",
+    units: [{ operation: "awning", marksObserved: true }, { operation: "fixed", marksObserved: false }],
+    confidence: "high",
   });
   assert.equal(out.units.length, 2);
-  const sum = out.units.reduce((s, u) => s + u.ratio, 0);
-  assert.ok(Math.abs(sum - 1) < 1e-9);
-  assert.equal(out.axis, "vertical");
+  assert.equal(out.units[0].operation, "awning");
 });
 
-test("openingReadSkill.validate: an invalid role, an out-of-range ratio, or a sum far from 1 is refused — never repaired (AB-7)", () => {
-  const base = { axis: "vertical", confidence: "high" };
-  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "hopper", ratio: 1 }] }), null);
-  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "operable", ratio: 1.5 }] }), null);
-  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "operable", ratio: 0.3 }, { role: "passive", ratio: 0.3 }] }), null); // sums to 0.6
+test("openingReadSkill.validate: invalid operation, missing evidence flag, or ratio field is refused", () => {
+  assert.equal(openingReadSkill.validate({ units: [{ operation: "hopper", marksObserved: true }], confidence: "high" }), null);
+  assert.equal(openingReadSkill.validate({ units: [{ operation: "awning" }], confidence: "high" }), null);
+  assert.equal(openingReadSkill.validate({ units: [{ operation: "awning", marksObserved: true, ratio: 1 }], confidence: "high" }), null);
 });
 
-test("openingReadSkill.validate: printedWidthMm survives only paired with the printed text it claims to quote", () => {
-  const withText = openingReadSkill.validate({
-    axis: "vertical", confidence: "high",
-    units: [
-      { role: "operable", ratio: 0.5, printedWidthMm: 600, printedText: "600" },
-      { role: "passive", ratio: 0.5, printedWidthMm: 900 }, // no printedText — must be dropped
-    ],
+test("measureSplit: deterministic mullion position produces ratios and derived widths", () => {
+  const measured = measureSplit({ mullionXs: [0.33], transomYs: [] }, [0.5, 0.5], 2050);
+  assert.deepEqual(measured.derivedWidthsMm, [675, 1375]);
+  const split = composeMeasuredSplit(["awning", "fixed"], measured);
+  assert.equal(split.units[0].operation, "awning");
+  assert.equal(split.units[0].role, "operable");
+  assert.equal(split.units[1].role, "passive");
+});
+
+test("parseCompositionComment and reconcileReading preserve contradictions as flags", () => {
+  assert.deepEqual(parseCompositionComment("2x 600mm WIDE AWNINGS RIGHT TO LEFT"), {
+    count: 2, unitWidthMm: 600, operation: "awning", direction: "rtl",
   });
-  assert.equal(withText.units[0].printedWidthMm, 600);
-  assert.equal(withText.units[1].printedWidthMm, undefined);
+  const result = reconcileReading({
+    split: { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 1500 }], axis: "vertical" },
+    scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS", modelConfidence: "high", northAssumed: true,
+  });
+  assert.equal(result.confidence, "low");
+  assert.deepEqual(result.flags, ["scheduleDrawingMismatch", "manufacturability", "northAssumed"]);
+});
+
+test("parseCompositionComment: cited door, direction, and garbage patterns stay explicit", () => {
+  assert.deepEqual(parseCompositionComment("920 DOOR & 1N° SIDELIGHT"), {
+    unitWidthMm: 920, operation: "hinged", sidelight: true,
+  });
+  assert.deepEqual(parseCompositionComment("RIGHT TO LEFT"), { direction: "rtl" });
+  assert.equal(parseCompositionComment("refer to architect"), null);
+});
+
+test("reconcileReading: agreement stays high and preserves measured geometry", () => {
+  const split = { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 900 }], axis: "vertical" };
+  const result = reconcileReading({
+    split, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
+  });
+  assert.equal(result.confidence, "high");
+  assert.deepEqual(result.flags, []);
+  assert.deepEqual(result.composition, split);
+});
+
+test("reconcileReading: comment operation count wins while drawing ratios stay fixed", () => {
+  const result = reconcileReading({
+    split: { units: [
+      { role: "passive", operation: "fixed", ratio: 0.2 },
+      { role: "passive", operation: "fixed", ratio: 0.6 },
+      { role: "passive", operation: "fixed", ratio: 0.2 },
+    ], axis: "vertical" },
+    scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+    modelConfidence: "high", northAssumed: false,
+  });
+  assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["awning", "fixed", "awning"]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.2, 0.6, 0.2]);
+  assert.deepEqual(result.flags, ["scheduleDrawingMismatch"]);
+});
+
+test("compositionFromSchedule: an elevation-hidden opening uses comments, never drawing guesses", () => {
+  const split = compositionFromSchedule({
+    widthMm: 3200, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+  });
+  assert.deepEqual(split.units.map((unit) => [unit.operation, unit.derivedWidthMm]), [
+    ["awning", 600], ["fixed", 2000], ["awning", 600],
+  ]);
+  const result = reconcileReading({
+    split, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+    modelConfidence: "low", northAssumed: false, visible: false,
+  });
+  assert.equal(result.confidence, "low");
+  assert.ok(result.flags.includes("notVisibleOnElevations"));
 });
 
 // ── assign (§3.3) — pure ───────────────────────────────────────────────────
@@ -273,6 +449,65 @@ test("containerClient.renderPage: a stalled DO call times out instead of hanging
   );
 });
 
+test("assignOpenings: region-local fractions convert back to page-space crop points", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "B", orderOnWall: 1 } },
+    { B: [{ box: [0, 0.1, 0.25, 0.3] }] },
+    { B: { widthPt: 400, heightPt: 800, originXPt: 600, originYPt: 0 } },
+  );
+  assert.deepEqual(out, [{ tag: "W1", outcome: "matched", boxPt: [600, 80, 700, 240] }]);
+});
+
+test("assignOpenings: a unique proportion fingerprint resolves a tied pair", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 1800, heightMm: 1200 }, { tag: "W2", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "A", orderOnWall: 1 }, W2: { elevation: "A", orderOnWall: 1 } },
+    { A: [{ box: [0.1, 0.2, 0.4, 0.4] }, { box: [0.6, 0.2, 0.7, 0.4] }] },
+    { A: { widthPt: 1000, heightPt: 800 } },
+  );
+  assert.deepEqual(out, [
+    { tag: "W1", outcome: "matched", boxPt: [100, 160, 400, 320] },
+    { tag: "W2", outcome: "matched", boxPt: [600, 160, 700, 320] },
+  ]);
+});
+
+test("assignOpenings: duplicate order numbers on different storeys map to different boxes", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }, { tag: "W2", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "A", orderOnWall: 1, storey: "ground" }, W2: { elevation: "A", orderOnWall: 1, storey: "first" } },
+    { A: [
+      { box: [0.1, 0.6, 0.2, 0.8], storey: "ground" },
+      { box: [0.1, 0.2, 0.2, 0.4], storey: "first" },
+    ] },
+    { A: { widthPt: 1000, heightPt: 800 } },
+  );
+  assert.equal(out[0].outcome, "matched");
+  assert.deepEqual(out[0].boxPt, [100, 480, 200, 640]);
+  assert.equal(out[1].outcome, "matched");
+  assert.deepEqual(out[1].boxPt, [100, 160, 200, 320]);
+});
+
+test("assignOpenings: a set-wide proportion mismatch refuses the group instead of swapping identities", () => {
+  const out = assignOpenings(
+    [{ tag: "W9", widthMm: 1810, heightMm: 2100 }, { tag: "W10", widthMm: 1450, heightMm: 2250 }],
+    { W9: { elevation: "A", orderOnWall: 1 }, W10: { elevation: "A", orderOnWall: 2 } },
+    { A: [{ box: [0.1, 0.2, 0.2, 0.5] }, { box: [0.3, 0.2, 0.7, 0.5] }] },
+    { A: { widthPt: 1000, heightPt: 800 } },
+  );
+  assert.deepEqual(out, [
+    { tag: "W9", outcome: "not_read", gapCode: "frame_ambiguous" },
+    { tag: "W10", outcome: "not_read", gapCode: "frame_ambiguous" },
+  ]);
+});
+
+test("containerClient: inspect and render budgets are named and finish before the 600s job lease", () => {
+  assert.equal(INSPECT_TIMEOUT_MS, 120_000);
+  assert.equal(RENDER_TIMEOUT_MS, 60_000);
+  assert.ok(INSPECT_TIMEOUT_MS < 600_000);
+  assert.ok(RENDER_TIMEOUT_MS < 600_000);
+});
+
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
 // ── A minimal fake R2Bucket — list/delete only, the subset purgeR2Prefix
@@ -404,6 +639,7 @@ test("enrichOpenings: a failing container call degrades to zero readings and a n
   assert.equal(result.readings.length, 0);
   assert.equal(result.report.files.length, 1);
   assert.ok(result.report.files[0].steps.read.attempted === 0);
+  assert.equal(result.report.files[0].steps.failedPhase, "inventory");
 });
 
 // ── runDrawingEnrichmentStage — the pipeline.ts call site's own unit, so the
@@ -444,7 +680,7 @@ test("runDrawingEnrichmentStage: mode 'auto_drawings' looks up R2 keys and runs 
   assert.equal(result.report.files.length, 1);
 });
 
-test("runDrawingEnrichmentStage: onProgress passes through to the real enrichment call", async () => {
+test("runDrawingEnrichmentStage: progress starts at zero before inspect", async () => {
   const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }) }) };
   const env = { AI_EXTRACTION_MODE: "auto_drawings", DB: fakeDb, FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
   const inspected = {
@@ -463,7 +699,7 @@ test("runDrawingEnrichmentStage: onProgress passes through to the real enrichmen
     scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
     onProgress: async (done, total) => { calls.push([done, total]); },
   }, deps);
-  assert.deepEqual(calls, [[1, 1]]);
+  assert.deepEqual(calls, [[0, 1], [1, 1]]);
 });
 
 test("enrichOpenings: a full happy path produces a value reading for a matched, read opening", async () => {
@@ -498,6 +734,41 @@ test("enrichOpenings: a full happy path produces a value reading for a matched, 
   assert.equal(result.readings[0].splitState, "value");
   assert.equal(result.readings[0].elevation, "A");
   assert.equal(result.report.files[0].steps.read.returned, 1);
+});
+
+test("enrichOpenings: no operable marks triggers one thresholded retry, then preserves drawn fixed evidence", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: { pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }, { pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }],
+  };
+  const renderRequests = [];
+  let reads = 0;
+  const deps = {
+    inspect: async () => inspected,
+    render: async (_ns, _project, _bytes, request) => {
+      renderRequests.push(request);
+      return { images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: request.dpi };
+    },
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.3, 0.3], unitProportions: [1] }] }),
+    runFloorplan: async () => ({ placements: { W1: { elevation: "A", orderOnWall: 1, roomLabel: null } }, facings: { A: { facing: "N" } }, issues: [], discardedTags: [] }),
+    runOpening: async () => {
+      reads++;
+      return { units: [{ operation: "awning", marksObserved: false }], confidence: "high" };
+    },
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1", files: [{ fileId: "f1", r2Key: "p.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 900, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(reads, 2);
+  assert.equal(renderRequests.filter((request) => request.threshold === 250).length, 1);
+  assert.equal(result.report.files[0].steps.read.retriedWithThreshold, 1);
+  assert.equal(result.readings[0].split.units[0].operation, "fixed");
+  assert.ok(result.readings[0].flags.includes("scheduleDrawingMismatch"));
 });
 
 test("enrichOpenings: the elevation letter comes from the sheet's own printed text, not page draw order (Codex P1)", async () => {
@@ -656,18 +927,100 @@ test("enrichOpenings: onProgress advances the numerator per opening, against a d
     onProgress: async (done, total) => { calls.push([done, total]); },
   }, deps);
   assert.equal(result.readings.length, 2);
-  assert.deepEqual(calls, [[1, 2], [2, 2]]);
+  assert.deepEqual(calls, [[0, 2], [1, 2], [2, 2]]);
+});
+
+test("enrichOpenings: one opening model failure preserves the other reading and already-known fields", async () => {
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: { pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 1000, heightPt: 800, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 1000, heightPt: 800, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }, { pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async (_ns, _project, _bytes, req) => ({
+      images: (req.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 })), dpi: req.dpi,
+    }),
+    runElevation: async () => ({ boxes: [
+      { box: [0.1, 0.1, 0.2, 0.2], unitProportions: [1] },
+      { box: [0.5, 0.1, 0.6, 0.2], unitProportions: [1] },
+    ] }),
+    runFloorplan: async () => ({ placements: {
+      W1: { elevation: "A", orderOnWall: 1, roomLabel: "BED 1" },
+      W2: { elevation: "A", orderOnWall: 2, roomLabel: "BED 2" },
+    }, facings: { A: { facing: "E" } }, issues: [], discardedTags: [] }),
+    runOpening: async (_image, row) => {
+      if (row.tag === "W1") throw new Error("provider unavailable");
+      return { units: [{ role: "operable", ratio: 1 }], axis: "vertical", confidence: "high" };
+    },
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1", files: [{ fileId: "f1", r2Key: "p.pdf" }],
+    scheduleRows: [
+      { tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 600, heightMm: 1200, typeText: "AWNING" },
+    ],
+  }, deps);
+  assert.equal(result.readings.length, 2);
+  const failed = result.readings.find((reading) => reading.externalRef === "W1");
+  const succeeded = result.readings.find((reading) => reading.externalRef === "W2");
+  assert.equal(failed.splitState, "not_read");
+  assert.equal(failed.gapCode, "model_declined");
+  assert.equal(failed.elevation, "A");
+  assert.equal(failed.orientation, "E");
+  assert.equal(failed.roomLabel, "BED 1");
+  assert.equal(succeeded.splitState, "value");
+});
+
+test("enrichOpenings: vector/text placement avoids the full-floorplan model call", async () => {
+  let floorplanCalls = 0;
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: { pageCount: 2, producer: "t", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 1, widthPt: 1000, heightPt: 800, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 2, widthPt: 1000, heightPt: 800, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [
+      { pageNo: 1, text: "ELEVATION A", words: [], lines: [] },
+      { pageNo: 2, text: "GROUND FLOOR PLAN", lines: [
+        { x0: 200, top: 200, x1: 800, bottom: 200 }, { x0: 200, top: 600, x1: 800, bottom: 600 },
+        { x0: 200, top: 200, x1: 200, bottom: 600 }, { x0: 800, top: 200, x1: 800, bottom: 600 },
+      ], words: [
+        { text: "A", x0: 80, x1: 90, top: 390, bottom: 410 },
+        { text: "W1", x0: 170, x1: 190, top: 290, bottom: 310 },
+        { text: "BEDROOM", x0: 260, x1: 340, top: 300, bottom: 320 },
+      ] },
+    ],
+  };
+  const deps = {
+    inspect: async () => inspected,
+    render: async (_ns, _project, _bytes, req) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: req.dpi }),
+    runElevation: async () => ({ boxes: [{ box: [0.1, 0.1, 0.2, 0.2], unitProportions: [1] }] }),
+    runFloorplan: async () => { floorplanCalls++; return null; },
+    runOpening: async () => ({ units: [{ role: "operable", ratio: 1 }], axis: "vertical", confidence: "high" }),
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1", files: [{ fileId: "f1", r2Key: "p.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(floorplanCalls, 0);
+  assert.equal(result.readings[0].roomLabel, "BEDROOM");
+  assert.deepEqual(result.report.files[0].steps.placements, { fromText: 1, fromModelFallback: 0, unplaced: 0 });
+  assert.equal(result.report.files[0].steps.northAssumed, true);
 });
 
 // ── scripts/drawing-gate.mjs — the release-gate comparator (AC-G1…G4) ─────
-test("runGate: matches a reading against its label, and reports an opening not drawn on any elevation in those words (AC-G3)", () => {
+test("runGate: scores every opening and every stated field, even when split is not drawn", () => {
   const readings = [
     { external_ref: "W1", split_state: "value", split_json: JSON.stringify({ units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" }), orientation_state: "value", orientation: "N", elevation_state: "value", elevation: "A", room_state: "value", room_label: "BEDROOM 1", gap_code: null },
-    { external_ref: "W2", split_state: "not_read", split_json: null, orientation_state: "not_read", orientation: null, elevation_state: "not_read", elevation: null, room_state: "not_read", room_label: null, gap_code: "unplaced" },
+    { external_ref: "W2", split_state: "not_stated", split_json: null, orientation_state: "value", orientation: "S", elevation_state: "value", elevation: "B", room_state: "not_stated", room_label: null, gap_code: null, page_no: 4 },
   ];
   const labels = {
     W1: { split: { units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" }, orientation: "N", elevation: "A", room: "BEDROOM 1", drawn: true },
-    W2: { drawn: false }, // W2 is a fixed-only door, never drawn as a division on any elevation
+    W2: { drawn: false, orientation: "S", elevation: "B", room: null, pageNo: 4 },
     W3: { drawn: true, split: null, orientation: "S", elevation: "B", room: null }, // in the label set, absent from readings
   };
   const { perOpening, summary } = runGate(readings, labels);
@@ -675,14 +1028,14 @@ test("runGate: matches a reading against its label, and reports an opening not d
   const w2 = perOpening.find((o) => o.externalRef === "W2");
   const w3 = perOpening.find((o) => o.externalRef === "W3");
   assert.equal(w1.verdict, "match");
-  assert.equal(w2.verdict, "not_drawn");
-  assert.equal(w2.note, "not drawn on any elevation");
+  assert.equal(w2.verdict, "match");
+  assert.equal(w2.note, "split not drawn on any elevation");
   assert.equal(w3.verdict, "not_read");
-  assert.equal(summary.matched, 1);
-  assert.equal(summary.of, 2); // W2 excluded — not drawn is not a miss
+  assert.equal(summary.matched, 2);
+  assert.equal(summary.of, 3);
 });
 
-test("persistReadings: one INSERT per reading, batched, against the migration 0060 columns", async () => {
+test("persistReadings: one INSERT per reading, batched, including migration 0061 diagnostics", async () => {
   const batched = [];
   const fakeDb = {
     prepare: (sql) => ({ bind: (...args) => ({ sql, args }) }),
@@ -691,12 +1044,16 @@ test("persistReadings: one INSERT per reading, batched, against the migration 00
   await persistReadings({ DB: fakeDb }, "proj_1", "run_1", [
     { externalRef: "W1", splitState: "not_read", split: null, orientationState: "not_stated", orientation: null,
       elevationState: "value", elevation: "A", roomState: "not_stated", roomLabel: null,
-      gapCode: "unplaced", gapNote: null, cropKey: null, pageNo: null, sheetRef: null, regionJson: null, sourceFileId: "f1" },
+      gapCode: "unplaced", gapNote: null, cropKey: null, pageNo: null, sheetRef: null, regionJson: null, sourceFileId: "f1",
+      confidence: "low", flags: ["notVisibleOnElevations"] },
   ]);
   assert.equal(batched.length, 1);
   assert.match(batched[0].sql, /INSERT INTO drawing_reading/);
+  assert.match(batched[0].sql, /confidence, flags_json/);
   assert.equal(batched[0].args[1], "proj_1");
   assert.equal(batched[0].args[2], "run_1");
+  assert.equal(batched[0].args.at(-2), "low");
+  assert.equal(batched[0].args.at(-1), '["notVisibleOnElevations"]');
 });
 
 test("AB-9: no image/pdf bytes under scripts/tests/fixtures/drawing or containers/", async () => {

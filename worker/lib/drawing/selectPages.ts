@@ -2,7 +2,6 @@
 // judgements, both pure, both Worker-side (02-design-v2.md §1, §2). Step 4
 // runs BEFORE any rendering, from step 3's text/word output (AC-12).
 import type { Inventory, PageText } from "./contract";
-import { normalizeOpeningRef } from "../ai/energyMap";
 
 export type PageTier = "elevation" | "floorplan" | "schedule" | "siteplan";
 
@@ -16,54 +15,39 @@ export type Strategy = "text_vector" | "text_raster" | "scanned";
 
 /** `scanned` STOPS the file and names the gap — it never falls through to a
  *  guess (AC-13): a document nobody could read must be reportable as such. */
-// Checked in this order because "WINDOW SCHEDULE" and "SITE PLAN" are more
-// specific than the bare "PLAN" a floor plan's own title carries — a
-// schedule sheet bound into a plan set, or a site plan among floor plans,
-// must not fall through to the looser pattern (AC-20).
+// Ordering is stable output ordering only. A sheet may carry more than one
+// tier (most importantly, schedules commonly share an elevation sheet).
 const TIER_PATTERNS: [PageTier, RegExp][] = [
   [
     "schedule",
     /\b(?:window|door)?\s*schedule\b/i,
   ],
-  ["elevation", /\belevation\b/i],
+  [
+    "elevation",
+    /(?:^|\n)\s*(?:ELEVATIONS?\s*[-:]?\s*(?:[A-D]|NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)|(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)\s+ELEVATION)\b/im,
+  ],
   ["siteplan", /\bsite\s*plan\b/i],
   ["floorplan", /\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b/i],
 ];
 
-function classify(text: string): { tier: PageTier; reason: string } | null {
+function classify(text: string): { tier: PageTier; reason: string }[] {
+  const hits: { tier: PageTier; reason: string }[] = [];
   for (const [tier, pattern] of TIER_PATTERNS) {
     const match = pattern.exec(text);
-    if (match) return { tier, reason: `title text: "${match[0].trim()}"` };
+    if (match) hits.push({ tier, reason: `title text: "${match[0].trim()}"` });
   }
-  return null;
+  return hits;
 }
 
-/** Step 4, from step 3's output — before any rendering (AC-12). A page whose
- *  text matches none of the four tiers is not selected: rasterising it later
- *  would spend tokens on a page nobody asked to read. `tagVocabulary` is the
- *  closed set of opening tags found on schedule-tier pages — the only tags
- *  `floorplan_read` is allowed to place (ADR 0015 point 2 / D-4). */
-export function selectPages(_inv: Inventory, pages: PageText[]): { selected: SelectedPage[]; tagVocabulary: string[] } {
+/** A page matching no tier is not selected. The closed tag vocabulary comes
+ * from authoritative schedule rows at the enrichment call site. */
+export function selectPages(_inv: Inventory, pages: PageText[]): { selected: SelectedPage[] } {
   const selected: SelectedPage[] = [];
-  const tags = new Set<string>();
-  // A separator between the letter and the digits ("W-04", "W 04") is
-  // presentation, same as the schedule extractor's own tags — normalized
-  // through the SAME function (normalizeOpeningRef) other joins across this
-  // codebase already use, so "W-04" and "w04" land in the vocabulary as one
-  // tag rather than two (Codex review finding).
-  const TAG_PATTERN = /\b([WD])[\s-]?(\d{1,3}[A-Za-z]?)\b/g;
   for (const page of pages) {
-    const hit = classify(page.text);
-    if (!hit) continue;
-    selected.push({ pageNo: page.pageNo, tier: hit.tier, reason: hit.reason });
-    if (hit.tier === "schedule") {
-      for (const m of page.text.matchAll(TAG_PATTERN)) {
-        const normalized = normalizeOpeningRef(`${m[1]}${m[2]}`);
-        if (normalized) tags.add(normalized);
-      }
-    }
+    const hits = classify(page.text);
+    for (const hit of hits) selected.push({ pageNo: page.pageNo, tier: hit.tier, reason: hit.reason });
   }
-  return { selected, tagVocabulary: [...tags] };
+  return { selected };
 }
 
 export function chooseStrategy(inv: Inventory): Strategy {

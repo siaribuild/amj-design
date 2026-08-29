@@ -9,14 +9,19 @@
 // surface, because nothing in here is allowed to throw past this file's
 // own try/catch.
 import type { Env } from "../../types";
-import type { DrawingFileReport, DrawingReading, DrawingReport, GapCode, Orientation } from "./contract";
-import { inspectPdf, renderPage } from "./containerClient";
+import type { DarknessProfile, DrawingFileReport, DrawingReading, DrawingReport, GapCode, Orientation, SplitReading } from "./contract";
+import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
 import { chooseStrategy, selectPages } from "./selectPages";
-import { assignOpenings, type Placement } from "./assign";
-import { elevationInventorySkill, makeFloorplanReadSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type OpeningReadResult } from "./skills";
+import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
+import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
 import { runStage } from "../ai/stage";
 import { normalizeOpeningRef } from "../ai/energyMap";
+import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
+import { locateFloorplanPage, orientationsFromNorth, resolveNorth, type Edge, type Storey } from "./locate";
+import { mapPool } from "./pool";
+import { composeMeasuredSplit, measureSplit } from "./measure";
+import { compositionFromSchedule, reconcileReading } from "./reconcile";
 
 export interface EnrichFile {
   fileId: string;
@@ -27,6 +32,7 @@ export interface EnrichScheduleRow {
   widthMm: number;
   heightMm: number;
   typeText: string | null;
+  commentText?: string | null;
 }
 
 /** The effectful boundary, injectable so tests never need a real container
@@ -38,7 +44,8 @@ export interface EnrichDeps {
   render: typeof renderPage;
   runElevation(imageDataUrl: string): Promise<ElevationInventoryOutput | null>;
   runFloorplan(imageDataUrl: string, tagVocabulary: string[]): Promise<FloorplanReadOutput | null>;
-  runOpening(imageDataUrl: string, row: EnrichScheduleRow): Promise<OpeningReadResult | null>;
+  runNorth?(imageDataUrl: string): Promise<NorthArrowOutput | null>;
+  runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }): Promise<OpeningReadResult | null>;
 }
 
 function emptyFileReport(fileId: string): DrawingFileReport {
@@ -50,7 +57,9 @@ function emptyFileReport(fileId: string): DrawingFileReport {
       text: { pagesRead: 0 },
       selectPages: { selected: [], of: 0 },
       renderCrop: { pagesRendered: 0, cropsMade: 0 },
-      read: { attempted: 0, returned: 0, declined: 0 },
+      read: { attempted: 0, returned: 0, declined: 0, retriedWithThreshold: 0 },
+      placements: { fromText: 0, fromModelFallback: 0, unplaced: 0 },
+      northAssumed: false,
     },
     perOpening: [],
     wallMs: 0,
@@ -59,12 +68,35 @@ function emptyFileReport(fileId: string): DrawingFileReport {
   };
 }
 
-function notReadRow(row: EnrichScheduleRow, gapCode: GapCode, gapNote: string | null): DrawingReading {
+function notReadRow(
+  row: EnrichScheduleRow,
+  gapCode: GapCode,
+  gapNote: string | null,
+  known: {
+    sourceFileId?: string;
+    elevation?: string | null;
+    orientation?: Orientation | null;
+    roomLabel?: string | null;
+    pageNo?: number | null;
+  } = {},
+): DrawingReading {
+  const placed = !!known.elevation;
+  const flags = [
+    ...(gapCode === "unplaced" ? ["notVisibleOnElevations" as const] : []),
+    ...(placed && !known.orientation ? ["northAssumed" as const] : []),
+  ];
+  const scheduleComposition = gapCode === "unplaced"
+    ? compositionFromSchedule({ widthMm: row.widthMm, scheduleType: row.typeText, commentText: row.commentText })
+    : null;
   return {
-    id: "", projectId: "", aiRunId: "", sourceFileId: null, externalRef: row.tag,
-    splitState: "not_read", split: null, orientationState: "not_read", orientation: null,
-    elevationState: "not_read", elevation: null, roomState: "not_read", roomLabel: null,
-    gapCode, gapNote, cropKey: null, pageNo: null, sheetRef: null, regionJson: null,
+    id: "", projectId: "", aiRunId: "", sourceFileId: known.sourceFileId ?? null, externalRef: row.tag,
+    splitState: scheduleComposition ? "value" : "not_read", split: scheduleComposition,
+    orientationState: placed ? (known.orientation ? "value" : "not_stated") : "not_read",
+    orientation: known.orientation ?? null,
+    elevationState: placed ? "value" : "not_read", elevation: known.elevation ?? null,
+    roomState: placed ? (known.roomLabel ? "value" : "not_stated") : "not_read", roomLabel: known.roomLabel ?? null,
+    gapCode, gapNote, cropKey: null, pageNo: known.pageNo ?? null, sheetRef: null, regionJson: null,
+    confidence: "low", flags,
   };
 }
 
@@ -78,12 +110,16 @@ async function enrichFile(
 ): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
   const startedAt = Date.now();
   const report = emptyFileReport(args.file.fileId);
+  let currentPhase = "r2_lookup";
   try {
     const obj = await env.FILES.get(args.file.r2Key);
     if (!obj) return { readings: [], report };
     const pdfBytes = new Uint8Array(await obj.arrayBuffer());
 
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length);
+    currentPhase = "inventory";
     const inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes);
+    report.inspectTimings = inspected.timings;
     report.containerCalls++;
     report.steps.inventory = {
       pages: inspected.inventory.pageCount,
@@ -103,32 +139,41 @@ async function enrichFile(
       return { readings: [], report };
     }
 
-    const { selected, tagVocabulary } = selectPages(inspected.inventory, inspected.pages);
+    currentPhase = "select_pages";
+    const { selected } = selectPages(inspected.inventory, inspected.pages);
+    const tagVocabulary = [...new Set(args.scheduleRows
+      .map((row) => normalizeOpeningRef(row.tag))
+      .filter((tag): tag is string => !!tag))];
     report.steps.selectPages = { selected, of: inspected.inventory.pageCount };
 
     const elevationPages = selected.filter((s) => s.tier === "elevation");
     const floorplanPages = selected.filter((s) => s.tier === "floorplan");
 
     const boxesByElevation: Record<string, { box: [number, number, number, number] }[]> = {};
-    const geometryByElevation: Record<string, { widthPt: number; heightPt: number }> = {};
-    // The letter must be the one PRINTED on the sheet, not the page's draw
-    // order — floorplan_read's placements/facings are keyed by the letter it
-    // read off the floor plan, which has no notion of PDF page order. A set
-    // with sheet B before sheet A silently cross-wired every opening on it
-    // (Codex review finding). Falls back to draw-order lettering only when
-    // no letter is printed on the sheet — a defensible last resort, not the
-    // common case.
-    const ELEVATION_LETTER = /\bELEVATION\s*[-:]?\s*([A-Z])\b/i;
-    const elevationLetters = elevationPages.map((p, i) => {
-      const text = inspected.pages.find((pg) => pg.pageNo === p.pageNo)?.text ?? "";
-      return ELEVATION_LETTER.exec(text)?.[1]?.toUpperCase() ?? String.fromCharCode(65 + i);
-    });
+    const geometryByElevation: Record<string, ElevationPageGeometry> = {};
+    const pageByElevation: Record<string, number> = {};
 
-    for (let i = 0; i < elevationPages.length; i++) {
-      const page = elevationPages[i];
-      const letter = elevationLetters[i];
+    const regionsFromText = (text: string, widthPt: number, heightPt: number): ElevationRegion[] => {
+      // `text` and `words` come from independent PDF extractors. Retain a
+      // single-sheet identity when pdftotext succeeds but pdfplumber does not.
+      const labels = [...text.matchAll(/\bELEVATION\s*[-:]?\s*([A-D])\b/gi)]
+        .map((match) => match[1].toUpperCase());
+      const unique = [...new Set(labels)];
+      return unique.length === 1 ? [{ label: unique[0], region: [0, 0, widthPt, heightPt] }] : [];
+    };
+
+    currentPhase = "elevation_inventory";
+    for (let elevationIndex = 0; elevationIndex < elevationPages.length; elevationIndex++) {
+      const page = elevationPages[elevationIndex];
       const geo = inspected.inventory.pages.find((p) => p.pageNo === page.pageNo);
-      if (geo) geometryByElevation[letter] = { widthPt: geo.widthPt, heightPt: geo.heightPt };
+      const pageText = inspected.pages.find((candidate) => candidate.pageNo === page.pageNo);
+      if (!geo || !pageText) continue;
+      const regions = elevationRegions(pageText.words, geo.widthPt, geo.heightPt);
+      const textRegions = regions.length ? regions : regionsFromText(pageText.text, geo.widthPt, geo.heightPt);
+      const explicitRegions = textRegions.length ? textRegions : [{
+        label: String.fromCharCode(65 + elevationIndex),
+        region: [0, 0, geo.widthPt, geo.heightPt] as [number, number, number, number],
+      }];
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150 });
       report.containerCalls++;
       report.steps.renderCrop.pagesRendered++;
@@ -136,91 +181,266 @@ async function enrichFile(
       if (!full) continue;
       const boxes = await deps.runElevation(`data:image/png;base64,${full.pngB64}`);
       report.modelCalls++;
-      if (boxes) boxesByElevation[letter] = boxes.boxes;
+      if (!boxes) continue;
+      const grouped = boxesByRegion(boxes.boxes, explicitRegions, geo.widthPt, geo.heightPt);
+      for (const region of explicitRegions) {
+        const [originXPt, originYPt, regionX1, regionY1] = region.region;
+        const regionWidthPt = regionX1 - originXPt;
+        const regionHeightPt = regionY1 - originYPt;
+        const datum = pageText.words.find((word) => /^(?:FFL|FIRST)$/i.test(word.text.trim()));
+        const withStoreys = (grouped[region.label] ?? []).map((box) => ({
+          ...box,
+          ...(datum ? { storey: originYPt + ((box.box[1] + box.box[3]) / 2) * regionHeightPt < (datum.top + datum.bottom) / 2 ? "first" as const : "ground" as const } : {}),
+        }));
+        boxesByElevation[region.label] = [...(boxesByElevation[region.label] ?? []), ...withStoreys];
+        geometryByElevation[region.label] = { widthPt: regionWidthPt, heightPt: regionHeightPt, originXPt, originYPt };
+        pageByElevation[region.label] = page.pageNo;
+      }
     }
 
-    const placements: Record<string, Placement & { roomLabel: string | null }> = {};
+    currentPhase = "floorplan_location";
+    const placements: Record<string, Placement & { roomLabel: string | null; storey?: Storey | null }> = {};
+    const markerEdges: Record<string, Edge> = {};
     let facingByElevation: Record<string, { facing: Orientation | null }> = {};
     for (const page of floorplanPages) {
+      const pageText = inspected.pages.find((candidate) => candidate.pageNo === page.pageNo);
+      const geo = inspected.inventory.pages.find((candidate) => candidate.pageNo === page.pageNo);
+      if (!pageText || !geo) continue;
+      const located = locateFloorplanPage(pageText, geo, tagVocabulary);
+      Object.assign(markerEdges, located.markerEdges);
+      for (const [tag, placement] of Object.entries(located.placements)) {
+        placements[tag] = placement;
+        report.steps.placements.fromText++;
+      }
+
+      const missing = tagVocabulary.filter((tag) => !placements[tag]);
+      if (!missing.length) continue;
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150 });
       report.containerCalls++;
       report.steps.renderCrop.pagesRendered++;
       const full = rendered.images[0];
       if (!full) continue;
-      const read = await deps.runFloorplan(`data:image/png;base64,${full.pngB64}`, tagVocabulary);
+      const read = await deps.runFloorplan(`data:image/png;base64,${full.pngB64}`, missing);
       report.modelCalls++;
       if (!read) continue;
+      const missingSet = new Set(missing);
       for (const [tag, p] of Object.entries(read.placements)) {
-        placements[normalizeOpeningRef(tag) ?? tag] = { elevation: p.elevation, orderOnWall: p.orderOnWall, roomLabel: p.roomLabel };
+        const normalized = normalizeOpeningRef(tag) ?? tag;
+        if (!missingSet.has(normalized) || placements[normalized]) continue;
+        placements[normalized] = { elevation: p.elevation, orderOnWall: p.orderOnWall, roomLabel: p.roomLabel };
+        report.steps.placements.fromModelFallback++;
       }
       facingByElevation = { ...facingByElevation, ...read.facings };
     }
+    for (const label of Object.keys(boxesByElevation)) {
+      if (["N", "NE", "E", "SE", "S", "SW", "W", "NW"].includes(label)) {
+        facingByElevation[label] = { facing: label as Orientation };
+      }
+    }
+    const northPages = selected
+      .filter((candidate) => candidate.tier === "siteplan" || candidate.tier === "floorplan")
+      .map((candidate) => inspected.pages.find((page) => page.pageNo === candidate.pageNo))
+      .filter((page): page is NonNullable<typeof page> => !!page);
+    const textNorth = resolveNorth(northPages);
+    if (Object.keys(markerEdges).length && textNorth) {
+      facingByElevation = { ...facingByElevation, ...orientationsFromNorth(markerEdges, textNorth.northArrowDegrees) };
+    }
+    if (Object.keys(markerEdges).length && deps.runNorth && !Object.values(facingByElevation).some((value) => !!value.facing)) {
+      const northPage = selected.find((candidate) => candidate.tier === "siteplan") ?? floorplanPages[0];
+      if (northPage) {
+        report.containerCalls++;
+        const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: northPage.pageNo, dpi: 100 });
+        const image = rendered.images[0];
+        if (image) {
+          const north = await deps.runNorth(`data:image/png;base64,${image.pngB64}`);
+          report.modelCalls++;
+          if (north) facingByElevation = { ...facingByElevation, ...orientationsFromNorth(markerEdges, north.northArrowDegrees) };
+        }
+      }
+    }
+    report.steps.placements.unplaced = tagVocabulary.filter((tag) => !placements[tag]).length;
+    report.steps.northAssumed = Object.keys(placements).length > 0 && !Object.values(facingByElevation).some((value) => !!value.facing);
 
+    currentPhase = "assignment";
     const assigned = assignOpenings(args.scheduleRows, placements, boxesByElevation, geometryByElevation);
-    const readings: DrawingReading[] = [];
+    type PreparedCrop = { pngB64?: string; profile?: DarknessProfile; boxPt: [number, number, number, number]; gapCode?: GapCode; gapNote?: string };
+    const prepared = new Map<string, PreparedCrop>();
+    const matchedByPage = new Map<number, { tag: string; boxPt: [number, number, number, number] }[]>();
+    const widen = (box: [number, number, number, number], widthPt: number, heightPt: number): [number, number, number, number] => {
+      const [x0, y0, x1, y1] = box;
+      const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2;
+      const halfW = (x1 - x0) * 0.75; const halfH = (y1 - y0) * 0.75;
+      return [Math.max(0, cx - halfW), Math.max(0, cy - halfH), Math.min(widthPt, cx + halfW), Math.min(heightPt, cy + halfH)];
+    };
+    for (const outcome of assigned) {
+      if (outcome.outcome !== "matched") continue;
+      const placement = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag];
+      const pageNo = placement?.elevation ? pageByElevation[placement.elevation] : undefined;
+      const geo = pageNo ? inspected.inventory.pages.find((page) => page.pageNo === pageNo) : undefined;
+      if (!pageNo || !geo) {
+        prepared.set(outcome.tag, { boxPt: outcome.boxPt, gapCode: "render_failed", gapNote: "elevation_page_missing" });
+        continue;
+      }
+      const boxPt = widen(outcome.boxPt, geo.widthPt, geo.heightPt);
+      const rows = matchedByPage.get(pageNo) ?? [];
+      rows.push({ tag: outcome.tag, boxPt });
+      matchedByPage.set(pageNo, rows);
+    }
+    currentPhase = "render_crops";
+    for (const [pageNo, rows] of matchedByPage) {
+      for (let offset = 0; offset < rows.length; offset += 12) {
+        const batch = rows.slice(offset, offset + 12);
+        try {
+          report.containerCalls++;
+          const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo, dpi: 300, crops: batch.map((row) => row.boxPt) });
+          batch.forEach((row, index) => {
+            const image = rendered.images[index];
+            prepared.set(row.tag, image ? { pngB64: image.pngB64, profile: image.profile, boxPt: row.boxPt } : { boxPt: row.boxPt, gapCode: "render_failed" });
+          });
+        } catch (error) {
+          const gapCode: GapCode = error instanceof ContainerClientError && error.code === "timeout" ? "timeout" : "render_failed";
+          batch.forEach((row) => prepared.set(row.tag, { boxPt: row.boxPt, gapCode, gapNote: error instanceof Error ? error.name : "Error" }));
+        }
+      }
+      report.steps.renderCrop.pagesRendered++;
+    }
+
     // Denominator is the located-openings count, set once — it never
     // shortens, and a not_read still advances the numerator (§5): a
     // customer watching this must not see it stall on what it could not
     // read, or lie by shrinking to reach 100%.
     let doneCount = 0;
-    const tick = async () => { doneCount++; if (args.onProgress) await args.onProgress(doneCount, assigned.length); };
-    for (const outcome of assigned) {
+    let progressChain = Promise.resolve();
+    const tick = async () => {
+      const done = ++doneCount;
+      if (args.onProgress) progressChain = progressChain.then(() => args.onProgress!(done, args.scheduleRows.length));
+      await progressChain;
+    };
+    currentPhase = "opening_read";
+    const readings = await mapPool(assigned, 5, async (outcome): Promise<DrawingReading> => {
       const row = args.scheduleRows.find((r) => r.tag === outcome.tag)!;
+      const placement = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag];
+      const elevationLetter = placement?.elevation;
+      const elevationPageNo = elevationLetter ? pageByElevation[elevationLetter] : undefined;
+      const page = elevationPages.find((candidate) => candidate.pageNo === elevationPageNo);
+      const facing = elevationLetter ? (facingByElevation[elevationLetter]?.facing ?? null) : null;
+      const roomLabel = placement?.roomLabel ?? null;
+      const known = {
+        sourceFileId: args.file.fileId,
+        elevation: elevationLetter,
+        orientation: facing,
+        roomLabel,
+        pageNo: page?.pageNo ?? null,
+      };
       report.steps.read.attempted++;
       if (outcome.outcome === "not_read") {
-        readings.push(notReadRow(row, outcome.gapCode, null));
         report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: null });
         await tick();
-        continue;
+        return notReadRow(row, outcome.gapCode, null, known);
       }
-      const [x0, y0, x1, y1] = outcome.boxPt;
-      // The elevation this box came from — needed to render the right page.
-      const elevationLetter = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag]?.elevation;
-      const page = elevationPages[elevationLetters.indexOf(elevationLetter ?? "")];
-      if (!page) { readings.push(notReadRow(row, "render_failed", "elevation page lost between assign and render")); await tick(); continue; }
-      const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150, crops: [[x0, y0, x1, y1]] });
-      report.containerCalls++;
-      const crop = rendered.images[0];
-      if (!crop) { readings.push(notReadRow(row, "render_failed", null)); await tick(); continue; }
-      const read = await deps.runOpening(`data:image/png;base64,${crop.pngB64}`, row);
-      report.modelCalls++;
-      if (!read || "decline" in read) {
-        readings.push(notReadRow(row, "model_declined", read && "decline" in read ? read.decline.reason : null));
-        report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page.pageNo });
+      const crop = prepared.get(outcome.tag);
+      if (!crop?.pngB64) {
+        report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page?.pageNo ?? null });
         await tick();
-        continue;
+        return notReadRow(row, crop?.gapCode ?? "render_failed", crop?.gapNote ?? null, known);
       }
-      report.steps.read.returned++;
-      const facing = elevationLetter ? (facingByElevation[elevationLetter]?.facing ?? null) : null;
-      const roomLabel = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag]?.roomLabel ?? null;
+      try {
+        const [x0, y0, x1, y1] = crop.boxPt;
+        let measured = measureSplit(crop.profile, outcome.unitProportions, row.widthMm);
+        if (!measured) {
+          report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page?.pageNo ?? null });
+          await tick();
+          return notReadRow(row, "division_unreadable", "grid_or_profile_ambiguous", known);
+        }
+        let activeCrop = crop;
+        let read = await deps.runOpening(`data:image/png;base64,${activeCrop.pngB64}`, row, { unitCount: measured.ratios.length });
+        report.modelCalls++;
+        const scheduleOperable = /AWNING|CASEMENT|SLID|LOUVRE|HINGED/i.test(`${row.typeText ?? ""} ${row.commentText ?? ""}`);
+        const classifiedWithoutMarks = read && "units" in read && read.units.every((unit) => "marksObserved" in unit && !unit.marksObserved);
+        if (page && scheduleOperable && (!read || "decline" in read || classifiedWithoutMarks)) {
+          report.steps.read.retriedWithThreshold++;
+          report.containerCalls++;
+          const retry = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 300, crops: [crop.boxPt], threshold: 250 });
+          const retryImage = retry.images[0];
+          if (retryImage) {
+            activeCrop = { pngB64: retryImage.pngB64, profile: retryImage.profile, boxPt: crop.boxPt };
+            measured = measureSplit(activeCrop.profile, outcome.unitProportions, row.widthMm) ?? measured;
+            read = await deps.runOpening(`data:image/png;base64,${activeCrop.pngB64}`, row, { unitCount: measured.ratios.length });
+            report.modelCalls++;
+          }
+        }
+        if (!read || "decline" in read) {
+          report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page.pageNo });
+          await tick();
+          return notReadRow(row, "model_declined", read && "decline" in read ? "model_declined" : null, known);
+        }
+        const stillNoMarks = read.units.every((unit) => "marksObserved" in unit && !unit.marksObserved);
+        if (scheduleOperable && stillNoMarks) {
+          read = { units: read.units.map(() => ({ operation: "fixed", marksObserved: false })), confidence: "low" };
+        }
+        const legacy = read.units.every((unit) => "role" in unit && "ratio" in unit)
+          ? { units: read.units, axis: "axis" in read ? read.axis : "vertical" } as SplitReading
+          : null;
+        const split = legacy ?? composeMeasuredSplit(read.units.map((unit) => unit.operation), measured);
+        if (!split) {
+          report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page?.pageNo ?? null });
+          await tick();
+          return notReadRow(row, "refused_contract", "classification_count_mismatch", known);
+        }
+        const reconciled = reconcileReading({
+          split,
+          scheduleType: row.typeText,
+          commentText: row.commentText,
+          modelConfidence: read.confidence,
+          northAssumed: !facing,
+        });
+        report.steps.read.returned++;
       // The crop evidence itself (§7): the gate walk checks a reading
       // against its own pixels via this key, and it must exist for that to
       // be possible at all. Best-effort — a write failure here degrades to
       // a dangling key (§7's own documented, acceptable failure mode), never
       // to losing the reading.
       const key = cropKey(args.projectId, args.aiRunId, row.tag);
-      const stored = await env.FILES.put(key, Uint8Array.from(atob(crop.pngB64), (c) => c.charCodeAt(0)))
+      const stored = await env.FILES.put(key, Uint8Array.from(atob(activeCrop.pngB64), (c) => c.charCodeAt(0)))
         .then(() => true).catch(() => false);
       if (stored) report.steps.renderCrop.cropsMade++;
-      readings.push({
+        const reading: DrawingReading = {
         id: "", projectId: "", aiRunId: "", sourceFileId: args.file.fileId, externalRef: row.tag,
-        splitState: "value", split: { units: read.units, axis: read.axis },
+        splitState: "value", split: reconciled.composition,
         orientationState: facing ? "value" : "not_stated", orientation: facing,
         elevationState: "value", elevation: elevationLetter ?? null,
         roomState: roomLabel ? "value" : "not_stated", roomLabel,
         gapCode: null, gapNote: null, cropKey: stored ? key : null, pageNo: page.pageNo, sheetRef: null,
         regionJson: [x0, y0, x1, y1],
-      });
-      report.perOpening.push({ tag: outcome.tag, outcome: "read", cropKey: stored ? key : null, pageNo: page.pageNo });
-      await tick();
-    }
-    report.steps.read.declined = report.steps.read.attempted - report.steps.read.returned - assigned.filter((a) => a.outcome === "not_read").length;
+        confidence: reconciled.confidence, flags: reconciled.flags,
+        };
+        report.perOpening.push({ tag: outcome.tag, outcome: "read", cropKey: stored ? key : null, pageNo: page.pageNo, confidence: reconciled.confidence, flags: reconciled.flags });
+        await tick();
+        return reading;
+      } catch (error) {
+        const gapCode: GapCode = error instanceof ContainerClientError
+          ? (error.code === "timeout" ? "timeout" : "render_failed")
+          : "model_declined";
+        report.perOpening.push({ tag: outcome.tag, outcome: "not_read", cropKey: null, pageNo: page?.pageNo ?? null });
+        await tick();
+        return notReadRow(row, gapCode, error instanceof Error ? error.name : "Error", known);
+      }
+    });
+    // Model calls finish out of order under the bounded pool. Keep the
+    // diagnostic artifact in authoritative schedule order so identical
+    // inputs produce byte-for-byte stable reports.
+    const scheduleOrder = new Map(args.scheduleRows.map((row, index) => [row.tag, index]));
+    report.perOpening.sort((left, right) =>
+      (scheduleOrder.get(left.tag) ?? Number.MAX_SAFE_INTEGER)
+      - (scheduleOrder.get(right.tag) ?? Number.MAX_SAFE_INTEGER));
+    report.steps.read.declined = report.steps.read.attempted - report.steps.read.returned;
     report.wallMs = Date.now() - startedAt;
     return { readings, report };
   } catch {
     // AC-28: any failure anywhere above degrades to zero readings for this
     // file. The report already reflects whatever steps completed before
     // the failure; nothing here re-throws.
+    report.steps.failedPhase = currentPhase;
     report.wallMs = Date.now() - startedAt;
     return { readings: [], report };
   }
@@ -267,10 +487,14 @@ export async function runDrawingEnrichmentStage(
       const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: makeFloorplanReadSkill(tagVocabulary), input: { imageDataUrl, tagVocabulary } });
       return res.data;
     },
-    async runOpening(imageDataUrl: string, row: EnrichScheduleRow) {
+    async runNorth(imageDataUrl: string) {
+      const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: northArrowSkill, input: { imageDataUrl } });
+      return res.data;
+    },
+    async runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }) {
       const res = await runStage(env, {
         aiRunId: args.aiRunId, projectId: args.projectId, skill: openingReadSkill,
-        input: { imageDataUrl, tag: row.tag, widthMm: row.widthMm, heightMm: row.heightMm, typeText: row.typeText },
+        input: { imageDataUrl, tag: row.tag, widthMm: row.widthMm, heightMm: row.heightMm, typeText: row.typeText, unitCount: context.unitCount, commentText: row.commentText ?? null },
       });
       return res.data;
     },
