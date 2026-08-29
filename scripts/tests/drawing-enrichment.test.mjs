@@ -18,13 +18,165 @@ await build({
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } from ${p("worker/lib/drawing/contract.ts")};
       export { inspectPdf, renderPage, ContainerClientError } from ${p("worker/lib/drawing/containerClient.ts")};
+      export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
+      export { elevationInventorySkill, validateFloorplanRead, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
+      export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings } = await import(pathToFileURL(outfile).href);
+
+// ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
+function inv(pages) {
+  return { pageCount: pages.length, producer: "test", fonts: pages.some((p) => p.textChars > 0) ? ["Helvetica"] : [], hasAttachments: false, pages };
+}
+function pageFacts(over) {
+  return { pageNo: 1, widthPt: 842, heightPt: 1191, rotation: 0, textChars: 500, imageCount: 0, imageAreaFraction: 0, ...over };
+}
+
+test("chooseStrategy: no fonts and no text on any page is scanned — stops, never guessed", () => {
+  const strategy = chooseStrategy(inv([pageFacts({ textChars: 0 }), pageFacts({ pageNo: 2, textChars: 0 })]));
+  assert.equal(strategy, "scanned");
+});
+
+test("chooseStrategy: a page mostly covered by images, despite a text layer, is text_raster", () => {
+  assert.equal(chooseStrategy(inv([pageFacts({ imageAreaFraction: 0.9 })])), "text_raster");
+});
+
+// ── Step 4 — selectPages (AC-12, AC-20, AC-21) ─────────────────────────────
+function pt(pageNo, text) { return { pageNo, text, words: [] }; }
+
+test("selectPages: tags each page's tier from its title-block text, with a stated reason", () => {
+  const pages = [pt(1, "ELEVATION A"), pt(2, "GROUND FLOOR PLAN"), pt(3, "WINDOW SCHEDULE"), pt(4, "SITE PLAN")];
+  const { selected } = selectPages(inv(pages.map((p) => pageFacts({ pageNo: p.pageNo }))), pages);
+  const tiers = Object.fromEntries(selected.map((s) => [s.pageNo, s.tier]));
+  assert.deepEqual(tiers, { 1: "elevation", 2: "floorplan", 3: "schedule", 4: "siteplan" });
+  assert.ok(selected.every((s) => s.reason.length > 0));
+});
+
+test("selectPages: tagVocabulary is the closed set of W/D tags on schedule pages only, not floor plan chatter", () => {
+  const pages = [
+    pt(1, "WINDOW SCHEDULE\nW1 600x1200 AWNING\nW2 900x1200 FIXED\nD1 820x2040 HINGED"),
+    pt(2, "GROUND FLOOR PLAN\nBEDROOM 1 W1\nLOT 42"), // "LOT" and room labels must not become tags
+  ];
+  const { tagVocabulary } = selectPages(inv(pages.map((p) => pageFacts({ pageNo: p.pageNo }))), pages);
+  assert.deepEqual([...tagVocabulary].sort(), ["D1", "W1", "W2"]);
+});
+
+test("selectPages: a page matching no tier is not selected — nobody asked to read it", () => {
+  const pages = [pt(1, "COVER SHEET — Project Overview")];
+  const { selected } = selectPages(inv(pages.map((p) => pageFacts({ pageNo: p.pageNo }))), pages);
+  assert.deepEqual(selected, []);
+});
+
+// ── Skills (§3.2) — validators refuse, never repair (AB-7) ────────────────
+test("elevationInventorySkill.validate: accepts in-range boxes, drops an out-of-range or inverted box rather than clamping it", () => {
+  const out = elevationInventorySkill.validate({
+    boxes: [
+      { box: [0.1, 0.2, 0.3, 0.4], unitProportions: [1] },
+      { box: [0.5, 0.5, 0.4, 0.9], unitProportions: [1] }, // x0 > x1 — inverted
+      { box: [0.1, -0.1, 0.3, 0.4], unitProportions: [1] }, // out of [0,1]
+    ],
+  });
+  assert.equal(out.boxes.length, 1);
+  assert.deepEqual(out.boxes[0].box, [0.1, 0.2, 0.3, 0.4]);
+});
+
+test("validateFloorplanRead: a tag outside the closed vocabulary is discarded and counted, never placed (ADR 0015 point 2 / D-4)", () => {
+  const out = validateFloorplanRead({
+    placements: {
+      W1: { elevation: "A", orderOnWall: 1, roomLabel: "BEDROOM 1" },
+      W99: { elevation: "A", orderOnWall: 2, roomLabel: "BEDROOM 2" }, // not in vocabulary
+    },
+    facings: { A: { facing: "N" }, B: { facing: "sideways" } }, // "sideways" not in the 8-point vocab
+    issues: [],
+  }, ["W1", "D1"]);
+  assert.deepEqual(Object.keys(out.placements), ["W1"]);
+  assert.deepEqual(out.discardedTags, ["W99"]);
+  assert.equal(out.facings.A.facing, "N");
+  assert.equal(out.facings.B.facing, null);
+});
+
+test("openingReadSkill.validate: a decline is a first-class answer, not a failure (AC-G6, R4)", () => {
+  const out = openingReadSkill.validate({ decline: { reason: "crop too dark to read the division" } });
+  assert.deepEqual(out, { decline: { reason: "crop too dark to read the division" } });
+});
+
+test("openingReadSkill.validate: a well-formed division is accepted, and near-1 ratios are renormalised to exactly 1", () => {
+  const out = openingReadSkill.validate({
+    units: [{ role: "operable", ratio: 0.49 }, { role: "passive", ratio: 0.5 }], // sums to 0.99 — within tolerance
+    axis: "vertical", confidence: "high",
+  });
+  assert.equal(out.units.length, 2);
+  const sum = out.units.reduce((s, u) => s + u.ratio, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9);
+  assert.equal(out.axis, "vertical");
+});
+
+test("openingReadSkill.validate: an invalid role, an out-of-range ratio, or a sum far from 1 is refused — never repaired (AB-7)", () => {
+  const base = { axis: "vertical", confidence: "high" };
+  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "hopper", ratio: 1 }] }), null);
+  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "operable", ratio: 1.5 }] }), null);
+  assert.equal(openingReadSkill.validate({ ...base, units: [{ role: "operable", ratio: 0.3 }, { role: "passive", ratio: 0.3 }] }), null); // sums to 0.6
+});
+
+test("openingReadSkill.validate: printedWidthMm survives only paired with the printed text it claims to quote", () => {
+  const withText = openingReadSkill.validate({
+    axis: "vertical", confidence: "high",
+    units: [
+      { role: "operable", ratio: 0.5, printedWidthMm: 600, printedText: "600" },
+      { role: "passive", ratio: 0.5, printedWidthMm: 900 }, // no printedText — must be dropped
+    ],
+  });
+  assert.equal(withText.units[0].printedWidthMm, 600);
+  assert.equal(withText.units[1].printedWidthMm, undefined);
+});
+
+// ── assign (§3.3) — pure ───────────────────────────────────────────────────
+test("assignOpenings: an unplaced tag is not_read('unplaced') — never matched set-wide (spec §10.4)", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }],
+    {}, // no placement for W1 at all
+    {}, {},
+  );
+  assert.deepEqual(out, [{ tag: "W1", outcome: "not_read", gapCode: "unplaced" }]);
+});
+
+test("assignOpenings: a single row on an elevation with a single box maps its fraction box to exact PDF points", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "A", orderOnWall: 1 } },
+    { A: [{ box: [0.1, 0.2, 0.3, 0.4] }] },
+    { A: { widthPt: 842, heightPt: 1191 } },
+  );
+  assert.deepEqual(out, [{ tag: "W1", outcome: "matched", boxPt: [84.2, 238.2, 252.6, 476.4] }]);
+});
+
+test("assignOpenings: two rows tied for the same order-on-wall both refuse — neither takes the other's box (spec §13, twin openings)", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }, { tag: "W2", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "A", orderOnWall: 1 }, W2: { elevation: "A", orderOnWall: 1 } }, // both claim position 1
+    { A: [{ box: [0.1, 0.2, 0.3, 0.4] }, { box: [0.4, 0.2, 0.6, 0.4] }] },
+    { A: { widthPt: 842, heightPt: 1191 } },
+  );
+  assert.deepEqual(out, [
+    { tag: "W1", outcome: "not_read", gapCode: "frame_ambiguous" },
+    { tag: "W2", outcome: "not_read", gapCode: "frame_ambiguous" },
+  ]);
+});
+
+test("assignOpenings: a row is matched only against boxes on ITS elevation, never another (ADR 0015 point 4)", () => {
+  const out = assignOpenings(
+    [{ tag: "W1", widthMm: 600, heightMm: 1200 }],
+    { W1: { elevation: "B", orderOnWall: 1 } }, // placed on B — only A has any boxes
+    { A: [{ box: [0.1, 0.2, 0.3, 0.4] }] },
+    { A: { widthPt: 842, heightPt: 1191 }, B: { widthPt: 842, heightPt: 1191 } },
+  );
+  assert.deepEqual(out, [{ tag: "W1", outcome: "not_read", gapCode: "frame_ambiguous" }]);
+});
 
 // ── containerClient (AB-6) — caps enforced Worker-side BEFORE any container
 // call. A namespace whose get()/fetch() throws proves the refusal never
