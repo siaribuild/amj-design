@@ -1915,6 +1915,61 @@ test('the shim carries no subagent transcript rewrite, and still invokes the bin
   }
 })
 
+// --- next auto-advances -------------------------------------------------------
+//
+// `next` used to run exactly one stage and return, always - even when nothing
+// needed the owner. Each stage already stops correctly on its own at a real
+// gate; `next` just never kept going past a clean one.
+
+test('a single next call advances through multiple clean stages, then stops the moment one holds', () => {
+  // spec settles idle on its very first `agent wait` - clean, no gate - and
+  // design settles blocked on its first wait too. Two states, two stages: spec
+  // must finish and hand off automatically, design must be attempted and then
+  // held, and nothing beyond design - the third stage in tier order - may ever
+  // be started.
+  const s = paneRepo('next-auto-advance', 'sess-auto', { HERDR_STUB_STATES: 'idle;blocked' })
+  // Pane mode never actually writes a stage's artifact - design's `needs` check
+  // would die() before it ever got a pane. This file standing in for spec's own
+  // output is exactly the "clean stages ready to go" the run started with.
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '01-spec.md'), '# spec' + NL)
+
+  const out = paned(s, 'next')
+
+  assert.deepEqual(said(s.log, 'agent', 'start').map((a) => a[2]), ['spec', 'design'],
+    'next either stopped short of design or ran past it into a third stage: ' + out)
+  const st = runJson(s).stages
+  assert.equal(st.spec.code, 0, 'the first clean stage was not run to completion automatically')
+  assert.equal(st.design.status, 'held')
+  assert.equal(st.design.holdReason, 'blocked-ui')
+  assert.equal(st.design.code, undefined, 'a held stage must not read as done')
+  assert.match(out, /HELD WARM \(blocked-ui\)/)
+})
+
+test('a cycle-cap refusal stops next cleanly - a clear message, not a crash or a silent retry', () => {
+  // The verify/fix cycle cap already exists and already refuses a third round
+  // inside a single stage run. Before this loop existed that refusal could only
+  // ever stop the one `next` invocation that hit it - there was nothing to loop
+  // past. Now that `next` keeps going on its own, the cap has to be respected
+  // across stages too: it must stop the loop, not spin on a stage that keeps
+  // refusing to make progress.
+  const { root, runJson: rj } = seedRun('next-cycle-cap',
+    { spec: { code: 0 }, design: { code: 0 }, build: { code: 0 }, polish: { code: 0 } })
+  const dir = join(root, 'docs', 'runs', 'demo')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  run.verifyRounds = 2
+  writeFileSync(rj, JSON.stringify(run, null, 2))
+  writeFileSync(join(dir, '04-build.md'), '# build' + NL)
+  const env = { ...process.env, CONDUCT_CLAUDE_BIN: join(root, 'no-such-claude') }
+
+  const out = execFileSync(process.execPath, [CONDUCT, 'next', '--no-panes'],
+    { cwd: root, encoding: 'utf8', env })
+
+  assert.match(out, /CYCLE CAP/, 'the refusal was not reported - it must never retry silently')
+  assert.equal(JSON.parse(readFileSync(rj, 'utf8')).verifyRounds, 2,
+    'a refused cycle must not itself burn a round')
+  assert.equal(existsSync(join(dir, 'logs')), false, 'a capped stage must not spawn a tester')
+})
+
 // --- proportionality ---------------------------------------------------------
 //
 // Measured on the feature that built this pipeline: build 1.41M, fix rounds

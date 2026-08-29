@@ -1203,6 +1203,20 @@ const cmds = {
     console.log('  ui stages ' + (run.ui ? 'ENABLED' : 'disabled') + ' for ' + run.slug)
   },
 
+  /**
+   * Keep picking the next un-done stage and running it, instead of the owner
+   * re-typing `next` after every clean one. Every stopping condition below
+   * already exists inside a single stage run - a gate, a hold, a cycle-cap
+   * refusal, a real failure - so this loop rebuilds none of them: it just
+   * checks the same `code === 0` a stage has always reported success with, and
+   * only goes around again when that says the last stage finished with nothing
+   * open.
+   *
+   * An interrupted stage is still picked up BEFORE anything new starts, and
+   * that dispatch stays exactly what it always was - one `resume`, no
+   * chaining onward - so a session recovering mid-flight behaves identically
+   * to before this loop existed.
+   */
   async next(...flags) {
     const run = loadRun(activeSlug())
     if (decisionsOpen(run)) return
@@ -1212,13 +1226,20 @@ const cmds = {
     const live = Object.entries(run.stages)
       .find(([, s]) => s.status === 'running' || s.status === 'held')
     if (live) return cmds.resume(live[0], ...flags)
-    for (const spec of STAGES) {
-      if (!inTier(spec, run)) continue
-      if (spec.ui && !run.ui) continue
-      if (run.stages[spec.id]?.code === 0) continue
-      return cmds.run(spec.id, ...flags)
+    for (;;) {
+      const r = loadRun(activeSlug())
+      const spec = STAGES.find((s) => inTier(s, r) && (!s.ui || r.ui) && r.stages[s.id]?.code !== 0)
+      if (!spec) {
+        console.log('\n  all stages complete -  node scripts/pipeline/conduct.mjs report\n')
+        return
+      }
+      await cmds.run(spec.id, ...flags)
+      // A gate, a hold, a cycle-cap refusal or a real failure already reported
+      // itself and is where a human decides next - the only stage worth
+      // looping past is one that finished clean with nothing open.
+      const st = loadRun(activeSlug()).stages[spec.id]
+      if (st?.code !== 0 || spec.gate) return
     }
-    console.log('\n  all stages complete -  node scripts/pipeline/conduct.mjs report\n')
   },
 
   async run(id, ...flags) {
