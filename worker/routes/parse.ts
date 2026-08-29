@@ -13,6 +13,7 @@ import {
 import { uuid } from "../lib/util";
 import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { derivedKeys } from "../lib/ai/ingest";
+import { purgeProjectCrops } from "../lib/drawing/crops";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -254,6 +255,10 @@ parse.post("/projects/current/clear", async (c) => {
     c.env.FILES.delete(f.r2_key),
     c.env.FILES.delete(derivedKeys(project.id, f.id).markdown),
   ])).catch(() => { /* D1 is authoritative; unreachable R2 objects are lifecycle cleanup */ });
+  // Trigger #1 of crop retention (§7): the draft is cleared, so crops
+  // derived from its documents are invalidated — an auto re-parse
+  // regenerates them if the customer starts again.
+  await purgeProjectCrops(c.env, project.id).catch(() => {});
   return c.json({ ok: true });
 });
 

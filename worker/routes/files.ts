@@ -10,6 +10,7 @@ import { autoExtractionEnabled } from "../lib/ai/versions";
 import { dispatchAiExtractionJob, type AiExtractionJob } from "../lib/ai/jobs";
 import { sha256hex } from "../lib/ai/hash";
 import { derivedKeys } from "../lib/ai/ingest";
+import { purgeProjectCrops } from "../lib/drawing/crops";
 import { deriveSubject } from "../lib/parse";
 
 export const files = new Hono<{ Bindings: Env }>();
@@ -530,6 +531,9 @@ files.delete("/files/:id", async (c) => {
     c.env.FILES.delete(derivedKeys(fa.project_id, fa.id).markdown),
     purgeR2Prefix(c.env.FILES, `projects/${fa.project_id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80)}/runs/`),
   ]).catch(() => { /* DB is authoritative; lifecycle cleanup can retry orphaned derivatives */ });
+  // Trigger #1 of crop retention (§7): deleting a source document
+  // invalidates crops derived from it — an auto re-parse regenerates them.
+  await purgeProjectCrops(c.env, fa.project_id).catch(() => {});
 
   // The remaining documents re-establish the project's evidence (registered
   // users; same auto path as upload).

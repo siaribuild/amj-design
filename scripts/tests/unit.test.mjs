@@ -1657,3 +1657,30 @@ test("documentChecklist: no drawings counts — today's six steps, unchanged, cu
   ]);
   assert.equal(steps[current].key, "building_envelope");
 });
+
+// §7 — every crop-lifecycle trigger provably calls purgeProjectCrops. A live
+// R2 proof for the clear trigger lives in api-edge.test.mjs (real objects,
+// real deletion); this is the structural pin for all three call sites at
+// once, read straight off the source the way this suite already reads
+// SplitProposal["basis"] off split.ts (ai-pipeline/ops2-why precedent).
+test("§7: issueQuote, /projects/current/clear and DELETE /files/:id each call purgeProjectCrops", async () => {
+  const issue = await readFile(join(projectRoot, "worker/lib/issue.ts"), "utf8");
+  const issueBody = issue.slice(issue.indexOf("export async function issueQuote"));
+  assert.match(issueBody, /purgeProjectCrops\(env, projectId\)/, "issueQuote's success path must purge crops");
+
+  const parse = await readFile(join(projectRoot, "worker/routes/parse.ts"), "utf8");
+  const clearBody = parse.slice(parse.indexOf('parse.post("/projects/current/clear"'));
+  assert.match(clearBody.slice(0, clearBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, project\.id\)/,
+    "the clear route must purge crops");
+
+  const files = await readFile(join(projectRoot, "worker/routes/files.ts"), "utf8");
+  const deleteBody = files.slice(files.indexOf('files.delete("/files/:id"'));
+  assert.match(deleteBody.slice(0, deleteBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, fa\.project_id\)/,
+    "DELETE /files/:id must purge crops");
+});
+
+test("§7: purgeProjectCrops keeps the (env, projectId)-only signature the future void sweep depends on", async () => {
+  const crops = await readFile(join(projectRoot, "worker/lib/drawing/crops.ts"), "utf8");
+  assert.match(crops, /export async function purgeProjectCrops\(env: Env, projectId: string\)/,
+    "a third parameter would break the scheduled()-callable seam §7 designed for");
+});

@@ -8,6 +8,7 @@ import { uuid } from "./util";
 import { referralDiscountState } from "./referral-discount";
 import { captureRecommendationOutcomes, type IssuedCartLine } from "./ai/outcomes";
 import { createLearningExample, refreshLearningExampleEligibility } from "./ai/examples";
+import { purgeProjectCrops } from "./drawing/crops";
 
 export type IssueResult =
   | { ok: true; total: number; goods: number; delivery: number }
@@ -293,5 +294,8 @@ export async function issueQuote(env: Env, projectId: string): Promise<IssueResu
   // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
   // proposal vs the human-approved outcome, retrieval-eligible immediately,
   // training-gated. Best-effort — issuing must never fail because capture did.
+  // Trigger #2 of crop retention (§7): the review window ends here — the
+  // quote is now the artefact of record, not the crops it was proposed from.
+  await purgeProjectCrops(env, projectId).catch(() => {});
   return { ok: true, total, goods, delivery };
 }

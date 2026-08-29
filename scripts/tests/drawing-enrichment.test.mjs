@@ -23,13 +23,14 @@ await build({
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
       export { applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
       export { enrichOpenings, runDrawingEnrichmentStage } from ${p("worker/lib/drawing/enrich.ts")};
+      export { runGate } from ${p("scripts/drawing-gate.mjs")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -509,6 +510,29 @@ test("enrichOpenings: onProgress advances the numerator per opening, against a d
   }, deps);
   assert.equal(result.readings.length, 2);
   assert.deepEqual(calls, [[1, 2], [2, 2]]);
+});
+
+// ── scripts/drawing-gate.mjs — the release-gate comparator (AC-G1…G4) ─────
+test("runGate: matches a reading against its label, and reports an opening not drawn on any elevation in those words (AC-G3)", () => {
+  const readings = [
+    { external_ref: "W1", split_state: "value", split_json: JSON.stringify({ units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" }), orientation_state: "value", orientation: "N", elevation_state: "value", elevation: "A", room_state: "value", room_label: "BEDROOM 1", gap_code: null },
+    { external_ref: "W2", split_state: "not_read", split_json: null, orientation_state: "not_read", orientation: null, elevation_state: "not_read", elevation: null, room_state: "not_read", room_label: null, gap_code: "unplaced" },
+  ];
+  const labels = {
+    W1: { split: { units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" }, orientation: "N", elevation: "A", room: "BEDROOM 1", drawn: true },
+    W2: { drawn: false }, // W2 is a fixed-only door, never drawn as a division on any elevation
+    W3: { drawn: true, split: null, orientation: "S", elevation: "B", room: null }, // in the label set, absent from readings
+  };
+  const { perOpening, summary } = runGate(readings, labels);
+  const w1 = perOpening.find((o) => o.externalRef === "W1");
+  const w2 = perOpening.find((o) => o.externalRef === "W2");
+  const w3 = perOpening.find((o) => o.externalRef === "W3");
+  assert.equal(w1.verdict, "match");
+  assert.equal(w2.verdict, "not_drawn");
+  assert.equal(w2.note, "not drawn on any elevation");
+  assert.equal(w3.verdict, "not_read");
+  assert.equal(summary.matched, 1);
+  assert.equal(summary.of, 2); // W2 excluded — not drawn is not a miss
 });
 
 test("persistReadings: one INSERT per reading, batched, against the migration 0060 columns", async () => {
