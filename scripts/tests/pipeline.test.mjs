@@ -437,6 +437,34 @@ test('tree links tasks to the criteria they claim, and never smears an overall v
     'an untagged task must fall into UNLINKED, not silently vanish')
 })
 
+test('tree still shows the overall verdict when a per-criterion table exists too', () => {
+  // Codex stop-gate finding: the overall verdict printed ONLY when no table
+  // parsed at all - so a report with a real (even partial) table suppressed
+  // it entirely, contradicting "shown once, separately" (it was shown zero
+  // times whenever a table existed). The two are different information: one
+  // is the report's own top-level conclusion, the other is per-criterion
+  // detail. Neither should silence the other.
+  const projects = tmp('tree-verdict-projects')
+  const { root } = seedRun('tree-verdict-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '01-spec.md'),
+    '1. **Given** a widget, **when** clicked, **then** it opens' + NL)
+  writeFileSync(join(dir, '06-verify.md'), [
+    '**Verdict: PASS.** No findings.',
+    '',
+    '| # | Criterion | Evidence | Result |',
+    '| --- | --- | --- | --- |',
+    '| 1 | opens on click | test:12 | PASS |',
+  ].join(NL))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /overall verdict: PASS/i,
+    'a real per-criterion table must not silence the report\'s own top-level verdict: ' + out)
+  const ac1 = out.split(NL).find((l) => l.includes('AC 1:'))
+  assert.match(ac1, /\bPASS\b/, 'the per-criterion detail must still show too: ' + ac1)
+})
+
 test('report prints machine-wide window totals, anchored when a future reset is known', () => {
   const projects = tmp('report-window-projects')
   const now = Date.now()
@@ -1137,6 +1165,31 @@ test('a momentary idle blip is confirmed before the stage is finalized', () => {
   assert.equal(st.status, 'done')
   const exits = said(s.log, 'agent', 'prompt').filter((a) => a[3] === '/exit')
   assert.equal(exits.length, 1, '/exit must only be sent once genuine settle is confirmed')
+})
+
+test('five confirmed-still-working cycles must never finalize an unconfirmed observation', () => {
+  // Codex stop-gate finding: the confirm loop only confirmed the first
+  // CONFIRM_RETRIES observations, then finalized the NEXT one unconditionally
+  // - recreating the exact premature-completion bug the confirm step exists
+  // to prevent, just delayed instead of removed. A sustained false-idle
+  // signal must never be trusted just because it has repeated a few times.
+  const s = paneRepo('confirm-exhausted', 'sess-exhausted')
+  // watch() settles idle every time it is asked - the false signal is sustained.
+  s.env.HERDR_STUB_STATES = 'idle;idle;idle;idle;idle;idle'
+  // agent get: one filler for launchStage's own pre-prompt check, then
+  // 'working' every single confirmation - the agent never actually settles.
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;working;working;working;working'
+
+  const out = paned(s, 'run', 'spec')
+
+  const exits = said(s.log, 'agent', 'prompt').filter((a) => a[3] === '/exit')
+  assert.equal(exits.length, 0,
+    '/exit must never be sent while every confirmation still finds the agent working: ' + out)
+  const st = runJson(s).stages.spec
+  assert.notEqual(st.status, 'done', 'a stage must not be marked done on an unconfirmed observation')
+  assert.equal(st.status, 'running', 'left exactly where an unconfirmable stage already was')
+  assert.match(out, /still (active|working)|check it|next again/i,
+    'the operator must be told this stage could not be confirmed, not left silent')
 })
 
 test('a pane stage runs start -> prompt -> watch -> finalize, and leaves the pane open', () => {

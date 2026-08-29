@@ -766,9 +766,14 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 // screen-based, and a brief pause mid-turn can render exactly like settled.
 // Live incident: a stage was finalized (and /exit sent) on one such
 // observation while the tester was still mid-task; it later hit a real
-// permission dialog with nobody watching for it any more. Bounded so a
-// genuinely flapping agent still finalizes eventually rather than looping.
+// permission dialog with nobody watching for it any more.
 const CONFIRM_MS = 2000
+// A bound on how many confirm cycles this ONE settleStage call spends waiting,
+// not a licence to trust an unconfirmed observation once it is reached. Codex
+// stop-gate finding: the first version skipped confirmation entirely past this
+// count and finalized the next settle blind - recreating the exact bug above,
+// just delayed instead of removed. Exhausting retries now leaves the stage
+// exactly where an interruption would: "running", pick-up-able by `next`.
 const CONFIRM_RETRIES = 5
 
 /** Wait for the agent to settle, then hold it warm or finish it off. */
@@ -784,15 +789,18 @@ async function settleStage(run, label, started) {
     // waiting on a human, and killing it here is precisely the cost this avoids.
     if (r.state === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
 
-    // r.state === 'settled' (idle/done). Confirm it a moment later before
-    // trusting it - unless we have already confirmed CONFIRM_RETRIES times,
-    // in which case a flapping agent is treated as settled rather than
-    // watched forever.
-    if (attempt < CONFIRM_RETRIES) {
-      await sleep(CONFIRM_MS)
-      const info = await agentInfo(label)
-      if (info?.agent_status === 'working') continue
-      if (info?.agent_status === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
+    // r.state === 'settled' (idle/done). ALWAYS confirm it a moment later
+    // before trusting it - no attempt count skips this check; a sustained
+    // false-idle signal is exactly the case confirmation exists to catch.
+    await sleep(CONFIRM_MS)
+    const info = await agentInfo(label)
+    if (info?.agent_status === 'blocked') return holdWarm(run, label, 'blocked-ui', started)
+    if (info?.agent_status === 'working') {
+      if (attempt + 1 < CONFIRM_RETRIES) continue
+      console.log('  !! ' + label + ' still active after ' + CONFIRM_RETRIES + ' confirm cycles - ' +
+        'not finalized on an unconfirmed observation. Check it, or run next again later:\n' +
+        '     node scripts/pipeline/conduct.mjs next')
+      return run.stages[label]
     }
     if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
     return finalizePane(run, label, started)
@@ -1687,9 +1695,9 @@ If you believe the finding is wrong, say so and change nothing.`
       // overall FAIL (from the other 5) would have painted all 42 red. A
       // number this wrong is worse than no number - show it once, separately,
       // never smeared across criteria it does not describe.
-      if (verify?.verdict && !verify.hasTable)
-        console.log('\n  overall verdict: ' + verify.verdict +
-          '  (06-verify.md has no per-criterion table to break this down further)')
+      if (verify?.verdict)
+        console.log('\n  overall verdict: ' + verify.verdict + (verify.hasTable ? '' :
+          '  (06-verify.md has no per-criterion table to break this down further)'))
       console.log()
       const linked = new Set()
       for (const c of specCriteria) {
