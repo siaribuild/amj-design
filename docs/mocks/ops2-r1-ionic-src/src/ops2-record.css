@@ -1,0 +1,171 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The reworked mobile project view. Same rules as ops2.css: no palette, no
+   fonts, no radii of our own — everything is Ionic's, or mixed from Ionic's own
+   two ends by the tokens defined there.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* D3 — bar 2. Both children sit in slots IonToolbar publishes (default and
+   `end`), so this styles slotted content rather than composing a layout inside
+   a standard component. */
+ion-toolbar.summarybar { --min-height: 46px; --padding-top: 2px; --padding-bottom: 4px; }
+.sb-id { display: flex; flex-direction: column; min-width: 0; }
+/* The ref cannot truncate: ten fixed-width characters, and nothing shares its
+   line. That is D1's answer — placement, not a promise. */
+.sb-ref { font-size: .8125rem; font-weight: 700; white-space: nowrap; }
+.sb-cust {
+  font-size: .75rem; line-height: 1.3; color: var(--ops-quiet);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The money finally has room to be read rather than squeezed into an end slot. */
+.sb-total { padding-inline-start: 12px; }
+.sb-total .money .amt { font-size: 1.0625rem; }
+.sb-total .money .basis { font-size: .6875rem; }
+
+/* The ranked lifecycle: two weights, not four facts at one. */
+.staterow {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  min-height: 44px; padding: 8px 14px; border: 0; text-align: left;
+  background: var(--ops-surface); cursor: pointer;
+  border-bottom: 1px solid var(--ops-line);
+}
+.sr-owed {
+  flex: none; font-size: .8125rem; font-weight: 700; letter-spacing: .02em;
+  color: var(--ops-ink);
+}
+/* Ours to move is the one worth marking. Waiting on someone else is not our
+   queue, so it stays quiet — that difference is the whole point of ranking. */
+/* Amber on a light background is never legible: warning-shade measured 1.91:1
+   here, the worst failure on the surface and one R1b shipped. Mixing the warning
+   hue toward the theme's own ink keeps the tone and clears rule A1's floor in
+   both palettes — olive-amber on light, light amber on dark. */
+.sr-owed[data-ours] {
+  color: color-mix(in srgb, var(--ion-color-warning, #ffc409) 45%, var(--ops-text));
+}
+.sr-rest {
+  flex: 1 1 auto; min-width: 0; font-size: .75rem; color: var(--ops-quiet);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sr-chev { flex: none; font-size: 16px; color: var(--ops-quiet); }
+
+/* The filter, under the segment it belongs to. */
+.filterrow {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 6px 14px; border: 0; text-align: left;
+  background: var(--ops-warn-tint); cursor: pointer;
+  border-bottom: 1px solid var(--ops-line);
+}
+.fr-dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: color-mix(in srgb, var(--ion-color-warning, #ffc409) 60%, var(--ops-text));
+}
+.fr-text { flex: 1 1 auto; min-width: 0; font-size: .8125rem; color: var(--ops-ink); }
+/* Not the primary hue: on the warning tint it measured 4.34:1 against the dark
+   palette, under rule A1's floor. Ink plus an underline carries "this is a
+   control" without borrowing a colour that has to fight the tint behind it. */
+.fr-act {
+  flex: none; font-size: .75rem; font-weight: 700; color: var(--ops-ink);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.filterrow[aria-pressed="true"] .fr-text { font-weight: 600; }
+
+/* Row end: the price, and the badge beneath it when there is one. */
+.rowend { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* Delivery in the totals panel — a reviewable row, not a statement. */
+.delivery-row {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 0 0 6px; border: 0; background: none;
+  cursor: pointer; color: inherit; font: inherit;
+}
+.delivery-row ion-icon { font-size: 15px; color: var(--ops-quiet); }
+.d-state {
+  font-size: .6875rem; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: var(--ops-warn-tint); color: var(--ops-ink); white-space: nowrap;
+}
+.d-missing { font-size: .8125rem; font-weight: 600; color: var(--ion-color-danger-shade); }
+.totals dt.tot, .totals dd.tot { font-weight: 700; padding-top: 6px; }
+.totals-basis { margin: 8px 0 0; font-size: .75rem; color: var(--ops-quiet); }
+
+/* Project-tab rows and block bodies. */
+.pb-name { font-size: .9375rem; font-weight: 600; }
+.sub-h {
+  margin: 16px 0 6px; font-size: .6875rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ops-quiet);
+}
+.section > .sub-h:first-child { margin-top: 0; }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+ul.rows li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px;
+  padding: 8px 0; border-bottom: 1px solid var(--ops-line);
+}
+ul.rows .r-name { font-size: .875rem; overflow-wrap: anywhere; }
+ul.rows .r-when { grid-column: 1; font-size: .75rem; color: var(--ops-quiet); }
+ul.rows .money { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+ul.rows.trail li { grid-template-columns: minmax(0, 1fr); }
+.block-act { margin-top: 18px; display: grid; gap: 6px; }
+.block-act ion-button { margin: 0; }
+ion-item.flush { --padding-start: 0; --inner-padding-end: 0; --background: transparent; }
+ion-button.offto { margin: 14px 0 0; --padding-start: 0; }
+.proposed {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 16px;
+  font-size: .8125rem; color: var(--ops-quiet);
+}
+
+/* Danger's counterpart to .note-warning. Rule A2 — the two never share a
+   treatment: danger is filled and stated as a fault, warning is bordered and
+   stops nobody. */
+.note-danger {
+  margin: 0 0 16px; padding: 10px 12px;
+  border: 1px solid var(--ion-color-danger-shade); border-left-width: 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ion-color-danger, #eb445a) 12%, var(--ops-bg));
+  color: var(--ops-ink); font-size: .875rem; line-height: 1.4;
+}
+.note-danger .lede { display: block; margin-bottom: 2px; }
+
+.linkish {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--ion-color-primary);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* Header budget. It carries back, the total, identity, customer, the ranked
+   state, the tabs and the filter — everything the owner asked to be there — so
+   each band is trimmed to what it needs rather than to the default 48px bar.
+   Measured at 375x812: 218px of header, 76px of footer, 518px of list. */
+ion-header ion-toolbar:has(ion-segment) { --min-height: 44px; --padding-top: 0; --padding-bottom: 0; }
+
+/* Files. The row grows a scan note and a control column, so it stops being a
+   grid of two lines and becomes two lines plus a spanning note beside an
+   action. */
+ul.rows.files li { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+ul.rows.files .f-note {
+  grid-column: 1 / -1; font-size: .75rem; line-height: 1.35;
+  color: var(--ops-quiet); margin-top: 2px;
+}
+/* danger-shade measured 4.23:1 on the dark palette, under rule A1's floor.
+   Mixing the danger hue toward the theme's own ink raises it in BOTH palettes
+   without picking a colour: lighter red on dark, darker red on light. */
+ul.rows.files .f-note.bad {
+  color: color-mix(in srgb, var(--ion-color-danger, #eb445a) 62%, var(--ops-text));
+  font-weight: 600;
+}
+ul.rows.files .f-act { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+ul.rows.files .f-act ion-button {
+  margin: 0; --padding-start: 10px; --padding-end: 10px;
+}
+
+/* The note composer. Ionic's textarea, autogrowing, with the action row beneath
+   so the button does not sit beside a field that changes height under it. */
+.composer {
+  border: 1px solid var(--ops-line);
+  border-radius: 6px;
+  padding: 4px 10px 8px;
+  background: var(--ops-surface);
+}
+.composer ion-textarea { --padding-start: 0; --padding-end: 0; font-size: .875rem; }
+.composer-act {
+  display: flex; align-items: center; gap: 12px; margin-top: 4px;
+}
+.composer-act ion-note { flex: 1 1 auto; min-width: 0; font-size: .75rem; }
+.composer-act ion-button { flex: none; margin: 0; }

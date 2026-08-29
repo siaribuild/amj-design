@@ -64,3 +64,13 @@ sanity/backups/
 # history). A guard one deletion away from failing is not a guard.
 containers/**/out/
 **/plan-parse/out/
+
+# pipeline v2 raw stage transcripts (large, reproducible)
+docs/runs/*/logs/
+
+# pipeline v2 stage prompts (written per stage, reproducible from the run)
+docs/runs/*/prompts/
+
+# which run this machine's `conduct` is pointed at -- a per-machine cursor,
+# not a fact about the branch.
+docs/runs/.active

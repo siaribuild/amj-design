@@ -1,0 +1,86 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The bottom-edge variants' chrome. Layout only — Ionic keeps its own look.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* E — the CTA in the header's trailing slot. It is an ACTION, which is why it
+   may sit where §16.1 forbade the total to sit. */
+ion-button.hdr-cta { --padding-start: 10px; --padding-end: 10px; font-weight: 600; }
+
+/* E and F on the RECORD: the panel is gone but the blocked primary's reason
+   cannot be. It becomes a slim strip instead of a 75px panel — ~28px, and the
+   trade is stated rather than hidden. */
+.reason-alone {
+  margin: 0;
+  padding: 6px 14px;
+  padding-bottom: calc(6px + var(--ion-safe-area-bottom, 0px));
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+  font-size: .75rem;
+  line-height: 1.3;
+  color: var(--ops-ink);
+}
+:root[data-tabbar="on"] .reason-alone { padding-bottom: 6px; }
+
+/* F — the FAB. It clears the tab bar rather than sitting on it, because a
+   circular target overlapping a row of tab targets is a mis-tap generator. */
+ion-fab.ctafab {
+  margin-bottom: calc(var(--ion-safe-area-bottom, 0px) + 12px);
+  margin-inline-end: 4px;
+}
+:root[data-tabbar="on"] ion-fab.ctafab {
+  /* clear the 56px of buttons AND the indicator band beneath them */
+  margin-bottom: calc(56px + var(--ion-safe-area-bottom, 0px) + 12px);
+}
+
+/* H — one bottom app bar carrying places and a verb.
+   Assembled from plain elements: Ionic ships no bottom-app-bar-with-FAB, so
+   there is no component to replace and no disqualifier to name. What it gives
+   up is IonTabBar itself — the selected state, the per-tab stacks and the
+   lossless return — all of which would have to be rebuilt. */
+.bottomappbar {
+  display: flex; align-items: stretch;
+  height: calc(56px + var(--ion-safe-area-bottom, 0px));
+  padding-bottom: var(--ion-safe-area-bottom, 0px);
+  border-top: 1px solid var(--ops-line);
+  background: var(--ion-background-color);
+}
+.bab-places { display: flex; flex: 1 1 auto; min-width: 0; }
+.bab-places button {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  border: 0; background: none; cursor: pointer; color: var(--ops-quiet);
+}
+.bab-places button[aria-selected="true"] { color: var(--ion-color-primary); }
+.bab-places ion-icon { font-size: 20px; }
+.bab-places ion-label { font-size: .625rem; }
+/* The ONLY thing distinguishing a place from a verb in this strip. */
+.bab-split { flex: none; width: 1px; margin: 10px 6px; background: var(--ops-line); }
+.bab-action {
+  flex: none; width: 56px; display: flex; align-items: center; justify-content: center;
+  border: 0; background: none; cursor: pointer; color: var(--ion-color-primary);
+}
+.bab-action ion-icon { font-size: 24px; }
+.bab-action:disabled { color: var(--ops-quiet); }
+
+/* The switcher grows to carry readable names rather than initials. */
+.variantswitch { flex-wrap: wrap; max-width: min(96vw, 420px); justify-content: flex-end; }
+.variantswitch button { min-width: 0; padding: 0 7px; font-size: 9px; }
+
+/* The blocker row's secondary count, and the cleared state. */
+.fr-more { color: var(--ops-quiet); font-weight: 400; }
+.fr-dot.fr-clear { background: color-mix(in srgb, var(--ion-color-success, #2dd36f) 60%, var(--ops-text)); }
+
+/* The switcher's second row, shown only in E. */
+.variantswitch .vs-row { display: flex; align-items: center; gap: 2px; }
+
+/* BARE / PATH — hide the back button's label through its PUBLISHED SHADOW PART.
+   Setting `text=""` is not enough: measured, Ionic still renders the previous
+   label in the shadow (a 83px span reading "Projects" with text="" on the host),
+   so the width is never handed back. `part="text"` is documented, so this is
+   extending through the API rather than piercing it.
+
+   The semantic label is untouched: Ionic puts aria-label="Back to Projects" on
+   the native button itself, so the eye spends nothing and a screen reader still
+   hears the destination. Visually bare, semantically labelled. */
+:root[data-hdr="bare"] ion-back-button::part(text),
+:root[data-hdr="path"] ion-back-button::part(text) { display: none; }

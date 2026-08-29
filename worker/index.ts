@@ -321,6 +321,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 }
 
+// THE DURABLE OBJECT CLASS MUST BE REACHABLE FROM THE MAIN MODULE, or wrangler
+// cannot bind it — and Cloudflare refuses any version that drops a class its
+// live objects depend on, which is what blocked every deploy of this Worker
+// after the plan-parse revert. The class itself is a held-open stub; see the
+// file for why it is not deleted and why it no longer extends `Container`.
+export { PlanParseContainer } from "./lib/drawing/PlanParseContainer";
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);

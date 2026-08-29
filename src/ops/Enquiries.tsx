@@ -4,7 +4,7 @@
 // reconciliation. Source is always OpenFrame — never editable here.
 import { SAGE } from "../styles/tokens";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, Loader2, HelpCircle, CalendarClock, Mail, Phone, MapPin, ExternalLink } from "lucide-react";
+import { ChevronLeft, Loader2, HelpCircle, CalendarClock, Mail, Phone, MapPin, ExternalLink, X } from "lucide-react";
 import {
   opsEnquiries, opsEnquiry, opsUpdateEnquiry, opsLogContact,
   type OpsUser, type OpsEnquiryRow, type OpsEnquiryDetail, type OpsEnquiryActivity,
@@ -25,6 +25,15 @@ const TABS: { id: string; label: string; params: Record<string, string> }[] = [
   { id: "contacted", label: "Contacted", params: { contact: "contacted" } },
   { id: "closed", label: "Closed", params: { status: "closed" } },
 ];
+// The default overview and the one that actually needs action. The rest sit
+// behind "More filters" instead of an overflow-x-auto row — six tabs is a
+// sideways swipe on a phone to reach "Closed", and that's the schema talking,
+// not a disclosure decision. (No counts on the hidden tabs here, unlike
+// Projects: each tab is a distinct server query via `params`, not a client-side
+// filter over one fetched set, so showing counts would mean firing five extra
+// requests just to label a "More filters" button.)
+const PRIMARY_TABS = TABS.slice(0, 2);
+const SECONDARY_TABS = TABS.slice(2);
 
 const statusClass = (s: string) => {
   if (["new", "requested"].includes(s)) return "text-amber-700 bg-amber-50 border-amber-200";
@@ -52,21 +61,63 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
   const [tab, setTab] = useState("all");
   const [rows, setRows] = useState<OpsEnquiryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     setRows(null); setError(null);
     opsEnquiries(TABS.find((t) => t.id === tab)!.params).then((r) => setRows(r.enquiries)).catch((e) => setError(String(e?.message ?? e)));
   }, [tab]);
 
+  // Same technique as MobileNav in OpsApp.tsx, mirrored to the right.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
+
+  const activeIsSecondary = SECONDARY_TABS.some((t) => t.id === tab);
+
   return (
     <div>
-      <div className="flex items-center gap-1 border-b border-black/8 mb-4 overflow-x-auto">
-        {TABS.map((t) => (
+      <div className="flex items-center gap-1 border-b border-black/8 mb-4">
+        {PRIMARY_TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-3 py-2 whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === t.id ? "border-sage text-ops font-medium" : "border-transparent text-quiet hover:text-ops"} t-bd-sm`}>
             {t.label}
           </button>
         ))}
+        <button onClick={() => setMoreOpen(true)}
+          className={`px-3 py-2 whitespace-nowrap border-b-2 -mb-px transition-colors ${activeIsSecondary ? "border-sage text-ops font-medium" : "border-transparent text-quiet hover:text-ops"} t-bd-sm`}>
+          {activeIsSecondary ? TABS.find((t) => t.id === tab)!.label : "More filters"}
+        </button>
       </div>
+
+      {moreOpen && (
+        <div className="fixed inset-0 z-40 bg-black/45" onClick={() => setMoreOpen(false)} aria-hidden="true" />
+      )}
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 w-full md:w-[320px] md:max-w-[92vw] bg-white flex flex-col border-l border-black/10
+                    transition-transform duration-200 ease-out
+                    ${moreOpen ? "translate-x-0" : "translate-x-full invisible"}`}
+        aria-hidden={!moreOpen}>
+        <div className="px-5 h-12 flex items-center justify-between border-b border-black/8 flex-shrink-0">
+          <span className="text-ops font-semibold t-bd">Filter</span>
+          <button onClick={() => setMoreOpen(false)} className="w-10 h-10 -mr-2 flex items-center justify-center text-body" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-2">
+          {SECONDARY_TABS.map((t) => (
+            <button key={t.id} onClick={() => { setTab(t.id); setMoreOpen(false); }}
+              className={`w-full text-left px-5 h-11 border-l-2 t-bd-sm ${tab === t.id ? "border-sage text-ops font-medium bg-black/[0.02]" : "border-transparent text-quiet"}`}>
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
       {error ? <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load enquiries. {error}</div>
         : !rows ? <Loader2 className="w-5 h-5 text-black/30 animate-spin" />
         : !rows.length ? <div className="bg-white border border-dashed border-black/15 p-12 text-center text-body t-bd-sm">No enquiries in this view.</div>
@@ -183,7 +234,10 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
                 <label className="block"><span className="text-quiet t-label">AMJ order ref</span>
                   <input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} onBlur={() => orderRef !== (d.manufacturerOrderRef ?? "") && patch({ manufacturerOrderRef: orderRef })} placeholder="—" className="mt-0.5 w-full border border-black/15 px-2 py-1.5 outline-none focus:border-sage t-bd-sm" /></label>
               </div>
-              <p className="text-quietest pt-1 t-cap">Adding a downstream AMJ reference never changes the OpenFrame source owner.</p>
+              {/* Was phrased as architecture rationale for a developer ("never
+                  changes the OpenFrame source owner"); an ops staffer filling
+                  this in just needs to know it's safe to enter. */}
+              <p className="text-quietest pt-1 t-cap">Just a cross-reference — entering it doesn't change who owns this enquiry.</p>
             </Panel>
           )}
 

@@ -1,0 +1,111 @@
+[
+  {
+    "id": "t1",
+    "title": "Fix stage metering: session-addressed transcripts, result fallback, lazy recompute, no dollars",
+    "files": [
+      "scripts/pipeline/conduct.mjs",
+      "scripts/pipeline/measure.mjs",
+      "scripts/tests/pipeline.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "With a seeded fake projects dir and stage log, a finished stage records non-zero contextTokens/outputTokens/turns in run.json (transcript first, stream-result fallback per design 6.1), 'conduct report' and 'conduct plan' heal old zero-token records once and print 'unknown' (never 0) for unrecoverable rows, and no command's output contains a dollar figure — STAGES budget fields, --max-budget-usd and the overBudget warning are deleted with no replacement; conduct.mjs is import-guarded and exports STAGES/REVIEWERS/cmds for tests; test:pipeline script exists and is in test:pure.",
+    "after": []
+  },
+  {
+    "id": "t2",
+    "title": "Window-aware metering: machine-wide 5h/7d totals anchored by rate_limit_event, advisory only",
+    "files": [
+      "scripts/pipeline/measure.mjs",
+      "scripts/pipeline/conduct.mjs",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "'conduct report' shows machine-wide 5-hour-window and rolling-7-day token totals (subagent transcript files included, requestId-deduped) labelled anchored when a future resetsAt exists in docs/runs/*/logs and 'trailing' otherwise, with no percentage/remaining/headroom figure and no session id, path or content from other projects in any output; a stage starting within 15 minutes of reset prints the advisory and starts anyway.",
+    "after": ["t1"]
+  },
+  {
+    "id": "t3",
+    "title": "Make mcp:true real: project .mcp.json with the browser server only, preflight warning",
+    "files": [
+      ".mcp.json",
+      "package.json",
+      "scripts/pipeline/conduct.mjs",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": ".mcp.json exists containing exactly one server (playwright browser, @playwright/mcp pinned in devDependencies); mcp:true stages get '--mcp-config .mcp.json --strict-mcp-config' and all other stages bare '--strict-mcp-config'; with node_modules/@playwright/mcp absent the ux/polish stage still runs and the conductor prints the unavailable warning; a non-browser server in .mcp.json fails the test.",
+    "after": ["t1"]
+  },
+  {
+    "id": "t4",
+    "title": "herd.mjs adapter: detection, cockpit skeleton, agent-start launch with native args, file-based prompts, boundary validation",
+    "files": [
+      "scripts/pipeline/herd.mjs",
+      "scripts/pipeline/conduct.mjs",
+      "scripts/tests/fixtures/herdr-stub.mjs",
+      "scripts/tests/pipeline.test.mjs",
+      ".gitignore"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "Against the herdr stub (HERDR_BIN): 'conduct start' validates the slug before creating anything (bad slug: exit non-zero, no dir, no .active, no herdr/git call) and builds workspace+plan+diff panes only; stage launch writes the full prompt byte-exact to docs/runs/<slug>/prompts/<label>.txt (gitignored), types only the one-line path sentence, runs 'herdr agent start <label> --kind claude --pane <id> -- --session-id <uuid> ...' per design 3.1 after the process-info readiness check, cross-checks agent_session.value, and on two launch failures falls back headless printing herdr's error verbatim; a prompt containing $(...) creates no marker file and appears in no recorded argv; the stub asserts 'agent read' is never invoked on any data path; record in 04-build.md whether live interactive claude accepted --session-id (fallback: adopt agent_session.value).",
+    "after": ["t1"]
+  },
+  {
+    "id": "t5",
+    "title": "Pane-mode stage execution: watch loop, hold-warm on decisions and blocked states",
+    "files": [
+      "scripts/pipeline/conduct.mjs",
+      "scripts/pipeline/herd.mjs",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "With stubs: a pane stage runs start->prompt->watch->finalize with completion taken from herdr's settled state via repeated bounded 'agent wait' calls (no fixed sleeps, no runaway check of any kind), records status/mode/session/source in run.json before prompting, meters via sessionTotals, /exits leaving the pane open, and fires the produces warning from files only; a settled stage with open DECISIONS or a herdr-blocked state holds warm (agent alive, notification issued, holdReason set) and 'conduct answer' prompts the same session with no second boot, while headless answer/gate behaviour is unchanged.",
+    "after": ["t4"]
+  },
+  {
+    "id": "t6",
+    "title": "Review fan-out under pane mode: conformance+ponytail as pane agents, security headless slash, codex child, concurrent",
+    "files": [
+      "scripts/pipeline/conduct.mjs",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "In pane mode the review stage starts conformance and ponytail as pane agents (reviewer tab), security as the headless -p /security-review child and codex unchanged, with all four started before any completion is consumed (stub call-order asserted); a held reviewer does not stall the other three; build tasks remain strictly sequential in both modes and a test fails if they are made concurrent.",
+    "after": ["t5"]
+  },
+  {
+    "id": "t7",
+    "title": "Durability: reattach running stages, resume-or-rerun after interruption, accounting survives restarts",
+    "files": [
+      "scripts/pipeline/conduct.mjs",
+      "scripts/pipeline/herd.mjs",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "With stubs: 'conduct next' on a status:running pane stage reattaches to a live agent (same session id, no relaunch), relaunches with '-- --resume <sid>' when the agent is gone but the session is recorded, and on an unrecoverable session explicitly says so and re-runs from scratch pushing the old id to previousSessions; stage totals sum session plus previousSessions so pre-interruption tokens are never lost; a worktree-cwd tester session is metered by its recorded id.",
+    "after": ["t5"]
+  },
+  {
+    "id": "t8",
+    "title": "Update PIPELINE-V2.md for pane mode",
+    "files": [
+      "docs/pipeline/PIPELINE-V2.md"
+    ],
+    "tests": [],
+    "done_when": "The 'Running it with herdr' section describes pane mode as built (auto-detect, --no-panes, cockpit skeleton, hold-warm on decisions/blocked, window metering, prompt files, results collected from files never panes) and records the two-install drift hazard (containerised 2.1.232 vs real-prefix 2.1.246, pane auth required for Probity's validator); the one-cp rollback claim in docs/pipeline/v1-backup/RESTORE.md still holds with .claude/agents untouched.",
+    "after": ["t6", "t7"]
+  },
+  {
+    "id": "t9",
+    "title": "Shrink the probity shim to job 2 only and record the ADR — strictly last",
+    "files": [
+      ".claude/hooks/probity-subagent-shim.mjs",
+      "docs/adr/0013-probity-direct-shim-not-plugin.md",
+      "scripts/tests/pipeline.test.mjs"
+    ],
+    "tests": ["scripts/tests/pipeline.test.mjs"],
+    "done_when": "In this exact order — test first, ADR second, shim edit LAST (design 9.5: the editing session is itself a v1 subagent and loses the rewrite the moment it lands): the shim's agent_id branch and findSubagentTranscript are deleted while direct bin invocation, the fail-closed deny, and the multi-candidate root resolution (payload.cwd, CLAUDE_PROJECT_DIR, process.cwd()) are preserved and covered by tests (no-agent_id payload forwarded byte-identical; missing probity denies; POSIX cwd still resolves); probity@probity remains disabled; the ADR records the npx-per-tool-call cost, why double-gating is wrong, and that the subagent half was removed when stages became top-level.",
+    "after": ["t8"]
+  }
+]

@@ -1,0 +1,1616 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<!-- Recovered from a claude.ai artifact (see ../BRAINSTORM-TRANSCRIPT.md). The
+     artifact host runtime that wrapped this file has been stripped; the
+     document below is unmodified. -->
+</head>
+<body>
+
+<title>OpenFrame Ops — v2, full site</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  /* ============ TOKENS ============ */
+  :root{
+    --paper:#F3F5F7; --surface:#FFFFFF; --surface-2:#EBEEF1; --surface-3:#E1E6EA;
+    --line:#D7DEE4; --line-strong:#B9C3CB;
+    --text-1:#171E25; --text-2:#57646F; --text-3:#8A97A1;
+    --accent:#1F4E8C; --accent-strong:#163A69; --accent-soft:#E5EDF7; --accent-ink:#0E2A4E;
+    --good:#2E7D4F; --good-soft:#E4F3EA;
+    --warn:#A8681A; --warn-soft:#FBF0DE;
+    --critical:#B23A3A; --critical-soft:#FBE8E8;
+    --radius-sm:4px; --radius-md:7px; --radius-lg:12px;
+    --tap-min:44px;
+    --shadow-1:0 1px 2px rgba(23,30,37,.06), 0 1px 1px rgba(23,30,37,.04);
+    --shadow-sheet:0 -12px 32px rgba(20,30,40,.18), 0 -2px 6px rgba(20,30,40,.08);
+    --shadow-pop:0 10px 30px rgba(20,30,40,.16), 0 2px 8px rgba(20,30,40,.08);
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+    color-scheme: light;
+    /* The nav shell (sidebar + mobile drawer) is a fixed dark chrome, same in
+       both themes — it's the staff console's identity, not content, matching
+       how the real app's own sidebar (bg-ops) doesn't follow a light/dark
+       toggle either. Defined once here rather than duplicated per theme block. */
+    --shell:#12181F; --shell-line:rgba(255,255,255,.1); --shell-text:#fff;
+    --shell-text-dim:rgba(255,255,255,.5); --shell-text-dimmer:rgba(255,255,255,.35);
+    --shell-active-bg:rgba(255,255,255,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#10151B; --surface:#161D25; --surface-2:#1C242D; --surface-3:#232C36;
+      --line:#2A333D; --line-strong:#3A4552;
+      --text-1:#E8EDF2; --text-2:#9AA7B2; --text-3:#6B7885;
+      --accent:#6FA3E0; --accent-strong:#8FBBEE; --accent-soft:#1C2E44; --accent-ink:#DCEBFB;
+      --good:#5CC98A; --good-soft:#16301F;
+      --warn:#E0A94A; --warn-soft:#362A12;
+      --critical:#E67373; --critical-soft:#3A1B1B;
+      --shadow-1:0 1px 2px rgba(0,0,0,.4);
+      --shadow-sheet:0 -12px 32px rgba(0,0,0,.55);
+      --shadow-pop:0 10px 30px rgba(0,0,0,.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#10151B; --surface:#161D25; --surface-2:#1C242D; --surface-3:#232C36;
+    --line:#2A333D; --line-strong:#3A4552;
+    --text-1:#E8EDF2; --text-2:#9AA7B2; --text-3:#6B7885;
+    --accent:#6FA3E0; --accent-strong:#8FBBEE; --accent-soft:#1C2E44; --accent-ink:#DCEBFB;
+    --good:#5CC98A; --good-soft:#16301F;
+    --warn:#E0A94A; --warn-soft:#362A12;
+    --critical:#E67373; --critical-soft:#3A1B1B;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-sheet:0 -12px 32px rgba(0,0,0,.55);
+    --shadow-pop:0 10px 30px rgba(0,0,0,.5);
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--text-1);
+    font-family:var(--font-ui); font-size:14px; line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent-soft); color:var(--accent-ink);}
+  button{font:inherit; color:inherit;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums;}
+  .eyebrow{
+    font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--text-3);
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important; transition-duration:.001ms !important;} }
+
+  /* ============ APP FRAME (mock harness, not product) ============ */
+  #app-outer{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding:28px 16px 120px; gap:18px;
+  }
+  .device{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-1); overflow:hidden; width:100%; max-width:1366px; height:820px;
+    display:flex; flex-direction:column;
+    /* This box is a CSS container — every "mobile" rule below reacts to ITS
+       rendered width via @container. There is no separate toggle mechanism
+       to keep in sync: resize the real window and it reflows, because
+       that's the only mechanism there is. */
+    container-type: inline-size; container-name: device;
+  }
+  /* The breakpoint matches the real app's own `md:` (768px) — not a number
+     invented for this mock. */
+
+  /* ============ APP SHELL: sidebar + content column ============ */
+  .app-body{ flex:1; min-height:0; display:flex; }
+  .main-col{ flex:1; min-width:0; display:flex; flex-direction:column; }
+
+  .sidebar{
+    width:224px; flex:0 0 auto; background:var(--shell); color:var(--shell-text);
+    display:flex; flex-direction:column;
+  }
+  .sidebar-brand{ height:56px; flex:0 0 auto; display:flex; align-items:center; padding:0 20px; border-bottom:1px solid var(--shell-line); }
+  .sidebar-nav{ flex:1; overflow-y:auto; padding:12px 0; }
+  .sidebar-item{
+    width:100%; display:flex; align-items:center; gap:10px; padding:9px 20px; border:0; background:transparent;
+    color:var(--shell-text-dim); font-size:13px; font-weight:600; cursor:pointer; border-left:2px solid transparent;
+    text-align:left;
+  }
+  .sidebar-item svg{ width:16px; height:16px; flex:0 0 auto; opacity:.85; }
+  .sidebar-item:hover{ color:var(--shell-text); }
+  .sidebar-item[aria-current="true"]{ color:var(--shell-text); background:var(--shell-active-bg); border-color:var(--accent); }
+  .sidebar-foot{ padding:12px; border-top:1px solid var(--shell-line); flex:0 0 auto; }
+  .sidebar-foot .who{ padding:0 8px 8px; overflow:hidden; }
+  .sidebar-foot .name{ color:var(--shell-text); font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sidebar-foot .email{ color:var(--shell-text-dimmer); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sidebar-foot button{
+    width:100%; display:flex; align-items:center; gap:8px; padding:7px 8px; border:0; background:transparent;
+    color:var(--shell-text-dim); font-size:12.5px; cursor:pointer; text-align:left;
+  }
+  .sidebar-foot button:hover{ color:var(--shell-text); }
+  .sidebar-foot button svg{ width:14px; height:14px; }
+
+  /* mobile left drawer — same technique as the right-side panels (scrim +
+     translate), mirrored: nav lives on the left, context (filters, confirm)
+     on the right, so the two never compete for the same edge. */
+  .navdrawer{
+    position:fixed; inset-block:0; left:0; width:264px; max-width:82vw; background:var(--shell); color:var(--shell-text);
+    z-index:50; transform:translateX(-100%); transition:transform .2s ease-out; display:flex; flex-direction:column;
+  }
+  .navdrawer.on{ transform:translateX(0); }
+  .navdrawer .sidebar-brand{ justify-content:space-between; }
+
+  /* ============ TOPBAR (now inside .main-col, beside the sidebar, not spanning it) ============ */
+  .topbar{
+    flex:0 0 auto; height:52px; display:flex; align-items:center; gap:10px;
+    padding:0 18px; border-bottom:1px solid var(--line); background:var(--surface);
+  }
+  /* .topbar .menu-btn (0,2,0) beats .icon-btn's display:flex (0,1,0)
+     regardless of source order — the bug this replaces was exactly that:
+     .menu-btn{display:none} and .icon-btn{display:flex} have EQUAL
+     specificity, .icon-btn is declared later in the sheet, so it won and the
+     hamburger showed on every width, sidebar or not. Same fix pattern
+     applies inside the @container override below. */
+  .topbar .menu-btn{ display:none; }
+  .topbar h1{ margin:0; font-size:15px; font-weight:700; color:var(--text-1); }
+  .brand{ display:flex; align-items:baseline; gap:7px; font-weight:800; font-size:15px; letter-spacing:-.01em; color:#fff; }
+  .brand small{ font-weight:500; color:rgba(255,255,255,.55); font-size:13px; }
+  .topbar .spacer{ flex:1; }
+  .avatar{
+    width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent-strong);
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex:0 0 auto;
+  }
+  .topbar-search{ display:block; }
+
+  /* ============ SCREEN BODY ============ */
+  .screen{ flex:1; min-height:0; overflow:auto; background:var(--paper); }
+
+  /* ---- page head (list surfaces) ---- */
+  .pagehead{ padding:18px 20px 14px; }
+  .pagehead h1{ margin:2px 0 0; font-size:21px; font-weight:800; letter-spacing:-.015em; text-wrap:balance; }
+  .pagehead h1 .count{ font-weight:500; color:var(--text-3); font-size:14px; margin-left:6px; }
+
+  /* ---- control row: segmented + filter chip + search, one line, fixed height ---- */
+  .controlrow{
+    display:flex; align-items:center; gap:8px; padding:0 20px 14px; flex-wrap:nowrap;
+  }
+
+  .segmented{
+    display:inline-flex; background:var(--surface-2); border-radius:var(--radius-md); padding:3px;
+    border:1px solid var(--line); flex:0 0 auto;
+  }
+  .segmented button{
+    border:0; background:transparent; padding:6px 12px; border-radius:5px; font-size:13px; font-weight:600;
+    color:var(--text-2); cursor:pointer; white-space:nowrap; min-height:32px;
+  }
+  .segmented button[aria-selected="true"]{ background:var(--surface); color:var(--text-1); box-shadow:var(--shadow-1); }
+  .segmented button .n{ color:var(--text-3); font-weight:500; margin-left:4px; }
+  .segmented button[aria-selected="true"] .n{ color:var(--accent); }
+
+  .filter-chip{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 10px 6px 11px; border-radius:999px;
+    border:1px solid var(--line-strong); background:var(--surface); cursor:pointer; font-size:13px; font-weight:600;
+    color:var(--text-1); min-height:32px; flex:0 0 auto;
+  }
+  .filter-chip:hover{ border-color:var(--accent); }
+  .filter-chip .badge{
+    background:var(--accent-soft); color:var(--accent-strong); border-radius:999px; padding:1px 7px;
+    font-size:11.5px; font-weight:700; font-family:var(--font-mono);
+  }
+  .filter-chip svg{ width:13px; height:13px; opacity:.55; }
+
+  .spacer-flex{ flex:1; }
+
+  .icon-btn{
+    width:32px; height:32px; border-radius:8px; border:1px solid transparent; background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-2); flex:0 0 auto;
+  }
+  .icon-btn:hover{ background:var(--surface-2); color:var(--text-1); }
+  .icon-btn svg{ width:16px; height:16px; }
+
+  .search-wrap{ display:flex; align-items:center; overflow:hidden; }
+  .search-input{
+    width:0; opacity:0; border:0; background:var(--surface-2); border-radius:8px; font-size:13px;
+    padding:0; height:32px; transition:width .16s ease, padding .16s ease, opacity .12s ease;
+    color:var(--text-1);
+  }
+  .search-input.open{ width:180px; opacity:1; padding:0 10px; margin-left:2px; }
+  .search-input::placeholder{ color:var(--text-3); }
+
+  .meta-line{ padding:0 20px 12px; font-size:12px; color:var(--text-3); }
+
+  /* ============ PROJECTS: table (desktop) ============ */
+  .ledger-wrap{ padding:0 20px 20px; }
+  table.ledger{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.ledger thead th{
+    text-align:left; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--text-3); padding:8px 12px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--paper);
+  }
+  table.ledger th.num, table.ledger td.num{ text-align:right; }
+  table.ledger tbody tr{ cursor:pointer; }
+  table.ledger tbody tr:hover{ background:var(--surface-3); }
+  table.ledger td{ padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .cell-title{ font-weight:600; color:var(--text-1); }
+  .cell-sub{ color:var(--text-3); font-size:12px; margin-top:2px; }
+  .waiting-us{ color:var(--text-1); font-weight:700; }
+  .waiting-cust{ color:var(--text-2); font-weight:600; }
+  .stage-badge{
+    display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px;
+    background:var(--accent-soft); color:var(--accent-strong);
+  }
+  .flag-chip{
+    display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 8px;
+    border-radius:999px; background:var(--warn-soft); color:var(--warn);
+  }
+
+  /* ============ PROJECTS: cards (mobile) ============ */
+  .cardlist{ flex:1; overflow:auto; padding:0 16px 16px; display:flex; flex-direction:column; gap:8px; }
+  .card-row{
+    border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); padding:11px 12px;
+    display:flex; flex-direction:column; gap:6px; cursor:pointer;
+  }
+  .card-row:active{ background:var(--surface-3); }
+  .card-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .card-title{ font-weight:700; font-size:14px; color:var(--text-1); }
+  .card-value{ font-family:var(--font-mono); font-weight:700; font-size:14px; white-space:nowrap; }
+  .card-value .basis{ display:block; font-family:var(--font-ui); font-weight:500; font-size:10.5px; color:var(--text-3); text-align:right; }
+  .card-sub{ font-size:12px; color:var(--text-3); }
+  .card-bottom{ display:flex; justify-content:space-between; align-items:center; margin-top:2px; }
+  .card-meta{ display:flex; align-items:center; gap:8px; font-size:12px; }
+
+  /* ============ RIGHT PANEL (progressive disclosure surface) ============
+     Same slide-in-from-right chrome as the editor zone uses at rest — filters and
+     editing both live in the same right-hand register instead of two different idioms. */
+  .scrim{
+    position:fixed; inset:0; background:rgba(15,20,25,.38); opacity:0; pointer-events:none;
+    transition:opacity .15s ease; z-index:40;
+  }
+  .scrim.on{ opacity:1; pointer-events:auto; }
+
+  .sheet{
+    position:fixed; top:0; right:0; bottom:0; width:360px; max-width:92vw; background:var(--surface); z-index:41;
+    border-radius:0; box-shadow:var(--shadow-pop); border-left:1px solid var(--line);
+    transform:translateX(100%); transition:transform .22s cubic-bezier(.32,.72,0,1);
+    display:flex; flex-direction:column;
+  }
+  .sheet.on{ transform:translateX(0); }
+  /* mobile: the panel takes the full screen — set by JS (state.size), not by media
+     query, because this element intentionally lives outside the simulated .device frame. */
+  .sheet.full{ width:100%; max-width:100%; border-left:0; }
+  .sheet-head{ padding:16px 18px; display:flex; align-items:center; justify-content:space-between; flex:0 0 auto; border-bottom:1px solid var(--line); }
+  .sheet-head h2{ font-size:15px; margin:0; font-weight:800; }
+  .sheet-body{ overflow:auto; padding:8px 10px; flex:1; }
+  .sheet-row{
+    display:flex; align-items:center; justify-content:space-between; width:100%; text-align:left;
+    border:0; background:transparent; padding:11px 10px; border-radius:8px; font-size:14px; cursor:pointer;
+    min-height:var(--tap-min);
+  }
+  .sheet-row:hover{ background:var(--surface-2); }
+  .sheet-row[aria-selected="true"]{ background:var(--accent-soft); color:var(--accent-ink); font-weight:700; }
+  .sheet-row .n{ font-family:var(--font-mono); color:var(--text-3); font-size:12.5px; }
+  .sheet-row[aria-selected="true"] .n{ color:var(--accent-strong); }
+  .sheet-div{ height:1px; background:var(--line); margin:6px 8px; }
+  .sheet-foot{ padding:12px 16px 16px; border-top:1px solid var(--line); flex:0 0 auto; }
+  .sort-select{
+    width:100%; height:var(--tap-min); border-radius:8px; border:1px solid var(--line-strong);
+    background:var(--surface); color:var(--text-1); padding:0 12px; font-size:13.5px;
+  }
+
+  /* ============ WORKSPACE — titleblock ============ */
+  .titleblock{
+    flex:0 0 auto; border-bottom:1px solid var(--line); background:var(--surface);
+    padding:10px 20px; display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+  }
+  .tb-field{ display:flex; flex-direction:column; gap:2px; }
+  .tb-field .k{ font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); }
+  .tb-field .v{ font-size:13px; font-weight:700; color:var(--text-1); }
+  .tb-field .v.mono{ font-family:var(--font-mono); }
+  .tb-field .v.waiting-us{ color:var(--critical); }
+  .titleblock .spacer-flex{ flex:1; min-width:8px; }
+  .unresolved-chip{
+    display:inline-flex; align-items:center; gap:5px; background:var(--critical-soft); color:var(--critical);
+    font-weight:700; font-size:12px; padding:5px 10px; border-radius:999px; white-space:nowrap;
+  }
+
+  /* ---- phase row: the job's actual progression, and the lever to move it.
+     "Ops needs the past, dated and attributed" — a coarse ribbon to orient,
+     not a vertical node timeline (that's explicitly rejected in the real
+     app's own design notes: ~9 quote states + 12 order stages drawn as nodes
+     is a screen and a half of chrome for one integer and four dates). ---- */
+  .phaserow{ display:flex; align-items:center; gap:14px; padding:0 20px 12px; flex-wrap:wrap; border-bottom:1px solid var(--line); }
+  .phaseribbon{ display:flex; gap:2px; flex:1; min-width:220px; }
+  .phase-seg{
+    flex:1; text-align:center; font-size:10.5px; font-weight:700; padding:6px 3px 5px;
+    border-bottom:3px solid var(--line); color:var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .phase-seg.done{ border-color:var(--good); color:var(--text-2); }
+  .phase-seg.current{ border-color:var(--accent); color:var(--text-1); }
+  .stage-action{ flex:0 0 auto; white-space:nowrap; }
+  /* Confirm-in-place, never a modal, never the right panel either — a stage
+     advance is a single fact to confirm, not a review with deltas and a
+     tripwire (that's what the right panel is for, e.g. the pricing confirm). */
+  .confirm-strip{
+    flex:1; min-width:260px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--accent-soft); border:1px solid var(--accent); border-radius:var(--radius-md);
+    padding:8px 8px 8px 14px; font-size:12.5px; color:var(--accent-ink);
+  }
+  .confirm-strip .btns{ display:flex; gap:6px; flex-shrink:0; }
+
+  /* ============ WORKSPACE — desktop: rail + canvas (editor is a right panel now,
+     not a third column — see #editor-panel) ============
+     Only the desktop branch of renderWorkspace() ever creates a
+     .workspace-body element at all (mobile builds .planebar/.plane-body
+     instead), so this doesn't need a container query of its own — the JS
+     that decides which DOM to build already reacts to real width via the
+     ResizeObserver below. */
+  .workspace-body{ flex:1; min-height:0; display:grid; grid-template-columns:230px 1fr; }
+  .zone{ min-height:0; overflow:auto; }
+  .zone + .zone{ border-left:1px solid var(--line); }
+  .canvas-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px 0; }
+  .canvas-head .who{ font-size:12.5px; font-weight:700; color:var(--text-1); }
+  .canvas-head .who span{ font-weight:500; color:var(--text-3); margin-left:4px; }
+  .btn-primary.btn-compact{ height:30px; padding:0 12px; font-size:12.5px; }
+
+  .rail{ background:var(--surface-2); padding:10px; display:flex; flex-direction:column; gap:2px; }
+  .rail-line{
+    display:flex; align-items:center; gap:8px; padding:8px 9px; border-radius:7px; cursor:pointer; font-size:12.5px;
+  }
+  .rail-line:hover{ background:var(--surface-3); }
+  .rail-line.active{ background:var(--surface); box-shadow:var(--shadow-1); font-weight:700; }
+  .rail-line .verdict{ width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+  .verdict.ok{ background:var(--good); } .verdict.warn{ background:var(--warn); } .verdict.crit{ background:var(--critical); }
+  .rail-unit{ padding:6px 9px 6px 26px; font-size:12px; color:var(--text-2); display:flex; align-items:center; gap:7px; }
+  .rail-foot{ margin-top:auto; padding:10px 9px 4px; border-top:1px solid var(--line); font-size:12px; display:flex; justify-content:space-between; }
+  .rail-foot b{ font-family:var(--font-mono); }
+
+  .canvas{ background:var(--paper); display:flex; flex-direction:column; }
+  .composite-wrap{ padding:20px 20px 8px; display:flex; justify-content:center; }
+  .composite{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md); }
+
+  /* fits all 5 in one row at 390px — no horizontal scroll on a tab strip, ever */
+  .lensbar{ display:flex; gap:2px; padding:4px 10px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .lens-btn{
+    display:flex; align-items:center; justify-content:center; gap:5px; flex:1; min-width:0;
+    border:0; background:transparent; padding:8px 6px; border-radius:7px;
+    font-size:12.5px; font-weight:700; color:var(--text-2); white-space:nowrap; cursor:pointer; overflow:hidden;
+  }
+  .lens-btn[aria-selected="true"]{ background:var(--accent-soft); color:var(--accent-strong); }
+  .lens-btn .lv{ font-weight:500; color:var(--text-3); }
+  .lens-btn[aria-selected="true"] .lv{ color:var(--accent-strong); }
+
+  .lens-panel{ padding:14px 20px 20px; font-size:13px; color:var(--text-2); flex:1; }
+  .lens-panel h3{ font-size:13px; margin:0 0 8px; color:var(--text-1); }
+  .kv-row{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .kv-row .k{ color:var(--text-3); }
+  .kv-row .v{ font-weight:600; color:var(--text-1); }
+
+  /* editor panel: fields scroll, the Save/Cancel bar stays pinned at the bottom —
+     the pattern the estimator already ships and proves out, reused here rather
+     than reinvented. */
+  .editor-panel{ flex:1; display:flex; flex-direction:column; min-height:0; background:var(--surface); }
+  .editor-fields{ flex:1; overflow:auto; padding:16px; }
+  .editor-fields h3{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin:0 0 12px; }
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-size:11.5px; font-weight:600; color:var(--text-2); margin-bottom:4px; }
+  .field input, .field select{
+    width:100%; height:36px; border:1px solid var(--line-strong); border-radius:7px; padding:0 10px;
+    font-size:13px; background:var(--surface); color:var(--text-1);
+  }
+  .field-row{ display:flex; gap:8px; }
+  .field-row .field{ flex:1; }
+
+  .editor-footer{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:12px 16px; border-top:1px solid var(--line); background:var(--surface);
+  }
+  .editor-dirty{ font-size:12px; color:var(--text-3); }
+  .editor-actions{ display:flex; gap:8px; margin-left:auto; }
+  .btn-ghost, .btn-primary{ height:36px; padding:0 16px; border-radius:7px; font-size:13px; font-weight:700; cursor:pointer; }
+  .btn-ghost{ background:transparent; border:1px solid var(--line-strong); color:var(--text-2); }
+  .btn-ghost:hover{ background:var(--surface-2); }
+  .btn-primary{ background:var(--accent); border:1px solid var(--accent); color:#fff; }
+  .btn-primary:hover{ background:var(--accent-strong); border-color:var(--accent-strong); }
+
+  /* ============ WORKSPACE — mobile plane stack ============ */
+  .planebar{ display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--line); }
+  .stepper{ display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:12px; color:var(--text-3); }
+  .stepper button{ width:26px; height:26px; border-radius:6px; border:1px solid var(--line); background:var(--surface); }
+  .plane-body{ flex:1; overflow:auto; min-height:0; display:flex; flex-direction:column; }
+  .plane-body.plane-edit{ overflow:hidden; }
+
+  /* ============ DASHBOARD ============ */
+  .dash-wrap{ padding:0 20px 20px; max-width:640px; }
+  .needs-card{ border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--radius-md); overflow:hidden; margin-bottom:22px; }
+  .needs-row{
+    display:flex; align-items:baseline; gap:12px; width:100%; text-align:left; border:0; background:var(--surface);
+    padding:13px 16px; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .needs-row:last-child{ border-bottom:0; }
+  .needs-row:hover{ background:var(--surface-2); }
+  .needs-row .n{ font-family:var(--font-mono); font-weight:800; font-size:17px; color:var(--text-1); flex:0 0 auto; }
+  .needs-row .t{ flex:1; color:var(--text-2); font-size:13px; }
+  .needs-row .go{ color:var(--accent); font-size:12px; font-weight:700; flex:0 0 auto; }
+  .needs-empty{ border:1px dashed var(--line-strong); border-radius:var(--radius-md); padding:22px; text-align:center; margin-bottom:22px; }
+  .needs-empty p{ margin:0; color:var(--text-1); font-weight:600; font-size:13px; }
+  .needs-empty span{ color:var(--text-3); font-size:12px; }
+  .stat-row{ display:flex; flex-wrap:wrap; border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; }
+  .stat-cell{ padding:12px 18px; border-right:1px solid var(--line); flex:1; min-width:120px; }
+  .stat-cell:last-child{ border-right:0; }
+  .stat-cell .k{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-3); }
+  .stat-cell .v{ font-family:var(--font-mono); font-weight:700; font-size:19px; color:var(--text-1); margin-top:2px; }
+
+  /* ============ SUB-TABS (Pricing) — fits without scroll, wraps if it must ============ */
+  .subtabs{ display:flex; flex-wrap:wrap; gap:2px; padding:0 20px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+  .subtabs button{
+    border:0; background:transparent; padding:9px 4px; margin-right:16px; font-size:13px; font-weight:600;
+    color:var(--text-3); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .subtabs button[aria-selected="true"]{ color:var(--text-1); border-color:var(--accent); font-weight:700; }
+
+  /* ============ chip filter that WRAPS (never scrolls) — for short lists ============ */
+  .chip-wrap{ display:flex; flex-wrap:wrap; gap:6px; padding:0 20px 14px; }
+  .chip-wrap button{
+    border:1px solid var(--line-strong); background:var(--surface); border-radius:999px; padding:6px 12px;
+    font-size:12.5px; font-weight:600; color:var(--text-2); cursor:pointer;
+  }
+  .chip-wrap button[aria-selected="true"]{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); }
+
+  /* ============ compact list rows (Audit) ============ */
+  .list-rows{ padding:0 20px 20px; }
+  .list-row{
+    display:flex; align-items:baseline; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line); font-size:12.5px;
+  }
+  .list-row .ent{ flex:0 0 auto; width:56px; color:var(--text-3); font-size:11px; text-transform:uppercase; font-weight:700; }
+  .list-row .act{ flex:1; min-width:0; color:var(--text-1); }
+  .list-row .who{ flex:0 0 auto; color:var(--text-3); font-size:11.5px; white-space:nowrap; }
+
+  /* ============ staff rows (Admin) ============ */
+  .staff-card{ border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; }
+  .staff-row{ display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); }
+  .staff-row:last-child{ border-bottom:0; }
+  .staff-row .who{ flex:1; min-width:0; }
+  .staff-row .who .name{ font-weight:600; font-size:13.5px; color:var(--text-1); }
+  .staff-row .who .email{ font-size:12px; color:var(--text-3); }
+  .staff-row select{
+    height:34px; border:1px solid var(--line-strong); border-radius:7px; padding:0 8px; font-size:12.5px;
+    background:var(--surface); color:var(--text-1); flex:0 0 auto;
+  }
+
+  /* ============ settings form (Pricing → Policy) ============ */
+  .settings-wrap{ padding:0 20px 20px; max-width:480px; }
+  .settings-block{ margin-bottom:20px; }
+  .settings-block .lbl{ font-size:12.5px; font-weight:600; color:var(--text-1); margin-bottom:6px; }
+  .settings-block .help{ font-size:12px; color:var(--text-3); margin-top:6px; line-height:1.5; }
+
+  /* ============ health / info banner ============ */
+  .banner{
+    margin:0 20px 16px; padding:11px 14px; border-radius:var(--radius-md); background:var(--warn-soft);
+    color:var(--warn); font-size:12.5px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .banner a{ color:inherit; font-weight:700; text-decoration:underline; flex:0 0 auto; }
+
+  .scope-note{
+    max-width:1366px; width:100%; font-size:12px; color:var(--text-3); text-align:center; padding:0 12px;
+  }
+  .scope-note b{ color:var(--text-2); }
+
+  /* ============ REAL RESPONSIVE BREAKPOINT ============
+     Every rule in here reacts to .device's actual rendered width (see
+     container-type on .device above) — not to the JS toggle. Drag the real
+     browser window narrower than this and it reflows exactly the same way
+     the "Mobile 390" toggle does, because it's the same mechanism, not a
+     parallel one that can disagree with it. */
+  @container device (max-width: 767.98px){
+    .screen{ display:flex; flex-direction:column; }
+    .pagehead{ padding:14px 16px 10px; }
+    .controlrow{ padding:0 16px 12px; }
+    .meta-line{ padding:0 16px 10px; }
+    .titleblock{ padding:9px 14px; gap:12px; }
+    .btn-ghost, .btn-primary{ height:var(--tap-min); }
+    .subtabs{ padding:0 16px; }
+    .chip-wrap{ padding:0 16px 12px; }
+    .list-rows{ padding:0 16px 20px; }
+    .list-row{ flex-wrap:wrap; }
+    .list-row .act{ flex-basis:100%; order:1; margin-top:2px; }
+    .settings-wrap{ padding:0 16px 20px; }
+    .banner{ margin:0 16px 14px; flex-direction:column; align-items:flex-start; }
+    .sidebar{ display:none; }
+    .topbar .menu-btn{ display:flex; }
+    .topbar-search{ display:none; }
+    /* .btn-compact (0,2,0) needs an equally-specific override here, or the
+       generic .btn-ghost,.btn-primary{height:var(--tap-min)} rule above
+       loses to it despite coming later — exactly the .menu-btn bug again,
+       just waiting to happen a second time if left as a single class. */
+    .btn-primary.btn-compact{ height:var(--tap-min); font-size:13px; padding:0 14px; }
+    .phaseribbon{ flex:1 1 100%; }
+    .phase-seg{ font-size:9px; padding:5px 2px 4px; }
+  }
+</style>
+
+<div id="app-outer">
+  <div class="device" id="device">
+    <div class="app-body">
+      <!-- Desktop sidebar — hidden below 768px via @container, replaced by
+           the drawer below. Filled in by renderSidebar(). -->
+      <aside class="sidebar" id="sidebar"></aside>
+
+      <div class="main-col">
+        <div class="topbar">
+          <button class="icon-btn menu-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="nav-drawer">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+          </button>
+          <h1 id="topbar-title">Dashboard</h1>
+          <div class="spacer"></div>
+          <div class="topbar-search search-wrap"><input class="search-input open" style="width:220px;" placeholder="Search projects, orders, customers…"></div>
+          <div class="avatar">GB</div>
+        </div>
+        <div class="screen" id="screen-root"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scope-note">Full site — <b>8 tabs</b>, matching the actual app's current structure. A project record opens from Projects, not as its own menu item — same as the real console.</div>
+</div>
+
+<!-- Mobile nav drawer — left edge, mirrors the real app's MobileNav technique.
+     Filled in by renderSidebar() too (same content, two mount points, exactly
+     like the real OpsLogo/nav being shared between rail and drawer). -->
+<div class="scrim" id="nav-scrim"></div>
+<aside class="navdrawer" id="nav-drawer"></aside>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="filter-sheet" role="dialog" aria-modal="true" aria-label="Filter">
+  <div class="sheet-head"><h2>Filter</h2><button class="icon-btn" id="sheet-close" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="sheet-options"></div>
+  <div class="sheet-foot" id="sheet-foot">
+    <label style="font-size:11.5px;font-weight:600;color:var(--text-2);display:block;margin-bottom:6px;">Sort</label>
+    <select class="sort-select">
+      <option>Ours first, longest waiting</option>
+      <option>Value</option>
+      <option>Days in stage</option>
+      <option>Updated</option>
+    </select>
+  </div>
+</div>
+
+<!-- Pricing's confirm panel — a separate overlay from the filter sheet above
+     (different content shape: deltas, a tripwire, a pinned Save/Cancel), same
+     right-slide-in / full-screen-on-mobile technique. Content is filled in by
+     renderConfirmPanel(). -->
+<div class="scrim" id="confirm-scrim"></div>
+<div class="sheet" id="confirm-panel" role="dialog" aria-modal="true" aria-label="Review pricing change"></div>
+
+<!-- Workspace's line editor — a third overlay, same technique again. Was a
+     permanent third desktop column plus a third mobile plane; now one panel,
+     opened explicitly, same on both sizes. -->
+<div class="scrim" id="editor-scrim"></div>
+<div class="sheet" id="editor-panel" role="dialog" aria-modal="true" aria-label="Line editor"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  var PROJECTS = [
+    {ref:'OF-Q-10402', order:null, project:'Northcote Renovation', customer:'Rangi Waititi', org:null, lines:4, value:24350, basis:'est.', stage:'Being priced', waiting:'Us', days:2, unpriced:3},
+    {ref:'OF-Q-10388', order:'SO-8821', project:'Ellerslie Spec Build', customer:'Chen Property Group', org:'Chen Property Group', lines:11, value:118200, basis:'issued', stage:'Ready to issue', waiting:'Us', days:6, unpriced:0},
+    {ref:'OF-Q-10375', order:null, project:'St Heliers Extension', customer:'Amara Singh', org:null, lines:6, value:31900, basis:'est.', stage:'Submitted', waiting:'Customer', days:1, unpriced:0},
+    {ref:'OF-Q-10360', order:'SO-8790', project:'Ponsonby Villa Restore', customer:'Marlene Ah Kuoi', org:null, lines:9, value:64750, basis:'contract', stage:'In production', waiting:'Nobody', days:0, unpriced:0},
+    {ref:'OF-Q-10352', order:null, project:'Devonport Boatshed', customer:'Josh Fenwick', org:null, lines:3, value:14200, basis:'est.', stage:'Being priced', waiting:'Us', days:9, unpriced:1},
+    {ref:'OF-Q-10349', order:null, project:'Mission Bay Apartments — B2', customer:'Kōwhai Developments', org:'Kōwhai Developments', lines:22, value:212400, basis:'est.', stage:'Awaiting customer', days:11, waiting:'Customer', unpriced:0},
+    {ref:'OF-Q-10341', order:'SO-8760', project:'Remuera Rebuild', customer:'Peter & Alofa Tuilagi', org:null, lines:7, value:52300, basis:'issued', stage:'Awaiting payment', waiting:'Customer', days:4, unpriced:0},
+    {ref:'OF-Q-10330', order:null, project:'Kingsland Retrofit', customer:'Dev Patel', org:null, lines:5, value:19800, basis:'est.', stage:'Being priced', waiting:'Us', days:14, unpriced:2},
+    {ref:'OF-Q-10318', order:null, project:'Grey Lynn Cottage', customer:'Hana Ngata', org:null, lines:2, value:8100, basis:'est.', stage:'Submitted', waiting:'Customer', days:3, unpriced:0},
+    {ref:'OF-Q-10301', order:'SO-8702', project:'Herne Bay New Build', customer:'Whitmore Family Trust', org:'Whitmore Family Trust', lines:14, value:187600, basis:'contract', stage:'In production', waiting:'Nobody', days:0, unpriced:0}
+  ];
+
+  var VIEWS = [
+    {key:'needs_us', label:'Needs us', test:function(p){return p.waiting==='Us';}},
+    {key:'submitted', label:'Submitted', test:function(p){return p.stage==='Submitted';}},
+    {key:'pricing', label:'Being priced', test:function(p){return p.stage==='Being priced';}},
+    {key:'ready', label:'Ready to issue', test:function(p){return p.stage==='Ready to issue';}},
+    {key:'payment', label:'Awaiting payment', test:function(p){return p.stage==='Awaiting payment';}},
+    {key:'customer', label:'Awaiting customer', test:function(p){return p.waiting==='Customer';}},
+    {key:'production', label:'In production', test:function(p){return p.stage==='In production';}},
+    {key:'open', label:'All open', test:function(p){return p.stage!=='In production'||true;}},
+    {key:'all', label:'All', test:function(){return true;}}
+  ];
+  VIEWS.forEach(function(v){ v.count = PROJECTS.filter(v.test).length; });
+  VIEWS[7].count = PROJECTS.filter(function(p){return p.waiting!=='Nobody';}).length;
+
+  var state = {
+    screen:'dashboard', size:'desktop',
+    activeView:'needs_us', sheetOpen:false, sheetKind:'projects',
+    projectOpen:null, plane:'lines', lensIdx:0, activeLine:0, stageConfirm:null,
+    customerOpen:null, enquiryOpen:null,
+    enqTab:'all', pricingSub:'rate-cards', rateCardOpen:null, rcDraft:null, depositDraft:null, auditFilter:''
+  };
+
+  var money = function(n){ return '$' + n.toLocaleString('en-NZ'); };
+
+  // The real console's own TABS array (OpsApp.tsx), not a bigger list
+  // invented for this mock — 8 menu items. A project record is reached BY
+  // CLICKING a Projects row, same as the real app; it has never been its own
+  // menu entry, so it isn't one here either.
+  var NAV_ITEMS = [
+    {id:'dashboard', label:'Dashboard', icon:'nav-dashboard'},
+    {id:'projects', label:'Projects', icon:'nav-file'},
+    {id:'customers', label:'Customers', icon:'nav-users'},
+    {id:'enquiries', label:'Enquiries', icon:'nav-mail'},
+    {id:'pricing', label:'Pricing', icon:'nav-boxes'},
+    {id:'files', label:'Files', icon:'nav-folder'},
+    {id:'audit', label:'Audit', icon:'nav-scroll'},
+    {id:'admin', label:'Admin', icon:'nav-settings'}
+  ];
+  var SCREENS = NAV_ITEMS.map(function(n){ return n.id; });
+  var SCREEN_LABEL = {}; NAV_ITEMS.forEach(function(n){ SCREEN_LABEL[n.id] = n.label; });
+
+  function svgIcon(name){
+    var icons = {
+      filter:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h14M6 10h8M9 16h2"/></svg>',
+      search:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M16 16l-3.2-3.2"/></svg>',
+      chevron:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 8l4 4 4-4"/></svg>',
+      back:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12.5 5l-5 5 5 5"/></svg>',
+      close:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 5l10 10M15 5L5 15"/></svg>',
+      signout:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 4H4v12h4M13 6l4 4-4 4M6.5 10H17"/></svg>',
+      'nav-dashboard':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>',
+      'nav-file':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 3h6l4 4v10H5z"/><path d="M11 3v4h4"/></svg>',
+      'nav-users':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.5" cy="7" r="2.6"/><path d="M2.5 16c0-3 2.2-4.6 5-4.6s5 1.6 5 4.6"/><path d="M13 6a2.4 2.4 0 0 1 0 4.6M15.5 16c0-2.4-1.4-3.8-3-4.3"/></svg>',
+      'nav-mail':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="M3 5.5l7 5.5 7-5.5"/></svg>',
+      'nav-boxes':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6l7-3.2L17 6v8l-7 3.2L3 14z"/><path d="M3 6l7 3.2L17 6M10 9.2V17"/></svg>',
+      'nav-folder':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 5.5A1 1 0 0 1 3.5 4.5h3.8l1.4 1.8h7.3a1 1 0 0 1 1 1v7.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z"/></svg>',
+      'nav-scroll':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 3h9v12.5a1.5 1.5 0 0 1-3 0V3M5 3a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h6"/></svg>',
+      'nav-settings':'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M4.2 5.2l1.4 1.4M14.4 13.4l1.4 1.4M3 10h2M15 10h2M4.2 14.8l1.4-1.4M14.4 6.6l1.4-1.4"/></svg>'
+    };
+    return icons[name] || '';
+  }
+
+  /* ---------------- PROJECTS SCREEN ---------------- */
+  function renderProjects(){
+    if (state.projectOpen) { renderProjectRecord(); return; }
+    var view = VIEWS.filter(function(v){return v.key===state.activeView;})[0];
+    var rows = PROJECTS.filter(view.test);
+    var quick = [VIEWS[0], VIEWS[7]]; // Needs us / All open — the two states people live in daily
+
+    var html = '';
+    html += '<div class="pagehead"><div class="eyebrow">Ledger</div><h1>Projects <span class="count">' + PROJECTS.length + '</span></h1></div>';
+
+    html += '<div class="controlrow">';
+    html += '<div class="segmented" role="tablist" aria-label="Quick filter">';
+    quick.forEach(function(v){
+      var sel = state.activeView===v.key;
+      html += '<button role="tab" aria-selected="'+sel+'" data-quick="'+v.key+'">'+v.label+'<span class="n">'+v.count+'</span></button>';
+    });
+    html += '</div>';
+    var showingFullSheet = quick.indexOf(view) === -1;
+    html += '<button class="filter-chip" id="filter-chip">'+svgIcon('filter')+'<span>'+ (showingFullSheet ? view.label : 'More filters') +'</span>'+(showingFullSheet ? '<span class="badge">'+view.count+'</span>' : '')+'</button>';
+    html += '<div class="spacer-flex"></div>';
+    html += '<div class="search-wrap"><input class="search-input" id="search-input" placeholder="ref, order, customer…"></div>';
+    html += '<button class="icon-btn" id="search-toggle" aria-label="Search">'+svgIcon('search')+'</button>';
+    html += '</div>';
+
+    html += '<div class="meta-line">' + rows.length + ' of ' + PROJECTS.length + ' · server’s own order, oldest obligation first</div>';
+
+    if (state.size === 'desktop') {
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr>';
+      html += '<th>Ref</th><th>Project</th><th>Customer</th><th class="num">Lines</th><th class="num">Value</th><th>Stage</th><th>Waiting on</th><th class="num">Days</th><th></th></tr></thead><tbody>';
+      rows.forEach(function(p){
+        html += '<tr data-project="'+p.ref+'">';
+        html += '<td class="mono">'+p.ref+(p.order?'<div class="cell-sub mono">'+p.order+'</div>':'')+'</td>';
+        html += '<td><div class="cell-title">'+p.project+'</div>'+(p.org?'<div class="cell-sub">'+p.org+'</div>':'')+'</td>';
+        html += '<td>'+p.customer+'</td>';
+        html += '<td class="num mono">'+p.lines+'</td>';
+        html += '<td class="num mono"><div>'+money(p.value)+'</div><div class="cell-sub">'+p.basis+'</div></td>';
+        html += '<td><span class="stage-badge">'+p.stage+'</span></td>';
+        html += '<td class="'+(p.waiting==='Us'?'waiting-us':'waiting-cust')+'">'+p.waiting+' <span class="cell-sub">· '+p.days+'d</span></td>';
+        html += '<td class="num mono">'+p.days+'</td>';
+        html += '<td>'+(p.unpriced?'<span class="flag-chip">Unpriced '+p.unpriced+'</span>':'')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="cardlist">';
+      rows.forEach(function(p){
+        html += '<div class="card-row" data-project="'+p.ref+'">';
+        html += '<div class="card-top"><div><div class="card-title">'+p.project+'</div><div class="card-sub">'+p.customer+'</div></div><div class="card-value">'+money(p.value)+'<span class="basis">'+p.basis+'</span></div></div>';
+        html += '<div class="card-bottom"><div class="card-meta"><span class="stage-badge">'+p.stage+'</span><span class="'+(p.waiting==='Us'?'waiting-us':'waiting-cust')+'">'+p.waiting+' · '+p.days+'d</span></div>'+(p.unpriced?'<span class="flag-chip">'+p.unpriced+'</span>':'')+'</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    document.getElementById('screen-root').innerHTML = html;
+    document.getElementById('screen-root').style.display = 'flex';
+    document.getElementById('screen-root').style.flexDirection = 'column';
+
+    document.getElementById('filter-chip').addEventListener('click', function(){ openSheet('projects'); });
+    document.querySelectorAll('[data-quick]').forEach(function(b){
+      b.addEventListener('click', function(){ state.activeView=b.getAttribute('data-quick'); render(); });
+    });
+    document.getElementById('search-toggle').addEventListener('click', function(){
+      var i = document.getElementById('search-input');
+      i.classList.toggle('open');
+      if (i.classList.contains('open')) i.focus();
+    });
+    document.querySelectorAll('[data-project]').forEach(function(el){
+      el.addEventListener('click', function(){ state.projectOpen = el.getAttribute('data-project'); render(); });
+    });
+    if (state.sheetOpen && state.sheetKind==='projects') renderSheetOptions();
+  }
+
+  // Generic right-panel used by every screen with a "More filters" affordance
+  // (Projects, Enquiries) — one component, populated differently per screen,
+  // rather than one bespoke panel each. state.sheetKind decides what's shown.
+  function renderSheetOptions(){
+    var foot = document.getElementById('sheet-foot');
+    if (state.sheetKind === 'enquiries') {
+      foot.style.display = 'none';
+      // No counts here, unlike Projects — each tab is a distinct server
+      // query in the real app, not a client-side filter over one fetched
+      // set, so counting the hidden ones would mean firing extra requests
+      // just to label a button (same reasoning as the real fix).
+      var html = '';
+      ENQ_SECONDARY.forEach(function(t){
+        html += '<button class="sheet-row" role="option" aria-selected="'+(t.id===state.enqTab)+'" data-enqtab="'+t.id+'">'+t.label+'</button>';
+      });
+      document.getElementById('sheet-options').innerHTML = html;
+      document.querySelectorAll('#sheet-options [data-enqtab]').forEach(function(b){
+        b.addEventListener('click', function(){ state.enqTab = b.getAttribute('data-enqtab'); closeSheet(); render(); });
+      });
+    } else {
+      foot.style.display = '';
+      var activeView = VIEWS.filter(function(v){return v.key===state.activeView;})[0];
+      var html2 = '';
+      VIEWS.forEach(function(v, idx){
+        html2 += '<button class="sheet-row" role="option" aria-selected="'+(v.key===activeView.key)+'" data-view="'+v.key+'">'+v.label+'<span class="n">'+v.count+'</span></button>';
+        if (idx===0) html2 += '<div class="sheet-div"></div>';
+      });
+      document.getElementById('sheet-options').innerHTML = html2;
+      document.querySelectorAll('#sheet-options [data-view]').forEach(function(b){
+        b.addEventListener('click', function(){ state.activeView = b.getAttribute('data-view'); closeSheet(); render(); });
+      });
+    }
+  }
+
+  function openSheet(kind){
+    state.sheetKind = kind;
+    state.sheetOpen = true;
+    document.getElementById('scrim').classList.add('on');
+    var sheet = document.getElementById('filter-sheet');
+    sheet.classList.toggle('full', state.size==='mobile');
+    sheet.classList.add('on');
+    document.addEventListener('keydown', escClose);
+    renderSheetOptions();
+  }
+  function closeSheet(){
+    state.sheetOpen=false;
+    document.getElementById('scrim').classList.remove('on');
+    document.getElementById('filter-sheet').classList.remove('on');
+    document.removeEventListener('keydown', escClose);
+  }
+  function escClose(e){ if(e.key==='Escape') closeSheet(); }
+
+  /* ---------------- WORKSPACE SCREEN ---------------- */
+  var LINES = [
+    {name:'W03', kind:'Awning', verdict:'ok'},
+    {name:'W04', kind:'Fixed light', verdict:'warn'},
+    {name:'D01', kind:'Bifold door', verdict:'ok'},
+    {name:'W05', kind:'Awning', verdict:'crit'}
+  ];
+  var LENSES = [
+    {key:'why', label:'Why', v:'plan-derived'},
+    {key:'glass', label:'Glass', v:'misses'},
+    {key:'build', label:'Build', v:'3 units'},
+    {key:'price', label:'Price', v:'$2,230'},
+    {key:'trail', label:'Trail', v:'1'}
+  ];
+
+  function compositeSVG(){
+    return '<svg class="composite" width="300" height="220" viewBox="0 0 300 220">'+
+      '<rect x="8" y="8" width="284" height="204" rx="2" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="2"/>'+
+      '<line x1="8" y1="70" x2="292" y2="70" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>'+
+      '<line x1="150" y1="8" x2="150" y2="70" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>'+
+      '<rect x="18" y="18" width="120" height="42" fill="currentColor" fill-opacity=".06"/>'+
+      '<rect x="160" y="18" width="122" height="42" fill="currentColor" fill-opacity=".06"/>'+
+      '<rect x="18" y="80" width="264" height="122" fill="currentColor" fill-opacity=".04"/>'+
+      '</svg>';
+  }
+
+  // The job's actual progression — the thing missing before. A coarse
+  // 6-stage ribbon (matches the real app's own phase vocabulary), not a
+  // per-quote-state timeline: Ops needs "where is it and what do I do next",
+  // not every internal transition drawn as a node.
+  var PHASES = ['Intake','Pricing','Issued','Accepted','Prod.','Delivered'];
+  function phaseIndexFor(p){
+    if (p.stage==='Submitted') return 0;
+    if (p.stage==='Being priced' || p.stage==='Ready to issue') return 1;
+    if (p.stage==='Awaiting customer') return 2;
+    if (p.stage==='Awaiting payment') return 3;
+    if (p.stage==='In production') return 4;
+    return 5;
+  }
+  // The actual lever, not just a label — what moves this job to the next
+  // stage from here. Null when there's nothing for ops to do (waiting on the
+  // customer, or already delivered) — matching the "Waiting on" column's own
+  // logic rather than contradicting it.
+  function nextActionFor(p){
+    if (p.stage==='Submitted') return p.waiting==='Us' ? {label:'Start pricing', toStage:'Being priced'} : null;
+    if (p.stage==='Being priced') return (p.waiting==='Us' && !p.unpriced) ? {label:'Issue revision', toStage:'Awaiting customer'} : null;
+    if (p.stage==='Ready to issue') return {label:'Issue revision', toStage:'Awaiting customer'};
+    if (p.stage==='Awaiting payment') return {label:'Record payment', toStage:'In production'};
+    if (p.stage==='In production') return {label:'Mark delivered', toStage:'Delivered'};
+    return null;
+  }
+
+  function titleblockHTML(p){
+    var h = '<div class="titleblock">';
+    h += '<button class="icon-btn" id="record-back" aria-label="Back to Projects">'+svgIcon('back')+'</button>';
+    h += tbField('Job', p.ref+' · '+p.project, '');
+    h += tbField('Waiting on', p.waiting, p.waiting==='Us' ? 'waiting-us' : '');
+    h += tbField('Days', p.days, 'mono');
+    h += tbField('Value '+p.basis, money(p.value), 'mono');
+    h += '<div class="spacer-flex"></div>';
+    if (p.unpriced > 0) h += '<div class="unresolved-chip">⚠ '+p.unpriced+' unresolved</div>';
+    h += '</div>';
+    h += phaseRowHTML(p);
+    return h;
+  }
+  function tbField(k,v,cls){ return '<div class="tb-field"><div class="k">'+k+'</div><div class="v '+(cls||'')+'">'+v+'</div></div>'; }
+
+  function phaseRowHTML(p){
+    var idx = phaseIndexFor(p);
+    var h = '<div class="phaserow"><div class="phaseribbon" role="list" aria-label="Stage">';
+    PHASES.forEach(function(ph, i){
+      var cls = i<idx ? 'done' : i===idx ? 'current' : '';
+      h += '<div class="phase-seg '+cls+'">'+ph+'</div>';
+    });
+    h += '</div>';
+    if (state.stageConfirm) {
+      var a = state.stageConfirm;
+      h += '<div class="confirm-strip"><span>'+a.label+' — moves to <strong>'+a.toStage+'</strong>?</span>';
+      h += '<div class="btns"><button class="btn-ghost" id="stage-cancel">Cancel</button><button class="btn-primary" id="stage-confirm">Confirm</button></div></div>';
+    } else {
+      var action = nextActionFor(p);
+      if (action) h += '<button class="btn-primary stage-action" id="stage-action">'+action.label+' →</button>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function lensbarHTML(){
+    // value suffix shows only on the active lens — that's what keeps all 5 in one
+    // row with no horizontal scroll, at any width down to 390px.
+    var h = '<div class="lensbar" role="tablist">';
+    LENSES.forEach(function(l, i){
+      var active = i===state.lensIdx;
+      h += '<button class="lens-btn" role="tab" aria-selected="'+active+'" data-lens="'+i+'">'+l.label+(active?'<span class="lv">· '+l.v+'</span>':'')+'</button>';
+    });
+    h += '</div>';
+    return h;
+  }
+  function lensPanelHTML(){
+    var l = LENSES[state.lensIdx];
+    var body = {
+      why:'<h3>Why this configuration</h3><div class="kv-row"><span class="k">Source</span><span class="v">Plan-derived from uploaded schedule</span></div><div class="kv-row"><span class="k">Confidence</span><span class="v">High — matched on room + opening code</span></div><div class="kv-row"><span class="k">Alternatives considered</span><span class="v">2, see Trail</span></div>',
+      glass:'<h3>Glazing</h3><div class="kv-row"><span class="k">Target</span><span class="v">Uw ≤ 1.40</span></div><div class="kv-row"><span class="k">Actual</span><span class="v" style="color:var(--critical)">Uw 1.74 — misses target by 0.34</span></div><div class="kv-row"><span class="k">Reason</span><span class="v">No energy report on file for this opening</span></div>',
+      build:'<h3>Build</h3><div class="kv-row"><span class="k">Units</span><span class="v">3 — frame, sash, glazing bead</span></div><div class="kv-row"><span class="k">Finish</span><span class="v">Powder coat — Ironsand</span></div>',
+      price:'<h3>Price</h3><div class="kv-row"><span class="k">Line total</span><span class="v">$2,230</span></div><div class="kv-row"><span class="k">Basis</span><span class="v">Estimate — not yet issued</span></div>',
+      trail:'<h3>Trail</h3><div class="kv-row"><span class="k">Candidate log</span><span class="v">1 alternative recorded</span></div>'
+    };
+    return '<div class="lens-panel">'+body[l.key]+'</div>';
+  }
+
+  function railHTML(){
+    var h = '<div class="rail">';
+    LINES.forEach(function(l, i){
+      h += '<div class="rail-line'+(i===state.activeLine?' active':'')+'" data-line="'+i+'"><span class="verdict '+l.verdict+'"></span>'+l.name+' <span style="color:var(--text-3);font-weight:500;">'+l.kind+'</span></div>';
+    });
+    h += '<div class="rail-foot"><span>Draft total</span><b class="mono">$61,940</b></div>';
+    h += '</div>';
+    return h;
+  }
+
+  function canvasHeadHTML(){
+    var l = LINES[state.activeLine];
+    return '<div class="canvas-head"><span class="who">'+l.name+'<span> '+l.kind+'</span></span>'
+      + '<button class="btn-primary btn-compact" id="open-editor">Edit</button></div>';
+  }
+
+  // The editor lives in a right panel now — same slide-in / full-screen-on-
+  // mobile technique as Filter and the pricing Confirm, opened explicitly by
+  // the Edit button above rather than always-on as a third column/plane.
+  // Fields scroll; Save/Cancel stay pinned to the bottom — the sticky action
+  // bar pattern the estimator already ships.
+  function editorPanelHTML(){
+    var l = LINES[state.activeLine];
+    return '<div class="sheet-head"><h2>Line editor — '+l.name+'</h2><button class="icon-btn" id="editor-close" aria-label="Close">✕</button></div>'
+      + '<div class="editor-panel">'
+      + '<div class="editor-fields">'
+      + '<div class="field-row"><div class="field"><label>Width (mm)</label><input value="1850"></div><div class="field"><label>Height (mm)</label><input value="1200"></div></div>'
+      + '<div class="field"><label>Configuration</label><select><option>Awning, single sash</option></select></div>'
+      + '<div class="field"><label>Glazing</label><select><option>Double, Low-E, argon</option></select></div>'
+      + '<div class="field"><label>Finish</label><select><option>Powder coat — Ironsand</option></select></div>'
+      + '</div>'
+      + '<div class="editor-footer"><span class="editor-dirty">2 changes on this line</span>'
+      + '<div class="editor-actions"><button class="btn-ghost" id="editor-cancel">Cancel</button><button class="btn-primary" id="editor-save">Save</button></div></div>'
+      + '</div>';
+  }
+  function openEditor(){
+    document.getElementById('editor-scrim').classList.add('on');
+    var panel = document.getElementById('editor-panel');
+    panel.classList.toggle('full', state.size==='mobile');
+    panel.innerHTML = editorPanelHTML();
+    panel.classList.add('on');
+    document.getElementById('editor-close').addEventListener('click', closeEditor);
+    document.getElementById('editor-cancel').addEventListener('click', closeEditor);
+    document.getElementById('editor-save').addEventListener('click', closeEditor);
+    document.addEventListener('keydown', escCloseEditor);
+  }
+  function closeEditor(){
+    document.getElementById('editor-scrim').classList.remove('on');
+    document.getElementById('editor-panel').classList.remove('on');
+    document.removeEventListener('keydown', escCloseEditor);
+  }
+  function escCloseEditor(e){ if(e.key==='Escape') closeEditor(); }
+
+  // Reached by clicking a row in Projects — never its own menu item, same as
+  // the real console (ProjectRecord absorbed the old Quotes workspace and
+  // Orders detail; it was never a separate tab even before that merge).
+  // The titleblock reflects whichever project was actually clicked; the
+  // lines/canvas/editor below are the same representative demo content for
+  // every project — building ten fully-unique work-in-progress states was
+  // out of scope for proving the navigation pattern holds.
+  function renderProjectRecord(){
+    var p = PROJECTS.filter(function(r){ return r.ref===state.projectOpen; })[0];
+    if (!p) { state.projectOpen=null; renderProjects(); return; }
+    var root = document.getElementById('screen-root');
+    root.style.display = 'flex'; root.style.flexDirection = 'column';
+    if (state.size === 'desktop'){
+      var h = titleblockHTML(p);
+      h += '<div class="workspace-body">';
+      h += '<div class="zone">'+railHTML()+'</div>';
+      h += '<div class="zone canvas">'+canvasHeadHTML()+'<div class="composite-wrap">'+compositeSVG()+'</div>'+lensbarHTML()+lensPanelHTML()+'</div>';
+      h += '</div>';
+      root.innerHTML = h;
+    } else {
+      // Two planes now, not three — Edit is the same right-panel-turned-
+      // full-screen used everywhere else, opened from the Edit button in the
+      // Detail plane, not its own place in the segmented control.
+      var planes = {
+        lines:'<div class="rail" style="background:var(--paper)">'+LINES.map(function(l,i){return '<div class="rail-line" data-line="'+i+'" style="min-height:44px" data-goto="detail"><span class="verdict '+l.verdict+'"></span>'+l.name+' <span style="color:var(--text-3)">'+l.kind+'</span></div>';}).join('')+'<div class="rail-foot"><span>Draft total</span><b class="mono">$61,940</b></div></div>',
+        detail:canvasHeadHTML()+'<div class="composite-wrap">'+compositeSVG()+'</div>'+lensbarHTML()+lensPanelHTML()
+      };
+      var h = titleblockHTML(p);
+      h += '<div class="planebar"><div class="segmented" role="tablist" style="flex:1;display:flex;">';
+      ['lines','detail'].forEach(function(pl){
+        var labels={lines:'Lines',detail:LINES[state.activeLine].name};
+        h += '<button role="tab" aria-selected="'+(state.plane===pl)+'" data-plane="'+pl+'" style="flex:1;">'+labels[pl]+'</button>';
+      });
+      h += '</div></div>';
+      h += '<div class="plane-body">'+planes[state.plane]+'</div>';
+      root.innerHTML = h;
+      document.querySelectorAll('[data-plane]').forEach(function(b){ b.addEventListener('click', function(){ state.plane=b.getAttribute('data-plane'); render(); }); });
+      document.querySelectorAll('[data-goto="detail"]').forEach(function(b){ b.addEventListener('click', function(){ state.activeLine=+b.getAttribute('data-line'); state.plane='detail'; render(); }); });
+    }
+    document.getElementById('record-back').addEventListener('click', function(){
+      state.projectOpen=null; state.plane='lines'; state.lensIdx=0; state.activeLine=0; state.stageConfirm=null; render();
+    });
+    document.querySelectorAll('[data-lens]').forEach(function(b){ b.addEventListener('click', function(){ state.lensIdx=+b.getAttribute('data-lens'); render(); }); });
+    document.querySelectorAll('.rail [data-line]').forEach(function(b){ b.addEventListener('click', function(){ state.activeLine=+b.getAttribute('data-line'); render(); }); });
+    var openEditorBtn = document.getElementById('open-editor');
+    if (openEditorBtn) openEditorBtn.addEventListener('click', openEditor);
+    var stageActionBtn = document.getElementById('stage-action');
+    if (stageActionBtn) stageActionBtn.addEventListener('click', function(){ state.stageConfirm = nextActionFor(p); render(); });
+    var stageCancelBtn = document.getElementById('stage-cancel');
+    if (stageCancelBtn) stageCancelBtn.addEventListener('click', function(){ state.stageConfirm = null; render(); });
+    var stageConfirmBtn = document.getElementById('stage-confirm');
+    if (stageConfirmBtn) stageConfirmBtn.addEventListener('click', function(){
+      p.stage = state.stageConfirm.toStage;
+      // Advancing to the next stage is also, itself, the resolution of
+      // "waiting on us" for stages we drive — the customer or nobody holds
+      // it from here until the next thing ops needs to do.
+      p.waiting = (p.stage==='Delivered') ? 'Nobody' : (p.stage==='Awaiting customer' ? 'Customer' : p.waiting);
+      p.days = 0;
+      state.stageConfirm = null;
+      render();
+    });
+  }
+
+  /* ---------------- DASHBOARD ---------------- */
+  var NEEDS_US = [
+    {count:5, text:'quotes need pricing', screen:'projects'},
+    {count:2, text:'quotes are priced and ready to issue', screen:'projects'},
+    {count:1, text:'order is awaiting payment', screen:'projects'},
+    {count:2, text:'enquiries nobody has replied to', screen:'enquiries'}
+  ];
+  function renderDashboard(){
+    var html = '<div class="pagehead"><div class="eyebrow">Overview</div><h1>Dashboard</h1></div>';
+    html += '<div class="dash-wrap">';
+    html += '<p class="eyebrow" style="margin:0 0 8px;">Needs us</p>';
+    if (NEEDS_US.length===0) {
+      html += '<div class="needs-empty"><p>Nothing is waiting on us.</p><span>New submissions and enquiries appear here.</span></div>';
+    } else {
+      html += '<div class="needs-card">';
+      NEEDS_US.forEach(function(n){
+        html += '<button class="needs-row" data-goto-screen="'+n.screen+'"><span class="n">'+n.count+'</span><span class="t">'+n.text+'</span><span class="go">Open →</span></button>';
+      });
+      html += '</div>';
+    }
+    html += '<p class="eyebrow" style="margin:0 0 8px;">The shop</p>';
+    html += '<div class="stat-row"><div class="stat-cell"><div class="k">Active orders</div><div class="v mono">14</div></div><div class="stat-cell"><div class="k">Customers</div><div class="v mono">62</div></div></div>';
+    html += '</div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.querySelectorAll('[data-goto-screen]').forEach(function(b){
+      b.addEventListener('click', function(){ state.screen=b.getAttribute('data-goto-screen'); render(); });
+    });
+  }
+
+  /* ---------------- CUSTOMERS ---------------- */
+  // No filter chips here at all, matching the real screen — it's a searchable
+  // list with nothing to disclose, not a smaller version of Projects.
+  var CUSTOMERS = [
+    {name:'Rangi Waititi', company:null, email:'rangi.w@gmail.com', phone:'021 555 0142', type:'Individual', projects:2, orders:1, joined:'12 Mar 2025'},
+    {name:'Chen Property Group', company:'Chen Property Group', email:'dev@chenproperty.co.nz', phone:'09 555 0110', type:'Company', projects:5, orders:3, joined:'3 Jan 2024'},
+    {name:'Amara Singh', company:null, email:'amara.singh@outlook.com', phone:'027 555 0198', type:'Individual', projects:1, orders:0, joined:'22 Jun 2025'},
+    {name:'Kōwhai Developments', company:'Kōwhai Developments', email:'projects@kowhaidev.co.nz', phone:'09 555 0177', type:'Company', projects:3, orders:2, joined:'14 Nov 2023'},
+    {name:'Marlene Ah Kuoi', company:null, email:'marlene.ak@xtra.co.nz', phone:'022 555 0163', type:'Individual', projects:1, orders:1, joined:'8 Aug 2024'},
+    {name:'Whitmore Family Trust', company:'Whitmore Family Trust', email:'trust@whitmorefam.nz', phone:'09 555 0125', type:'Trust', projects:2, orders:1, joined:'30 Apr 2025'}
+  ];
+  function renderCustomers(){
+    if (state.customerOpen!=null) { renderCustomerDetail(); return; }
+    var html = '<div class="pagehead"><div class="eyebrow">Directory</div><h1>Customers <span class="count">'+CUSTOMERS.length+'</span></h1></div>';
+    html += '<div class="controlrow"><div class="spacer-flex"></div>';
+    html += '<div class="search-wrap"><input class="search-input" id="cust-search" placeholder="name, company, email…"></div>';
+    html += '<button class="icon-btn" id="cust-search-toggle" aria-label="Search">'+svgIcon('search')+'</button></div>';
+    if (state.size==='desktop'){
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr><th>Name</th><th>Type</th><th>Contact</th><th class="num">Projects</th><th class="num">Orders</th><th>Joined</th></tr></thead><tbody>';
+      CUSTOMERS.forEach(function(c,i){
+        html += '<tr data-customer="'+i+'"><td><div class="cell-title">'+c.name+'</div>'+(c.company?'<div class="cell-sub">'+c.company+'</div>':'')+'</td>';
+        html += '<td>'+c.type+'</td><td>'+c.email+'<div class="cell-sub">'+c.phone+'</div></td>';
+        html += '<td class="num mono">'+c.projects+'</td><td class="num mono">'+c.orders+'</td><td class="mono">'+c.joined+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="cardlist">';
+      CUSTOMERS.forEach(function(c,i){
+        html += '<div class="card-row" data-customer="'+i+'"><div class="card-top"><div><div class="card-title">'+c.name+'</div><div class="card-sub">'+(c.company||c.type)+'</div></div></div>';
+        html += '<div class="card-sub">'+c.email+' · '+c.phone+'</div>';
+        html += '<div class="card-bottom"><div class="card-meta">'+c.projects+' project'+(c.projects===1?'':'s')+' · '+c.orders+' order'+(c.orders===1?'':'s')+'</div><span class="cell-sub">since '+c.joined+'</span></div></div>';
+      });
+      html += '</div>';
+    }
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.getElementById('cust-search-toggle').addEventListener('click', function(){
+      var i = document.getElementById('cust-search'); i.classList.toggle('open'); if (i.classList.contains('open')) i.focus();
+    });
+    document.querySelectorAll('[data-customer]').forEach(function(el){
+      el.addEventListener('click', function(){ state.customerOpen = +el.getAttribute('data-customer'); render(); });
+    });
+  }
+
+  function renderCustomerDetail(){
+    var c = CUSTOMERS[state.customerOpen];
+    if (state.custEmailDraft==null) state.custEmailDraft = c.email;
+    var dirty = state.custEmailDraft !== c.email;
+    var html = '<div class="pagehead">';
+    html += '<button class="icon-btn" id="cust-back" aria-label="Back to Customers" style="margin-bottom:8px;">'+svgIcon('back')+'</button>';
+    html += '<div class="eyebrow">'+c.type+'</div><h1>'+c.name+'</h1>';
+    if (c.company) html += '<p style="color:var(--text-3);font-size:12.5px;margin:2px 0 0;">'+c.company+'</p>';
+    html += '</div>';
+    html += '<div class="settings-wrap">';
+    html += '<div class="settings-block"><div class="lbl">Contact</div>';
+    html += '<div class="kv-row"><span class="k">Phone</span><span class="v mono"><a href="tel:'+c.phone+'" style="color:inherit;">'+c.phone+'</a></span></div>';
+    html += '<div class="kv-row"><span class="k">Type</span><span class="v">'+c.type+'</span></div>';
+    html += '<div class="kv-row" style="border-bottom:0;"><span class="k">Customer since</span><span class="v mono">'+c.joined+'</span></div></div>';
+    html += '<div class="settings-block"><div class="lbl">Sign-in email</div>';
+    html += '<div class="field"><input id="cust-email-input" value="'+state.custEmailDraft+'"></div>';
+    html += '<p class="help">The customer signs in with the new address from their next login. Opening this record is logged.</p></div>';
+    html += '<div class="stat-row"><div class="stat-cell"><div class="k">Projects</div><div class="v mono">'+c.projects+'</div></div><div class="stat-cell"><div class="k">Orders</div><div class="v mono">'+c.orders+'</div></div></div>';
+    if (dirty) html += '<div style="margin-top:16px;"><button class="btn-primary" id="cust-email-save">Save sign-in email</button> <button class="btn-ghost" id="cust-email-discard">Discard</button></div>';
+    html += '</div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.getElementById('cust-back').addEventListener('click', function(){ state.customerOpen=null; state.custEmailDraft=null; render(); });
+    document.getElementById('cust-email-input').addEventListener('input', function(e){ state.custEmailDraft=e.target.value; render(); });
+    if (dirty){
+      document.getElementById('cust-email-save').addEventListener('click', function(){ c.email=state.custEmailDraft; render(); });
+      document.getElementById('cust-email-discard').addEventListener('click', function(){ state.custEmailDraft=null; render(); });
+    }
+  }
+
+  /* ---------------- ENQUIRIES ---------------- */
+  var ENQUIRIES = [
+    {ref:'EQ-3391', type:'Question', customer:'Priya Nair', location:null, submitted:'2d ago', owner:null, status:'New'},
+    {ref:'EQ-3388', type:'Appointment', customer:'Tom Baxter', location:'Ellerslie', submitted:'4d ago', owner:'GB', status:'Confirmed'},
+    {ref:'EQ-3379', type:'Question', customer:'Lianne Fox', location:null, submitted:'6d ago', owner:null, status:'Contacted'},
+    {ref:'EQ-3364', type:'Appointment', customer:'Marcus Reid', location:'Hamilton', submitted:'9d ago', owner:'DH', status:'Completed'},
+    {ref:'EQ-3350', type:'Question', customer:'Aroha Ngata', location:null, submitted:'13d ago', owner:'GB', status:'Closed'},
+    {ref:'EQ-3341', type:'Appointment', customer:'Sione Taufa', location:'Manukau', submitted:'15d ago', owner:null, status:'No-show'}
+  ];
+  var ENQ_TABS = [
+    {id:'all', label:'All', test:function(){return true;}},
+    {id:'new', label:'New', test:function(e){return e.status==='New';}},
+    {id:'question', label:'Question', test:function(e){return e.type==='Question';}},
+    {id:'appointment', label:'Appointment', test:function(e){return e.type==='Appointment';}},
+    {id:'contacted', label:'Contacted', test:function(e){return e.status==='Contacted';}},
+    {id:'closed', label:'Closed', test:function(e){return e.status==='Closed';}}
+  ];
+  var ENQ_PRIMARY = ENQ_TABS.slice(0,2);
+  var ENQ_SECONDARY = ENQ_TABS.slice(2);
+
+  function renderEnquiries(){
+    if (state.enquiryOpen) { renderEnquiryDetail(); return; }
+    var tab = ENQ_TABS.filter(function(t){return t.id===state.enqTab;})[0];
+    var rows = ENQUIRIES.filter(tab.test);
+    var activeIsSecondary = ENQ_SECONDARY.indexOf(tab) !== -1;
+
+    var html = '<div class="pagehead"><div class="eyebrow">Leads</div><h1>Enquiries <span class="count">'+ENQUIRIES.length+'</span></h1></div>';
+    html += '<div class="controlrow"><div class="segmented" role="tablist">';
+    ENQ_PRIMARY.forEach(function(t){
+      html += '<button role="tab" aria-selected="'+(state.enqTab===t.id)+'" data-enq-primary="'+t.id+'">'+t.label+'</button>';
+    });
+    html += '</div>';
+    html += '<button class="filter-chip" id="enq-filter-chip">'+svgIcon('filter')+'<span>'+(activeIsSecondary?tab.label:'More filters')+'</span></button>';
+    html += '<div class="spacer-flex"></div></div>';
+    html += '<div class="meta-line">'+rows.length+' of '+ENQUIRIES.length+'</div>';
+
+    if (state.size==='desktop'){
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr><th>Ref</th><th>Type</th><th>Customer</th><th>Location</th><th>Submitted</th><th>Owner</th><th>Status</th></tr></thead><tbody>';
+      rows.forEach(function(e){
+        html += '<tr data-enquiry="'+e.ref+'"><td class="mono">'+e.ref+'</td><td>'+e.type+'</td><td>'+e.customer+'</td><td>'+(e.location||'—')+'</td>';
+        html += '<td class="cell-sub">'+e.submitted+'</td><td>'+(e.owner||'<span class="cell-sub">unassigned</span>')+'</td><td><span class="stage-badge">'+e.status+'</span></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="cardlist">';
+      rows.forEach(function(e){
+        html += '<div class="card-row" data-enquiry="'+e.ref+'"><div class="card-top"><div><div class="card-title">'+e.customer+'</div><div class="card-sub mono">'+e.ref+' · '+e.type+'</div></div><span class="stage-badge">'+e.status+'</span></div>';
+        html += '<div class="card-bottom"><div class="card-meta">'+(e.location?e.location+' · ':'')+e.submitted+'</div><span class="cell-sub">'+(e.owner||'unassigned')+'</span></div></div>';
+      });
+      html += '</div>';
+    }
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.querySelectorAll('[data-enq-primary]').forEach(function(b){
+      b.addEventListener('click', function(){ state.enqTab=b.getAttribute('data-enq-primary'); render(); });
+    });
+    document.getElementById('enq-filter-chip').addEventListener('click', function(){ openSheet('enquiries'); });
+    if (state.sheetOpen && state.sheetKind==='enquiries') renderSheetOptions();
+    document.querySelectorAll('[data-enquiry]').forEach(function(el){
+      el.addEventListener('click', function(){ state.enquiryOpen = el.getAttribute('data-enquiry'); render(); });
+    });
+  }
+
+  var ENQ_WORKFLOW = ['New','Assigned','In progress','Waiting on customer','Closed'];
+  function renderEnquiryDetail(){
+    var e = ENQUIRIES.filter(function(r){ return r.ref===state.enquiryOpen; })[0];
+    var isAppt = e.type==='Appointment';
+    var html = '<div class="pagehead">';
+    html += '<button class="icon-btn" id="enq-back" aria-label="Back to Enquiries" style="margin-bottom:8px;">'+svgIcon('back')+'</button>';
+    html += '<div class="eyebrow">'+e.ref+' · '+e.type+'</div><h1>'+e.customer+'</h1>';
+    html += '<p style="color:var(--text-3);font-size:12.5px;margin:4px 0 0;">Submitted '+e.submitted+(e.owner?' · owner '+e.owner:' · unassigned')+'</p>';
+    html += '</div>';
+    html += '<div class="settings-wrap" style="max-width:560px;">';
+    html += '<div class="settings-block"><div class="lbl">'+(isAppt?'Appointment':'Question')+'</div>';
+    if (isAppt) {
+      html += '<div class="kv-row"><span class="k">Showroom</span><span class="v">'+(e.location||'—')+'</span></div>';
+      html += '<div class="kv-row" style="border-bottom:0;"><span class="k">Status</span><span class="v">'+e.status+'</span></div>';
+    } else {
+      html += '<p class="help" style="margin-top:0;">Asking about lead times for a renovation quote — no product specified yet.</p>';
+    }
+    html += '</div>';
+    html += '<div class="settings-block"><div class="lbl">Workflow status</div>';
+    html += '<div class="field" style="max-width:220px;"><select id="enq-status">';
+    ENQ_WORKFLOW.forEach(function(w){ html += '<option'+(w.toLowerCase()===e.status.toLowerCase()?' selected':'')+'>'+w+'</option>'; });
+    html += '</select></div></div>';
+    if (e.owner==null) html += '<button class="btn-primary" id="enq-assign">Assign to me</button>';
+    html += '</div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.getElementById('enq-back').addEventListener('click', function(){ state.enquiryOpen=null; render(); });
+    document.getElementById('enq-status').addEventListener('change', function(ev){ e.status = ev.target.value; render(); });
+    var assignBtn = document.getElementById('enq-assign');
+    if (assignBtn) assignBtn.addEventListener('click', function(){ e.owner='GB'; render(); });
+  }
+
+  /* ---------------- PRICING ---------------- */
+  var PRICING_SUBS = [
+    {id:'rate-cards', label:'Rate cards'}, {id:'options', label:'Options'},
+    {id:'policy', label:'Policy'}, {id:'catalogue', label:'Catalogue'}
+  ];
+  var RATECARDS = [
+    {slug:'amj100-series-awning-window', name:'AMJ100 Series Awning Window', perim:55, area:340, min:0, rules:1, example:750, version:'v1'},
+    {slug:'amj100-series-casement-door', name:'AMJ100 Series Casement Door', perim:95, area:460, min:0, rules:1, example:1120, version:'v1'},
+    {slug:'amj100-series-sliding-door', name:'AMJ100 Series Sliding Door', perim:85, area:420, min:0, rules:1, example:1010, version:'v1'},
+    {slug:'amj100-series-pivot-door', name:'AMJ100 Series Pivot Door', perim:160, area:640, min:0, rules:1, example:1690, version:'v1'},
+    {slug:'amj100l-series-fixed-window', name:'AMJ100L Series Fixed Window', perim:45, area:300, min:0, rules:1, example:650, version:'v1-provisional'}
+  ];
+  var OPTIONS = [
+    {slug:'glazing-double-lowe-argon', label:'Double glazed, Low-E, argon fill', family:'Glazing', surcharge:0},
+    {slug:'glazing-triple-lowe-argon', label:'Triple glazed, Low-E, argon fill', family:'Glazing', surcharge:180},
+    {slug:'finish-powdercoat-ironsand', label:'Powder coat — Ironsand', family:'Finish', surcharge:45},
+    {slug:'finish-powdercoat-custom', label:'Powder coat — custom colour', family:'Finish', surcharge:95},
+    {slug:'hardware-multipoint-lock', label:'Multi-point locking', family:'Hardware', surcharge:120}
+  ];
+
+  function renderPricing(){
+    var html = '<div class="pagehead"><div class="eyebrow">D1 commercial layer</div><h1>Pricing</h1></div>';
+    html += '<div class="banner"><span>Pricing has never been checked against the catalogue.</span><a href="#" id="pricing-check">Check now</a></div>';
+    html += '<div class="subtabs" role="tablist">';
+    PRICING_SUBS.forEach(function(s){
+      html += '<button role="tab" aria-selected="'+(state.pricingSub===s.id)+'" data-sub="'+s.id+'">'+s.label+'</button>';
+    });
+    html += '</div><div id="pricing-sub-root"></div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.querySelectorAll('[data-sub]').forEach(function(b){
+      b.addEventListener('click', function(){ state.pricingSub=b.getAttribute('data-sub'); state.rateCardOpen=null; render(); });
+    });
+    if (state.pricingSub==='rate-cards') { if (state.rateCardOpen) renderRateCardDetail(); else renderRateCardsList(); }
+    else if (state.pricingSub==='options') renderOptionsList();
+    else if (state.pricingSub==='policy') renderPolicy();
+    else renderCatalogue();
+  }
+
+  function renderRateCardsList(){
+    var sub = document.getElementById('pricing-sub-root');
+    var html = '';
+    if (state.size==='desktop'){
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr><th>Product</th><th class="num">Perim $/m</th><th class="num">Area $/m²</th><th class="num">Min $</th><th class="num">Rules</th><th class="num">Example</th><th>Ver</th></tr></thead><tbody>';
+      RATECARDS.forEach(function(r){
+        html += '<tr data-rc="'+r.slug+'"><td><div class="cell-title">'+r.name+'</div><div class="cell-sub mono">'+r.slug+'</div></td>';
+        html += '<td class="num mono">'+r.perim.toFixed(2)+'</td><td class="num mono">'+r.area.toFixed(2)+'</td><td class="num mono">'+r.min+'</td>';
+        html += '<td class="num mono">'+r.rules+'</td><td class="num mono">$'+r.example.toLocaleString()+'</td><td class="cell-sub mono">'+r.version+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="cardlist">';
+      RATECARDS.forEach(function(r){
+        html += '<div class="card-row" data-rc="'+r.slug+'"><div class="card-top"><div><div class="card-title">'+r.name+'</div><div class="card-sub mono">'+r.slug+'</div></div><div class="card-value">$'+r.example.toLocaleString()+'</div></div>';
+        html += '<div class="card-bottom"><div class="card-meta">$'+r.perim.toFixed(0)+'/m · $'+r.area.toFixed(0)+'/m² · '+r.rules+' rule'+(r.rules===1?'':'s')+'</div><span class="cell-sub mono">'+r.version+'</span></div></div>';
+      });
+      html += '</div>';
+    }
+    sub.innerHTML = html;
+    sub.querySelectorAll('[data-rc]').forEach(function(el){
+      el.style.cursor='pointer';
+      el.addEventListener('click', function(){ state.rateCardOpen=el.getAttribute('data-rc'); state.rcDraft=null; render(); });
+    });
+  }
+
+  function renderRateCardDetail(){
+    var sub = document.getElementById('pricing-sub-root');
+    var rc = RATECARDS.filter(function(r){return r.slug===state.rateCardOpen;})[0];
+    if (!state.rcDraft) state.rcDraft = {perim:rc.perim, area:rc.area, min:rc.min};
+    var dirty = state.rcDraft.perim!==rc.perim || state.rcDraft.area!==rc.area || state.rcDraft.min!==rc.min;
+    var typical = Math.round((state.rcDraft.perim*4.8 + state.rcDraft.area*1.44 + state.rcDraft.min)/10)*10;
+
+    var html = '<div class="editor-panel">';
+    html += '<div class="editor-fields" style="padding:16px 20px;">';
+    html += '<button class="icon-btn" id="rc-back" aria-label="Back" style="margin-bottom:8px;">'+svgIcon('back')+'</button>';
+    html += '<h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--text-1);font-weight:800;">'+rc.name+' <span class="cell-sub mono" style="font-weight:500;">'+rc.version+'</span></h3>';
+    html += '<div class="field-row" style="margin-top:14px;"><div class="field"><label>Perimeter rate $/m</label><input type="number" id="rc-perim" value="'+state.rcDraft.perim+'"></div><div class="field"><label>Area rate $/m²</label><input type="number" id="rc-area" value="'+state.rcDraft.area+'"></div></div>';
+    html += '<div class="field" style="max-width:200px;"><label>Minimum charge $</label><input type="number" id="rc-min" value="'+state.rcDraft.min+'"></div>';
+    html += '<div class="kv-row" style="border:0;margin-top:8px;"><span class="k">Typical 1200×1200 example</span><span class="v mono">$'+typical.toLocaleString()+'</span></div>';
+    html += '</div>';
+    if (dirty){
+      html += '<div class="editor-footer"><span class="editor-dirty">Unsaved changes</span><div class="editor-actions"><button class="btn-ghost" id="rc-discard">Discard</button><button class="btn-primary" id="rc-review">Review change →</button></div></div>';
+    }
+    html += '</div>';
+    sub.innerHTML = html;
+    sub.parentElement.style.overflow = dirty ? 'hidden' : 'auto';
+    sub.parentElement.style.display = dirty ? 'flex' : 'block';
+    sub.parentElement.style.flexDirection = 'column';
+    sub.parentElement.style.minHeight = '0';
+    sub.style.flex = dirty ? '1' : '';
+    sub.style.minHeight = dirty ? '0' : '';
+
+    document.getElementById('rc-back').addEventListener('click', function(){ state.rateCardOpen=null; state.rcDraft=null; render(); });
+    ['perim','area','min'].forEach(function(k){
+      document.getElementById('rc-'+k).addEventListener('input', function(e){ state.rcDraft[k] = Number(e.target.value)||0; render(); });
+    });
+    if (dirty){
+      document.getElementById('rc-discard').addEventListener('click', function(){ state.rcDraft=null; render(); });
+      document.getElementById('rc-review').addEventListener('click', function(){ openConfirm(rc); });
+    }
+  }
+
+  function renderOptionsList(){
+    var sub = document.getElementById('pricing-sub-root');
+    var html = '';
+    if (state.size==='desktop'){
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr><th>Option</th><th>Family</th><th class="num">Surcharge</th></tr></thead><tbody>';
+      OPTIONS.forEach(function(o){
+        html += '<tr><td><div class="cell-title">'+o.label+'</div><div class="cell-sub mono">'+o.slug+'</div></td><td>'+o.family+'</td><td class="num mono">'+(o.surcharge?'+$'+o.surcharge:'—')+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="cardlist">';
+      OPTIONS.forEach(function(o){
+        html += '<div class="card-row"><div class="card-top"><div><div class="card-title">'+o.label+'</div><div class="card-sub">'+o.family+'</div></div><div class="card-value">'+(o.surcharge?'+$'+o.surcharge:'—')+'</div></div></div>';
+      });
+      html += '</div>';
+    }
+    sub.innerHTML = html;
+  }
+
+  function renderPolicy(){
+    var sub = document.getElementById('pricing-sub-root');
+    if (state.depositDraft==null) state.depositDraft = 20;
+    var dirty = state.depositDraft !== 20;
+    var html = '<div class="settings-wrap">';
+    html += '<div class="settings-block"><div class="lbl">Deposit</div>';
+    html += '<div class="field" style="max-width:140px;"><input type="number" id="deposit-input" value="'+state.depositDraft+'"></div>';
+    html += '<p class="help">A $10,000 order asks for $'+(10000*state.depositDraft/100).toLocaleString()+' up front. Changing this does not alter deposits already requested on existing orders.</p></div>';
+    html += '<div class="settings-block"><div class="lbl">GST</div>';
+    html += '<p class="help">Prices are stored GST-inclusive. Whether a customer sees "inc GST" or "ex GST" is their own account preference — the GST rate itself can\'t be changed from this screen.</p></div>';
+    if (dirty) html += '<button class="btn-primary" id="deposit-save">Save deposit %</button>';
+    html += '</div>';
+    sub.innerHTML = html;
+    document.getElementById('deposit-input').addEventListener('input', function(e){ state.depositDraft = Number(e.target.value)||0; render(); });
+    if (dirty) document.getElementById('deposit-save').addEventListener('click', function(){ state.depositDraft = state.depositDraft; render(); });
+  }
+
+  function renderCatalogue(){
+    var sub = document.getElementById('pricing-sub-root');
+    sub.innerHTML = '<div class="settings-wrap"><div class="settings-block"><div class="lbl">The boundary</div>'
+      + '<p class="help">Product names, descriptions, images and which options a product offers are edited in the design studio. What anything costs is edited on the other three tabs here. Both editors can be checked against that sentence in five seconds, which is the point of writing it down.</p></div></div>';
+  }
+
+  // Confirm panel — a separate overlay from the filter sheet (different shape
+  // of content: deltas, a tripwire, a pinned Save/Cancel — not a list of
+  // options), but the same right-slide-in / full-screen-on-mobile technique.
+  function openConfirm(rc){
+    state.confirmFor = rc.slug;
+    var d = document.getElementById('confirm-panel');
+    d.classList.toggle('full', state.size==='mobile');
+    document.getElementById('confirm-scrim').classList.add('on');
+    d.classList.add('on');
+    renderConfirmPanel(rc);
+    document.addEventListener('keydown', escCloseConfirm);
+  }
+  function closeConfirm(){
+    document.getElementById('confirm-scrim').classList.remove('on');
+    document.getElementById('confirm-panel').classList.remove('on');
+    document.removeEventListener('keydown', escCloseConfirm);
+  }
+  function escCloseConfirm(e){ if(e.key==='Escape') closeConfirm(); }
+  function renderConfirmPanel(rc){
+    var d = state.rcDraft;
+    var pct = Math.round(Math.max(Math.abs((d.perim-rc.perim)/(rc.perim||1)), Math.abs((d.area-rc.area)/(rc.area||1)))*100);
+    var tripwire = pct > 20;
+    var html = '<div class="sheet-head"><h2>Review pricing change</h2><button class="icon-btn" id="confirm-close" aria-label="Close">✕</button></div>';
+    html += '<div class="sheet-body">';
+    html += '<div class="kv-row"><span class="k">Perimeter rate</span><span class="v mono">$'+rc.perim.toFixed(2)+' → $'+d.perim.toFixed(2)+'</span></div>';
+    html += '<div class="kv-row"><span class="k">Area rate</span><span class="v mono">$'+rc.area.toFixed(2)+' → $'+d.area.toFixed(2)+'</span></div>';
+    html += '<div class="kv-row"><span class="k">Minimum charge</span><span class="v mono">$'+rc.min+' → $'+d.min+'</span></div>';
+    html += '<p style="font-size:12.5px;color:var(--text-2);margin-top:14px;line-height:1.6;">Takes effect immediately for every new quote line on this product. It does <strong>not</strong> change quotes already issued, or any order.</p>';
+    if (tripwire){
+      html += '<div style="margin-top:14px;padding:10px 12px;border-radius:7px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;">This is a '+pct+'% change. Type the product slug to confirm.<input id="confirm-typed" style="width:100%;margin-top:8px;height:36px;border:1px solid var(--line-strong);border-radius:6px;padding:0 10px;background:var(--surface);color:var(--text-1);" placeholder="'+rc.slug+'"></div>';
+    }
+    html += '</div>';
+    html += '<div class="sheet-foot" style="border-top:1px solid var(--line);"><div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn-ghost" id="confirm-cancel">Cancel</button><button class="btn-primary" id="confirm-save">Save new rates</button></div></div>';
+    document.getElementById('confirm-panel').innerHTML = html;
+    document.getElementById('confirm-close').addEventListener('click', closeConfirm);
+    document.getElementById('confirm-cancel').addEventListener('click', closeConfirm);
+    document.getElementById('confirm-save').addEventListener('click', function(){
+      rc.perim = d.perim; rc.area = d.area; rc.min = d.min;
+      state.rcDraft = null; closeConfirm(); render();
+    });
+  }
+
+  /* ---------------- FILES ---------------- */
+  var FILES = [
+    {name:'Northcote-elevations-r3.pdf', project:'Northcote Renovation', size:'2.4 MB', kind:'Drawing', scan:'clean'},
+    {name:'Ellerslie-schedule.xlsx', project:'Ellerslie Spec Build', size:'640 KB', kind:'Schedule', scan:'clean'},
+    {name:'site-photo-042.jpg', project:'St Heliers Extension', size:'3.1 MB', kind:'Photo', scan:'scanning'},
+    {name:'contract-signed.pdf', project:'Ponsonby Villa Restore', size:'1.8 MB', kind:'Contract', scan:'clean'},
+    {name:'invoice-draft-v2.pdf', project:'Devonport Boatshed', size:'210 KB', kind:'Invoice', scan:'infected'}
+  ];
+  function renderFiles(){
+    var html = '<div class="pagehead"><div class="eyebrow">Uploads</div><h1>Files <span class="count">'+FILES.length+'</span></h1></div>';
+    if (state.size==='desktop'){
+      html += '<div class="ledger-wrap"><table class="ledger"><thead><tr><th>File</th><th>Project</th><th class="num">Size</th><th>Scan</th><th></th></tr></thead><tbody>';
+      FILES.forEach(function(f){
+        html += '<tr><td><div class="cell-title">'+f.name+'</div><div class="cell-sub">'+f.kind+'</div></td><td>'+f.project+'</td><td class="num mono">'+f.size+'</td>';
+        html += '<td>'+scanBadge(f.scan)+'</td><td>'+scanAction(f.scan)+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      // A genuine mobile card treatment — the real app's own comment admits
+      // this is still pending there ("overflow-x-auto is containment, not a
+      // design"). No horizontal scroll here, ever, is the whole point of
+      // this pass, so the mock doesn't get to inherit that gap.
+      html += '<div class="cardlist">';
+      FILES.forEach(function(f){
+        html += '<div class="card-row"><div class="card-top"><div><div class="card-title">'+f.name+'</div><div class="card-sub">'+f.project+' · '+f.size+'</div></div>'+scanBadge(f.scan)+'</div>';
+        html += '<div class="card-bottom">'+scanAction(f.scan)+'</div></div>';
+      });
+      html += '</div>';
+    }
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+  }
+  function scanBadge(s){
+    var tone = s==='clean' ? '' : s==='infected' ? 'background:var(--critical-soft);color:var(--critical);' : 'background:var(--warn-soft);color:var(--warn);';
+    return '<span class="stage-badge" style="'+tone+(s==='clean'?'background:var(--surface-3);color:var(--text-2);':'')+'">'+s+'</span>';
+  }
+  function scanAction(s){
+    if (s==='clean') return '<span class="mono" style="color:var(--accent);font-size:12.5px;font-weight:700;">Download</span>';
+    if (s==='infected') return '<span class="cell-sub">Blocked</span>';
+    return '<span class="cell-sub">Scanning…</span>';
+  }
+
+  /* ---------------- AUDIT ---------------- */
+  var AUDIT_EVENTS = [
+    {entity:'project', action:'opened the customer record', actor:'GB', when:'2m ago'},
+    {entity:'order', action:'advanced OF-Q-10388 to Production', actor:'DH', when:'18m ago'},
+    {entity:'user', action:"changed Priya Nair's role to estimator", actor:'GB', when:'1h ago'},
+    {entity:'project', action:'issued revision 2 on Northcote Renovation', actor:'GB', when:'3h ago'},
+    {entity:'order', action:'recorded a $12,400 payment on SO-8790', actor:'DH', when:'5h ago'},
+    {entity:'project', action:'downloaded Ellerslie-schedule.xlsx', actor:'GB', when:'yesterday'},
+    {entity:'user', action:'signed in', actor:'DH', when:'yesterday'},
+    {entity:'project', action:'requested clarification on St Heliers Extension', actor:'GB', when:'2 days ago'}
+  ];
+  var AUDIT_FILTERS = [{id:'', label:'All'}, {id:'project', label:'Project'}, {id:'order', label:'Order'}, {id:'user', label:'User'}];
+  function renderAudit(){
+    var rows = AUDIT_EVENTS.filter(function(e){ return !state.auditFilter || e.entity===state.auditFilter; });
+    var html = '<div class="pagehead"><div class="eyebrow">Event log</div><h1>Audit</h1></div>';
+    html += '<div class="chip-wrap">';
+    AUDIT_FILTERS.forEach(function(f){
+      html += '<button aria-selected="'+(state.auditFilter===f.id)+'" data-audit-filter="'+f.id+'">'+f.label+'</button>';
+    });
+    html += '</div>';
+    html += '<div class="list-rows">';
+    rows.forEach(function(e){
+      html += '<div class="list-row"><span class="ent">'+e.entity+'</span><span class="act">'+e.action+'</span><span class="who">'+e.actor+' · '+e.when+'</span></div>';
+    });
+    html += '</div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.querySelectorAll('[data-audit-filter]').forEach(function(b){
+      b.addEventListener('click', function(){ state.auditFilter=b.getAttribute('data-audit-filter'); render(); });
+    });
+  }
+
+  /* ---------------- ADMIN ---------------- */
+  var STAFF = [
+    {name:'Gediminas Bereznevicius', email:'ged@openframe.com.au', role:'admin'},
+    {name:'Doni Haziraj', email:'doni@openframe.com.au', role:'admin'},
+    {name:'Priya Nair', email:'priya@openframe.com.au', role:'estimator'},
+    {name:'Amara Fale', email:'amara@openframe.com.au', role:'technical_reviewer'}
+  ];
+  var ROLES = ['admin','estimator','technical_reviewer','manager'];
+  function renderAdmin(){
+    var html = '<div class="pagehead"><div class="eyebrow">Access</div><h1>Admin</h1></div>';
+    html += '<div class="settings-wrap" style="max-width:600px;">';
+    html += '<p style="font-size:12.5px;color:var(--text-2);margin:0 0 4px;">Staff &amp; roles. Only admins can change roles.</p>';
+    html += '<p class="help" style="margin-bottom:16px;">Only <strong>Admin</strong> changes what someone can do on this screen — role changes and editing a customer\'s sign-in email. Other roles are labels and don\'t restrict access.</p>';
+    html += '<div class="staff-card">';
+    STAFF.forEach(function(s, i){
+      html += '<div class="staff-row"><div class="who"><div class="name">'+s.name+'</div><div class="email">'+s.email+'</div></div>';
+      html += '<select data-staff="'+i+'">';
+      ROLES.forEach(function(r){ html += '<option value="'+r+'"'+(r===s.role?' selected':'')+'>'+r+'</option>'; });
+      html += '</select></div>';
+    });
+    html += '</div></div>';
+    var root = document.getElementById('screen-root');
+    root.innerHTML = html; root.style.display='flex'; root.style.flexDirection='column';
+    document.querySelectorAll('[data-staff]').forEach(function(sel){
+      sel.addEventListener('change', function(){ STAFF[+sel.getAttribute('data-staff')].role = sel.value; });
+    });
+  }
+
+  /* ---------------- MAIN NAV: sidebar (desktop) + drawer (mobile) ---------------- */
+  // One content function, two mount points — same reasoning the real
+  // OpsLogo/nav share between the rail and MobileNav: the two surfaces
+  // should teach the same map, not two different ones.
+  function navContentHTML(forDrawer){
+    var h = '<div class="sidebar-brand">';
+    h += '<span class="brand">OpenFrame <small>Ops</small></span>';
+    if (forDrawer) h += '<button class="icon-btn" id="drawer-close" aria-label="Close menu" style="color:rgba(255,255,255,.6);">'+svgIcon('close')+'</button>';
+    h += '</div>';
+    h += '<nav class="sidebar-nav">';
+    NAV_ITEMS.forEach(function(n){
+      h += '<button class="sidebar-item" aria-current="'+(state.screen===n.id)+'" data-nav="'+n.id+'">'+svgIcon(n.icon)+'<span>'+n.label+'</span></button>';
+    });
+    h += '</nav>';
+    h += '<div class="sidebar-foot"><div class="who"><div class="name">Gediminas Bereznevicius</div><div class="email">ged@openframe.com.au</div></div>';
+    h += '<button id="'+(forDrawer?'drawer-signout':'sidebar-signout')+'">'+svgIcon('signout')+'Sign out</button></div>';
+    return h;
+  }
+  function renderSidebar(){
+    document.getElementById('sidebar').innerHTML = navContentHTML(false);
+    document.getElementById('nav-drawer').innerHTML = navContentHTML(true);
+    document.querySelectorAll('[data-nav]').forEach(function(b){
+      b.addEventListener('click', function(){
+        closeSheet(); closeConfirm(); closeDrawer();
+        state.screen = b.getAttribute('data-nav');
+        // Leaving a record/detail view resets its sub-state — navigating
+        // away and back should land on the list, not where you left off.
+        state.projectOpen = null; state.rcDraft = null; state.customerOpen = null; state.enquiryOpen = null;
+        render();
+      });
+    });
+    var so1 = document.getElementById('sidebar-signout'), so2 = document.getElementById('drawer-signout');
+    // Not wired to anything — there's no sign-in flow in this mock either,
+    // so a sign-out that did something would be pretending to a state that
+    // was never real. Present, inert, same as the real button's shape.
+    if (so1) so1.addEventListener('click', function(e){ e.preventDefault(); });
+    if (so2) so2.addEventListener('click', function(e){ e.preventDefault(); });
+  }
+  function openDrawer(){
+    document.getElementById('nav-scrim').classList.add('on');
+    document.getElementById('nav-drawer').classList.add('on');
+    document.getElementById('menu-btn').setAttribute('aria-expanded', 'true');
+    document.addEventListener('keydown', escCloseDrawer);
+  }
+  function closeDrawer(){
+    document.getElementById('nav-scrim').classList.remove('on');
+    document.getElementById('nav-drawer').classList.remove('on');
+    document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', escCloseDrawer);
+  }
+  function escCloseDrawer(e){ if(e.key==='Escape') closeDrawer(); }
+
+  /* ---------------- ROOT RENDER ---------------- */
+  function render(){
+    // Every editable field (rate-card rates, deposit %, sign-in email) calls
+    // render() on its own 'input' event, because the dirty-footer and
+    // computed readouts have to update as you type — but a full innerHTML
+    // rebuild destroys and recreates that same input, which silently ate
+    // every keystroke after the first (typing "777" left the field reading
+    // "7", focus gone). Caught it by actually typing, not .fill()'ing, into
+    // the field — automation shortcuts don't reproduce it. Restoring focus
+    // and cursor position here fixes it for every field at once, current and
+    // future, rather than patching each render function individually.
+    var active = document.activeElement;
+    var activeId = active && active.id;
+    var selStart = active && typeof active.selectionStart === 'number' ? active.selectionStart : null;
+    var selEnd = active && typeof active.selectionEnd === 'number' ? active.selectionEnd : null;
+
+    document.getElementById('topbar-title').textContent = SCREEN_LABEL[state.screen];
+    document.querySelectorAll('[data-nav]').forEach(function(b){ b.setAttribute('aria-current', b.getAttribute('data-nav')===state.screen); });
+    var renderers = {
+      dashboard: renderDashboard, projects: renderProjects, customers: renderCustomers,
+      enquiries: renderEnquiries, pricing: renderPricing, files: renderFiles, audit: renderAudit, admin: renderAdmin
+    };
+    (renderers[state.screen] || renderDashboard)();
+
+    if (activeId) {
+      var el = document.getElementById(activeId);
+      if (el && typeof el.focus === 'function') {
+        el.focus();
+        if (selStart != null && el.setSelectionRange) { try { el.setSelectionRange(selStart, selEnd); } catch(e){} }
+      }
+    }
+  }
+
+  // The actual responsiveness: measure .device's real rendered width, derive
+  // state.size from it. 767.98px matches the @container breakpoint above and
+  // the real app's own `md:` convention. This is the only mechanism — no
+  // toggle to keep in sync with it.
+  var sizeObserver = new ResizeObserver(function(entries){
+    var w = entries[0].contentRect.width;
+    var next = w < 768 ? 'mobile' : 'desktop';
+    if (next !== state.size){ state.size = next; render(); }
+  });
+
+  document.getElementById('menu-btn').addEventListener('click', openDrawer);
+  document.getElementById('nav-scrim').addEventListener('click', closeDrawer);
+  document.addEventListener('click', function(e){ if (e.target && e.target.id==='drawer-close') closeDrawer(); });
+  document.getElementById('sheet-close').addEventListener('click', closeSheet);
+  document.getElementById('scrim').addEventListener('click', closeSheet);
+  document.getElementById('confirm-scrim').addEventListener('click', closeConfirm);
+  document.getElementById('editor-scrim').addEventListener('click', closeEditor);
+
+  renderSidebar();
+  render();
+  sizeObserver.observe(document.getElementById('device'));
+})();
+</script>
+
+
+</body>
+</html>

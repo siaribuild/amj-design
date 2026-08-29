@@ -1,0 +1,1888 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>ops2 R1 — the frame and the record (mock)</title>
+<!-- The product's two faces. Loaded when there is a network; the stacks below
+     fall back to the system UI face so the file still opens from disk. Without
+     these the mock would be approved in Segoe UI, which is not what ships. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   ops2 R1 mock — structure only. Visual treatment is the ui-designer's pass.
+
+   Everything below the harness uses the product's OWN design language, read
+   from src/styles/theme.css: the warm neutral ramp, sage as the single accent,
+   the dark ops chrome (#14150f), Space Grotesk for display/data and Inter for
+   body. No network requests: the two faces are named first and fall back to
+   the system stack, so the file opens from the filesystem.
+
+   THE ONE PROPERTY THIS FILE EXISTS TO PROVE: every frame below renders the
+   SAME markup from the same template. There is no phone build and no desktop
+   build. Drag the handle on the right edge of a frame — the layout answers the
+   frame's width, not the browser's, which is exactly the Fold-open-beside-
+   another-app case (C1).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Harness (not part of the product) ─────────────────────────────────── */
+:root{
+  --h-bg:#191a17; --h-fg:#e9e8e3; --h-dim:#a3a29b; --h-line:rgba(255,255,255,.14);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:#2a2b26; color:var(--h-fg);
+  font:400 14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;
+}
+.harness{position:sticky;top:0;z-index:100;background:var(--h-bg);border-bottom:1px solid var(--h-line)}
+.harness-in{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;padding:10px 16px}
+.harness h1{
+  font:600 13px/1.2 'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.08em;text-transform:uppercase;margin:0;color:#fff;
+}
+.hgroup{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hgroup > span{color:var(--h-dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.hbtn{
+  appearance:none;border:1px solid var(--h-line);background:transparent;color:var(--h-fg);
+  font:500 12px/1 'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  padding:6px 9px;border-radius:3px;cursor:pointer;font-variant-numeric:tabular-nums;
+}
+.hbtn:hover{border-color:#8CA99B;color:#fff}
+.hbtn[aria-pressed="true"]{background:#5A7A6A;border-color:#5A7A6A;color:#fff}
+.hnote{padding:0 16px 12px;color:var(--h-dim);font-size:12px;max-width:110ch}
+
+/* ─── The stage and its frames ──────────────────────────────────────────── */
+.stage{padding:20px 16px 60px;display:flex;gap:22px;align-items:flex-start;overflow-x:auto}
+.frame-wrap{flex:0 0 auto}
+.frame-label{
+  font:500 11px/1.4 'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--h-dim);margin-bottom:6px;
+  display:flex;justify-content:space-between;gap:10px;
+}
+.frame-label b{color:#fff;font-weight:600}
+.frame{
+  position:relative;height:760px;overflow:hidden;background:#FBFAF8;
+  border:1px solid rgba(255,255,255,.2);border-radius:4px;
+  resize:horizontal;min-width:320px;max-width:2000px;
+}
+.frame-scroll{height:100%;overflow-y:auto;overflow-x:hidden}
+.grip{
+  position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.35) 0 2px,transparent 2px 6px);
+  z-index:60;
+}
+.grip::after{content:"";position:absolute;inset:0}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRODUCT STYLES START HERE
+   ══════════════════════════════════════════════════════════════════════════ */
+.app{
+  /* palette — verbatim from src/styles/theme.css */
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0; --shade:#E8E5DF;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-veil:#F7FAF8; --sage-deep:#3f5a4c;
+  --sage-ink:#355344; --sage-light:#8CA99B; --sage-hover:#4a6858;
+  --ink:#131311; --ink-soft:#3a3835; --body:#5c5a56; --body-soft:#6f6c67;
+  --quiet:#8b8880; --quieter:#9a9894; --quietest:#b5b2ac;
+  --ops:#14150f; --ops-panel:#1d1e17;
+  --positive:#2c7a54; --warning:#8a6a2a; --warning-ink:#7a5410;
+  --attention:#C0392B; --attention-ink:#96271B; --info:#4C6A88; --info-ink:#31485f;
+  /* the four-state TONE triples, verbatim */
+  --tone-attn:#A2610A; --tone-pos:#2C7A54; --tone-work:#4C6A88; --tone-mute:#8b897f;
+
+  /* ─── OPS INK ROLES ────────────────────────────────────────────────────
+     The marketing site can spend --quiet (3.5:1) and --quieter (2.9:1) on
+     decorative captions. This console cannot: its "captions" are the GST
+     mode, the review count, the delivery basis and the freshness stamp —
+     facts read aloud to a customer, one-handed, on a phone, outdoors. So the
+     ops surfaces bind their label ink to the step of the SAME warm ramp that
+     clears 4.5:1, and --quiet and below are demoted to pure ornament
+     (separator dots, disabled rules). No new hue is introduced.
+       --body      #5c5a56  →  7.0:1 on paper
+       --body-soft #6f6c67  →  5.2:1 on paper
+       --quiet     #8b8880  →  3.5:1  ✗ text
+     ──────────────────────────────────────────────────────────────────── */
+  --label:      var(--body-soft);   /* uppercase labels, units, bylines      */
+  --secondary:  var(--body);        /* supporting sentences, captions        */
+  --ornament:   var(--quietest);    /* separator dots and rules only         */
+
+  --font-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --font-body:Inter,ui-sans-serif,system-ui,sans-serif;
+  --font-data:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+
+  /* ─── TYPE SCALE — the product's t-* ramp, at console density.
+     The site's scale is tuned for reading; the console is tuned for scanning,
+     so the display sizes are unused and the ramp is compressed into the band
+     between 11 and 22px. Every size in this file comes from here. ─── */
+  --t-lbl:11px;   --t-lbl-lh:14px;  --t-lbl-track:.09em;
+  --t-datsm:12px; --t-datsm-lh:16px;
+  --t-cap:13px;   --t-cap-lh:18px;
+  --t-bdsm:14px;  --t-bdsm-lh:20px;
+  --t-bd:15px;    --t-bd-lh:22px;
+  --t-hd3:17px;   --t-hd3-lh:23px;  --t-hd3-track:-.01em;
+  --t-hd2:20px;   --t-hd2-lh:26px;  --t-hd2-track:-.015em;
+  --t-fig:26px;   --t-fig-lh:30px;  --t-fig-track:-.02em;
+
+  /* ─── SPACE SCALE — one 4px grid. The mock previously carried 6/7/9/11/13/14
+     as separate literals; a dense screen only reads calm when the rhythm
+     underneath it is regular. ─── */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px;
+  --pad-card:14px;     /* the card's own inset, both axes                    */
+  --pad-row:12px;      /* a list row's vertical inset                        */
+
+  /* ─── SURFACE — radii and depth.
+     The product's --radius is 2px: this is a near-square-cornered world and
+     the mock's stray 4px cards were the only thing rounding it off.
+     Depth is one soft, offset, warm-black shadow at two strengths. A card is
+     an object on a ground, not a hairline drawn on the ground. ─── */
+  --r-ctl:2px; --r-card:3px;
+  --sh-card:0 1px 2px rgba(19,19,17,.05), 0 1px 1px rgba(19,19,17,.04);
+  --sh-lift:0 -8px 24px rgba(19,19,17,.09), 0 -1px 3px rgba(19,19,17,.06);
+  --ease:cubic-bezier(.2,.7,.3,1);
+
+  /* ─── LAYOUT CHANGE POINTS — the whole responsive system, in one block.
+     In the build these are tokens in src/ops2/layout/tokens.css. Container
+     queries cannot read a custom property in their condition, so the literals
+     below are the only place each number appears in this file. ─── */
+  /*  --cp-shell-rail   1024px   drawer  → labelled rail        (container: app)   */
+  /*  --cp-record-2col  1060px   1 col   → work + context       (container: record)*/
+  /*  --cp-record-3col  1180px   context pane gains its own measure               */
+  /*  --cp-rows-size     480px   size/qty fold out of the stacked meta line (rows) */
+  /*  --cp-rows-state    680px   state + actions gain their own columns            */
+  /*  --cp-form-2col     560px   editor fields go two-up        (container: editor)*/
+  /*  --cp-ctx-2up       720px   context blocks pair up         (container: ctx)   */
+
+  container-type:inline-size; container-name:app;
+  min-height:100%;
+  /* The ground is --recessive, not --bone. --bone is ΔL* 1.6 from paper — the
+     theme's own comment calls it "deliberately barely there", which is right
+     for a marketing page with four cards and wrong for a record with twelve.
+     --recessive is the next step of the same warm ramp and gives the cards a
+     boundary the eye reads before the hairline does. */
+  background:var(--recessive); color:var(--ink);
+  font-family:var(--font-body); font-size:var(--t-bdsm); line-height:1.5;
+  display:flex; flex-direction:column;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  -webkit-tap-highlight-color:transparent;
+  font-feature-settings:"cv05" 1;  /* Inter: the disambiguated lowercase l */
+}
+.app *{box-sizing:border-box}
+.app :focus-visible{outline:2px solid var(--sage);outline-offset:2px;border-radius:1px}
+/* On the dark chrome the sage ring all but vanishes — the light step of the
+   same accent is the one that carries there. */
+.topbar :focus-visible,.rail :focus-visible{outline-color:var(--sage-light)}
+.app ::selection{background:var(--sage-wash);color:var(--sage-ink)}
+.app button,.app input,.app select,.app textarea{font:inherit;color:inherit}
+.app a{color:var(--sage-ink)}
+
+.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.lbl{
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);
+  letter-spacing:var(--t-lbl-track);text-transform:uppercase;color:var(--label);
+}
+.lbl.strong{color:var(--ink-soft)}
+.cap{font-size:var(--t-cap);line-height:var(--t-cap-lh);color:var(--secondary)}
+.dim{color:var(--label)}
+.sml{font-size:var(--t-datsm);line-height:var(--t-datsm-lh)}
+/* The only thing --quietest is for: the character between two facts. */
+.sep-dot{color:var(--ornament)}
+
+@media (prefers-reduced-motion:reduce){
+  .app *,.app *::before,.app *::after{
+    animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+  }
+}
+
+/* ─── Shell: top bar, nav, content ──────────────────────────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:40;background:var(--ops);color:#fff;
+  display:flex;align-items:center;gap:var(--s1);padding:0 var(--s2);min-height:52px;
+  /* the chrome sits over the record, not beside it */
+  box-shadow:0 1px 0 rgba(0,0,0,.35);
+}
+.topbar .brand{
+  font:600 var(--t-bdsm)/1 var(--font-display);letter-spacing:.01em;white-space:nowrap;
+  padding-left:var(--s1);
+}
+.topbar .crumb{
+  display:flex;align-items:baseline;gap:var(--s2);min-width:0;flex:1;
+  color:#fff;padding-left:var(--s1);
+}
+.topbar .crumb .ref{
+  font:600 var(--t-bdsm)/1 var(--font-data);letter-spacing:.01em;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.topbar .crumb .ttl{
+  font-size:var(--t-cap);color:rgba(255,255,255,.72);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.iconbtn{
+  appearance:none;background:transparent;border:1px solid transparent;color:inherit;
+  min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:var(--r-ctl);cursor:pointer;
+  transition:background .12s var(--ease),color .12s var(--ease);
+}
+.iconbtn svg{width:18px;height:18px;display:block}
+.iconbtn:hover{background:rgba(255,255,255,.12)}
+.iconbtn:active{background:rgba(255,255,255,.2)}
+/* "Loaded 14:38" is the freshness claim — the one line that says whether the
+   number being read aloud is current. It is not a caption. */
+.topbar .meta{
+  display:none;font:500 var(--t-datsm)/1 var(--font-data);letter-spacing:.01em;
+  color:rgba(255,255,255,.72);white-space:nowrap;font-variant-numeric:tabular-nums;
+  padding:0 var(--s1);
+}
+.topbar .sep{width:1px;height:20px;background:rgba(255,255,255,.18);flex:0 0 auto}
+
+.shell{display:flex;flex:1;min-height:0}
+.rail{
+  display:none;background:var(--ops);color:#fff;width:224px;flex:0 0 224px;
+  padding:var(--s3) 0 var(--s4);
+}
+.railbrand{
+  font:600 var(--t-hd3)/1 var(--font-display);letter-spacing:-.01em;
+  padding:var(--s1) var(--s4) var(--s5);color:#fff;
+}
+.rail nav{display:flex;flex-direction:column}
+.rail a{
+  display:flex;align-items:center;gap:var(--s3);min-height:44px;padding:0 var(--s4);
+  color:rgba(255,255,255,.74);text-decoration:none;font-size:var(--t-bdsm);
+  border-left:3px solid transparent;
+  transition:background .12s var(--ease),color .12s var(--ease);
+}
+.rail a:hover{background:rgba(255,255,255,.07);color:#fff}
+.rail a[aria-current]{
+  background:rgba(255,255,255,.10);color:#fff;
+  border-left-color:var(--sage-light);font-weight:600;
+}
+.rail .glyph{
+  width:18px;height:18px;flex:0 0 auto;display:inline-flex;
+  align-items:center;justify-content:center;opacity:.7;
+}
+.rail a[aria-current] .glyph{opacity:1;color:var(--sage-light)}
+.rail .glyph svg{width:17px;height:17px;display:block}
+.rail .foot{margin-top:auto;padding:var(--s4);border-top:1px solid rgba(255,255,255,.14)}
+.rail .foot .who{
+  font-size:var(--t-datsm);line-height:17px;color:rgba(255,255,255,.72);margin-bottom:var(--s2);
+}
+.rail .foot .railout{
+  color:#fff;min-height:38px;padding:0 var(--s3);margin-top:var(--s2);
+  border:1px solid rgba(255,255,255,.22);
+}
+.rail .foot .railout:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.4);color:#fff}
+.rail .foot .who .role{
+  display:inline-block;margin-top:3px;font:600 var(--t-lbl)/1 var(--font-display);
+  letter-spacing:var(--t-lbl-track);text-transform:uppercase;color:var(--sage-light);
+}
+
+.content{flex:1;min-width:0;display:flex;flex-direction:column}
+.pagepad{padding:var(--s3) var(--s3) 120px;flex:1}
+
+@container app (min-width: 1024px){
+  .rail{display:flex;flex-direction:column}
+  .topbar .menu{display:none}
+  .topbar .meta{display:inline-flex;align-items:center}
+  .pagepad{padding:var(--s5) var(--s6) var(--s7)}
+  .topbar{min-height:56px;padding:0 var(--s3)}
+}
+
+/* ─── Loud failure: the connection band ─────────────────────────────────── */
+/* Loud, and loud on purpose. This is the one state on the whole console that
+   is allowed to be the brightest thing on screen: if the console is offline,
+   nothing the operator does will be saved, and a pale strip does not carry
+   that at arm's length in a van. It is still a band — non-blocking, no focus
+   steal, no dialog — but it is unmistakably a failure, not a notice. */
+.offline{
+  display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+  background:var(--attention);
+  color:#fff;padding:10px var(--s3);
+  font-size:var(--t-cap);line-height:var(--t-cap-lh);
+  box-shadow:inset 0 -1px 0 rgba(0,0,0,.18);
+}
+.offline b{font-weight:700}
+.offline .dot{
+  width:9px;height:9px;border-radius:50%;background:#fff;flex:0 0 auto;
+  box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:pulse 2s var(--ease) infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,255,255,.65)}
+  70%{box-shadow:0 0 0 7px rgba(255,255,255,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}
+}
+.offline .btn{
+  margin-left:auto;background:#fff;border-color:#fff;color:var(--attention-ink);
+  font-weight:700;min-height:40px;padding:0 var(--s4);
+}
+.offline .btn:hover{background:#fff;border-color:#fff;color:var(--attention)}
+
+/* ─── The record plane ──────────────────────────────────────────────────── */
+.record{container-type:inline-size;container-name:record;display:flex;flex-direction:column;gap:var(--s3)}
+.head{display:flex;flex-direction:column;gap:var(--s3)}
+.cols{display:flex;flex-direction:column;gap:var(--s3)}
+.work{min-width:0;display:flex;flex-direction:column;gap:var(--s3);container-type:inline-size;container-name:work}
+.ctx{min-width:0;container-type:inline-size;container-name:ctx}
+.ctxgrid{display:flex;flex-direction:column;gap:var(--s3)}
+
+@container record (min-width: 1060px){
+  .cols{flex-direction:row;align-items:flex-start;gap:var(--s5)}
+  .work{flex:1 1 60%}
+  .ctx{flex:0 1 360px}
+}
+@container record (min-width: 1180px){
+  .cols{gap:26px}
+  .work{flex:1 1 62%}
+  .ctx{flex:0 1 420px}
+}
+@container ctx (min-width: 720px){
+  .ctxgrid{display:grid;grid-template-columns:1fr 1fr;align-items:start;gap:var(--s3)}
+  .ctxgrid > .span2{grid-column:1 / -1}
+}
+
+/* ─── Card chrome ───────────────────────────────────────────────────────── */
+.card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--sh-card);
+}
+/* The header is capped in the recessive ground so every block announces
+   itself once, at a glance, down a column of twelve. */
+.card > header{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s2) var(--pad-card);border-bottom:1px solid var(--line);
+  background:var(--bone);border-radius:var(--r-card) var(--r-card) 0 0;
+  min-height:44px;
+}
+.card > header .lbl{color:var(--ink-soft)}
+.card > header .meta{
+  font-family:var(--font-data);font-size:var(--t-datsm);line-height:var(--t-datsm-lh);
+  color:var(--label);font-variant-numeric:tabular-nums;font-weight:500;white-space:nowrap;
+}
+.card > header .meta em{font-style:normal;color:var(--warning-ink);font-weight:600}
+.card .body{padding:var(--pad-card)}
+.card .body.flush{padding:0}
+
+/* ─── Identity ──────────────────────────────────────────────────────────── */
+.ident{display:flex;flex-direction:column;gap:var(--s2);padding:var(--pad-card)}
+.ident .idline{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap}
+.ident .ref{
+  font:700 var(--t-hd2)/var(--t-hd2-lh) var(--font-data);letter-spacing:var(--t-hd2-track);
+  color:var(--ink);font-variant-numeric:tabular-nums;
+}
+.ident .dot{color:var(--ornament)}
+.ident .ttl{font:500 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:var(--t-hd3-track);color:var(--ink-soft)}
+.ident .who{
+  font-size:var(--t-cap);line-height:var(--t-cap-lh);color:var(--secondary);
+  display:flex;flex-wrap:wrap;gap:var(--s1) var(--s2);align-items:center;
+}
+.ident .who a{
+  color:var(--sage-ink);text-decoration:none;
+  border-bottom:1px solid color-mix(in oklab,var(--sage) 40%,transparent);
+}
+.ident .who a:hover{border-bottom-color:var(--sage)}
+/* The tap-to-call control (N1). It is the one thing on this card that is used
+   rather than read, so it is the one thing shaped like a control. */
+.ident .who .tel{
+  display:inline-flex;align-items:center;gap:var(--s2);min-height:44px;padding:0 var(--s3);
+  border:1px solid var(--line-strong);border-radius:var(--r-ctl);
+  font:600 var(--t-cap)/1 var(--font-data);font-variant-numeric:tabular-nums;
+  color:var(--ink);text-decoration:none;background:var(--paper);
+  transition:border-color .12s var(--ease),background .12s var(--ease);
+}
+.ident .who .tel svg{width:14px;height:14px;color:var(--sage);flex:0 0 auto}
+.ident .who .tel:hover{border-color:var(--sage);background:var(--sage-wash)}
+.ident .deliver{
+  font-size:var(--t-cap);line-height:var(--t-cap-lh);color:var(--secondary);
+  display:flex;align-items:center;gap:var(--s2);
+}
+.ident .deliver svg{width:14px;height:14px;color:var(--label);flex:0 0 auto}
+
+/* ─── Money block ───────────────────────────────────────────────────────── */
+/* Every money figure carries its GST mode, and the mode is never smaller or
+   fainter than legible. The suffix is set as a real unit — it belongs to the
+   number the way "mm" belongs to a dimension — not as a caption beside it. */
+.money .fig{
+  font:700 var(--t-fig)/var(--t-fig-lh) var(--font-data);letter-spacing:var(--t-fig-track);
+  font-variant-numeric:tabular-nums;color:var(--ink);
+}
+.money .gst{
+  font:600 var(--t-datsm)/1 var(--font-display);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--label);margin-left:var(--s2);white-space:nowrap;
+}
+.money .basis{font-size:var(--t-datsm);line-height:17px;color:var(--secondary);margin-top:var(--s1)}
+.money .split{
+  margin-top:var(--s3);border-top:1px solid var(--line);padding-top:var(--s3);
+  display:flex;flex-direction:column;gap:var(--s2);
+}
+.money .split .r{
+  display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);
+  font-size:var(--t-cap);line-height:var(--t-cap-lh);color:var(--secondary);
+}
+.money .split .r .v{
+  font-family:var(--font-data);font-variant-numeric:tabular-nums;
+  font-weight:600;color:var(--ink);
+}
+/* The delivery-honesty sentence. AC-85's whole point is that this is read, so
+   it is set as a sentence at reading contrast, not as fine print. */
+.money .zone{
+  font-size:var(--t-datsm);line-height:17px;color:var(--secondary);
+  margin:var(--s2) 0 0;padding-top:var(--s2);border-top:1px solid var(--line);
+}
+.money .zone b{color:var(--ink-soft);font-weight:600}
+.unpriced{color:var(--warning-ink);font-weight:600}
+
+/* ─── Phase ribbon ──────────────────────────────────────────────────────── */
+/* Hierarchy note: the mock previously filled the PASSED cells solid sage and
+   tinted the CURRENT one — so the loudest thing on the ribbon was where the
+   record used to be. Inverted: what is done reads settled, where it is now
+   reads present, in ink, at weight, with the underline and aria-current
+   still carrying it independently of hue. */
+.ribbon{display:flex;gap:1px;background:var(--line);padding:0;border-radius:var(--r-card) var(--r-card) 0 0;overflow:hidden}
+.ribbon .ph{
+  flex:1 1 0;min-width:0;text-align:center;padding:var(--s2) var(--s1);
+  font:500 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);letter-spacing:.04em;
+  color:var(--body-soft);background:var(--recessive);
+  box-shadow:inset 0 -2px 0 transparent;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ribbon .ph.past{color:var(--sage-ink);background:var(--sage-wash);font-weight:500}
+.ribbon .ph.now{
+  color:var(--ink);background:var(--paper);font-weight:700;letter-spacing:.05em;
+  box-shadow:inset 0 -2px 0 var(--sage);
+}
+.ribbon-cap{
+  font-size:var(--t-cap);line-height:var(--t-cap-lh);color:var(--secondary);
+  padding:var(--s3) var(--pad-card);margin:0;
+}
+.ribbon-cap b{color:var(--ink);font-weight:600}
+
+/* ─── Action bar ────────────────────────────────────────────────────────── */
+.actions{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+.btn{
+  appearance:none;border:1px solid var(--line-strong);background:var(--paper);color:var(--ink);
+  min-height:44px;padding:0 var(--s4);border-radius:var(--r-ctl);cursor:pointer;
+  font:500 var(--t-bdsm)/1 var(--font-body);display:inline-flex;align-items:center;
+  justify-content:center;gap:var(--s2);white-space:nowrap;
+  transition:background .12s var(--ease),border-color .12s var(--ease),color .12s var(--ease);
+}
+.btn svg{width:15px;height:15px;flex:0 0 auto}
+.btn:hover{border-color:var(--sage);background:var(--sage-wash);color:var(--sage-ink)}
+.btn:active{background:var(--sage-veil)}
+/* Exactly one primary per bar. It is the only filled sage on the record. */
+.btn.primary{background:var(--sage);border-color:var(--sage);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--sage-hover);border-color:var(--sage-hover);color:#fff}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--secondary)}
+.btn.quiet:hover{background:var(--recessive);border-color:transparent;color:var(--ink)}
+/* Secondary/recovery size — never below the 40px the row links get. */
+.btn.sm{min-height:40px;padding:0 var(--s3);font-size:var(--t-cap)}
+/* A blocked action is RENDERED, with its reason. Dimming it with opacity took
+   its label to ~2.5:1 — the operator could see that something was unavailable
+   but not read what. Inert is expressed with explicit tokens instead, so the
+   label stays at ~5:1 and the reason beneath it stays readable. Nothing here
+   is the machine refusing: the sentence names a condition, not a permission. */
+.btn[aria-disabled="true"],
+.btn.primary[aria-disabled="true"]{
+  background:var(--recessive);border-color:var(--line);color:var(--body-soft);
+  cursor:default;font-weight:500;box-shadow:none;
+}
+.btn[aria-disabled="true"]:hover,
+.btn.primary[aria-disabled="true"]:hover{
+  background:var(--recessive);border-color:var(--line);color:var(--body-soft);
+}
+.blocked{
+  font-size:var(--t-datsm);color:var(--warning-ink);flex:1 1 100%;line-height:17px;
+  margin:0;display:flex;align-items:center;gap:var(--s2);font-weight:500;
+}
+.blocked svg{width:14px;height:14px;flex:0 0 auto}
+
+.confirm{
+  margin-top:var(--s3);background:var(--sage-veil);
+  border:1px solid color-mix(in oklab,var(--sage) 38%,#fff);
+  border-radius:var(--r-card);padding:var(--pad-card);
+}
+.confirm h4{
+  margin:0 0 var(--s1);
+  font:600 var(--t-bd)/var(--t-bd-lh) var(--font-display);letter-spacing:-.01em;color:var(--ink);
+}
+.confirm p{margin:0 0 var(--s3);font-size:var(--t-cap);color:var(--secondary);line-height:19px}
+.btnrow{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.inp{
+  width:100%;min-height:44px;padding:var(--s2) var(--s3);border:1px solid var(--line-strong);
+  border-radius:var(--r-ctl);background:var(--paper);margin-bottom:var(--s3);
+  font-size:var(--t-bdsm);color:var(--ink);
+  transition:border-color .12s var(--ease),box-shadow .12s var(--ease);
+}
+.inp::placeholder{color:var(--body-soft)}
+.inp:focus{border-color:var(--sage);outline:none;box-shadow:0 0 0 3px var(--sage-wash)}
+select.inp{cursor:pointer}
+
+/* ─── Banners: unresolved / read-only ───────────────────────────────────── */
+/* ─── Bands ─────────────────────────────────────────────────────────────────
+   Three registers, and the distance between them is the point.
+
+   .warn — a precondition of the record. "2 lines are unpriced" is not the
+     machine objecting; it is the record stating a fact about itself. Visible
+     at a glance, tinted, but flat: no fill strong enough to sit on top of the
+     work, and no shadow, so it never reads as a layer over the record.
+
+   .info — a statement of the record's mode (issued, empty). Coolest, quietest.
+
+   .note — the divergence register, and it is deliberately the mildest thing
+     here. Previously the estimator's "what is selected reaches Uw 2.41"
+     shared the amber .warn treatment with the unresolved-lines band, so the
+     machine's observation looked exactly like a blocking condition. It now
+     sits on the neutral ground with a work-tone mark: present, readable,
+     impossible to mistake for an obstruction. The copy is unchanged; only
+     the volume is.
+   ───────────────────────────────────────────────────────────────────────── */
+.editor > .band{margin-bottom:var(--s4)}
+.band.bandgap{margin-bottom:var(--s3)}
+.band{
+  display:flex;gap:var(--s3);align-items:flex-start;
+  padding:var(--s3);border-radius:var(--r-card);
+  font-size:var(--t-cap);line-height:19px;
+}
+.band b{font-weight:600}
+/* The glyph slot carries a drawn mark, not a typed character: a filled disc in
+   the band's own tone, optically aligned to the first line of text. */
+.band .glyph{
+  flex:0 0 auto;font-size:0;width:16px;height:19px;position:relative;
+}
+.band .glyph::before{
+  content:"";position:absolute;left:3px;top:6px;width:8px;height:8px;
+  border-radius:50%;background:currentColor;
+}
+.band.warn{
+  background:color-mix(in oklab,var(--warning) 11%,#fff);
+  border:1px solid color-mix(in oklab,var(--warning) 34%,#fff);
+  color:var(--warning-ink);
+}
+.band.info{
+  background:color-mix(in oklab,var(--info) 8%,#fff);
+  border:1px solid color-mix(in oklab,var(--info) 28%,#fff);
+  color:var(--info-ink);
+}
+.band.bad{
+  background:color-mix(in oklab,var(--attention) 9%,#fff);
+  border:1px solid color-mix(in oklab,var(--attention) 40%,#fff);
+  color:var(--attention-ink);
+}
+.band.note{
+  background:var(--recessive);border:1px solid var(--line);color:var(--ink-soft);
+}
+.band.note .glyph{color:var(--tone-work)}
+.band.note .glyph::before{
+  width:9px;height:9px;top:5px;left:3px;border-radius:50%;
+  background:none;border:2px solid currentColor;
+}
+.band.note .qualifier{color:var(--secondary)}
+.band a,.band button.link{
+  color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px;
+  text-decoration-thickness:1px;background:none;border:none;padding:0;cursor:pointer;
+  font-size:inherit;line-height:inherit;font-family:inherit;
+}
+.band button.link:hover{text-decoration-thickness:2px}
+
+/* ─── The line list (one folding component) ─────────────────────────────── */
+.linelist{container-type:inline-size;container-name:rows;list-style:none;margin:0;padding:0}
+.linelist > li{border-bottom:1px solid var(--line)}
+.linelist > li:last-child{border-bottom:none}
+.linelist > li:not(.unit):hover{background:var(--sage-veil)}
+.linelist .rhead{display:none}
+.lrow{
+  display:grid;gap:2px var(--s3);padding:var(--pad-row) var(--pad-card);align-items:baseline;
+  grid-template-columns:1fr auto;
+  grid-template-areas:
+    "code  total"
+    "prod  prod"
+    "size  state"
+    "act   act";
+}
+/* The line code is an identifier, not a link. Sage on this record means one of
+   three things — the primary action, where the record is now, and an
+   affirmative state — and spending it on six row codes was what made the
+   accent stop meaning anything. */
+.lrow .c-code{
+  grid-area:code;font:600 var(--t-cap)/18px var(--font-data);
+  letter-spacing:.02em;color:var(--body-soft);font-variant-numeric:tabular-nums;
+}
+.lrow .c-prod{grid-area:prod;min-width:0}
+.lrow .c-size{grid-area:size}
+.lrow .c-qty{display:none}
+/* The figure the customer is being read. It outweighs everything else on the
+   row on purpose. */
+.lrow .c-total{
+  grid-area:total;text-align:right;
+  font:600 var(--t-bd)/var(--t-bd-lh) var(--font-data);letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums;color:var(--ink);
+}
+.lrow .c-state{grid-area:state;text-align:right}
+.lrow .c-act{grid-area:act;display:flex;gap:var(--s5);justify-content:flex-start}
+
+.lrow .pname{font-size:var(--t-bdsm);line-height:20px;color:var(--ink);font-weight:600;letter-spacing:-.005em}
+.lrow .psub{font-size:var(--t-datsm);line-height:17px;color:var(--label)}
+/* The review reasons are the whole reason a line is not ready. They were the
+   smallest, faintest text on the row; they are now set at caption size. */
+.lrow .flags{
+  margin:var(--s2) 0 0;padding:var(--s1) 0 var(--s1) var(--s3);
+  font-size:var(--t-cap);line-height:18px;color:var(--warning-ink);
+  border-left:1px solid color-mix(in oklab,var(--warning) 45%,#fff);
+  list-style:none;
+}
+.lrow .flags li + li{margin-top:3px}
+.lrow .tag{font-size:var(--t-datsm);line-height:17px;color:var(--label)}
+.lrow .tag.warn{color:var(--warning-ink);font-weight:500}
+.lrow .tag.info{color:var(--info-ink)}
+.lrow .size{
+  font:500 var(--t-cap)/18px var(--font-data);font-variant-numeric:tabular-nums;
+  color:var(--ink-soft);
+}
+.lrow .unit-suffix{font-size:var(--t-datsm);color:var(--label)}
+/* State is carried by the word first; the colour only agrees with it. */
+.lrow .state{font-size:var(--t-cap);line-height:18px;font-weight:600;white-space:nowrap}
+.lrow .state.ok{color:var(--positive)}
+.lrow .state.rev{color:var(--warning-ink)}
+.lrow .link{
+  background:none;border:none;padding:0;cursor:pointer;
+  font:500 var(--t-cap)/18px var(--font-body);
+  color:var(--sage-ink);cursor:pointer;
+  text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px;
+  text-decoration-color:color-mix(in oklab,var(--sage) 40%,transparent);
+  min-height:40px;display:inline-flex;align-items:center;   /* thumb target below the fold */
+  transition:color .12s var(--ease),text-decoration-color .12s var(--ease);
+}
+.lrow .link:hover{color:var(--sage-deep);text-decoration-color:var(--sage)}
+/* The deep-linked row (AC-25). Spec §3.3 prescribes the 3px sage inset edge
+   and the veil fill; both are carried verbatim. */
+.linelist > li.target,.linelist > li.target:hover{
+  background:var(--sage-veil);box-shadow:inset 3px 0 0 var(--sage);
+}
+/* Composite units hang under their parent: recessive fill, a lighter rule,
+   and an indent that says "these belong to the row above". */
+.linelist > li.unit{border-bottom-color:color-mix(in oklab,var(--line) 55%,transparent)}
+.linelist > li.unit .lrow{background:var(--recessive);padding-left:var(--s6)}
+.linelist > li.unit .lrow .c-code{color:var(--body-soft);font-weight:500}
+.linelist > li.unit .pname{font-weight:500;font-size:var(--t-cap);line-height:19px}
+.coverage{
+  padding:var(--s3) var(--pad-card) var(--s3) var(--s6);
+  display:flex;gap:var(--s3);flex-wrap:wrap;justify-content:space-between;align-items:center;
+  background:var(--recessive);
+}
+.coverage .next{flex:1 1 100%;font-size:var(--t-datsm);line-height:17px;color:var(--secondary);margin:0}
+
+/* ─── Add / remove an opening (spec §4.5a) ───────────────────────────────────
+   The add control is the list's own last row, not a floating button: it belongs
+   to the list, it scrolls with it, and at 320 it is a full-width 44px target
+   with nothing beside it to collide with. It is quiet — adding a line is
+   ordinary work, not the record's primary act, which is still Issue. */
+.addrow{
+  display:flex;align-items:center;justify-content:center;gap:var(--s2);
+  width:100%;min-height:44px;padding:var(--s3) var(--pad-card);
+  background:var(--bone);border:none;border-top:1px solid var(--line);
+  color:var(--sage-ink);font:600 var(--t-cap)/18px var(--font-body);cursor:pointer;
+  transition:background .12s var(--ease),color .12s var(--ease);
+}
+.addrow svg{width:15px;height:15px;flex:0 0 auto}
+.addrow:hover{background:var(--sage-wash);color:var(--sage-deep)}
+.empty .addrow{margin-top:var(--s3);border-radius:var(--r-ctl);border:1px solid var(--line-strong)}
+/* A row that exists only on this screen until it is saved. Dashed, so it reads
+   as not-yet-a-line, and it says so in words as well. */
+.linelist > li.draft{
+  background:var(--bone);
+  box-shadow:inset 3px 0 0 var(--line-strong);
+}
+.draftmark{
+  font:600 var(--t-datsm)/16px var(--font-display);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--body-soft);
+}
+/* The destructive control sits under a rule at the foot of the editor, away
+   from Save. It is never inert, never asks for a reason, and — like every
+   blocked control here — expresses state with tokens, not opacity. */
+.removebar{
+  margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line);
+  display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center;
+}
+.btn.danger{
+  color:var(--attention-ink);border-color:color-mix(in oklab,var(--attention) 34%,#fff);
+  background:var(--paper);
+}
+.btn.danger:hover{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 6%,#fff);color:var(--attention-ink)}
+.btn.danger svg{width:15px;height:15px}
+.confirm.destructive{
+  flex:1 1 100%;margin-top:0;
+  background:color-mix(in oklab,var(--attention) 6%,#fff);
+  border-color:color-mix(in oklab,var(--attention) 34%,#fff);
+}
+.confirm.destructive h4{color:var(--attention-ink)}
+.confirm.destructive .btn.primary{
+  background:var(--attention);border-color:var(--attention);color:#fff;
+}
+.confirm.destructive .btn.primary:hover{background:var(--attention-ink);border-color:var(--attention-ink)}
+
+/* ─── The size junction (spec §4.6a) ─────────────────────────────────────────
+   A size outside the product's range is not an error and must not be dressed
+   as one: the band states the fact and then carries the two routes out as real
+   controls, so the remedy is on screen rather than in the operator's memory
+   while a customer waits. It uses .warn — the register the ui-designer reserved
+   for "the record stating a condition of itself" — which is exactly what an
+   unsettled fit is, and which reads distinctly from the .note band directly
+   above it carrying the estimator's observation. */
+.routes{
+  display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3);align-items:flex-start;
+}
+.routes .route{flex:1 1 210px;min-width:0}
+.routes .btn{width:100%;justify-content:flex-start;text-align:left}
+/* The R4 stand-in. NOT hatched: the route works today — a note is really sent —
+   so drawing it as scaffolding would call a working control broken. What is
+   reserved is the MARK, and the caption is what says so. */
+.routes .later{
+  margin:var(--s1) 0 0;font-size:var(--t-datsm);line-height:16px;color:var(--secondary);
+  display:flex;gap:var(--s1);align-items:baseline;
+}
+.routes .later .tick{
+  color:var(--body-soft);font:600 var(--t-lbl)/1 var(--font-display);
+  letter-spacing:var(--t-lbl-track);text-transform:uppercase;white-space:nowrap;
+}
+
+/* FOLD 1 (480px): size and qty leave the stacked meta line and become columns.
+   The quantity is one datum with two slots — `.qty-inline` inside the size cell
+   below the fold, the `Qty` column above it. Exactly one is ever rendered. */
+@container rows (min-width: 480px){
+  .lrow{
+    grid-template-columns:56px 1fr 92px 44px 104px;
+    grid-template-areas:
+      "code prod size qty total"
+      "act  act  act  act  state";
+  }
+  .lrow .c-size{text-align:right}
+  .lrow .c-qty{
+    display:block;grid-area:qty;text-align:right;font-family:var(--font-data);
+    font-variant-numeric:tabular-nums;font-size:var(--t-cap);font-weight:500;color:var(--ink-soft);
+  }
+  .lrow .qty-inline{display:none}
+  .lrow .c-act{padding-top:var(--s1)}
+}
+/* FOLD 2 (680px): state and the row actions take their own columns and the
+   whole row becomes a single line with a column header above it. */
+@container rows (min-width: 680px){
+  .lrow{
+    grid-template-columns:56px 1fr 92px 44px 104px 100px 96px;
+    grid-template-areas:"code prod size qty total state act";
+  }
+  .lrow .c-state{text-align:left}
+  .lrow .c-act{justify-content:flex-end;padding-top:0;gap:var(--s3)}
+  .lrow .link{min-height:20px}
+  .linelist .rhead{
+    display:grid;gap:var(--s3);padding:var(--s2) var(--pad-card);
+    grid-template-columns:56px 1fr 92px 44px 104px 100px 96px;
+    background:var(--bone);border-bottom:1px solid var(--line-strong);
+  }
+  .linelist .rhead span{
+    font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);
+    letter-spacing:var(--t-lbl-track);text-transform:uppercase;color:var(--label);
+  }
+  .linelist .rhead .r{text-align:right}
+}
+
+/* ─── The inline line editor ────────────────────────────────────────────── */
+/* The editor opens inside the row it belongs to. The sage veil ground and the
+   accented top rule are what say "you are inside this line" without a modal,
+   a drawer or a route. */
+.editor{
+  container-type:inline-size;container-name:editor;
+  background:var(--sage-veil);
+  border-top:1px solid color-mix(in oklab,var(--sage) 35%,#fff);
+  box-shadow:inset 0 3px 0 -1px var(--sage-wash);
+  padding:var(--pad-card);
+}
+.editor h4{
+  margin:0 0 var(--s1);
+  font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:var(--t-hd3-track);
+  color:var(--ink);
+}
+/* The standing line. It is the thesis of the whole console, so it is set to be
+   read once rather than skipped forever. */
+.editor .hint{
+  margin:0 0 var(--s4);font-size:var(--t-cap);color:var(--secondary);line-height:18px;
+  font-style:italic;
+}
+.fields{display:grid;grid-template-columns:1fr;gap:var(--s3)}
+@container editor (min-width: 560px){ .fields{grid-template-columns:1fr 1fr} .fields .full{grid-column:1 / -1} }
+.field label{
+  display:block;margin-bottom:var(--s1);
+  font:600 var(--t-datsm)/16px var(--font-display);letter-spacing:.03em;color:var(--ink-soft);
+}
+.field .inp{margin-bottom:0}
+.field .help{font-size:var(--t-datsm);color:var(--secondary);margin:var(--s1) 0 0;line-height:16px}
+.field .err{font-size:var(--t-datsm);color:var(--attention-ink);margin-top:var(--s1);line-height:16px;font-weight:600}
+.disclose{border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--paper)}
+.disclose > summary{
+  cursor:pointer;padding:var(--s3) var(--pad-card);min-height:44px;display:flex;align-items:center;
+  justify-content:space-between;gap:var(--s3);
+  font:600 var(--t-bdsm)/1.3 var(--font-body);color:var(--ink);
+  list-style:none;
+}
+.disclose > summary::-webkit-details-marker{display:none}
+.disclose > summary:hover{background:var(--bone)}
+.disclose > div{padding:var(--pad-card);border-top:1px solid var(--line)}
+.opt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:var(--s2)}
+.opt{
+  border:1px solid var(--line-strong);border-radius:var(--r-ctl);
+  padding:var(--s2) var(--s3);background:var(--paper);
+  cursor:pointer;font-size:var(--t-cap);min-height:44px;text-align:left;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;
+  transition:border-color .12s var(--ease),background .12s var(--ease);
+}
+.opt:hover{border-color:var(--sage)}
+/* Selection is the theme's opaque sage-wash — the token that exists precisely
+   so a selected chip does not composite to dirty grey on a warm ground. The
+   previous ink ring put a second accent system inside the editor. */
+.opt.sel{
+  border-color:var(--sage);box-shadow:inset 0 0 0 1px var(--sage);
+  background:var(--sage-wash);color:var(--sage-ink);font-weight:600;
+}
+.opt .p{font-family:var(--font-data);font-size:var(--t-datsm);color:var(--label);font-weight:500}
+.opt.sel .p{color:var(--sage-ink)}
+.preview{
+  display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--s3);
+  margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line);
+}
+.preview .amt{
+  font:700 var(--t-hd2)/var(--t-hd2-lh) var(--font-data);letter-spacing:var(--t-hd2-track);
+  font-variant-numeric:tabular-nums;color:var(--ink);
+}
+.preview .ea{font-size:var(--t-datsm);color:var(--secondary);font-weight:500}
+.footnote{margin:var(--s3) 0 0;font-size:var(--t-datsm);color:var(--secondary);line-height:17px}
+/* Level-3 failure: at the control, values intact, both ways out named. */
+.savefail{
+  margin-top:var(--s3);background:color-mix(in oklab,var(--attention) 9%,#fff);
+  border:1px solid color-mix(in oklab,var(--attention) 42%,#fff);border-radius:var(--r-card);
+  padding:var(--s3) var(--pad-card);
+  color:var(--attention-ink);font-size:var(--t-cap);line-height:19px;
+}
+.savefail b{font-weight:700}
+.savefail .btnrow{margin-top:var(--s3)}
+.savefail .btn{border-color:color-mix(in oklab,var(--attention) 40%,#fff);color:var(--attention-ink);background:#fff}
+.savefail .btn:hover{border-color:var(--attention);background:#fff;color:var(--attention)}
+.savefail .btn.quiet{background:transparent;border-color:transparent}
+.savefail .btn.quiet:hover{background:rgba(255,255,255,.7);border-color:transparent}
+
+/* ─── The totals bar: one component, two homes ──────────────────────────── */
+/* The one fixture of the record. It is chrome, not a card: pinned, lifted off
+   the content by a real shadow, and the only surface besides the top bar that
+   is present at every scroll position. */
+.totalsbar{
+  position:sticky;bottom:0;z-index:35;background:var(--paper);
+  border-top:1px solid var(--line-strong);box-shadow:var(--sh-lift);
+  padding:var(--s3) var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:var(--s3) var(--s5);flex-wrap:wrap;
+}
+.totalsbar .t{flex:1 1 auto;min-width:0}
+.totalsbar .t .k{
+  font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);
+  letter-spacing:var(--t-lbl-track);text-transform:uppercase;color:var(--label);
+  margin-bottom:3px;
+}
+.totalsbar .t .v{
+  font:700 var(--t-hd2)/var(--t-hd2-lh) var(--font-data);letter-spacing:var(--t-hd2-track);
+  font-variant-numeric:tabular-nums;color:var(--ink);
+  display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap;
+}
+/* GST mode again, at the size it has everywhere else. It is never optional
+   and never smaller than this. */
+.totalsbar .t .v .gst{
+  font:600 var(--t-datsm)/1 var(--font-display);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--label);margin-left:0;
+}
+.totalsbar .acts{display:flex;gap:var(--s2);flex:0 0 auto;margin-left:auto}
+/* A figure that is momentarily stale goes quiet rather than confidently wrong. */
+.totalsbar.saving .v{color:var(--body-soft)}
+
+/* ─── Blocks: notes / files / history / payments ────────────────────────── */
+.blist{list-style:none;margin:0;padding:0}
+.blist > li{padding:var(--s3) var(--pad-card);border-bottom:1px solid var(--line)}
+.blist > li:last-child{border-bottom:none}
+.blist .txt{font-size:var(--t-cap);line-height:19px;color:var(--ink-soft)}
+.blist .by{
+  margin-top:var(--s1);font-family:var(--font-data);font-size:var(--t-datsm);
+  line-height:16px;color:var(--label);font-variant-numeric:tabular-nums;
+}
+.blist .by.warn{color:var(--warning-ink);font-weight:600}
+.blist .lineref{
+  display:inline-flex;align-items:center;min-height:24px;margin-right:var(--s1);
+  padding:0 var(--s2);border-radius:var(--r-ctl);
+  background:var(--sage-wash);color:var(--sage-ink);font-family:var(--font-data);
+  font-size:var(--t-lbl);font-weight:700;letter-spacing:.04em;text-decoration:none;
+  vertical-align:1px;
+}
+.blist .lineref:hover{background:var(--sage);color:#fff}
+.blist .amt{float:right;font-family:var(--font-data);font-weight:600;font-variant-numeric:tabular-nums}
+/* Spec §4.9 prescribes the 2px sage edge on a note. Carried verbatim. */
+.note-left{border-left:2px solid var(--sage);padding-left:var(--s3)}
+.card.fold > header{padding:0 var(--pad-card) 0 0}
+.foldbtn{
+  display:flex;align-items:center;gap:var(--s2);background:none;border:none;cursor:pointer;
+  padding:var(--s2) var(--pad-card);min-height:44px;flex:1;text-align:left;
+  border-radius:var(--r-card) 0 0 0;
+}
+.foldbtn:hover .chev{color:var(--sage)}
+.chev{
+  display:inline-flex;align-items:center;color:var(--label);
+  transition:transform .16s var(--ease),color .12s var(--ease);
+}
+.chev svg{width:12px;height:12px;display:block}
+.card.fold[data-open="0"]{border-color:var(--line)}
+.card.fold[data-open="0"] > header{border-bottom:none;border-radius:var(--r-card)}
+.card.fold[data-open="0"] > .body,
+.card.fold[data-open="0"] > .foot,
+.card.fold[data-open="0"] > .empty{display:none}
+.card.fold[data-open="0"] .chev{transform:rotate(-90deg)}
+.empty{padding:var(--s4) var(--pad-card);font-size:var(--t-cap);line-height:19px;color:var(--secondary)}
+.card .foot{
+  padding:0 var(--pad-card);border-top:1px solid var(--line);
+  font-size:var(--t-datsm);color:var(--label);background:var(--bone);
+  border-radius:0 0 var(--r-card) var(--r-card);
+  display:flex;align-items:center;flex-wrap:wrap;gap:var(--s1) var(--s2);min-height:40px;
+}
+/* Every standalone control gets a thumb-sized hit area even where its text is
+   small — the row-link rule only ever covered controls inside .lrow. */
+.card .foot .link,.coverage .link{
+  background:none;border:none;padding:0;cursor:pointer;
+  font:600 var(--t-datsm)/1.4 var(--font-body);color:var(--sage-ink);
+  text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px;
+  text-decoration-color:color-mix(in oklab,var(--sage) 40%,transparent);
+  min-height:40px;display:inline-flex;align-items:center;
+  transition:color .12s var(--ease),text-decoration-color .12s var(--ease);
+}
+.coverage .link{font-size:var(--t-cap)}
+.card .foot .link:hover,.coverage .link:hover{color:var(--sage-deep);text-decoration-color:var(--sage)}
+
+/* ─── Per-pane failure and loading ──────────────────────────────────────── */
+.pane-err{padding:var(--pad-card);display:flex;flex-direction:column;gap:var(--s3);align-items:flex-start}
+.pane-err p{margin:0;font-size:var(--t-cap);line-height:19px;color:var(--attention-ink)}
+.skel{height:12px;border-radius:2px;background:var(--shade);margin:var(--s2) var(--pad-card)}
+.skel.s2{width:60%} .skel.s3{width:80%}
+
+/* ─── The R3 seam ───────────────────────────────────────────────────────── */
+/* Deliberately unfinished. A seam that looks finished is a lie about what has
+   been built (spec §8), so this block keeps the dashed contour and the hatch
+   and gets no shadow, no header cap, and no card treatment. Its TEXT is
+   legible — the seam is honest, not illegible. */
+.seam{
+  border:1px dashed var(--line-strong);border-radius:var(--r-card);
+  background:repeating-linear-gradient(135deg,transparent 0 8px,rgba(19,19,17,.03) 8px 16px);
+  padding:var(--pad-card);
+}
+.seam .lbl{color:var(--body-soft)}
+.seam h4{
+  margin:var(--s2) 0 var(--s1);
+  font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:var(--t-hd3-track);
+  color:var(--ink-soft);
+}
+.seam p{margin:0;font-size:var(--t-cap);line-height:19px;color:var(--secondary)}
+.seam p b{color:var(--ink-soft)}
+
+/* ─── Classes replacing the mock's inline styles ────────────────────────── */
+.summary-sub{font-weight:400;font-size:var(--t-cap);color:var(--label)}
+.optlbl{margin:var(--s5) 0 var(--s2)}
+.optlbl.first{margin-top:0}
+.previewacts{justify-content:flex-end;flex:0 0 auto}
+/* The interim list reuses the row grid; "waiting on" is a word, not money, so
+   it does not inherit the money column's weight. */
+.c-total.waiting{font:500 var(--t-cap)/18px var(--font-body);color:var(--secondary);letter-spacing:0}
+.field.spaced{margin-bottom:var(--s4)}
+.codefield{letter-spacing:.42em;font-size:var(--t-hd3);font-weight:600}
+.btn.grow{flex:1 1 auto}
+.bootsplit{flex:0 0 46%}
+.crashpane{flex:1;align-items:flex-start;padding-top:var(--s6)}
+.crashcard{max-width:460px;width:100%}
+.crashttl{
+  margin:var(--s2) 0 var(--s2);
+  font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:var(--t-hd2-track);color:var(--ink);
+}
+.crashbody{margin:0 0 var(--s5)}
+
+/* ─── Interim list / sign-in / boot ─────────────────────────────────────── */
+/* The two screens that are not dense. They get the air the record cannot. */
+.centre{flex:1;display:flex;align-items:center;justify-content:center;padding:var(--s7) var(--s4)}
+.signin{width:100%;max-width:392px}
+.signin .body{padding:var(--s6)}
+.signin h2{
+  margin:0 0 var(--s2);
+  font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:var(--t-hd2-track);
+  color:var(--ink);
+}
+.signin p.sub{margin:0 0 var(--s5);font-size:var(--t-cap);line-height:19px;color:var(--secondary)}
+.signin .legal{
+  margin:var(--s5) 0 0;font-size:var(--t-datsm);line-height:17px;
+  color:var(--secondary);text-align:center;
+}
+.devbanner{
+  background:var(--sage-wash);border:1px solid color-mix(in oklab,var(--sage) 38%,#fff);
+  border-radius:var(--r-ctl);padding:var(--s3);font-size:var(--t-cap);
+  margin-bottom:var(--s5);color:var(--sage-ink);font-weight:500;
+  display:flex;align-items:center;gap:var(--s2);
+}
+.devbanner .code{font-family:var(--font-data);font-weight:700;letter-spacing:.08em}
+.spinner{
+  width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.22);
+  border-top-color:var(--sage-light);animation:spin .9s var(--ease) infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bootscreen{flex:1;display:flex;align-items:center;justify-content:center;background:var(--ops)}
+</style>
+</head>
+<body>
+
+<div class="harness">
+  <div class="harness-in">
+    <h1>ops2 R1 — frame &amp; record</h1>
+    <div class="hgroup"><span>Screen</span>
+      <button class="hbtn" data-screen="record">Record</button>
+      <button class="hbtn" data-screen="editing">Record · editing</button>
+      <button class="hbtn" data-screen="adding">Record · adding</button>
+      <button class="hbtn" data-screen="removing">Record · removing</button>
+      <button class="hbtn" data-screen="failure">Record · failure</button>
+      <button class="hbtn" data-screen="issued">Record · issued</button>
+      <button class="hbtn" data-screen="empty">Record · empty</button>
+      <button class="hbtn" data-screen="home">Home (interim)</button>
+      <button class="hbtn" data-screen="signin">Sign in</button>
+      <button class="hbtn" data-screen="boot">Boot / crash</button>
+    </div>
+    <div class="hgroup"><span>Width</span>
+      <button class="hbtn" data-w="320">320</button>
+      <button class="hbtn" data-w="375">375</button>
+      <button class="hbtn" data-w="412">412</button>
+      <button class="hbtn" data-w="560">560</button>
+      <button class="hbtn" data-w="768">768</button>
+      <button class="hbtn" data-w="1024">1024</button>
+      <button class="hbtn" data-w="1280">1280</button>
+      <button class="hbtn" data-w="1440">1440</button>
+      <button class="hbtn" data-w="fill">Fill</button>
+    </div>
+    <div class="hgroup"><span>Compare</span>
+      <button class="hbtn" id="gallery">320 · 768 · 1440 side by side</button>
+    </div>
+  </div>
+  <p class="hnote">
+    Every frame is built from one template. Drag a frame's right edge (or its striped grip) to resize it continuously —
+    the layout answers the <b>frame's</b> width, not the browser's. That is the C1 property being approved: a Fold held
+    open with another app beside it is just a narrower container.
+  </p>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   ONE markup source. Every frame calls the same function with the same data.
+   This is deliberate: it is the mock's proof that there is no second build.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Icons ─────────────────────────────────────────────────────────────────
+   One drawn set, one stroke weight (1.6 on a 24 grid), one join. The mock
+   previously typed its icons as unicode characters — ☰ ⟳ ⋯ ☎ ▤ ◑ 🗎 ⚙ — which
+   render at a different size, weight and baseline on every machine the owner
+   might open this on, and one of which (🗎) becomes a colour emoji on Windows.
+   An ops console the founders read at speed cannot have its controls change
+   shape by platform.
+   ───────────────────────────────────────────────────────────────────────── */
+const ICON = {
+  menu:    'M4 7h16M4 12h16M4 17h16',
+  back:    'M15 5l-7 7 7 7',
+  refresh: 'M20 12a8 8 0 1 1-2.6-5.9M20 4v4h-4',
+  more:    'M6 12h.01M12 12h.01M18 12h.01',
+  phone:   'M6.5 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.1 6.1l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2z',
+  pin:     'M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z M12 10h.01',
+  chev:    'M5 8l7 7 7-7',
+  plus:    'M12 5v14M5 12h14',
+  trash:   'M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3',
+  split:   'M4 4h16v16H4z M12 4v16',
+  warn:    'M12 3.5 1.8 20.5h20.4L12 3.5z M12 10v4.5 M12 17.5h.01',
+  work:    'M4 5h16v5H4z M4 14h7v5H4z M14 14h6v5h-6z',
+  records: 'M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7',
+  people:  'M9 11a3.2 3.2 0 1 0 0-6.5 3.2 3.2 0 0 0 0 6.5z M2.5 20a6.5 6.5 0 0 1 13 0 M17 11.2a5.6 5.6 0 0 1 4.5 8.8',
+  mail:    'M3 6h18v12H3z M3 7l9 6 9-6',
+  price:   'M12 3v18 M16.5 7.2A4 4 0 0 0 13 5.5h-1.6a3.2 3.2 0 0 0 0 6.4h1.2a3.3 3.3 0 0 1 0 6.6H11a4 4 0 0 1-3.5-1.8',
+  files:   'M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h9A1.5 1.5 0 0 1 21 10v8.5A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z',
+  audit:   'M20.5 12a8.5 8.5 0 1 1-2.6-6.1 M20.5 3.5v5h-5 M12 7.5V12l3 2',
+  admin:   'M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z M19.4 14.6a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0-1.2-2.9h-.2a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.3-2.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5v-.2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'
+};
+function ic(name, extra){
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${extra?" "+extra:""}><path d="${ICON[name]}"/></svg>`;
+}
+
+const NAV = [
+  ["work","Work",1],["records","Records",0],["people","Customers",0],["mail","Enquiries",0],
+  ["price","Pricing",0],["files","Files",0],["audit","Audit",0],["admin","Admin",0]
+];
+
+const REC = {
+  ref:"OF-Q-10412",
+  title:"Hawthorn East — 14 Rathmines Rd",
+  org:"Carrington Build Co",
+  customer:"Dan Whitfield",
+  email:"dan@carringtonbuild.com.au",
+  phone:"0413 220 118",
+  suburb:"Hawthorn East VIC 3123",
+  total:"$46,180", goods:"$44,930", delivery:null,
+  gst:"inc GST", basis:"estimate",
+  phase:1, state:"Pricing", waiting:"us", days:2,
+  unresolved:2,
+  asOf:"14:38"
+};
+
+const LINES = [
+  { code:"W01", name:"Awning window — 2 sash", room:"Bedroom 1, north elevation",
+    cfg:"configuration · AWN-2S-DG-LOWE", size:"1210 × 1810", qty:2, total:"$4,240",
+    state:"ready", frame:"frame system · Elevate 60" },
+  { code:"W02", name:"Awning window — 3 sash, high-level", max:"1810",
+    room:"Living, west elevation", cfg:"configuration · AWN-3S-DG-LOWE",
+    size:"1210 × 3600", qty:1, total:"$9,860", state:"review",
+    flags:["Fit: no single unit is made at this size — we will confirm how it is built and price it at technical review.",
+           "Thermal configuration: proposed Uw 2.41 against a target of ≤ 2.27",
+           "No longer in current documents"],
+    frame:"frame system · Elevate 60" },
+  { code:"W03", name:"Fixed + Sliding — corner assembly", room:"Kitchen, north-west corner",
+    size:"2100 × 4200", qty:1, total:"$12,410", state:"ready",
+    composite:"composite · 2 joined units · Fixed lite + Sliding door",
+    frameWarn:"mixed frame systems · Elevate 60 + Magnum 80 — confirm these couple",
+    units:[
+      { n:"1.", name:"Fixed lite", spec:"Spec: as the opening", size:"2100 × 1800", per:"1× per opening", total:"$4,120" },
+      { n:"2.", name:"Sliding door — 2 panel", spec:"Spec: 2 changed — glazing Double glazed low-E, colour Monument", size:"2100 × 2400", per:"1× per opening", total:"$8,290" }
+    ],
+    coverage:"Units span 4200 mm — exactly the opening." },
+  { code:"W04", name:"Double-hung window", room:"Bathroom", cfg:"configuration · DH-1S-OBS",
+    size:"1500 × 900", qty:3, total:"$3,180", state:"ready",
+    withdrawn:"Sandstone Beige — withdrawn from sale · the line still prices from its stored configuration",
+    frame:"frame system · Elevate 60" },
+  { code:"W05", name:"Sliding door — 2 panel", room:"Meals, east elevation",
+    cfg:"configuration · SLD-2P-DG", size:"2100 × 2400", qty:1, total:"$8,120", state:"ready",
+    frame:"frame system · Elevate 60" },
+  { code:"W06", name:"Awning window — 1 sash", room:"Study",
+    size:"600 × 900", qty:2, total:null, state:"review",
+    flags:["Unpriced — no exact price for this configuration"],
+    frame:"frame system · Elevate 60" }
+];
+
+/* ─── small helpers ─────────────────────────────────────────────────────── */
+const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function topbar(o={}){
+  return `
+  <div class="topbar">
+    <button class="iconbtn menu" aria-label="Open navigation">${ic("menu")}</button>
+    ${o.crumb ? "" : '<span class="brand">OpenFrame</span>'}
+    ${o.crumb ? `
+      <span class="sep" aria-hidden="true"></span>
+      <a class="iconbtn" href="#" aria-label="Back to work">${ic("back")}</a>
+      <span class="crumb"><span class="ref mono">${REC.ref}</span><span class="ttl">${esc(REC.title)}</span></span>
+    ` : `<span class="crumb"><span class="ttl">Work</span></span>`}
+    <span class="meta">Loaded ${REC.asOf}</span>
+    <button class="iconbtn" aria-label="Refresh this record" title="Refresh">${ic("refresh")}</button>
+    <button class="iconbtn" aria-label="View and account options" title="Options">${ic("more")}</button>
+  </div>`;
+}
+
+function rail(){
+  return `
+  <aside class="rail" aria-label="Sections">
+    <div class="railbrand">OpenFrame</div>
+    <nav>${NAV.map(([g,l,on]) =>
+      `<a href="#" ${on?'aria-current="page"':""}><span class="glyph" aria-hidden="true">${ic(g)}</span>${l}</a>`).join("")}
+    </nav>
+    <div class="foot">
+      <div class="who">dan@openframe.com.au<br><span class="role">Admin</span></div>
+      <button class="btn quiet railout">Sign out</button>
+    </div>
+  </aside>`;
+}
+
+function offlineBand(){
+  return `
+  <div class="offline" role="status">
+    <span class="dot" aria-hidden="true"></span>
+    <span><b>Not connected.</b> Nothing can be saved until this clears. What is on screen has not been sent.</span>
+    <button class="btn">Try now</button>
+  </div>`;
+}
+
+/* ─── record parts ──────────────────────────────────────────────────────── */
+function identity(){
+  return `
+  <section class="card" aria-label="Record identity">
+    <div class="ident">
+      <div class="idline">
+        <span class="ref">${REC.ref}</span><span class="dot">·</span><span class="ttl">${esc(REC.title)}</span>
+      </div>
+      <div class="who">
+        <span>${esc(REC.org)}</span><span class="sep-dot">·</span><span>${esc(REC.customer)}</span>
+        <a href="#">${REC.email}</a>
+        <a class="tel" href="#" aria-label="Call ${REC.phone}">${ic("phone")}${REC.phone}</a>
+      </div>
+      <div class="deliver">${ic("pin")}Delivery to ${REC.suburb}</div>
+    </div>
+  </section>`;
+}
+
+function ribbon(phaseIdx, stateLabel, waiting, days){
+  const P = ["Intake","Pricing","Issued","Accepted","Production","Delivered"];
+  return `
+  <section class="card" aria-label="Phase">
+    <div class="ribbon">
+      ${P.map((p,i)=>`<div class="ph ${i<phaseIdx?"past":i===phaseIdx?"now":""}"
+        ${i===phaseIdx?'aria-current="step"':""}>${p}</div>`).join("")}
+    </div>
+    <p class="ribbon-cap">Now · <b>${stateLabel}</b> · waiting on ${waiting} · ${days} day${days===1?"":"s"} in this state</p>
+  </section>`;
+}
+
+function money(state){
+  const unpriced = `<span class="unpriced">not yet priced</span>`;
+  return `
+  <section class="card money span2" aria-label="Value">
+    <div class="body">
+      <div><span class="fig">${REC.total}</span><span class="gst">${REC.gst}</span></div>
+      <div class="basis">${state==="issued"?"issued":"estimate"} · this customer's account shows prices ${REC.gst}</div>
+      <div class="split">
+        <div class="r"><span>Goods <span class="sep-dot">·</span> 6 lines</span><span class="v">${REC.goods}</span></div>
+        <div class="r"><span>Delivery</span><span class="v">${unpriced}</span></div>
+      </div>
+      <p class="zone">Zone: <b>Melbourne Metro East</b>, matched by postcode. The zone has no rates yet, so no delivery
+        figure can be shown — this is not $0.</p>
+    </div>
+  </section>`;
+}
+
+function actionbar(state){
+  if(state==="issued"){
+    return `
+    <section class="card" aria-label="Actions"><div class="body">
+      <div class="actions">
+        <button class="btn primary">Return to pricing</button>
+        <button class="btn">Request clarification</button>
+        <button class="btn">Add a note</button>
+      </div>
+    </div></section>`;
+  }
+  return `
+  <section class="card" aria-label="Actions"><div class="body">
+    <div class="actions">
+      <button class="btn primary" aria-disabled="true">Issue reviewed quote</button>
+      <button class="btn">Send to technical review</button>
+      <button class="btn">Request clarification</button>
+      <button class="btn">Add a note</button>
+      <p class="blocked">${ic("warn")}2 lines are unpriced or unresolved</p>
+    </div>
+    <div class="confirm" role="group" aria-label="Confirm: Add a note">
+      <h4>Add a note?</h4>
+      <p>Recorded against this record. The customer does not see it.</p>
+      <input class="inp" placeholder="What should the file record?">
+      <div class="btnrow"><button class="btn primary">Confirm</button><button class="btn quiet">Cancel</button></div>
+    </div>
+  </div></section>`;
+}
+
+function lineRow(l, opts={}){
+  const flags = l.flags ? `<ul class="flags">${l.flags.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>` : "";
+  const tags = [
+    l.cfg ? `<div class="psub">${esc(l.cfg)}</div>` : "",
+    l.composite ? `<div class="tag">${esc(l.composite)}</div>` : "",
+    l.frame ? `<div class="tag">${esc(l.frame)}</div>` : "",
+    l.frameWarn ? `<div class="tag warn">${esc(l.frameWarn)}</div>` : "",
+    l.withdrawn ? `<div class="tag warn">${esc(l.withdrawn)}</div>` : ""
+  ].join("");
+  const notesCount = opts.notes || 0;
+  const cls = [opts.draft ? "draft" : "", opts.target ? "target" : ""].filter(Boolean).join(" ");
+  return `
+  <li${cls ? ` class="${cls}"` : ""}${opts.target ? ' id="line-target"' : ""}>
+    <div class="lrow">
+      <div class="c-code mono">${l.code}</div>
+      <div class="c-prod">
+        <div class="pname">${esc(l.name)}</div>
+        <div class="psub">${esc(l.room||"")}</div>
+        ${tags}${flags}
+      </div>
+      <div class="c-size">${l.size ? `<span class="size">${l.size}</span><span class="unit-suffix"> h × w</span><span class="qty-inline unit-suffix"> · ×${l.qty}</span>` : '<span class="dim">—</span>'}</div>
+      <div class="c-qty">${l.size ? `×${l.qty}` : ""}</div>
+      <div class="c-total">${l.total ?? '<span class="dim">—</span>'}</div>
+      <div class="c-state">${opts.draft
+        ? '<span class="draftmark">not saved yet</span>'
+        : `<span class="state ${l.state==="ready"?"ok":"rev"}">${l.state==="ready"?"ready":"needs review"}</span>`}</div>
+      <div class="c-act">${opts.draft ? "" : `
+        <button class="link">${opts.editing?"close":"edit"}</button>
+        <button class="link">${l.composite?"units":"split"}</button>
+        <button class="link">note${notesCount?` (${notesCount})`:""}</button>`}
+      </div>
+    </div>
+    ${opts.editing ? editor({...opts, line:l}) : ""}
+  </li>
+  ${(l.units||[]).map(u=>`
+  <li class="unit">
+    <div class="lrow">
+      <div class="c-code mono">${u.n}</div>
+      <div class="c-prod"><div class="pname">${esc(u.name)}</div><div class="psub">${esc(u.spec)}</div></div>
+      <div class="c-size"><span class="size">${u.size}</span><span class="qty-inline unit-suffix"> · ${u.per}</span></div>
+      <div class="c-qty">${u.per.replace("× per opening","×")}</div>
+      <div class="c-total">${u.total}</div>
+      <div class="c-state"><span class="state ok">ready</span></div>
+      <div class="c-act"><button class="link">edit</button><button class="link">remove</button></div>
+    </div>
+  </li>`).join("")}
+  ${l.coverage ? `<li class="unit"><div class="coverage">
+      <button class="link">+ Add unit</button>
+      <span class="cap">${esc(l.coverage)}</span>
+      <p class="next">Each unit can be a different product — open a unit to change it.</p>
+    </div></li>` : ""}`;
+}
+
+function editor(opts={}){
+  const l = opts.line || {};
+  const draft = !!opts.draft;
+
+  /* The size junction (spec §4.6a). Not an error state: the band names the
+     condition and carries the two routes out as controls. `Split` is the
+     existing planner; `Ask the manufacturer` is R4's mark, standing in today
+     as the note the founders already send. */
+  const junction = opts.junction ? `
+    <div class="band warn bandgap" role="status">
+      <span class="glyph" aria-hidden="true"></span>
+      <div>
+        <b>3600 mm is wider than an Awning window is made — 1810 mm is the maximum.</b><br>
+        This is normal on a large opening. Saving is not affected: the line carries a
+        <b>fit</b> flag either way and prices best-fit until it is settled. Two ways forward:
+        <div class="routes">
+          <div class="route">
+            <button class="btn sm">${ic("split")}Split this opening into units</button>
+            <p class="later">Builds it as 2+ joined products — e.g. awning + fixed.</p>
+          </div>
+          <div class="route">
+            <button class="btn sm">${ic("mail")}Ask the manufacturer</button>
+            <p class="later"><span class="tick">R4</span> Adds a note for now — the
+              with-manufacturer mark arrives with the work queue.</p>
+          </div>
+        </div>
+      </div>
+    </div>` : "";
+
+  /* The estimator's observation. Deliberately the mildest register on screen. */
+  const divergence = (!draft && opts.divergence) ? `
+    <div class="band note" role="status">
+      <span class="glyph" aria-hidden="true"></span>
+      <span>The estimator proposed this configuration to meet <b>Uw ≤ 2.27</b>; what is selected reaches <b>Uw 2.41</b>.
+      <span class="qualifier">Saving is not affected.</span> <button class="link">See the derivation</button></span>
+    </div>` : "";
+
+  /* Delete: hard, confined to the editable states, one press away, never
+     disabled and never asking for a reason. The consequence sentence is
+     composed from what is true of THIS line — the units clause appears only
+     when there are units to go. */
+  const removeBar = draft ? "" : (opts.confirmRemove ? `
+    <div class="removebar">
+      <div class="confirm destructive" role="group" aria-label="Confirm: remove opening">
+        <h4>Remove ${l.code}?</h4>
+        <p>${l.units ? `Its ${l.units.length} joined units go with it. ` : ""}Notes written against this line stay on the record.</p>
+        <div class="btnrow">
+          <button class="btn primary">Remove</button>
+          <button class="btn quiet">Keep</button>
+        </div>
+      </div>
+    </div>` : `
+    <div class="removebar">
+      <button class="btn danger sm">${ic("trash")}Remove opening</button>
+    </div>`);
+
+  const heading = draft ? "New opening" : `${l.code} · ${esc(l.name)}`;
+  const hint = draft
+    ? "Nothing exists until you save. Cancel leaves no trace."
+    : "Everything here is a proposal. Change anything; nothing has to be justified.";
+
+  return `
+  <div class="editor">
+    <h4>${heading}</h4>
+    <p class="hint">${hint}</p>
+
+    ${divergence}
+    ${junction}
+
+    <div class="fields">
+      <div class="field">
+        <label for="f-id">Item ID</label>
+        <input class="inp" id="f-id" value="${draft ? "W07" : l.code}" maxlength="10">
+        ${draft ? '<p class="help">Next free code on this record. Change it if you want.</p>' : ""}
+      </div>
+      <div class="field">
+        <label for="f-prod">Product</label>
+        <select class="inp" id="f-prod">
+          ${draft ? "<option>Choose a product</option>" : ""}
+          <option>Awning window — 3 sash, high-level</option>
+          <option>Awning window — 2 sash</option>
+          <option>Fixed lite</option>
+          <option>Sliding door — 2 panel</option>
+          <option>Stacking door — 4 panel — withdrawn from sale</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-h">Height — vertical (mm)</label>
+        <input class="inp mono" id="f-h" value="${draft ? "" : "1210"}">
+        <p class="help">Height first, the trade convention. Sizes read h × w everywhere in ops2.</p>
+      </div>
+      <div class="field">
+        <label for="f-w">Width — horizontal (mm)</label>
+        <input class="inp mono" id="f-w" value="${draft ? "" : "3600"}">
+        ${draft ? '<p class="help">Fits 400–1810 high, 400–1810 wide.</p>' : ""}
+      </div>
+      <div class="field full">
+        <details class="disclose"${draft ? "" : " open"}>
+          <summary>Options <span class="summary-sub">Glazing · Colour · Hardware</span></summary>
+          <div>
+            <p class="lbl optlbl first">Glazing · required</p>
+            <div class="opt-grid">
+              <button class="opt${draft ? "" : " sel"}">Double glazed low-E<span class="p">included</span></button>
+              <button class="opt">Double glazed clear<span class="p">− $310</span></button>
+              <button class="opt">Triple glazed<span class="p">+ $1,140</span></button>
+            </div>
+            <p class="lbl optlbl">Colour · required</p>
+            <div class="opt-grid">
+              <button class="opt${draft ? "" : " sel"}">Monument<span class="p">included</span></button>
+              <button class="opt">Surfmist<span class="p">included</span></button>
+              <button class="opt">Anodised<span class="p">+ $460</span></button>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="field full">
+        <label for="f-note">Note on this line</label>
+        <input class="inp" id="f-note" placeholder="e.g. left leaf, obscure glass here">
+      </div>
+    </div>
+
+    <div class="preview">
+      <div><span class="lbl">Estimated price</span>
+        <div>${draft
+          ? '<span class="ea">Priced once a product and a size are set.</span>'
+          : '<span class="amt">$9,860</span> <span class="ea">inc GST · $9,860 ea</span>'}</div></div>
+      <div class="actions previewacts">
+        <button class="btn quiet">Cancel</button>
+        <button class="btn primary"${draft ? ' aria-disabled="true"' : ""}>Save line</button>
+      </div>
+      ${draft ? '<p class="blocked">Choose a product and enter a size</p>' : ""}
+    </div>
+    <p class="footnote">Confirmed on technical review before any deposit. Supply only.</p>
+
+    ${opts.savefail ? `
+    <div class="savefail" role="alert">
+      <b>This quote was issued while you had it open — your edit wasn't saved.</b><br>
+      Lines are read-only until it returns to pricing. Nothing on this screen has been sent.
+      <div class="btnrow">
+        <button class="btn sm">Try again</button>
+        <button class="btn quiet sm">Reload this record</button>
+      </div>
+    </div>` : ""}
+
+    ${removeBar}
+  </div>`;
+}
+
+function linesCard(state, opts={}){
+  const editable = state === "pricing";          // add + delete live only here
+  const addRow = editable
+    ? `<button class="addrow">${ic("plus")}Add opening</button>` : "";
+
+  if(state==="empty"){
+    return `<section class="card" aria-label="Openings">
+      <header><span class="lbl">Openings</span><span class="meta">0 lines</span></header>
+      <div class="empty">No lines on this project.
+        <button class="addrow">${ic("plus")}Add the first opening</button>
+      </div>
+    </section>`;
+  }
+  const title = state==="issued" ? "Issued lines" : "Openings";
+  const count = opts.adding ? "7 lines <span class=\"sep-dot\">·</span> <em>1 not saved</em>"
+                            : "6 lines <span class=\"sep-dot\">·</span> <em>2 need review</em>";
+  const draftLine = { code:"W07", name:"—", room:"", size:null, qty:1, total:null, state:"review" };
+
+  return `
+  <section class="card" aria-label="Openings">
+    <header><span class="lbl">${title}</span><span class="meta">${count}</span></header>
+    <div class="body flush">
+      <ul class="linelist">
+        <li class="rhead" aria-hidden="true">
+          <span>Code</span><span>Product</span><span class="r">Size h × w</span><span class="r">Qty</span>
+          <span class="r">Line total</span><span>State</span><span></span>
+        </li>
+        ${LINES.map((l,i)=>{
+          if(opts.editLine === i) return lineRow(l, {
+            editing:true, target:true, savefail:opts.savefail,
+            junction:opts.junction, divergence:opts.divergence,
+            confirmRemove:opts.confirmRemove, notes:1
+          });
+          return lineRow(l, { notes: i===0 ? 2 : 0 });
+        }).join("")}
+        ${opts.adding ? lineRow(draftLine, { draft:true, editing:true }) : ""}
+      </ul>
+      ${addRow}
+    </div>
+  </section>`;
+}
+
+function seamR3(){
+  return `
+  <section class="seam span2" aria-label="Reserved for a later region">
+    <span class="lbl">Region R3 — not built yet</span>
+    <h4>Derivation</h4>
+    <p>Origin file, extracted text, the requirement derived, the reasoning, and every candidate considered with its rank
+      and reason — the answer to <i>"why that one, and why not the cheaper one?"</i> while the customer is still on the
+      phone. It lands <b>here</b>: asking a line's "why" opens it at the top of this pane and pushes the record blocks
+      down. Nothing in R1 has to move for it to arrive, and at 1440 it sits beside the openings list rather than
+      replacing it.</p>
+  </section>`;
+}
+
+function notesBlock(){
+  return `
+  <section class="card" aria-label="Notes">
+    <header><span class="lbl">Notes</span><span class="meta">7</span></header>
+    <div class="body flush">
+      <ul class="blist">
+        <li><div class="note-left">
+          <div class="txt"><a class="lineref" href="#line-w02">W02</a> Dan is fine with the 2.41 — wants the wider opening
+            more than the thermal number. Confirmed on the call.</div>
+          <div class="by">Note · dan@openframe.com.au · 17 Aug, 14:22</div></div></li>
+        <li><div class="note-left">
+          <div class="txt"><a class="lineref" href="#">W01</a> Sill height checked against the slab set-down — OK.</div>
+          <div class="by">Note · dan@openframe.com.au · 17 Aug, 11:03</div></div></li>
+        <li><div class="note-left">
+          <div class="txt">Waiting on AMJ for the corner-assembly price before this can be issued.</div>
+          <div class="by">Note · sam@openframe.com.au · 16 Aug, 16:40</div></div></li>
+        <li><div class="note-left">
+          <div class="txt">Customer asked whether the study window can be dropped entirely.</div>
+          <div class="by">Clarification · system · 15 Aug, 09:12</div></div></li>
+      </ul>
+    </div>
+    <div class="foot">Showing 4 of 7 <span class="sep-dot">·</span> <button class="link">Show all</button></div>
+  </section>`;
+}
+
+function filesBlock(){
+  return `
+  <section class="card fold" data-open="1" aria-label="Files">
+    <header><button class="foldbtn" aria-expanded="true"><span class="chev" aria-hidden="true">${ic("chev")}</span><span class="lbl">Files</span></button><span class="meta">3</span></header>
+    <div class="body flush">
+      <ul class="blist">
+        <li><div class="txt">window-schedule-rev-c.pdf <span class="dim">· 1.8 MB</span></div>
+            <div class="by">Schedule · clean · 12 Aug</div></li>
+        <li><div class="txt">elevations-north.pdf <span class="dim">· 640 kB</span></div>
+            <div class="by">Drawing · clean · 12 Aug</div></li>
+        <li><div class="txt">site-photos.zip</div>
+            <div class="by warn">Not scanned — this file is not known to be safe</div></li>
+      </ul>
+    </div>
+  </section>`;
+}
+
+function historyBlock(fail){
+  if(fail){
+    return `
+    <section class="card" aria-label="History">
+      <header><span class="lbl">History</span></header>
+      <div class="pane-err" role="alert">
+        <p>The history couldn't be loaded — the server answered 503. Everything else on this record is current.</p>
+        <div><button class="btn sm">Try again</button></div>
+      </div>
+    </section>`;
+  }
+  return `
+  <section class="card fold" data-open="1" aria-label="History">
+    <header><button class="foldbtn" aria-expanded="true"><span class="chev" aria-hidden="true">${ic("chev")}</span><span class="lbl">History</span></button><span class="meta">31</span></header>
+    <div class="body flush">
+      <ul class="blist">
+        <li><div class="txt">resolved technical review: thermalRecommendation</div><div class="by">dan@openframe.com.au · 17 Aug, 14:21</div></li>
+        <li><div class="txt">line.split</div><div class="by">dan@openframe.com.au · 17 Aug, 10:58</div></li>
+        <li><div class="txt">started pricing</div><div class="by">sam@openframe.com.au · 15 Aug, 08:30</div></li>
+        <li><div class="txt">schedule parsed (12 items, 3 to review)</div><div class="by">system · 12 Aug, 19:44</div></li>
+      </ul>
+    </div>
+    <div class="foot"><button class="link">Show all 31 events →</button></div>
+  </section>`;
+}
+
+function paymentsBlock(){
+  return `
+  <section class="card fold" data-open="1" aria-label="Payments">
+    <header><button class="foldbtn" aria-expanded="true"><span class="chev" aria-hidden="true">${ic("chev")}</span><span class="lbl">Payments</span></button><span class="meta">—</span></header>
+    <div class="empty">No payments recorded. Payments begin when the quote is accepted and an order is raised.</div>
+  </section>`;
+}
+
+/* ─── the totals bar: one component, both homes ─────────────────────────── */
+function totalsbar(mode){
+  if(mode==="editing"){
+    return `
+    <div class="totalsbar" role="region" aria-label="Totals and save">
+      <div class="t"><div class="k">This line</div><div class="v">$9,860<span class="gst">inc GST</span></div></div>
+      <div class="t"><div class="k">Quote total</div><div class="v">$46,180<span class="gst">inc GST</span></div></div>
+      <div class="acts"><button class="btn quiet">Cancel</button><button class="btn primary">Save line</button></div>
+    </div>`;
+  }
+  return `
+  <div class="totalsbar" role="region" aria-label="Totals">
+    <div class="t"><div class="k">Quote total · 6 lines · delivery not yet priced</div>
+      <div class="v">$46,180<span class="gst">inc GST</span></div></div>
+    <div class="acts"><button class="btn" aria-disabled="true">Issue</button></div>
+  </div>`;
+}
+
+/* ─── screens ───────────────────────────────────────────────────────────── */
+function screenRecord(kind){
+  const editing = kind==="editing" || kind==="failure" || kind==="removing";
+  const failure = kind==="failure";
+  const issued  = kind==="issued";
+  const empty   = kind==="empty";
+  const adding  = kind==="adding";
+
+  const banner = issued
+    ? `<div class="band info"><span class="glyph" aria-hidden="true"></span>
+        <span>This quote is <b>issued</b> — nothing can be added, changed or removed. Return it to pricing
+        to work on it. Nothing is hidden: everything below is exactly what was issued.</span></div>`
+    : empty
+      ? `<div class="band info"><span class="glyph" aria-hidden="true"></span>
+          <span>Nothing has been configured yet. Lines appear here when a schedule is parsed or the customer submits a configuration.</span></div>`
+      : `<div class="band warn"><span class="glyph" aria-hidden="true"></span>
+          <span><b>2 lines are unpriced or unresolved</b> — a quote cannot be issued until they are settled.
+          <button class="link">Show only those lines</button></span></div>`;
+
+  // W02 (index 1) is the size junction; W03 (index 2) is the composite whose
+  // removal has units to name.
+  const listOpts = {
+    savefail: failure,
+    adding,
+    editLine: kind==="removing" ? 2 : (editing ? 1 : undefined),
+    junction: editing && kind!=="removing",
+    divergence: editing && kind!=="removing",
+    confirmRemove: kind==="removing"
+  };
+
+  return `
+  <div class="app">
+    ${topbar({crumb:true})}
+    ${failure ? offlineBand() : ""}
+    <div class="shell">
+      ${rail()}
+      <main class="content">
+        <div class="pagepad">
+          <div class="record">
+            <div class="head">
+              ${identity()}
+              ${ribbon(issued?2:1, issued?"Quote issued":"Pricing", issued?"customer":"us", issued?4:2)}
+              ${banner}
+              ${actionbar(issued?"issued":"pricing")}
+            </div>
+            <div class="cols">
+              <div class="work">
+                ${linesCard(issued?"issued":empty?"empty":"pricing", listOpts)}
+              </div>
+              <div class="ctx"><div class="ctxgrid">
+                ${money(issued?"issued":"pricing")}
+                ${seamR3()}
+                ${notesBlock()}
+                ${filesBlock()}
+                ${historyBlock(failure)}
+                ${paymentsBlock()}
+              </div></div>
+            </div>
+          </div>
+        </div>
+        ${totalsbar(editing||adding?"editing":"idle")}
+      </main>
+    </div>
+  </div>`;
+}
+
+function screenHome(){
+  const rows = [
+    ["OF-Q-10412","Hawthorn East — 14 Rathmines Rd","Carrington Build Co","Pricing","us",2],
+    ["OF-Q-10409","Brunswick — 8/22 Weston St","Ardent Homes","Issued","customer",4],
+    ["OF-Q-10404","Doncaster — Lot 118 Ellery Rise","Peak Residential","Production","nobody",11],
+    ["OF-Q-10398","Kew — 3 Fenton Ave","Carrington Build Co","Intake","us",1]
+  ];
+  return `
+  <div class="app">
+    ${topbar({})}
+    <div class="shell">
+      ${rail()}
+      <main class="content"><div class="pagepad">
+        <div class="record"><div class="cols"><div class="work">
+          <div class="band info bandgap"><span class="glyph" aria-hidden="true"></span>
+            <span><b>Interim list.</b> R4 replaces this with the attention surface — what needs doing, and where the
+            catalogue has gaps. Until then this is how you reach a record without pasting a URL.</span></div>
+          <section class="card">
+            <header><span class="lbl">Records</span><span class="meta">4 shown</span></header>
+            <div class="body flush"><ul class="linelist">
+              <li class="rhead" aria-hidden="true"><span>Ref</span><span>Project</span><span class="r">Phase</span>
+                <span class="r"></span><span class="r">Waiting on</span><span>Days</span><span></span></li>
+              ${rows.map(([ref,t,org,ph,w,d])=>`
+              <li><div class="lrow">
+                <div class="c-code mono">${ref.replace("OF-Q-","")}</div>
+                <div class="c-prod"><div class="pname">${esc(t)}</div><div class="psub">${esc(org)}</div></div>
+                <div class="c-size"><span class="size">${ph}</span></div>
+                <div class="c-qty"></div>
+                <div class="c-total waiting">${w}</div>
+                <div class="c-state"><span class="state ${w==="us"?"rev":"ok"}">${d} d</span></div>
+                          <div class="c-act"><button class="link">open</button></div>
+              </div></li>`).join("")}
+            </ul></div>
+          </section>
+        </div></div></div>
+      </div></main>
+    </div>
+  </div>`;
+}
+
+function screenSignin(){
+  return `
+  <div class="app">
+    <div class="topbar"><span class="brand">OpenFrame</span></div>
+    <div class="centre">
+      <section class="card signin"><div class="body">
+        <h2>Internal console — staff sign-in</h2>
+        <p class="sub">This screen only exists where Cloudflare Access is not configured — local and staging.
+          In production Access answers first and these routes return 404.</p>
+        <div class="devbanner">Dev mode — code is <span class="code">418022</span></div>
+        <div class="field spaced">
+          <label for="s-email">Work email</label>
+          <input class="inp" id="s-email" value="dan@openframe.com.au">
+        </div>
+        <div class="field spaced">
+          <label for="s-code">Code</label>
+          <input class="inp mono codefield" id="s-code" inputmode="numeric" placeholder="••••••">
+        </div>
+        <div class="actions">
+          <button class="btn primary grow">Sign in</button>
+          <button class="btn quiet">← Change email</button>
+        </div>
+        <p class="legal">Authorised staff only. Access is logged.</p>
+      </div></section>
+    </div>
+  </div>`;
+}
+
+function screenBoot(){
+  return `
+  <div class="app">
+    <div class="bootscreen bootsplit"><div class="spinner" role="status" aria-label="Loading"></div></div>
+    <div class="centre crashpane">
+      <section class="card crashcard"><div class="body">
+        <span class="lbl">Error boundary</span>
+        <h2 class="crashttl">This screen stopped working</h2>
+        <p class="cap crashbody">Something in the console failed, not your record. Nothing you had on
+          screen was saved. Reload to carry on — you will come back to this same address.</p>
+        <div class="actions">
+          <button class="btn primary">Reload this screen</button>
+          <button class="btn">Go to work</button>
+        </div>
+        <p class="footnote">OF-Q-10412 · 17 Aug 14:41 · reference 7f3c-11ab</p>
+      </div></section>
+    </div>
+  </div>`;
+}
+
+const SCREENS = {
+  record:  ()=>screenRecord("record"),
+  editing: ()=>screenRecord("editing"),
+  adding:  ()=>screenRecord("adding"),
+  removing:()=>screenRecord("removing"),
+  failure: ()=>screenRecord("failure"),
+  issued:  ()=>screenRecord("issued"),
+  empty:   ()=>screenRecord("empty"),
+  home:    screenHome,
+  signin:  screenSignin,
+  boot:    screenBoot
+};
+
+/* ─── harness wiring ────────────────────────────────────────────────────── */
+let current = "record", width = "412", gallery = false;
+
+function frame(w, label){
+  const wrap = document.createElement("div");
+  wrap.className = "frame-wrap";
+  const px = w === "fill" ? null : parseInt(w,10);
+  wrap.innerHTML = `
+    <div class="frame-label"><b>${label||(px?px+" px":"Fill")}</b><span>drag the edge →</span></div>
+    <div class="frame"><div class="grip" title="Drag to resize"></div><div class="frame-scroll"></div></div>`;
+  const f = wrap.querySelector(".frame");
+  if(px){ f.style.width = px+"px"; } else { f.style.width = "100%"; wrap.style.flex = "1 1 auto"; }
+  wrap.querySelector(".frame-scroll").innerHTML = SCREENS[current]();
+
+  // continuous drag — the point of the whole file
+  const grip = wrap.querySelector(".grip");
+  grip.addEventListener("pointerdown", e=>{
+    e.preventDefault(); grip.setPointerCapture(e.pointerId);
+    const x0 = e.clientX, w0 = f.getBoundingClientRect().width;
+    const label = wrap.querySelector(".frame-label b");
+    const move = ev=>{
+      const nw = Math.max(320, Math.round(w0 + (ev.clientX - x0)));
+      f.style.width = nw+"px"; label.textContent = nw+" px"; f.__sync && f.__sync();
+    };
+    const up = ()=>{ grip.removeEventListener("pointermove",move); grip.removeEventListener("pointerup",up); };
+    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up);
+  });
+  return wrap;
+}
+
+/* Structural fold #2: the reference blocks (Files, History, Payments) close
+   themselves when the RECORD is narrow enough that they would stack full-width
+   into an endless page — a phone shows a record
+   rather than an endless page. Notes stays open — it is used ON the call.
+   Nothing is hidden: every heading and count stays visible, one tap opens it.
+   This is the ResizeObserver half of the layout system (arch §4.1), not CSS. */
+function applyFolds(frame){
+  const rec = frame.querySelector('.record');
+  if(!rec) return () => {};
+  const cards = [...rec.querySelectorAll('.card.fold')];
+  cards.forEach(c=>{
+    c.querySelector('.foldbtn').onclick = () => {
+      const open = c.dataset.open === '1' ? '0' : '1';
+      c.dataset.open = open; c.dataset.user = '1';
+      c.querySelector('.foldbtn').setAttribute('aria-expanded', open === '1');
+    };
+  });
+  const sync = () => {
+    const wide = rec.getBoundingClientRect().width >= 640;
+    cards.forEach(c=>{
+      if(c.dataset.user) return;
+      c.dataset.open = wide ? '1' : '0';
+      c.querySelector('.foldbtn').setAttribute('aria-expanded', String(wide));
+    });
+  };
+  sync();
+  new ResizeObserver(sync).observe(rec);
+  return sync;
+}
+
+function render(){
+  const stage = document.getElementById("stage");
+  stage.innerHTML = "";
+  const add = w => {
+    const wrap = frame(w);
+    stage.appendChild(wrap);                     // attach first, then measure
+    const f = wrap.querySelector('.frame');
+    f.__sync = applyFolds(f);
+  };
+  if(gallery){ ["320","768","1440"].forEach(add); } else { add(width); }
+  document.querySelectorAll("[data-screen]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.screen===current));
+  document.querySelectorAll("[data-w]").forEach(b=>b.setAttribute("aria-pressed", !gallery && b.dataset.w===width));
+  document.getElementById("gallery").setAttribute("aria-pressed", gallery);
+}
+
+document.querySelectorAll("[data-screen]").forEach(b=>b.onclick=()=>{ current=b.dataset.screen; render(); });
+document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{ width=b.dataset.w; gallery=false; render(); });
+document.getElementById("gallery").onclick=()=>{ gallery=!gallery; render(); };
+render();
+</script>
+</body>
+</html>

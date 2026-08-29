@@ -131,6 +131,18 @@ Turning an uploaded schedule into proposed lines. Parsed lines carry their origi
 The per-opening answer read from a plan set's elevations by a vision model: how the opening *divides* — operations, their order, the division axis, and the ratio each unit takes. Three states, never collapsed (plan-parse output spec §4): a value, *not stated* (readable drawings that simply do not say), *not read* (we could not tell). A reading claims operable-or-not, never a family — the schedule names the family — and a stated width always beats a measured ratio. Every reading carries its crop as evidence. The customer sees successes only; ops sees gaps and disagreements, because only ops can act on them.
 _Avoid_: drawing parse result (a reading is per opening, not per document), detection
 
+**Drawing enrichment**:
+The pass that goes back into the plans, per opening the schedule already found, for what the schedule cannot carry — accurate split, orientation, elevation, room. It never re-derives the schedule and never contradicts it: the schedule owns the size, the drawing owns the division. Invisible to the customer, who sees only openings, dimensions and the product selected; its value is a better-chosen product, and *better accuracy* means *higher estimate accuracy*. Off is a supported state (`AI_EXTRACTION_MODE`), and with it off the schedule table and the default split carry the quote exactly as before.
+_Avoid_: drawing parse (that is the schedule parse), advanced parse (owner shorthand, not a surface)
+
+**Architectural priority**:
+Which source wins on size, splits and types: **plans** (drawing enrichment), then the **energy report** where no plans exist, then the **schedule table**. Plans are a binding build contract, so they win on every architectural fact.
+_Avoid_: parse precedence
+
+**Thermal priority**:
+Which source wins on target Uw and solar gain: the **energy report**, then values **calculated** by the platform's thermal modelling, then **system defaults** from the project's location (Melbourne only for the MVP). The calculated tier is *advisory, not authoritative* — the platform is not thermal certification software and uses these values for product selection. Ops sees **one** value and how the offered product matches it, never a set of competing ones.
+_Avoid_: thermal source of truth (there is a ladder, not a single source)
+
 **Crop evidence**:
 The exact image the model was shown for a drawing reading, stored per stage run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface.
 
