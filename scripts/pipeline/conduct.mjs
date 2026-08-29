@@ -885,6 +885,11 @@ TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
       : `SCOPE - read the ask and fix exactly that:
   ${run.dir}/00-ask.md
 
+If the ask already names a file and line (e.g. "Foo.tsx:120"), that IS your
+location - go straight there. Do not Grep or Read your way to rediscovering a
+place you were already told. Only search if the ask is genuinely vague about
+where the problem lives.
+
 Nobody sliced this one, so the boundary is yours to hold: change what the fix
 needs and nothing else. No drive-by refactors, no widening.`
     const priorNotes = notesFor(run, t.after)
