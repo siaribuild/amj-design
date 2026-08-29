@@ -23,6 +23,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY steps.py server.py ./
 
+# Runs as an unprivileged user (semgrep dockerfile.security.missing-user) —
+# this container already holds no credentials and makes no outbound call
+# (§9 AB-5); it also should not be able to touch anything as root if a PDF
+# parsing bug were ever exploitable.
+RUN useradd --no-create-home --uid 10001 planparse
+USER planparse
+
 # The Worker talks to this over HTTP, via the PLAN_PARSE Durable Object
 # binding only — no public route, no service binding, no hostname (§9 AB-5).
 # One job per request; the instance sleeps when idle and stops billing then.
