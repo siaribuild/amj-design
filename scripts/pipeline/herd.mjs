@@ -112,21 +112,38 @@ export async function available() {
 const watchLoop = (cmd) => 'while ($true) { cls; ' + cmd + '; Start-Sleep 5 }'
 
 /**
- * The run's own workspace: a plan pane and a diff pane, and nothing else. Stage
- * panes are split on demand, so `conduct start` does not open a dozen shells
- * for stages that may never run.
+ * The run's own workspace: plan pane (top-left), diff pane (bottom-left), and
+ * the epic/story tree - full height, right half of the screen. Stage panes
+ * are split on demand, so `conduct start` does not open a dozen shells for
+ * stages that may never run.
+ *
+ * Layout order matters: the root pane is split RIGHT first, at ratio 0.5,
+ * before it is subdivided - that is what makes the right side ONE pane
+ * spanning the full height, rather than a third row squeezed under plan/diff.
  */
 export async function ensureCockpit({ slug, base, root }) {
   checkSha(base)                                // both before anything exists
   const ws = await herd('workspace', 'create', '--cwd', root, '--label', checkSlug(slug), '--no-focus')
   const planPane = ws.root_pane.pane_id
-  await herd('pane', 'run', planPane, watchLoop('node scripts/pipeline/conduct.mjs plan'))
-  const split = await herd('pane', 'split', '--pane', planPane, '--direction', 'down',
+
+  // Split geometry first, both watch loops after: the tree must split off the
+  // root BEFORE the root is subdivided into plan/diff, or it ends up a third
+  // row squeezed under them instead of one pane spanning the full height.
+  const right = await herd('pane', 'split', '--pane', planPane, '--direction', 'right',
+    '--ratio', '0.5', '--cwd', root, '--no-focus')
+  const treePane = right.pane.pane_id
+  const down = await herd('pane', 'split', '--pane', planPane, '--direction', 'down',
     '--cwd', root, '--no-focus')
-  const diffPane = split.pane.pane_id
+  const diffPane = down.pane.pane_id
+
+  await herd('pane', 'run', planPane, watchLoop('node scripts/pipeline/conduct.mjs plan'))
   await herd('pane', 'run', diffPane,
     watchLoop('git --no-pager diff --stat ' + checkSha(base) + '...HEAD'))
-  return { workspace: ws.workspace.workspace_id, tab: ws.tab.tab_id, planPane, diffPane, rolePanes: {} }
+  await herd('pane', 'run', treePane, watchLoop('node scripts/pipeline/conduct.mjs tree'))
+  return {
+    workspace: ws.workspace.workspace_id, tab: ws.tab.tab_id,
+    planPane, diffPane, treePane, rolePanes: {},
+  }
 }
 
 // --- launching a stage -------------------------------------------------------

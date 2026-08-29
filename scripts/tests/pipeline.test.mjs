@@ -394,6 +394,49 @@ test('plan shows an interrupted stage as in progress, never as not-started', () 
   assert.match(row('t1  '), /held|blocked/i)
 })
 
+test('tree links tasks to the criteria they claim, and never smears an overall verdict onto one it did not measure', () => {
+  // The epic/story view: acceptance criteria as the stories, tasks nested
+  // under whichever they claim via 02-tasks.json's "criteria" field. The
+  // defect this guards against was caught building it, against a REAL
+  // verify.md: an overall FAIL (from 5 of 42 criteria) painted all 42 red
+  // when applied per-criterion - a report that was wrong is worse than one
+  // that admits it does not know.
+  const projects = tmp('tree-projects')
+  const { root } = seedRun('tree-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '01-spec.md'), [
+    '## 2. Acceptance criteria',
+    '',
+    '1. **Given** a widget, **when** clicked, **then** it opens',
+    '2. **Given** it is open, **when** dismissed, **then** it closes',
+  ].join(NL))
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify([
+    { id: 't1', title: 'wire the open handler', criteria: ['1'], after: [] },
+    { id: 't2', title: 'unrelated cleanup', after: [] },
+  ]))
+  // No parseable per-criterion table - only an overall verdict line, the
+  // shape a real report had when this was caught.
+  writeFileSync(join(dir, '06-verify.md'), '**Verdict: FAIL.** 1 of 2 failed.\n')
+  const run = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8'))
+  run.tasksDone = ['t1']
+  writeFileSync(join(dir, 'run.json'), JSON.stringify(run))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /overall verdict: FAIL/i, 'the overall verdict must appear, once, clearly labelled')
+  const ac1 = out.split(NL).find((l) => l.includes('AC 1:'))
+  const ac2 = out.split(NL).find((l) => l.includes('AC 2:'))
+  assert.doesNotMatch(ac1, /\bFAIL\b/, 'AC 1 must not be painted with the overall verdict: ' + ac1)
+  assert.doesNotMatch(ac2, /\bFAIL\b/, 'AC 2 must not be painted with the overall verdict: ' + ac2)
+  assert.match(ac1, /not broken down/i)
+
+  const t1Line = out.split(NL).find((l) => l.includes('t1  '))
+  assert.match(t1Line, /\[x\]/, 'a done task must show done under its criterion')
+  assert.match(out, /UNLINKED TASKS/)
+  assert.ok(out.indexOf('t2') > out.indexOf('UNLINKED TASKS'),
+    'an untagged task must fall into UNLINKED, not silently vanish')
+})
+
 test('report prints machine-wide window totals, anchored when a future reset is known', () => {
   const projects = tmp('report-window-projects')
   const now = Date.now()
@@ -769,7 +812,7 @@ test('conduct start validates the slug BEFORE it creates anything', () => {
   }
 })
 
-test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane, and nothing else', () => {
+test('conduct start builds the cockpit: plan, diff, and a full-height tree pane on the right', () => {
   const s = stubbedRepo('cockpit')
 
   const out = execFileSync(process.execPath, [CONDUCT, 'start', 'demo', 'an ask'],
@@ -777,10 +820,22 @@ test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane
 
   const argvs = calls(s.log)
   assert.equal(said(s.log, 'workspace', 'create').length, 1, 'no workspace for the run')
-  assert.equal(said(s.log, 'pane', 'split').length, 1,
-    'the skeleton is plan + diff; stage panes are split on demand, not at start')
-  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both cockpit panes must be given their watch loop')
+  assert.equal(said(s.log, 'pane', 'split').length, 2,
+    'the skeleton is plan + diff + tree; stage panes are split on demand, not at start')
+  assert.equal(said(s.log, 'pane', 'run').length, 3, 'all three cockpit panes must be given their watch loop')
   assert.equal(said(s.log, 'agent', 'start').length, 0, 'start must boot no agent - no stage has run yet')
+
+  // The tree is split FIRST, off the root pane, right/ratio 0.5 - full height,
+  // not a third row squeezed under plan/diff. Only then does the root pane
+  // (now the left half) get subdivided into plan (top) and diff (bottom).
+  const splits = said(s.log, 'pane', 'split')
+  assert.equal(splits[0][splits[0].indexOf('--direction') + 1], 'right',
+    'the tree pane must be split off BEFORE plan/diff subdivide the root, or it is not full height')
+  assert.equal(splits[0][splits[0].indexOf('--ratio') + 1], '0.5')
+  assert.equal(splits[1][splits[1].indexOf('--direction') + 1], 'down')
+
+  const runs = said(s.log, 'pane', 'run').map((a) => a[3])
+  assert.ok(runs.some((cmd) => cmd.includes('conduct.mjs tree')), 'the tree pane never got its watch loop')
 
   const ws = said(s.log, 'workspace', 'create')[0]
   assert.equal(ws[ws.indexOf('--label') + 1], 'demo')
@@ -789,8 +844,10 @@ test('conduct start builds the cockpit: a workspace, a plan pane and a diff pane
     assert.ok(split.includes('--no-focus'), 'a split must never steal focus')
 
   const run = JSON.parse(readFileSync(join(s.root, 'docs', 'runs', 'demo', 'run.json'), 'utf8'))
-  assert.equal(run.herdr.planPane, 'w9:p1')
-  assert.equal(run.herdr.diffPane, 'w9:p2')
+  assert.equal(run.herdr.planPane, 'w9:p1', 'the root pane IS the plan pane, no extra split for it')
+  // Split order: tree (right) before diff (down) - geometry, not run order.
+  assert.equal(run.herdr.treePane, 'w9:p2')
+  assert.equal(run.herdr.diffPane, 'w9:p3')
   assert.equal(run.herdr.workspace, 'w9')
 
   // The diff loop is the one command string with a variable in it. It carries
@@ -850,8 +907,10 @@ test('a herdr command that answers with nothing is a success, not a parse error'
   const c = await ensureCockpit({ slug: 'demo', base: 'abc1234', root: s.root })
 
   assert.equal(c.planPane, 'w9:p1')
-  assert.equal(c.diffPane, 'w9:p2', 'the split after a payload-less pane run must still land')
-  assert.equal(said(s.log, 'pane', 'run').length, 2, 'both watch loops must have been sent')
+  // Split order: tree (right) before diff (down) - geometry, not run order.
+  assert.equal(c.treePane, 'w9:p2', 'the split after a payload-less pane run must still land')
+  assert.equal(c.diffPane, 'w9:p3')
+  assert.equal(said(s.log, 'pane', 'run').length, 3, 'all three watch loops must have been sent')
 })
 
 test('launchStage checks the pane is at a shell, then boots claude with native args', async () => {
@@ -1362,7 +1421,7 @@ test('a role gets ONE pane, reused - a run must not end with a dozen idle shells
   const afterFirst = said(s.log, 'pane', 'split').length
   paned(s, 'run', 'spec')
 
-  assert.equal(afterFirst, 2, 'cockpit diff pane + one pane for the product-manager role')
+  assert.equal(afterFirst, 3, 'cockpit tree pane + diff pane + one pane for the product-manager role')
   assert.equal(said(s.log, 'pane', 'split').length, afterFirst,
     'the role pane was back at a shell after /exit and must be reused, not re-split')
   assert.equal(said(s.log, 'agent', 'start').length, 2,

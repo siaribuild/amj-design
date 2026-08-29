@@ -192,7 +192,8 @@ WRITE TWO FILES.
         "files": ["worker/lib/foo.ts", "scripts/tests/foo.test.mjs"],
         "tests": ["scripts/tests/foo.test.mjs"],
         "done_when": "one sentence a tester could check",
-        "after": [] }
+        "after": [],
+        "criteria": ["1", "3"] }
     ]
 
     Rules: every path exact and relative to repo root - the developer is
@@ -200,6 +201,14 @@ WRITE TWO FILES.
     work, not a day. "after" lists task ids that must land first. Every test
     file your design names MUST appear in some task's "files" - a
     named-but-never-created test file is v1's most-repeated failure.
+
+    "criteria" names which of the spec's numbered acceptance criteria this
+    task addresses (its own numbering from 01-spec.md's list, as strings). Not
+    always 1:1 - one task can serve several criteria, one criterion can need
+    several tasks. This is the ONLY thing that lets \`conduct tree\` show the
+    epic/story view (which criteria are done, not just which tasks are);
+    leaving it off buries the task under "unlinked" and answers nobody's
+    "how is the feature actually progressing" question. Tag every task.
 
     A LARGE FILE IN MANY TASKS' "files" IS A COST BUG, not a convenience.
     Measured: a 9-task slice that put a 2000-line file in 8 tasks made 8 fresh
@@ -1280,7 +1289,7 @@ const cmds = {
       try {
         run.herdr = await ensureCockpit({ slug, base: run.base, root: ROOT })
         console.log('\n  cockpit: workspace ' + run.herdr.workspace + '  plan ' +
-          run.herdr.planPane + '  diff ' + run.herdr.diffPane)
+          run.herdr.planPane + '  diff ' + run.herdr.diffPane + '  tree ' + run.herdr.treePane)
       } catch (e) {
         console.log('\n  could not build the cockpit (' + e.message + ') - running headless.')
       }
@@ -1612,6 +1621,95 @@ If you believe the finding is wrong, say so and change nothing.`
     console.log('\n  context so far: ' + fmt(spent) + '\n')
   },
 
+  // Epic/story view: acceptance criteria as the "stories", each task nested
+  // under the criteria it claims to satisfy, verify's verdict once it lands.
+  // The data already existed in three separate artifacts (spec, tasks, verify
+  // report) before this - this is wiring, not new process.
+  async tree() {
+    const run = refreshRun(loadRun(activeSlug()))
+    console.log('\n  ' + run.slug + '   tier ' + (run.tier || 'full'))
+
+    const specCriteria = (() => {
+      const p = join(RUNS, run.slug, '01-spec.md')
+      if (!existsSync(p)) return null
+      // "**Given**" right after a numbered bullet is the one anchor every
+      // spec-writing prompt actually enforces ("numbered Given-When-Then") -
+      // reliable regardless of which heading text wraps the section, unlike
+      // matching on a heading, which has drifted across real spec files.
+      const text = readFileSync(p, 'utf8')
+      const re = /^(\d+)\.\s+\*\*Given\*\*(.*)$/gm
+      const out = []
+      let m
+      while ((m = re.exec(text))) out.push({ num: m[1], text: ('Given' + m[2]).replace(/\*\*/g, '').trim() })
+      return out.length ? out : null
+    })()
+
+    const tasks = (() => {
+      const tp = join(RUNS, run.slug, '02-tasks.json')
+      if (existsSync(tp)) return JSON.parse(readFileSync(tp, 'utf8'))
+      // Mirrors runBuild's own synthetic task exactly - the fix tier has no
+      // architect to slice one, so there is nothing else to render here.
+      if (run.tier === 'fix') return [{
+        id: 't1', title: 'the ask in ' + run.dir + '/00-ask.md', after: [],
+      }]
+      return []
+    })()
+
+    const verify = (() => {
+      const p = join(RUNS, run.slug, '06-verify.md')
+      if (!existsSync(p)) return null
+      const text = readFileSync(p, 'utf8')
+      const verdict = (text.match(/\*\*Verdict:\s*(PASS|FAIL)/i) || [])[1] || null
+      // Best-effort: a per-criterion table if the report happens to have one.
+      // Real reports vary a lot - one is a strict table, another pure prose -
+      // so this is additive detail, never the only source of the verdict.
+      const perCriterion = {}
+      for (const row of text.matchAll(/^\|\s*(\d+)\s*\|.*\|\s*(PASS|FAIL)\s*\|\s*$/gim))
+        perCriterion[row[1]] = row[2].toUpperCase()
+      return { verdict, perCriterion, hasTable: Object.keys(perCriterion).length > 0 }
+    })()
+
+    const done = new Set(run.tasksDone || [])
+    const taskLine = (t) => {
+      const st = run.stages['build-' + t.id]
+      const mark = done.has(t.id) ? '[x]' : (st?.status === 'held' || st?.status === 'running') ? '[>]' : '[ ]'
+      return '  ' + mark + ' ' + t.id + '  ' + (t.title || '').slice(0, 60)
+    }
+
+    if (!specCriteria) {
+      console.log('\n  no 01-spec.md yet (fix/direct tier, or spec has not run)')
+      console.log('  ' + run.dir + '/00-ask.md is the whole story here:\n')
+      for (const t of tasks) console.log(taskLine(t))
+    } else {
+      // The overall verdict is NOT a per-criterion verdict. Applying it to
+      // every criterion when the report has no real table was caught testing
+      // this against a live report: 35 of 42 criteria actually PASSED, but an
+      // overall FAIL (from the other 5) would have painted all 42 red. A
+      // number this wrong is worse than no number - show it once, separately,
+      // never smeared across criteria it does not describe.
+      if (verify?.verdict && !verify.hasTable)
+        console.log('\n  overall verdict: ' + verify.verdict +
+          '  (06-verify.md has no per-criterion table to break this down further)')
+      console.log()
+      const linked = new Set()
+      for (const c of specCriteria) {
+        const status = verify?.hasTable
+          ? (verify.perCriterion[c.num] || '(not in the table)')
+          : (verify ? '(not broken down)' : '(unverified)')
+        console.log('  AC ' + c.num + ': ' + c.text.slice(0, 70) + '   ' + status)
+        const mine = tasks.filter((t) => (t.criteria || []).map(String).includes(c.num))
+        mine.forEach((t) => linked.add(t.id))
+        for (const t of mine) console.log('  ' + taskLine(t))
+      }
+      const unlinked = tasks.filter((t) => !linked.has(t.id))
+      if (unlinked.length) {
+        console.log('\n  UNLINKED TASKS (no criteria tag from design)')
+        for (const t of unlinked) console.log(taskLine(t))
+      }
+    }
+    console.log()
+  },
+
   async report() {
     const run = refreshRun(loadRun(activeSlug()))
     const rows = Object.entries(run.stages).filter(([, s]) => !s.rollup)
@@ -1661,6 +1759,8 @@ function main() {
     conduct fix "<finding>"        route a review finding to a developer
                                      [--severity high|medium|low|cosmetic]
                                      low/cosmetic are deferred to DEBT.md
+    conduct plan                   stage/task progress - what the pipeline is doing
+    conduct tree                   epic/story view - which acceptance criteria are done
     conduct report                 token and time split per stage
 
   stages: ` + STAGES.map((s) => s.id).join(' -> ') + `
