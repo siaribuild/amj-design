@@ -1,0 +1,32 @@
+{
+  "slug": "smoke-test",
+  "base": "6a5668d2",
+  "branch": "fix/guest-otp-attempt-cap",
+  "ui": false,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "cost": 0.5426285,
+      "contextTokens": 110499,
+      "outputTokens": 3718,
+      "session": "a3caa593-a5e3-4bd4-8a4a-22268eab078f",
+      "seconds": 67,
+      "overBudget": false,
+      "turns": 3,
+      "source": "transcript"
+    },
+    "design": {
+      "code": 0,
+      "cost": 4.1085295,
+      "contextTokens": 556185,
+      "outputTokens": 16933,
+      "session": "378e86ec-6368-466e-8a8a-fb99948c21c6",
+      "seconds": 368,
+      "overBudget": false,
+      "turns": 10,
+      "source": "transcript"
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-08-26T04:22:20.749Z"
+}

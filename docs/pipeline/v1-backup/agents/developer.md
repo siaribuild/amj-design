@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implements features and fixes test-first from a spec/design. Use PROACTIVELY for the implementation step of the feature pipeline, and for any non-trivial code change.
-model: sonnet
+model: opus
 effort: high
 ---
 

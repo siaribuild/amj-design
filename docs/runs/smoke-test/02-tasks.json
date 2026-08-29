@@ -1,0 +1,39 @@
+[
+  {
+    "id": "t1",
+    "title": "Health verdict lib + pure unit suite (red first)",
+    "files": [
+      "worker/lib/health.ts",
+      "worker/types.ts",
+      "scripts/tests/health.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/health.test.mjs"],
+    "done_when": "New scripts/tests/health.test.mjs (esbuild stdin-bundle pattern copied from scripts/tests/ai-pipeline.test.mjs lines 24-47) covers checkHealth per design §6: healthy stub → {status:'ok',sha,db:'ok'}/200 with exactly the keys status,sha,db; DB.prepare('SELECT 1').first() rejecting → {status:'degraded',db:'error'}/503 with sha present and no fragment of the thrown message in the serialized body; env.DB undefined → same degraded shape without throwing; BUILD_SHA unset and empty-string → sha 'unknown', still 200 when db ok; stub records exactly one statement, 'SELECT 1', no .run(). worker/lib/health.ts implements checkHealth(env) per design §3. worker/types.ts Env gains BUILD_SHA?: string (after APP_ENV, line 12) with the doc comment from design §2. package.json: health.test.mjs appended to test:pure (line 17) and a test:health script added. npm run test:health green; npm run typecheck:gate green.",
+    "after": []
+  },
+  {
+    "id": "t2",
+    "title": "Route exit in worker/index.ts + integration assertions in api.test.mjs",
+    "files": [
+      "worker/index.ts",
+      "scripts/tests/api.test.mjs"
+    ],
+    "tests": ["scripts/tests/api.test.mjs"],
+    "done_when": "worker/index.ts: /health exit added inside route() immediately after the /api/health bypass at line 274 (before opsShellFor and ensureCatalogue), exactly per design §3 — GET/HEAD dispatch to checkHealth, everything else 405 with Allow: GET, HEAD; the nine-exits comment at lines 160-167 updated to ten and the new exit named. scripts/tests/api.test.mjs: wrangler dev start args (lines 48-55) gain --var BUILD_SHA:<fixture sha, e.g. 40 hex chars>; the 'health, routing, and unauthenticated access boundaries' subtest (line 65) gains: GET /health → 200 application/json with body deep-equal {status:'ok',sha:'<fixture>',db:'ok'}; POST /health → 405; GET /health?sql=DROP%20TABLE%20user&db=other → body identical to bare GET /health. Existing /api/health assertions (lines 66-68) untouched and green. npm run test:api green.",
+    "after": ["t1"]
+  },
+  {
+    "id": "t3",
+    "title": "Deploy wrapper injecting BUILD_SHA + docs line",
+    "files": [
+      "scripts/cf-deploy.mjs",
+      "package.json",
+      "scripts/tests/health.test.mjs",
+      "docs/DEPLOY.md"
+    ],
+    "tests": ["scripts/tests/health.test.mjs", "scripts/tests/docs.test.mjs"],
+    "done_when": "scripts/cf-deploy.mjs exists per design §3: exports resolveBuildSha() (execFileSync git rev-parse HEAD, null on any failure); when run directly (import.meta.url guard) it runs the vite builds then wrangler deploy --var APP_ENV:production plus --var BUILD_SHA:<sha> (var omitted when resolveBuildSha() is null). package.json cf:deploy (line 13) becomes 'node scripts/cf-deploy.mjs'. scripts/tests/health.test.mjs gains a subtest: resolveBuildSha() matches /^[0-9a-f]{40}$/ in this repo (plain import, no bundling). docs/DEPLOY.md verification section (~line 183) gains one line: curl the deployed /health and confirm sha equals git rev-parse HEAD of the deployed ref. npm run test:health and npm run test:docs green. No actual deploy is run.",
+    "after": ["t1"]
+  }
+]
