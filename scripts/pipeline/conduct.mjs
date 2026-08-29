@@ -898,42 +898,86 @@ Stop when this task is done. Do not start the next one.`
 
 // --- parallel review fan-out -----------------------------------------------
 
-function runCodex(run) {
+function codexCompanion() {
+  const home = process.env.USERPROFILE || process.env.HOME
+  return join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6',
+    'scripts', 'codex-companion.mjs')
+}
+
+/**
+ * One codex child, captured into `07-review-<id>.md`. The companion's `review`
+ * subcommand writes its own file; `task` does not - so the conductor writes
+ * both, from stdout, and neither depends on which subcommand was used.
+ */
+function runCodexJob(run, id, args, file) {
   return new Promise((res) => {
-    const home = process.env.USERPROFILE || process.env.HOME
-    const script = join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6',
-      'scripts', 'codex-companion.mjs')
+    const script = codexCompanion()
     if (!existsSync(script)) {
       process.stdout.write('  !! codex companion not found at ' + script +
         '\n     This work is UNREVIEWED by Codex. Do not present it as reviewed.\n')
       return res()
     }
-    process.stdout.write('\n  > review-codex\n')
-    const cp = spawn(process.execPath, [script, 'review', '--wait', '--base', run.base, '--scope', 'branch'],
-      { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+    process.stdout.write('\n  > ' + id + '\n')
+    const cp = spawn(process.execPath, [script, ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     cp.stdout.on('data', (d) => { out += d })
     cp.stderr.on('data', (d) => { out += d })
     cp.on('close', (code) => {
-      writeFileSync(join(RUNS, run.slug, '07-review-codex.md'), out)
+      writeFileSync(join(RUNS, run.slug, file), out)
       // Measured zero Claude tokens, not unmeasured: codex is another vendor's model.
-      run.stages['review-codex'] = { code, contextTokens: 0, outputTokens: 0, turns: 0, source: 'codex' }
+      run.stages[id] = { code, contextTokens: 0, outputTokens: 0, turns: 0, source: 'codex' }
       saveRun(run)
-      process.stdout.write('  ok review-codex (exit ' + code + ', 0 Claude tokens)\n')
+      process.stdout.write('  ok ' + id + ' (exit ' + code + ', 0 Claude tokens)\n')
       if (code !== 0)
-        process.stdout.write('  !! codex review did not complete. An infrastructure failure is NOT\n' +
+        process.stdout.write('  !! ' + id + ' did not complete. An infrastructure failure is NOT\n' +
           '     a clean review - retry once, then tell the owner it is unreviewed.\n')
       res()
     })
   })
 }
 
-// The one place in the pipeline where concurrency is free: the four reviewers
-// are read-only and independent, so running them at once costs the same tokens
+const runCodex = (run) =>
+  runCodexJob(run, 'review-codex',
+    ['review', '--wait', '--base', run.base, '--scope', 'branch'], '07-review-codex.md')
+
+/**
+ * The design's own reviewer, so it exists only where a design does: the
+ * architect runs in tier `full` alone. `task` rather than `review` because the
+ * review subcommand takes --model but has no --effort flag at all, and this
+ * one is worth xhigh.
+ */
+function runCodexArchitecture(run) {
+  const tier = run.tier || 'full'
+  if (tier !== 'full') {
+    // Never silently absent: a review nobody printed reads exactly like a
+    // review that ran clean.
+    process.stdout.write('\n  -- review-codex-architecture skipped: tier ' + tier +
+      ' has no design stage, so no architect was involved and there is no\n' +
+      '     architecture to review.\n')
+    return Promise.resolve()
+  }
+  return runCodexJob(run, 'review-codex-architecture',
+    ['task', '--model', 'gpt-5.6-sol', '--effort', 'xhigh', '--wait',
+      `Architecture review of this branch.
+
+READ ${run.dir}/02-design.md and ${run.dir}/02-tasks.json, then the branch diff:
+git diff ${run.base}...HEAD
+
+Judge the architecture itself, not the literal file list - a separate
+conformance reviewer already checks that every path the design named exists.
+Is the structure sound? Are the module boundaries in the right places? Does
+what was built serve what the design was for, or only its letter?
+
+Report findings in your reply, most serious first.`],
+    '07-review-architecture.md')
+}
+
+// The one place in the pipeline where concurrency is free: the reviewers are
+// read-only and independent, so running them at once costs the same tokens
 // and divides that stage's wall clock. Every reviewer is STARTED before any
 // completion is awaited - a fan-out that starts the second only once the first
 // has finished is a sequential loop wearing a costume - and one reviewer
-// holding on a question does not stall the other three.
+// holding on a question does not stall the rest.
 async function runReviews(run, panes) {
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
     const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
@@ -946,7 +990,7 @@ async function runReviews(run, panes) {
     if (!panes || rv.headless) return runClaude(spec, text, run, label)
     return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
-  await Promise.all([...jobs, runCodex(run)])
+  await Promise.all([...jobs, runCodex(run), runCodexArchitecture(run)])
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
     '     conduct fix "<finding>"\n')
 }

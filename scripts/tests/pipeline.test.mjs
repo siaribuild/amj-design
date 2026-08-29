@@ -1410,6 +1410,49 @@ test('the review fan-out starts all four reviewers before it consumes any comple
   assert.equal(existsSync(s.log + '.readcalled'), false, 'a data path read a pane')
 })
 
+test('the codex architecture review joins the fan-out, and only where an architect ran', () => {
+  const s = reviewRepo('review-arch')
+
+  const out = paned(s, 'run', 'review')
+
+  const done = firstFinish(out)
+  const at = startLine(out, 'review-codex-architecture')
+  assert.ok(at >= 0, 'the architecture review never started: ' + out)
+  assert.ok(at < done, 'it started only after another reviewer had finished')
+
+  // `task`, not `review`: the review subcommand takes --model but has no
+  // --effort flag at all, so effort control is only reachable through task -
+  // and task writes no file of its own, which is why the conductor writes it.
+  const task = calls(s.log).filter((a) => a[0] === 'codex' && a[1] === 'task')
+  assert.equal(task.length, 1, 'expected one codex task call: ' + JSON.stringify(calls(s.log)))
+  assert.deepEqual(task[0].slice(1, 7),
+    ['task', '--model', 'gpt-5.6-sol', '--effort', 'xhigh', '--wait'])
+  assert.match(task[0][7], /02-design\.md/, 'codex was never pointed at the design')
+  assert.match(readFileSync(join(s.root, 'docs', 'runs', 'demo', '07-review-architecture.md'), 'utf8'),
+    /codex reviewed/, 'the task subcommand writes no file - the conductor must capture its stdout')
+  const st = runJson(s).stages['review-codex-architecture']
+  assert.equal(st.source, 'codex', 'another vendor\'s model: a MEASURED zero, not unmeasured')
+  assert.equal(st.code, 0)
+
+  // No architect ran in the fix tier, so there is no design to review. Owner's
+  // rule, and a skip nobody prints is indistinguishable from a bug.
+  const f = reviewRepo('review-arch-fix')
+  const rj = join(f.root, 'docs', 'runs', 'demo', 'run.json')
+  writeFileSync(rj, JSON.stringify({ ...JSON.parse(readFileSync(rj, 'utf8')), tier: 'fix' }, null, 2))
+
+  const fixOut = paned(f, 'run', 'review')
+
+  assert.equal(startLine(fixOut, 'review-codex-architecture'), -1, 'it ran without a design')
+  assert.match(fixOut, /review-codex-architecture skipped[\s\S]{0,80}fix/,
+    'the skip was silent, or never said why: ' + fixOut)
+  assert.equal(calls(f.log).filter((a) => a[0] === 'codex' && a[1] === 'task').length, 0)
+  const fst = runJson(f).stages
+  assert.equal(fst['review-codex-architecture'], undefined)
+  // A skip must resolve, not take the rest of the fan-out down with it.
+  assert.equal(fst['review-codex'].code, 0)
+  assert.ok('code' in fst['review-security'], 'the skip stalled the fan-out')
+})
+
 test('one reviewer holding does not stall the other three', () => {
   // The first agent to settle reports a permission/question UI and is held
   // warm; the second settles clean. Codex, meanwhile, fails its own
