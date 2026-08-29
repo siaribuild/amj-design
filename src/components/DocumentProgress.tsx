@@ -57,18 +57,25 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   const showSteps = aiPhase?.kind === "reading" && !!active;
 
   // Per-step elapsed, from the observed transition times. A step's end is the
-  // next observed step's start; the current step ticks live. The drawing-read
-  // row has no stage of its own (it is driven by counts, not the CHECK-
-  // constrained progress_stage vocabulary — §5), so it carries no timer.
-  const stepStart = (i: number) => stageLog.find((s) => s.stage === AI_STEPS[i].key)?.at;
+  // next observed step's start; the current step ticks live. Drawing reads run
+  // inside building_envelope because the DB vocabulary has no drawing stage,
+  // so that observed transition is also the virtual row's honest start time.
+  const stepStart = (i: number) => {
+    const key = AI_STEPS[i].key;
+    const stage = key === "reading_openings" ? "building_envelope" : key;
+    return stageLog.find((entry) => entry.stage === stage)?.at;
+  };
   const stepDurMs = (i: number): number | null => {
     const start = stepStart(i);
     if (start == null) return null;
+    if (i === current) return Math.max(0, nowTick - start);
     for (let j = i + 1; j < AI_STEPS.length; j++) {
       const nx = stepStart(j);
-      if (nx != null) return nx - start;
+      // The virtual drawing row and building_envelope intentionally share a
+      // transition. It is not an end time; wait for the next real transition.
+      if (nx != null && nx > start) return nx - start;
     }
-    return i === current ? Math.max(0, nowTick - start) : null;
+    return null;
   };
   // Stall = no new step for a while. This, not elapsed time, is what actually
   // worries a customer, so it is the only thing that changes the reassurance

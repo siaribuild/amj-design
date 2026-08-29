@@ -24,7 +24,7 @@ const TIER_PATTERNS: [PageTier, RegExp][] = [
   ],
   [
     "elevation",
-    /(?:^|\n)\s*(?:ELEVATIONS?\s*[-:]?\s*(?:[A-D]|NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)|(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)\s+ELEVATION)\b/im,
+    /(?:^|\n)\s*ELEVATIONS?\s*[-:]?\s*[A-D]\b/im,
   ],
   ["siteplan", /\bsite\s*plan\b/i],
   ["floorplan", /\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b/i],

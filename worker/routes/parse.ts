@@ -11,7 +11,7 @@ import {
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 import { uuid } from "../lib/util";
-import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
+import { aiJobDeadlineMs, customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { derivedKeys } from "../lib/ai/ingest";
 import { purgeProjectCrops } from "../lib/drawing/crops";
 
@@ -406,6 +406,11 @@ parse.get("/projects/current/extraction-status", async (c) => {
         summary: null,
         diagnostic,
         progressStage: pending.progress_stage,
+        // The client derives its polling backstop from this instead of holding
+        // a literal of its own. The two drifted once — a 150s client window
+        // against a 600s auto_drawings lease — and a run that went on to
+        // succeed was reported to the customer as interrupted.
+        deadlineMs: aiJobDeadlineMs(c.env),
         // Present only while a drawing read is running (§5) — absent on
         // every job that predates this feature and on any run with no
         // drawings. No unread/gap detail rides along either (AC-25).

@@ -155,6 +155,11 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const withCounts = await requestJson(s, "/api/projects/current/extraction-status");
       assert.equal(withCounts.body.run.drawingsDone, 7);
       assert.equal(withCounts.body.run.drawingsTotal, 20);
+      // The client's polling backstop is derived from this rather than from a
+      // literal of its own: the two drifted once (150s client vs a 600s
+      // auto_drawings lease) and a completed run was shown as interrupted.
+      assert.equal(typeof withCounts.body.run.deadlineMs, "number");
+      assert.ok(withCounts.body.run.deadlineMs >= 120_000);
 
       // A run with no drawings carries neither field — a numerator without a
       // denominator is not a counter, and this is AC-25's shape check: no
