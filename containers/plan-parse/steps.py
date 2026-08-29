@@ -73,14 +73,6 @@ class Word:
     bottom: float
 
 
-@dataclass
-class Line:
-    x0: float
-    top: float
-    x1: float
-    bottom: float
-
-
 def _document_text(pdf_path: str, page_count: int) -> list[str]:
     raw = _run(["pdftotext", "-layout", pdf_path, "-"])
     pages = raw.split("\f")
@@ -91,7 +83,7 @@ def _document_text(pdf_path: str, page_count: int) -> list[str]:
     return pages[:page_count]
 
 
-def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Word]], list[list[Line]], dict[str, int]]:
+def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Word]], dict[str, int]]:
     """One inspect pass: metadata tools once, pdftotext once, pdfplumber once.
 
     This is the sole inventory/text/word implementation. Keeping the tests
@@ -142,28 +134,11 @@ def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Wor
 
     pages: list[PageFacts] = []
     words_by_page: list[list[Word]] = []
-    lines_by_page: list[list[Line]] = []
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages, start=1):
             raw_words = page.extract_words()
             words = [Word(text=w["text"], x0=w["x0"], top=w["top"], x1=w["x1"], bottom=w["bottom"]) for w in raw_words]
             words_by_page.append(words)
-            lines: list[Line] = []
-            for raw_line in page.lines:
-                lines.append(Line(
-                    x0=float(raw_line.get("x0", 0)), top=float(raw_line.get("top", 0)),
-                    x1=float(raw_line.get("x1", 0)), bottom=float(raw_line.get("bottom", raw_line.get("top", 0))),
-                ))
-            for rect in page.rects:
-                x0, x1 = float(rect.get("x0", 0)), float(rect.get("x1", 0))
-                top, bottom = float(rect.get("top", 0)), float(rect.get("bottom", 0))
-                lines.extend([
-                    Line(x0=x0, top=top, x1=x1, bottom=top),
-                    Line(x0=x0, top=bottom, x1=x1, bottom=bottom),
-                    Line(x0=x0, top=top, x1=x0, bottom=bottom),
-                    Line(x0=x1, top=top, x1=x1, bottom=bottom),
-                ])
-            lines_by_page.append(lines)
             image_rects = images_by_page.get(i, [])
             image_area = sum(width * height for width, height in image_rects)
             page_area = max(page.width * page.height, 1.0)
@@ -182,7 +157,6 @@ def inspect_document(pdf_path: str) -> tuple[Inventory, list[str], list[list[Wor
         Inventory(page_count=page_count, producer=producer, fonts=fonts, has_attachments=has_attachments, pages=pages),
         texts,
         words_by_page,
-        lines_by_page,
         {"inventoryMs": inventory_ms, "textMs": text_ms, "wordsMs": words_ms, "totalMs": total_ms},
     )
 

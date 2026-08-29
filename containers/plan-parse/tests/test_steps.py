@@ -94,14 +94,22 @@ def test_inspect_document_reads_text_and_words_in_one_document_pass(synthetic_pd
         return real_run(args)
 
     monkeypatch.setattr(steps, "_run", counted)
-    inv, texts, words, lines, timings = inspect_document(synthetic_pdf)
+    inv, texts, words, timings = inspect_document(synthetic_pdf)
     assert inv.page_count == 1
     assert "AWNING" in texts[0]
     assert any(word.text == "W1" for word in words[0])
-    assert lines == [[]]
     assert len([args for args in calls if args[0] == "pdftotext"]) == 1
     assert set(timings) == {"inventoryMs", "textMs", "wordsMs", "totalMs"}
     assert all(value >= 0 for value in timings.values())
+
+
+def test_inspect_document_does_not_enumerate_cad_lines_or_rectangles():
+    import inspect
+    import steps
+
+    source = inspect.getsource(steps.inspect_document)
+    assert "page.lines" not in source
+    assert "page.rects" not in source
 
 
 def test_inspect_document_is_the_only_inventory_text_word_entrypoint():

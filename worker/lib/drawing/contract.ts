@@ -38,18 +38,10 @@ export interface PageWord {
   bottom: number;
 }
 
-export interface PageLine {
-  x0: number;
-  top: number;
-  x1: number;
-  bottom: number;
-}
-
 export interface PageText {
   pageNo: number;
   text: string;
   words: PageWord[];
-  lines?: PageLine[];
 }
 
 export interface InspectResponse {

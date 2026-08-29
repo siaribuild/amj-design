@@ -1,4 +1,4 @@
-import type { Orientation, PageInventory, PageLine, PageText, PageWord } from "./contract";
+import type { Orientation, PageInventory, PageText, PageWord } from "./contract";
 import { normalizeOpeningRef } from "../ai/energyMap";
 
 export type Storey = "ground" | "first";
@@ -21,23 +21,64 @@ function centre(word: PageWord): [number, number] {
   return [(word.x0 + word.x1) / 2, (word.top + word.bottom) / 2];
 }
 
-function lineLength(line: PageLine): number {
-  return Math.hypot(line.x1 - line.x0, line.bottom - line.top);
+function percentile(values: number[], fraction: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * fraction)))];
 }
 
-function footprint(lines: PageLine[], geo: Pick<PageInventory, "widthPt" | "heightPt">): Footprint | null {
-  const minLength = Math.min(geo.widthPt, geo.heightPt) * 0.08;
-  const usable = lines.filter((line) => {
-    const cx = (line.x0 + line.x1) / 2;
-    const cy = (line.top + line.bottom) / 2;
-    return lineLength(line) >= minLength && cx < geo.widthPt * 0.88 && cy < geo.heightPt * 0.92;
+/** A text footprint is deliberately robust rather than exact: its purpose is
+ * to identify the nearest exterior wall for printed tags. Opening tags,
+ * dimensions, marker letters and the title-block strips cannot define it. */
+function footprint(words: PageWord[], geo: Pick<PageInventory, "widthPt" | "heightPt">, vocabulary: Set<string>): Footprint | null {
+  const usable = words.filter((word) => {
+    const text = word.text.trim();
+    const upper = text.toUpperCase();
+    const [x, y] = centre(word);
+    if (!text || x >= geo.widthPt * 0.85 || y >= geo.heightPt * 0.85) return false;
+    if (vocabulary.has(normalizeOpeningRef(text) ?? "")) return false;
+    if (/^(?:S\d{1,3}|[A-D])$/i.test(upper) || STOP.has(upper)) return false;
+    if (/^(?:\d{3,}(?:\.\d+)?|\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?)$/i.test(text)) return false;
+    return true;
   });
   if (usable.length < 4) return null;
-  const xs = usable.flatMap((line) => [line.x0, line.x1]);
-  const ys = usable.flatMap((line) => [line.top, line.bottom]);
-  const result = { x0: Math.min(...xs), top: Math.min(...ys), x1: Math.max(...xs), bottom: Math.max(...ys) };
+  // Percentiles stop one remote annotation from stretching every wall snap.
+  const result = {
+    x0: percentile(usable.map((word) => word.x0), 0.05),
+    top: percentile(usable.map((word) => word.top), 0.05),
+    x1: percentile(usable.map((word) => word.x1), 0.95),
+    bottom: percentile(usable.map((word) => word.bottom), 0.95),
+  };
   if (result.x1 - result.x0 < geo.widthPt * 0.15 || result.bottom - result.top < geo.heightPt * 0.15) return null;
   return result;
+}
+
+function distanceToFootprint(word: PageWord, box: Footprint): number {
+  const [x, y] = centre(word);
+  const dx = x < box.x0 ? box.x0 - x : x > box.x1 ? x - box.x1 : 0;
+  const dy = y < box.top ? box.top - y : y > box.bottom ? y - box.bottom : 0;
+  return Math.hypot(dx, dy);
+}
+
+function sheetRefScore(tagWord: PageWord, words: PageWord[]): number {
+  const [tx, ty] = centre(tagWord);
+  const height = Math.max(tagWord.bottom - tagWord.top, 1);
+  let score = 0;
+  for (const word of words) {
+    const text = word.text.trim().toUpperCase();
+    if (!/^S\d{1,3}$/.test(text)) continue;
+    const [x, y] = centre(word);
+    if (Math.abs(x - tx) > height * 3 || Math.abs(y - ty) > height * 4) continue;
+    score = Math.max(score, /^S\d{2,3}$/.test(text) ? 2 : 1);
+  }
+  return score;
+}
+
+function inDimensionChain(tagWord: PageWord, words: PageWord[]): boolean {
+  const height = Math.max(tagWord.bottom - tagWord.top, 1);
+  return words.some((word) => word !== tagWord
+    && /^\d{3,}(?:\.\d+)?$/.test(word.text.trim())
+    && sameLineWord(tagWord, word)
+    && Math.min(Math.abs(word.x0 - tagWord.x1), Math.abs(tagWord.x0 - word.x1)) <= height * 2);
 }
 
 function nearestEdge(word: PageWord, box: Footprint): Edge {
@@ -113,23 +154,37 @@ export function locateFloorplanPage(
   vocabulary: string[],
 ): { placements: Record<string, TextPlacement>; markerEdges: Record<string, Edge>; unplaced: string[] } {
   const normalizedVocabulary = new Set(vocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
-  const box = footprint(page.lines ?? [], geo);
+  const box = footprint(page.words, geo, normalizedVocabulary);
   if (!box) return { placements: {}, markerEdges: {}, unplaced: [...normalizedVocabulary] };
+  const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
 
   const markerByEdge = new Map<Edge, string>();
   const ambiguousEdges = new Set<Edge>();
   for (const word of page.words) {
     const label = word.text.trim().toUpperCase();
     if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
+    if (distanceToFootprint(word, box) > footprintDiagonal * 0.2) continue;
     const edge = nearestEdge(word, box);
     if (markerByEdge.has(edge) && markerByEdge.get(edge) !== label) ambiguousEdges.add(edge);
     markerByEdge.set(edge, label);
   }
 
-  const candidates: Candidate[] = [];
+  const wordsByTag = new Map<string, PageWord[]>();
   for (const word of page.words) {
     const tag = normalizeOpeningRef(word.text);
     if (!tag || !normalizedVocabulary.has(tag)) continue;
+    if (inDimensionChain(word, page.words)) continue;
+    const current = wordsByTag.get(tag) ?? [];
+    current.push(word);
+    wordsByTag.set(tag, current);
+  }
+
+  const candidates: Candidate[] = [];
+  for (const [tag, tagWords] of wordsByTag) {
+    const word = [...tagWords].sort((a, b) =>
+      sheetRefScore(b, page.words) - sheetRefScore(a, page.words)
+      || distanceToFootprint(a, box) - distanceToFootprint(b, box))[0];
+    if (!word || distanceToFootprint(word, box) > footprintDiagonal * 0.2) continue;
     const edge = nearestEdge(word, box);
     const elevation = ambiguousEdges.has(edge) ? null : markerByEdge.get(edge);
     if (!elevation) continue;
