@@ -1244,7 +1244,11 @@ function afterStage(run, spec) {
  * pays a whole developer session to redo work that is already on disk.
  */
 function finished(run, label, spec, s) {
-  if (!s || s.status === 'held') return
+  // "running" (herdr lost track, or confirm-exhausted without a genuine
+  // settle) is not completion, same reasoning as the pane-stage caller above -
+  // afterStage's gate messages must never fire for a stage that has not
+  // actually finished.
+  if (!s || s.status === 'held' || s.status === 'running') return
   if (!label.startsWith('build-')) return afterStage(run, spec)
   if (s.code === 0) {
     run.tasksDone = [...new Set([...(run.tasksDone || []), label.slice('build-'.length)])]
@@ -1421,6 +1425,12 @@ const cmds = {
       // A held stage has not produced anything yet, so the produces check would
       // only ever be wrong about it. The decision gate still gets printed.
       if (s?.status === 'held') return s.holdReason === 'decisions' ? afterStage(run, spec) : undefined
+      // "running" is not completion either - herdr lost track of the agent, or
+      // confirm-exhausted without ever confirming a genuine settle. afterStage
+      // prints gate messages (MOCK GATE, SIGN-OFF) unconditionally on a truthy
+      // return; printing one here would tell the operator to review a mock the
+      // ux-designer session that would produce it has not actually finished.
+      if (s?.status === 'running') return undefined
       if (s) return afterStage(run, spec)
     }
     await runClaude(spec, spec.prompt(run), run, spec.id)

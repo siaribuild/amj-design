@@ -437,6 +437,34 @@ test('tree links tasks to the criteria they claim, and never smears an overall v
     'an untagged task must fall into UNLINKED, not silently vanish')
 })
 
+test('confirm-exhaustion on a GATED stage never prints the gate for an unfinished agent', () => {
+  // Codex stop-gate finding: settleStage's exhaustion return (status:
+  // "running", genuinely truthy) still flowed into afterStage at the caller -
+  // which prints MOCK GATE / SIGN-OFF unconditionally for a gated stage. An
+  // operator would be told "review the mock" while the ux-designer session
+  // that would produce it is still actively running. The SAME shape return
+  // already existed for "lost track of the agent" - this was latent before
+  // the confirm-exhaustion path added a second way to trigger it.
+  const s = paneRepo('gate-exhausted', 'sess-gate-exhausted', { HERDR_STUB_TRANSCRIPT: '' })
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = runJson(s)
+  run.ui = true
+  run.stages = { spec: { code: 0 }, design: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(run))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
+
+  // Every confirmation finds the agent still working - never settles for real.
+  s.env.HERDR_STUB_STATES = 'idle;idle;idle;idle;idle;idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;working;working;working;working'
+
+  const out = paned(s, 'run', 'ux')
+
+  assert.doesNotMatch(out, /MOCK GATE/,
+    'the mock gate must never be shown for a stage that has not actually finished: ' + out)
+  assert.equal(runJson(s).stages.ux.status, 'running',
+    'an unconfirmed stage must stay running, not be treated as reaching its gate')
+})
+
 test('tree still shows the overall verdict when a per-criterion table exists too', () => {
   // Codex stop-gate finding: the overall verdict printed ONLY when no table
   // parsed at all - so a report with a real (even partial) table suppressed
