@@ -364,10 +364,12 @@ export function ProjectRecordPage() {
       {record && (
         <>
           {/* THE PILL, and it is drawn only when there is something to draw it
-              for. It is the reason the header's CTA is disabled, so it may not
-              disappear while the CTA is still refused for a LINE reason — and
-              it never does, because both read the same predicate. */}
-          {attention > 0 && (
+              for, AND ONLY ON THE LINES TAB — it filters the Lines list, and
+              has no meaning on a tab that does not show that list. It is the
+              reason the header's CTA is disabled, so it may not disappear
+              while the CTA is still refused for a LINE reason — and it never
+              does, because both read the same predicate. */}
+          {attention > 0 && tab === "lines" && (
             <AttentionPill
               count={attention}
               filterOn={filterOn}

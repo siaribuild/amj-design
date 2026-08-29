@@ -184,15 +184,22 @@ Each stage runs as `claude -p --agent <role>` against the **unmodified**
 | ux | ux-designer | `03-ux.md`, `docs/mocks/<slug>.html` |
 | build | developer × N tasks | `04-build.md` |
 | polish | ui-designer | `05-polish.md` |
-| verify | tester (own worktree) | `06-verify.md` |
+| verify | tester | `06-verify.md` |
 | review | architect + security + ponytail + codex, **in parallel** | `07-review-*.md` |
 | accept | product-manager | `08-accept.md` |
 
 **Grill (stage 0) is not conducted.** It is the only stage that talks to you, so
 you run it yourself in a herdr pane and paste its conclusions into `00-ask.md`.
 
-**Verify runs in its own git worktree.** A tester mutating beside a developer
-makes red tests nobody can attribute.
+**Verify runs inline, same directory as every other stage** — no worktree.
+It did, once: "a tester mutating beside a developer makes red tests nobody can
+attribute." Owner ruling supersedes it: no parallel development, one directory,
+one branch at a time, so that scenario cannot arise anywhere in this repo, and
+the worktree was only ever defending against it. Removed after it cost two live
+defects on its own — `docs/runs/<slug>/*` besides `04-build.md` is untracked
+and invisible in a worktree checkout, and `node_modules` is never provisioned
+there, which also broke the Probity shim's own resolution and denied every
+Bash call regardless of target.
 
 **Review fans out in parallel.** The four reviewers are read-only and
 independent, so they run concurrently — wall-clock, not just tokens.

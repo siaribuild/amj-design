@@ -131,17 +131,25 @@ export async function ensureCockpit({ slug, base, root }) {
 
 // --- launching a stage -------------------------------------------------------
 
-/** Write a stage's prompt where the pane can read it. Returns the repo-relative path. */
+/**
+ * Write a stage's prompt where the pane can read it. Returns an ABSOLUTE path,
+ * not a repo-relative one - deliberately. Live incident (while `verify` still
+ * ran in its own worktree, since removed): a relative "Read
+ * docs/runs/.../prompts/x.txt" resolves against the AGENT's cwd, and a stage
+ * booted with a different cwd than `root` couldn't find it - the tester
+ * correctly reported "Blocker: ... does not exist. Nothing to execute." and
+ * gave up cleanly, but nothing got verified. No stage runs with a different
+ * cwd today, but an absolute path costs nothing and stays correct regardless.
+ */
 export function writePrompt(root, slug, label, text) {
   // BOTH halves of this path are run-derived, and the whole of it is typed at a
   // herdr agent as the file holding its instructions. Validating only the label
   // let `../../../ESCAPED` write outside the repo and then be read as a prompt.
   checkSlug(slug)
-  const rel = 'docs/runs/' + slug + '/prompts/' + checkLabel(label) + '.txt'
   const abs = join(root, 'docs', 'runs', slug, 'prompts', checkLabel(label) + '.txt')
   mkdirSync(join(root, 'docs', 'runs', slug, 'prompts'), { recursive: true })
   writeFileSync(abs, text)
-  return rel
+  return abs
 }
 
 /**

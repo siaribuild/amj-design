@@ -613,14 +613,19 @@ test('herdr identifiers are allowlisted before they ever reach a command', () =>
     'an unanchored allowlist matches a substring of anything: ' + LABEL)
 })
 
-test('a stage prompt is delivered as a FILE, byte-exact, and the file is gitignored', () => {
+test('a stage prompt is delivered as a FILE, byte-exact, at an ABSOLUTE path, and gitignored', () => {
   const { root } = stubbed('prompt-file')
   // Everything a TTY would mangle: 2KB+, newlines, quotes, backticks.
   const body = 'Read "docs/x.md" and `do` it.' + NL + 'x'.repeat(2048) + NL + "end's"
-  const rel = writePrompt(root, 'demo', 'build-t1', body)
+  const abs = writePrompt(root, 'demo', 'build-t1', body)
 
-  assert.equal(rel, 'docs/runs/demo/prompts/build-t1.txt', 'prompt path is not the designed one')
-  assert.equal(readFileSync(join(root, rel), 'utf8'), body, 'prompt file is not byte-exact')
+  // Absolute, not repo-relative: verify boots its agent with cwd set to an
+  // isolated worktree, a different directory from root where this file lives.
+  // A relative path resolves against the agent's OWN cwd and does not exist
+  // there - live incident, the tester reported the blocker and gave up clean.
+  assert.equal(abs, join(root, 'docs', 'runs', 'demo', 'prompts', 'build-t1.txt'),
+    'prompt path is not the designed one')
+  assert.equal(readFileSync(abs, 'utf8'), body, 'prompt file is not byte-exact')
 
   const ignore = readFileSync(resolve('.gitignore'), 'utf8')
   assert.match(ignore, /docs\/runs\/\*\/prompts\//,
@@ -641,7 +646,8 @@ test('writePrompt allowlists the slug too, not just the label', () => {
   assert.equal(existsSync(resolve(root, '..', '..', '..', 'ESCAPED')), false,
     'a rejected slug still created a directory outside the repo')
 
-  assert.equal(writePrompt(root, 'demo', 'spec', 'body'), 'docs/runs/demo/prompts/spec.txt',
+  assert.equal(writePrompt(root, 'demo', 'spec', 'body'),
+    join(root, 'docs', 'runs', 'demo', 'prompts', 'spec.txt'),
     'the legal path must be unchanged')
 })
 
@@ -1221,7 +1227,7 @@ test('a stage blocked at LAUNCH holds warm - the conductor must never die on it'
   paned(s, 'answer')
 
   const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
-  assert.match(typed[1], /docs\/runs\/demo\/prompts\/spec\.txt/,
+  assert.ok(typed[1].includes(join(s.root, 'docs', 'runs', 'demo', 'prompts', 'spec.txt')),
     'answer must hand over the prompt the blocked launch never delivered: ' + typed.join(' | '))
   assert.equal(typed[2], '/exit')
   const after = runJson(s)
@@ -1614,7 +1620,7 @@ test('a stage whose agent is gone is relaunched with --resume, on the SAME sessi
   assert.match(out, /interrupted|resum/i, 'the operator was not told the stage was restored')
 
   const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
-  assert.match(typed[0], /docs\/runs\/demo\/prompts\/spec\.txt/,
+  assert.ok(typed[0].includes(join(s.root, 'docs', 'runs', 'demo', 'prompts', 'spec.txt')),
     'a restored agent must be pointed back at its prompt file, not re-fed the prompt')
   assert.ok(!typed[0].includes(NL), 'a newline in typed text submits it early')
 })
@@ -1685,12 +1691,13 @@ test('report heals an interrupted stage to the sum of every session it burned', 
   assert.equal(st.turns, 5)
 })
 
-test('a tester session in the verify worktree is metered by its recorded id, wherever its transcript landed', () => {
-  // Claude Code names its project directory after the cwd, so the verify
-  // stage - which runs in an isolated worktree - writes its transcript under a
-  // DIFFERENT project folder than every other stage of the same run. Metering
-  // is addressed by session id, so where the file landed cannot lose the spend,
-  // and an interruption in the worktree is accounted for like any other.
+test('a session is metered by its recorded id, wherever its transcript landed', () => {
+  // Claude Code names its project directory after the cwd. verify no longer
+  // runs in its own worktree (owner ruling: no parallel development, one
+  // directory at a time - a worktree was only ever defending against a
+  // scenario that can no longer arise), but the general property this guards
+  // is still real: metering is addressed by session id, not by which project
+  // directory a transcript happens to land under, so nothing loses its spend.
   const projects = tmp('worktree')
   seedTranscript(projects, 'E--Projects-demo-verify', 'sess-wt', ['w1', 'w2', 'w3'], 2)
   seedTranscript(projects, 'E--Projects-demo-verify', 'sess-wt-dead', ['d1'], 2)
@@ -1785,7 +1792,7 @@ test('a reviewer blocked at LAUNCH is answerable - it is owed the prompt it neve
 
   assert.ok(!/conduct fix/.test(out), 'a launch-blocked reviewer was refused:' + NL + out)
   const typed = said(s.log, 'agent', 'prompt').map((a) => a[3])
-  assert.ok(typed.some((l) => l.includes('docs/runs/demo/prompts/' + held + '.txt')),
+  assert.ok(typed.some((l) => l.includes(join(s.root, 'docs', 'runs', 'demo', 'prompts', held + '.txt'))),
     'answer never delivered the prompt the blocked launch withheld: ' + typed.join(' | '))
   assert.equal(runJson(s).stages[held].status, 'done')
   assert.equal(runJson(s).gateStage, null)
