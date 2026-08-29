@@ -46,7 +46,10 @@ async function rejectUploadReservation(
   ]).catch(() => { /* pending row remains fail-closed and customer-removable */ });
 }
 
-async function purgeR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
+// Exported: `worker/lib/drawing/crops.ts` reuses this rather than a second
+// list-and-delete loop (this is the same list/delete pattern the crop
+// lifecycle needs, only the prefix differs).
+export async function purgeR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
   let cursor: string | undefined;
   do {
     const page = await bucket.list({ prefix, cursor, limit: 500 });
