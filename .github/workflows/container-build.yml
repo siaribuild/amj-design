@@ -67,9 +67,11 @@ jobs:
 
       - name: It refuses an oversized request
         run: |
-          # Content-Length above the 40MB + 4KB header allowance — the
-          # container's own copy of the Worker's cap (AB-6, defence in depth).
-          head -c 41943041 /dev/zero \
+          # One byte over the 40MB PDF cap PLUS the 4KB header allowance —
+          # the container's own copy of the Worker's cap (AB-6, defence in
+          # depth). The Content-Length check fires before framing is even
+          # parsed, so this is deliberately not valid `{json}\n<bytes>`.
+          head -c 41947137 /dev/zero \
             | curl -s -o body.txt -w '%{http_code}' -XPOST --data-binary @- localhost:8080/inspect \
             | grep -q '^413$'
 
