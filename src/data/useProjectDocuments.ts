@@ -87,6 +87,21 @@ export function documentChecklist(
   return { steps, current: current < 0 ? 0 : current };
 }
 
+/** How long the client keeps watching a run, derived from the deadline the
+ *  SERVER states rather than a literal of our own. The margin covers the
+ *  poll interval and the final status read.
+ *
+ *  This drifted once and cost a real run: the backstop was written as 150s
+ *  "generous, past the server's 120s job ceiling", then the auto_drawings
+ *  lease went to 600s and this side did not move — so the browser announced
+ *  "interrupted" while the job ran on and completed. A number computed from
+ *  the server's own answer cannot drift; a second literal always can. */
+export const POLL_WINDOW_MARGIN_MS = 60_000;
+export const POLL_WINDOW_FALLBACK_MS = 150_000;
+export function pollWindowMs(serverDeadlineMs?: number | null): number {
+  return (serverDeadlineMs ?? POLL_WINDOW_FALLBACK_MS) + POLL_WINDOW_MARGIN_MS;
+}
+
 export type StageLogEntry = { stage: AiProgressStage; at: number };
 export type UploadNotice = { type: "success" | "error"; message: string };
 
@@ -386,14 +401,18 @@ export function useProjectDocuments(
     let sawRun = false;
     let lastDiagnostic: SafeDiagnostic | null = null;
     let lastStage: AiProgressStage | undefined;
+    // Widened to the server's own stated deadline as soon as a status read
+    // reports one; until then, the historical literal.
+    let windowMs = pollWindowMs();
     const tick = async (n: number) => {
       if (epoch !== pollEpoch.current) return;
       let inFlight = false;
-      // Duration is NOT failure. The client backstop is generous (past the
-      // server's 120s job ceiling); the server is the authority on actual
-      // failure. We only give up on our own if the whole run window elapses with
-      // no terminal status at all — a stall is surfaced as concern, not death.
-      const windowElapsed = Date.now() - t0 >= 150_000;
+      // Duration is NOT failure. The client backstop outlasts the server's own
+      // job deadline BY CONSTRUCTION (pollWindowMs); the server is the
+      // authority on actual failure. We only give up on our own if the whole
+      // run window elapses with no terminal status at all — a stall is
+      // surfaced as concern, not death.
+      const windowElapsed = Date.now() - t0 >= windowMs;
       try {
         const { run, basis } = await extractionStatus();
         if (epoch !== pollEpoch.current) return;
@@ -401,6 +420,7 @@ export function useProjectDocuments(
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
           inFlight = true;
+          if (run.deadlineMs) windowMs = pollWindowMs(run.deadlineMs);
           lastDiagnostic = run.diagnostic ?? null;
           if (run.progressStage !== lastStage) { lastStage = run.progressStage; }
           recordStage(run.progressStage);
@@ -444,7 +464,7 @@ export function useProjectDocuments(
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, 150_000 - (Date.now() - t0));
+      const remaining = Math.max(250, windowMs - (Date.now() - t0));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);

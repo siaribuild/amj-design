@@ -40,7 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
-      export { documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
+      export { documentChecklist, pollWindowMs } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1636,6 +1636,17 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
+});
+
+// The client backstop must OUTLAST the server's own job deadline, or the
+// browser reports "interrupted" while the job is still running and will still
+// succeed — which is exactly what production did on 2026-08-30 once the
+// auto_drawings lease went to 600s and this side stayed on a 150s literal.
+// The server now states its deadline; the client adds a margin to it rather
+// than guessing, so the two can never drift apart again.
+test("pollWindowMs: the client window is the server's stated deadline plus a margin", () => {
+  assert.equal(M.pollWindowMs(600_000), 660_000);
+  assert.equal(M.pollWindowMs(120_000), 180_000);
 });
 
 test("documentChecklist: a drawing read gets its own row, driven by counts, between extracting_schedule and building_envelope (§5)", () => {
