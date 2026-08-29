@@ -17,7 +17,7 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } from ${p("worker/lib/drawing/contract.ts")};
-      export { inspectPdf, renderPage, ContainerClientError } from ${p("worker/lib/drawing/containerClient.ts")};
+      export { inspectPdf, renderPage, ContainerClientError, CONTAINER_CALL_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationInventorySkill, validateFloorplanRead, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
@@ -30,7 +30,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, CONTAINER_CALL_TIMEOUT_MS, chooseStrategy, selectPages, elevationInventorySkill, validateFloorplanRead, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -258,6 +258,21 @@ test("containerClient.renderPage: sends pageNo/dpi/crops and returns the parsed 
   assert.deepEqual(header, { pageNo: 3, dpi: 150, crops: [[0, 0, 10, 10]] });
   assert.deepEqual(result, rendered);
 });
+// A container call that never answers must not hang the job for the whole
+// lease (the 2026-08-29 production incident: a stalled fetch silently burned
+// the entire 240s deadline with nothing persisted). Overriding timeoutMs
+// keeps this test fast; production leaves it at CONTAINER_CALL_TIMEOUT_MS.
+function hangingNamespace() {
+  return { idFromName: (name) => ({ toString: () => name }), get: () => ({ fetch: () => new Promise(() => {}) }) };
+}
+
+test("containerClient.renderPage: a stalled DO call times out instead of hanging the job", { timeout: 2000 }, async () => {
+  await assert.rejects(
+    () => renderPage(hangingNamespace(), "proj_1", new Uint8Array([1]), { pageNo: 1, dpi: 150 }, 5),
+    (err) => err instanceof ContainerClientError && err.code === "timeout",
+  );
+});
+
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
 // ── A minimal fake R2Bucket — list/delete only, the subset purgeR2Prefix

@@ -10,7 +10,7 @@ export const MAX_PAGES = 60;
 export const MAX_CROPS_PER_PAGE = 12;
 export const MAX_DPI = 300;
 
-export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed";
+export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed" | "timeout";
 
 export interface PageInventory {
   pageNo: number;
