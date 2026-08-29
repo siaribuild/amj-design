@@ -67,14 +67,18 @@ export function documentChecklist(
   const done = phase?.drawingsDone ?? 0;
   const steps: DocumentChecklistStep[] = [];
   for (const s of BASE_STEPS) {
-    steps.push({ key: s.key, label: s.label, detail: "" });
+    steps.push({
+      key: s.key,
+      label: s.label,
+      detail: s.key === "extracting_schedule" && total != null
+        ? ` · ${total} opening${total === 1 ? "" : "s"} found`
+        : "",
+    });
     if (s.key === "extracting_schedule" && total != null) {
       steps.push({
         key: "reading_openings",
         label: "Reading your drawings",
-        detail: done > 0
-          ? ` · opening ${done} of ${total}`
-          : ` · ${total} opening${total === 1 ? "" : "s"} found`,
+        detail: ` · opening ${done} of ${total}`,
       });
     }
   }

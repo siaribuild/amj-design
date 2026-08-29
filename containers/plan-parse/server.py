@@ -92,16 +92,15 @@ class Handler(BaseHTTPRequestHandler):
         with tempfile.TemporaryDirectory() as tmp:
             pdf_path = str(Path(tmp) / "in.pdf")
             Path(pdf_path).write_bytes(pdf_bytes)
-            inv, texts, words_by_page, lines_by_page, timings = inspect_document(pdf_path)
+            inv, texts, words_by_page, timings = inspect_document(pdf_path)
             if inv.page_count > max_pages:
                 raise StepError("bad_request", "page count exceeds maxPages")
             pages = []
-            for pf, text, words, lines in zip(inv.pages, texts, words_by_page, lines_by_page):
+            for pf, text, words in zip(inv.pages, texts, words_by_page):
                 pages.append({
                     "pageNo": pf.page_no,
                     "text": text,
                     "words": [{"text": w.text, "x0": w.x0, "top": w.top, "x1": w.x1, "bottom": w.bottom} for w in words],
-                    "lines": [{"x0": line.x0, "top": line.top, "x1": line.x1, "bottom": line.bottom} for line in lines],
                 })
             self._send(200, {
                 "inventory": {

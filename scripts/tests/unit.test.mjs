@@ -1645,8 +1645,16 @@ test("documentChecklist: a drawing read gets its own row, driven by counts, betw
     "queued", "reading_documents", "extracting_schedule", "reading_openings",
     "building_envelope", "matching_and_pricing", "preparing_quote",
   ]);
+  assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 20 openings found");
   assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
   assert.match(steps[current].detail, /opening 7 of 20/);
+});
+
+test("documentChecklist: drawing progress starts visibly at opening 0 rather than stopping at openings found", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19 });
+  assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 19 openings found");
+  assert.equal(steps[current].key, "reading_openings");
+  assert.equal(steps[current].detail, " · opening 0 of 19");
 });
 
 test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {

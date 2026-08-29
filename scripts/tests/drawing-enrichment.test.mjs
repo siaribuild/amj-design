@@ -89,6 +89,12 @@ test("selectPages: a floor-plan legend mentioning an elevation marker is not an 
   assert.deepEqual(selected.map((s) => s.tier), ["floorplan"]);
 });
 
+test("selectPages: FRONT ELEVATION MATERIALS TABLE is not an elevation callout", () => {
+  const pages = [pt(6, "FRONT ELEVATION MATERIALS TABLE")];
+  const { selected } = selectPages(inv([pageFacts({ pageNo: 6 })]), pages);
+  assert.deepEqual(selected, []);
+});
+
 test("elevationRegions: multiple printed labels partition a shared sheet without inventing labels", () => {
   const words = [
     { text: "ELEVATION", x0: 100, x1: 180, top: 700, bottom: 715 },
@@ -123,22 +129,18 @@ test("elevationRegions: ignores named facades until floor-plan placement can joi
   assert.deepEqual(regions, []);
 });
 
-test("locateFloorplanPage: vector footprint + printed marker place tags without vision", () => {
+test("locateFloorplanPage: word footprint + printed marker place tags without vision", () => {
   const page = {
     pageNo: 2,
     text: "GROUND FLOOR PLAN",
-    lines: [
-      { x0: 200, top: 200, x1: 800, bottom: 200 },
-      { x0: 200, top: 600, x1: 800, bottom: 600 },
-      { x0: 200, top: 200, x1: 200, bottom: 600 },
-      { x0: 800, top: 200, x1: 800, bottom: 600 },
-    ],
     words: [
-      { text: "A", x0: 80, x1: 90, top: 390, bottom: 410 },
-      { text: "W1", x0: 170, x1: 190, top: 290, bottom: 310 },
-      { text: "W2", x0: 170, x1: 190, top: 490, bottom: 510 },
+      { text: "A", x0: 150, x1: 160, top: 390, bottom: 410 },
+      { text: "W1", x0: 210, x1: 230, top: 290, bottom: 310 },
+      { text: "W2", x0: 210, x1: 230, top: 490, bottom: 510 },
       { text: "BEDROOM", x0: 260, x1: 340, top: 300, bottom: 320 },
       { text: "STUDY", x0: 260, x1: 320, top: 500, bottom: 520 },
+      { text: "KITCHEN", x0: 650, x1: 720, top: 250, bottom: 270 },
+      { text: "LIVING", x0: 650, x1: 720, top: 550, bottom: 570 },
     ],
   };
   const result = locateFloorplanPage(page, { widthPt: 1000, heightPt: 800 }, ["W1", "W2"]);
@@ -147,8 +149,25 @@ test("locateFloorplanPage: vector footprint + printed marker place tags without 
   assert.equal(result.unplaced.length, 0);
 });
 
-test("locateFloorplanPage: missing vector geometry returns an attributable fallback set", () => {
-  const result = locateFloorplanPage({ pageNo: 2, text: "GROUND FLOOR PLAN", words: [], lines: [] }, { widthPt: 1000, heightPt: 800 }, ["W1"]);
+test("locateFloorplanPage: the S08 tag beats a nearby W1/S7 legend decoy", () => {
+  const words = [
+    { text: "A", x0: 150, x1: 160, top: 390, bottom: 410 },
+    { text: "W1", x0: 210, x1: 230, top: 290, bottom: 310 },
+    { text: "S08", x0: 210, x1: 230, top: 312, bottom: 332 },
+    { text: "W1", x0: 210, x1: 230, top: 440, bottom: 460 },
+    { text: "S7", x0: 210, x1: 230, top: 462, bottom: 482 },
+    { text: "BEDROOM", x0: 260, x1: 340, top: 300, bottom: 320 },
+    { text: "STUDY", x0: 260, x1: 320, top: 500, bottom: 520 },
+    { text: "KITCHEN", x0: 650, x1: 720, top: 250, bottom: 270 },
+    { text: "LIVING", x0: 650, x1: 720, top: 550, bottom: 570 },
+  ];
+  const result = locateFloorplanPage({ pageNo: 2, text: "GROUND FLOOR PLAN", words }, { widthPt: 1000, heightPt: 800 }, ["W1"]);
+  assert.equal(result.placements.W1.orderOnWall, 1);
+  assert.equal(result.placements.W1.roomLabel, "BEDROOM");
+});
+
+test("locateFloorplanPage: missing word geometry returns an attributable fallback set", () => {
+  const result = locateFloorplanPage({ pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }, { widthPt: 1000, heightPt: 800 }, ["W1"]);
   assert.deepEqual(result.placements, {});
   assert.deepEqual(result.markerEdges, {});
   assert.deepEqual(result.unplaced, ["W1"]);
@@ -984,14 +1003,14 @@ test("enrichOpenings: vector/text placement avoids the full-floorplan model call
       { pageNo: 2, widthPt: 1000, heightPt: 800, rotation: 0, textChars: 50, imageCount: 0, imageAreaFraction: 0 },
     ] },
     pages: [
-      { pageNo: 1, text: "ELEVATION A", words: [], lines: [] },
-      { pageNo: 2, text: "GROUND FLOOR PLAN", lines: [
-        { x0: 200, top: 200, x1: 800, bottom: 200 }, { x0: 200, top: 600, x1: 800, bottom: 600 },
-        { x0: 200, top: 200, x1: 200, bottom: 600 }, { x0: 800, top: 200, x1: 800, bottom: 600 },
-      ], words: [
-        { text: "A", x0: 80, x1: 90, top: 390, bottom: 410 },
-        { text: "W1", x0: 170, x1: 190, top: 290, bottom: 310 },
+      { pageNo: 1, text: "ELEVATION A", words: [] },
+      { pageNo: 2, text: "GROUND FLOOR PLAN", words: [
+        { text: "A", x0: 150, x1: 160, top: 390, bottom: 410 },
+        { text: "W1", x0: 210, x1: 230, top: 290, bottom: 310 },
         { text: "BEDROOM", x0: 260, x1: 340, top: 300, bottom: 320 },
+        { text: "STUDY", x0: 260, x1: 320, top: 500, bottom: 520 },
+        { text: "KITCHEN", x0: 650, x1: 720, top: 250, bottom: 270 },
+        { text: "LIVING", x0: 650, x1: 720, top: 550, bottom: 570 },
       ] },
     ],
   };
