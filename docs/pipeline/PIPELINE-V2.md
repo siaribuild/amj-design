@@ -430,10 +430,12 @@ display-only and no criterion asked for it; the pane itself is the live view.
 
 ## A full feature, start to finish
 
-**1. Grill it** — in a pane of your own:
+**1. Grill it** — in a pane of your own. `--autocompact` caps the window the
+same way every conducted stage does; a long interactive grill with none would
+grow toward the default and resend it every turn:
 
 ```bash
-claude
+claude --autocompact 100000
 ```
 
 Then `/grilling` and paste the ask. Stress-test the idea, and pin down which
@@ -451,20 +453,34 @@ node scripts/pipeline/conduct.mjs ui on
 stages and the mock gate. `start` also builds the cockpit — unless herdr is down,
 or you pass `--no-panes`.
 
-**3. Drive it.** Repeat until it tells you otherwise:
+**3. Drive it:**
 
 ```bash
 node scripts/pipeline/conduct.mjs next
 ```
 
-Each call runs one stage and stops. You will be stopped at three kinds of gate:
+One call now runs every stage the tier still owes, back to back, on its own —
+no re-typing `next` after each clean one. It only stops for you at a real gate:
 
-- **A decision.** The stage wrote `DECISIONS.md`. Answer inline — put `A: ...`
+- **A decision.** A stage wrote `DECISIONS.md`. Answer inline — put `A: ...`
   under each question — then `conduct answer`. In pane mode the agent is still
   alive and just gets nudged; headless, it resumes warm via `--resume`.
 - **The mock.** Open `docs/mocks/<slug>.html`. Not happy? Write what you want
   into `03-ux.md` and `conduct run ux`. Happy? `conduct next`.
 - **Sign-off.** `08-accept.md` is a recommendation, not a decision.
+- **A pane held on a dialog** (`blocked-launch` / `blocked-ui`) — attach and
+  clear it, same as a single stage run.
+- **A cycle-cap refusal.** Verify/fix has run its two verifies or three fixes;
+  `next` stops and prints what is still open rather than spinning on a stage
+  that keeps refusing to make progress.
+- **A stage that genuinely fails** — a non-zero exit or a crash. `next` reports
+  it and stops rather than pressing on past it. A stage that exits clean but
+  did not write a file it was supposed to still only warns, as it always has -
+  the warning is printed, and the next stage is attempted regardless.
+
+An interrupted (`running`/`held`) stage is still picked up before anything new
+starts, exactly as before — that reattach/restore/re-run dispatch is one call,
+not chained into the next stage.
 
 `--no-panes` is accepted by `start`, `next`, `run`, `answer` and `fix`, and is
 **per-invocation** — it is never persisted, so it cannot silently turn pane mode

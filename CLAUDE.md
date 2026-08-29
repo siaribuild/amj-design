@@ -85,11 +85,15 @@ override disables Probity or the mandatory `review` stage.
   4. **Every feature, explicitly invoked:** the Codex review over that feature's diff (the stop-gate alone does not see subagent work — see the cross-cutting note above).
   5. **Stage gate — the orchestrator runs this itself, every full-pipeline feature.** Before PM acceptance:
 
+     Conducted automatically as part of pipeline v2's mandatory `review` stage
+     (`docs/pipeline/PIPELINE-V2.md`), capped like every other stage. Run by
+     hand only as a fallback — outside the conductor, always cap the window:
+
      ```bash
-     claude -p "/security-review" --permission-mode plan
+     claude -p "/security-review" --permission-mode plan --autocompact 100000 --strict-mcp-config
      ```
 
-     `security-review` is a **built-in command compiled into the CLI**, not a skill — so the `Skill` tool cannot reach it and there is no file for it on disk (verified 2026-08-24, do not go looking). Headless `-p` is how the orchestrator invokes it; `--permission-mode plan` keeps it read-only. It reviews the current branch's diff and reports findings above an ~80% confidence bar, saying so explicitly when nothing clears. Findings route to the developer like any review. It runs on Anthropic quota, so it stays available when the Codex layer is quota-blocked — the two are independent on purpose. **Owner ruling 2026-08-24: a gate only he can fire is not a pipeline stage. Never downgrade this to "ask the user to run it".**
+     `security-review` is a **built-in command compiled into the CLI**, not a skill — so the `Skill` tool cannot reach it and there is no file for it on disk (verified 2026-08-24, do not go looking). Headless `-p` keeps it non-interactive; `--permission-mode plan` keeps it read-only. It reviews the current branch's diff and reports findings above an ~80% confidence bar, saying so explicitly when nothing clears. Findings route to the developer like any review. It runs on Anthropic quota, so it stays available when the Codex layer is quota-blocked — the two are independent on purpose. **Owner ruling 2026-08-24: a gate only he can fire is not a pipeline stage. Never downgrade this to "ask the user to run it".**
   6. **Deterministic sweep (CI):** `.github/workflows/security-sweep.yml` runs the Semgrep OSS engine (registry rules, logged out, telemetry off) on every push — fails on ERROR-severity findings. Delete the file to remove the layer; nothing depends on it.
   7. **Deep scan (on demand):** the `claude-security` plugin (`/claude-security` → scan changes / scan codebase / suggest patches — findings adversarially verified before reporting). Run "scan changes" before merging any sensitive-surface feature; "scan codebase" at milestones.
 - **agent-guard** (`.claude/hooks/agent-guard.mjs`): mechanically enforces the runaway caps — near-identical agent respawns, >20 agent spawns/session, >8 messages to one agent, >5 workflow runs all pause for explicit user approval. If it fires, treat it as a stall signal: diagnose, don't just re-approve. Thresholds: `.claude/hooks/agent-guard.config.json` (optional).
