@@ -667,3 +667,34 @@ None outstanding. Rounds 1-3 in `DECISIONS.md` resolved everything this design
 depends on: runaway deleted (round 3), reviewer placement accepted (round 3),
 pane-visible claude fixed by the real-prefix npm install (round 3 preamble —
 the design's earlier item 3), cockpit skeleton + on-demand panes (round 2).
+
+---
+
+## 15. As-built amendments (conformance review, 2026-08-29)
+
+Recorded here so no stale instruction above outlives the review. Full detail:
+`07-review-conformance.md`.
+
+- **§3.1 step 2** — pane boots use `--permission-mode acceptEdits`, not
+  `bypassPermissions`: an interactive bypass boot raises a consent dialog
+  nothing persists, which blocked every pane stage (measured live). Headless
+  keeps `bypassPermissions`; readonly reviewers keep `plan`.
+- **§3.1 step 3** — the adopt-`agent_session.value` fallback is withdrawn. The
+  boot id is authoritative (interactive claude accepts `--session-id`, and
+  herdr can report a dead agent's session for a reused pane); a disagreement
+  is printed and kept as `herdrSession`.
+- **§3.4 step 3** — finalize does not wait for the shell after `/exit`; the
+  readiness check at reuse (`rolePane`, per §4) enforces the same invariant,
+  splitting a fresh pane in the worst case.
+- **§4** — the reviewer second tab was not built; reviewer panes split off the
+  plan pane. Accepted (cramped, not wrong). If a tab is ever wanted, the
+  helper belongs in `herd.mjs`.
+- **§6.1 layer 2** — the transcript→result→none fallback lives in
+  `measure.mjs:stageTotals`, not `runClaude`'s close handler. Stronger form of
+  the one-accounting-module rule.
+- **Post-design, owner-sanctioned additions** (not designed here, documented
+  in `PIPELINE-V2.md`): run tiers `full|fix|direct` declared as `tiers` on the
+  stage table, blast-radius-scaled verify depth (fails closed), the severity
+  gate deferring `low|cosmetic` findings to `DEBT.md`, the `CYCLE_CAP = 2`
+  verify/fix cycle cap (a cycle ceiling — the no-runaway-guard ruling stands),
+  and the `blocked-launch` hold-warm path with `pendingLine`.
