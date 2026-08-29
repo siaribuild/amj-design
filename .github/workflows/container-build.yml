@@ -98,5 +98,17 @@ jobs:
       # given commit's image is a deliberate, separate act.
       - name: Push
         run: |
-          echo "${{ secrets.CLOUDFLARE_API_TOKEN }}" | docker login registry.cloudflare.com -u "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" --password-stdin
+          # The API token itself is NOT the registry password — Cloudflare's
+          # container registry takes a short-lived, scoped credential pair
+          # exchanged for the token via the Cloudchamber API (this is what
+          # `wrangler containers push` does internally; found by reading
+          # node_modules/wrangler's own dockerLoginImageRegistry after a
+          # direct docker-login-with-the-token attempt failed 401).
+          creds=$(curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/containers/registries/registry.cloudflare.com/credentials" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"expiration_minutes": 30, "permissions": ["push", "pull"]}')
+          echo "$creds" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d['password'])" \
+            | docker login registry.cloudflare.com -u "$(echo "$creds" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['username'])")" --password-stdin
           docker push "registry.cloudflare.com/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/plan-parse:${{ github.sha }}"
