@@ -10,7 +10,7 @@ export const MAX_PAGES = 60;
 export const MAX_CROPS_PER_PAGE = 12;
 export const MAX_DPI = 300;
 
-export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed";
+export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed" | "timeout";
 
 export interface PageInventory {
   pageNo: number;
@@ -38,15 +38,24 @@ export interface PageWord {
   bottom: number;
 }
 
+export interface PageLine {
+  x0: number;
+  top: number;
+  x1: number;
+  bottom: number;
+}
+
 export interface PageText {
   pageNo: number;
   text: string;
   words: PageWord[];
+  lines?: PageLine[];
 }
 
 export interface InspectResponse {
   inventory: Inventory;
   pages: PageText[];
+  timings?: { inventoryMs: number; textMs: number; wordsMs: number; totalMs: number };
 }
 
 /** [x0, y0, x1, y1] in PDF points. */
@@ -56,12 +65,20 @@ export interface RenderRequest {
   pageNo: number;
   dpi: number;
   crops?: CropBoxPt[];
+  threshold?: number;
+}
+
+export interface DarknessProfile {
+  /** Interior line positions as fractions of the crop, excluding its frame. */
+  mullionXs: number[];
+  transomYs: number[];
 }
 
 export interface RenderedImage {
   pngB64: string;
   widthPx: number;
   heightPx: number;
+  profile?: DarknessProfile;
 }
 
 export interface RenderResponse {
@@ -83,15 +100,19 @@ export type GapCode =
   | "scanned"
   | "refused_contract"
   | "model_declined"
-  | "render_failed";
+  | "render_failed"
+  | "timeout";
 
 export type SplitAxis = "vertical" | "horizontal";
 export type SplitRole = "operable" | "passive";
+export type OpeningOperation = "fixed" | "awning" | "casement" | "sliding" | "louvre" | "hinged" | "sidelight";
 
 export interface SplitUnit {
   role: SplitRole;
   ratio: number;
-  printedWidthMm?: number;
+  operation?: OpeningOperation;
+  /** Arithmetic from crop ratio × schedule width; never presented as a printed dimension. */
+  derivedWidthMm?: number;
 }
 
 export interface SplitReading {
@@ -100,6 +121,8 @@ export interface SplitReading {
 }
 
 export type Orientation = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+export type DrawingConfidence = "high" | "low";
+export type DrawingFlag = "scheduleDrawingMismatch" | "manufacturability" | "notVisibleOnElevations" | "northAssumed";
 
 /** One `drawing_reading` row (migration 0060) — the release-gate and
  *  method-report unit; no `src/` reader exists after the ops descope. */
@@ -123,6 +146,8 @@ export interface DrawingReading {
   pageNo: number | null;
   sheetRef: string | null;
   regionJson: [number, number, number, number] | null;
+  confidence: DrawingConfidence | null;
+  flags: DrawingFlag[];
 }
 
 export interface DrawingRunStepCounts {
@@ -131,16 +156,20 @@ export interface DrawingRunStepCounts {
   text: { pagesRead: number };
   selectPages: { selected: { pageNo: number; tier: string; reason: string }[]; of: number };
   renderCrop: { pagesRendered: number; cropsMade: number };
-  read: { attempted: number; returned: number; declined: number };
+  read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number };
+  placements: { fromText: number; fromModelFallback: number; unplaced: number };
+  northAssumed: boolean;
+  failedPhase?: string;
 }
 
 export interface DrawingFileReport {
   fileId: string;
   steps: DrawingRunStepCounts;
-  perOpening: { tag: string; outcome: "read" | "not_read"; cropKey: string | null; pageNo: number | null }[];
+  perOpening: { tag: string; outcome: "read" | "not_read"; cropKey: string | null; pageNo: number | null; confidence?: DrawingConfidence | null; flags?: DrawingFlag[] }[];
   wallMs: number;
   modelCalls: number;
   containerCalls: number;
+  inspectTimings?: { inventoryMs: number; textMs: number; wordsMs: number; totalMs: number };
 }
 
 /** Persisted to `ai_runs.drawing_report_json` (AC-11…AC-14, AC-24) — no

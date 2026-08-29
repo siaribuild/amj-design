@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402
 
-from steps import StepError, crop, inventory, page_text, page_words, render_page  # noqa: E402
+from steps import StepError, crop, inspect_document, measure_profile, prepare_crop, render_page  # noqa: E402
 
 
 def make_synthetic_pdf(text: str = "W1  600 x 1200  AWNING", width: float = 842, height: float = 1191) -> bytes:
@@ -50,8 +50,13 @@ def synthetic_pdf(tmp_path):
     return str(path)
 
 
-def test_inventory_reads_page_count_and_geometry(synthetic_pdf):
-    inv = inventory(synthetic_pdf)
+@pytest.fixture()
+def inspection(synthetic_pdf):
+    return inspect_document(synthetic_pdf)
+
+
+def test_inventory_reads_page_count_and_geometry(inspection):
+    inv = inspection[0]
     assert inv.page_count == 1
     assert len(inv.pages) == 1
     page = inv.pages[0]
@@ -60,27 +65,51 @@ def test_inventory_reads_page_count_and_geometry(synthetic_pdf):
     assert page.text_chars > 0
 
 
-def test_inventory_finds_no_attachments_in_a_plain_pdf(synthetic_pdf):
-    assert inventory(synthetic_pdf).has_attachments is False
+def test_inventory_finds_no_attachments_in_a_plain_pdf(inspection):
+    assert inspection[0].has_attachments is False
 
 
-def test_page_text_reads_the_printed_string(synthetic_pdf):
-    text = page_text(synthetic_pdf, 1)
+def test_page_text_reads_the_printed_string(inspection):
+    text = inspection[1][0]
     assert "W1" in text
     assert "AWNING" in text
 
 
-def test_page_words_locates_coordinates_for_each_word(synthetic_pdf):
-    words = page_words(synthetic_pdf, 1)
+def test_page_words_locates_coordinates_for_each_word(inspection):
+    words = inspection[2][0]
     assert any(w.text == "AWNING" for w in words)
     for w in words:
         assert 0 <= w.x0 < w.x1
         assert 0 <= w.top < w.bottom
 
 
-def test_page_words_out_of_range_page_refuses(synthetic_pdf):
-    with pytest.raises(StepError):
-        page_words(synthetic_pdf, 99)
+def test_inspect_document_reads_text_and_words_in_one_document_pass(synthetic_pdf, monkeypatch):
+    import steps
+
+    real_run = steps._run
+    calls = []
+
+    def counted(args):
+        calls.append(args)
+        return real_run(args)
+
+    monkeypatch.setattr(steps, "_run", counted)
+    inv, texts, words, lines, timings = inspect_document(synthetic_pdf)
+    assert inv.page_count == 1
+    assert "AWNING" in texts[0]
+    assert any(word.text == "W1" for word in words[0])
+    assert lines == [[]]
+    assert len([args for args in calls if args[0] == "pdftotext"]) == 1
+    assert set(timings) == {"inventoryMs", "textMs", "wordsMs", "totalMs"}
+    assert all(value >= 0 for value in timings.values())
+
+
+def test_inspect_document_is_the_only_inventory_text_word_entrypoint():
+    import steps
+
+    assert not hasattr(steps, "inventory")
+    assert not hasattr(steps, "page_text")
+    assert not hasattr(steps, "page_words")
 
 
 def test_render_page_writes_a_png_and_crop_extracts_a_sub_window(synthetic_pdf, tmp_path):
@@ -104,3 +133,45 @@ def test_crop_box_with_no_area_refuses(synthetic_pdf, tmp_path):
     rendered = render_page(synthetic_pdf, 1, dpi=72, out_prefix=out_prefix)
     with pytest.raises(StepError):
         crop(rendered, (10, 10, 10, 10), str(tmp_path / "empty.png"))
+
+
+def test_prepare_crop_upscales_and_thresholds_without_changing_aspect(tmp_path):
+    from PIL import Image
+
+    path = tmp_path / "small.png"
+    image = Image.new("L", (300, 200), 255)
+    image.putpixel((10, 10), 200)
+    image.save(path)
+    prepare_crop(str(path), threshold=250)
+    with Image.open(path) as prepared:
+        assert prepared.size == (1200, 800)
+        assert prepared.getpixel((40, 40)) == 0
+
+
+def test_measure_profile_returns_only_interior_continuous_divisions(tmp_path):
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "profile.png"
+    image = Image.new("L", (900, 600), 255)
+    draw = ImageDraw.Draw(image)
+    draw.line((10, 0, 10, 599), fill=0, width=3)      # frame-like: excluded
+    draw.line((300, 0, 300, 599), fill=0, width=3)   # mullion
+    image.save(path)
+    profile = measure_profile(str(path))
+    assert profile["mullionXs"] == [pytest.approx(1 / 3, abs=0.01)]
+    assert profile["transomYs"] == []
+
+
+def test_measure_profile_counts_dark_pixels_before_native_averaging(tmp_path):
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "profile-threshold.png"
+    image = Image.new("L", (100, 100), 255)
+    draw = ImageDraw.Draw(image)
+    draw.line((30, 0, 30, 54), fill=179)  # 55% genuinely dark: a division.
+    draw.line((60, 0, 60, 99), fill=200)  # Lower mean, but no pixel is dark.
+    image.save(path)
+
+    profile = measure_profile(str(path))
+    assert profile["mullionXs"] == [pytest.approx(0.3, abs=0.01)]
+    assert profile["transomYs"] == []

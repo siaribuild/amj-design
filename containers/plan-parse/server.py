@@ -20,7 +20,7 @@ import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from steps import StepError, crop, inventory, page_text, page_words, render_page
+from steps import StepError, crop, inspect_document, measure_profile, prepare_crop, render_page
 
 # Mirrors worker/lib/drawing/contract.ts — kept in sync by convention, not
 # import (no shared build step across the language boundary); the Worker
@@ -92,17 +92,16 @@ class Handler(BaseHTTPRequestHandler):
         with tempfile.TemporaryDirectory() as tmp:
             pdf_path = str(Path(tmp) / "in.pdf")
             Path(pdf_path).write_bytes(pdf_bytes)
-            inv = inventory(pdf_path)
+            inv, texts, words_by_page, lines_by_page, timings = inspect_document(pdf_path)
             if inv.page_count > max_pages:
                 raise StepError("bad_request", "page count exceeds maxPages")
             pages = []
-            for pf in inv.pages:
-                text = page_text(pdf_path, pf.page_no)
-                words = page_words(pdf_path, pf.page_no)
+            for pf, text, words, lines in zip(inv.pages, texts, words_by_page, lines_by_page):
                 pages.append({
                     "pageNo": pf.page_no,
                     "text": text,
                     "words": [{"text": w.text, "x0": w.x0, "top": w.top, "x1": w.x1, "bottom": w.bottom} for w in words],
+                    "lines": [{"x0": line.x0, "top": line.top, "x1": line.x1, "bottom": line.bottom} for line in lines],
                 })
             self._send(200, {
                 "inventory": {
@@ -118,6 +117,7 @@ class Handler(BaseHTTPRequestHandler):
                     ],
                 },
                 "pages": pages,
+                "timings": timings,
             })
 
     def _handle_render(self):
@@ -125,6 +125,9 @@ class Handler(BaseHTTPRequestHandler):
         page_no = int(header["pageNo"])
         dpi = min(int(header.get("dpi", 150)), MAX_DPI)
         crops = header.get("crops")
+        threshold = header.get("threshold")
+        if threshold is not None and (not isinstance(threshold, int) or threshold < 0 or threshold > 255):
+            raise StepError("bad_request", "threshold outside 0..255")
         with tempfile.TemporaryDirectory() as tmp:
             pdf_path = str(Path(tmp) / "in.pdf")
             Path(pdf_path).write_bytes(pdf_bytes)
@@ -139,9 +142,11 @@ class Handler(BaseHTTPRequestHandler):
                                   round(x1 * px_per_pt), round(y1 * px_per_pt))
                         out_path = str(Path(tmp) / f"crop{i}.png")
                         crop(rendered_path, box_px, out_path)
+                        prepare_crop(out_path, threshold=threshold)
                         with Image.open(out_path) as c:
                             images.append({"pngB64": base64.b64encode(Path(out_path).read_bytes()).decode("ascii"),
-                                           "widthPx": c.width, "heightPx": c.height})
+                                           "widthPx": c.width, "heightPx": c.height,
+                                           "profile": measure_profile(out_path)})
             else:
                 from PIL import Image
                 with Image.open(rendered_path) as full:

@@ -78,7 +78,10 @@ export function documentChecklist(
       });
     }
   }
-  const stillReadingDrawings = phase?.stage === "building_envelope" && total != null && done < total;
+  // done === total still holds here: the resting "19 of 19" state must stay
+  // visible until the stage actually moves on, not snap to the thermal-check
+  // label the instant the last opening ticks (owner correction 2026-08-29).
+  const stillReadingDrawings = phase?.stage === "building_envelope" && total != null;
   const currentKey = stillReadingDrawings ? "reading_openings" : phase?.stage;
   const current = steps.findIndex((s) => s.key === currentKey);
   return { steps, current: current < 0 ? 0 : current };

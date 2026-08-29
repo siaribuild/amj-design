@@ -130,7 +130,7 @@
     // runs (02-design-v2.md §4) — flipped only after the release gate scores
     // 19/19 (docs/runs/plan-parse-method §7.1).
     // 'manual': emergency kill-switch, ops-triggered only, unchanged.
-    "AI_EXTRACTION_MODE": "auto",
+    "AI_EXTRACTION_MODE": "auto_drawings",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an
     // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:

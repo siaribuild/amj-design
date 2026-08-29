@@ -1649,6 +1649,12 @@ test("documentChecklist: a drawing read gets its own row, driven by counts, betw
   assert.match(steps[current].detail, /opening 7 of 20/);
 });
 
+test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19 });
+  assert.equal(steps[current].key, "reading_openings", "19/19 must stay the visible resting state, not snap to building_envelope");
+  assert.match(steps[current].detail, /opening 19 of 19/);
+});
+
 test("documentChecklist: no drawings counts — today's six steps, unchanged, current on the real stage", () => {
   const { steps, current } = M.documentChecklist({ stage: "building_envelope" });
   assert.deepEqual(steps.map((s) => s.key), [

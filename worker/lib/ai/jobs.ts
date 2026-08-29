@@ -46,7 +46,11 @@ const AI_JOB_DEADLINE_MS = 120_000;
 // switched-on drawing-enrichment mode pays more — its own ~90s target on
 // top, not the reverted attempt's blanket 300s for every job.
 export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
-  return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 240_000 : AI_JOB_DEADLINE_MS;
+  // 600s while the freshly-provisioned container is tested (owner, 2026-08-29
+  // — the 240s figure got a real run killed by this exact lease mid-flight,
+  // drawing_report_json never persisted). Tighten once cold-start behaviour
+  // is known-good; containerClient's own per-call timeout is the real bound.
+  return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 600_000 : AI_JOB_DEADLINE_MS;
 }
 
 /** Per-opening progress, same shape and same token guard as pipeline.ts's
