@@ -1351,3 +1351,79 @@ test("enrichOpenings: retries one timed-out cold inspection before degrading", a
   assert.equal(result.report.files[0].containerCalls, 2);
   assert.equal(result.report.files[0].steps.failedPhase, undefined);
 });
+
+test("validateAgentTurn: preserves and clamps cross-turn working memory", () => {
+  const remembered = validateAgentTurn({ action: "get_page_text", pages: [1], memory: "  found elevation A  " }, ["W1"], [1]);
+  assert.equal(remembered.memory, "found elevation A");
+  const clamped = validateAgentTurn({ action: "finish", memory: "x".repeat(9_000) }, ["W1"], [1]);
+  assert.equal(clamped.memory.length, 8_000);
+});
+
+test("runDrawingAgent: carries visual findings and stored renders across stateless turns", async () => {
+  const inputs = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "Elevation A; inspect W1 in the new render." },
+    { action: "get_text_tokens", pages: [1], memory: "r_001_01 shows W1 as awning plus fixed; preserve it while checking the tag." },
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.4, 0.6], divisionAxis: "vertical",
+      orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 80, 80],
+      confidence: "high", flags: [], basis: ["W1 frame and two panels visible."], note: null,
+    }], memory: "W1 emitted." },
+    { action: "finish", memory: "All pending evidence resolved." },
+  ];
+  const inspected = {
+    inventory: {
+      pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }],
+    },
+    pages: [{ pageNo: 1, text: "ELEVATION A W1", words: [] }],
+  };
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "AWNING" }],
+    inspected,
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift(); },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs[1].workingMemory, "Elevation A; inspect W1 in the new render.");
+  assert.deepEqual(inputs[1].renderCatalog.map((render) => render.renderId), ["r_001_01"]);
+  assert.match(inputs[2].workingMemory, /awning plus fixed/);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+});
+
+test("runDrawingAgent: reserves five turns to conclude a 19-opening set instead of researching forever", async () => {
+  const inputs = [];
+  let renderCalls = 0;
+  const scheduleRows = Array.from({ length: 19 }, (_, index) => ({ tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING" }));
+  const inspected = {
+    inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "ELEVATIONS", words: [] }],
+  };
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows,
+    inspected,
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (input.turn <= 7) return { action: "get_page_text", pages: [1], memory: `research ${input.turn}` };
+        if (input.turn === 8) return { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "late research must be rejected" };
+        return { action: "finish", memory: "No evidence-backed records can be emitted." };
+      },
+      render: async () => { renderCalls++; throw new Error("conclusion render must not run"); },
+      store: async () => null,
+    },
+  });
+  assert.equal(inputs.length, 9);
+  assert.equal(inputs[7].conclusionRequired, true);
+  assert.equal(inputs[7].turnsRemaining, 5);
+  assert.equal(inputs[8].observations[0].data.reason, "conclusion_required");
+  assert.equal(inputs[8].workingMemory, "late research must be rejected");
+  assert.equal(renderCalls, 0);
+  assert.equal(result.report.modelCalls, 9);
+  assert.ok(result.report.perOpening.every((opening) => opening.outcome === "not_read"));
+});

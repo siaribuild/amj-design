@@ -18,6 +18,8 @@ import type { EnrichScheduleRow } from "./enrich";
 import { compositionFromSchedule } from "./reconcile";
 
 const MAX_TURNS = 12;
+const MAX_RESEARCH_TURNS = 7;
+const MAX_WORKING_MEMORY_CHARS = 8_000;
 const MAX_EMIT_BATCH = 4;
 const MAX_RENDER_BATCH = 6;
 const MAX_TEXT_PAGES = 4;
@@ -58,12 +60,13 @@ export interface AgentOpeningProposal {
   note: string | null;
 }
 
-export type DrawingAgentTurn =
+export type DrawingAgentTurn = (
   | { action: "get_page_text"; pages: number[] }
   | { action: "get_text_tokens"; pages: number[] }
   | { action: "render"; requests: AgentRenderRequest[] }
   | { action: "emit"; records: AgentOpeningProposal[] }
-  | { action: "finish" };
+  | { action: "finish" }
+) & { memory?: string };
 
 export interface AgentObservation {
   kind: "initial" | "page_text" | "text_tokens" | "renders" | "emit_result";
@@ -77,6 +80,10 @@ export interface DrawingAgentInput {
   pendingTags: string[];
   acceptedTags: string[];
   finishAllowed: boolean;
+  turnsRemaining: number;
+  conclusionRequired: boolean;
+  workingMemory: string;
+  renderCatalog: { renderId: string; pageNo: number; bboxPt: CropBoxPt; stored: boolean }[];
   observations: AgentObservation[];
   imageDataUrls: { renderId: string; dataUrl: string }[];
 }
@@ -115,10 +122,14 @@ export function validateAgentTurn(raw: unknown, tagVocabulary: string[], pageNum
   if (!value || typeof value !== "object" || typeof value.action !== "string") return null;
   const tags = new Set(tagVocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
   const pages = new Set(pageNumbers);
-  if (value.action === "finish") return { action: "finish" };
+  const memory = typeof value.memory === "string" && value.memory.trim()
+    ? value.memory.trim().slice(0, MAX_WORKING_MEMORY_CHARS) : undefined;
+  const remember = <T extends object>(action: T): T & { memory?: string } =>
+    memory ? { ...action, memory } : action;
+  if (value.action === "finish") return remember({ action: "finish" as const });
   if (value.action === "get_page_text" || value.action === "get_text_tokens") {
     const requested = pageList(value.pages, pages);
-    return requested ? { action: value.action, pages: requested } : null;
+    return requested ? remember({ action: value.action, pages: requested }) : null;
   }
   if (value.action === "render") {
     if (!Array.isArray(value.requests) || value.requests.length < 1 || value.requests.length > MAX_RENDER_BATCH) return null;
@@ -132,7 +143,7 @@ export function validateAgentTurn(raw: unknown, tagVocabulary: string[], pageNum
       if (threshold != null && (!Number.isInteger(threshold) || threshold < 0 || threshold > 255)) return null;
       requests.push({ pageNo: rawRequest.pageNo, dpi: rawRequest.dpi, ...(bboxPt ? { bboxPt } : {}), ...(threshold != null ? { threshold } : {}) });
     }
-    return { action: "render", requests };
+    return remember({ action: "render" as const, requests });
   }
   if (value.action !== "emit" || !Array.isArray(value.records) || value.records.length < 1 || value.records.length > MAX_EMIT_BATCH) return null;
   const records: AgentOpeningProposal[] = [];
@@ -177,7 +188,7 @@ export function validateAgentTurn(raw: unknown, tagVocabulary: string[], pageNum
       note: typeof rawRecord.note === "string" && rawRecord.note.trim() ? rawRecord.note.trim().slice(0, 240) : null,
     });
   }
-  return { action: "emit", records };
+  return remember({ action: "emit" as const, records });
 }
 
 const AGENT_RULES = `You are reading an unfamiliar architectural plan set to enrich a closed schedule of openings.
@@ -194,24 +205,31 @@ NON-NEGOTIABLE RULES
 - STATE.finishAllowed is enforced by the application. When false, you MUST choose a research, render or emit action; never finish.
 - Before an allowed finish, research enough of the set to derive its title, elevation, storey and orientation conventions.
 - Emit no more than four records per turn so users see steady progress.
+- Every action MUST include a concise memory string. It is your only memory across turns: preserve drawing conventions, visual findings, render ids and the next pending tags to emit.
+- STATE.workingMemory is your prior memory. Update it; do not start the investigation again.
+- STATE.renderCatalog lists every stored evidence render that remains valid for emit actions.
+- When STATE.conclusionRequired is true, research is over: return emit for evidence-backed pending tags, or finish only if no pending tag can honestly be read.
 
 ACTIONS (return exactly one JSON object)
-{"action":"get_page_text","pages":[1]}
-{"action":"get_text_tokens","pages":[1]}
-{"action":"render","requests":[{"pageNo":1,"dpi":150,"bboxPt":[x0,y0,x1,y1],"threshold":180}]}
-{"action":"emit","records":[{"tag":"W1","operations":["awning","fixed"],"unitRatios":[0.4,0.6],"divisionAxis":"vertical","orientation":"N","elevation":"A","roomLabel":"BED 1","storey":"ground","evidenceRenderId":"r_001_01","frameBoxPt":[x0,y0,x1,y1],"confidence":"high","flags":[],"basis":["what can be seen and where"],"note":null}]}
-{"action":"finish"}
+{"action":"get_page_text","pages":[1],"memory":"what is known and what to inspect next"}
+{"action":"get_text_tokens","pages":[1],"memory":"what is known and what to inspect next"}
+{"action":"render","requests":[{"pageNo":1,"dpi":150,"bboxPt":[x0,y0,x1,y1],"threshold":180}],"memory":"what is known and what these renders must resolve"}
+{"action":"emit","records":[{"tag":"W1","operations":["awning","fixed"],"unitRatios":[0.4,0.6],"divisionAxis":"vertical","orientation":"N","elevation":"A","roomLabel":"BED 1","storey":"ground","evidenceRenderId":"r_001_01","frameBoxPt":[x0,y0,x1,y1],"confidence":"high","flags":[],"basis":["what can be seen and where"],"note":null}],"memory":"remaining evidence-backed tags to emit next"}
+{"action":"finish","memory":"why no remaining tag can honestly be read"}
 
 Use batched tool requests where useful. You may revise an emitted tag later; the latest evidence-backed record wins. Return JSON only.`;
 
 export function makeDrawingAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<DrawingAgentInput, DrawingAgentTurn> {
   return {
     id: "drawing_agent_turn",
-    promptVersion: "v2",
+    promptVersion: "v3",
     responseSchema: {
       type: "object",
-      properties: { action: { enum: ["get_page_text", "get_text_tokens", "render", "emit", "finish"] } },
-      required: ["action"],
+      properties: {
+        action: { enum: ["get_page_text", "get_text_tokens", "render", "emit", "finish"] },
+        memory: { type: "string", maxLength: MAX_WORKING_MEMORY_CHARS },
+      },
+      required: ["action", "memory"],
     },
     buildPrompt: (input) => `${AGENT_RULES}\n\nSTATE\n${JSON.stringify({ ...input, imageDataUrls: input.imageDataUrls.map(({ renderId }) => ({ renderId })) })}`,
     buildContent: (input) => [
@@ -377,6 +395,7 @@ export async function runDrawingAgent(args: {
     data: { instruction: "Inspect the set, establish its conventions, then read every scheduled opening with evidence." },
   }];
   let imageDataUrls: DrawingAgentInput["imageDataUrls"] = [];
+  let workingMemory = "";
   let totalRenders = 0;
   let finished = false;
   await deps.onProgress?.(0, scheduleRows.length, "floorplan_location");
@@ -384,7 +403,10 @@ export async function runDrawingAgent(args: {
   for (let turn = 1; turn <= MAX_TURNS && !finished; turn++) {
     const pendingTags = scheduleRows.map((row) => row.tag)
       .filter((tag) => !proposals.has(normalizeOpeningRef(tag) ?? tag));
-    const finishAllowed = pendingTags.length === 0 || (turn >= 4 && totalRenders > 0);
+    const turnsRemaining = MAX_TURNS - turn + 1;
+    const emitTurnsNeeded = Math.ceil(pendingTags.length / MAX_EMIT_BATCH);
+    const conclusionRequired = pendingTags.length > 0 && (turn > MAX_RESEARCH_TURNS || turnsRemaining <= emitTurnsNeeded);
+    const finishAllowed = pendingTags.length === 0 || conclusionRequired || (turn >= 4 && totalRenders > 0);
     const acceptedTags = [...proposals.keys()];
     const action = await deps.runTurn({
       turn,
@@ -399,14 +421,28 @@ export async function runDrawingAgent(args: {
       })),
       pendingTags,
       finishAllowed,
+      turnsRemaining,
+      conclusionRequired,
+      workingMemory,
+      renderCatalog: [...renders.values()].map((render) => ({
+        renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt, stored: !!render.cropKey,
+      })),
       acceptedTags,
       observations,
       imageDataUrls,
     });
     report.modelCalls++;
+    if (!action) break;
+    if (action.memory) workingMemory = action.memory;
+    if (conclusionRequired && (action.action === "get_page_text" || action.action === "get_text_tokens" || action.action === "render")) {
+      observations = [{
+        kind: "emit_result",
+        data: { accepted: [], rejectedAction: action.action, reason: "conclusion_required", pendingTags },
+      }];
+      continue;
+    }
     observations = [];
     imageDataUrls = [];
-    if (!action) break;
     if (action.action === "finish") {
       if (!finishAllowed) {
         observations = [{
