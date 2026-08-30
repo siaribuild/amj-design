@@ -343,6 +343,7 @@ test("buildSplitHints: a drawing reading wins the shape over a schedule comment,
   const readings = [{
     externalRef: "W1", splitState: "value",
     split: { units: [{ role: "operable", ratio: 0.5 }, { role: "passive", ratio: 0.5 }], axis: "vertical" },
+    confidence: "high", flags: [],
   }];
   const { splitHints, flags } = buildSplitHints(lines, readings);
   assert.equal(splitHints.get("W1").source, "plans");
@@ -354,9 +355,22 @@ test("buildSplitHints: schedule says FIXED but the drawing shows an operating un
   const readings = [{
     externalRef: "W2", splitState: "value",
     split: { units: [{ role: "operable", ratio: 1 }], axis: "vertical" },
+    confidence: "high", flags: [],
   }];
   const { flags } = buildSplitHints(lines, readings);
   assert.ok(flags.get("W2").some((f) => f === "drawing shows operating unit | schedule types FIXED"));
+});
+
+test("buildSplitHints: low or flagged agent evidence is review-only and cannot shape the estimate", () => {
+  const lines = [{ tag: "W3", widthMm: 1200, heightMm: 1200, typeText: "AWNING", notes: "AWNING + CASEMENT", split: null }];
+  const readings = [{
+    externalRef: "W3", splitState: "value",
+    split: { units: [{ role: "operable", ratio: 1 }], axis: "vertical" },
+    confidence: "low", flags: ["agentEvidenceWeak"],
+  }];
+  const { splitHints, flags } = buildSplitHints(lines, readings);
+  assert.equal(splitHints.get("W3").source, "schedule_comment");
+  assert.ok(flags.get("W3").includes("drawing evidence needs review: agentEvidenceWeak"));
 });
 
 test("parentTagOf: thermal children map to their architectural parent", () => {

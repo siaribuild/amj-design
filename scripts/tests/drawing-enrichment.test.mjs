@@ -22,6 +22,7 @@ await build({
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
+      export { validateAgentTurn, runDrawingAgent, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
       export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
       export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
@@ -36,6 +37,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
+const { validateAgentTurn, runDrawingAgent, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
 const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
@@ -1130,4 +1132,154 @@ test("AB-5: containers/plan-parse/requirements.txt holds no credential-bearing c
   const deps = (await readFile(reqPath, "utf8")).split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join("\n");
   assert.doesNotMatch(deps, /\bboto3\b/i);
   assert.doesNotMatch(deps, /\banthropic\b/i);
+});
+
+// ── v3 agentic loop — bounded tools, evidence and customer progress ────────
+test("validateAgentTurn: accepts bounded tool batches and refuses vocabulary or batch escape", () => {
+  assert.deepEqual(validateAgentTurn(
+    { action: "render", requests: [{ pageNo: 2, dpi: 200, bboxPt: [0, 0, 100, 120], threshold: 180 }] },
+    ["W1"],
+    [1, 2],
+  ), { action: "render", requests: [{ pageNo: 2, dpi: 200, bboxPt: [0, 0, 100, 120], threshold: 180 }] });
+
+  const record = {
+    tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
+    orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "ground",
+    evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 40, 50],
+    confidence: "high", flags: [], basis: ["Visible W1 frame on elevation A."], note: null,
+  };
+  assert.equal(validateAgentTurn({ action: "emit", records: Array(5).fill(record) }, ["W1"], [1]), null);
+  assert.equal(validateAgentTurn({ action: "emit", records: [{ ...record, tag: "W99" }] }, ["W1"], [1]), null);
+  assert.equal(DRAWING_AGENT_LIMITS.maxEmitBatch, 4);
+});
+
+test("runDrawingAgent: reads the opening set in batches, stores evidence and degrades only missing rows", async () => {
+  const progress = [];
+  const stored = [];
+  const inputs = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 200, bboxPt: [0, 0, 100, 100] }] },
+    { action: "emit", records: [
+      {
+        tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.4, 0.6], divisionAxis: "vertical",
+        orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "ground",
+        evidenceRenderId: "r_001_01", frameBoxPt: [5, 5, 45, 45],
+        confidence: "high", flags: [], basis: ["W1 tag and two panels visible in render."], note: null,
+      },
+      {
+        tag: "W2", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+        orientation: null, elevation: "A", roomLabel: null, storey: "ground",
+        evidenceRenderId: "r_001_01", frameBoxPt: [55, 5, 95, 45],
+        confidence: "low", flags: ["northAssumed"], basis: ["W2 frame visible; north unresolved."], note: null,
+      },
+    ] },
+    { action: "finish" },
+  ];
+  const inspected = {
+    inventory: {
+      pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 100, imageCount: 0, imageAreaFraction: 0 }],
+    },
+    pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN ELEVATION A", words: [] }],
+    timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+  };
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1000, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 800, heightMm: 1200, typeText: "FIXED" },
+      { tag: "W3", widthMm: 600, heightMm: 1200, typeText: "FIXED" },
+    ],
+    inspected,
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift() ?? { action: "finish" }; },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => { stored.push(renderId); return `projects/p/crops/r/${renderId}.png`; },
+      onProgress: async (done, total, phase) => { progress.push({ done, total, phase }); },
+    },
+  });
+
+  assert.equal(stored.length, 1);
+  assert.equal(inputs[1].imageDataUrls[0].renderId, "r_001_01");
+  assert.equal(result.readings.length, 3);
+  assert.equal(result.readings[0].confidence, "high");
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [400, 600]);
+  assert.equal(result.readings[1].confidence, "low");
+  assert.ok(result.readings[1].flags.includes("northAssumed"));
+  assert.equal(result.readings[2].confidence, "low");
+  assert.ok(result.readings[2].flags.includes("agentEvidenceWeak"));
+  assert.equal(result.report.perOpening[2].outcome, "not_read");
+  assert.ok(progress.some((item) => item.phase === "opening_read" && item.done === 2 && item.total === 3));
+  assert.deepEqual(progress.at(-1), { done: 3, total: 3, phase: "opening_read" });
+});
+
+test("runDrawingAgent: hard turn cap finishes the UI and never creates unevidenced drawing facts", async () => {
+  let turns = 0;
+  const inspected = {
+    inventory: {
+      pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }],
+    },
+    pages: [{ pageNo: 1, text: "PLAN", words: [] }],
+  };
+  const progress = [];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "FIXED" }],
+    inspected,
+    deps: {
+      runTurn: async () => { turns++; return { action: "get_page_text", pages: [1] }; },
+      render: async () => { throw new Error("not called"); },
+      store: async () => { throw new Error("not called"); },
+      onProgress: async (done, total, phase) => { progress.push({ done, total, phase }); },
+    },
+  });
+  assert.equal(turns, DRAWING_AGENT_LIMITS.maxTurns);
+  assert.equal(result.readings[0].orientationState, "not_read");
+  assert.equal(result.readings[0].confidence, "low");
+  assert.match(result.readings[0].gapNote, /turn budget ended/i);
+  assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
+});
+
+test("flagged agent orientation and room remain review-only", async () => {
+  const model = { openings: [{ externalRef: "W1", wallOrientation: null, wallOrientationSource: null }] };
+  const reading = {
+    externalRef: "W1", orientationState: "value", orientation: "N",
+    roomState: "value", roomLabel: "BED 1", confidence: "low", flags: ["agentEvidenceWeak"],
+  };
+  applyDrawingOrientation(model, [reading]);
+  assert.equal(model.openings[0].wallOrientation, null);
+  let writes = 0;
+  await applyDrawingRoom({ DB: { prepare: () => ({ bind: () => ({ run: async () => { writes++; } }) }) } }, "p1", [reading]);
+  assert.equal(writes, 0);
+});
+
+test("runDrawingAgent: an unstored render cannot authorize a drawing reading", async () => {
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }] },
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
+      orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 40, 40],
+      confidence: "high", flags: [], basis: ["Visible frame."], note: null,
+    }] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => actions.shift() ?? { action: "finish" },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async () => null,
+    },
+  });
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.equal(result.readings[0].confidence, "low");
+  assert.equal(result.readings[0].cropKey, null);
 });

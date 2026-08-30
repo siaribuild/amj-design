@@ -418,10 +418,10 @@ export function useProjectDocuments(
       if (epoch !== pollEpoch.current) return;
       let inFlight = false;
       // Duration is NOT failure. The client backstop is generous (past the
-      // server's 120s job ceiling); the server is the authority on actual
+      // server's 600s drawing-job ceiling); the server is the authority on actual
       // failure. We only give up on our own if the whole run window elapses with
       // no terminal status at all — a stall is surfaced as concern, not death.
-      const windowElapsed = Date.now() - t0 >= 150_000;
+      const windowElapsed = Date.now() - t0 >= 660_000;
       try {
         const { run, basis } = await extractionStatus();
         if (epoch !== pollEpoch.current) return;
@@ -464,7 +464,7 @@ export function useProjectDocuments(
         // does a network failure become the visible bounded failure state.
       }
       // Only the CLIENT backstop fails here; a healthy-but-slow run keeps its
-      // checklist and its live timer. The server fails the job at 120s and we
+      // checklist and its live timer. The server fails the job at 600s and we
       // read that as run.status==='failed' above — this is just the net for a
       // status endpoint that never returns a terminal state at all.
       if (windowElapsed) {
@@ -475,7 +475,7 @@ export function useProjectDocuments(
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, 150_000 - (Date.now() - t0));
+      const remaining = Math.max(250, 660_000 - (Date.now() - t0));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);

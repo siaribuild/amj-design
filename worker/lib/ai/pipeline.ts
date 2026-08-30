@@ -163,7 +163,7 @@ export function buildSplitHints(
   drawingReadings: DrawingReading[],
 ): { splitHints: Map<string, SplitHint>; flags: Map<string, string[]> } {
   const readingByTag = new Map(drawingReadings
-    .filter((r) => r.splitState === "value" && r.split)
+    .filter((r) => r.splitState === "value" && r.split && r.confidence === "high" && (r.flags?.length ?? 0) === 0)
     .map((r) => [r.externalRef, { splitState: r.splitState, units: r.split!.units, axis: r.split!.axis }] as const));
   const splitHints = new Map<string, SplitHint>();
   const flags = new Map<string, string[]>();
@@ -172,6 +172,12 @@ export function buildSplitHints(
     list.push(reason);
     flags.set(tag, list);
   };
+  for (const reading of drawingReadings) {
+    if (reading.confidence === "low" || reading.flags?.length) {
+      const detail = reading.flags?.length ? reading.flags.join(", ") : "low confidence";
+      flag(reading.externalRef, `drawing evidence needs review: ${detail}`);
+    }
+  }
   for (const l of lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
     const reading = readingByTag.get(l.tag) ?? null;
@@ -181,9 +187,10 @@ export function buildSplitHints(
     if (reading && (l.typeText ?? "").trim().toLowerCase() === "fixed" && reading.units.some((u) => u.role === "operable")) {
       flag(l.tag, conflictReason("drawing shows operating unit", "schedule types FIXED"));
     }
+    const parsedComment = parseSplitHint(l.notes);
     const commentHint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
-      : parseSplitHint(l.notes);
+      : parsedComment ? { ...parsedComment, source: "schedule_comment" } : null;
     const { hint, conflict } = resolveMakeUp(l.tag, {
       reading,
       commentHint,
