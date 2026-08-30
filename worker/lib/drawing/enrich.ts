@@ -15,6 +15,7 @@ import { cropKey } from "./crops";
 import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
+import { makeDrawingAgentSkill, runDrawingAgent, type DrawingAgentInput, type DrawingAgentTurn } from "./agent";
 import { runStage } from "../ai/stage";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
@@ -46,6 +47,7 @@ export interface EnrichDeps {
   runFloorplan(imageDataUrl: string, tagVocabulary: string[], elevationVocabulary: string[]): Promise<FloorplanReadOutput | null>;
   runNorth?(imageDataUrl: string): Promise<NorthArrowOutput | null>;
   runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }): Promise<OpeningReadResult | null>;
+  runAgentTurn?(input: DrawingAgentInput): Promise<DrawingAgentTurn | null>;
 }
 
 function emptyFileReport(fileId: string): DrawingFileReport {
@@ -132,12 +134,39 @@ async function enrichFile(
 
     const strategy = chooseStrategy(inspected.inventory);
     report.steps.strategy = strategy;
-    if (strategy === "scanned") {
+    if (strategy === "scanned" && !deps.runAgentTurn) {
       // Stops here, named — every opening this file might have covered is
       // simply absent from `readings`; resolveMakeUp falls through to the
       // comment/energy/default rungs for them, exactly as if the file were
       // never uploaded (AC-13).
       return { readings: [], report };
+    }
+
+    if (deps.runAgentTurn) {
+      currentPhase = "drawing_agent";
+      const agentResult = await runDrawingAgent({
+        fileId: args.file.fileId,
+        scheduleRows: args.scheduleRows,
+        inspected,
+        deps: {
+          runTurn: deps.runAgentTurn,
+          render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
+          async store(renderId, pngB64) {
+            const key = cropKey(args.projectId, args.aiRunId, `agent-${renderId}`);
+            try {
+              const bytes = Uint8Array.from(atob(pngB64), (char) => char.charCodeAt(0));
+              await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
+              return key;
+            } catch {
+              return null;
+            }
+          },
+          onProgress: args.onProgress,
+        },
+      });
+      agentResult.report.steps.strategy = strategy;
+      agentResult.report.containerCalls++;
+      return agentResult;
     }
 
     currentPhase = "select_pages";
@@ -515,6 +544,15 @@ export async function runDrawingEnrichmentStage(
       const res = await runStage(env, {
         aiRunId: args.aiRunId, projectId: args.projectId, skill: openingReadSkill,
         input: { imageDataUrl, tag: row.tag, widthMm: row.widthMm, heightMm: row.heightMm, typeText: row.typeText, unitCount: context.unitCount, commentText: row.commentText ?? null },
+      });
+      return res.data;
+    },
+    async runAgentTurn(input: DrawingAgentInput) {
+      const res = await runStage(env, {
+        aiRunId: args.aiRunId,
+        projectId: args.projectId,
+        skill: makeDrawingAgentSkill(args.scheduleRows.map((row) => row.tag), input.pages.map((page) => page.pageNo)),
+        input,
       });
       return res.data;
     },

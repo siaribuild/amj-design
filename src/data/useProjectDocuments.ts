@@ -484,7 +484,7 @@ export function useProjectDocuments(
         // does a network failure become the visible bounded failure state.
       }
       // Only the CLIENT backstop fails here; a healthy-but-slow run keeps its
-      // checklist and its live timer. The server fails the job at 120s and we
+      // checklist and its live timer. The server fails the job at 600s and we
       // read that as run.status==='failed' above — this is just the net for a
       // status endpoint that never returns a terminal state at all.
       if (windowElapsed) {
