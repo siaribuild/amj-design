@@ -16,7 +16,13 @@ const IDENTIFIER = /^[A-D]$/i;
 function sameLine(a: PageWord, b: PageWord): boolean {
   const ah = Math.max(a.bottom - a.top, 1);
   const bh = Math.max(b.bottom - b.top, 1);
-  return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) <= Math.max(ah, bh);
+  return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) <= Math.max(ah, bh) * 1.5;
+}
+
+function horizontalGap(a: PageWord, b: PageWord): number {
+  if (a.x1 < b.x0) return b.x0 - a.x1;
+  if (b.x1 < a.x0) return a.x0 - b.x1;
+  return 0;
 }
 
 /** Locate only explicit elevation titles. No labels means no regions: page
@@ -28,8 +34,17 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
     const word = ordered[i];
     const text = word.text.trim().replace(/[:\-]$/, "").toUpperCase();
     if (!/^ELEVATIONS?$/.test(text)) continue;
-    const candidates = [ordered[i + 1], ordered[i - 1]].filter((candidate): candidate is PageWord => !!candidate && sameLine(word, candidate));
-    const identifier = candidates.find((candidate) => IDENTIFIER.test(candidate.text.trim().replace(/[:\-]/g, "")));
+    // Poppler orders words by the PDF content stream, not necessarily visual
+    // adjacency. REF contains scale/title tokens between the two printed title
+    // words, so searching only i±1 loses one elevation on each shared sheet.
+    const titleHeight = Math.max(word.bottom - word.top, 1);
+    const identifier = ordered
+      .filter((candidate) =>
+        candidate !== word
+        && sameLine(word, candidate)
+        && IDENTIFIER.test(candidate.text.trim().replace(/[:\-]/g, ""))
+        && horizontalGap(word, candidate) <= titleHeight * 12)
+      .sort((a, b) => horizontalGap(word, a) - horizontalGap(word, b))[0];
     if (!identifier) continue;
     const label = identifier.text.trim().replace(/[:\-]/g, "").toUpperCase();
     if (labels.some((item) => item.label === label)) continue;
@@ -40,18 +55,21 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
 
   const xs = labels.map((label) => label.x);
   const ys = labels.map((label) => label.y);
-  const verticalSplit = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
-  const sorted = [...labels].sort((a, b) => verticalSplit ? a.x - b.x : a.y - b.y);
+  const sideBySide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+  const sorted = [...labels].sort((a, b) => sideBySide ? a.x - b.x : a.y - b.y);
   return sorted.map((label, index) => {
-    const before = index === 0 ? 0 : verticalSplit
+    // Side-by-side drawings meet halfway between titles. Stacked elevation
+    // titles are printed below their drawings: each region reaches from the
+    // preceding title boundary down to its own title, never to the midpoint.
+    const before = index === 0 ? 0 : sideBySide
       ? (sorted[index - 1].x + label.x) / 2
-      : (sorted[index - 1].y + label.y) / 2;
-    const after = index === sorted.length - 1 ? (verticalSplit ? widthPt : heightPt) : verticalSplit
-      ? (label.x + sorted[index + 1].x) / 2
-      : (label.y + sorted[index + 1].y) / 2;
+      : sorted[index - 1].y;
+    const after = sideBySide
+      ? (index === sorted.length - 1 ? widthPt : (label.x + sorted[index + 1].x) / 2)
+      : label.y;
     return {
       label: label.label,
-      region: verticalSplit ? [before, 0, after, heightPt] : [0, before, widthPt, after],
+      region: sideBySide ? [before, 0, after, heightPt] : [0, before, widthPt, after],
     };
   });
 }

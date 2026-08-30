@@ -1,11 +1,9 @@
 # The Python half of the SKILL.md toolchain, pinned.
 #
-# pdfplumber  layout-aware text with per-word coordinates (step 3)
 # pillow      crop rendered pages to one opening's window (step 5)
 #
 # Deliberately NOT here (02-design-v2.md §1, §9 AB-5): boto3, anthropic.
 # The container holds no R2/D1/model credentials and makes no outbound call —
 # it receives PDF bytes over its own HTTP endpoint and returns text/images
 # over the same connection. The vision read and R2 write are the Worker's.
-pdfplumber==0.11.4
 pillow==11.0.0

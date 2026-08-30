@@ -1650,7 +1650,9 @@ test("pollWindowMs: the client window is the server's stated deadline plus a mar
 });
 
 test("documentChecklist: a drawing read gets its own row, driven by counts, between extracting_schedule and building_envelope (§5)", () => {
-  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 7, drawingsTotal: 20 });
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 7, drawingsTotal: 20, drawingsPhase: "opening_read",
+  });
   const keys = steps.map((s) => s.key);
   assert.deepEqual(keys, [
     "queued", "reading_documents", "extracting_schedule", "reading_openings",
@@ -1658,18 +1660,22 @@ test("documentChecklist: a drawing read gets its own row, driven by counts, betw
   ]);
   assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 20 openings found");
   assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
-  assert.match(steps[current].detail, /opening 7 of 20/);
+  assert.match(steps[current].detail, /opening 8 of 20/);
 });
 
-test("documentChecklist: drawing progress starts visibly at opening 0 rather than stopping at openings found", () => {
-  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19 });
+test("documentChecklist: page-wide drawing work is named instead of displaying a frozen opening zero", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19, drawingsPhase: "elevation_inventory",
+  });
   assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 19 openings found");
   assert.equal(steps[current].key, "reading_openings");
-  assert.equal(steps[current].detail, " · opening 0 of 19");
+  assert.equal(steps[current].detail, " · finding elevation views");
 });
 
 test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {
-  const { steps, current } = M.documentChecklist({ stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19 });
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
   assert.equal(steps[current].key, "reading_openings", "19/19 must stay the visible resting state, not snap to building_envelope");
   assert.match(steps[current].detail, /opening 19 of 19/);
 });

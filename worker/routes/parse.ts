@@ -374,7 +374,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
             j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at,
-            j.drawings_done, j.drawings_total
+            j.drawings_done, j.drawings_total, j.drawings_phase
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -391,6 +391,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
     updated_at: string;
     drawings_done: number | null;
     drawings_total: number | null;
+    drawings_phase: string | null;
   }>().catch(() => null);
   if (pending) {
     const diagnostic = (pending.status === "failed" || pending.failure_class === "quota")
@@ -414,7 +415,11 @@ parse.get("/projects/current/extraction-status", async (c) => {
         // Present only while a drawing read is running (§5) — absent on
         // every job that predates this feature and on any run with no
         // drawings. No unread/gap detail rides along either (AC-25).
-        ...(pending.drawings_total != null ? { drawingsDone: pending.drawings_done ?? 0, drawingsTotal: pending.drawings_total } : {}),
+        ...(pending.drawings_total != null ? {
+          drawingsDone: pending.drawings_done ?? 0,
+          drawingsTotal: pending.drawings_total,
+          ...(pending.drawings_phase ? { drawingsPhase: pending.drawings_phase } : {}),
+        } : {}),
       },
       basis: {},
     });

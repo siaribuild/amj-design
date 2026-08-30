@@ -9,7 +9,7 @@
 // surface, because nothing in here is allowed to throw past this file's
 // own try/catch.
 import type { Env } from "../../types";
-import type { DarknessProfile, DrawingFileReport, DrawingReading, DrawingReport, GapCode, Orientation, SplitReading } from "./contract";
+import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
 import { chooseStrategy, selectPages } from "./selectPages";
@@ -43,7 +43,7 @@ export interface EnrichDeps {
   inspect(namespace: DurableObjectNamespace, projectId: string, pdfBytes: Uint8Array): ReturnType<typeof inspectPdf>;
   render: typeof renderPage;
   runElevation(imageDataUrl: string): Promise<ElevationInventoryOutput | null>;
-  runFloorplan(imageDataUrl: string, tagVocabulary: string[]): Promise<FloorplanReadOutput | null>;
+  runFloorplan(imageDataUrl: string, tagVocabulary: string[], elevationVocabulary: string[]): Promise<FloorplanReadOutput | null>;
   runNorth?(imageDataUrl: string): Promise<NorthArrowOutput | null>;
   runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }): Promise<OpeningReadResult | null>;
 }
@@ -56,6 +56,7 @@ function emptyFileReport(fileId: string): DrawingFileReport {
       strategy: "scanned",
       text: { pagesRead: 0 },
       selectPages: { selected: [], of: 0 },
+      elevationRegions: [],
       renderCrop: { pagesRendered: 0, cropsMade: 0 },
       read: { attempted: 0, returned: 0, declined: 0, retriedWithThreshold: 0 },
       placements: { fromText: 0, fromModelFallback: 0, unplaced: 0 },
@@ -104,7 +105,7 @@ async function enrichFile(
   env: Env,
   args: {
     projectId: string; aiRunId: string; file: EnrichFile; scheduleRows: EnrichScheduleRow[];
-    onProgress?: (done: number, total: number) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
   },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
@@ -116,7 +117,7 @@ async function enrichFile(
     if (!obj) return { readings: [], report };
     const pdfBytes = new Uint8Array(await obj.arrayBuffer());
 
-    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length);
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "inventory");
     currentPhase = "inventory";
     const inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes);
     report.inspectTimings = inspected.timings;
@@ -163,6 +164,7 @@ async function enrichFile(
     };
 
     currentPhase = "elevation_inventory";
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "elevation_inventory");
     for (let elevationIndex = 0; elevationIndex < elevationPages.length; elevationIndex++) {
       const page = elevationPages[elevationIndex];
       const geo = inspected.inventory.pages.find((p) => p.pageNo === page.pageNo);
@@ -170,10 +172,18 @@ async function enrichFile(
       if (!geo || !pageText) continue;
       const regions = elevationRegions(pageText.words, geo.widthPt, geo.heightPt);
       const textRegions = regions.length ? regions : regionsFromText(pageText.text, geo.widthPt, geo.heightPt);
-      const explicitRegions = textRegions.length ? textRegions : [{
-        label: String.fromCharCode(65 + elevationIndex),
-        region: [0, 0, geo.widthPt, geo.heightPt] as [number, number, number, number],
-      }];
+      // Page draw order is not elevation identity. If neither positioned words
+      // nor the single-title text fallback can name the region, do not ask the
+      // model to inventory a page under an invented A/B/C/D key.
+      if (!textRegions.length) {
+        report.steps.elevationRegions.push({ pageNo: page.pageNo, labels: [] });
+        continue;
+      }
+      const explicitRegions = textRegions;
+      report.steps.elevationRegions.push({
+        pageNo: page.pageNo,
+        labels: explicitRegions.map((region) => region.label),
+      });
       const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: page.pageNo, dpi: 150 });
       report.containerCalls++;
       report.steps.renderCrop.pagesRendered++;
@@ -199,6 +209,8 @@ async function enrichFile(
     }
 
     currentPhase = "floorplan_location";
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "floorplan_location");
+    const elevationVocabulary = Object.keys(boxesByElevation).sort();
     const placements: Record<string, Placement & { roomLabel: string | null; storey?: Storey | null }> = {};
     const markerEdges: Record<string, Edge> = {};
     let facingByElevation: Record<string, { facing: Orientation | null }> = {};
@@ -220,7 +232,7 @@ async function enrichFile(
       report.steps.renderCrop.pagesRendered++;
       const full = rendered.images[0];
       if (!full) continue;
-      const read = await deps.runFloorplan(`data:image/png;base64,${full.pngB64}`, missing);
+      const read = await deps.runFloorplan(`data:image/png;base64,${full.pngB64}`, missing, elevationVocabulary);
       report.modelCalls++;
       if (!read) continue;
       const missingSet = new Set(missing);
@@ -248,6 +260,7 @@ async function enrichFile(
     if (Object.keys(markerEdges).length && deps.runNorth && !Object.values(facingByElevation).some((value) => !!value.facing)) {
       const northPage = selected.find((candidate) => candidate.tier === "siteplan") ?? floorplanPages[0];
       if (northPage) {
+        if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "orientation");
         report.containerCalls++;
         const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: northPage.pageNo, dpi: 100 });
         const image = rendered.images[0];
@@ -287,6 +300,7 @@ async function enrichFile(
       matchedByPage.set(pageNo, rows);
     }
     currentPhase = "render_crops";
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "render_crops");
     for (const [pageNo, rows] of matchedByPage) {
       for (let offset = 0; offset < rows.length; offset += 12) {
         const batch = rows.slice(offset, offset + 12);
@@ -305,7 +319,7 @@ async function enrichFile(
       report.steps.renderCrop.pagesRendered++;
     }
 
-    // Denominator is the located-openings count, set once — it never
+    // Denominator is the schedule-opening count, set once — it never
     // shortens, and a not_read still advances the numerator (§5): a
     // customer watching this must not see it stall on what it could not
     // read, or lie by shrinking to reach 100%.
@@ -313,10 +327,11 @@ async function enrichFile(
     let progressChain = Promise.resolve();
     const tick = async () => {
       const done = ++doneCount;
-      if (args.onProgress) progressChain = progressChain.then(() => args.onProgress!(done, args.scheduleRows.length));
+      if (args.onProgress) progressChain = progressChain.then(() => args.onProgress!(done, args.scheduleRows.length, "opening_read"));
       await progressChain;
     };
     currentPhase = "opening_read";
+    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "opening_read");
     const readings = await mapPool(assigned, 5, async (outcome): Promise<DrawingReading> => {
       const row = args.scheduleRows.find((r) => r.tag === outcome.tag)!;
       const placement = placements[normalizeOpeningRef(outcome.tag) ?? outcome.tag];
@@ -455,7 +470,7 @@ export async function runDrawingEnrichmentStage(
   env: Env,
   args: {
     projectId: string; aiRunId: string; planPdfDocs: { fileId: string }[]; scheduleRows: EnrichScheduleRow[];
-    onProgress?: (done: number, total: number) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
   },
   /** Test-only: overrides the real container/runStage deps. Production
    *  never passes this — see the default branch below. */
@@ -483,8 +498,13 @@ export async function runDrawingEnrichmentStage(
       const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: elevationInventorySkill, input: { imageDataUrl } });
       return res.data;
     },
-    async runFloorplan(imageDataUrl: string, tagVocabulary: string[]) {
-      const res = await runStage(env, { aiRunId: args.aiRunId, projectId: args.projectId, skill: makeFloorplanReadSkill(tagVocabulary), input: { imageDataUrl, tagVocabulary } });
+    async runFloorplan(imageDataUrl: string, tagVocabulary: string[], elevationVocabulary: string[]) {
+      const res = await runStage(env, {
+        aiRunId: args.aiRunId,
+        projectId: args.projectId,
+        skill: makeFloorplanReadSkill(tagVocabulary, elevationVocabulary),
+        input: { imageDataUrl, tagVocabulary, elevationVocabulary },
+      });
       return res.data;
     },
     async runNorth(imageDataUrl: string) {
@@ -508,7 +528,7 @@ export async function enrichOpenings(
   env: Env,
   args: {
     projectId: string; aiRunId: string; files: EnrichFile[]; scheduleRows: EnrichScheduleRow[];
-    onProgress?: (done: number, total: number) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
   },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingReport }> {

@@ -604,6 +604,15 @@ export interface ExtractionRun {
    *  not do. Which openings those were is an ops question, never a customer one. */
   drawingsDone?: number;
   drawingsTotal?: number;
+  /** Page-wide preparation is real drawing work, but it cannot honestly
+   * advance the completed-opening numerator. This phase explains that time. */
+  drawingsPhase?:
+    | "inventory"
+    | "elevation_inventory"
+    | "floorplan_location"
+    | "orientation"
+    | "render_crops"
+    | "opening_read";
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:

@@ -51,14 +51,14 @@ test("aiJobDeadlineMs: 600s under auto_drawings while the freshly-provisioned co
   assert.equal(aiJobDeadlineMs({}), 120_000);
 });
 
-test("setDrawingProgress: writes the counts guarded by the exact processing token, same shape as setProgress", async () => {
+test("setDrawingProgress: writes phase + counts guarded by the exact processing token", async () => {
   const calls = [];
   const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
-  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20);
+  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20, "opening_read");
   assert.equal(calls.length, 1);
-  assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?/);
+  assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?, drawings_phase=\?/);
   assert.match(calls[0].sql, /WHERE project_id=\? AND source_generation=\? AND status='processing'\s+AND processing_token=\?/);
-  assert.deepEqual(calls[0].args, [7, 20, "proj_1", 3, "tok-abc"]);
+  assert.deepEqual(calls[0].args, [7, 20, "opening_read", "proj_1", 3, "tok-abc"]);
 });
 
 test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {
@@ -197,6 +197,7 @@ test("staff retry resets and dispatches the same failed generation durably", asy
   assert.equal(writes.length, 1);
   assert.match(writes[0].sql, /status='scheduled'/);
   assert.match(writes[0].sql, /attempts=0/);
+  assert.match(writes[0].sql, /drawings_done=NULL,\s+drawings_total=NULL, drawings_phase=NULL/);
   assert.equal(sends.length, 1, "the reset claim is sent through the durable queue");
   assert.equal(puts.length, 1, "debounce state follows the replacement token");
 });
