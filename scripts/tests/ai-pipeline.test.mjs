@@ -28,7 +28,7 @@ await build({
   stdin: {
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
-      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, buildSplitHints } from ${p("worker/lib/ai/pipeline.ts")};
+      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
@@ -47,7 +47,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, buildSplitHints, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
+  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
@@ -447,6 +447,7 @@ test("plan context enriches rooms, orientation and floor area without inventing 
   assert.equal(opening.roomId, "living");
   assert.equal(opening.wallOrientation, "W");
   assert.equal(opening.thermalRequirement, null);
+  assert.deepEqual(drawingContextForOpening(model, "W01"), { roomLabel: "Living", storey: "ground" });
 });
 
 test("plan context skill clamps untrusted plan output", () => {

@@ -283,6 +283,23 @@ export function applyPlanContext(
   }
 }
 
+export function drawingContextForOpening(
+  model: Pick<BuildingModelV1, "openings" | "rooms">,
+  externalRef: string,
+): { roomLabel: string | null; storey: "ground" | "first" | null } {
+  const normalizedRef = normalizeOpeningRef(externalRef) ?? externalRef;
+  const opening = model.openings.find((item) =>
+    (normalizeOpeningRef(item.externalRef) ?? item.externalRef) === normalizedRef);
+  const room = opening?.roomId ? model.rooms.find((item) => item.roomId === opening.roomId) : null;
+  const level = (room?.level ?? opening?.level ?? "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  const storey = /^(ground|ground floor|level 0|0)$/.test(level)
+    ? "ground"
+    : /^(first|first floor|level 1|1)$/.test(level)
+      ? "first"
+      : null;
+  return { roomLabel: room?.name?.trim() || null, storey };
+}
+
 export function thermalContextFor(
   model: BuildingModelV1,
   opening: OpeningV1,
@@ -766,20 +783,29 @@ export async function runAiExtraction(
   await setProgress("building_envelope");
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
+  applyPlanContext(model, planContexts);
 
   // Plan-parse enrichment (02-design-v2.md §4) — runDrawingEnrichmentStage
   // owns the mode gate, the R2-key lookup and the container/model wiring
   // (worker/lib/drawing/enrich.ts, unit-tested there — it never throws;
   // this try/catch only covers the schedule-row mapping around the call).
-  // Applied BEFORE applyPlanContext so its wallOrientation ??= (the
-  // text-derived fallback) cannot override a reading (§3.5).
+  // Plan context is applied first so its room/storey identity can be supplied
+  // to the agent. A high-confidence drawing orientation is still allowed to
+  // replace the plan-derived fallback (§3.5).
   let drawingReadings: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["readings"] = [];
   let drawingReport: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["report"] = null;
   try {
     const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
     const scheduleRows = merged.lines
       .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
-      .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null, commentText: l.notes ?? null }));
+      .map((l) => ({
+        tag: l.tag,
+        widthMm: l.widthMm,
+        heightMm: l.heightMm,
+        typeText: l.typeText ?? null,
+        commentText: l.notes ?? null,
+        ...drawingContextForOpening(model, l.tag),
+      }));
     const onProgress = opts.processingToken
       ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase) =>
           setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase)
@@ -812,7 +838,6 @@ export async function runAiExtraction(
     warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
   }
 
-  applyPlanContext(model, planContexts);
   const technicalReviewReasons = new Map<string, Set<string>>();
   const flagOpening = (externalRef: string, reason: string) => {
     const current = technicalReviewReasons.get(externalRef) ?? new Set<string>();

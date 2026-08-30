@@ -235,7 +235,7 @@ const AGENT_RULES = `You are reading an unfamiliar architectural plan set to enr
 Work as an evidence-led document agent, not as a fixed template parser. Learn the drawing's own conventions, inspect likely floor plans and elevations, zoom where needed, and reconcile all openings as a set.
 
 NON-NEGOTIABLE RULES
-- The supplied schedule is authoritative for tag, width and height. Never alter it.
+- The supplied opening context is authoritative for tag, width, height and any non-null roomLabel/storey. Never alter those facts.
 - Never emit millimetre widths. Emit visible unit ratios; the application calculates dimensions.
 - Floor plans may establish tag location, room, wall and orientation only. Never infer panel operations or unit ratios from a floor plan, schedule type, schedule comment or generic defaults.
 - A composition record requires a close elevation or architectural detail render where the opening frame, divisions and operations are actually visible, plus a tight frame box in PDF points. Set evidenceView to elevation or detail.
@@ -266,7 +266,7 @@ Use batched tool requests where useful. You may revise an emitted tag later; the
 export function makeDrawingAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<DrawingAgentInput, DrawingAgentTurn> {
   return {
     id: "drawing_agent_turn",
-    promptVersion: "v6",
+    promptVersion: "v7",
     responseSchema: {
       type: "object",
       properties: {
@@ -302,7 +302,11 @@ const renderCacheKey = (request: AgentRenderRequest) => JSON.stringify([
 const inside = (inner: CropBoxPt, outer: CropBoxPt): boolean =>
   inner[0] >= outer[0] && inner[1] >= outer[1] && inner[2] <= outer[2] && inner[3] <= outer[3];
 
-const MIN_COMPOSITION_FRAME_FRACTION = 0.06;
+// A frame occupying only a few percent of a broad sheet crop is locator
+// evidence, not enough visual detail to support operations or split ratios.
+// Fifteen percent excludes broad locator views containing many opening widths
+// while preserving the targeted-crop repair path below.
+const MIN_COMPOSITION_FRAME_FRACTION = 0.15;
 
 function compositionFrameIsCloseUp(frame: CropBoxPt, renderBox: CropBoxPt): boolean {
   const renderWidth = renderBox[2] - renderBox[0];
@@ -311,6 +315,14 @@ function compositionFrameIsCloseUp(frame: CropBoxPt, renderBox: CropBoxPt): bool
   const frameHeight = frame[3] - frame[1];
   return frameWidth / renderWidth >= MIN_COMPOSITION_FRAME_FRACTION
     && frameHeight / renderHeight >= MIN_COMPOSITION_FRAME_FRACTION;
+}
+
+const comparableContext = (value: string): string => value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function conflictsWithKnownContext(proposal: AgentOpeningProposal, row: EnrichScheduleRow): boolean {
+  return !!(
+    row.roomLabel && proposal.roomLabel && comparableContext(row.roomLabel) !== comparableContext(proposal.roomLabel)
+  ) || !!(row.storey && proposal.storey && row.storey !== proposal.storey);
 }
 
 function iou(a: CropBoxPt, b: CropBoxPt): number {
@@ -357,10 +369,10 @@ function readingFromProposal(
     orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated",
     elevation: proposal.elevation,
-    roomState: proposal.roomLabel ? "value" : "not_stated",
-    roomLabel: proposal.roomLabel,
+    roomState: row.roomLabel || proposal.roomLabel ? "value" : "not_stated",
+    roomLabel: row.roomLabel ?? proposal.roomLabel,
     gapCode: confidence === "high" ? null : "model_declined",
-    gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...(proposal.storey ? [`storey:${proposal.storey}`] : [])].join(" | ").slice(0, 1000),
+    gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...((row.storey ?? proposal.storey) ? [`storey:${row.storey ?? proposal.storey}`] : [])].join(" | ").slice(0, 1000),
     cropKey: render.cropKey,
     pageNo: render.pageNo,
     sheetRef: proposal.elevation,
@@ -389,10 +401,10 @@ function fallbackReading(row: EnrichScheduleRow, fileId: string, note: string): 
     orientation: null,
     elevationState: "not_read",
     elevation: null,
-    roomState: "not_read",
-    roomLabel: null,
+    roomState: row.roomLabel ? "value" : "not_read",
+    roomLabel: row.roomLabel ?? null,
     gapCode: "model_declined",
-    gapNote: note,
+    gapNote: [note, ...(row.storey ? [`storey:${row.storey}`] : [])].join(" | "),
     cropKey: null,
     pageNo: null,
     sheetRef: null,
@@ -617,6 +629,11 @@ export async function runDrawingAgent(args: {
     for (const proposal of action.records) {
       const render = renders.get(proposal.evidenceRenderId);
       const page = render ? pageByNo.get(render.pageNo) : null;
+      const row = rowByTag.get(proposal.tag);
+      if (!row || conflictsWithKnownContext(proposal, row)) {
+        rejected.push({ tag: proposal.tag, reason: "plan_context_conflict" });
+        continue;
+      }
       if (!render || !render.cropKey || !page || !inside(proposal.frameBoxPt, render.bboxPt)) {
         rejected.push({ tag: proposal.tag, reason: "evidence_render_or_frame_invalid" });
         continue;

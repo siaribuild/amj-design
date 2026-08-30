@@ -34,6 +34,8 @@ export interface EnrichScheduleRow {
   heightMm: number;
   typeText: string | null;
   commentText?: string | null;
+  roomLabel?: string | null;
+  storey?: "ground" | "first" | null;
 }
 
 /** The effectful boundary, injectable so tests never need a real container

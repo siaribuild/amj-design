@@ -7,9 +7,8 @@ import type { DrawingReading, Orientation } from "./contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
 
-/** Orientation is a PLAIN ASSIGNMENT, not `??=` — it must run BEFORE
- *  `applyPlanContext` (pipeline.ts), whose own `wallOrientation ??=` is the
- *  text-derived fallback this reading is meant to outrank. */
+/** Orientation is a PLAIN ASSIGNMENT, not `??=`: a high-confidence drawing
+ *  reading outranks the plan-context fallback already present on the model. */
 export function applyDrawingOrientation(
   model: { openings: { externalRef: string; wallOrientation: Orientation | null; wallOrientationSource: string | null }[] },
   readings: { externalRef: string; orientationState: string; orientation: Orientation | null; confidence?: string | null; flags?: unknown[] }[],

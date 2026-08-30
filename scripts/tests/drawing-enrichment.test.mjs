@@ -642,7 +642,7 @@ async function walk(dir) {
 const FORBIDDEN_BYTES = /\.(png|jpe?g|pdf)$/i;
 
 // ── readings.ts (§3.5) — model application, pure ───────────────────────────
-test("applyDrawingOrientation: writes wallOrientation + source 'plan', a plain assignment (wins over the later ??=)", () => {
+test("applyDrawingOrientation: writes wallOrientation + source 'plan', replacing the plan-context fallback", () => {
   const model = { openings: [{ externalRef: "W1", wallOrientation: null, wallOrientationSource: null }] };
   applyDrawingOrientation(model, [{ externalRef: "W1", orientationState: "value", orientation: "N" }]);
   assert.equal(model.openings[0].wallOrientation, "N");
@@ -1162,7 +1162,7 @@ test("validateAgentTurn: accepts bounded tool batches and refuses vocabulary or 
 test("drawing-agent prompt treats unlabelled elevations as an order-matching problem, not an automatic decline", () => {
   const skill = makeDrawingAgentSkill(["W1"], [1]);
   const prompt = skill.buildPrompt({ imageDataUrls: [] });
-  assert.equal(skill.promptVersion, "v6");
+  assert.equal(skill.promptVersion, "v7");
   assert.match(prompt, /Elevation drawings commonly omit opening tags/i);
   assert.match(prompt, /left-to-right order/i);
   assert.match(prompt, /research, render, emit or decline action/i);
@@ -1637,4 +1637,70 @@ test("runDrawingAgent: an invalid model batch gets feedback and the next turn ca
   assert.deepEqual(inputs[2].renderCatalog.map((render) => render.renderId), ["r_001_01"]);
   assert.equal(result.report.perOpening[0].outcome, "read");
   assert.equal(result.readings[0].split.axis, "vertical");
+});
+
+test("runDrawingAgent: the production W1 frame is too small within a broad elevation render", async () => {
+  const inputs = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150, bboxPt: [50, 50, 1140, 420] }] },
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
+      orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "first",
+      evidenceView: "elevation", evidenceRenderId: "r_001_01", frameBoxPt: [425, 140, 495, 220],
+      confidence: "high", flags: [], basis: ["Broad elevation view."], note: null,
+    }] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 1200, heightPt: 800, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift() ?? { action: "finish" }; },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => "projects/p/crops/r/" + renderId + ".png",
+    },
+  });
+  assert.equal(inputs[2].observations[0].data.rejected[0].reason, "composition_evidence_not_close_up");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+});
+
+test("runDrawingAgent: plan context rejects a conflicting room and remains authoritative", async () => {
+  const inputs = [];
+  const proposal = {
+    tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.4, 0.6], divisionAxis: "vertical",
+    orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "first",
+    evidenceView: "elevation", evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 80, 80],
+    confidence: "high", flags: [], basis: ["Opening composition is visible."], note: null,
+  };
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }] },
+    { action: "emit", records: [proposal] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{
+      tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING",
+      roomLabel: "STUDY", storey: "ground",
+    }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift() ?? { action: "finish" }; },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => "projects/p/crops/r/" + renderId + ".png",
+    },
+  });
+  assert.equal(inputs[2].observations[0].data.rejected[0].reason, "plan_context_conflict");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.equal(result.readings[0].roomLabel, "STUDY");
+  assert.match(result.readings[0].gapNote, /storey:ground/);
 });
