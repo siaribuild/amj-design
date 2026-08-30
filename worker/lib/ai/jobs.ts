@@ -2,6 +2,7 @@ import type { Env } from "../../types";
 import { runAiExtraction, type AiExtractionSummary } from "./pipeline";
 import { uuid } from "../util";
 import { hasAnyExactPricingCoverage } from "../estimator/catalogue";
+import type { DrawingProgressPhase } from "../drawing/contract";
 
 export interface AiExtractionJob {
   projectId: string;
@@ -53,10 +54,10 @@ export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
   return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 600_000 : AI_JOB_DEADLINE_MS;
 }
 
-/** Per-opening progress, same shape and same token guard as pipeline.ts's
- *  own setProgress: it never writes past the token that owns the lease
- *  (§5, migration 0059). Denominator is set once, from the located-openings
- *  count, and is never shortened — a gap still advances the numerator. */
+/** Drawing progress, same shape and same token guard as pipeline.ts's own
+ *  setProgress: it never writes past the token that owns the lease (§5,
+ *  migration 0059). Denominator is the schedule-opening count and is never
+ *  shortened — a gap still advances the numerator. */
 export async function setDrawingProgress(
   env: Pick<Env, "DB">,
   projectId: string,
@@ -64,12 +65,13 @@ export async function setDrawingProgress(
   processingToken: string,
   drawingsDone: number,
   drawingsTotal: number,
+  drawingsPhase: DrawingProgressPhase,
 ): Promise<void> {
   await env.DB.prepare(
-    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, updated_at=datetime('now')
+    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, updated_at=datetime('now')
       WHERE project_id=? AND source_generation=? AND status='processing'
         AND processing_token=?`,
-  ).bind(drawingsDone, drawingsTotal, projectId, sourceGeneration, processingToken).run().catch(() => {});
+  ).bind(drawingsDone, drawingsTotal, drawingsPhase, projectId, sourceGeneration, processingToken).run().catch(() => {});
 }
 
 class AiJobFault extends Error {
@@ -342,7 +344,9 @@ export async function retryCurrentAiExtraction(
           SET status='scheduled', attempts=0, debounce_token=?,
               processing_token=NULL, lease_expires_at=NULL,
               last_error=NULL, failure_class=NULL, retry_after=NULL,
-              progress_stage='queued', updated_at=datetime('now')
+              progress_stage='queued', drawings_done=NULL,
+              drawings_total=NULL, drawings_phase=NULL,
+              updated_at=datetime('now')
         WHERE project_id=? AND source_generation=?
           AND (status='failed'
                OR (status='processing' AND lease_expires_at IS NOT NULL
@@ -475,7 +479,9 @@ export async function processAiExtractionJob(
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
             retry_after=NULL, lease_expires_at=datetime('now','+135 seconds'),
-            progress_stage='reading_documents', updated_at=datetime('now')
+            progress_stage='reading_documents', drawings_done=NULL,
+            drawings_total=NULL, drawings_phase=NULL,
+            updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
           (status='scheduled' AND (retry_after IS NULL OR retry_after <= datetime('now')))

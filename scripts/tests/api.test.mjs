@@ -149,8 +149,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const pid = created.body.project.id;
       const gen = (await sql(`SELECT ai_generation FROM project WHERE id='${pid}'`))[0].ai_generation;
       await sql(
-        `INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status, progress_stage, drawings_done, drawings_total)
-         VALUES ('${pid}', ${gen}, 'test-token', 'processing', 'building_envelope', 7, 20)`,
+        `INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status, progress_stage, drawings_done, drawings_total, drawings_phase)
+         VALUES ('${pid}', ${gen}, 'test-token', 'processing', 'building_envelope', 7, 20, 'opening_read')`,
       );
       const withCounts = await requestJson(s, "/api/projects/current/extraction-status");
       assert.equal(withCounts.body.run.drawingsDone, 7);
@@ -160,14 +160,18 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // auto_drawings lease) and a completed run was shown as interrupted.
       assert.equal(typeof withCounts.body.run.deadlineMs, "number");
       assert.ok(withCounts.body.run.deadlineMs >= 120_000);
+      // The subphase explains the long stretch the opening counter cannot move
+      // through — page-wide preparation is real work, not a stall.
+      assert.equal(withCounts.body.run.drawingsPhase, "opening_read");
 
       // A run with no drawings carries neither field — a numerator without a
       // denominator is not a counter, and this is AC-25's shape check: no
       // unread/gap detail rides along either.
-      await sql(`UPDATE ai_job_claim SET drawings_total=NULL, drawings_done=NULL WHERE project_id='${pid}'`);
+      await sql(`UPDATE ai_job_claim SET drawings_total=NULL, drawings_done=NULL, drawings_phase=NULL WHERE project_id='${pid}'`);
       const withoutCounts = await requestJson(s, "/api/projects/current/extraction-status");
       assert.equal("drawingsDone" in withoutCounts.body.run, false);
       assert.equal("drawingsTotal" in withoutCounts.body.run, false);
+      assert.equal("drawingsPhase" in withoutCounts.body.run, false);
 
       await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });

@@ -3,7 +3,7 @@
 # The reading method that reached 100% accuracy on a real plan set is a
 # POPPLER AND PYTHON method, and Cloudflare Containers run it as-is. Nothing
 # here is an equivalent of that method or an adaptation of it — pdfinfo,
-# pdffonts, pdftotext, pdftoppm, pdfimages, pdfdetach and pdfplumber are the
+# pdffonts, pdftotext, pdftoppm, pdfimages and pdfdetach are the
 # same tools, invoked the same way (ADR 0016).
 #
 # linux/amd64 is required by the platform. Keep the image lean: image size is

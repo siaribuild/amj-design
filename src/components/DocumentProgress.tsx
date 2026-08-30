@@ -50,7 +50,10 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   const waiting = active === "waiting_capacity";
   const drawingsDone = aiPhase?.kind === "reading" ? aiPhase.drawingsDone : undefined;
   const drawingsTotal = aiPhase?.kind === "reading" ? aiPhase.drawingsTotal : undefined;
-  const { steps: AI_STEPS, current: checklistCurrent } = documentChecklist({ stage: active, drawingsDone, drawingsTotal });
+  const drawingsPhase = aiPhase?.kind === "reading" ? aiPhase.drawingsPhase : undefined;
+  const { steps: AI_STEPS, current: checklistCurrent } = documentChecklist({
+    stage: active, drawingsDone, drawingsTotal, drawingsPhase,
+  });
   // An unknown stage is treated as the first step rather than as no progress:
   // work IS under way, and showing every row pending would say the opposite.
   const current = waiting ? 0 : Math.max(0, checklistCurrent);

@@ -774,7 +774,8 @@ export async function runAiExtraction(
       .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
       .map((l) => ({ tag: l.tag, widthMm: l.widthMm, heightMm: l.heightMm, typeText: l.typeText ?? null, commentText: l.notes ?? null }));
     const onProgress = opts.processingToken
-      ? async (done: number, total: number) => setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total)
+      ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase) =>
+          setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase)
       : undefined;
     const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
     drawingReadings = result.readings;
