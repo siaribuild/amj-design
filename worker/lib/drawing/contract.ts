@@ -122,7 +122,14 @@ export interface SplitReading {
 
 export type Orientation = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 export type DrawingConfidence = "high" | "low";
-export type DrawingFlag = "scheduleDrawingMismatch" | "manufacturability" | "notVisibleOnElevations" | "northAssumed";
+export type DrawingFlag =
+  | "scheduleDrawingMismatch"
+  | "manufacturability"
+  | "notVisibleOnElevations"
+  | "northAssumed"
+  | "agentEvidenceWeak"
+  | "duplicateFrame"
+  | "drawingInconsistency";
 
 /** One `drawing_reading` row (migration 0060) — the release-gate and
  *  method-report unit; no `src/` reader exists after the ops descope. */

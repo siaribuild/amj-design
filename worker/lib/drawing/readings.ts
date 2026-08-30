@@ -12,12 +12,12 @@ import { uuid } from "../util";
  *  text-derived fallback this reading is meant to outrank. */
 export function applyDrawingOrientation(
   model: { openings: { externalRef: string; wallOrientation: Orientation | null; wallOrientationSource: string | null }[] },
-  readings: { externalRef: string; orientationState: string; orientation: Orientation | null }[],
+  readings: { externalRef: string; orientationState: string; orientation: Orientation | null; confidence?: string | null; flags?: unknown[] }[],
 ): void {
   const byRef = new Map(readings.map((r) => [r.externalRef, r]));
   for (const opening of model.openings) {
     const reading = byRef.get(opening.externalRef);
-    if (reading?.orientationState === "value" && reading.orientation) {
+    if (reading?.orientationState === "value" && reading.orientation && reading.confidence !== "low" && !(reading.flags?.length)) {
       opening.wallOrientation = reading.orientation;
       opening.wallOrientationSource = "plan";
     }
@@ -31,10 +31,10 @@ export function applyDrawingOrientation(
 export async function applyDrawingRoom(
   env: Pick<Env, "DB">,
   projectId: string,
-  readings: { externalRef: string; roomState: string; roomLabel: string | null }[],
+  readings: { externalRef: string; roomState: string; roomLabel: string | null; confidence?: string | null; flags?: unknown[] }[],
 ): Promise<void> {
   for (const r of readings) {
-    if (r.roomState !== "value" || !r.roomLabel) continue;
+    if (r.roomState !== "value" || !r.roomLabel || r.confidence === "low" || r.flags?.length) continue;
     await env.DB.prepare(
       `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
     ).bind(r.roomLabel, projectId, r.externalRef).run();
