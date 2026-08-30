@@ -40,7 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
-      export { checklistStepDuration, documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
+      export { checklistStepDuration, documentChecklist, drawingProgressEnded } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1734,4 +1734,11 @@ test("checklistStepDuration: a missed sub-second thermal stage reports zero, nev
   ];
   const thermalIndex = steps.findIndex((step) => step.key === "building_envelope");
   assert.equal(M.checklistStepDuration(steps, current, log, 240_000, thermalIndex), 0);
+});
+
+test("drawingProgressEnded: leaving drawing work closes its timer even when inspection failed at zero", () => {
+  assert.equal(M.drawingProgressEnded({ progressStage: "building_envelope", drawingsDone: 0, drawingsTotal: 19 }), false);
+  assert.equal(M.drawingProgressEnded({ progressStage: "extracting_schedule" }), false);
+  assert.equal(M.drawingProgressEnded({ progressStage: "building_envelope", drawingsDone: 19, drawingsTotal: 19 }), true);
+  assert.equal(M.drawingProgressEnded({ progressStage: "matching_and_pricing", drawingsDone: 0, drawingsTotal: 19 }), true);
 });

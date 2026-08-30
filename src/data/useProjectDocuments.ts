@@ -118,6 +118,16 @@ export function documentChecklist(
 export type StageLogKey = AiProgressStage | "reading_openings_complete";
 export type StageLogEntry = { stage: StageLogKey; at: number };
 
+/** True once the run has either completed every drawing read or advanced past
+ * drawing work. The latter matters when drawing inspection fails before the
+ * per-opening counter can move: later rows must not inherit the drawing timer. */
+export function drawingProgressEnded(run: Pick<ExtractionRun, "progressStage" | "drawingsDone" | "drawingsTotal">): boolean {
+  const hasDrawingWork = run.drawingsTotal != null && run.drawingsTotal > 0;
+  const completed = hasDrawingWork && (run.drawingsDone ?? 0) >= run.drawingsTotal;
+  const leftDrawingStage = run.progressStage != null && run.progressStage !== "building_envelope" && run.progressStage !== "waiting_capacity";
+  return hasDrawingWork && (completed || leftDrawingStage);
+}
+
 /** Duration for one visible checklist row. The drawing row is virtual: it
  * shares the server's building_envelope stage with the thermal step, so the
  * observed drawing-completion marker is the boundary between those two rows. */
@@ -337,7 +347,7 @@ export function useProjectDocuments(
     setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
   };
   const recordRunProgress = (run: ExtractionRun) => {
-    if (run.drawingsTotal != null && run.drawingsTotal > 0 && (run.drawingsDone ?? 0) >= run.drawingsTotal) {
+    if (drawingProgressEnded(run)) {
       recordStage("reading_openings_complete");
     }
     recordStage(run.progressStage);

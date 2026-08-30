@@ -1318,3 +1318,36 @@ test("runDrawingAgent: refuses the production failure mode where turn one finish
   assert.equal(result.report.perOpening[0].outcome, "read");
   assert.equal(result.readings[0].confidence, "high");
 });
+
+test("enrichOpenings: retries one timed-out cold inspection before degrading", async () => {
+  let inspectCalls = 0;
+  const env = { FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }), put: async () => {} } };
+  const inspected = {
+    inventory: {
+      pageCount: 1, producer: null, fonts: [], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 0, imageCount: 1, imageAreaFraction: 1 }],
+    },
+    pages: [{ pageNo: 1, text: "", words: [] }],
+    timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+  };
+  const deps = {
+    inspect: async () => {
+      inspectCalls++;
+      if (inspectCalls === 1) throw new ContainerClientError("timeout");
+      return inspected;
+    },
+    render: async () => { throw new Error("not called"); },
+    runElevation: async () => null,
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    files: [{ fileId: "f1", r2Key: "projects/proj_1/runs/f1.pdf" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(inspectCalls, 2);
+  assert.equal(result.readings.length, 0);
+  assert.equal(result.report.files[0].containerCalls, 2);
+  assert.equal(result.report.files[0].steps.failedPhase, undefined);
+});

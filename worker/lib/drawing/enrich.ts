@@ -9,7 +9,7 @@
 // surface, because nothing in here is allowed to throw past this file's
 // own try/catch.
 import type { Env } from "../../types";
-import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, Orientation, SplitReading } from "./contract";
+import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
 import { chooseStrategy, selectPages } from "./selectPages";
@@ -121,9 +121,18 @@ async function enrichFile(
 
     if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "inventory");
     currentPhase = "inventory";
-    const inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes);
-    report.inspectTimings = inspected.timings;
+    let inspected: InspectResponse;
     report.containerCalls++;
+    try {
+      inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes);
+    } catch (error) {
+      if (!(error instanceof ContainerClientError) || error.code !== "timeout") throw error;
+      // A cold container can consume the whole request timeout while starting.
+      // Retry once: the first request has usually left the instance ready.
+      report.containerCalls++;
+      inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes);
+    }
+    report.inspectTimings = inspected.timings;
     report.steps.inventory = {
       pages: inspected.inventory.pageCount,
       fonts: inspected.inventory.fonts.length,
