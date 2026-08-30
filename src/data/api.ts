@@ -591,6 +591,10 @@ export interface ExtractionRun {
     | "preparing_quote"
     | "waiting_capacity"
     | "complete";
+  /** The server's own job deadline for this run, in ms. The client's polling
+   *  backstop is derived from it rather than guessed, so the two cannot drift
+   *  apart — they did once, and a completed run was reported as interrupted. */
+  deadlineMs?: number;
   /** How many of the project's openings have been read from the drawings, and
    *  how many there are. Present only while a drawing read is running.
    *
