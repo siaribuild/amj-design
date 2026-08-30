@@ -563,6 +563,7 @@ export async function runDrawingEnrichmentStage(
         skill: makeDrawingAgentSkill(args.scheduleRows.map((row) => row.tag), input.pages.map((page) => page.pageNo)),
         input,
       });
+      if (!res.ok && res.failureKind !== "invalid_output") throw new Error("drawing_agent_provider_failure");
       return res.data;
     },
   };

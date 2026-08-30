@@ -22,7 +22,7 @@ await build({
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
-      export { validateAgentTurn, runDrawingAgent, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
+      export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
       export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
       export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
@@ -37,7 +37,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   external: ["cloudflare:workers"],
 });
-const { validateAgentTurn, runDrawingAgent, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
+const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
 const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
@@ -1159,6 +1159,86 @@ test("validateAgentTurn: accepts bounded tool batches and refuses vocabulary or 
   assert.equal(DRAWING_AGENT_LIMITS.maxEmitBatch, 4);
 });
 
+test("drawing-agent prompt treats unlabelled elevations as an order-matching problem, not an automatic decline", () => {
+  const skill = makeDrawingAgentSkill(["W1"], [1]);
+  const prompt = skill.buildPrompt({ imageDataUrls: [] });
+  assert.equal(skill.promptVersion, "v6");
+  assert.match(prompt, /Elevation drawings commonly omit opening tags/i);
+  assert.match(prompt, /left-to-right order/i);
+  assert.match(prompt, /research, render, emit or decline action/i);
+  assert.match(prompt, /"action":"decline"/);
+});
+
+test("runDrawingAgent: pending openings cannot finish and explicit declines advance visible progress", async () => {
+  const inputs = [];
+  const progress = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "Elevation stored." },
+    ...Array.from({ length: 3 }, (_, index) => ({ action: "get_page_text", pages: [1], memory: "research " + (index + 2) })),
+    { action: "finish", memory: "Nothing can be read." },
+    {
+      action: "decline",
+      records: [
+        { tag: "W1", reason: "W1 remains ambiguous after plan-to-elevation order matching." },
+        { tag: "W2", reason: "W2 remains ambiguous after plan-to-elevation order matching." },
+      ],
+      memory: "Both openings explicitly reviewed.",
+    },
+    { action: "finish", memory: "Every opening has been resolved." },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 800, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift(); },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => "projects/p/crops/r/" + renderId + ".png",
+      onProgress: async (done, total, phase) => { progress.push({ done, total, phase }); },
+    },
+  });
+  assert.equal(inputs[4].conclusionRequired, true);
+  assert.equal(inputs[4].finishAllowed, false);
+  assert.equal(inputs[5].observations[0].data.reason, "finish_not_allowed_with_pending_openings");
+  assert.deepEqual(inputs[6].declinedTags, ["W1", "W2"]);
+  assert.ok(progress.some((item) => item.phase === "opening_read" && item.done === 2 && item.total === 2));
+  assert.equal(result.report.steps.read.declined, 2);
+  assert.ok(result.report.perOpening.every((opening) => opening.outcome === "not_read"));
+});
+
+test("runDrawingAgent: provider failure quietly completes with schedule fallbacks", async () => {
+  const progress = [];
+  let turns = 0;
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => { turns++; throw new Error("provider unavailable"); },
+      render: async () => { throw new Error("not called"); },
+      store: async () => null,
+      onProgress: async (done, total, phase) => { progress.push({ done, total, phase }); },
+    },
+  });
+  assert.equal(turns, 1);
+  assert.equal(result.report.steps.failedPhase, "drawing_agent");
+  assert.equal(result.report.steps.read.attempted, 0);
+  assert.equal(result.report.steps.read.declined, 0);
+  assert.equal(result.readings[0].splitState, "value");
+  assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
+});
+
 test("runDrawingAgent: reads the opening set in batches, stores evidence and degrades only missing rows", async () => {
   const progress = [];
   const stored = [];
@@ -1323,7 +1403,7 @@ test("runDrawingAgent: refuses the production failure mode where turn one finish
   });
   assert.equal(inputs.length, 4);
   assert.equal(inputs[0].finishAllowed, false);
-  assert.equal(inputs[1].observations[0].data.reason, "finish_not_allowed_before_research");
+  assert.equal(inputs[1].observations[0].data.reason, "finish_not_allowed_with_pending_openings");
   assert.equal(inputs[3].finishAllowed, true);
   assert.equal(result.report.perOpening[0].outcome, "read");
   assert.equal(result.readings[0].confidence, "high");
@@ -1406,7 +1486,7 @@ test("runDrawingAgent: carries visual findings and stored renders across statele
   assert.equal(result.report.perOpening[0].outcome, "read");
 });
 
-test("runDrawingAgent: reserves thirteen turns to conclude and repair a 19-opening set", async () => {
+test("runDrawingAgent: conclusion mode resolves all 19 openings in bounded batches before finish", async () => {
   const inputs = [];
   let renderCalls = 0;
   const scheduleRows = Array.from({ length: 19 }, (_, index) => ({ tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING" }));
@@ -1421,21 +1501,31 @@ test("runDrawingAgent: reserves thirteen turns to conclude and repair a 19-openi
     deps: {
       runTurn: async (input) => {
         inputs.push(input);
-        if (input.turn <= 7) return { action: "get_page_text", pages: [1], memory: `research ${input.turn}` };
-        if (input.turn === 8) return { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "late research must be rejected" };
-        return { action: "finish", memory: "No evidence-backed records can be emitted." };
+        if (input.turn <= 4) return { action: "get_page_text", pages: [1], memory: `research ${input.turn}` };
+        if (input.turn === 5) return { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "late research must be rejected" };
+        if (input.pendingTags.length) {
+          return {
+            action: "decline",
+            records: input.pendingTags.slice(0, 4).map((tag) => ({ tag, reason: tag + " remains ambiguous after plan-to-elevation matching." })),
+            memory: "Resolve the remaining openings in order.",
+          };
+        }
+        return { action: "finish", memory: "Every opening has been explicitly reviewed." };
       },
       render: async () => { renderCalls++; throw new Error("conclusion render must not run"); },
       store: async () => null,
     },
   });
-  assert.equal(inputs.length, 9);
-  assert.equal(inputs[7].conclusionRequired, true);
-  assert.equal(inputs[7].turnsRemaining, 13);
-  assert.equal(inputs[8].observations[0].data.reason, "conclusion_required");
-  assert.equal(inputs[8].workingMemory, "late research must be rejected");
+  assert.equal(inputs.length, 11);
+  assert.equal(inputs[4].conclusionRequired, true);
+  assert.equal(inputs[4].turnsRemaining, 16);
+  assert.equal(inputs[5].observations[0].data.reason, "conclusion_required");
+  assert.equal(inputs[5].workingMemory, "late research must be rejected");
+  assert.equal(inputs[10].finishAllowed, true);
+  assert.equal(inputs[10].declinedTags.length, 19);
   assert.equal(renderCalls, 0);
-  assert.equal(result.report.modelCalls, 9);
+  assert.equal(result.report.modelCalls, 11);
+  assert.equal(result.report.steps.read.declined, 19);
   assert.ok(result.report.perOpening.every((opening) => opening.outcome === "not_read"));
 });
 
