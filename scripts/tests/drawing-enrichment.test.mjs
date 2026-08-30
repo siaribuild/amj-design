@@ -1283,3 +1283,38 @@ test("runDrawingAgent: an unstored render cannot authorize a drawing reading", a
   assert.equal(result.readings[0].confidence, "low");
   assert.equal(result.readings[0].cropKey, null);
 });
+
+test("runDrawingAgent: refuses the production failure mode where turn one finishes with every tag pending", async () => {
+  const inputs = [];
+  const actions = [
+    { action: "finish" },
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }] },
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
+      orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceRenderId: "r_002_01", frameBoxPt: [10, 10, 40, 40],
+      confidence: "high", flags: [], basis: ["Visible W1 frame."], note: null,
+    }] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1200, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift() ?? { action: "finish" }; },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs.length, 4);
+  assert.equal(inputs[0].finishAllowed, false);
+  assert.equal(inputs[1].observations[0].data.reason, "finish_not_allowed_before_research");
+  assert.equal(inputs[3].finishAllowed, true);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.equal(result.readings[0].confidence, "high");
+});

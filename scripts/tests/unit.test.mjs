@@ -40,7 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
-      export { documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
+      export { checklistStepDuration, documentChecklist } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1703,4 +1703,35 @@ test("§7: purgeProjectCrops keeps the (env, projectId)-only signature the futur
   const crops = await readFile(join(projectRoot, "worker/lib/drawing/crops.ts"), "utf8");
   assert.match(crops, /export async function purgeProjectCrops\(env: Env, projectId: string\)/,
     "a third parameter would break the scheduled()-callable seam §7 designed for");
+});
+
+test("checklistStepDuration: thermal starts when drawing completion is observed, not when drawings began", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "matching_and_pricing", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  const log = [
+    { stage: "queued", at: 0 },
+    { stage: "reading_documents", at: 20_000 },
+    { stage: "extracting_schedule", at: 25_000 },
+    { stage: "building_envelope", at: 66_000 },
+    { stage: "reading_openings_complete", at: 234_000 },
+    { stage: "matching_and_pricing", at: 238_000 },
+  ];
+  const drawingIndex = steps.findIndex((step) => step.key === "reading_openings");
+  const thermalIndex = steps.findIndex((step) => step.key === "building_envelope");
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, drawingIndex), 168_000);
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, thermalIndex), 4_000);
+});
+
+test("checklistStepDuration: a missed sub-second thermal stage reports zero, never the full drawing duration", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "matching_and_pricing", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  const log = [
+    { stage: "building_envelope", at: 66_000 },
+    { stage: "reading_openings_complete", at: 238_000 },
+    { stage: "matching_and_pricing", at: 238_000 },
+  ];
+  const thermalIndex = steps.findIndex((step) => step.key === "building_envelope");
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, thermalIndex), 0);
 });

@@ -115,7 +115,48 @@ export function documentChecklist(
   return { steps, current: current < 0 ? 0 : current };
 }
 
-export type StageLogEntry = { stage: AiProgressStage; at: number };
+export type StageLogKey = AiProgressStage | "reading_openings_complete";
+export type StageLogEntry = { stage: StageLogKey; at: number };
+
+/** Duration for one visible checklist row. The drawing row is virtual: it
+ * shares the server's building_envelope stage with the thermal step, so the
+ * observed drawing-completion marker is the boundary between those two rows. */
+export function checklistStepDuration(
+  steps: DocumentChecklistStep[],
+  current: number,
+  stageLog: StageLogEntry[],
+  now: number,
+  index: number,
+): number | null {
+  const markerAt = stageLog.find((entry) => entry.stage === "reading_openings_complete")?.at;
+  const key = steps[index]?.key;
+  if (!key) return null;
+  const startFor = (stepKey: DocumentChecklistStep["key"]): number | undefined => {
+    if (stepKey === "reading_openings") {
+      return stageLog.find((entry) => entry.stage === "building_envelope")?.at;
+    }
+    if (stepKey === "building_envelope" && markerAt != null) return markerAt;
+    return stageLog.find((entry) => entry.stage === stepKey)?.at;
+  };
+  const start = startFor(key);
+  if (start == null) return null;
+
+  // Completion is observable before the DB stage changes. Freeze the drawing
+  // duration there, even though that row deliberately remains current until
+  // the server advances to thermal/product work.
+  if (key === "reading_openings" && markerAt != null) {
+    return Math.max(0, markerAt - start);
+  }
+  if (index === current) return Math.max(0, now - start);
+  for (let next = index + 1; next < steps.length; next++) {
+    // Without the completion marker, drawing and thermal have the same server
+    // timestamp; that is not a real boundary.
+    if (key === "reading_openings" && steps[next].key === "building_envelope" && markerAt == null) continue;
+    const nextStart = startFor(steps[next].key);
+    if (nextStart != null && nextStart >= start) return Math.max(0, nextStart - start);
+  }
+  return null;
+}
 export type UploadNotice = { type: "success" | "error"; message: string };
 
 export class PhotoPreparationError extends Error {}
@@ -291,9 +332,15 @@ export function useProjectDocuments(
   // with a live timer on the step in flight. `stageLog` is append-only per run.
   const [stageLog, setStageLog] = useState<StageLogEntry[]>([]);
   const [nowTick, setNowTick] = useState(() => 0);
-  const recordStage = (stage: AiProgressStage | undefined) => {
+  const recordStage = (stage: StageLogKey | undefined) => {
     if (!stage || stage === "waiting_capacity") return;   // a pause is not a step
     setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
+  };
+  const recordRunProgress = (run: ExtractionRun) => {
+    if (run.drawingsTotal != null && run.drawingsTotal > 0 && (run.drawingsDone ?? 0) >= run.drawingsTotal) {
+      recordStage("reading_openings_complete");
+    }
+    recordStage(run.progressStage);
   };
   // A one-second heartbeat so the in-progress step's timer ticks. Runs only while
   // a run is in flight, and is torn down the moment it is not — no idle interval.
@@ -431,7 +478,7 @@ export function useProjectDocuments(
           inFlight = true;
           lastDiagnostic = run.diagnostic ?? null;
           if (run.progressStage !== lastStage) { lastStage = run.progressStage; }
-          recordStage(run.progressStage);
+          recordRunProgress(run);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
             : {

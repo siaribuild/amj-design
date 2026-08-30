@@ -14,7 +14,7 @@
 // churning.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { Check, Loader2 } from "lucide-react";
-import { documentChecklist, type AiPhase, type AiProgressStage, type StageLogEntry } from "../data/useProjectDocuments";
+import { checklistStepDuration, documentChecklist, type AiPhase, type AiProgressStage, type StageLogEntry } from "../data/useProjectDocuments";
 // `waiting_capacity` is deliberately not a checklist row: it is not a stage of
 // the work but a pause in it, and giving it a row would imply the run had
 // moved on.
@@ -59,27 +59,6 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   const current = waiting ? 0 : Math.max(0, checklistCurrent);
   const showSteps = aiPhase?.kind === "reading" && !!active;
 
-  // Per-step elapsed, from the observed transition times. A step's end is the
-  // next observed step's start; the current step ticks live. Drawing reads run
-  // inside building_envelope because the DB vocabulary has no drawing stage,
-  // so that observed transition is also the virtual row's honest start time.
-  const stepStart = (i: number) => {
-    const key = AI_STEPS[i].key;
-    const stage = key === "reading_openings" ? "building_envelope" : key;
-    return stageLog.find((entry) => entry.stage === stage)?.at;
-  };
-  const stepDurMs = (i: number): number | null => {
-    const start = stepStart(i);
-    if (start == null) return null;
-    if (i === current) return Math.max(0, nowTick - start);
-    for (let j = i + 1; j < AI_STEPS.length; j++) {
-      const nx = stepStart(j);
-      // The virtual drawing row and building_envelope intentionally share a
-      // transition. It is not an end time; wait for the next real transition.
-      if (nx != null && nx > start) return nx - start;
-    }
-    return null;
-  };
   // Stall = no new step for a while. This, not elapsed time, is what actually
   // worries a customer, so it is the only thing that changes the reassurance
   // into a heads-up.
@@ -97,7 +76,7 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
               const done = i < current;
               const inProgress = i === current && !waiting;
               const stalled = i === current && waiting;
-              const durMs = stepDurMs(i);
+              const durMs = checklistStepDuration(AI_STEPS, current, stageLog, nowTick, i);
               // Reading step names how many documents it is working through —
               // the honest, available granularity (the PDF text layer is read
               // in one call, so there is no live per-page tick to show). The
