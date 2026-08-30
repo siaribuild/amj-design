@@ -235,10 +235,21 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
   const openingAlong = axis === "vertical" ? opening.widthMm : opening.heightMm;
   const coverage = openingAlong > 0 ? spanned - openingAlong : null;
 
+  // A no-match proposal puts a blocking `product` reason on the parent. Once
+  // its units all price, that claim is obsolete: a composite parent deliberately
+  // has no product of its own because its units are the products. Retire only
+  // that key, only when the units produce a total; an unpriced composite keeps
+  // its blocker, and every unrelated review reason survives the JSON merge.
+  //
   stmts.push(env.DB.prepare(
     `UPDATE quote_line SET line_total=?, status=?, line_kind='composite_parent',
-       coverage_delta_mm=?, updated_at=datetime('now') WHERE id=?`,
-  ).bind(total, total == null ? "incomplete" : worst, coverage, parentId));
+       coverage_delta_mm=?,
+       review_json=CASE WHEN ? IS NOT NULL
+         THEN NULLIF(json_patch(COALESCE(review_json,'{}'), '{"product":null}'), '{}')
+         ELSE review_json
+       END,
+       updated_at=datetime('now') WHERE id=?`,
+  ).bind(total, total == null ? "incomplete" : worst, coverage, total, parentId));
 
   await env.DB.batch(stmts);
 }

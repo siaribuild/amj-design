@@ -535,6 +535,14 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         json: { delivery: { suburb: "Rowville", postcode: "3178" } },
       });
 
+      // Production W1 reached this state before its drawing-derived split was
+      // materialised: the single-frame proposal could not be priced, so it
+      // carried a blocking `product` reason. A composite parent is not itself a
+      // product; its children are. Once those children price successfully the
+      // old reason is false and must not keep the otherwise valid opening marked
+      // Incomplete. An unrelated technical reason still belongs to the opening.
+      await sql(`UPDATE quote_line SET line_total=NULL, status='incomplete', review_json='{"product":"No single product could price this opening.","material":"Confirm the specified material."}' WHERE id='${parentId}'`);
+
       const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
         method: "POST",
         json: {
@@ -546,6 +554,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         },
       });
       assert.equal(split.body.ok, true);
+
+      const parentAfterSplit = (await sql(`SELECT status, line_total, review_json FROM quote_line WHERE id='${parentId}'`))[0];
+      const reviewAfterSplit = JSON.parse(parentAfterSplit.review_json || "{}");
+      assert.ok(parentAfterSplit.line_total > 0, "the composite is priced from its units");
+      assert.equal(parentAfterSplit.status, "ready", "priced units make the opening complete");
+      assert.equal(reviewAfterSplit.product, undefined,
+        "a priced composite retires the obsolete single-product blocker");
+      assert.equal(reviewAfterSplit.material, "Confirm the specified material.",
+        "composite recomputation preserves unrelated technical review reasons");
 
       // The reviewer's list still shows ONE line for W12 — segments are nested,
       // never loose beside their opening.
