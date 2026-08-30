@@ -17,7 +17,7 @@ import type {
 import type { EnrichScheduleRow } from "./enrich";
 import { compositionFromSchedule } from "./reconcile";
 
-const MAX_TURNS = 12;
+const MAX_TURNS = 20;
 const MAX_RESEARCH_TURNS = 7;
 const MAX_WORKING_MEMORY_CHARS = 8_000;
 const MAX_EMIT_BATCH = 4;
@@ -103,6 +103,19 @@ export interface DrawingAgentResult {
 
 function safeJson(raw: unknown): any {
   return typeof raw === "string" ? parseModelJson(raw) : raw;
+}
+
+const REPAIRABLE_EMIT_REASONS = new Set([
+  "composition_evidence_not_close_up",
+  "evidence_render_or_frame_invalid",
+]);
+
+function hasRepairableEmitRejection(observations: AgentObservation[]): boolean {
+  return observations.some((observation) => {
+    if (observation.kind !== "emit_result" || !observation.data || typeof observation.data !== "object") return false;
+    const rejected = (observation.data as { rejected?: unknown }).rejected;
+    return Array.isArray(rejected) && rejected.some((item) => item && REPAIRABLE_EMIT_REASONS.has((item as { reason?: string }).reason ?? ""));
+  });
 }
 
 function box(value: unknown): CropBoxPt | null {
@@ -217,7 +230,7 @@ NON-NEGOTIABLE RULES
 - Every action MUST include a concise memory string. It is your only memory across turns: preserve drawing conventions, visual findings, render ids and the next pending tags to emit.
 - STATE.workingMemory is your prior memory. Update it; do not start the investigation again.
 - STATE.renderCatalog lists every stored evidence render that remains valid for emit actions.
-- When STATE.conclusionRequired is true, research is over: return emit for evidence-backed pending tags, or finish only if no pending tag can honestly be read.
+- When STATE.conclusionRequired is true, broad research is over. Return emit for evidence-backed pending tags. If the immediately preceding emit_result rejected records for loose or invalid crop evidence, one targeted render action may repair those same records; re-emit them next. Finish only if no pending tag can honestly be read or repaired.
 
 ACTIONS (return exactly one JSON object)
 {"action":"get_page_text","pages":[1],"memory":"what is known and what to inspect next"}
@@ -231,7 +244,7 @@ Use batched tool requests where useful. You may revise an emitted tag later; the
 export function makeDrawingAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<DrawingAgentInput, DrawingAgentTurn> {
   return {
     id: "drawing_agent_turn",
-    promptVersion: "v4",
+    promptVersion: "v5",
     responseSchema: {
       type: "object",
       properties: {
@@ -460,7 +473,10 @@ export async function runDrawingAgent(args: {
       continue;
     }
     if (action.memory) workingMemory = action.memory;
-    if (conclusionRequired && (action.action === "get_page_text" || action.action === "get_text_tokens" || action.action === "render")) {
+    const repairRender = action.action === "render" && hasRepairableEmitRejection(observations);
+    if (conclusionRequired && (
+      action.action === "get_page_text" || action.action === "get_text_tokens" || (action.action === "render" && !repairRender)
+    )) {
       observations = [{
         kind: "emit_result",
         data: { accepted: [], rejectedAction: action.action, reason: "conclusion_required", pendingTags },
