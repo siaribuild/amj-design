@@ -66,13 +66,15 @@
   // development machine needs Docker to deploy (02-design-v2.md §1, §10).
   // CI only ever pushes per-commit-sha tags; bumping the tag THIS config
   // names is a deliberate, by-hand act once a build is confirmed good —
-  // this one is apertly@main's d3c2ee1 (2026-08-29), the first image built
-  // from the real Python/poppler container, confirmed pushed via
-  // `wrangler containers images list`.
+  // this one is apertly@main's 80327a5 (2026-08-30), the v3 agentic-loop
+  // image, confirmed pushed via `wrangler containers images list`.
+  // The Worker REQUIRES this image or newer: word boxes now come from
+  // `pdftotext -bbox-layout` in one Poppler call, and an older image answers
+  // /inspect from the pdfplumber path that cost 107s of every run.
   "containers": [
     {
       "class_name": "PlanParseContainer",
-      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:d3c2ee176ac23e914771b02d061eea5c721bf2ae",
+      "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:80327a502963969a01af99afee1e13a1d90260fe",
       "instance_type": "basic",
       "max_instances": 5
     }
