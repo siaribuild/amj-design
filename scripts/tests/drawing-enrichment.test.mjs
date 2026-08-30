@@ -1145,11 +1145,17 @@ test("validateAgentTurn: accepts bounded tool batches and refuses vocabulary or 
   const record = {
     tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
     orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "ground",
+    evidenceView: "elevation",
     evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 40, 50],
     confidence: "high", flags: [], basis: ["Visible W1 frame on elevation A."], note: null,
   };
   assert.equal(validateAgentTurn({ action: "emit", records: Array(5).fill(record) }, ["W1"], [1]), null);
   assert.equal(validateAgentTurn({ action: "emit", records: [{ ...record, tag: "W99" }] }, ["W1"], [1]), null);
+  assert.equal(
+    validateAgentTurn({ action: "emit", records: [{ ...record, divisionAxis: null }] }, ["W1"], [1]).records[0].divisionAxis,
+    "vertical",
+  );
+  assert.equal(validateAgentTurn({ action: "emit", records: [{ ...record, evidenceView: "floorplan" }] }, ["W1"], [1]), null);
   assert.equal(DRAWING_AGENT_LIMITS.maxEmitBatch, 4);
 });
 
@@ -1163,12 +1169,14 @@ test("runDrawingAgent: reads the opening set in batches, stores evidence and deg
       {
         tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.4, 0.6], divisionAxis: "vertical",
         orientation: "N", elevation: "A", roomLabel: "BED 1", storey: "ground",
+        evidenceView: "elevation",
         evidenceRenderId: "r_001_01", frameBoxPt: [5, 5, 45, 45],
         confidence: "high", flags: [], basis: ["W1 tag and two panels visible in render."], note: null,
       },
       {
         tag: "W2", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
         orientation: null, elevation: "A", roomLabel: null, storey: "ground",
+        evidenceView: "elevation",
         evidenceRenderId: "r_001_01", frameBoxPt: [55, 5, 95, 45],
         confidence: "low", flags: ["northAssumed"], basis: ["W2 frame visible; north unresolved."], note: null,
       },
@@ -1260,6 +1268,7 @@ test("runDrawingAgent: an unstored render cannot authorize a drawing reading", a
     { action: "emit", records: [{
       tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
       orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceView: "elevation",
       evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 40, 40],
       confidence: "high", flags: [], basis: ["Visible frame."], note: null,
     }] },
@@ -1292,6 +1301,7 @@ test("runDrawingAgent: refuses the production failure mode where turn one finish
     { action: "emit", records: [{
       tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
       orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceView: "elevation",
       evidenceRenderId: "r_002_01", frameBoxPt: [10, 10, 40, 40],
       confidence: "high", flags: [], basis: ["Visible W1 frame."], note: null,
     }] },
@@ -1367,6 +1377,7 @@ test("runDrawingAgent: carries visual findings and stored renders across statele
     { action: "emit", records: [{
       tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.4, 0.6], divisionAxis: "vertical",
       orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+      evidenceView: "elevation",
       evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 80, 80],
       confidence: "high", flags: [], basis: ["W1 frame and two panels visible."], note: null,
     }], memory: "W1 emitted." },
@@ -1426,4 +1437,68 @@ test("runDrawingAgent: reserves five turns to conclude a 19-opening set instead 
   assert.equal(renderCalls, 0);
   assert.equal(result.report.modelCalls, 9);
   assert.ok(result.report.perOpening.every((opening) => opening.outcome === "not_read"));
+});
+test("runDrawingAgent: a tiny floor-plan marker cannot authorize opening composition", async () => {
+  const inputs = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }] },
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
+      orientation: "W", elevation: "A", roomLabel: "STUDY", storey: "ground",
+      evidenceView: "elevation", evidenceRenderId: "r_001_01", frameBoxPt: [1, 1, 3, 3],
+      confidence: "high", flags: [], basis: ["A tiny W1 marker is visible on the floor plan."], note: null,
+    }] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 1_435, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN W1 STUDY", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift() ?? { action: "finish" }; },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs[2].observations[0].data.rejected[0].reason, "composition_evidence_not_close_up");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.equal(result.readings[0].confidence, "low");
+});
+
+test("runDrawingAgent: an invalid model batch gets feedback and the next turn can recover", async () => {
+  const inputs = [];
+  const actions = [
+    { action: "render", requests: [{ pageNo: 1, dpi: 150 }] },
+    null,
+    { action: "emit", records: [{
+      tag: "W1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical",
+      orientation: "W", elevation: "A", roomLabel: "STUDY", storey: "ground",
+      evidenceView: "elevation", evidenceRenderId: "r_001_01", frameBoxPt: [10, 10, 40, 40],
+      confidence: "high", flags: [], basis: ["W1 opening frame is visible on elevation A."], note: null,
+    }] },
+    { action: "finish" },
+  ];
+  const result = await runDrawingAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 1_435, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "ELEVATION A W1", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => { inputs.push(input); return actions.shift(); },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs[2].observations[0].data.reason, "invalid_action");
+  assert.equal(inputs[2].imageDataUrls[0].renderId, "r_001_01");
+  assert.deepEqual(inputs[2].renderCatalog.map((render) => render.renderId), ["r_001_01"]);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.equal(result.readings[0].split.axis, "vertical");
 });
