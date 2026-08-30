@@ -40,6 +40,22 @@ export async function applyDrawingRoom(
   }
 }
 
+/** Plan-context rooms are independent of drawing composition confidence.
+ * Persist them after quote lines exist, while keeping the same empty-only
+ * guard that protects customer-entered labels. */
+export async function applyKnownRooms(
+  env: Pick<Env, "DB">,
+  projectId: string,
+  rooms: { externalRef: string; roomLabel: string | null }[],
+): Promise<void> {
+  const statements = rooms
+    .filter((room): room is { externalRef: string; roomLabel: string } => !!room.roomLabel)
+    .map((room) => env.DB.prepare(
+      `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
+    ).bind(room.roomLabel, projectId, room.externalRef));
+  if (statements.length) await env.DB.batch(statements);
+}
+
 /** One shape for any two-sided disagreement — resolves the build's own open
  *  loop (design §14a): AC-9 (schedule vs drawing) and AC-15 (plans vs
  *  energy report) both reach the reviewer through this same string, via the

@@ -14,13 +14,14 @@ import type {
   RenderResponse,
   SplitAxis,
 } from "./contract";
+import { MAX_CROPS_PER_PAGE } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { compositionFromSchedule } from "./reconcile";
 
-const MAX_TURNS = 20;
-const MAX_RESEARCH_TURNS = 4;
+const MAX_TURNS = 8;
+const MAX_RESEARCH_TURNS = 2;
 const MAX_WORKING_MEMORY_CHARS = 8_000;
-const MAX_EMIT_BATCH = 4;
+const MAX_EMIT_BATCH = 20;
 const MAX_RENDER_BATCH = 6;
 const MAX_TEXT_PAGES = 4;
 const MAX_TOTAL_RENDERS = 36;
@@ -115,6 +116,7 @@ function safeJson(raw: unknown): any {
 const REPAIRABLE_EMIT_REASONS = new Set([
   "composition_evidence_not_close_up",
   "evidence_render_or_frame_invalid",
+  "plan_context_conflict",
 ]);
 
 function hasRepairableEmitRejection(observations: AgentObservation[]): boolean {
@@ -244,12 +246,14 @@ NON-NEGOTIABLE RULES
 - If evidence is ambiguous, use low confidence and a flag. Partial completion is valid.
 - STATE.finishAllowed is enforced by the application. When false, you MUST choose a research, render, emit or decline action; never finish.
 - Before an allowed finish, research enough of the set to derive its title, elevation, storey and orientation conventions.
+- Broad research is limited to two turns. Request the most useful elevation renders by the second turn; if no render exists yet, conclusion mode permits one bootstrap render.
 - Elevation drawings commonly omit opening tags. Reconcile a tag's floor-plan wall and left-to-right order with the corresponding elevation's storey, opening order, relative size and schedule dimensions, just as a human plan reader does. Record that chain in basis.
-- Emit no more than four records per turn so users see steady progress.
+- Emit all resolved openings in one batch when possible (up to twenty records). The application reports the accepted count.
 - Every action MUST include a concise memory string. It is your only memory across turns: preserve drawing conventions, visual findings, render ids and the next pending tags to emit.
 - STATE.workingMemory is your prior memory. Update it; do not start the investigation again.
 - STATE.renderCatalog lists every stored evidence render that remains valid for emit actions.
-- When STATE.conclusionRequired is true, broad research is over. Resolve pending tags in batches: return emit for evidence-backed readings, or decline for tags that still cannot honestly be reconciled after the plan/elevation order method above. If the immediately preceding emit_result rejected loose or invalid crop evidence, one targeted render action may repair; re-emit next.
+- When STATE.conclusionRequired is true, broad research is over. Resolve pending tags in one batch where possible: return emit for evidence-backed readings, or decline for tags that still cannot honestly be reconciled after the plan/elevation order method above. A targeted render may repair the immediately preceding loose, invalid or plan-context-conflicting evidence.
+- When emit_result supplies repairs, those tight crops were made automatically from your locator boxes. Inspect the attached repair images and re-emit using each supplied renderId; do not spend a turn requesting the same crops.
 - A decline is an explicit completed opening review, not a shortcut. Give the drawing-specific reason. Do not decline the whole set merely because elevation frames are unlabelled.
 - Finish is allowed only after every scheduled tag has either been emitted or explicitly declined.
 
@@ -266,7 +270,7 @@ Use batched tool requests where useful. You may revise an emitted tag later; the
 export function makeDrawingAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<DrawingAgentInput, DrawingAgentTurn> {
   return {
     id: "drawing_agent_turn",
-    promptVersion: "v7",
+    promptVersion: "v8",
     responseSchema: {
       type: "object",
       properties: {
@@ -315,6 +319,20 @@ function compositionFrameIsCloseUp(frame: CropBoxPt, renderBox: CropBoxPt): bool
   const frameHeight = frame[3] - frame[1];
   return frameWidth / renderWidth >= MIN_COMPOSITION_FRAME_FRACTION
     && frameHeight / renderHeight >= MIN_COMPOSITION_FRAME_FRACTION;
+}
+
+function closeUpCropBox(
+  frame: CropBoxPt,
+  page: { widthPt: number; heightPt: number },
+): CropBoxPt {
+  const padX = (frame[2] - frame[0]) * 0.35;
+  const padY = (frame[3] - frame[1]) * 0.35;
+  return [
+    Math.max(0, frame[0] - padX),
+    Math.max(0, frame[1] - padY),
+    Math.min(page.widthPt, frame[2] + padX),
+    Math.min(page.heightPt, frame[3] + padY),
+  ];
 }
 
 const comparableContext = (value: string): string => value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -457,6 +475,7 @@ export async function runDrawingAgent(args: {
   const declines = new Map<string, string>();
   const renders = new Map<string, StoredRender>();
   const cachedRenders = new Map<string, StoredRender>();
+  const repairRenders = new Map<string, StoredRender>();
   const resolvedProgress = new Set<string>();
   let observations: AgentObservation[] = [{
     kind: "initial",
@@ -465,7 +484,13 @@ export async function runDrawingAgent(args: {
   let imageDataUrls: DrawingAgentInput["imageDataUrls"] = [];
   let workingMemory = "";
   let totalRenders = 0;
+  let repairSequence = 0;
   let finished = false;
+  const attachRender = (render: StoredRender) => {
+    if (!imageDataUrls.some((image) => image.renderId === render.id)) {
+      imageDataUrls.push({ renderId: render.id, dataUrl: `data:image/png;base64,${render.pngB64}` });
+    }
+  };
   await deps.onProgress?.(0, scheduleRows.length, "floorplan_location");
 
   for (let turn = 1; turn <= MAX_TURNS && !finished; turn++) {
@@ -520,8 +545,10 @@ export async function runDrawingAgent(args: {
     }
     if (action.memory) workingMemory = action.memory;
     const repairRender = action.action === "render" && hasRepairableEmitRejection(observations);
+    const bootstrapRender = action.action === "render" && renders.size === 0;
     if (conclusionRequired && (
-      action.action === "get_page_text" || action.action === "get_text_tokens" || (action.action === "render" && !repairRender)
+      action.action === "get_page_text" || action.action === "get_text_tokens"
+      || (action.action === "render" && !repairRender && !bootstrapRender)
     )) {
       observations = [{
         kind: "emit_result",
@@ -622,16 +649,20 @@ export async function runDrawingAgent(args: {
       report.steps.read.attempted += action.records.length;
       await deps.onProgress?.(resolvedProgress.size, scheduleRows.length, "opening_read");
       observations = [{ kind: "emit_result", data: { accepted: [], declined, rejected } }];
+      if (resolvedProgress.size === scheduleRows.length) finished = true;
       continue;
     }
     const accepted: string[] = [];
     const rejected: { tag: string; reason: string }[] = [];
+    const repairCandidates: { tag: string; pageNo: number; bboxPt: CropBoxPt }[] = [];
+    const repairs: { tag: string; renderId?: string; pageNo?: number; bboxPt?: CropBoxPt; error?: string }[] = [];
     for (const proposal of action.records) {
       const render = renders.get(proposal.evidenceRenderId);
       const page = render ? pageByNo.get(render.pageNo) : null;
       const row = rowByTag.get(proposal.tag);
       if (!row || conflictsWithKnownContext(proposal, row)) {
         rejected.push({ tag: proposal.tag, reason: "plan_context_conflict" });
+        if (render) attachRender(render);
         continue;
       }
       if (!render || !render.cropKey || !page || !inside(proposal.frameBoxPt, render.bboxPt)) {
@@ -640,16 +671,67 @@ export async function runDrawingAgent(args: {
       }
       if (!compositionFrameIsCloseUp(proposal.frameBoxPt, render.bboxPt)) {
         rejected.push({ tag: proposal.tag, reason: "composition_evidence_not_close_up" });
+        const existing = repairRenders.get(proposal.tag);
+        if (existing) {
+          repairs.push({ tag: proposal.tag, renderId: existing.id, pageNo: existing.pageNo, bboxPt: existing.bboxPt });
+          attachRender(existing);
+        } else if (totalRenders < MAX_TOTAL_RENDERS) {
+          repairCandidates.push({
+            tag: proposal.tag,
+            pageNo: render.pageNo,
+            bboxPt: closeUpCropBox(proposal.frameBoxPt, page),
+          });
+        }
         continue;
       }
       proposals.set(proposal.tag, proposal);
       accepted.push(proposal.tag);
       resolvedProgress.add(proposal.tag);
     }
+    if (repairCandidates.length) {
+      await deps.onProgress?.(resolvedProgress.size, scheduleRows.length, "render_crops");
+      const byPage = new Map<number, typeof repairCandidates>();
+      for (const candidate of repairCandidates.slice(0, MAX_TOTAL_RENDERS - totalRenders)) {
+        const group = byPage.get(candidate.pageNo) ?? [];
+        group.push(candidate);
+        byPage.set(candidate.pageNo, group);
+      }
+      for (const [pageNo, pageCandidates] of byPage) {
+        for (let offset = 0; offset < pageCandidates.length; offset += MAX_CROPS_PER_PAGE) {
+          const batch = pageCandidates.slice(offset, offset + MAX_CROPS_PER_PAGE);
+          try {
+            const response = await deps.render({ pageNo, dpi: 250, crops: batch.map((item) => item.bboxPt) });
+            report.containerCalls++;
+            report.steps.renderCrop.pagesRendered++;
+            for (let index = 0; index < batch.length; index++) {
+              const image = response.images[index];
+              const candidate = batch[index];
+              if (!image) {
+                repairs.push({ tag: candidate.tag, error: "repair_render_empty" });
+                continue;
+              }
+              repairSequence++;
+              totalRenders++;
+              const id = `r_${String(turn).padStart(3, "0")}_repair_${String(repairSequence).padStart(2, "0")}`;
+              const cropKey = await deps.store(id, image.pngB64);
+              const stored = { id, pageNo, bboxPt: candidate.bboxPt, cropKey, pngB64: image.pngB64 };
+              renders.set(id, stored);
+              repairRenders.set(candidate.tag, stored);
+              report.steps.renderCrop.cropsMade++;
+              imageDataUrls.push({ renderId: id, dataUrl: `data:image/png;base64,${image.pngB64}` });
+              repairs.push({ tag: candidate.tag, renderId: id, pageNo, bboxPt: candidate.bboxPt });
+            }
+          } catch {
+            repairs.push(...batch.map((candidate) => ({ tag: candidate.tag, error: "repair_render_failed" })));
+          }
+        }
+      }
+    }
     report.steps.read.attempted += action.records.length;
     report.steps.read.returned += accepted.length;
     await deps.onProgress?.(resolvedProgress.size, scheduleRows.length, "opening_read");
-    observations = [{ kind: "emit_result", data: { accepted, rejected } }];
+    observations = [{ kind: "emit_result", data: { accepted, rejected, repairs } }];
+    if (resolvedProgress.size === scheduleRows.length) finished = true;
   }
 
   const validated: { proposal: AgentOpeningProposal; row: EnrichScheduleRow; render: StoredRender }[] = [];

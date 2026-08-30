@@ -29,7 +29,11 @@ import type { Env } from "../../types";
 // varies with orientation, a basis that can be plan_derived, and a derivation
 // that did not exist before), so the stage idempotency key must move with it.
 // No skill promptVersion changes: extraction is untouched.
-export const PIPELINE_VERSION = "2026-08-20.1";
+// 2026-08-31.1: plan rooms persist independently of drawing-read confidence,
+// and drawing-agent v8 batches set results and automatically tightens locator
+// crops. The same documents can therefore produce different room/composition
+// output and must not replay an older pipeline archive.
+export const PIPELINE_VERSION = "2026-08-31.1";
 // 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
 // additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";

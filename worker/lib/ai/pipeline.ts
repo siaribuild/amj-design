@@ -26,7 +26,7 @@ import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
 import { runDrawingEnrichmentStage } from "../drawing/enrich";
 import { setDrawingProgress } from "./jobs";
-import { applyDrawingOrientation, applyDrawingRoom, persistReadings, conflictReason } from "../drawing/readings";
+import { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, persistReadings, conflictReason } from "../drawing/readings";
 import type { DrawingReading } from "../drawing/contract";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
@@ -784,6 +784,10 @@ export async function runAiExtraction(
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
+  const knownRooms = model.openings.map((opening) => ({
+    externalRef: opening.externalRef,
+    roomLabel: drawingContextForOpening(model, opening.externalRef).roomLabel,
+  }));
 
   // Plan-parse enrichment (02-design-v2.md §4) — runDrawingEnrichmentStage
   // owns the mode gate, the R2-key lookup and the container/model wiring
@@ -1123,8 +1127,13 @@ export async function runAiExtraction(
   }, { splitHints, scheduleTypes });
 
   // Room application stays after estimate because quote_line rows do not
-  // exist earlier. Readings/report were persisted immediately after
-  // enrichment so a later estimate failure cannot erase diagnostics.
+  // exist earlier. Plan rooms do not depend on whether composition AI could
+  // read the drawing; drawing-only rooms retain their confidence guard.
+  try {
+    await applyKnownRooms(env, projectId, knownRooms);
+  } catch (err) {
+    warnings.push(`plan_rooms_persist_failed:${err instanceof Error ? err.message : String(err)}`);
+  }
   if (drawingReadings.length) {
     try {
       await applyDrawingRoom(env, projectId, drawingReadings);
