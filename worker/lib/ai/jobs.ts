@@ -2,6 +2,7 @@ import type { Env } from "../../types";
 import { runAiExtraction, type AiExtractionSummary } from "./pipeline";
 import { uuid } from "../util";
 import { hasAnyExactPricingCoverage } from "../estimator/catalogue";
+import type { DrawingProgressPhase } from "../drawing/contract";
 
 export interface AiExtractionJob {
   projectId: string;
@@ -42,6 +43,36 @@ const MAX_AUTOMATIC_ATTEMPTS = 1;
 // finish rather than being severed to fit an arbitrary minute. The UI no longer
 // treats duration as failure — it shows per-step progress and flags only a stall.
 const AI_JOB_DEADLINE_MS = 120_000;
+// 02-design-v2.md §10: the base budget stays owner-approved; only the
+// switched-on drawing-enrichment mode pays more — its own ~90s target on
+// top, not the reverted attempt's blanket 300s for every job.
+export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
+  // 600s while the freshly-provisioned container is tested (owner, 2026-08-29
+  // — the 240s figure got a real run killed by this exact lease mid-flight,
+  // drawing_report_json never persisted). Tighten once cold-start behaviour
+  // is known-good; containerClient's own per-call timeout is the real bound.
+  return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 600_000 : AI_JOB_DEADLINE_MS;
+}
+
+/** Drawing progress, same shape and same token guard as pipeline.ts's own
+ *  setProgress: it never writes past the token that owns the lease (§5,
+ *  migration 0059). Denominator is the schedule-opening count and is never
+ *  shortened — a gap still advances the numerator. */
+export async function setDrawingProgress(
+  env: Pick<Env, "DB">,
+  projectId: string,
+  sourceGeneration: number,
+  processingToken: string,
+  drawingsDone: number,
+  drawingsTotal: number,
+  drawingsPhase: DrawingProgressPhase,
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, updated_at=datetime('now')
+      WHERE project_id=? AND source_generation=? AND status='processing'
+        AND processing_token=?`,
+  ).bind(drawingsDone, drawingsTotal, drawingsPhase, projectId, sourceGeneration, processingToken).run().catch(() => {});
+}
 
 class AiJobFault extends Error {
   constructor(
@@ -313,7 +344,9 @@ export async function retryCurrentAiExtraction(
           SET status='scheduled', attempts=0, debounce_token=?,
               processing_token=NULL, lease_expires_at=NULL,
               last_error=NULL, failure_class=NULL, retry_after=NULL,
-              progress_stage='queued', updated_at=datetime('now')
+              progress_stage='queued', drawings_done=NULL,
+              drawings_total=NULL, drawings_phase=NULL,
+              updated_at=datetime('now')
         WHERE project_id=? AND source_generation=?
           AND (status='failed'
                OR (status='processing' AND lease_expires_at IS NOT NULL
@@ -446,7 +479,9 @@ export async function processAiExtractionJob(
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
             retry_after=NULL, lease_expires_at=datetime('now','+135 seconds'),
-            progress_stage='reading_documents', updated_at=datetime('now')
+            progress_stage='reading_documents', drawings_done=NULL,
+            drawings_total=NULL, drawings_phase=NULL,
+            updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
           (status='scheduled' AND (retry_after IS NULL OR retry_after <= datetime('now')))
@@ -514,7 +549,7 @@ export async function processAiExtractionJob(
       new Promise<never>((_resolve, reject) => {
         deadlineTimer = setTimeout(
           () => reject(new AiJobFault("ai_processing_deadline_exceeded", "transient")),
-          AI_JOB_DEADLINE_MS,
+          aiJobDeadlineMs(env),
         );
       }),
     ]).finally(() => {

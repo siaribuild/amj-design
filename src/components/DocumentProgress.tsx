@@ -14,22 +14,10 @@
 // churning.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { Check, Loader2 } from "lucide-react";
-import type { AiPhase, AiProgressStage, StageLogEntry } from "../data/useProjectDocuments";
-
-// Shorter labels than the single-line fallback: a checklist is scanned, not
-// read, and the sentence-length copy belongs to the fallback.
-const AI_STEPS: { stage: AiProgressStage; label: string }[] = [
-  { stage: "queued", label: "Preparing document review" },
-  { stage: "reading_documents", label: "Reading the documents" },
-  { stage: "extracting_schedule", label: "Extracting the schedule" },
-  { stage: "building_envelope", label: "Checking thermal requirements" },
-  { stage: "matching_and_pricing", label: "Matching products and prices" },
-  { stage: "preparing_quote", label: "Preparing your recommendations" },
-];
-// `waiting_capacity` is deliberately NOT a step: it is not a stage of the work
-// but a pause in it, and giving it a row would imply the run had moved on.
-const stepIndex = (stage: AiProgressStage | undefined): number =>
-  AI_STEPS.findIndex((s) => s.stage === stage);
+import { checklistStepDuration, documentChecklist, type AiPhase, type AiProgressStage, type StageLogEntry } from "../data/useProjectDocuments";
+// `waiting_capacity` is deliberately not a checklist row: it is not a stage of
+// the work but a pause in it, and giving it a row would imply the run had
+// moved on.
 
 const fmtDur = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -60,23 +48,17 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
   // deterministic parse reports none, so it keeps the single line.
   const active = aiPhase?.kind === "reading" ? aiPhase.stage : undefined;
   const waiting = active === "waiting_capacity";
+  const drawingsDone = aiPhase?.kind === "reading" ? aiPhase.drawingsDone : undefined;
+  const drawingsTotal = aiPhase?.kind === "reading" ? aiPhase.drawingsTotal : undefined;
+  const drawingsPhase = aiPhase?.kind === "reading" ? aiPhase.drawingsPhase : undefined;
+  const { steps: AI_STEPS, current: checklistCurrent } = documentChecklist({
+    stage: active, drawingsDone, drawingsTotal, drawingsPhase,
+  });
   // An unknown stage is treated as the first step rather than as no progress:
-  // work IS under way, and showing six pending rows would say the opposite.
-  const current = waiting ? 0 : Math.max(0, stepIndex(active));
+  // work IS under way, and showing every row pending would say the opposite.
+  const current = waiting ? 0 : Math.max(0, checklistCurrent);
   const showSteps = aiPhase?.kind === "reading" && !!active;
 
-  // Per-step elapsed, from the observed transition times. A step's end is the
-  // next observed step's start; the current step ticks live.
-  const stepStart = (i: number) => stageLog.find((s) => s.stage === AI_STEPS[i].stage)?.at;
-  const stepDurMs = (i: number): number | null => {
-    const start = stepStart(i);
-    if (start == null) return null;
-    for (let j = i + 1; j < AI_STEPS.length; j++) {
-      const nx = stepStart(j);
-      if (nx != null) return nx - start;
-    }
-    return i === current ? Math.max(0, nowTick - start) : null;
-  };
   // Stall = no new step for a while. This, not elapsed time, is what actually
   // worries a customer, so it is the only thing that changes the reassurance
   // into a heads-up.
@@ -94,15 +76,16 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
               const done = i < current;
               const inProgress = i === current && !waiting;
               const stalled = i === current && waiting;
-              const durMs = stepDurMs(i);
+              const durMs = checklistStepDuration(AI_STEPS, current, stageLog, nowTick, i);
               // Reading step names how many documents it is working through —
               // the honest, available granularity (the PDF text layer is read
-              // in one call, so there is no live per-page tick to show).
-              const detail = inProgress && step.stage === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
+              // in one call, so there is no live per-page tick to show). The
+              // drawing-read row carries its own count-derived detail already.
+              const detail = step.detail || (inProgress && step.key === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
                 ? ` · ${aiPhase.docs} document${aiPhase.docs !== 1 ? "s" : ""}`
-                : "";
+                : "");
               return (
-                <li key={step.stage} className="flex items-center gap-2.5">
+                <li key={step.key} className="flex items-center gap-2.5">
                   <span className="w-4 h-4 flex-shrink-0 grid place-items-center" aria-hidden="true">
                     {done ? (
                       <Check className="w-4 h-4 text-sage" />

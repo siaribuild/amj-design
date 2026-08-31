@@ -591,6 +591,10 @@ export interface ExtractionRun {
     | "preparing_quote"
     | "waiting_capacity"
     | "complete";
+  /** The server's own job deadline for this run, in ms. The client's polling
+   *  backstop is derived from it rather than guessed, so the two cannot drift
+   *  apart — they did once, and a completed run was reported as interrupted. */
+  deadlineMs?: number;
   /** How many of the project's openings have been read from the drawings, and
    *  how many there are. Present only while a drawing read is running.
    *
@@ -600,6 +604,15 @@ export interface ExtractionRun {
    *  not do. Which openings those were is an ops question, never a customer one. */
   drawingsDone?: number;
   drawingsTotal?: number;
+  /** Page-wide preparation is real drawing work, but it cannot honestly
+   * advance the completed-opening numerator. This phase explains that time. */
+  drawingsPhase?:
+    | "inventory"
+    | "elevation_inventory"
+    | "floorplan_location"
+    | "orientation"
+    | "render_crops"
+    | "opening_read";
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:

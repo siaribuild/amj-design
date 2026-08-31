@@ -21,15 +21,167 @@ import { type QuoteState } from "./configurator";
 
 export type SafeDiagnostic = NonNullable<ExtractionRun["diagnostic"]>;
 export type AiProgressStage = NonNullable<ExtractionRun["progressStage"]>;
+export type DrawingProgressPhase = NonNullable<ExtractionRun["drawingsPhase"]>;
 
 export type AiPhase =
   | null
-  | { kind: "reading"; docs: number; stage?: AiProgressStage }
+  | {
+      kind: "reading"; docs: number; stage?: AiProgressStage;
+      /** Present only while a drawing read is running (§5) — the customer
+       *  sees a counter, never which openings could not be read. */
+      drawingsDone?: number; drawingsTotal?: number; drawingsPhase?: DrawingProgressPhase;
+    }
   | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
   | { kind: "done"; refined: number }
   | { kind: "failed"; diagnostic?: SafeDiagnostic | null };
 
-export type StageLogEntry = { stage: AiProgressStage; at: number };
+export interface DocumentChecklistStep {
+  key: AiProgressStage | "reading_openings";
+  label: string;
+  detail: string;
+}
+
+const BASE_STEPS: { key: AiProgressStage; label: string }[] = [
+  { key: "queued", label: "Preparing document review" },
+  { key: "reading_documents", label: "Reading the documents" },
+  { key: "extracting_schedule", label: "Extracting the schedule" },
+  { key: "building_envelope", label: "Checking thermal requirements" },
+  { key: "matching_and_pricing", label: "Matching products and prices" },
+  { key: "preparing_quote", label: "Preparing your recommendations" },
+];
+
+/** The checklist the customer sees, plus which row is current — computed
+ *  once so the component only renders it.
+ *
+ *  A drawing read gets its OWN row, driven by counts rather than a stage:
+ *  there is no `reading_openings` progress_stage and there will not be one
+ *  (0059's own rationale — extending the CHECK is a table rebuild). It runs
+ *  inside the same DB window as "building the envelope" but is conceptually
+ *  a different job, so it earns its own row rather than hiding under
+ *  "Checking thermal requirements" — the placement lesson two prior sessions
+ *  (f0714fec, then the correction in 827a8a32) had to learn by shipping it
+ *  wrong first. */
+export function documentChecklist(
+  phase: {
+    stage?: AiProgressStage;
+    drawingsDone?: number;
+    drawingsTotal?: number;
+    drawingsPhase?: DrawingProgressPhase;
+  } | undefined,
+): { steps: DocumentChecklistStep[]; current: number } {
+  const total = phase?.drawingsTotal;
+  const done = phase?.drawingsDone ?? 0;
+  const drawingDetail = (): string => {
+    if (total == null) return "";
+    switch (phase?.drawingsPhase) {
+      case "inventory": return ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+      case "elevation_inventory": return " · finding elevation views";
+      case "floorplan_location": return ` · locating ${total} opening${total === 1 ? "" : "s"}`;
+      case "orientation": return " · checking drawing orientation";
+      case "render_crops": return " · preparing opening details";
+      case "opening_read": {
+        const currentOpening = Math.min(total, done + (done < total ? 1 : 0));
+        return ` · opening ${currentOpening} of ${total}`;
+      }
+      default:
+        return done > 0
+          ? ` · opening ${Math.min(done, total)} of ${total}`
+          : ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+    }
+  };
+  const steps: DocumentChecklistStep[] = [];
+  for (const s of BASE_STEPS) {
+    steps.push({
+      key: s.key,
+      label: s.label,
+      detail: s.key === "extracting_schedule" && total != null
+        ? ` · ${total} opening${total === 1 ? "" : "s"} found`
+        : "",
+    });
+    if (s.key === "extracting_schedule" && total != null) {
+      steps.push({
+        key: "reading_openings",
+        label: "Reading your drawings",
+        detail: drawingDetail(),
+      });
+    }
+  }
+  // done === total still holds here: the resting "19 of 19" state must stay
+  // visible until the stage actually moves on, not snap to the thermal-check
+  // label the instant the last opening ticks (owner correction 2026-08-29).
+  const stillReadingDrawings = phase?.stage === "building_envelope" && total != null;
+  const currentKey = stillReadingDrawings ? "reading_openings" : phase?.stage;
+  const current = steps.findIndex((s) => s.key === currentKey);
+  return { steps, current: current < 0 ? 0 : current };
+}
+
+export type StageLogKey = AiProgressStage | "reading_openings_complete";
+export type StageLogEntry = { stage: StageLogKey; at: number };
+
+/** True once the run has either completed every drawing read or advanced past
+ * drawing work. The latter matters when drawing inspection fails before the
+ * per-opening counter can move: later rows must not inherit the drawing timer. */
+export function drawingProgressEnded(run: Pick<ExtractionRun, "progressStage" | "drawingsDone" | "drawingsTotal">): boolean {
+  const hasDrawingWork = run.drawingsTotal != null && run.drawingsTotal > 0;
+  const completed = hasDrawingWork && (run.drawingsDone ?? 0) >= run.drawingsTotal;
+  const leftDrawingStage = run.progressStage != null && run.progressStage !== "building_envelope" && run.progressStage !== "waiting_capacity";
+  return hasDrawingWork && (completed || leftDrawingStage);
+}
+
+/** Duration for one visible checklist row. The drawing row is virtual: it
+ * shares the server's building_envelope stage with the thermal step, so the
+ * observed drawing-completion marker is the boundary between those two rows. */
+export function checklistStepDuration(
+  steps: DocumentChecklistStep[],
+  current: number,
+  stageLog: StageLogEntry[],
+  now: number,
+  index: number,
+): number | null {
+  const markerAt = stageLog.find((entry) => entry.stage === "reading_openings_complete")?.at;
+  const key = steps[index]?.key;
+  if (!key) return null;
+  const startFor = (stepKey: DocumentChecklistStep["key"]): number | undefined => {
+    if (stepKey === "reading_openings") {
+      return stageLog.find((entry) => entry.stage === "building_envelope")?.at;
+    }
+    if (stepKey === "building_envelope" && markerAt != null) return markerAt;
+    return stageLog.find((entry) => entry.stage === stepKey)?.at;
+  };
+  const start = startFor(key);
+  if (start == null) return null;
+
+  // Completion is observable before the DB stage changes. Freeze the drawing
+  // duration there, even though that row deliberately remains current until
+  // the server advances to thermal/product work.
+  if (key === "reading_openings" && markerAt != null) {
+    return Math.max(0, markerAt - start);
+  }
+  if (index === current) return Math.max(0, now - start);
+  for (let next = index + 1; next < steps.length; next++) {
+    // Without the completion marker, drawing and thermal have the same server
+    // timestamp; that is not a real boundary.
+    if (key === "reading_openings" && steps[next].key === "building_envelope" && markerAt == null) continue;
+    const nextStart = startFor(steps[next].key);
+    if (nextStart != null && nextStart >= start) return Math.max(0, nextStart - start);
+  }
+  return null;
+}
+/** How long the client keeps watching a run, derived from the deadline the
+ *  SERVER states rather than a literal of our own. The margin covers the
+ *  poll interval and the final status read.
+ *
+ *  This drifted once and cost a real run: the backstop was written as 150s
+ *  "generous, past the server's 120s job ceiling", then the auto_drawings
+ *  lease went to 600s and this side did not move — so the browser announced
+ *  "interrupted" while the job ran on and completed. A number computed from
+ *  the server's own answer cannot drift; a second literal always can. */
+export const POLL_WINDOW_MARGIN_MS = 60_000;
+export const POLL_WINDOW_FALLBACK_MS = 150_000;
+export function pollWindowMs(serverDeadlineMs?: number | null): number {
+  return (serverDeadlineMs ?? POLL_WINDOW_FALLBACK_MS) + POLL_WINDOW_MARGIN_MS;
+}
+
 export type UploadNotice = { type: "success" | "error"; message: string };
 
 export class PhotoPreparationError extends Error {}
@@ -205,9 +357,15 @@ export function useProjectDocuments(
   // with a live timer on the step in flight. `stageLog` is append-only per run.
   const [stageLog, setStageLog] = useState<StageLogEntry[]>([]);
   const [nowTick, setNowTick] = useState(() => 0);
-  const recordStage = (stage: AiProgressStage | undefined) => {
+  const recordStage = (stage: StageLogKey | undefined) => {
     if (!stage || stage === "waiting_capacity") return;   // a pause is not a step
     setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
+  };
+  const recordRunProgress = (run: ExtractionRun) => {
+    if (drawingProgressEnded(run)) {
+      recordStage("reading_openings_complete");
+    }
+    recordStage(run.progressStage);
   };
   // A one-second heartbeat so the in-progress step's timer ticks. Runs only while
   // a run is in flight, and is torn down the moment it is not — no idle interval.
@@ -328,14 +486,18 @@ export function useProjectDocuments(
     let sawRun = false;
     let lastDiagnostic: SafeDiagnostic | null = null;
     let lastStage: AiProgressStage | undefined;
+    // Widened to the server's own stated deadline as soon as a status read
+    // reports one; until then, the historical literal.
+    let windowMs = pollWindowMs();
     const tick = async (n: number) => {
       if (epoch !== pollEpoch.current) return;
       let inFlight = false;
-      // Duration is NOT failure. The client backstop is generous (past the
-      // server's 120s job ceiling); the server is the authority on actual
-      // failure. We only give up on our own if the whole run window elapses with
-      // no terminal status at all — a stall is surfaced as concern, not death.
-      const windowElapsed = Date.now() - t0 >= 150_000;
+      // Duration is NOT failure. The client backstop outlasts the server's own
+      // job deadline BY CONSTRUCTION (pollWindowMs); the server is the
+      // authority on actual failure. We only give up on our own if the whole
+      // run window elapses with no terminal status at all — a stall is
+      // surfaced as concern, not death.
+      const windowElapsed = Date.now() - t0 >= windowMs;
       try {
         const { run, basis } = await extractionStatus();
         if (epoch !== pollEpoch.current) return;
@@ -343,12 +505,16 @@ export function useProjectDocuments(
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
           inFlight = true;
+          if (run.deadlineMs) windowMs = pollWindowMs(run.deadlineMs);
           lastDiagnostic = run.diagnostic ?? null;
           if (run.progressStage !== lastStage) { lastStage = run.progressStage; }
-          recordStage(run.progressStage);
+          recordRunProgress(run);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-            : { kind: "reading", docs, stage: run.progressStage });
+            : {
+                kind: "reading", docs, stage: run.progressStage,
+                drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal, drawingsPhase: run.drawingsPhase,
+              });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
@@ -375,7 +541,7 @@ export function useProjectDocuments(
         // does a network failure become the visible bounded failure state.
       }
       // Only the CLIENT backstop fails here; a healthy-but-slow run keeps its
-      // checklist and its live timer. The server fails the job at 120s and we
+      // checklist and its live timer. The server fails the job at 600s and we
       // read that as run.status==='failed' above — this is just the net for a
       // status endpoint that never returns a terminal state at all.
       if (windowElapsed) {
@@ -386,7 +552,7 @@ export function useProjectDocuments(
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, 150_000 - (Date.now() - t0));
+      const remaining = Math.max(250, windowMs - (Date.now() - t0));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);
@@ -423,7 +589,10 @@ export function useProjectDocuments(
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase(run.diagnostic
           ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-          : { kind: "reading", docs, stage: run.progressStage });
+          : {
+              kind: "reading", docs, stage: run.progressStage,
+              drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal, drawingsPhase: run.drawingsPhase,
+            });
         pollExtraction(docs);
       } else if (docs > 0 && run?.status === "failed") {
         setAiPhase({ kind: "failed", diagnostic: run.diagnostic });

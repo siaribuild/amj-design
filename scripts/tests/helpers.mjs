@@ -7,6 +7,26 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+// `@cloudflare/containers` (worker/lib/drawing/PlanParseContainer.ts) imports
+// `DurableObject`/`WorkerEntrypoint` from the `cloudflare:workers` virtual
+// module, which only exists inside workerd — esbuild bundling worker/index.ts
+// on plain Node (unit.test.mjs) cannot resolve it. These stubs exist only to
+// let bundling and module-evaluation succeed; no test in this suite
+// instantiates a Durable Object, so the stubs need no real behaviour.
+export const cloudflareWorkersShimPlugin = {
+  name: "cloudflare-workers-shim",
+  setup(build) {
+    build.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: "cloudflare:workers", namespace: "cf-workers-shim" }));
+    build.onLoad({ filter: /.*/, namespace: "cf-workers-shim" }, () => ({
+      contents: `
+        export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }
+        export class WorkerEntrypoint { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }
+      `,
+      loader: "js",
+    }));
+  },
+};
 export const viteCli = join(projectRoot, "node_modules", "vite", "bin", "vite.js");
 export const wranglerCli = join(projectRoot, "node_modules", "wrangler", "bin", "wrangler.js");
 

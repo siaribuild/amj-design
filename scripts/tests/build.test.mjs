@@ -11,7 +11,7 @@ test("customer/ops bundles and the Cloudflare Worker build", { timeout: 120_000 
     const vite = await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
     assert.match(vite.stdout + vite.stderr, /built in/i);
     const wrangler = await run(process.execPath, [wranglerCli, "deploy", "--dry-run", "--assets", assets, "--outdir", worker], {
-      env: { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") },
+      env: { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") },
     });
     assert.match(wrangler.stdout + wrangler.stderr, /Total Upload|dry-run/i);
   } finally {

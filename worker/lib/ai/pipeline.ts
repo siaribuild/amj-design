@@ -23,7 +23,11 @@ import { computeThermalBand } from "../estimator/thermal/computedBand";
 import { readSourced, type CompassPoint, type ThermalModelInputs } from "../estimator/thermal/contract";
 import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
 import { coerceCoherent } from "../estimator/thermal/precedence";
-import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
+import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
+import { runDrawingEnrichmentStage } from "../drawing/enrich";
+import { setDrawingProgress } from "./jobs";
+import { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, persistReadings, conflictReason } from "../drawing/readings";
+import type { DrawingReading } from "../drawing/contract";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
@@ -150,6 +154,64 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
   };
 }
 
+// ── WS5 + 02-design-v2.md §3.4: one place that turns a merged schedule line
+// (plus, when enrichment ran, its drawing reading) into a split hint and the
+// review flags it earns. Pure — extracted so the make-up ladder is tested
+// directly rather than only through the full runAiExtraction pipeline. ──
+export function buildSplitHints(
+  lines: MergedLine[],
+  drawingReadings: DrawingReading[],
+): { splitHints: Map<string, SplitHint>; flags: Map<string, string[]> } {
+  const readingByTag = new Map(drawingReadings
+    .filter((r) => r.splitState === "value" && r.split && r.confidence === "high" && (r.flags?.length ?? 0) === 0)
+    .map((r) => [r.externalRef, { splitState: r.splitState, units: r.split!.units, axis: r.split!.axis }] as const));
+  const splitHints = new Map<string, SplitHint>();
+  const flags = new Map<string, string[]>();
+  const flag = (tag: string, reason: string) => {
+    const list = flags.get(tag) ?? [];
+    list.push(reason);
+    flags.set(tag, list);
+  };
+  for (const reading of drawingReadings) {
+    if (reading.confidence === "low" || reading.flags?.length) {
+      const detail = reading.flags?.length ? reading.flags.join(", ") : "low confidence";
+      flag(reading.externalRef, `drawing evidence needs review: ${detail}`);
+    }
+  }
+  for (const l of lines) {
+    if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
+    const reading = readingByTag.get(l.tag) ?? null;
+    // AC-9: schedule says FIXED, the drawing shows an operating unit — the
+    // reason string names both sides, the same channel a split proposal
+    // uses (§3.5), so it reaches the reviewer with zero new machinery.
+    if (reading && (l.typeText ?? "").trim().toLowerCase() === "fixed" && reading.units.some((u) => u.role === "operable")) {
+      flag(l.tag, conflictReason("drawing shows operating unit", "schedule types FIXED"));
+    }
+    const parsedComment = parseSplitHint(l.notes);
+    const commentHint: SplitHint | null = l.split?.operable?.length
+      ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
+      : parsedComment ? { ...parsedComment, source: "schedule_comment" } : null;
+    const { hint, conflict } = resolveMakeUp(l.tag, {
+      reading,
+      commentHint,
+      typeText: l.typeText ?? null,
+      fallbackOp: (l.typeText ?? "").toLowerCase() || "awning",
+      energyComponents: null,
+      energyAxis: "vertical",
+    });
+    if (!hint) continue;
+    splitHints.set(l.tag, hint);
+    const proposal = proposeSplit(
+      { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
+      hint,
+    );
+    const layout = proposal.segments.map((s) => `${s.operation} ${s.widthMm}mm`).join(" + ");
+    flag(l.tag, `proposed split (confirm at review): ${layout}`);
+    if (conflict) flag(l.tag, conflict);
+  }
+  return { splitHints, flags };
+}
+
 export function applyPlanContext(
   model: BuildingModelV1,
   sources: { fileId: string; context: PlanContextV1 }[],
@@ -219,6 +281,23 @@ export function applyPlanContext(
       model.assumptions.push({ fact: `plan_context_issue:${issue}`, origin: "unknown", note: fileId });
     }
   }
+}
+
+export function drawingContextForOpening(
+  model: Pick<BuildingModelV1, "openings" | "rooms">,
+  externalRef: string,
+): { roomLabel: string | null; storey: "ground" | "first" | null } {
+  const normalizedRef = normalizeOpeningRef(externalRef) ?? externalRef;
+  const opening = model.openings.find((item) =>
+    (normalizeOpeningRef(item.externalRef) ?? item.externalRef) === normalizedRef);
+  const room = opening?.roomId ? model.rooms.find((item) => item.roomId === opening.roomId) : null;
+  const level = (room?.level ?? opening?.level ?? "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  const storey = /^(ground|ground floor|level 0|0)$/.test(level)
+    ? "ground"
+    : /^(first|first floor|level 1|1)$/.test(level)
+      ? "first"
+      : null;
+  return { roomLabel: room?.name?.trim() || null, storey };
 }
 
 export function thermalContextFor(
@@ -521,10 +600,12 @@ export async function runAiExtraction(
   // Never log filenames, document text or model output (§21.1).
   const runStartedAt = Date.now();
   let phaseMark = runStartedAt;
+  let lastPhase = "start";
   const phase = (
     label: string,
     fields: Record<string, string | number | boolean | null> = {},
   ) => {
+    lastPhase = label;
     const now = Date.now();
     console.log({
       event: "ai_pipeline_phase",
@@ -703,6 +784,64 @@ export async function runAiExtraction(
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
+  const knownRooms = model.openings.map((opening) => ({
+    externalRef: opening.externalRef,
+    roomLabel: drawingContextForOpening(model, opening.externalRef).roomLabel,
+  }));
+
+  // Plan-parse enrichment (02-design-v2.md §4) — runDrawingEnrichmentStage
+  // owns the mode gate, the R2-key lookup and the container/model wiring
+  // (worker/lib/drawing/enrich.ts, unit-tested there — it never throws;
+  // this try/catch only covers the schedule-row mapping around the call).
+  // Plan context is applied first so its room/storey identity can be supplied
+  // to the agent. A high-confidence drawing orientation is still allowed to
+  // replace the plan-derived fallback (§3.5).
+  let drawingReadings: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["readings"] = [];
+  let drawingReport: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["report"] = null;
+  try {
+    const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
+    const scheduleRows = merged.lines
+      .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
+      .map((l) => ({
+        tag: l.tag,
+        widthMm: l.widthMm,
+        heightMm: l.heightMm,
+        typeText: l.typeText ?? null,
+        commentText: l.notes ?? null,
+        ...drawingContextForOpening(model, l.tag),
+      }));
+    const onProgress = opts.processingToken
+      ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase) =>
+          setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase)
+      : undefined;
+    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
+    drawingReadings = result.readings;
+    drawingReport = result.report;
+    applyDrawingOrientation(model, drawingReadings);
+    if (drawingReport) {
+      await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
+        .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
+      const files = drawingReport.files;
+      console.log({
+        event: "drawing_enrichment", aiRunId: run.id, projectId,
+        filesTried: files.length,
+        containerCalls: files.reduce((sum, file) => sum + file.containerCalls, 0),
+        modelCalls: files.reduce((sum, file) => sum + file.modelCalls, 0),
+        readingsProduced: drawingReadings.length,
+        notReadCount: drawingReadings.filter((reading) => reading.splitState !== "value").length,
+        wallMs: files.reduce((sum, file) => sum + file.wallMs, 0),
+        inspectTimings: files.map((file) => file.inspectTimings ?? null),
+      });
+    }
+    if (drawingReadings.length) {
+      await persistReadings(env, projectId, run.id, drawingReadings).catch((error) => {
+        warnings.push(`drawing_readings_persist_failed:${error instanceof Error ? error.name : "Error"}`);
+      });
+    }
+  } catch (err) {
+    warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
+  }
+
   const technicalReviewReasons = new Map<string, Set<string>>();
   const flagOpening = (externalRef: string, reason: string) => {
     const current = technicalReviewReasons.get(externalRef) ?? new Set<string>();
@@ -724,20 +863,11 @@ export async function runAiExtraction(
   // offset one, and the estimator has no other copy of the wording.
   const scheduleTypes = new Map<string, string>();
   for (const l of merged.lines) {
-    if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
-    if (l.typeText) scheduleTypes.set(l.tag, l.typeText);
-    const hint: SplitHint | null = l.split?.operable?.length
-      ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
-      : parseSplitHint(l.notes);
-    if (!hint) continue;
-    splitHints.set(l.tag, hint);
-    const proposal = proposeSplit(
-      { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
-      hint,
-    );
-    const layout = proposal.segments.map((s) => `${s.operation} ${s.widthMm}mm`).join(" + ");
-    flagOpening(l.tag, `proposed split (confirm at review): ${layout}`);
+    if (l.tag && l.typeText) scheduleTypes.set(l.tag, l.typeText);
   }
+  const built = buildSplitHints(merged.lines, drawingReadings);
+  for (const [tag, hint] of built.splitHints) splitHints.set(tag, hint);
+  for (const [tag, reasons] of built.flags) for (const reason of reasons) flagOpening(tag, reason);
 
   // Path 1 (§10.1): report configuration/performance is authoritative, while
   // architectural dimensions describe the constructed opening. Map both onto
@@ -782,7 +912,10 @@ export async function runAiExtraction(
         // along in `components` so the thermal targets they carry can still be
         // attached to whatever the plan produced (plans do not carry targets).
         const planHint = splitHints.get(o.externalRef);
-        if (planHint && planHint.source === "schedule_comment") {
+        // "plans" (a drawing reading) wins the geometry same as
+        // "schedule_comment" always has (§3.4 point 4) — only when nothing
+        // but the energy report proposed a shape does the report supply one.
+        if (planHint && planHint.source !== "energy_report") {
           planHint.components = componentUnits;
         } else {
           splitHints.set(o.externalRef, {
@@ -993,6 +1126,22 @@ export async function runAiExtraction(
     processingToken: opts.processingToken,
   }, { splitHints, scheduleTypes });
 
+  // Room application stays after estimate because quote_line rows do not
+  // exist earlier. Plan rooms do not depend on whether composition AI could
+  // read the drawing; drawing-only rooms retain their confidence guard.
+  try {
+    await applyKnownRooms(env, projectId, knownRooms);
+  } catch (err) {
+    warnings.push(`plan_rooms_persist_failed:${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (drawingReadings.length) {
+    try {
+      await applyDrawingRoom(env, projectId, drawingReadings);
+    } catch (err) {
+      warnings.push(`drawing_readings_persist_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   phase("estimate_and_pricing", {
     openings: estimate.openings,
     selected: estimate.selected,
@@ -1016,6 +1165,12 @@ export async function runAiExtraction(
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
   } catch (error) {
+    console.log({
+      event: "ai_pipeline_error", aiRunId: run.id, projectId,
+      name: error instanceof Error ? error.name : "Error",
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      phase: lastPhase,
+    });
     const stale = error instanceof Error && error.message === "ai_job_stale_before_publish";
     const failureKind = stale ? "stale_generation" : dominantFailure(stageFailures);
     const errorCode = stale ? "STALE_GENERATION" : (failureKind ? errorCodeForFailure(failureKind) : "PIPELINE_INTERNAL_ERROR");

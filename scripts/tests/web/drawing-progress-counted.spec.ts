@@ -40,7 +40,7 @@ async function runningWith(page: import("@playwright/test").Page, run: Record<st
 test("the drawing read is its own step, counted, and silent about what it could not read", async ({ page }) => {
   await runningWith(page, {
     id: "r-read", status: "running", startedAt: new Date().toISOString(),
-    progressStage: "building_envelope", drawingsDone: 7, drawingsTotal: 20,
+    progressStage: "building_envelope", drawingsDone: 7, drawingsTotal: 20, drawingsPhase: "opening_read",
   });
   // The checklist only appears once the poll has completed a round trip and set
   // the phase — the default 10s is marginal for that on a cold dev server, and
@@ -49,7 +49,9 @@ test("the drawing read is its own step, counted, and silent about what it could 
   const steps = page.locator("ol").first();
   await expect(steps).toBeVisible({ timeout: 30_000 });
   await expect(steps).toContainText("Extracting the schedule · 20 openings found");
-  await expect(steps).toContainText("Extracting opening details · 7 of 20");
+  const drawingRow = steps.getByText("Reading your drawings · opening 8 of 20").locator("..");
+  await expect(drawingRow).toBeVisible();
+  await expect(drawingRow).toContainText(/\b[1-9]\d*s\b/, { timeout: 5_000 });
   // A gap is not a customer's to resolve — they cannot add a split, an
   // orientation or a head height to an opening that did not parse.
   for (const forbidden of [/unread/i, /could not be read/i, /upload the remaining/i]) {

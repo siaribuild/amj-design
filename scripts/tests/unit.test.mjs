@@ -8,7 +8,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { cloudflareWorkersShimPlugin, makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("unit");
@@ -40,6 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
+      export { checklistStepDuration, documentChecklist, drawingProgressEnded, pollWindowMs } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1437,6 +1438,7 @@ test("the ops2 shell does not wait for a catalogue it never reads", async () => 
       resolveDir: projectRoot, sourcefile: "worker-entry.ts", loader: "ts",
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+    plugins: [cloudflareWorkersShimPlugin],
   });
   const { worker } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 
@@ -1634,4 +1636,120 @@ test("an action's refusal is a sentence, not the code the endpoint returned", ()
   assert.equal(M.actionErrorText("not_found"), "That action could not be completed.");
   assert.equal(M.actionErrorText(""), "That action could not be completed.");
   assert.equal(M.actionErrorText(undefined), "That action could not be completed.");
+});
+
+// The client backstop must OUTLAST the server's own job deadline, or the
+// browser reports "interrupted" while the job is still running and will still
+// succeed — which is exactly what production did on 2026-08-30 once the
+// auto_drawings lease went to 600s and this side stayed on a 150s literal.
+// The server now states its deadline; the client adds a margin to it rather
+// than guessing, so the two can never drift apart again.
+test("pollWindowMs: the client window is the server's stated deadline plus a margin", () => {
+  assert.equal(M.pollWindowMs(600_000), 660_000);
+  assert.equal(M.pollWindowMs(120_000), 180_000);
+});
+
+test("documentChecklist: a drawing read gets its own row, driven by counts, between extracting_schedule and building_envelope (§5)", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 7, drawingsTotal: 20, drawingsPhase: "opening_read",
+  });
+  const keys = steps.map((s) => s.key);
+  assert.deepEqual(keys, [
+    "queued", "reading_documents", "extracting_schedule", "reading_openings",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 20 openings found");
+  assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
+  assert.match(steps[current].detail, /opening 8 of 20/);
+});
+
+test("documentChecklist: page-wide drawing work is named instead of displaying a frozen opening zero", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19, drawingsPhase: "elevation_inventory",
+  });
+  assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 19 openings found");
+  assert.equal(steps[current].key, "reading_openings");
+  assert.equal(steps[current].detail, " · finding elevation views");
+});
+
+test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  assert.equal(steps[current].key, "reading_openings", "19/19 must stay the visible resting state, not snap to building_envelope");
+  assert.match(steps[current].detail, /opening 19 of 19/);
+});
+
+test("documentChecklist: no drawings counts — today's six steps, unchanged, current on the real stage", () => {
+  const { steps, current } = M.documentChecklist({ stage: "building_envelope" });
+  assert.deepEqual(steps.map((s) => s.key), [
+    "queued", "reading_documents", "extracting_schedule",
+    "building_envelope", "matching_and_pricing", "preparing_quote",
+  ]);
+  assert.equal(steps[current].key, "building_envelope");
+});
+
+// §7 — every crop-lifecycle trigger provably calls purgeProjectCrops. A live
+// R2 proof for the clear trigger lives in api-edge.test.mjs (real objects,
+// real deletion); this is the structural pin for all three call sites at
+// once, read straight off the source the way this suite already reads
+// SplitProposal["basis"] off split.ts (ai-pipeline/ops2-why precedent).
+test("§7: issueQuote, /projects/current/clear and DELETE /files/:id each call purgeProjectCrops", async () => {
+  const issue = await readFile(join(projectRoot, "worker/lib/issue.ts"), "utf8");
+  const issueBody = issue.slice(issue.indexOf("export async function issueQuote"));
+  assert.match(issueBody, /purgeProjectCrops\(env, projectId\)/, "issueQuote's success path must purge crops");
+
+  const parse = await readFile(join(projectRoot, "worker/routes/parse.ts"), "utf8");
+  const clearBody = parse.slice(parse.indexOf('parse.post("/projects/current/clear"'));
+  assert.match(clearBody.slice(0, clearBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, project\.id\)/,
+    "the clear route must purge crops");
+
+  const files = await readFile(join(projectRoot, "worker/routes/files.ts"), "utf8");
+  const deleteBody = files.slice(files.indexOf('files.delete("/files/:id"'));
+  assert.match(deleteBody.slice(0, deleteBody.indexOf("\n});")), /purgeProjectCrops\(c\.env, fa\.project_id\)/,
+    "DELETE /files/:id must purge crops");
+});
+
+test("§7: purgeProjectCrops keeps the (env, projectId)-only signature the future void sweep depends on", async () => {
+  const crops = await readFile(join(projectRoot, "worker/lib/drawing/crops.ts"), "utf8");
+  assert.match(crops, /export async function purgeProjectCrops\(env: Env, projectId: string\)/,
+    "a third parameter would break the scheduled()-callable seam §7 designed for");
+});
+
+test("checklistStepDuration: thermal starts when drawing completion is observed, not when drawings began", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "matching_and_pricing", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  const log = [
+    { stage: "queued", at: 0 },
+    { stage: "reading_documents", at: 20_000 },
+    { stage: "extracting_schedule", at: 25_000 },
+    { stage: "building_envelope", at: 66_000 },
+    { stage: "reading_openings_complete", at: 234_000 },
+    { stage: "matching_and_pricing", at: 238_000 },
+  ];
+  const drawingIndex = steps.findIndex((step) => step.key === "reading_openings");
+  const thermalIndex = steps.findIndex((step) => step.key === "building_envelope");
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, drawingIndex), 168_000);
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, thermalIndex), 4_000);
+});
+
+test("checklistStepDuration: a missed sub-second thermal stage reports zero, never the full drawing duration", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "matching_and_pricing", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  const log = [
+    { stage: "building_envelope", at: 66_000 },
+    { stage: "reading_openings_complete", at: 238_000 },
+    { stage: "matching_and_pricing", at: 238_000 },
+  ];
+  const thermalIndex = steps.findIndex((step) => step.key === "building_envelope");
+  assert.equal(M.checklistStepDuration(steps, current, log, 240_000, thermalIndex), 0);
+});
+
+test("drawingProgressEnded: leaving drawing work closes its timer even when inspection failed at zero", () => {
+  assert.equal(M.drawingProgressEnded({ progressStage: "building_envelope", drawingsDone: 0, drawingsTotal: 19 }), false);
+  assert.equal(M.drawingProgressEnded({ progressStage: "extracting_schedule" }), false);
+  assert.equal(M.drawingProgressEnded({ progressStage: "building_envelope", drawingsDone: 19, drawingsTotal: 19 }), true);
+  assert.equal(M.drawingProgressEnded({ progressStage: "matching_and_pricing", drawingsDone: 0, drawingsTotal: 19 }), true);
 });

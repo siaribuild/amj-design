@@ -22,7 +22,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
   const wranglerLog = join(runDir, "wrangler.log");
   let server;
   try {
-    const wranglerEnv = { WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
+    const wranglerEnv = { CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential", WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
     // ops2 is a SECOND graph, not a third entry — it rides React Router 5 with
     // Ionic while these two stay on 7, and the alias that keeps them apart
@@ -131,6 +131,49 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         method: "PUT", json: { items: [{ ...line(1200), serverId: wide.body.items[0].id }] },
       });
       assert.equal(narrow.body.items[0].lineTotal, 510, "at exactly 1200 the modifier must not fire");
+    });
+
+    // 02-design-v2.md §5: the drawing-read counter rides the existing poll,
+    // present only while a drawing read is actually running.
+    await t.test("extraction-status: drawingsDone/drawingsTotal ride the poll only while a drawing read is running (§5)", async () => {
+      const s = new Session(baseUrl);
+      const created = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Drawing-progress project", items: [{
+          code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+          width: "1200", height: "900", qty: 1,
+          options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+          lineTotal: 1,
+        }] },
+      });
+      const pid = created.body.project.id;
+      const gen = (await sql(`SELECT ai_generation FROM project WHERE id='${pid}'`))[0].ai_generation;
+      await sql(
+        `INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status, progress_stage, drawings_done, drawings_total, drawings_phase)
+         VALUES ('${pid}', ${gen}, 'test-token', 'processing', 'building_envelope', 7, 20, 'opening_read')`,
+      );
+      const withCounts = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal(withCounts.body.run.drawingsDone, 7);
+      assert.equal(withCounts.body.run.drawingsTotal, 20);
+      // The client's polling backstop is derived from this rather than from a
+      // literal of its own: the two drifted once (150s client vs a 600s
+      // auto_drawings lease) and a completed run was shown as interrupted.
+      assert.equal(typeof withCounts.body.run.deadlineMs, "number");
+      assert.ok(withCounts.body.run.deadlineMs >= 120_000);
+      // The subphase explains the long stretch the opening counter cannot move
+      // through — page-wide preparation is real work, not a stall.
+      assert.equal(withCounts.body.run.drawingsPhase, "opening_read");
+
+      // A run with no drawings carries neither field — a numerator without a
+      // denominator is not a counter, and this is AC-25's shape check: no
+      // unread/gap detail rides along either.
+      await sql(`UPDATE ai_job_claim SET drawings_total=NULL, drawings_done=NULL, drawings_phase=NULL WHERE project_id='${pid}'`);
+      const withoutCounts = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal("drawingsDone" in withoutCounts.body.run, false);
+      assert.equal("drawingsTotal" in withoutCounts.body.run, false);
+      assert.equal("drawingsPhase" in withoutCounts.body.run, false);
+
+      await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });
 
     await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {
@@ -492,6 +535,14 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         json: { delivery: { suburb: "Rowville", postcode: "3178" } },
       });
 
+      // Production W1 reached this state before its drawing-derived split was
+      // materialised: the single-frame proposal could not be priced, so it
+      // carried a blocking `product` reason. A composite parent is not itself a
+      // product; its children are. Once those children price successfully the
+      // old reason is false and must not keep the otherwise valid opening marked
+      // Incomplete. An unrelated technical reason still belongs to the opening.
+      await sql(`UPDATE quote_line SET line_total=NULL, status='incomplete', review_json='{"product":"No single product could price this opening.","material":"Confirm the specified material."}' WHERE id='${parentId}'`);
+
       const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
         method: "POST",
         json: {
@@ -503,6 +554,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         },
       });
       assert.equal(split.body.ok, true);
+
+      const parentAfterSplit = (await sql(`SELECT status, line_total, review_json FROM quote_line WHERE id='${parentId}'`))[0];
+      const reviewAfterSplit = JSON.parse(parentAfterSplit.review_json || "{}");
+      assert.ok(parentAfterSplit.line_total > 0, "the composite is priced from its units");
+      assert.equal(parentAfterSplit.status, "ready", "priced units make the opening complete");
+      assert.equal(reviewAfterSplit.product, undefined,
+        "a priced composite retires the obsolete single-product blocker");
+      assert.equal(reviewAfterSplit.material, "Confirm the specified material.",
+        "composite recomputation preserves unrelated technical review reasons");
 
       // The reviewer's list still shows ONE line for W12 — segments are nested,
       // never loose beside their opening.
