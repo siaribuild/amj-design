@@ -3,7 +3,7 @@ import { Elevation } from "../../components/quote-project/Elevation";
 import { Row, RowList } from "../chrome/RowList";
 import { Plate } from "./Plate";
 import {
-  joinedUnitCount, money, needsReview, priceState, provenanceWord, sizeText,
+  joinedUnitCount, money, needsReview, provenanceWord, sizeText,
   unitLabel, unitsOf, type RecordLine,
 } from "./record";
 
@@ -194,18 +194,8 @@ function Units({ line, onOpenDrawing }: {
   );
 }
 
-const PRICE_STATE: Record<ReturnType<typeof priceState>, string> = {
-  no_rate: "no rate on this line yet",
-  override: "price set by hand",
-  list: "list price",
-  // THE ABSENCE OF EVIDENCE, SAID. Claiming "list price" for every figure that
-  // happens to carry no override stamp states a provenance the record does not
-  // have — accepted order lines discard that metadata, and a composite parent
-  // can hold overridden segments without a timestamp of its own.
-  unknown: "priced",
-};
 
-export function LineReview({ line, onOpenDrawing, why }: {
+export function LineReview({ line, onOpenDrawing, why, price }: {
   line: RecordLine;
   /** A drawing was activated: the opening itself (`null`) or the 1-based unit.
    *  WHAT that means is the page's, not this body's — see the router-free note
@@ -215,6 +205,10 @@ export function LineReview({ line, onOpenDrawing, why }: {
    *  order record: D2 puts no panel there at all, and no sentence in its
    *  place — so the absence is a missing element rather than a rendered one. */
   why: ReactNode;
+  /** The Price panel, already wired by the page — a door to the calculator,
+   *  same router-free seam as `why`. `null` where a record has no price to
+   *  set. */
+  price: ReactNode;
 }) {
   // UNITS, NOT ROWS — see `elevationPartsFor`. A symmetric split is stored as
   // one row carrying two units, and counting rows called it a simple opening.
@@ -270,18 +264,7 @@ export function LineReview({ line, onOpenDrawing, why }: {
 
       {why}
 
-      <Panel
-        title="Price"
-        testId="line-price"
-        budget={2}
-        lines={[
-          // NEVER $0. An opening nobody has priced is the thing this console
-          // exists to find, and a zero is a priced-at-nothing claim about work
-          // nobody has costed.
-          { v: line.lineTotal == null ? "No rate" : money(line.lineTotal) },
-          { v: PRICE_STATE[priceState(line)], quiet: true },
-        ]}
-      />
+      {price}
 
       {/* THEIR WORDS, READ-ONLY. `quote_line.room_label` is free text the
           customer types, and it is not a thread: there is no line-level comment

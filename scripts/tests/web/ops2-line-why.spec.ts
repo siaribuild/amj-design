@@ -1152,13 +1152,16 @@ test("OP-3 a panel that opens nothing grows no chevron, no control and no gutter
   await serve(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await openLine(page, "l1");
-  for (const id of ["line-spec", "line-price"]) {
+  // `line-price` used to be one of these. It became a door when the price
+  // calculator arrived, which is the component earning its keep — so the
+  // panels that still open nothing are Specification and the customer's note.
+  for (const id of ["line-spec", "line-note"]) {
     await expect(page.getByTestId(id).locator("svg.lp-panel__chev")).toHaveCount(0);
     await expect(page.getByTestId(id).locator("button.lp-panel__door")).toHaveCount(0);
   }
   const padding = (id: string) => page.getByTestId(id)
     .evaluate((el) => getComputedStyle(el).paddingRight);
-  expect(await padding("line-spec")).toBe(await padding("line-price"));
+  expect(await padding("line-spec")).toBe(await padding("line-note"));
 });
 
 test("OP-4 every term and value stays individually exposed — the door's name is only its own", async ({ page }) => {
@@ -1203,4 +1206,91 @@ test("OP-6 a click on the card's bare padding opens it — the whole block is th
   // Bottom-left of the card: inside the door, on no text of its own.
   await page.mouse.click(panel.x + 6, panel.y + panel.height - 6);
   await expect(page).toHaveURL(/\/why$/);
+});
+
+// ── MP — the price calculator ───────────────────────────────────────────────
+//
+// Ops gets a price per line from the manufacturer and has to reach a customer
+// price from it. The panel exists to save reaching for a calculator, and keeps
+// nothing: the working is scaffolding on the way to a number, and the number is
+// the fact. These are the states node cannot see, because the form does not
+// exist in the page until the door is opened.
+
+test("MP-1 the Price panel is a door, and it opens the calculator", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+
+  await expect(page.getByTestId("line-price").locator("svg.lp-panel__chev")).toHaveCount(1);
+  await expect(page.getByTestId("line-price-figure")).toHaveCount(0);
+
+  await page.getByTestId("line-price-open").click();
+  await expect(page.getByTestId("line-price-figure")).toBeVisible();
+  await expect(page.getByTestId("line-price-uplift")).toBeVisible();
+});
+
+test("MP-2 the arithmetic appears as it is typed, and the uplift defaults to 30", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await page.getByTestId("line-price-open").click();
+
+  // Nothing typed: the space holds its height and Confirm cannot be pressed.
+  await expect(page.getByTestId("line-price-work")).toHaveCount(0);
+  // `ion-button` is a custom element, so toBeDisabled() cannot read it — the
+  // attribute it actually sets is the assertion.
+  await expect(page.getByTestId("line-price-confirm")).toHaveAttribute("aria-disabled", "true");
+
+  await page.getByTestId("line-price-figure").locator("input").fill("1240");
+  const work = page.getByTestId("line-price-work");
+  await expect(work).toContainText("$1,240.00");
+  await expect(work).toContainText("30%");
+  await expect(work).toContainText("$372.00");
+  await expect(work).toContainText("$1,612.00");
+  await expect(page.getByTestId("line-price-confirm")).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("MP-3 declaring the figure tax-inclusive converts before the uplift", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await page.getByTestId("line-price-open").click();
+  await page.getByTestId("line-price-figure").locator("input").fill("1240");
+  await page.getByTestId("line-price-basis-inc").click();
+
+  // 1240 / 1.1 = 1127.27, then + 30% = 1465.45.
+  await expect(page.getByTestId("line-price-work")).toContainText("$1,127.27");
+  await expect(page.getByTestId("line-price-work")).toContainText("$1,465.45");
+});
+
+test("MP-4 the read-back shows what the line becomes, beside what it was", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await page.getByTestId("line-price-open").click();
+  await page.getByTestId("line-price-figure").locator("input").fill("1240");
+
+  const readback = page.getByTestId("line-price-readback");
+  await expect(readback).toContainText("$1,612.00");
+  await expect(readback.locator("s")).toHaveCount(1, "the superseded figure is struck through");
+  // The project total is NOT here: it is not this decision (owner, 2026-08-31).
+  await expect(readback).not.toContainText("Quote total");
+});
+
+test("MP-5 re-opening starts clean — nothing was kept", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+
+  await page.getByTestId("line-price-open").click();
+  await page.getByTestId("line-price-figure").locator("input").fill("1240");
+  await expect(page.getByTestId("line-price-work")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("line-price-figure")).toHaveCount(0);
+
+  await page.getByTestId("line-price-open").click();
+  await expect(page.getByTestId("line-price-figure").locator("input")).toHaveValue("");
+  await expect(page.getByTestId("line-price-uplift").locator("input")).toHaveValue("30");
+  await expect(page.getByTestId("line-price-work")).toHaveCount(0);
 });

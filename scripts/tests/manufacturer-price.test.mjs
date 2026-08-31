@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { createElement as h } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -17,15 +19,18 @@ const runDir = await makeRunDir("manufacturer-price");
 const outfile = join(runDir, "manufacturer-price-bundle.mjs");
 await build({
   stdin: {
-    contents: `export * from ${p("src/data/manufacturerPrice.ts")};`,
-    resolveDir: projectRoot,
-    sourcefile: "manufacturer-price-entry.ts",
-    loader: "ts",
+    contents: `export * from ${p("src/data/manufacturerPrice.ts")};
+      export { PricePanel } from ${p("src/ops2/projects/PricePanel.tsx")};`,
+    resolveDir: projectRoot, sourcefile: "manufacturer-price-entry.tsx", loader: "tsx",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
+  loader: { ".css": "empty" },
 });
-const { DEFAULT_UPLIFT_PCT, manufacturerExGst, upliftedLineTotal } =
+const { DEFAULT_UPLIFT_PCT, manufacturerExGst, upliftedLineTotal, PricePanel } =
   await import(pathToFileURL(outfile).href);
+
+const line = { id: "l1", code: "W01", lineTotal: 2140 };
 
 test("DEFAULT_UPLIFT_PCT is 30", () => {
   assert.equal(DEFAULT_UPLIFT_PCT, 30);
@@ -60,6 +65,26 @@ test("no $10 rounding: an awkward figure keeps its cents", () => {
   // 1237.13 + 30% = 1608.269 → 1608.27, never 1610. `round10` is the engine's
   // customer-facing grid and is deliberately not imported on this path (D2).
   assert.equal(upliftedLineTotal(1237.13, 30), 1608.27);
+});
+
+test("the Price panel is a door: the chevron component, named for where it goes", () => {
+  const html = renderToStaticMarkup(h(PricePanel, { line, reload: () => {} }));
+  assert.match(html, /data-testid="line-price"/);
+  assert.match(html, /data-testid="line-price-open"/, "the door id derives from the panel's");
+  assert.match(html, /lp-panel--door/, "it wears the door class OpenablePanel gives it");
+  assert.match(html, /\$2,140/, "and still shows the price it is a door to");
+});
+
+test("closed, the calculator is not in the page at all — no fields, no confirm, no tab stops", () => {
+  // The form lives inside SidePanel, which renders nothing until it is opened.
+  // Asserted deliberately: a closed panel that still rendered its inputs would
+  // put four hidden tab stops on the line page. What the calculator DOES once
+  // open is a browser question and is tested there.
+  const html = renderToStaticMarkup(h(PricePanel, { line, reload: () => {} }));
+  for (const id of ["line-price-figure", "line-price-uplift", "line-price-confirm", "line-price-work"]) {
+    assert.equal(html.includes(id), false, `${id} is absent while closed`);
+  }
+  assert.equal(html.includes("<s>"), false, "and nothing is struck through");
 });
 
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });

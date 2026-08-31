@@ -1,0 +1,104 @@
+/* ── The price calculator, inside its SidePanel ─────────────────────────────
+ * Companion to `projects/PricePanel.tsx`, the way `panel.css` is to
+ * `OpenablePanel` and `rows.css` to `RowList`.
+ *
+ * Every value here is a token. The panel introduces no colour, border or state
+ * of its own — it is the console's existing surface with two inputs and a sum
+ * on it, which is the whole reason it can be read at a glance by someone who
+ * already knows this console.
+ */
+
+/* SidePanel pads its FOOTER slot and not its content — its other caller gets
+ * away with that by filling the panel with Ionic list components, which bring
+ * their own. Raw markup has to pad itself, and the inset is the footer's own
+ * (`.pq-sheet__foot`) so the two sides of the panel line up. */
+.lp-mfr {
+  padding: var(--theme-spacing-md);
+}
+
+.lp-mfr__label {
+  display: block;
+  font-size: var(--theme-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+  font-weight: 600;
+  margin-bottom: var(--theme-spacing-xs);
+}
+
+/* The two fields stay SIDE BY SIDE at every width, phone included: an uplift is
+ * read against the price it applies to, and stacking them separates the pair
+ * the estimator is actually comparing. The uplift is fixed-width because it
+ * holds two or three characters and the price does not. */
+.lp-mfr__pair {
+  display: grid;
+  grid-template-columns: 1fr 7.5rem;
+  gap: var(--theme-spacing-md);
+  margin-bottom: var(--theme-spacing-lg);
+}
+
+/* ── The working ────────────────────────────────────────────────────────────
+ * Sunken rather than raised: it is derived from what was typed above it, not a
+ * second thing to act on. */
+.lp-mfr__work {
+  padding: var(--theme-spacing-md);
+  background: var(--ds-surface-sunken);
+  border-radius: var(--ds-radius-control);
+}
+.lp-mfr__work > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--theme-spacing-md);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+  padding: 2px 0;
+}
+.lp-mfr__total {
+  border-top: 1px solid var(--ds-border-subtle);
+  margin-top: var(--theme-spacing-xs);
+  padding-top: var(--theme-spacing-sm);
+  color: var(--ds-text-primary);
+  font-weight: 600;
+}
+
+/* The empty state holds the working's height rather than collapsing, so the
+ * panel does not jump when the arithmetic arrives. */
+.lp-mfr__empty {
+  margin: 0;
+  padding: var(--theme-spacing-lg) var(--theme-spacing-md);
+  background: var(--ds-surface-sunken);
+  border-radius: var(--ds-radius-control);
+  text-align: center;
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-muted);
+}
+
+.lp-mfr__note {
+  margin: var(--theme-spacing-lg) 0 0;
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+  line-height: 1.5;
+}
+
+/* ── The read-back ──────────────────────────────────────────────────────────
+ * Rendered through SidePanel's own `footer` slot, which is what puts it below
+ * the scrolling content and pads it. The consequence of pressing Confirm must
+ * not be scrollable away from Confirm, and it is the only place the line's
+ * current price appears. */
+.lp-mfr__readback {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--theme-spacing-md);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-text-secondary);
+  margin-bottom: var(--theme-spacing-md);
+}
+.lp-mfr__readback b {
+  color: var(--ds-text-primary);
+  font-size: var(--theme-font-size-base);
+}
+.lp-mfr__readback s {
+  color: var(--ds-text-muted);
+  margin-right: var(--theme-spacing-sm);
+  font-weight: 400;
+}
