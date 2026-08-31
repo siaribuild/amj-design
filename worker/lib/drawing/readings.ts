@@ -23,6 +23,47 @@ export function applyDrawingOrientation(
   }
 }
 
+/** The full-document agent is allowed to correct plan-context room candidates.
+ * Legacy readings keep their existing empty-only persistence behaviour. */
+export function applyFullAgentRooms(
+  model: {
+    rooms: { roomId: string; name: string | null }[];
+    openings: { externalRef: string; roomId: string | null }[];
+  },
+  knownRooms: { externalRef: string; roomLabel: string | null }[],
+  readings: {
+    externalRef: string;
+    roomState: string;
+    roomLabel: string | null;
+    confidence?: string | null;
+    flags?: unknown[];
+  }[],
+): void {
+  const key = (value: string) => value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const openings = new Map(model.openings.map((opening) => [key(opening.externalRef), opening]));
+  const roomIds = new Map(
+    model.rooms
+      .filter((room): room is { roomId: string; name: string } => !!room.name)
+      .map((room) => [key(room.name), room.roomId]),
+  );
+  const candidates = new Map(knownRooms.map((room) => [key(room.externalRef), room]));
+
+  for (const reading of readings) {
+    if (
+      reading.roomState !== "value"
+      || !reading.roomLabel
+      || reading.confidence === "low"
+      || reading.flags?.length
+    ) continue;
+    const openingKey = key(reading.externalRef);
+    const roomId = roomIds.get(key(reading.roomLabel));
+    const opening = openings.get(openingKey);
+    if (opening && roomId) opening.roomId = roomId;
+    const candidate = candidates.get(openingKey);
+    if (candidate) candidate.roomLabel = reading.roomLabel;
+  }
+}
+
 /** Room label → `quote_line.room_label`, guarded to rows that are still
  *  empty (§3.5) — a human's own label is never overwritten. Runs after
  *  `runProjectEstimate` materialises lines (readings apply before that has
