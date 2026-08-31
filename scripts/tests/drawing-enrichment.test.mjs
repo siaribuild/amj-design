@@ -1881,6 +1881,65 @@ test("full-document agent prioritizes automatic legibility repairs over discreti
   assert.ok(!captured.some((request) => request.pageNo === 13), "the last discretionary request yields to the repair crop");
 });
 
+test("full-document agent reassesses a declined opening when the same turn produces new evidence", async () => {
+  const inputs = [];
+  let renderCalls = 0;
+  const scheduleRows = [
+    { tag: "W7", widthMm: 1_810, heightMm: 854, typeText: "AWNING" },
+    { tag: "W8", widthMm: 1_450, heightMm: 1_543, typeText: "FIXED" },
+  ];
+  const proposal = (tag, operations, frameBoxPt) => ({
+    tag, operations, unitRatios: operations.map(() => 1), divisionAxis: "vertical",
+    orientation: "N", elevation: "D", roomLabel: "BED 1", storey: "first",
+    evidenceView: "elevation", evidenceRenderId: "fd_t002_02", frameBoxPt,
+    confidence: "high", flags: [], basis: [`${tag} is visible on Elevation D.`], note: null,
+  });
+  const result = await runFullDocumentAgent({
+    fileId: "f1", scheduleRows,
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION D W7 W8", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (input.turn === 1) return {
+          memory: "Render Elevation D.", renderRequests: [{ pageNo: 1, dpi: 110 }],
+          records: [], declines: [], complete: false,
+        };
+        if (input.turn === 2) return {
+          memory: "W7 needs a close-up; W8 was not visible in the broad view.",
+          renderRequests: [],
+          records: [{ ...proposal("W7", ["awning", "fixed"], [30, 20, 50, 60]), evidenceRenderId: "fd_t001_01" }],
+          declines: [{ tag: "W8", reason: "Not depicted on elevation drawings." }],
+          complete: true,
+        };
+        assert.deepEqual(input.pendingTags, ["W7", "W8"], "W8 must remain pending for the newly rendered close-up");
+        assert.deepEqual(input.declinedTags, []);
+        return {
+          memory: "The close-up resolves both adjacent Elevation D openings.", renderRequests: [], declines: [], complete: true,
+          records: [
+            proposal("W7", ["awning", "fixed"], [30, 20, 50, 60]),
+            proposal("W8", ["fixed"], [24, 20, 29, 60]),
+          ],
+        };
+      },
+      render: async (request) => {
+        renderCalls++;
+        const size = renderCalls === 1 ? 400 : 1_000;
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: size, heightPx: size }], dpi: request.dpi };
+      },
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs.length, 3);
+  assert.equal(result.readings.find((reading) => reading.externalRef === "W8")?.confidence, "high");
+  assert.equal(result.readings.find((reading) => reading.externalRef === "W8")?.split.units[0].operation, "fixed");
+});
+
 test("accepted low-confidence reads are complete and detail scales are not compared with elevations", async () => {
   let turn = 0;
   const result = await runFullDocumentAgent({
