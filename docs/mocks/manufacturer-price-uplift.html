@@ -1,0 +1,264 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Manufacturer's price and uplift — SidePanel</title>
+<style>
+  :root{
+    --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+    --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb; --theme-neutral-400:#b5b2ab;
+    --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+    --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+    --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-300:#a8c9b4;
+    --theme-sage-500:#5a7a6a; --theme-sage-600:#4a6858;
+    --ds-surface-card:var(--theme-neutral-0); --ds-surface-page:var(--theme-neutral-50);
+    --ds-surface-sunken:var(--theme-neutral-100);
+    --ds-border-subtle:var(--theme-neutral-200); --ds-border-input:var(--theme-neutral-300);
+    --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+    --ds-text-muted:var(--theme-neutral-500); --ds-text-inverse:var(--theme-neutral-0);
+    --ds-color-brand:var(--theme-sage-500); --ds-color-brand-wash:var(--theme-sage-50);
+    --ds-radius-control:3px; --ds-radius-surface:5px;
+    --sp-xs:.25rem; --sp-sm:.5rem; --sp-md:.75rem; --sp-lg:1rem; --sp-xl:1.5rem;
+    --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.9375rem; --fs-md:1rem; --fs-lg:1.125rem;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ds-surface-page);color:var(--ds-text-primary);
+    font:var(--fs-base)/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .page{max-width:1180px;margin:0 auto;padding:var(--sp-xl)}
+  h1{font-size:var(--fs-lg);font-weight:600;margin:0 0 var(--sp-xs)}
+  .lede{color:var(--ds-text-secondary);margin:0 0 var(--sp-xl);max-width:62ch}
+  h2.sec{font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ds-text-muted);font-weight:600;margin:var(--sp-xl) 0 var(--sp-md)}
+  .row{display:flex;gap:var(--sp-xl);align-items:flex-start;flex-wrap:wrap}
+
+  /* ── the door: the Price panel on the line page ─────────────────────── */
+  .lp-panel{padding:var(--sp-sm) var(--sp-md);background:var(--ds-surface-card);
+    border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);
+    box-shadow:0 1px 2px rgba(22,20,18,.06);width:420px}
+  .lp-panel--door{position:relative;padding-right:calc(var(--sp-md) + 16px + var(--sp-sm))}
+  .lp-panel--door:hover{background:var(--ds-color-brand-wash)}
+  .lp-panel__chev{position:absolute;right:var(--sp-md);top:50%;transform:translateY(-50%);
+    width:16px;height:16px;color:var(--ds-text-muted)}
+  .lp-panel__title{font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ds-text-muted);font-weight:600;margin:0 0 var(--sp-xs)}
+  .lp-panel__lines{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-xs) var(--sp-md);margin:0}
+  .lp-panel__lines dt{color:var(--ds-text-secondary);font-size:var(--fs-sm)}
+  .lp-panel__lines dd{margin:0;font-weight:600}
+  .lp-panel__lines dd.state{font-weight:400;color:var(--ds-text-secondary);font-size:var(--fs-sm)}
+
+  /* ── the SidePanel ──────────────────────────────────────────────────── */
+  .panel{width:min(88vw,520px);background:var(--ds-surface-card);
+    border:1px solid var(--ds-border-subtle);display:flex;flex-direction:column;
+    box-shadow:-8px 0 24px rgba(22,20,18,.10)}
+  .panel--phone{width:390px}
+  .panel__head{display:flex;align-items:center;justify-content:space-between;
+    padding:var(--sp-md) var(--sp-lg);border-bottom:1px solid var(--ds-border-subtle)}
+  .panel__head h3{margin:0;font-size:var(--fs-md);font-weight:600}
+  .panel__close{background:none;border:0;color:var(--ds-text-secondary);
+    font-size:var(--fs-base);cursor:pointer;padding:var(--sp-xs)}
+  .panel__body{padding:var(--sp-lg);flex:1}
+  .panel__foot{border-top:1px solid var(--ds-border-subtle);background:var(--ds-surface-page);
+    padding:var(--sp-md) var(--sp-lg)}
+
+  .mfr-lede{margin:0 0 var(--sp-lg);color:var(--ds-text-secondary);font-size:var(--fs-sm)}
+  .mfr-lede b{color:var(--ds-text-primary)}
+  .fieldlabel{display:block;font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ds-text-muted);font-weight:600;margin:0 0 var(--sp-xs)}
+  .seg{display:inline-flex;border:1px solid var(--ds-border-input);
+    border-radius:var(--ds-radius-control);overflow:hidden;margin-bottom:var(--sp-lg)}
+  .seg button{appearance:none;border:0;background:var(--ds-surface-card);
+    padding:var(--sp-xs) var(--sp-md);font-size:var(--fs-sm);cursor:pointer;
+    color:var(--ds-text-secondary)}
+  .seg button[aria-pressed=true]{background:var(--ds-color-brand);color:var(--ds-text-inverse)}
+  .pair{display:grid;grid-template-columns:1fr 132px;gap:var(--sp-md);margin-bottom:var(--sp-xs)}
+  .field input{width:100%;padding:var(--sp-sm) var(--sp-md);font-size:var(--fs-md);
+    border:1px solid var(--ds-border-input);border-radius:var(--ds-radius-control);
+    background:var(--ds-surface-card);color:var(--ds-text-primary)}
+  .field input:focus{outline:2px solid var(--ds-color-brand);outline-offset:1px;border-color:var(--ds-color-brand)}
+  .help{font-size:var(--fs-xs);color:var(--ds-text-muted);margin:var(--sp-xs) 0 0}
+  .work{margin:var(--sp-lg) 0 0;padding:var(--sp-md);background:var(--ds-surface-sunken);
+    border-radius:var(--ds-radius-control)}
+  .work div{display:flex;justify-content:space-between;font-size:var(--fs-sm);
+    color:var(--ds-text-secondary);padding:2px 0}
+  .work .tot{border-top:1px solid var(--ds-border-subtle);margin-top:var(--sp-xs);
+    padding-top:var(--sp-sm);color:var(--ds-text-primary);font-weight:600;font-size:var(--fs-base)}
+  .work--empty{color:var(--ds-text-muted);font-size:var(--fs-sm);text-align:center;padding:var(--sp-lg) var(--sp-md)}
+  .note{margin:var(--sp-lg) 0 0;font-size:var(--fs-xs);color:var(--ds-text-muted);line-height:1.5}
+  .readback div{display:flex;justify-content:space-between;font-size:var(--fs-sm);padding:2px 0}
+  .readback .big{font-weight:600;font-size:var(--fs-base);color:var(--ds-text-primary)}
+  s{color:var(--ds-text-muted);margin-right:var(--sp-sm);font-weight:400}
+  .actions{display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)}
+  .btn{flex:1;padding:var(--sp-sm) var(--sp-md);border-radius:var(--ds-radius-control);
+    font-size:var(--fs-base);cursor:pointer;border:1px solid transparent}
+  .btn--primary{background:var(--ds-color-brand);color:var(--ds-text-inverse)}
+  .btn--primary[disabled]{background:var(--theme-neutral-300);cursor:not-allowed}
+  .btn--ghost{background:var(--ds-surface-card);border-color:var(--ds-border-input);
+    color:var(--ds-text-primary)}
+  .cap{font-size:var(--fs-sm);color:var(--ds-text-secondary);margin:0;flex:1 1 300px;max-width:420px;line-height:1.6}
+</style>
+
+<div class="page">
+  <h1>Manufacturer's price and uplift</h1>
+  <p class="lede">The estimator has a figure from the manufacturer, usually read to them on a
+  call. They enter it, the platform applies the uplift, and the working is shown before anything
+  is committed. Container is <code>SidePanel</code>, unmodified; the door is the Price panel
+  through <code>OpenablePanel</code>, unmodified. A price is a price: the same manufacturer
+  pricelist as every other line, priced ad-hoc for this project — so no new state wording, no
+  restated GST basis, and nothing on the line page reads differently afterwards.</p>
+
+  <h2 class="sec">1 · The door — Price panel on the line page</h2>
+  <div class="row">
+    <section class="lp-panel lp-panel--door">
+      <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <h2 class="lp-panel__title">Price</h2>
+      <dl class="lp-panel__lines">
+        <dt>$2,140</dt><dd></dd>
+      </dl>
+    </section>
+    <section class="lp-panel lp-panel--door">
+      <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <h2 class="lp-panel__title">Price</h2>
+      <dl class="lp-panel__lines">
+        <dt>$1,612</dt><dd></dd>
+      </dl>
+    </section>
+  </div>
+  <p class="cap">Same chevron, same centring as the Why panel. The figure alone — a line priced
+  ad-hoc for this project is indistinguishable from any other, because it is one.</p>
+
+  <h2 class="sec">2 · Panel at rest — nothing typed yet</h2>
+  <div class="row">
+    <aside class="panel">
+      <header class="panel__head"><h3>Set this line's price</h3>
+        <button class="panel__close">✕</button></header>
+      <div class="panel__body">
+        <span class="fieldlabel">Manufacturer's price is</span>
+        <div class="seg"><button aria-pressed="true">ex GST</button><button aria-pressed="false">inc GST</button></div>
+        <div class="pair">
+          <div class="field"><span class="fieldlabel">Manufacturer's price</span>
+            <input placeholder="0.00" inputmode="decimal"></div>
+          <div class="field"><span class="fieldlabel">Uplift %</span>
+            <input value="30" inputmode="decimal"></div>
+        </div>
+        <div class="work work--empty">The arithmetic appears here once you enter their figure.</div>
+        <p class="note">Confirming does not change the project's “waiting on the manufacturer”
+          state — that is set on Progress.</p>
+      </div>
+      <footer class="panel__foot">
+        <div class="readback">
+          <div><span>W01 becomes</span><span class="big">$2,140.00</span></div>
+        </div>
+        <div class="actions"><button class="btn btn--primary" disabled>Confirm this price</button>
+          <button class="btn btn--ghost">Cancel</button></div>
+      </footer>
+    </aside>
+    <p class="cap">The working area holds its height with a sentence rather than collapsing, so
+    nothing jumps when the arithmetic arrives. Confirm is disabled and the read-back shows the
+    current price. <b>There is no clear action</b> — entry is one-way.</p>
+  </div>
+
+  <h2 class="sec">3 · Filled — 1,240 at 30%</h2>
+  <div class="row">
+    <aside class="panel">
+      <header class="panel__head"><h3>Set this line's price</h3>
+        <button class="panel__close">✕</button></header>
+      <div class="panel__body">
+        <span class="fieldlabel">Manufacturer's price is</span>
+        <div class="seg"><button aria-pressed="true">ex GST</button><button aria-pressed="false">inc GST</button></div>
+        <div class="pair">
+          <div class="field"><span class="fieldlabel">Manufacturer's price</span>
+            <input value="1240.00" inputmode="decimal"></div>
+          <div class="field"><span class="fieldlabel">Uplift %</span>
+            <input value="30" inputmode="decimal"></div>
+        </div>
+        <div class="work">
+          <div><span>Their price</span><span>$1,240.00</span></div>
+          <div><span>+ 30% uplift</span><span>$372.00</span></div>
+          <div class="tot"><span>W01 price</span><span>$1,612.00</span></div>
+        </div>
+        <p class="note">Confirming does not change the project's “waiting on the manufacturer”
+          state — that is set on Progress.</p>
+      </div>
+      <footer class="panel__foot">
+        <div class="readback">
+          <div><span>W01 becomes</span><span class="big"><s>$2,140.00</s>$1,612.00</span></div>
+        </div>
+        <div class="actions"><button class="btn btn--primary">Confirm this price</button>
+          <button class="btn btn--ghost">Cancel</button></div>
+      </footer>
+    </aside>
+    <p class="cap">Three arithmetic rows, in the order the estimator reasons: their number, what we
+    add, what it becomes. The read-back is pinned to the footer beside Confirm so the consequence is
+    never scrolled away from the action, and it is the only place the current price appears.</p>
+  </div>
+
+  <h2 class="sec">4 · the same 1,240, declared inclusive</h2>
+  <div class="row">
+    <aside class="panel">
+      <header class="panel__head"><h3>Set this line's price</h3>
+        <button class="panel__close">✕</button></header>
+      <div class="panel__body">
+        <span class="fieldlabel">Manufacturer's price is</span>
+        <div class="seg"><button aria-pressed="false">ex GST</button><button aria-pressed="true">inc GST</button></div>
+        <div class="pair">
+          <div class="field"><span class="fieldlabel">Manufacturer's price</span>
+            <input value="1240.00" inputmode="decimal"></div>
+          <div class="field"><span class="fieldlabel">Uplift %</span>
+            <input value="30" inputmode="decimal"></div>
+        </div>
+        <div class="work">
+          <div><span>Their price</span><span>$1,127.27</span></div>
+          <div><span>+ 30% uplift</span><span>$338.18</span></div>
+          <div class="tot"><span>W01 price</span><span>$1,465.45</span></div>
+        </div>
+        <p class="note">Confirming does not change the project's “waiting on the manufacturer”
+          state — that is set on Progress.</p>
+      </div>
+      <footer class="panel__foot">
+        <div class="readback">
+          <div><span>W01 becomes</span><span class="big"><s>$2,140.00</s>$1,465.45</span></div>
+        </div>
+        <div class="actions"><button class="btn btn--primary">Confirm this price</button>
+          <button class="btn btn--ghost">Cancel</button></div>
+      </footer>
+    </aside>
+    <p class="cap">The switch states what the manufacturer's price is, and nothing more — no
+    explanation of GST or of the conversion. The first arithmetic row shows the converted number,
+    which is the only place the division needs to be visible.</p>
+  </div>
+
+  <h2 class="sec">5 · Phone — the same panel as a bottom sheet</h2>
+  <div class="row">
+    <aside class="panel panel--phone">
+      <header class="panel__head"><h3>Set this line's price</h3>
+        <button class="panel__close">✕</button></header>
+      <div class="panel__body">
+        <span class="fieldlabel">Manufacturer's price is</span>
+        <div class="seg"><button aria-pressed="true">ex GST</button><button aria-pressed="false">inc GST</button></div>
+        <div class="pair">
+          <div class="field"><span class="fieldlabel">Manufacturer's price</span>
+            <input value="1240.00" inputmode="decimal"></div>
+          <div class="field"><span class="fieldlabel">Uplift %</span>
+            <input value="30" inputmode="decimal"></div>
+        </div>
+        <div class="work">
+          <div><span>Their price</span><span>$1,240.00</span></div>
+          <div><span>+ 30% uplift</span><span>$372.00</span></div>
+          <div class="tot"><span>W01 price</span><span>$1,612.00</span></div>
+        </div>
+      </div>
+      <footer class="panel__foot">
+        <div class="readback">
+          <div><span>W01 becomes</span><span class="big"><s>$2,140.00</s>$1,612.00</span></div>
+        </div>
+        <div class="actions"><button class="btn btn--primary">Confirm this price</button></div>
+      </footer>
+    </aside>
+    <p class="cap">The two fields stay side by side even at 390px — an uplift is read against the
+    price it applies to, and stacking them separates the pair. The lede shortens and the standing
+    note drops below the fold rather than pushing the arithmetic off screen. Cancel goes: the
+    sheet's own dismiss is the way out.</p>
+  </div>
+</div>

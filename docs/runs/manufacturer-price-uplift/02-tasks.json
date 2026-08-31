@@ -1,0 +1,67 @@
+[
+  {
+    "id": "1",
+    "title": "Migration 0063 + shared arithmetic module",
+    "files": [
+      "migrations/0063_manufacturer_price.sql",
+      "src/data/manufacturerPrice.ts",
+      "src/data/gst.ts",
+      "scripts/tests/manufacturer-price.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/manufacturer-price.test.mjs"],
+    "done_when": "Migration 0063 adds nullable REAL columns manufacturer_price and manufacturer_uplift_pct to quote_line (ALTER TABLE ADD COLUMN only, header comment states 'children affected: none'); src/data/gst.ts exports round2 (line 19, add export keyword, nothing else moves); src/data/manufacturerPrice.ts exports DEFAULT_UPLIFT_PCT=30, EntryBasis, manufacturerExGst(typed,basis) (inc divides by 1+GST_RATE then round2; ex round2 passthrough), upliftedLineTotal(ex,pct) (round2(ex*(1+pct/100))); manufacturer-price.test.mjs arithmetic cases pass: ex 1240@30 -> 1612.00, inc 1240 -> 1127.27 then @30 -> 1465.45, pct 0 -> ex unchanged, no round10 anywhere; package.json test:pure list (line 17) gains scripts/tests/manufacturer-price.test.mjs and a test:manufacturer-price script exists; npm run db:migrate:local applies clean.",
+    "after": [],
+    "criteria": ["3", "4", "18"]
+  },
+  {
+    "id": "2",
+    "title": "Manufacturer-price endpoint, criterion-13 clearing, opsLineDto fields",
+    "files": [
+      "worker/routes/ops.ts",
+      "scripts/tests/manufacturer-price-api.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/manufacturer-price-api.test.mjs"],
+    "done_when": "PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price exists in worker/routes/ops.ts (place after rationale endpoint ~line 742; mirror PUT /lines/:id/price at 1274-1328): resolveStaff 403, hasAssignedRole 403, line loaded via JOIN project with q.project_id = :id AND p.status_internal IN the five D3 statuses (miss = 404, one code path), composite_parent 409, body {price,upliftPct,basis} validated server-side (price finite >0, upliftPct finite >=0, basis ex|inc, else 400), total computed via src/data/manufacturerPrice.ts, UPDATE sets line_total/manufacturer_price(ex)/manufacturer_uplift_pct/price_calculated(captured line.price_calculated ?? line.line_total)/price_override_by/price_override_at/edit_version+1/updated_at, recomputeComposite when parent_line_id, logEvent action line.price.manufacturer with before/after {lineTotal} ONLY (no price, no uplift), returns {ok:true,line:opsLineDto(fresh)}; both UPDATE branches of PUT /lines/:id/price (~1300-1315) additionally set manufacturer_price=NULL, manufacturer_uplift_pct=NULL; opsLineDto (line 150) and LineRow (line 129) gain manufacturerPrice/manufacturerUpliftPct nullable; api tests green for: commit stores 1612.00 + ex price + pct, quote total recomputed via existing read not persisted from client, project status_internal unchanged after commit, override clears manufacturer fields, issued-status line 404, wrong-project lineId 404 and row untouched, 400s for zero/negative/non-numeric price, negative/non-numeric uplift, bad basis; package.json test:heavy list (line 18) gains scripts/tests/manufacturer-price-api.test.mjs.",
+    "after": ["1"],
+    "criteria": ["8", "11", "12", "13", "15", "19", "24"]
+  },
+  {
+    "id": "3",
+    "title": "Abuse-case tests: roles, leaks, logs",
+    "files": [
+      "scripts/tests/manufacturer-price-api.test.mjs"
+    ],
+    "tests": ["scripts/tests/manufacturer-price-api.test.mjs"],
+    "done_when": "Same api test file gains executed abuse cases: signed-in Customer PUT (own project's line) -> 403, no manufacturer value in body; signed-out Visitor -> 401/403, line unchanged; Manufacturer partner session -> 403 on the PUT and refused on GET /api/ops/projects/:id (both halves of c22); after committing a manufacturer price, the customer-facing project/quote payload for that project contains neither the string of the stored price value nor any key matching /manufacturer/i (c23, pins named-column reads in worker/lib/lines.ts, worker/routes/quote.ts, worker/lib/issue.ts); the audit_event row for the commit contains lineTotal but neither the manufacturer price value nor the uplift value in before/after JSON (c25).",
+    "after": ["2"],
+    "criteria": ["20", "21", "22", "23", "25"]
+  },
+  {
+    "id": "4",
+    "title": "record.ts: carry fields, manufacturer price state",
+    "files": [
+      "src/ops2/projects/record.ts",
+      "scripts/tests/ops2-record.test.mjs"
+    ],
+    "tests": ["scripts/tests/ops2-record.test.mjs"],
+    "done_when": "RecordLine gains manufacturerPrice: number|null and manufacturerUpliftPct: number|null; parseLine maps both (absent/invalid -> null); priceState returns 'manufacturer' when manufacturerPrice != null, checked BEFORE the priceOverrideAt branch (both paths set price_override_at, manufacturer must win); ops2-record.test.mjs gains cases: parseLine carries both fields, priceState 'manufacturer' when price stored even with priceOverrideAt set, existing states unchanged; existing suite still green.",
+    "after": ["2"],
+    "criteria": ["9"]
+  },
+  {
+    "id": "5",
+    "title": "PricePanel: openable summary + SidePanel entry form",
+    "files": [
+      "src/ops2/projects/PricePanel.tsx",
+      "src/ops2/projects/LineReview.tsx",
+      "src/ops2/projects/LinePage.tsx",
+      "scripts/tests/manufacturer-price.test.mjs"
+    ],
+    "tests": ["scripts/tests/manufacturer-price.test.mjs"],
+    "done_when": "New src/ops2/projects/PricePanel.tsx: closed state renders OpenablePanel title 'Price' testId 'line-price' with the two summary rows (money(lineTotal)|'No rate' + provenance wording; PRICE_STATE map moves here from LineReview and gains manufacturer wording with stored uplift pct); door onOpen sets local state opening SidePanel (no navigation, no URL change); SidePanel form: basis switch (declares typed number only, display always ex-GST), price field, uplift field (empty/30/ex defaults on unstored line; stored ex price + stored pct + ex basis when stored), three arithmetic rows live via src/data/manufacturerPrice.ts, footer read-back shows new line price + new quote total via totalsFor on a lines-substituted record with superseded figures in <s> (absent when current total null), confirm disabled while price not finite>0 or uplift not finite>=0 and computed rows blank on invalid price, NO clear action anywhere, cents formatter local (en-AU 2dp); commit PUTs {price,upliftPct,basis} then reload() and closes; LineReview: props gain price: ReactNode rendered where lines 273-284 Price Panel block stood, that block and PRICE_STATE (197-206) deleted; LinePage (296-302): builds <PricePanel line={line} record={record} reload={reload}/> passed as price prop; manufacturer-price.test.mjs gains PricePanel markup cases (esbuild harness per ops2-panel.test.mjs): closed summary + door testId line-price-open, defaults (c2), pre-fill (c10), no clear control (c14), disabled confirm cases (c16,c17), arithmetic rows (c3,c4), struck read-back (c6), single basis control (c7).",
+    "after": ["1", "4"],
+    "criteria": ["1", "2", "3", "4", "5", "6", "7", "9", "10", "14", "16", "17"]
+  }
+]

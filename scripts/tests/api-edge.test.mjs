@@ -795,6 +795,31 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
       await requestJson(staff, "/api/ops/lines/does-not-exist/price", { method: "PUT", json: { total: 10 } }, 404);
     });
 
+    await t.test("the manufacturer's figure and the uplift reach the line price", async () => {
+      // Ops receives a price per line from the manufacturer and has to reach a
+      // customer price from it. Before 0063 the only way in was to do the margin
+      // arithmetic by hand and type the finished number into the 0046 override,
+      // which keeps the answer and loses the question.
+      const detail = await requestJson(staff, "/api/ops/projects/p_submitted");
+      const line = detail.body.lines[0];
+
+      const set = await requestJson(staff, `/api/ops/projects/p_submitted/lines/${line.id}/manufacturer-price`,
+        { method: "PUT", json: { price: 1240, upliftPct: 30, basis: "ex" } });
+      assert.equal(set.body.line.lineTotal, 1612, "1,240 + 30% is the line price");
+      assert.equal(set.body.line.manufacturerPrice, 1240, "their figure is kept, ex-GST");
+      assert.equal(set.body.line.manufacturerUpliftPct, 30, "and the uplift that produced it");
+
+      // ONE PRICE FACT PER LINE, last write wins (owner, 2026-08-31). A typed
+      // override supersedes the manufacturer's figure and takes its working
+      // with it — a line must never display arithmetic that does not produce
+      // its own total.
+      const typed = await requestJson(staff, `/api/ops/lines/${line.id}/price`,
+        { method: "PUT", json: { total: 1500 } });
+      assert.equal(typed.body.line.lineTotal, 1500);
+      assert.equal(typed.body.line.manufacturerPrice, null, "their figure goes with it");
+      assert.equal(typed.body.line.manufacturerUpliftPct, null, "and so does the uplift");
+    });
+
     await t.test("no approval step: a priced quote issues directly, and the old surfaces are gone", async () => {
       // The approval engine — rules, instances, steps, delegate — was removed
       // (0033). With anyone able to approve, including the submitter, a mandatory
