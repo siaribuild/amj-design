@@ -1,0 +1,323 @@
+# Design — Manufacturer's price and uplift
+
+Stage 2, 2026-08-31. Implements `01-spec.md` (criteria 1–25) under the grill
+decisions D1–D8 in `00-ask.md`. Four owner decisions in `DECISIONS.md` are
+unanswered; the design follows the spec's `ASSUMED:` positions, **except item 3
+(phases)**, where discovery produced hard evidence against the recommendation —
+see "Decisions needed" relayed with this design. The default built here is the
+reversible one.
+
+---
+
+## 1. Shape of the change
+
+One new fact pair on the line (`manufacturer_price`, `manufacturer_uplift_pct`,
+both ex-GST semantics, NULL = absent — the 0046 value-not-state pattern, grill
+D3), one shared compute module used by both the panel and the Worker so the
+arithmetic exists once, one new project-scoped staff endpoint, and a SidePanel
+opened from the line page's Price panel via `OpenablePanel` (grill D8 — no
+chrome component changes).
+
+**One price fact per line (spec 13, D4-assumption).** The existing override
+columns are *reused*, not duplicated:
+
+- `line_total` stays THE price. Nothing else is ever summed.
+- `price_calculated` stays the preserved engine figure (captured once:
+  `line.price_calculated ?? line.line_total`, same as ops.ts:~1310). Clear
+  (spec 14) restores it — identical mechanics to the override's clear.
+- `price_override_by` / `price_override_at` stay the attribution pair
+  (spec 15). Both paths write them.
+- `manufacturer_price IS NOT NULL` is the discriminator: manufacturer-set vs
+  hand-typed override. No new flag, no new attribution columns.
+
+Each write path nulls the other's discriminator: the manufacturer endpoint is
+one more writer of the same price fact; the typed override and the generic
+line PATCH clear `manufacturer_price`/`manufacturer_uplift_pct` (spec 13).
+
+## 2. Data model — migration `migrations/0063_manufacturer_price.sql`
+
+```sql
+-- Manufacturer's quoted price for the whole line (ex-GST) and the uplift %
+-- applied to reach line_total. NULL = no manufacturer fact on this line
+-- (the 0046 pattern: a value, not a state — grill D3).
+-- Additive ALTER TABLE ADD COLUMN only: no table rebuild, no DROP, so no
+-- ON DELETE CASCADE can fire. quote_line's referencing children
+-- (job_event 0003, opening_instance/learning tables 0012/0022/0047 — all
+-- SET NULL; quote_line.parent_line_id self-CASCADE 0028) are untouched.
+ALTER TABLE quote_line ADD COLUMN manufacturer_price REAL;
+ALTER TABLE quote_line ADD COLUMN manufacturer_uplift_pct REAL;
+```
+
+`d1-migration-safety` loaded and applied: rule 1 (additive — no ceremony, no
+`PRAGMA defer_foreign_keys`, no rebuild). Numbered after highest existing
+(0062). Remote apply still follows the skill's export-first protocol at deploy
+time.
+
+## 3. Shared compute — one place for the arithmetic
+
+### `src/data/gst.ts` (extend, don't duplicate — GST single source)
+
+Export the inc→ex conversion that already exists privately as `supply().ex`:
+
+```ts
+/** An inc-GST amount net of GST, rounded to cents — one taxable supply. */
+export const exFromInc = (inc: number) => round2(inc / (1 + GST_RATE));
+```
+
+(Implement `supply` in terms of it; behaviour unchanged.)
+
+### `src/data/manufacturerPrice.ts` (new)
+
+```ts
+import { exFromInc } from "./gst";
+
+export const DEFAULT_UPLIFT_PCT = 30;
+export type EntryBasis = "ex" | "inc";
+
+/** Valid iff price is finite and > 0, uplift finite and >= 0 (0 allowed). */
+export function computeManufacturerLinePrice(input: {
+  price: number; upliftPct: number; basis: EntryBasis;
+}): { exPrice: number; lineTotal: number } | null;
+```
+
+Rounding to cents **twice** (spec 4): once on the inc→ex conversion
+(`exFromInc`), once on the uplifted result (`round2(ex * (1 + pct/100))` —
+`round2` moves to a shared export or is re-declared locally; prefer exporting
+it from gst.ts). No `round10` anywhere on this path (grill D2). Returns `null`
+on invalid input, which drives both the panel's disabled confirm (spec 16–17)
+and the Worker's 400 (spec 19) from the same predicate. Worker imports
+`src/data/*` routinely (catalogue, abn, phone precedents).
+
+## 4. API — `worker/routes/ops.ts`
+
+### New: `PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price`
+
+Project-scoped by design (spec 24) — deliberately NOT the bare-line shape of
+the existing `PUT /lines/:id/price`. Thin route; arithmetic and validation via
+`computeManufacturerLinePrice`.
+
+Body: `{ price: number, upliftPct: number, basis: "ex" | "inc" }`, or
+`{ price: null }` to clear (mirrors the existing override's `total: null`
+convention).
+
+Flow (mirrors ops.ts:1274–1328 structure):
+
+1. `resolveStaff` + `hasAssignedRole` → else 403 (spec 20–22; signed-out → 401
+   via existing auth plumbing, spec 21).
+2. Load line **scoped through the project**:
+   `SELECT ... FROM quote_line l JOIN quote q ON q.id = l.quote_id JOIN project
+   p ON p.id = q.project_id WHERE l.id = ?1 AND p.id = ?2 AND p.status_internal
+   IN (<PRICEABLE_STATUSES>)` → else 404 (spec 24).
+3. `PRICEABLE_STATUSES`: extract the existing override's literal list
+   (`'submitted','triage_pending','estimator_assigned','technical_review_required','customer_clarification_required'`)
+   into one exported const in ops.ts used by BOTH endpoints, so the two price
+   writers cannot drift. (Default pre-issue window — see Decisions needed #3.)
+4. `composite_parent` line → 409 (mirror existing override; a parent's total is
+   the sum of its segments).
+5. **Set:** `computeManufacturerLinePrice(body)`; `null` → 400
+   `invalid_amount`. UPDATE:
+   `line_total = lineTotal, manufacturer_price = exPrice,
+   manufacturer_uplift_pct = upliftPct,
+   price_calculated = COALESCE(price_calculated, line_total-before),
+   price_override_by = ?, price_override_at = now`.
+   (Engine figure captured in JS as today: `line.price_calculated ??
+   line.line_total`, computed before the UPDATE.)
+6. **Clear:** restore `line_total = price_calculated` when present, NULL out
+   all five columns (`manufacturer_price, manufacturer_uplift_pct,
+   price_calculated, price_override_by, price_override_at`) — same shape as the
+   override's clear.
+7. `recomputeComposite` when `parent_line_id` set (child segment edited).
+8. `logEvent` — actions `line.price.manufacturer` /
+   `line.price.manufacturer.cleared`; `before`/`after` carry **`lineTotal`
+   only**. Never `manufacturer_price` and never `upliftPct`: with the uplift,
+   `lineTotal / (1 + pct/100)` reconstructs the cost — logging either leaks
+   both (spec 25).
+9. Return fresh `opsLineDto` (quote total then recomputes through the existing
+   single source — spec 11; nothing persisted from the client).
+
+### Changed: `PUT /api/ops/lines/:id/price` (ops.ts:~1274–1328)
+
+Both its UPDATEs (set and clear) add
+`manufacturer_price = NULL, manufacturer_uplift_pct = NULL` (spec 13).
+
+### Changed: `PATCH /api/ops/lines/:id` (ops.ts:~1184–1194)
+
+The UPDATE that already clears `price_calculated`/`price_override_*` on
+re-price also clears the two manufacturer columns — an edited, re-priced line
+must not keep stale manufacturer working (spec's own no-disagreeing-arithmetic
+principle).
+
+### Changed: `opsLineDto` (ops.ts:150–180)
+
+Append, following the exact pattern of `priceCalculated` at the end of the
+map:
+
+```ts
+manufacturerPrice: (r as { manufacturer_price?: number | null }).manufacturer_price ?? null,
+manufacturerUpliftPct: (r as { manufacturer_uplift_pct?: number | null }).manufacturer_uplift_pct ?? null,
+```
+
+Staff-gated record endpoint only — this is how the panel prefills (spec 10).
+Customer DTOs untouched: `rowToApiLine` (worker/lib/lines.ts:94–120) maps
+explicit fields with no row spread, so the new columns are invisible to every
+customer surface by construction (spec 23). **No change to worker/lib/lines.ts
+is part of this feature; a reviewer seeing one should treat it as a finding.**
+
+## 5. Frontend — ops2
+
+### `src/ops2/projects/record.ts`
+
+- `RecordLine` (+2 fields beside priceCalculated/priceOverrideAt, :108–109):
+  `manufacturerPrice: number | null; manufacturerUpliftPct: number | null;`
+- `parseLine` (:210–236): map both via the existing `num()` guard.
+- `priceState` (:526–536): new branch **before** `override`, keyed on
+  `manufacturerPrice != null` → `"manufacturer"`. Existing states untouched.
+
+### `src/ops2/projects/LineReview.tsx`
+
+- Price panel (:273–275) switches from the local `Panel` to `OpenablePanel`
+  (both render `section.lp-panel` + `h2.lp-panel__title`, markup-compatible;
+  chrome reuse is the case OpenablePanel was written for — grill D8). `open`
+  is passed only when the surface provides it; label from the copy constants
+  beside `PRICE_STATE`, stating the destination ("Open manufacturer price
+  entry" phrasing decided by UX stage).
+- `PRICE_STATE` gains `manufacturer` wording carrying the stored price + uplift
+  ("from manufacturer's price, +30%") — the summary readable without opening
+  (spec 9).
+
+### `src/ops2/projects/PricePanel.tsx` (new)
+
+Renders `SidePanel` (unchanged, grill D8). Props:
+`{ open, onClose, line: RecordLine, record, onCommitted }`. Contents (mock is
+content reference only; layout owned by UX stage):
+
+- Entry-basis switch (ex default), price field, uplift field (prefill stored
+  values or empty/`30` — spec 2, 10).
+- Three-row arithmetic from `computeManufacturerLinePrice` on every keystroke —
+  pure client compute, nothing stored (spec 3–5); invalid → no computed rows,
+  confirm disabled (spec 16–17).
+- Footer read-back: new line price + new quote total with superseded figures
+  struck through — quote total derived by substituting the candidate
+  `lineTotal` into `totalsFor` (record.ts:597–621) client-side, **display
+  only** (spec 6, 11).
+- Cents formatter local to this panel — record.ts `money()` is whole-dollar by
+  design and stays that way.
+- Confirm → `PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price`;
+  Clear (only when a manufacturer price is stored) → same endpoint,
+  `{ price: null }`. On ok: `onCommitted()` (LinePage's `reload` from
+  `useProjectRecord`) then `onClose` (spec 8, 14).
+- All amounts ex-GST, no display-basis control anywhere (grill D6, spec 7).
+
+### `src/ops2/projects/LinePage.tsx`
+
+Local `useState` open flag (SidePanel funnels backdrop/Escape/back-gesture to
+`onClose`; no route suffix — a dismissible sheet is not an address). Wires
+`open` into the Price panel door and passes `reload` to `PricePanel`.
+
+## 6. Security
+
+**Data classification.** `manufacturer_price` (and `manufacturer_uplift_pct`,
+which reconstructs it from the visible total) = **commercially sensitive cost
+data**. Smallest surface: two nullable columns on `quote_line`; exposed on
+exactly one DTO (`opsLineDto`, staff-gated); never logged (see below); never
+on any customer-facing DTO, PDF, or email — `rowToApiLine` explicit-map
+guarantee, spec 23.
+
+**Trust boundaries.**
+- ops ↔ Worker: the only crossing that carries the value. Validated by
+  `computeManufacturerLinePrice` server-side (spec 19) regardless of client
+  state.
+- customer ↔ Worker: carries only `lineTotal`. No schema/DTO change on this
+  boundary.
+- Worker ↔ third parties: none touched.
+
+**Authorization per endpoint.**
+
+| Endpoint | Who | Scoping filter |
+|---|---|---|
+| `PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price` (new) | Staff with assigned role (`resolveStaff` + `hasAssignedRole`); Customer/Visitor/Manufacturer partner → 401/403 before any query | `WHERE l.id = :lineId AND p.id = :projectId AND p.status_internal IN (PRICEABLE_STATUSES)` via `quote_line ⋈ quote ⋈ project` — wrong-project line id → 404, nothing modified (spec 24) |
+| `PUT /api/ops/lines/:id/price` (changed) | unchanged (staff-gated) | unchanged; only its UPDATE column list grows |
+| `GET /api/ops/projects/:id` (DTO grows) | unchanged staff gate | unchanged |
+
+Manufacturer partner accounts have no staff role → `hasAssignedRole` fails →
+403 on read and write (spec 22). No read endpoint exists outside the staff
+record DTO.
+
+**Abuse cases → criteria.** Customer on own project → 403 (20); visitor →
+401/403 (21); manufacturer partner read+write → 403 (22); customer payload
+sweep quote view/PDF/email (23); cross-project line id → 404 (24); log sweep
+(25). All executed for real by the tester per spec §2.
+
+**Logging.** `logEvent` before/after = `lineTotal` only; the action name
+records *that* a manufacturer price drove it, never the figure or the
+percentage (uplift + total reconstructs cost — the reconstruction leak is
+designed out, not residual). Residual risk: `lineTotal` itself appears in
+audit — accepted; it is the quote figure the customer sees anyway.
+
+## 7. Sequencing
+
+1. **S1 foundation** — migration 0063; `exFromInc` export;
+   `manufacturerPrice.ts` + unit tests.
+2. **S2 endpoint** — new route, `PRICEABLE_STATUSES` const extraction, DTO
+   fields, override/PATCH clearing; api tests incl. abuse.
+3. **S3 record client** — record.ts fields + `priceState`; ops2-record tests.
+4. **S4 panel** — PricePanel + LineReview door + LinePage wiring (S4 layout
+   details may be refined by the UX stage; the seams above don't move).
+5. **S5 docs** — CONTEXT.md term ("Manufacturer price" under the line/pricing
+   vocabulary; sharpen "Openable panel" with its first realised door).
+
+## 8. Test plan
+
+| File (all pre-wired in package.json) | Proves |
+|---|---|
+| `scripts/tests/unit.test.mjs` (`test:unit`; bundles `src/data/*` already) | `exFromInc` cents rounding; `computeManufacturerLinePrice`: spec-3 ex case (1240@30 → 1612.00), spec-4 inc case (1240 → 1127.27 → 1465.45, rounded twice), zero uplift (18), null on empty/zero/negative/non-numeric price (16) and negative/non-numeric uplift (17), no $10 rounding |
+| `scripts/tests/api-edge.test.mjs` (`test:api`; beside :760–795) | set/clear/prefill columns (8, 10, 14, 15), server 400s (19), abuse: customer 403 (20), visitor 401/403 (21), manufacturer partner 403 (22), cross-project 404 (24), audit rows contain no price/uplift (25), phase-window refusal, override clears manufacturer fact (13), PATCH clears it |
+| `scripts/tests/api.test.mjs` (beside :593–604) | composite parent 409; segment set recomputes parent; quote total recomputes server-side (11); phase unchanged (12); customer quote payload has no manufacturer fields (23) |
+| `scripts/tests/ops2-record.test.mjs` (`test:ops2`; beside :138–167, :756–761) | parseLine maps new fields; `priceState` manufacturer branch precedence; PRICE_STATE summary wording (9); LineReview Price panel renders as OpenablePanel door |
+| Playwright (`scripts/tests/web/`) | none new — panel behaviour is markup-tested; E2E deferred unless the UX stage demands it |
+
+No new test file → no package.json wiring needed (every named file verified
+present in `test:*` scripts).
+
+## 9. Rejected alternatives
+
+- **Separate attribution/state columns** (`manufacturer_price_by/at`,
+  `manufacturer_confirmed`) — duplicates the 0046 fact pair; a flag can
+  disagree with the value (grill D3). Rejected: reuse `price_override_by/at`,
+  NULL-discriminated.
+- **Bare-line endpoint** (`PUT /lines/:id/manufacturer-price`, matching the
+  existing override) — fails spec 24's resolve-through-project rule; the
+  existing endpoint's shape is grandfathered, not a precedent to extend.
+- **Compute in the Worker only, panel re-implements display arithmetic** —
+  two places for one fact; a drift between panel preview and stored figure is
+  the exact bug class D6 exists to prevent. Rejected for the shared module.
+- **Logging price with redaction at the sink** — redaction is a filter that
+  can be forgotten; not writing the value is structural (spec 25).
+- **Route-suffix (`.../price`) for the panel like the mock** — grill D8 ruled
+  panel-not-page; SidePanel's onClose funnel makes history plumbing pure
+  overhead.
+- **New `round10`-aware pricing hook** — grill D2: this path never rounds to
+  $10; touching `pricing.ts` is explicitly out of scope.
+- **Uplift in audit log** — reconstructs cost from visible total; excluded by
+  design, not by review.
+
+## 10. Affected files — hand-off index
+
+| Path | Where | Change |
+|---|---|---|
+| `migrations/0063_manufacturer_price.sql` | new | two ADD COLUMNs (§2 verbatim) |
+| `src/data/gst.ts` | :19–26 (`round2`, `supply`) | export `exFromInc` (and `round2`); `supply` reuses it |
+| `src/data/manufacturerPrice.ts` | new | `DEFAULT_UPLIFT_PCT`, `EntryBasis`, `computeManufacturerLinePrice` |
+| `worker/routes/ops.ts` | :150–180 `opsLineDto` | +`manufacturerPrice`, `manufacturerUpliftPct` |
+| `worker/routes/ops.ts` | ~:1184–1194 PATCH lines UPDATE | +NULL the two manufacturer columns |
+| `worker/routes/ops.ts` | ~:1274–1328 `PUT /lines/:id/price` | extract `PRICEABLE_STATUSES` const; both UPDATEs NULL manufacturer columns |
+| `worker/routes/ops.ts` | after the override route | new `PUT /projects/:id/lines/:lineId/manufacturer-price` (§4 flow) |
+| `src/ops2/projects/record.ts` | :108–109 `RecordLine`; :210–236 `parseLine`; :526–536 `priceState` | +2 fields; +`manufacturer` state |
+| `src/ops2/projects/LineReview.tsx` | :273–275 Price panel; `PRICE_STATE` block | OpenablePanel door + manufacturer summary wording |
+| `src/ops2/projects/PricePanel.tsx` | new | SidePanel contents (§5) |
+| `src/ops2/projects/LinePage.tsx` | line-panel composition (uses `useProjectRecord(id)` / `record.lines.find`) | open state + door wiring + `reload` passthrough |
+| `CONTEXT.md` | pricing + "Openable panel" entries | new term "Manufacturer price"; door realised |
+| `scripts/tests/unit.test.mjs` | src/data bundle exports (:19–41) | +manufacturerPrice/gst exports + tests |
+| `scripts/tests/api-edge.test.mjs` | beside :760–795 | endpoint + abuse tests |
+| `scripts/tests/api.test.mjs` | beside :593–604 | composite + payload-sweep tests |
+| `scripts/tests/ops2-record.test.mjs` | beside :138–167, :756–761 | parse/priceState/door tests |

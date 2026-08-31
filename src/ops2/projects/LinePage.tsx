@@ -8,6 +8,7 @@ import { DrawingViewer } from "../chrome/DrawingViewer";
 import { LineReview } from "./LineReview";
 import { WhyDetail } from "./WhyDetail";
 import { WhyPanel } from "./WhyPanel";
+import { PricePanel } from "./PricePanel";
 import { drawingSubject, viewerUnitCount } from "./drawingSubject";
 import {
   drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, whyDoor,
@@ -298,6 +299,10 @@ export function LinePage() {
           line={line}
           onOpenDrawing={openDrawing}
           why={<WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />}
+          price={(
+            <PricePanel line={line} reload={reload}
+              editable={!isOrder && line.lineKind !== "composite_parent"} />
+          )}
         />
       )}
 

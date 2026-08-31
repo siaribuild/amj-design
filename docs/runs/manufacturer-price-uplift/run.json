@@ -1,0 +1,39 @@
+{
+  "slug": "manufacturer-price-uplift",
+  "tier": "full",
+  "base": "29222efe",
+  "branch": "deploy/main-29222efe",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 163432,
+      "outputTokens": 7168,
+      "turns": 4,
+      "source": "transcript",
+      "session": "94d2f1c0-a3f1-4e5c-beb9-cc4915ca572e",
+      "seconds": 104
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1744748,
+      "outputTokens": 30282,
+      "turns": 28,
+      "source": "transcript",
+      "session": "a5928a17-839a-4693-825a-1e165d5db52d",
+      "seconds": 773
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 516479,
+      "outputTokens": 3233,
+      "turns": 9,
+      "source": "transcript",
+      "session": "1ecba83f-6940-4809-a910-f1d70e42900f",
+      "seconds": 557,
+      "note": "Stage failed three times with autocompact thrashing (broad exploration: ~44 Bash calls of 15-20KB against a 100k window). Mock authored directly in the conducting session from 02-design.md and the real ops2 tokens, then revised through six owner rulings at the gate and APPROVED 2026-08-31. docs/mocks/manufacturer-price-uplift.html"
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-08-31T01:50:50.452Z"
+}

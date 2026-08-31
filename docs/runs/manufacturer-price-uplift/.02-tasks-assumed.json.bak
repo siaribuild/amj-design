@@ -1,0 +1,75 @@
+[
+  {
+    "id": "T1",
+    "title": "Shared compute: migration 0063, gst exFromInc export, manufacturerPrice module",
+    "files": [
+      "migrations/0063_manufacturer_price.sql",
+      "src/data/gst.ts",
+      "src/data/manufacturerPrice.ts",
+      "scripts/tests/unit.test.mjs"
+    ],
+    "tests": ["scripts/tests/unit.test.mjs"],
+    "done_when": "Red-first in unit.test.mjs (extend the existing src/data esbuild bundle exports at :19-41): exFromInc(1240)=1127.27; computeManufacturerLinePrice ex 1240@30 -> {exPrice:1240, lineTotal:1612}; inc 1240@30 -> {exPrice:1127.27, lineTotal:1465.45} (rounded to cents twice, never $10); uplift 0 returns exPrice as lineTotal; returns null for price empty/0/negative/NaN and uplift negative/NaN. gst.ts change is design section 3 only: export exFromInc (+round2), supply() reuses it, taxBreakdown behaviour unchanged. Migration is the two ADD COLUMNs verbatim from design section 2 with its cascade comment; npm run db:migrate:local applies clean. npm run test:unit green.",
+    "after": [],
+    "criteria": ["3", "4", "16", "17", "18"]
+  },
+  {
+    "id": "T2",
+    "title": "Endpoint: PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price + DTO fields + validation/abuse tests",
+    "files": [
+      "worker/routes/ops.ts",
+      "scripts/tests/api-edge.test.mjs"
+    ],
+    "tests": ["scripts/tests/api-edge.test.mjs"],
+    "done_when": "ops.ts changes limited to: opsLineDto (:150-180) gains manufacturerPrice/manufacturerUpliftPct following the priceCalculated pattern; PRICEABLE_STATUSES const extracted from the existing override's status_internal list (~:1290) and used by both price endpoints; new route after the override route implementing design section 4 flow (resolveStaff+hasAssignedRole 403; line loaded via quote JOIN project WHERE l.id=? AND p.id=? AND p.status_internal IN (PRICEABLE_STATUSES) else 404; composite_parent 409; computeManufacturerLinePrice null -> 400 invalid_amount; set/clear UPDATEs per design incl. price_calculated capture and price_override_by/at attribution; recomputeComposite on parent_line_id; logEvent actions line.price.manufacturer(.cleared) with lineTotal ONLY; returns opsLineDto). Red-first tests beside api-edge.test.mjs:760-795: set stores exact figures + attribution; reopen columns prefillable (GET record shows both fields); clear reverts to price_calculated and nulls all five columns; 400 on negative/zero/non-numeric price and negative/non-numeric uplift; inc basis stores ex figure; customer session 403; no session 401/403; manufacturer-partner session 403 read+write; line id from another project 404 with line unchanged; audit_event rows for these actions contain neither manufacturer price nor uplift values; refused outside PRICEABLE_STATUSES. npm run test:api green.",
+    "after": ["T1"],
+    "criteria": ["8", "10", "14", "15", "19", "20", "21", "22", "24", "25"]
+  },
+  {
+    "id": "T3",
+    "title": "One price fact: override and PATCH clear manufacturer columns; composite + customer-payload tests",
+    "files": [
+      "worker/routes/ops.ts",
+      "scripts/tests/api.test.mjs"
+    ],
+    "tests": ["scripts/tests/api.test.mjs"],
+    "done_when": "ops.ts changes limited to two UPDATE column lists: PUT /lines/:id/price (~:1274-1328) set AND clear branches add manufacturer_price=NULL, manufacturer_uplift_pct=NULL; PATCH /lines/:id UPDATE (~:1184-1194) adds the same two NULLs beside its existing price_calculated/price_override clears. Red-first tests beside api.test.mjs:593-604: typed override on a manufacturer-priced line keeps the typed total and nulls both manufacturer columns; line PATCH (repricing edit) nulls them; manufacturer-price on composite parent 409; on a segment recomputes parent total; project draft_total/quote total recomputes server-side after commit (assert via project GET, not client math); status_internal unchanged by set and clear; customer quote view payload (loadLines/rowToApiLine path) contains no manufacturerPrice/manufacturerUpliftPct keys. worker/lib/lines.ts must show NO diff. npm run test:api green.",
+    "after": ["T2"],
+    "criteria": ["11", "12", "13", "23"]
+  },
+  {
+    "id": "T4",
+    "title": "Record client: RecordLine fields + priceState manufacturer branch",
+    "files": [
+      "src/ops2/projects/record.ts",
+      "scripts/tests/ops2-record.test.mjs"
+    ],
+    "tests": ["scripts/tests/ops2-record.test.mjs"],
+    "done_when": "Red-first beside ops2-record.test.mjs:138-167 and :756-761: parseLine maps manufacturerPrice/manufacturerUpliftPct (num-guarded, null when absent); priceState returns 'manufacturer' when manufacturerPrice != null, checked before the override branch; existing no_rate/override/list/unknown cases still pass unchanged. record.ts changes limited to RecordLine (:108-109 area), parseLine (:210-236), priceState (:526-536). money() stays whole-dollar. npm run test:ops2 green.",
+    "after": ["T2"],
+    "criteria": ["9"]
+  },
+  {
+    "id": "T5",
+    "title": "Panel UI: PricePanel + LineReview door + LinePage wiring",
+    "files": [
+      "src/ops2/projects/PricePanel.tsx",
+      "src/ops2/projects/LineReview.tsx",
+      "src/ops2/projects/LinePage.tsx",
+      "scripts/tests/ops2-record.test.mjs"
+    ],
+    "tests": ["scripts/tests/ops2-record.test.mjs"],
+    "done_when": "LineReview.tsx: only the Price panel call site (:273-275) and the PRICE_STATE copy block change — Price renders via OpenablePanel with open passed through from props, label from the copy constants naming the destination; PRICE_STATE gains manufacturer wording showing stored price + uplift pct. PricePanel.tsx (new): SidePanel per design section 5 — basis switch (ex default), price + uplift fields (prefill stored ex figure + stored pct, else empty + 30), three-row arithmetic from computeManufacturerLinePrice on each change with no round trip, footer read-back with struck-through old line total and quote total via totalsFor substitution (display only, nothing persisted client-side), local cents formatter, confirm disabled while compute returns null, confirm PUTs the project-scoped endpoint then onCommitted+onClose, Clear shown only when manufacturerPrice stored and sends {price:null}; every displayed amount ex-GST, no display-basis control. LinePage.tsx: local open state, passes reload as onCommitted. Red-first markup tests in ops2-record.test.mjs (same esbuild-render pattern the file already uses): Price panel renders lp-panel--door with derived line-price-open test id; PricePanel markup shows the three arithmetic rows for 1240@30 ex (1,240.00 / +372.00 / 1,612.00) and empty-state disabled confirm; manufacturer summary readable in Price panel dl without opening. npm run test:ops2 green.",
+    "after": ["T1", "T4"],
+    "criteria": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "16", "17"]
+  },
+  {
+    "id": "T6",
+    "title": "CONTEXT.md vocabulary: Manufacturer price; Openable panel door realised",
+    "files": ["CONTEXT.md"],
+    "tests": [],
+    "done_when": "CONTEXT.md pricing vocabulary gains 'Manufacturer price' (whole-line ex-GST cost figure + uplift pct stored on the line; commercially sensitive, staff-only, never on customer surfaces or readable by Manufacturer partner; NULL = absent, one price fact per line shared with the typed override). 'Openable panel' entry updated: the line page Price panel is now a realised door to the manufacturer-price SidePanel. No other sections touched.",
+    "after": ["T5"],
+    "criteria": []
+  }
+]

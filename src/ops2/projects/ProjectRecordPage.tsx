@@ -11,6 +11,7 @@ import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
+import { PricePanel } from "./PricePanel";
 import { WhyPanel } from "./WhyPanel";
 import { useLineRationale, type RationaleLoad } from "./useLineRationale";
 import { drawingSuffix, VIEWER_FROM_RECORD, WHY_SUFFIX, WHY_FROM_RECORD } from "./lineRoute";
@@ -486,6 +487,10 @@ export function ProjectRecordPage() {
                       <LineReview
                         line={selected}
                         onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
+                        price={(
+                          <PricePanel line={selected} reload={reload}
+                            editable={record.orderNo == null && selected.lineKind !== "composite_parent"} />
+                        )}
                         why={(
                           <WhyPanel
                             load={canvasWhy}
