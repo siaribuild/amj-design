@@ -43,14 +43,22 @@ import { money as whole } from "./record";
 const money = (n: number) =>
   `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function PricePanel({ line, reload }: {
+export function PricePanel({ line, reload, editable }: {
   line: { id: string; code: string; lineTotal: number | null };
   reload: () => void;
+  /** Whether this line can actually be repriced. A door onto a screen whose
+   *  Confirm can never succeed is worse than no door: the endpoint refuses a
+   *  composite parent outright (its total is the sum of its segments) and finds
+   *  no line at all once a quote is issued. `OpenablePanel` takes openability
+   *  as the PRESENCE of `open`, so a non-editable line simply gets the static
+   *  panel it had before this feature — no chevron, no tab stop. */
+  editable: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [uplift, setUplift] = useState(String(DEFAULT_UPLIFT_PCT));
   const [basis, setBasis] = useState<EntryBasis>("ex");
+  const [failed, setFailed] = useState(false);
   /** Cleared on OPEN, never on close: a panel that tidies itself afterwards is
    *  still holding the previous line's figures in the meantime, and the record
    *  page's canvas can put a different line behind the same mounted panel. */
@@ -58,16 +66,20 @@ export function PricePanel({ line, reload }: {
     setTyped("");
     setUplift(String(DEFAULT_UPLIFT_PCT));
     setBasis("ex");
+    setFailed(false);
     setOpen(true);
   };
 
   const price = Number(typed);
-  const pct = Number(uplift);
+  // `Number("")` is 0, so an emptied uplift field would silently mean "no
+  // uplift" and let Confirm through. Absence is not zero on either field.
+  const pct = uplift.trim() === "" ? NaN : Number(uplift);
   const exPrice = price > 0 && pct >= 0 ? manufacturerExGst(price, basis) : null;
   const total = exPrice == null ? null : upliftedLineTotal(exPrice, pct);
 
   const confirm = async () => {
     if (total == null) return;
+    setFailed(false);
     // The existing override endpoint (0046). Nothing new is needed: the
     // calculator's result IS a price a human decided, which is exactly what
     // that endpoint records — inline fetch because ops2 has no client module
@@ -77,8 +89,10 @@ export function PricePanel({ line, reload }: {
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ total }),
-    });
-    if (!res.ok) return;
+    }).catch(() => null);
+    // A pricing action that silently does not save is the worst of the failure
+    // modes available here: the panel would close on a price that never landed.
+    if (!res || !res.ok) { setFailed(true); return; }
     setOpen(false);
     reload();
   };
@@ -88,7 +102,7 @@ export function PricePanel({ line, reload }: {
       <OpenablePanel
         title="Price"
         testId="line-price"
-        open={{ label: "Set this line's price", onOpen: openFresh }}
+        open={editable ? { label: "Set this line's price", onOpen: openFresh } : undefined}
       >
         <dl className="lp-panel__lines">
           <div className="lp-panel__line">
@@ -108,9 +122,14 @@ export function PricePanel({ line, reload }: {
               <span>{line.code} becomes</span>
               <span>
                 {total != null && line.lineTotal != null && <s>{money(line.lineTotal)}</s>}
-                <b>{money(total ?? line.lineTotal ?? 0)}</b>
+                <b>{total != null ? money(total) : line.lineTotal != null ? money(line.lineTotal) : "No rate"}</b>
               </span>
             </div>
+            {failed && (
+              <p className="lp-mfr__failed" role="alert" data-testid="line-price-failed">
+                That price was not saved. Try again.
+              </p>
+            )}
             <IonButton expand="block" disabled={total == null}
               data-testid="line-price-confirm" onClick={confirm}>
               Confirm this price

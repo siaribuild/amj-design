@@ -299,7 +299,10 @@ export function LinePage() {
           line={line}
           onOpenDrawing={openDrawing}
           why={<WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />}
-          price={<PricePanel line={line} reload={reload} />}
+          price={(
+            <PricePanel line={line} reload={reload}
+              editable={!isOrder && line.lineKind !== "composite_parent"} />
+          )}
         />
       )}
 

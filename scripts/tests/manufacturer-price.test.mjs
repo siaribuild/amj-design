@@ -31,6 +31,8 @@ const { DEFAULT_UPLIFT_PCT, manufacturerExGst, upliftedLineTotal, PricePanel } =
   await import(pathToFileURL(outfile).href);
 
 const line = { id: "l1", code: "W01", lineTotal: 2140 };
+const panel = (over = {}) => renderToStaticMarkup(
+  h(PricePanel, { line, reload: () => {}, editable: true, ...over }));
 
 test("DEFAULT_UPLIFT_PCT is 30", () => {
   assert.equal(DEFAULT_UPLIFT_PCT, 30);
@@ -68,7 +70,7 @@ test("no $10 rounding: an awkward figure keeps its cents", () => {
 });
 
 test("the Price panel is a door: the chevron component, named for where it goes", () => {
-  const html = renderToStaticMarkup(h(PricePanel, { line, reload: () => {} }));
+  const html = panel();
   assert.match(html, /data-testid="line-price"/);
   assert.match(html, /data-testid="line-price-open"/, "the door id derives from the panel's");
   assert.match(html, /lp-panel--door/, "it wears the door class OpenablePanel gives it");
@@ -80,11 +82,23 @@ test("closed, the calculator is not in the page at all — no fields, no confirm
   // Asserted deliberately: a closed panel that still rendered its inputs would
   // put four hidden tab stops on the line page. What the calculator DOES once
   // open is a browser question and is tested there.
-  const html = renderToStaticMarkup(h(PricePanel, { line, reload: () => {} }));
+  const html = panel();
   for (const id of ["line-price-figure", "line-price-uplift", "line-price-confirm", "line-price-work"]) {
     assert.equal(html.includes(id), false, `${id} is absent while closed`);
   }
   assert.equal(html.includes("<s>"), false, "and nothing is struck through");
+});
+
+test("a line the endpoint cannot reprice gets no door at all", () => {
+  // A composite parent's total is the sum of its segments and the endpoint
+  // refuses one outright; an issued quote's lines are not found. A chevron onto
+  // a Confirm that can never succeed is worse than no chevron, and
+  // OpenablePanel takes openability as the presence of `open`.
+  const html = panel({ editable: false });
+  assert.equal(html.includes("lp-panel--door"), false, "no door class");
+  assert.equal(html.includes("line-price-open"), false, "no control, no tab stop");
+  assert.equal(html.includes("<svg"), false, "and no chevron");
+  assert.match(html, /\$2,140/, "but the price is still shown");
 });
 
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });

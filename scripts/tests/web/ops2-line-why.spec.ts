@@ -1294,3 +1294,23 @@ test("MP-5 re-opening starts clean — nothing was kept", async ({ page }) => {
   await expect(page.getByTestId("line-price-uplift").locator("input")).toHaveValue("30");
   await expect(page.getByTestId("line-price-work")).toHaveCount(0);
 });
+
+test("MP-6 an emptied uplift is not zero — Confirm stays shut", async ({ page }) => {
+  // `Number("")` is 0, so an emptied field would silently mean "no uplift" and
+  // let a pass-through price through. Absence is not zero (Codex review).
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await page.getByTestId("line-price-open").click();
+  await page.getByTestId("line-price-figure").locator("input").fill("1240");
+  await expect(page.getByTestId("line-price-confirm")).not.toHaveAttribute("aria-disabled", "true");
+
+  await page.getByTestId("line-price-uplift").locator("input").fill("");
+  await expect(page.getByTestId("line-price-work")).toHaveCount(0);
+  await expect(page.getByTestId("line-price-confirm")).toHaveAttribute("aria-disabled", "true");
+
+  // Zero typed deliberately is still legitimate — a pass-through at cost.
+  await page.getByTestId("line-price-uplift").locator("input").fill("0");
+  await expect(page.getByTestId("line-price-work")).toContainText("$1,240.00");
+  await expect(page.getByTestId("line-price-confirm")).not.toHaveAttribute("aria-disabled", "true");
+});
