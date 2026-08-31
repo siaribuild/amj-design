@@ -9,7 +9,7 @@
 // button paints above it.
 //
 // Those are exactly the properties a convention loses when it is copied to a
-// second surface, which is why this component exists (ADR 0016).
+// second surface, which is why this component exists.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";

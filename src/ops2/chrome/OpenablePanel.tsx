@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * A PANEL THAT MIGHT BE A DOOR — ops2 chrome (ADR 0016).
+ * A PANEL THAT MIGHT BE A DOOR — ops2 chrome (CONTEXT.md, "Openable panel").
  *
  * Two rules a caller cannot get wrong from here, because this file owns them:
  *

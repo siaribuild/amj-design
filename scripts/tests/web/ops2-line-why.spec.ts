@@ -1116,7 +1116,7 @@ test("FB-AC-44 — the desk canvas carries the panel, and its door opens the LIN
 
 // ── OP — the openable panel ─────────────────────────────────────────────────
 //
-// The door became a component (ADR 0016). These prove the four things it owns
+// The door became a component. These prove the four things it owns
 // still agree once they are drawn: the chevron's position, the absence of any
 // affordance on a panel that opens nothing, one tab stop, and a click that
 // lands anywhere on the card.

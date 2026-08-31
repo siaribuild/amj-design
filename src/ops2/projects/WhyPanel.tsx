@@ -15,7 +15,7 @@ import type { RationaleLoad } from "./useLineRationale";
  * The stretched button, the chevron, the card focus ring and a name that says
  * where it goes are four things that must agree, and they now live in
  * `chrome/OpenablePanel.tsx` where a second consumer inherits them rather than
- * re-solving them (ADR 0016). This file passes `open` and the words; it no
+ * re-solving them. This file passes `open` and the words; it no
  * longer builds a door.
  *
  * ── AND IT IS ALWAYS THERE (FB-AC-38, superseding WHY-AC-41) ────────────────

@@ -343,7 +343,7 @@
 }
 
 /* The panel card and its door live in panel.css, beside the component that
- * renders them (ADR 0016). */
+ * renders them. */
 /* UPPERCASE IS RESERVED FOR LABELS in FrameFlow — small and wide-tracked — and
    a panel's title is exactly that: a name for the block, not a heading someone
    reads as a sentence. */

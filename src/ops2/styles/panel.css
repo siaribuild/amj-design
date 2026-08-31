@@ -1,6 +1,6 @@
 /* The panel, and the door it may be — companion to `chrome/OpenablePanel.tsx`
  * the way `rows.css` is to `RowList.tsx`. Moved here from `line.css`, not
- * invented (ADR 0016).
+ * invented.
  *
  * `ponytail:` the `lp-` prefix is inherited — `__title`, `__lines`, `__line`,
  * `__more` are the line page's content grammar, named in `LineReview.tsx` and
