@@ -1113,3 +1113,94 @@ test("FB-AC-44 — the desk canvas carries the panel, and its door opens the LIN
   await page.getByTestId("line-why-detail-back").click();
   await expect(page).toHaveURL(/\/projects\/p_rec$/);
 });
+
+// ── OP — the openable panel ─────────────────────────────────────────────────
+//
+// The door became a component (ADR 0016). These prove the four things it owns
+// still agree once they are drawn: the chevron's position, the absence of any
+// affordance on a panel that opens nothing, one tab stop, and a click that
+// lands anywhere on the card.
+
+const centres = async (page: Page, panelId: string) => {
+  const panel = await page.getByTestId(panelId).boundingBox();
+  const chev = await page.getByTestId(panelId).locator("svg.lp-panel__chev").boundingBox();
+  if (!panel || !chev) throw new Error(`no box for ${panelId}`);
+  return { panel, chev };
+};
+
+test("OP-1 the chevron is centred on the panel's full height, inside its right edge", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // `lc` is the tall composite: the accepted trade is that the arrow sits well
+  // below the heading rather than riding it, so a tall panel is the test.
+  await openLine(page, "lc");
+  const { panel, chev } = await centres(page, "line-why");
+  expect(Math.abs((chev.y + chev.height / 2) - (panel.y + panel.height / 2))).toBeLessThanOrEqual(2);
+  expect(chev.x + chev.width).toBeLessThanOrEqual(panel.x + panel.width);
+  expect(chev.x).toBeGreaterThan(panel.x + panel.width / 2);
+});
+
+test("OP-2 and it stays centred on a phone", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLine(page, "lc");
+  const { panel, chev } = await centres(page, "line-why");
+  expect(Math.abs((chev.y + chev.height / 2) - (panel.y + panel.height / 2))).toBeLessThanOrEqual(2);
+});
+
+test("OP-3 a panel that opens nothing grows no chevron, no control and no gutter", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  for (const id of ["line-spec", "line-price"]) {
+    await expect(page.getByTestId(id).locator("svg.lp-panel__chev")).toHaveCount(0);
+    await expect(page.getByTestId(id).locator("button.lp-panel__door")).toHaveCount(0);
+  }
+  const padding = (id: string) => page.getByTestId(id)
+    .evaluate((el) => getComputedStyle(el).paddingRight);
+  expect(await padding("line-spec")).toBe(await padding("line-price"));
+});
+
+test("OP-4 every term and value stays individually exposed — the door's name is only its own", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  const panel = page.getByTestId("line-why");
+  const terms = await panel.getByRole("term").count();
+  expect(terms).toBeGreaterThanOrEqual(1);
+  expect(await panel.getByRole("definition").count()).toBe(terms);
+  const name = await page.getByTestId("line-why-open").getAttribute("aria-label");
+  for (const term of await panel.getByRole("term").allInnerTexts()) {
+    expect(name).not.toContain(term);
+  }
+});
+
+test("OP-5 one tab stop, and both Enter and Space open the detail", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await expect(page.getByTestId("line-why").locator("button")).toHaveCount(1);
+
+  await page.getByTestId("line-why-open").focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/why$/);
+
+  // Re-enter the line page rather than navigating back: the return journey has
+  // its own tests (WHY-AC-7a), and borrowing them here would make this one fail
+  // for their reasons instead of its own.
+  await openLine(page, "l1");
+  await page.getByTestId("line-why-open").focus();
+  await page.keyboard.press(" ");
+  await expect(page).toHaveURL(/\/why$/);
+});
+
+test("OP-6 a click on the card's bare padding opens it — the whole block is the door", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  const panel = await page.getByTestId("line-why").boundingBox();
+  if (!panel) throw new Error("no panel box");
+  // Bottom-left of the card: inside the door, on no text of its own.
+  await page.mouse.click(panel.x + 6, panel.y + panel.height - 6);
+  await expect(page).toHaveURL(/\/why$/);
+});
