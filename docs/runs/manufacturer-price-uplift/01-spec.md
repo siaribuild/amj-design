@@ -1,5 +1,14 @@
 # Spec — Manufacturer's price and uplift
 
+> **SUPERSEDED IN PART, 2026-08-31.** The owner ruled that nothing is stored but
+> the price: *"it's one price per line — price. Uplift is default per platform.
+> The whole concept: help ops update prices without pulling their calculators."*
+> Migration 0063, the `manufacturer_price` / `manufacturer_uplift_pct` columns
+> and the dedicated endpoint are all DELETED. The panel computes and commits the
+> resulting price through the existing override. Criteria that describe storing
+> or re-reading the manufacturer's figure, the uplift, or a prefill from them do
+> not apply. See `00-ask.md` D1 (corrected).
+
 Stage 1, 2026-08-31. Built on the stage-0 grill conclusions in
 `00-ask.md` (run with the owner, 2026-08-31). Nothing decided there (D1–D8) is
 reopened here.

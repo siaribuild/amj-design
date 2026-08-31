@@ -46,7 +46,6 @@ import { captureOne, figuresFromVariant, figuresJson, storedPickOf } from "../li
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
 import { opsThermal } from "./ops-thermal";
-import { manufacturerExGst, upliftedLineTotal, type EntryBasis } from "../../src/data/manufacturerPrice";
 
 export const ops = new Hono<{ Bindings: Env }>();
 
@@ -146,8 +145,6 @@ interface LineRow {
   parent_line_id?: string | null;
   composite_axis?: string | null;
   coverage_delta_mm?: number | null;
-  manufacturer_price?: number | null;
-  manufacturer_uplift_pct?: number | null;
 }
 
 const opsLineDto = (r: LineRow) => {
@@ -179,13 +176,6 @@ const opsLineDto = (r: LineRow) => {
     // so nothing downstream has to know this exists.
     priceCalculated: (r as { price_calculated?: number | null }).price_calculated ?? null,
     priceOverrideAt: (r as { price_override_at?: string | null }).price_override_at ?? null,
-    // 0063 — the manufacturer's own figure (always ex-GST) and the uplift that
-    // turned it into lineTotal. The WORKING, not a second answer: lineTotal is
-    // the price either way. NULL manufacturerPrice is the whole test for "not
-    // priced this way" — there is no state column and no new price state, a
-    // price being a price (owner, 2026-08-31).
-    manufacturerPrice: (r as { manufacturer_price?: number | null }).manufacturer_price ?? null,
-    manufacturerUpliftPct: (r as { manufacturer_uplift_pct?: number | null }).manufacturer_uplift_pct ?? null,
   };
 };
 
@@ -749,82 +739,6 @@ ops.get("/projects/:id/lines/:lineId/rationale", async (c) => {
     projectId: c.req.param("id"), lineId: c.req.param("lineId"),
   });
   return dto ? c.json(dto) : c.json({ error: "not_found" }, 404);
-});
-
-// PUT /api/ops/projects/:id/lines/:lineId/manufacturer-price — 0063.
-//
-// Ops receives a price per line from the manufacturer and has to reach a
-// customer price from it. Before this the only way in was the 0046 override:
-// do the margin arithmetic by hand and type the finished number, which keeps
-// the answer and loses the question.
-//
-// THE SERVER RUNS THE ARITHMETIC. The body carries what was TYPED — their
-// figure and the basis it was quoted on — never the client's computed result.
-// The panel previews with the same two functions so the figures cannot
-// diverge, but a preview is display and this is the record.
-//
-// Project-scoped like the rationale read above it: a line id belonging to
-// another project is not found, which is the same sentence as a line that does
-// not exist and a project outside the editable window. One code path, because
-// they are one fact to the reader — "not something you can price here".
-ops.put("/projects/:id/lines/:lineId/manufacturer-price", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-
-  // The same mutable-state window the override enforces: repricing happens
-  // during review and stops at issue (owner, 2026-08-31).
-  const line = await c.env.DB.prepare(
-    `SELECT q.id, q.line_kind, q.line_total, q.price_calculated, q.parent_line_id
-       FROM quote_line q JOIN project p ON p.id=q.project_id
-      WHERE q.id=? AND q.project_id=?
-        AND p.status_internal IN (
-          'submitted','triage_pending','estimator_assigned',
-          'technical_review_required','customer_clarification_required'
-        )`,
-  ).bind(c.req.param("lineId"), c.req.param("id")).first<any>();
-  if (!line) return c.json({ error: "not_found" }, 404);
-  // A parent's total is the sum of its segments (composite.ts's single-writer
-  // invariant), so a price written here would be overwritten on the next edit.
-  // Refused explicitly rather than silently ignored.
-  if (line.line_kind === "composite_parent") return c.json({ error: "composite_parent" }, 409);
-
-  const body = await c.req.json().catch(() => ({}));
-  const price = Number(body?.price);
-  const upliftPct = Number(body?.upliftPct);
-  const basis = body?.basis as EntryBasis;
-  if (!Number.isFinite(price) || price <= 0) return c.json({ error: "invalid_amount" }, 400);
-  // Zero uplift is legitimate — a pass-through at cost. Negative is not.
-  if (!Number.isFinite(upliftPct) || upliftPct < 0) return c.json({ error: "invalid_uplift" }, 400);
-  if (basis !== "ex" && basis !== "inc") return c.json({ error: "invalid_basis" }, 400);
-
-  const exPrice = manufacturerExGst(price, basis);
-  const total = upliftedLineTotal(exPrice, upliftPct);
-  // The engine's figure, captured the first time this line's price is decided
-  // by a human and preserved through later changes — so "calculated" keeps
-  // meaning what the rate card said (0046's rule, reused not duplicated).
-  const calculated = line.price_calculated ?? line.line_total;
-
-  await c.env.DB.prepare(
-    `UPDATE quote_line SET line_total=?, manufacturer_price=?, manufacturer_uplift_pct=?,
-       price_calculated=?, price_override_by=?, price_override_at=datetime('now'),
-       edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`,
-  ).bind(total, exPrice, upliftPct, calculated, staff.id, line.id).run();
-
-  if (line.parent_line_id) await recomputeComposite(c.env, line.parent_line_id);
-
-  // THE MANUFACTURER'S FIGURE IS NOT LOGGED, and neither is the uplift: either
-  // one beside the total derives the other, so logging half of it is logging
-  // their price. The audit records what the line now costs, as the override does.
-  await logEvent(c.env, {
-    actor: staff.id, entityType: "quote_line", entityId: line.id,
-    action: "line.price.manufacturer",
-    before: { lineTotal: line.line_total },
-    after: { lineTotal: total },
-  });
-
-  const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
-  return c.json({ ok: true, line: opsLineDto(fresh!) });
 });
 
 // PUT /api/ops/projects/:id/delivery { amount, postcode?, note? } — E7. Settles,
@@ -1393,15 +1307,10 @@ ops.put("/lines/:id/price", async (c) => {
 
   await c.env.DB.prepare(
     clearing
-      // ONE PRICE FACT PER LINE (owner, 2026-08-31). Both branches drop 0063's
-      // manufacturer figure and uplift: a typed number supersedes them, and a
-      // line must never carry working that does not produce its own total.
       ? `UPDATE quote_line SET line_total=?, price_calculated=NULL, price_override_by=NULL,
-           price_override_at=NULL, manufacturer_price=NULL, manufacturer_uplift_pct=NULL,
-           edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`
+           price_override_at=NULL, edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`
       : `UPDATE quote_line SET line_total=?, price_calculated=?, price_override_by=?,
-           price_override_at=datetime('now'), manufacturer_price=NULL, manufacturer_uplift_pct=NULL,
-           edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`,
+           price_override_at=datetime('now'), edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`,
   ).bind(...(clearing ? [calculated, line.id] : [total, calculated, staff.id, line.id])).run();
 
   // A segment's price change moves its parent's total, which is Σ(segments).

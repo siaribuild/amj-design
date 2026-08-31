@@ -1,5 +1,11 @@
 # Design — Manufacturer's price and uplift
 
+> **SUPERSEDED IN PART, 2026-08-31.** No storage: no migration 0063, no new
+> columns, no new endpoint, no criterion-13 clearing. The panel is a calculator
+> whose result commits through the existing `PUT /api/ops/lines/:id/price`.
+> `src/data/manufacturerPrice.ts` survives — it IS the calculator. See
+> `00-ask.md` D1 (corrected).
+
 Stage 2, 2026-08-31. Implements `01-spec.md` (25 criteria). All four owner
 decisions in `DECISIONS.md` are answered; none reopened here. The owner's door
 clarification is binding: the Price panel becomes an `OpenablePanel` whose

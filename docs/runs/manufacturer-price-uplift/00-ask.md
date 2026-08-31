@@ -26,10 +26,24 @@ and nothing about how it was reached (§3, D4).
 
 ## 3. What was decided
 
-**D1 — The uplift is stored per line.**
-Not a project setting, not a global. 30% is the default the field starts at and
-is editable for that line. Every line then explains itself later without a
-lookup against a setting that may since have moved.
+**D1 — CORRECTED 2026-08-31. Nothing is stored but the price.**
+
+> "Since when do we store 3 things? It's one price per line — price. Uplift is
+> default per platform. The whole concept, as I stated clearly: help ops to
+> update prices without pulling their calculators!"
+
+The panel is a CALCULATOR, not a record. Ops types the manufacturer's figure,
+adjusts the uplift if this line needs it, sees the result, and confirms — and
+what lands on the line is the resulting price, through the existing 0046
+override. No new columns, no new endpoint, no stored working.
+
+The 30% default is a code constant for now; it moves to ops → Pricing settings
+later, when there is a surface for it.
+
+An earlier reading of "per line" as *stored* per line produced migration 0063
+and a second endpoint. Both are deleted. The signal was there earlier and was
+missed: when the owner cut the "manufacturer's price + 30% uplift" state
+wording, a thing not shown and not a state is a thing not stored.
 
 **D2 — No $10 rounding on this path.**
 The owner was unaware the platform rounds at all, and never asked for it here.
