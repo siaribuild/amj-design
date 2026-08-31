@@ -43,6 +43,19 @@ import { money as whole } from "./record";
 const money = (n: number) =>
   `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** "No rate" is what an unpriced line says everywhere in this console — never
+ *  $0, which is a priced-at-nothing claim about work nobody has costed. One
+ *  place decides it. */
+const priceText = (n: number | null) => (n == null ? "No rate" : money(n));
+
+/** The form's initial value AND its reset, so the two cannot drift apart. */
+const FRESH = {
+  typed: "",
+  uplift: String(DEFAULT_UPLIFT_PCT),
+  basis: "ex" as EntryBasis,
+  failed: false,
+};
+
 export function PricePanel({ line, reload, editable }: {
   line: { id: string; code: string; lineTotal: number | null };
   reload: () => void;
@@ -55,20 +68,13 @@ export function PricePanel({ line, reload, editable }: {
   editable: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
-  const [uplift, setUplift] = useState(String(DEFAULT_UPLIFT_PCT));
-  const [basis, setBasis] = useState<EntryBasis>("ex");
-  const [failed, setFailed] = useState(false);
+  const [form, setForm] = useState(FRESH);
+  const { typed, uplift, basis, failed } = form;
   /** Cleared on OPEN, never on close: a panel that tidies itself afterwards is
    *  still holding the previous line's figures in the meantime, and the record
-   *  page's canvas can put a different line behind the same mounted panel. */
-  const openFresh = () => {
-    setTyped("");
-    setUplift(String(DEFAULT_UPLIFT_PCT));
-    setBasis("ex");
-    setFailed(false);
-    setOpen(true);
-  };
+   *  page's canvas can put a different line behind the same mounted panel.
+   *  The reset IS the initial value, so the two cannot drift apart. */
+  const openFresh = () => { setForm(FRESH); setOpen(true); };
 
   const price = Number(typed);
   // `Number("")` is 0, so an emptied uplift field would silently mean "no
@@ -79,7 +85,7 @@ export function PricePanel({ line, reload, editable }: {
 
   const confirm = async () => {
     if (total == null) return;
-    setFailed(false);
+    setForm((f) => ({ ...f, failed: false }));
     // The existing override endpoint (0046). Nothing new is needed: the
     // calculator's result IS a price a human decided, which is exactly what
     // that endpoint records — inline fetch because ops2 has no client module
@@ -92,7 +98,7 @@ export function PricePanel({ line, reload, editable }: {
     }).catch(() => null);
     // A pricing action that silently does not save is the worst of the failure
     // modes available here: the panel would close on a price that never landed.
-    if (!res || !res.ok) { setFailed(true); return; }
+    if (!res || !res.ok) { setForm((f) => ({ ...f, failed: true })); return; }
     setOpen(false);
     reload();
   };
@@ -122,7 +128,7 @@ export function PricePanel({ line, reload, editable }: {
               <span>{line.code} becomes</span>
               <span>
                 {total != null && line.lineTotal != null && <s>{money(line.lineTotal)}</s>}
-                <b>{total != null ? money(total) : line.lineTotal != null ? money(line.lineTotal) : "No rate"}</b>
+                <b>{priceText(total ?? line.lineTotal)}</b>
               </span>
             </div>
             {failed && (
@@ -139,7 +145,7 @@ export function PricePanel({ line, reload, editable }: {
         <div className="lp-mfr">
           <span className="lp-mfr__label">Manufacturer's price is</span>
           <IonSegment value={basis} scrollable={false}
-            onIonChange={(e) => setBasis((e.detail.value as EntryBasis) ?? "ex")}>
+            onIonChange={(e) => setForm((f) => ({ ...f, basis: (e.detail.value as EntryBasis) ?? "ex" }))}>
             <IonSegmentButton value="ex" data-testid="line-price-basis-ex">
               <IonLabel>excludes tax</IonLabel>
             </IonSegmentButton>
@@ -152,18 +158,18 @@ export function PricePanel({ line, reload, editable }: {
             <IonInput label="Manufacturer's price" labelPlacement="stacked" type="number"
               inputMode="decimal" placeholder="0.00" value={typed}
               data-testid="line-price-figure"
-              onIonInput={(e) => setTyped(String(e.detail.value ?? ""))} />
+              onIonInput={(e) => setForm((f) => ({ ...f, typed: String(e.detail.value ?? "") }))} />
             <IonInput label="Uplift %" labelPlacement="stacked" type="number"
               inputMode="decimal" value={uplift}
               data-testid="line-price-uplift"
-              onIonInput={(e) => setUplift(String(e.detail.value ?? ""))} />
+              onIonInput={(e) => setForm((f) => ({ ...f, uplift: String(e.detail.value ?? "") }))} />
           </div>
 
           {/* The working, shown only once it is real. Before that the space
               holds its height with a sentence so nothing jumps when it lands. */}
-          {total != null && exPrice != null ? (
+          {total != null ? (
             <div className="lp-mfr__work" aria-live="polite" data-testid="line-price-work">
-              <div><span>Their price</span><span>{money(exPrice)}</span></div>
+              <div><span>Their price</span><span>{money(exPrice!)}</span></div>
               <div><span>+ {pct}% uplift</span><span>{money(total - exPrice)}</span></div>
               <div className="lp-mfr__total"><span>{line.code} price</span><span>{money(total)}</span></div>
             </div>

@@ -97,6 +97,14 @@
   color: var(--ds-text-primary);
   font-size: var(--theme-font-size-base);
 }
+/* The failure line. Colour only — `role="alert"` and the footer's own padding
+ * do the rest, so this is a rule for the one thing CSS has to say. */
+.lp-mfr__failed {
+  margin: 0 0 var(--theme-spacing-sm);
+  font-size: var(--theme-font-size-sm);
+  color: var(--ds-color-error-text);
+}
+
 .lp-mfr__readback s {
   color: var(--ds-text-muted);
   margin-right: var(--theme-spacing-sm);
