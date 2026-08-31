@@ -6,6 +6,7 @@
 import type { DrawingReading, Orientation } from "./contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
+import { normalizeOpeningRef } from "../ai/energyMap";
 
 /** Orientation is a PLAIN ASSIGNMENT, not `??=`: a high-confidence drawing
  *  reading outranks the plan-context fallback already present on the model. */
@@ -27,8 +28,8 @@ export function applyDrawingOrientation(
  * Legacy readings keep their existing empty-only persistence behaviour. */
 export function applyFullAgentRooms(
   model: {
-    rooms: { roomId: string; name: string | null }[];
-    openings: { externalRef: string; roomId: string | null }[];
+    rooms: { roomId: string; name: string | null; level: string | null; areaM2: number | null; zoneType: string | null }[];
+    openings: { externalRef: string; roomId: string | null; level: string | null }[];
   },
   knownRooms: { externalRef: string; roomLabel: string | null }[],
   readings: {
@@ -39,12 +40,12 @@ export function applyFullAgentRooms(
     flags?: unknown[];
   }[],
 ): void {
-  const key = (value: string) => value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const key = (value: string) => normalizeOpeningRef(value) ?? "";
   const openings = new Map(model.openings.map((opening) => [key(opening.externalRef), opening]));
   const roomIds = new Map(
     model.rooms
-      .filter((room): room is { roomId: string; name: string } => !!room.name)
-      .map((room) => [key(room.name), room.roomId]),
+      .filter((room) => !!room.name)
+      .map((room) => [key(room.name!), room.roomId]),
   );
   const candidates = new Map(knownRooms.map((room) => [key(room.externalRef), room]));
 
@@ -56,9 +57,16 @@ export function applyFullAgentRooms(
       || reading.flags?.length
     ) continue;
     const openingKey = key(reading.externalRef);
-    const roomId = roomIds.get(key(reading.roomLabel));
     const opening = openings.get(openingKey);
-    if (opening && roomId) opening.roomId = roomId;
+    if (!opening) continue;
+    const roomKey = key(reading.roomLabel);
+    let roomId = roomIds.get(roomKey);
+    if (!roomId) {
+      roomId = `drawing_${uuid()}`;
+      model.rooms.push({ roomId, name: reading.roomLabel, level: opening.level, areaM2: null, zoneType: null });
+      roomIds.set(roomKey, roomId);
+    }
+    opening.roomId = roomId;
     const candidate = candidates.get(openingKey);
     if (candidate) candidate.roomLabel = reading.roomLabel;
   }

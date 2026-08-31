@@ -17,14 +17,17 @@ import type {
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
 import { compositionFromSchedule } from "./reconcile";
+import { applyDrawingConsistencyFlags } from "./consistency";
 
 const MAX_TURNS = 4;
 const MAX_RECORDS = 60;
 const MAX_RENDER_REQUESTS = 12;
-const MAX_TOTAL_RENDERS = 60;
-const MAX_OVERVIEW_PAGES = 10;
+const MAX_TOTAL_RENDERS = 36;
 const MAX_ACTIVE_IMAGES = 12;
-const OVERVIEW_DPI = 110;
+const MAX_ACTIVE_IMAGE_B64_CHARS = 12 * 1024 * 1024;
+const MAX_TAG_CANDIDATES_PER_TAG = 4;
+const MAX_HARVEST_TEXT_CHARS = 48_000;
+const MAX_NEARBY_TEXT_CHARS = 400;
 const MIN_FRAME_PIXELS = 120;
 const MAX_MEMORY_CHARS = 8_000;
 const OPERATIONS: OpeningOperation[] = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"];
@@ -164,12 +167,24 @@ export function buildFullDocumentHarvest(
     if (!tiers.includes(item.tier)) tiers.push(item.tier);
     tiersByPage.set(item.pageNo, tiers);
   }
-  const tags = new Map(scheduleRows.map((row) => [normalizeOpeningRef(row.tag), normalizeOpeningRef(row.tag)]));
-  const tagCandidates: FullDocumentHarvest["tagCandidates"] = [];
+  const tags = new Set(scheduleRows.map((row) => normalizeOpeningRef(row.tag)).filter((tag): tag is string => !!tag));
+  const hitsByTag = new Map<string, { tag: string; page: InspectResponse["pages"][number]; word: InspectResponse["pages"][number]["words"][number]; rank: number }[]>();
   for (const page of inspected.pages) {
     for (const word of page.words) {
       const tag = normalizeOpeningRef(word.text);
       if (!tag || !tags.has(tag)) continue;
+      const tiers = tiersByPage.get(page.pageNo) ?? [];
+      const rank = tiers.includes("floorplan") ? 0 : tiers.includes("elevation") ? 1 : tiers.includes("siteplan") ? 2 : 3;
+      const hits = hitsByTag.get(tag) ?? [];
+      if (hits.filter((hit) => hit.page.pageNo === page.pageNo).length >= 2) continue;
+      hits.push({ tag, page, word, rank });
+      hits.sort((a, b) => a.rank - b.rank || a.page.pageNo - b.page.pageNo || a.word.top - b.word.top || a.word.x0 - b.word.x0);
+      hitsByTag.set(tag, hits.slice(0, MAX_TAG_CANDIDATES_PER_TAG));
+    }
+  }
+  const tagCandidates: FullDocumentHarvest["tagCandidates"] = [];
+  for (const hits of hitsByTag.values()) {
+    for (const { tag, page, word } of hits) {
       const [cx, cy] = centre(word);
       const nearbyText = page.words
         .filter((candidate) => {
@@ -181,14 +196,24 @@ export function buildFullDocumentHarvest(
         .map((candidate) => candidate.text)
         .join(" ");
       tagCandidates.push({
-        tag,
-        pageNo: page.pageNo,
-        boxPt: [word.x0, word.top, word.x1, word.bottom],
-        nearbyText: compactText(nearbyText, 800),
+        tag, pageNo: page.pageNo, boxPt: [word.x0, word.top, word.x1, word.bottom],
+        nearbyText: compactText(nearbyText, MAX_NEARBY_TEXT_CHARS),
       });
     }
   }
   const inventoryByPage = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
+  const excerpts = new Map<number, string>();
+  let excerptChars = MAX_HARVEST_TEXT_CHARS;
+  for (const page of [...inspected.pages].sort((a, b) => {
+    const selectedA = (tiersByPage.get(a.pageNo)?.length ?? 0) > 0 ? 0 : 1;
+    const selectedB = (tiersByPage.get(b.pageNo)?.length ?? 0) > 0 ? 0 : 1;
+    return selectedA - selectedB || a.pageNo - b.pageNo;
+  })) {
+    const limit = Math.min(excerptChars, (tiersByPage.get(page.pageNo)?.length ?? 0) > 0 ? 2_000 : 600);
+    const excerpt = compactText(page.text, limit);
+    excerpts.set(page.pageNo, excerpt);
+    excerptChars -= excerpt.length;
+  }
   return {
     schedule: scheduleRows.map((row) => ({
       tag: normalizeOpeningRef(row.tag) ?? row.tag,
@@ -207,7 +232,7 @@ export function buildFullDocumentHarvest(
         widthPt: inventory?.widthPt ?? 0,
         heightPt: inventory?.heightPt ?? 0,
         tiers,
-        textExcerpt: compactText(page.text, tiers.length ? 4_000 : 1_200),
+        textExcerpt: excerpts.get(page.pageNo) ?? "",
       };
     }),
     tagCandidates,
@@ -229,44 +254,42 @@ export function validateFullDocumentTurn(
 ): FullDocumentTurn | null {
   const value = safeJson(raw);
   if (!value || typeof value !== "object") return null;
-  if (!Array.isArray(value.renderRequests) || value.renderRequests.length > MAX_RENDER_REQUESTS) return null;
-  if (!Array.isArray(value.records) || value.records.length > MAX_RECORDS) return null;
-  if (!Array.isArray(value.declines) || value.declines.length > MAX_RECORDS || typeof value.complete !== "boolean") return null;
+  if (!Array.isArray(value.renderRequests) || !Array.isArray(value.records) || !Array.isArray(value.declines) || typeof value.complete !== "boolean") return null;
   const memory = typeof value.memory === "string" ? value.memory.trim().slice(0, MAX_MEMORY_CHARS) : "";
   if (!memory) return null;
   const pages = new Set(pageNumbers);
   const tags = new Set(tagVocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
   const renderRequests: FullAgentRenderRequest[] = [];
-  for (const request of value.renderRequests) {
-    if (!request || !Number.isInteger(request.pageNo) || !pages.has(request.pageNo)) return null;
-    if (!Number.isInteger(request.dpi) || request.dpi < 96 || request.dpi > 300) return null;
+  for (const request of value.renderRequests.slice(0, MAX_RENDER_REQUESTS)) {
+    if (!request || !Number.isInteger(request.pageNo) || !pages.has(request.pageNo)) continue;
     const bboxPt = request.bboxPt == null ? undefined : box(request.bboxPt);
-    if (request.bboxPt != null && !bboxPt) return null;
+    if (request.bboxPt != null && !bboxPt) continue;
+    if (!Number.isInteger(request.dpi) || request.dpi < 96 || request.dpi > (bboxPt ? 300 : 120)) continue;
     const threshold = request.threshold == null ? undefined : request.threshold;
-    if (threshold != null && (!Number.isInteger(threshold) || threshold < 0 || threshold > 255)) return null;
+    if (threshold != null && (!Number.isInteger(threshold) || threshold < 0 || threshold > 255)) continue;
     renderRequests.push({ pageNo: request.pageNo, dpi: request.dpi, ...(bboxPt ? { bboxPt } : {}), ...(threshold != null ? { threshold } : {}) });
   }
   const records: FullAgentProposal[] = [];
   const seen = new Set<string>();
-  for (const item of value.records) {
+  for (const item of value.records.slice(0, MAX_RECORDS)) {
     const tag = normalizeOpeningRef(item?.tag);
     const frameBoxPt = box(item?.frameBoxPt);
     const operations = Array.isArray(item?.operations) ? item.operations : [];
     const unitRatios = Array.isArray(item?.unitRatios) ? item.unitRatios : [];
-    if (!tag || !tags.has(tag) || seen.has(tag) || !frameBoxPt || operations.length < 1 || operations.length > 12 || operations.length !== unitRatios.length) return null;
-    if (!operations.every((operation: unknown) => OPERATIONS.includes(operation as OpeningOperation))) return null;
-    if (!unitRatios.every((ratio: unknown) => typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0)) return null;
-    if (item.divisionAxis !== "vertical" && item.divisionAxis !== "horizontal") return null;
-    if (item.orientation != null && !ORIENTATIONS.includes(item.orientation)) return null;
-    if (item.evidenceView !== "elevation" && item.evidenceView !== "detail") return null;
-    if (typeof item.evidenceRenderId !== "string" || !item.evidenceRenderId.trim()) return null;
-    if (item.confidence !== "high" && item.confidence !== "low") return null;
+    if (!tag || !tags.has(tag) || seen.has(tag) || !frameBoxPt || operations.length < 1 || operations.length > 12 || operations.length !== unitRatios.length) continue;
+    if (!operations.every((operation: unknown) => OPERATIONS.includes(operation as OpeningOperation))) continue;
+    if (!unitRatios.every((ratio: unknown) => typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0)) continue;
+    if (item.divisionAxis !== "vertical" && item.divisionAxis !== "horizontal") continue;
+    if (item.orientation != null && !ORIENTATIONS.includes(item.orientation)) continue;
+    if (item.evidenceView !== "elevation" && item.evidenceView !== "detail") continue;
+    if (typeof item.evidenceRenderId !== "string" || !item.evidenceRenderId.trim()) continue;
+    if (item.confidence !== "high" && item.confidence !== "low") continue;
     const flags = Array.isArray(item.flags) ? [...new Set(item.flags)] : null;
-    if (!flags || flags.length !== item.flags.length || !flags.every((flag) => FLAGS.includes(flag as DrawingFlag))) return null;
+    if (!flags || !flags.every((flag) => FLAGS.includes(flag as DrawingFlag))) continue;
     const basis = Array.isArray(item.basis)
       ? item.basis.filter((entry: unknown): entry is string => typeof entry === "string" && !!entry.trim()).map((entry: string) => entry.trim().slice(0, 180)).slice(0, 8)
       : [];
-    if (!basis.length) return null;
+    if (!basis.length) continue;
     seen.add(tag);
     records.push({
       tag,
@@ -288,10 +311,10 @@ export function validateFullDocumentTurn(
   }
   const declines: FullDocumentTurn["declines"] = [];
   const declined = new Set<string>();
-  for (const item of value.declines) {
+  for (const item of value.declines.slice(0, MAX_RECORDS)) {
     const tag = normalizeOpeningRef(item?.tag);
     const reason = typeof item?.reason === "string" ? item.reason.trim().slice(0, 240) : "";
-    if (!tag || !tags.has(tag) || seen.has(tag) || declined.has(tag) || !reason) return null;
+    if (!tag || !tags.has(tag) || seen.has(tag) || declined.has(tag) || !reason) continue;
     declined.add(tag);
     declines.push({ tag, reason });
   }
@@ -307,7 +330,7 @@ METHOD
 - The deterministic harvest contains free PDF facts. Schedule tag/width/height are authoritative. priorRoomCandidate, priorStoreyCandidate, page tiers, nearby words and title excerpts are only clues: correct them when the drawings show otherwise.
 - Floor plans establish tag location, room, storey, wall and orientation. Elevations/details establish composition. Never accept schedule type or a generic default as visual proof of a split.
 - A visible chevron identifies an operable sash; use the schedule type only to name that visibly operable sash. Plain panes are fixed. Mullions divide side-by-side units; transoms divide stacked units; arrows identify sliders/stackers.
-- Render broad faces first. Request a 250-300 dpi tight crop only when the supplied image does not make a symbol or divider legible.
+- The first turn is text-only. Use it to request only the useful broad plan/elevation pages at 96-120 dpi; request a 250-300 dpi tight crop only when a supplied image does not make a symbol or divider legible.
 - Report what is drawn. Conflicts and physically implausible results are low confidence with an actionable flag, never silently rewritten.
 
 EVIDENCE AND OUTPUT
@@ -345,7 +368,7 @@ const recordSchema = {
 export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<FullDocumentAgentInput, FullDocumentTurn> {
   return {
     id: "full_document_agent_turn",
-    promptVersion: "v1",
+    promptVersion: "v2",
     responseSchema: {
       type: "object",
       properties: {
@@ -393,15 +416,6 @@ function closeUp(frame: CropBoxPt, page: { widthPt: number; heightPt: number }):
   return [Math.max(0, frame[0] - x), Math.max(0, frame[1] - y), Math.min(page.widthPt, frame[2] + x), Math.min(page.heightPt, frame[3] + y)];
 }
 
-function iou(a: CropBoxPt, b: CropBoxPt): number {
-  const width = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
-  const height = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-  const intersection = width * height;
-  const areaA = (a[2] - a[0]) * (a[3] - a[1]);
-  const areaB = (b[2] - b[0]) * (b[3] - b[1]);
-  return intersection / Math.max(1, areaA + areaB - intersection);
-}
-
 const round5 = (value: number): number => Math.round(value / 5) * 5;
 
 function readingFromProposal(
@@ -432,7 +446,7 @@ function readingFromProposal(
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated", elevation: proposal.elevation,
     roomState: proposal.roomLabel ? "value" : "not_stated", roomLabel: proposal.roomLabel,
-    gapCode: confidence === "high" ? null : "model_declined",
+    gapCode: null,
     gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...(proposal.storey ? [`storey:${proposal.storey}`] : [])].join(" | ").slice(0, 1000),
     cropKey: render.cropKey, pageNo: render.pageNo, sheetRef: proposal.elevation,
     regionJson: [
@@ -480,17 +494,6 @@ function emptyReport(fileId: string, inspected: InspectResponse): DrawingFileRep
   };
 }
 
-function overviewPages(harvest: FullDocumentHarvest): number[] {
-  const useful = new Set<number>();
-  for (const page of harvest.pages) {
-    if (page.tiers.some((tier) => tier === "floorplan" || tier === "elevation" || tier === "siteplan")) useful.add(page.pageNo);
-    else if (/\b(?:elevations?|floor\s*plan|ground\s*floor|first\s*floor|site\s*plan)\b/i.test(page.textExcerpt)) useful.add(page.pageNo);
-  }
-  if (!useful.size) for (const candidate of harvest.tagCandidates) useful.add(candidate.pageNo);
-  if (!useful.size) for (const page of harvest.pages) useful.add(page.pageNo);
-  return [...useful].sort((a, b) => a - b).slice(0, MAX_OVERVIEW_PAGES);
-}
-
 export async function runFullDocumentAgent(args: {
   fileId: string;
   scheduleRows: EnrichScheduleRow[];
@@ -508,7 +511,6 @@ export async function runFullDocumentAgent(args: {
   const renders = new Map<string, StoredRender>();
   const renderCache = new Map<string, StoredRender>();
   const history: FullAgentHistoryItem[] = [];
-  const overviewIds: string[] = [];
   let activeIds: string[] = [];
   let renderSequence = 0;
   let totalRenders = 0;
@@ -520,7 +522,7 @@ export async function runFullDocumentAgent(args: {
     if (request.bboxPt && !inside(request.bboxPt, outer)) return null;
     const key = JSON.stringify([request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
     const cached = renderCache.get(key);
-    if (cached) return cached;
+    if (cached?.pngB64) return cached;
     if (totalRenders >= MAX_TOTAL_RENDERS) return null;
     const response = await deps.render({
       pageNo: request.pageNo,
@@ -531,6 +533,7 @@ export async function runFullDocumentAgent(args: {
     report.containerCalls++;
     const image = response.images[0];
     if (!image) return null;
+    if (image.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) throw new Error("render_image_too_large");
     const cropKey = await deps.store(id, image.pngB64);
     const stored: StoredRender = {
       id, pageNo: request.pageNo, bboxPt: request.bboxPt ?? outer, dpi: request.dpi,
@@ -548,16 +551,6 @@ export async function runFullDocumentAgent(args: {
   const selected = selectPages(inspected.inventory, inspected.pages).selected;
   report.steps.selectPages = { selected, of: inspected.inventory.pageCount };
   await deps.onProgress?.(0, scheduleRows.length, "elevation_inventory");
-  for (const pageNo of overviewPages(harvest)) {
-    const id = `fd_overview_${String(overviewIds.length + 1).padStart(2, "0")}`;
-    try {
-      const render = await addRender(id, { pageNo, dpi: OVERVIEW_DPI });
-      if (render) overviewIds.push(render.id);
-    } catch {
-      // A missed advisory overview does not stop the agent requesting that page.
-    }
-  }
-  activeIds = [...overviewIds];
   await deps.onProgress?.(0, scheduleRows.length, "floorplan_location");
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
@@ -567,7 +560,7 @@ export async function runFullDocumentAgent(args: {
     if (!pendingTags.length) break;
     const imageDataUrls = activeIds
       .map((id) => renders.get(id))
-      .filter((render): render is StoredRender => !!render)
+      .filter((render): render is StoredRender => !!render?.pngB64)
       .slice(-MAX_ACTIVE_IMAGES)
       .map((render) => ({ renderId: render.id, dataUrl: `data:image/png;base64,${render.pngB64}` }));
     let action: FullDocumentTurn | null = null;
@@ -594,7 +587,7 @@ export async function runFullDocumentAgent(args: {
 
     const accepted: string[] = [];
     const rejected: { tag: string; reason: string }[] = [];
-    const requested = [...action.renderRequests];
+    const repairRequests: FullAgentRenderRequest[] = [];
     report.steps.read.attempted += action.records.length + action.declines.length;
     for (const proposal of action.records) {
       if (!pending.has(proposal.tag)) {
@@ -610,7 +603,7 @@ export async function runFullDocumentAgent(args: {
       }
       if (!frameIsLegible(proposal.frameBoxPt, render)) {
         rejected.push({ tag: proposal.tag, reason: "composition_evidence_not_legible" });
-        requested.push({ pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page) });
+        repairRequests.push({ pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page) });
         continue;
       }
       proposals.set(proposal.tag, proposal);
@@ -625,57 +618,60 @@ export async function runFullDocumentAgent(args: {
     }
     await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "opening_read");
 
+    const requestedByKey = new Map<string, FullAgentRenderRequest>();
+    for (const request of [...repairRequests, ...action.renderRequests]) {
+      const key = JSON.stringify([request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
+      if (!requestedByKey.has(key)) requestedByKey.set(key, request);
+    }
+    const requested = [...requestedByKey.values()];
+    if (requested.length > MAX_RENDER_REQUESTS) {
+      rejected.push({ tag: "*", reason: `render_request_budget_dropped_${requested.length - MAX_RENDER_REQUESTS}` });
+    }
+    const boundedRequests = requested.slice(0, MAX_RENDER_REQUESTS);
+    if (boundedRequests.length) {
+      for (const id of activeIds) {
+        const render = renders.get(id);
+        if (render) render.pngB64 = "";
+      }
+      activeIds = [];
+    }
     const newRenders: StoredRender[] = [];
     await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "render_crops");
-    for (const request of requested.slice(0, MAX_RENDER_REQUESTS)) {
+    for (const request of boundedRequests) {
       try {
         renderSequence++;
         const id = `fd_t${String(turn).padStart(3, "0")}_${String(renderSequence).padStart(2, "0")}`;
         const render = await addRender(id, request);
-        if (render && !newRenders.some((item) => item.id === render.id)) newRenders.push(render);
-      } catch {
-        rejected.push({ tag: "*", reason: `render_failed_page_${request.pageNo}` });
+        if (!render) rejected.push({ tag: "*", reason: `render_unavailable_page_${request.pageNo}` });
+        else if (!newRenders.some((item) => item.id === render.id)) newRenders.push(render);
+      } catch (error) {
+        rejected.push({ tag: "*", reason: error instanceof Error && error.message === "render_image_too_large"
+          ? `render_image_too_large_page_${request.pageNo}` : `render_failed_page_${request.pageNo}` });
+      }
+    }
+    if (newRenders.length) {
+      let activeChars = 0;
+      activeIds = [];
+      for (const render of newRenders) {
+        if (activeIds.length >= MAX_ACTIVE_IMAGES || activeChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) {
+          render.pngB64 = "";
+          rejected.push({ tag: "*", reason: `render_attachment_budget_page_${render.pageNo}` });
+          continue;
+        }
+        activeIds.push(render.id);
+        activeChars += render.pngB64.length;
       }
     }
     history.push({
       turn, memory: action.memory, accepted, rejected, declined,
       renders: newRenders.map((render) => ({ renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt })),
     });
-    if (newRenders.length) {
-      const newPages = new Set(newRenders.map((render) => render.pageNo));
-      activeIds = [
-        ...overviewIds.filter((id) => {
-          const render = renders.get(id);
-          return render && !newPages.has(render.pageNo);
-        }).slice(0, Math.max(0, MAX_ACTIVE_IMAGES - newRenders.length)),
-        ...newRenders.map((render) => render.id),
-      ];
-    }
     if (action.complete && proposals.size + declines.size === scheduleRows.length) break;
   }
 
   const validated = [...proposals.entries()].map(([tag, proposal]) => ({ tag, proposal, row: rowByTag.get(tag), render: renders.get(proposal.evidenceRenderId) }))
     .filter((item): item is { tag: string; proposal: FullAgentProposal; row: EnrichScheduleRow; render: StoredRender } => !!item.row && !!item.render);
-  for (let left = 0; left < validated.length; left++) {
-    for (let right = left + 1; right < validated.length; right++) {
-      const a = validated[left], b = validated[right];
-      if (a.render.pageNo === b.render.pageNo && iou(a.proposal.frameBoxPt, b.proposal.frameBoxPt) > 0.85) {
-        for (const item of [a, b]) {
-          if (!item.proposal.flags.includes("duplicateFrame")) item.proposal.flags.push("duplicateFrame");
-          item.proposal.confidence = "low";
-        }
-      }
-      if (a.render.pageNo !== b.render.pageNo || a.proposal.elevation !== b.proposal.elevation || a.proposal.storey !== b.proposal.storey) continue;
-      const scheduleRatio = a.row.widthMm / b.row.widthMm;
-      const drawnRatio = (a.proposal.frameBoxPt[2] - a.proposal.frameBoxPt[0]) / (b.proposal.frameBoxPt[2] - b.proposal.frameBoxPt[0]);
-      if ((scheduleRatio > 1.25 && drawnRatio < 0.9) || (scheduleRatio < 0.8 && drawnRatio > 1.1)) {
-        for (const item of [a, b]) {
-          if (!item.proposal.flags.includes("drawingInconsistency")) item.proposal.flags.push("drawingInconsistency");
-          item.proposal.confidence = "low";
-        }
-      }
-    }
-  }
+  applyDrawingConsistencyFlags(validated);
 
   const readings = scheduleRows.map((row) => {
     const tag = normalizeOpeningRef(row.tag) ?? row.tag;
@@ -706,5 +702,7 @@ export const FULL_DOCUMENT_AGENT_LIMITS = {
   maxRecords: MAX_RECORDS,
   maxRenderRequests: MAX_RENDER_REQUESTS,
   maxTotalRenders: MAX_TOTAL_RENDERS,
-  maxOverviewPages: MAX_OVERVIEW_PAGES,
+  maxActiveImageB64Chars: MAX_ACTIVE_IMAGE_B64_CHARS,
+  maxTagCandidatesPerTag: MAX_TAG_CANDIDATES_PER_TAG,
+  maxHarvestTextChars: MAX_HARVEST_TEXT_CHARS,
 } as const;
