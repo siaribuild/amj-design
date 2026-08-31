@@ -1,4 +1,5 @@
 import { IonButton, IonSkeletonText } from "@ionic/react";
+import { OpenablePanel } from "../chrome/OpenablePanel";
 import { NOT_RECORDED, panelCopy, type PanelLine } from "./whyCopy";
 import type { RationaleLoad } from "./useLineRationale";
 
@@ -10,11 +11,12 @@ import type { RationaleLoad } from "./useLineRationale";
  * makes R2's ban checkable without a browser, and it is why nothing here builds
  * a sentence — a string assembled in JSX is a string no node test can walk.
  *
- * ── THE DOOR IS A STRETCHED BUTTON, NOT A WRAPPING ONE ──────────────────────
- * A `<button>` around a `<dl>` is invalid HTML and flattens every term/value
- * pair into one accessible name, so the panel stays a `<section>` and the button
- * is positioned over it. The focus ring is drawn around the CARD rather than
- * around an invisible control.
+ * ── THE DOOR IS `OpenablePanel`'S ───────────────────────────────────────────
+ * The stretched button, the chevron, the card focus ring and a name that says
+ * where it goes are four things that must agree, and they now live in
+ * `chrome/OpenablePanel.tsx` where a second consumer inherits them rather than
+ * re-solving them. This file passes `open` and the words; it no
+ * longer builds a door.
  *
  * ── AND IT IS ALWAYS THERE (FB-AC-38, superseding WHY-AC-41) ────────────────
  * WHY-AC-41 gave a panel with no recorded run no control at all. The owner
@@ -36,8 +38,7 @@ export function WhyPanel({ load, onOpen, reload }: {
 
   if (load.status === "loading") {
     return (
-      <section className="lp-panel" data-testid="line-why" aria-label="Why this product" aria-busy="true">
-        <h2 className="lp-panel__title">Why this product</h2>
+      <OpenablePanel title="Why this product" testId="line-why" busy>
         {/* Three bars at the widths the three lines will occupy, so the page
             does not jump when the data lands. */}
         <div className="lp-why__skeleton">
@@ -45,7 +46,7 @@ export function WhyPanel({ load, onOpen, reload }: {
           <IonSkeletonText animated style={{ width: "55%" }} />
           <IonSkeletonText animated style={{ width: "85%" }} />
         </div>
-      </section>
+      </OpenablePanel>
     );
   }
 
@@ -54,31 +55,22 @@ export function WhyPanel({ load, onOpen, reload }: {
     // different things and only one of them is worth retrying; saying the first
     // when the second happened would state something nobody established.
     return (
-      <section className="lp-panel" data-testid="line-why" aria-label="Why this product">
-        <h2 className="lp-panel__title">Why this product</h2>
+      <OpenablePanel title="Why this product" testId="line-why">
         <p className="lp-why__error">The reasoning for this line could not be read just now.</p>
         <IonButton className="lp-why__retry" size="small" fill="outline" onClick={reload} data-testid="line-why-retry">
           Try again
         </IonButton>
-      </section>
+      </OpenablePanel>
     );
   }
 
   const copy = panelCopy(load.dto);
-  const body = (
-    <>
-      {/* THE HEAD IS ONE SHAPE NOW. Both branches of a `copy.door` test lived
-          here — one with the chevron and one without — and the second carried a
-          duplicate of this very `<h2>`. `panelCopy` returns a door on all four
-          kinds since FB-AC-38, so the no-door branch was unreachable: exactly
-          the "what-if scenario in the code" the owner's ruling removed, left
-          behind by the ruling that removed it. */}
-      <span className="lp-panel__head">
-        <h2 className="lp-panel__title">Why this product</h2>
-        <svg className="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
-      </span>
+  return (
+    <OpenablePanel
+      title="Why this product"
+      testId="line-why"
+      open={{ label: copy.door, onOpen }}
+    >
       <dl className="lp-panel__lines">
         {copy.lines.map((line) => (
           <div key={line.k} className="lp-panel__line">
@@ -88,24 +80,7 @@ export function WhyPanel({ load, onOpen, reload }: {
         ))}
       </dl>
       {copy.foot && <p className="lp-panel__more" data-testid="line-why-foot">{copy.foot}</p>}
-    </>
-  );
-
-  return (
-    <section
-      className="lp-panel lp-panel--door"
-      data-testid="line-why"
-      aria-label="Why this product"
-    >
-      <button
-        type="button"
-        className="lp-panel__door"
-        data-testid="line-why-open"
-        aria-label={copy.door}
-        onClick={onOpen}
-      />
-      {body}
-    </section>
+    </OpenablePanel>
   );
 }
 

@@ -1,0 +1,62 @@
+/* The panel, and the door it may be — companion to `chrome/OpenablePanel.tsx`
+ * the way `rows.css` is to `RowList.tsx`. Moved here from `line.css`, not
+ * invented.
+ *
+ * `ponytail:` the `lp-` prefix is inherited — `__title`, `__lines`, `__line`,
+ * `__more` are the line page's content grammar, named in `LineReview.tsx` and
+ * in eight Playwright selectors. Rename to `ops2-panel` when a surface OUTSIDE
+ * the line page adopts this and the `lp-` reads wrong there.
+ */
+
+/* Card — moved verbatim from line.css. */
+.lp-panel {
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--ds-layer-raised);
+}
+
+/* ── The door ───────────────────────────────────────────────────────────────
+ * A STRETCHED BUTTON, not a wrapping one: a button around a dl is invalid and
+ * flattens every term/value pair into one accessible name. The focus ring is
+ * drawn around the CARD, because that is the thing that moves.
+ *
+ * The chevron's column is reserved ONLY under `--door`, so a panel that opens
+ * nothing keeps its layout exactly as it was — no gutter, no shift. */
+.lp-panel--door {
+  position: relative;
+  padding-right: calc(var(--theme-spacing-md) + 16px + var(--theme-spacing-sm));
+}
+.lp-panel__door {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: var(--ds-radius-surface);
+}
+/* Hover is not an affordance on a phone, which is half this console's use — so
+   it decorates and never carries the meaning. */
+@media (hover: hover) {
+  .lp-panel--door:hover { background: var(--ds-color-brand-wash); }
+}
+.lp-panel__door:focus-visible { outline-offset: 2px; }
+
+/* ── The chevron ────────────────────────────────────────────────────────────
+ * Centred on the panel's FULL HEIGHT, right-hand side. It used to sit inside
+ * the header row beside the `<h2>`, which read as decoration on the heading
+ * rather than as "this whole block is pressable". Out of flow, so a tall panel
+ * puts the arrow well below the heading — the accepted trade — and a panel
+ * with no door reflows not at all. */
+.lp-panel__chev {
+  position: absolute;
+  right: var(--theme-spacing-md);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--ds-text-muted);
+}

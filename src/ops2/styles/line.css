@@ -342,16 +342,8 @@
   color: var(--ds-text-muted);
 }
 
-/* ── A panel: one fact-block ────────────────────────────────────────────────
- * Same object as the queue's list and the record's — card, hairline border,
- * 5px corners, the raised shadow. */
-.lp-panel {
-  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
-  box-shadow: var(--ds-layer-raised);
-}
+/* The panel card and its door live in panel.css, beside the component that
+ * renders them. */
 /* UPPERCASE IS RESERVED FOR LABELS in FrameFlow — small and wide-tracked — and
    a panel's title is exactly that: a name for the block, not a heading someone
    reads as a sentence. */
@@ -521,42 +513,6 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
    Specification and Price panels at the same time — they use the same object,
    and were wearing the same defect. */
 .lp-panel__lines > div { display: contents; }
-
-/* ── The door ───────────────────────────────────────────────────────────────
- * A STRETCHED BUTTON, not a wrapping one: a button around a dl is invalid and
- * flattens every term/value pair into one accessible name. The focus ring is
- * drawn around the CARD, because that is the thing that moves. */
-.lp-panel--door { position: relative; }
-.lp-panel__door {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  padding: 0;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  border-radius: var(--ds-radius-surface);
-}
-/* Hover is not an affordance on a phone, which is half this console's use — so
-   it decorates and never carries the meaning. */
-@media (hover: hover) {
-  .lp-panel--door:hover { background: var(--ds-color-brand-wash); }
-}
-.lp-panel__door:focus-visible { outline-offset: 2px; }
-.lp-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--theme-spacing-sm);
-}
-.lp-panel__head > .lp-panel__title { margin-bottom: 0; }
-.lp-panel__chev {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--ds-text-muted);
-}
-.lp-panel--door .lp-panel__lines { margin-top: var(--theme-spacing-xs); }
 
 /* ── The panel's own values ────────────────────────────────────────────────*/
 /* A THERMAL FIGURE IS A FIGURE, and figures in this console are the display
