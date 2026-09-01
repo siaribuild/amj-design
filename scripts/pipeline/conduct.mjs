@@ -517,8 +517,15 @@ export async function paneMode(args) {
 // flight - and every loadRun(activeSlug()) downstream would then be reading a
 // different run than the one the command was given. Pinning is what makes
 // `next`'s own "resolved once" comment true for the stages it goes on to run.
-let pinnedSlug = (process.argv.find((a) => a.startsWith('--slug=')) || '').slice(7) || null
-export const pinSlug = (slug) => { pinnedSlug = slug }
+//
+// The pin is a path segment - join(RUNS, slug, ...) - so it goes through the
+// same gate `start` has always used. Taken raw from argv it was a traversal:
+// `--slug=../../etc` resolved outside docs/runs entirely, to be read from and
+// written to.
+export const pinSlug = (slug) => { pinnedSlug = slug && checkSlug(slug) }
+let pinnedSlug = null
+const slugFlag = process.argv.find((a) => a.startsWith('--slug='))
+if (slugFlag) pinSlug(slugFlag.slice(7))
 
 function activeSlug() {
   if (pinnedSlug) return pinnedSlug

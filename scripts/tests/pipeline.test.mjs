@@ -2545,3 +2545,26 @@ test('a stage runs against the run it was told to, even when .active moves under
   assert.equal(JSON.parse(readFileSync(join(runs, 'other', 'run.json'), 'utf8')).stages.design, undefined,
     'the stage was executed against whatever .active happened to say - the pin is not real')
 })
+
+test('--slug= is validated like every other slug - it names a run, not a path', () => {
+  // Codex stop-gate finding: the pinned slug was taken raw from argv and fed
+  // straight into join(RUNS, slug, ...). `conduct plan --slug=../../..` would
+  // read, and a stage would write, outside docs/runs entirely. `start` has
+  // always validated its slug; the pin skipped the same gate.
+  const { root } = seedRun('slug-traversal', { spec: { code: 0 } })
+  const projects = tmp('slug-traversal-projects')
+  const attempt = (slug) => {
+    try {
+      conduct(root, projects, 'plan', '--slug=' + slug)
+      return null
+    } catch (e) { return (e.stdout || '') + (e.stderr || '') }
+  }
+
+  for (const bad of ['../../etc', '..', 'a/b', 'C:\Windows', 'UPPER']) {
+    const out = attempt(bad)
+    assert.ok(out, 'the pin accepted "' + bad + '" - it is used as a path segment')
+    assert.match(out, /slug must match/,
+      'a rejected slug must say why, like every other slug does: ' + out)
+  }
+  assert.equal(attempt('demo'), null, 'a well-formed slug must still be accepted')
+})
