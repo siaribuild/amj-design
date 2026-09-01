@@ -18,6 +18,7 @@ import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
 import { compositionFromSchedule } from "./reconcile";
 import { applyDrawingConsistencyFlags } from "./consistency";
+import { sizesFromRatios } from "../estimator/split";
 
 const MAX_TURNS = 4;
 const MAX_RECORDS = 60;
@@ -417,8 +418,6 @@ function closeUp(frame: CropBoxPt, page: { widthPt: number; heightPt: number }):
   return [Math.max(0, frame[0] - x), Math.max(0, frame[1] - y), Math.min(page.widthPt, frame[2] + x), Math.min(page.heightPt, frame[3] + y)];
 }
 
-const round5 = (value: number): number => Math.round(value / 5) * 5;
-
 function readingFromProposal(
   proposal: FullAgentProposal,
   row: EnrichScheduleRow,
@@ -428,6 +427,7 @@ function readingFromProposal(
 ): DrawingReading {
   const total = proposal.unitRatios.reduce((sum, ratio) => sum + ratio, 0);
   const ratios = proposal.unitRatios.map((ratio) => ratio / total);
+  const widths = sizesFromRatios(ratios, row.widthMm, 5);
   const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
@@ -441,7 +441,7 @@ function readingFromProposal(
         role: passive.has(operation) ? "passive" : "operable",
         operation,
         ratio: ratios[index],
-        derivedWidthMm: round5(ratios[index] * row.widthMm),
+        derivedWidthMm: widths[index],
       })),
     },
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,

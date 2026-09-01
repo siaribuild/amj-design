@@ -18,6 +18,7 @@ import { MAX_CROPS_PER_PAGE } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { compositionFromSchedule } from "./reconcile";
 import { applyDrawingConsistencyFlags } from "./consistency";
+import { sizesFromRatios } from "../estimator/split";
 
 const MAX_TURNS = 8;
 const MAX_RESEARCH_TURNS = 2;
@@ -344,8 +345,6 @@ function conflictsWithKnownContext(proposal: AgentOpeningProposal, row: EnrichSc
   ) || !!(row.storey && proposal.storey && row.storey !== proposal.storey);
 }
 
-const round5 = (value: number) => Math.round(value / 5) * 5;
-
 function readingFromProposal(
   proposal: AgentOpeningProposal,
   row: EnrichScheduleRow,
@@ -355,6 +354,7 @@ function readingFromProposal(
 ): DrawingReading {
   const ratioTotal = proposal.unitRatios.reduce((sum, ratio) => sum + ratio, 0);
   const ratios = proposal.unitRatios.map((ratio) => ratio / ratioTotal);
+  const widths = sizesFromRatios(ratios, row.widthMm, 5);
   const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
@@ -372,7 +372,7 @@ function readingFromProposal(
         role: passive.has(operation) ? "passive" : "operable",
         operation,
         ratio: ratios[index],
-        derivedWidthMm: round5(ratios[index] * row.widthMm),
+        derivedWidthMm: widths[index],
       })),
     },
     orientationState: proposal.orientation ? "value" : "not_stated",

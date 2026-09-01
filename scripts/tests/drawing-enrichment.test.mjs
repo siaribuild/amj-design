@@ -294,6 +294,9 @@ test("openingReadSkill.validate: invalid operation, missing evidence flag, or ra
 test("measureSplit: deterministic mullion position produces ratios and derived widths", () => {
   const measured = measureSplit({ mullionXs: [0.33], transomYs: [] }, [0.5, 0.5], 2050);
   assert.deepEqual(measured.derivedWidthsMm, [675, 1375]);
+  const offset = measureSplit(undefined, [0.35, 0.65], 2050);
+  assert.deepEqual(offset.derivedWidthsMm, [720, 1330]);
+  assert.equal(offset.derivedWidthsMm.reduce((sum, width) => sum + width, 0), 2050);
   const split = composeMeasuredSplit(["awning", "fixed"], measured);
   assert.equal(split.units[0].operation, "awning");
   assert.equal(split.units[0].role, "operable");
@@ -1978,7 +1981,7 @@ test("approximate frame boxes do not reject W1 and D1 compositions", async () =>
     },
   });
   const byTag = Object.fromEntries(result.readings.map((reading) => [reading.externalRef, reading]));
-  assert.deepEqual(byTag.W1.split.units.map((unit) => unit.derivedWidthMm), [720, 1_335]);
+  assert.deepEqual(byTag.W1.split.units.map((unit) => unit.derivedWidthMm), [720, 1_330]);
   assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [925, 455]);
   assert.ok(result.readings.every((reading) => reading.confidence === "high" && !reading.flags.includes("drawingInconsistency")));
 });

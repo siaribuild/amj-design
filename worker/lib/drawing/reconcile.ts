@@ -1,5 +1,6 @@
 import type { DrawingConfidence, DrawingFlag, OpeningOperation, SplitReading } from "./contract";
 import { parseCompositionComment } from "./comments";
+import { sizesFromRatios } from "../estimator/split";
 
 const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
 
@@ -30,9 +31,10 @@ export function compositionFromSchedule(args: {
   if (parsed?.sidelight) {
     const doorRatio = parsed.unitWidthMm && parsed.unitWidthMm < args.widthMm
       ? parsed.unitWidthMm / args.widthMm : 0.75;
+    const widths = sizesFromRatios([doorRatio, 1 - doorRatio], args.widthMm, 5);
     return { axis: "vertical", units: [
-      { role: "operable", operation: "hinged", ratio: doorRatio, derivedWidthMm: Math.round(args.widthMm * doorRatio / 5) * 5 },
-      { role: "passive", operation: "sidelight", ratio: 1 - doorRatio, derivedWidthMm: Math.round(args.widthMm * (1 - doorRatio) / 5) * 5 },
+      { role: "operable", operation: "hinged", ratio: doorRatio, derivedWidthMm: widths[0] },
+      { role: "passive", operation: "sidelight", ratio: 1 - doorRatio, derivedWidthMm: widths[1] },
     ] };
   }
   const count = Math.max(1, parsed?.count ?? 1);
@@ -44,9 +46,11 @@ export function compositionFromSchedule(args: {
       { role: passive.has(operation) ? "passive" : "operable", operation, ratio: sideRatio, derivedWidthMm: parsed.unitWidthMm },
     ] };
   }
-  return { axis: "vertical", units: Array.from({ length: count }, () => ({
+  const ratios = Array.from({ length: count }, () => 1 / count);
+  const widths = sizesFromRatios(ratios, args.widthMm, 5);
+  return { axis: "vertical", units: ratios.map((ratio, index) => ({
     role: passive.has(operation) ? "passive" as const : "operable" as const,
-    operation, ratio: 1 / count, derivedWidthMm: Math.round(args.widthMm / count / 5) * 5,
+    operation, ratio, derivedWidthMm: widths[index],
   })) };
 }
 
