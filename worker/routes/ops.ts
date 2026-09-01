@@ -898,10 +898,20 @@ ops.put("/projects/:id/delivery", async (c) => {
   // predicate, so a row that stopped being editable matches nothing — and a
   // write that changed nothing is a 409, never a quiet success.
   const editable = ["draft", ...ISSUABLE_FROM];
+  // AND THE DESTINATION THE SNAPSHOT WAS PRICED FROM, when this request settles
+  // a figure without setting the postcode itself. Between the SELECT above and
+  // this write, a concurrent address save can move the postcode — the row would
+  // then carry the new destination beside a settle_json describing the old one,
+  // which is precisely the independent variable that snapshot exists to record.
+  // Optimistic concurrency: it matches nothing and answers 409 instead.
+  // `IS` rather than `=` because the postcode is nullable and SQL equality is
+  // not true of two NULLs.
+  const guardPostcode = has("amount") && amount != null && postcode === undefined;
   const written = await c.env.DB.prepare(
     `UPDATE project SET ${sets.join(", ")}
-      WHERE id = ? AND status_internal IN (${editable.map(() => "?").join(", ")})`,
-  ).bind(...binds, id, ...editable).run();
+      WHERE id = ? AND status_internal IN (${editable.map(() => "?").join(", ")})${
+        guardPostcode ? " AND delivery_postcode IS ?" : ""}`,
+  ).bind(...binds, id, ...editable, ...(guardPostcode ? [project.delivery_postcode] : [])).run();
   if (written.meta?.changes === 0) return c.json({ error: "locked" }, 409);
 
   const after = await c.env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(id).first<any>();

@@ -85,7 +85,13 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     let frames = 0;
     const take = () => {
       if (!el.isConnected || frames++ > 20) return;
-      if (el.querySelector("input") === document.activeElement) return;
+      // STOP AS SOON AS THE PANEL HAS FOCUS — and stop if anything else took
+      // it. `contains` rather than node identity so this holds however the
+      // input is composed, and the second clause means a staffer who tabs or
+      // dismisses inside the retry window is not dragged back.
+      const active = document.activeElement;
+      if (el.contains(active)) return;
+      if (active && active !== document.body && !el.contains(active)) return;
       void el.setFocus();
       requestAnimationFrame(take);
     };
@@ -120,6 +126,11 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     // the panel would close on a figure that never landed, and delivery is the
     // gate the whole quote is waiting on.
     setSaving(false);
+    // 409 IS NOT TRANSIENT. It means a colleague issued the quote while this
+    // panel was open, so the project is locked and every retry must fail —
+    // inviting one would be a lie. Close and re-read instead, which is what the
+    // record page already does with a conflict.
+    if (res && res.status === 409) { onClose(); onSaved(); return; }
     if (!res || !res.ok) { setError("That price was not saved. Try again."); return; }
     onClose();
     onSaved();

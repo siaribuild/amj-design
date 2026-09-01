@@ -78,7 +78,13 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
     let frames = 0;
     const take = () => {
       if (!el.isConnected || frames++ > 20) return;
-      if (el.querySelector("input") === document.activeElement) return;
+      // STOP AS SOON AS THE PANEL HAS FOCUS — and stop if anything else took
+      // it. `contains` rather than node identity so this holds however the
+      // input is composed, and the second clause means a staffer who tabs or
+      // dismisses inside the retry window is not dragged back.
+      const active = document.activeElement;
+      if (el.contains(active)) return;
+      if (active && active !== document.body && !el.contains(active)) return;
       void el.setFocus();
       requestAnimationFrame(take);
     };
@@ -138,6 +144,9 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
       body: JSON.stringify(body),
     }).catch(() => null);
     setSaving(false);
+    // 409 is permanent — see DeliveryPricePanel. The project was locked while
+    // this panel was open; retrying cannot help, so re-read instead.
+    if (res && res.status === 409) { setOpen(false); onSaved(); return; }
     if (!res || !res.ok) { setError("That address was not saved. Try again."); return; }
     setOpen(false);
     onSaved();

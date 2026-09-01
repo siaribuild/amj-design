@@ -980,6 +980,23 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       assert.match(put, /meta\??\.changes/, "and a write that matched nothing is not reported as success");
     });
 
+    await t.test("T-B50: a settle stamps the zone it actually priced, or it does not settle", async () => {
+      // The amount path reads the postcode, resolves the zone, computes the
+      // estimate, and only then writes. A concurrent address-only PUT can move
+      // the postcode inside that window — the row would then carry the NEW
+      // destination beside a settle_json describing the OLD one, which is the
+      // one thing that snapshot exists to prevent: without a trustworthy
+      // independent variable, a year of overrides is a scatter of numbers.
+      //
+      // Optimistic concurrency, same shape the pricing tables already use: the
+      // postcode the snapshot was computed from is part of the write's
+      // predicate, so a row that moved matches nothing and answers 409.
+      const handler = await readFile(join(projectRoot, "worker", "routes", "ops.ts"), "utf8");
+      const put = handler.slice(handler.indexOf('ops.put("/projects/:id/delivery"'));
+      const update = put.slice(put.indexOf("UPDATE project SET"), put.indexOf("UPDATE project SET") + 600);
+      assert.match(update, /delivery_postcode IS \?/, "the settle guards the destination it priced");
+    });
+
     await t.test("T-B48: an address is stored and returned literally, never interpreted", async () => {
       const { id } = await submitted("Literal address");
       const saved = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
