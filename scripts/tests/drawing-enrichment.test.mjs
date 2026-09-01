@@ -328,11 +328,12 @@ test("reconcileReading: D1 keeps the stated door width and gives the last panel 
   const result = reconcileReading({
     split: { units: [
       { role: "operable", operation: "hinged", ratio: 0.67 },
-      { role: "passive", operation: "sidelight", ratio: 0.33 },
+      { role: "passive", operation: "fixed", ratio: 0.33 },
     ], axis: "vertical" },
     widthMm: 1380, scheduleType: "HINGED", commentText: "920 DOOR & 1N° SIDELIGHT",
     modelConfidence: "high", northAssumed: false,
   });
+  assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["hinged", "sidelight"]);
   assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [920, 460]);
   assert.equal(result.composition.units.reduce((sum, unit) => sum + unit.derivedWidthMm, 0), 1380);
 });

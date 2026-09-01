@@ -44,9 +44,14 @@ export function applyStatedWidths(
     5,
   );
   const widths = split.units.map((_, index) => stated.includes(index) ? parsed.unitWidthMm : remainderWidths[remainderIndexes.indexOf(index)]);
+  const sidelightIndex = parsed.sidelight && remainderIndexes.length === 1 ? remainderIndexes[0] : -1;
   return {
     ...split,
-    units: split.units.map((unit, index) => ({ ...unit, ratio: widths[index] / widthMm, derivedWidthMm: widths[index] })),
+    units: split.units.map((unit, index) => ({
+      ...(index === sidelightIndex ? withOperation(unit, "sidelight") : unit),
+      ratio: widths[index] / widthMm,
+      derivedWidthMm: widths[index],
+    })),
   };
 }
 
