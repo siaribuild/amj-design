@@ -227,7 +227,6 @@ const maxLimit = (a: number | null | undefined, b: number | null | undefined) =>
 // Enum-aware (M2): the class is {single|double|triple}_{clear|toned|low_e}.
 // "Double glazed" means double OR better (triple counts); "low-E" is any coating.
 const isDoubleGlazed = (variant: PerformanceVariant) => /^(double|triple)_/.test(variant.glazingClass ?? "");
-const isSingleGlazed = (variant: PerformanceVariant) => /^single_/.test(variant.glazingClass ?? "");
 const isLowE = (variant: PerformanceVariant) => /_lowe$/.test(variant.glazingClass ?? "");
 
 /**
@@ -243,9 +242,11 @@ function checkScheduleConfiguration(opening: OpeningInput, c: CatalogueCandidate
   const schedule = opening.scheduleRequirements;
   const glass = (schedule?.glassDescription ?? "").toLowerCase();
   const requiresDouble = schedule?.doubleGlazed === true;
-  const requiresSingle = schedule?.doubleGlazed === false;
   const requiresLowE = /\blow[- ]?e\b/.test(glass);
-  if (!requiresDouble && !requiresSingle && !requiresLowE) {
+  // "Double glazing required: no" states the minimum, not a prohibition.
+  // Double/triple glazing remains an eligible upgrade; only an explicit true
+  // value is a hard minimum that excludes single glazing.
+  if (!requiresDouble && !requiresLowE) {
     return {
       outcome: { filter: "schedule_configuration", passed: true },
       matching: c.performanceVariants.filter((variant) => variant.published),
@@ -273,12 +274,10 @@ function checkScheduleConfiguration(opening: OpeningInput, c: CatalogueCandidate
   }
   const matching = classified.filter((variant) =>
     (!requiresDouble || isDoubleGlazed(variant)) &&
-    (!requiresSingle || isSingleGlazed(variant)) &&
     (!requiresLowE || isLowE(variant)));
   if (!matching.length) {
     const requested = [
       requiresDouble ? "double glazing" : null,
-      requiresSingle ? "single glazing" : null,
       requiresLowE ? "Low-E coating" : null,
     ].filter(Boolean).join(", ");
     return {
@@ -313,7 +312,7 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   // Glass exists at all.
   filters.push(checkPerformanceData(c));
 
-  // Material schedule instructions (double/single glazing, Low-E) are the SOLE
+  // Material schedule minimums (double glazing and Low-E) are the SOLE
   // source of eligible variants now. A stated "double glazed" is a customer
   // instruction, not a performance objective — satisfying it with the opposite
   // glass is the substitution D3 forbids, so it stays a hard reject (A3, AC-11).
