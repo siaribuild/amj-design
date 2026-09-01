@@ -442,3 +442,24 @@ anyway.
 | `scripts/tests/ops2-record.test.mjs` | bundle entry list; append | §8 additions |
 | `scripts/tests/web/ops2-record.spec.ts` | delete :391 assertion; append | §8 additions |
 | `CONTEXT.md` | §Openable panel 236–238 | architect's edit, done alongside this design |
+
+---
+
+## Addendum — post-implementation corrections (conformance review, 2026-09-01)
+
+Recorded per the conformance review (`07-review-conformance.md`); these supersede
+the clauses they name.
+
+1. **§11 "`src/ops2/chrome/SidePanel.tsx` — read-only, no edit" was wrong.** The
+   `phoneForm` union had no `"side"` value before this feature; §5.2/5.3's
+   `phoneForm="side"` required widening it. The implemented edit (union widened,
+   enter/leave animation keyed on `fromRight = !sheet`) is the design-intended
+   minimum and stands.
+2. **§11 "PricePanel.tsx untouched" and t3's "byte-identical" clause are
+   superseded.** PricePanel's `<dl>`→`<ul>` fixes an accessibility defect the
+   required spec assertions surfaced, and it gained `phoneForm="side"` for
+   presentation parity with the new panels. Criterion 40's intent (behaviour
+   unchanged) holds.
+3. **§8/§11 "delete the web spec :391 assertion" is withdrawn.** The Project-tab
+   footer was reworded instead; the assertion still guards true behaviour beside
+   the new address panel.

@@ -72,7 +72,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   lifecycle: { stateLabel: "Technical review", waitingOn: "Us", phase: "Pricing" },
   daysInStage: 3,
   lines: [line()],
-  delivery: { amount: 420, settled: true, estimate: 400 },
+  delivery: { amount: 420, settled: true, editable: true },
   actions: [],
   order: null,
   ...over,
@@ -225,7 +225,7 @@ test("the attention pill is scoped to the Lines tab, not drawn on Project", asyn
 test("the totals name the absence rather than captioning a number", async ({ page }) => {
   await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
     lines: [line({ lineTotal: 1000 }), line({ id: "l2", code: "W02", lineTotal: null, status: "draft" })],
-    delivery: { amount: null, settled: false, estimate: 640 },
+    delivery: { amount: null, settled: false, editable: true },
   }) }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(RECORD);

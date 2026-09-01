@@ -601,9 +601,10 @@ export interface RecordTotals {
  * reviewer reads $18,000 for a job that will be $30,000 — the arithmetic is
  * right and the label is a lie.
  *
- * Delivery is added only when SETTLED. The live estimate is shown beside it as
- * an estimate, never folded into the total: it moves with the rate table, and a
- * total that changes because someone edited a zone is not a total.
+ * Delivery is added only when SETTLED, and a machine estimate is never shown
+ * anywhere near it — a single price, always (D12, owner 2026-09-01). The
+ * estimate moves with the rate table, so a total that changed because someone
+ * edited a zone would not be a total; it is simply not on this surface.
  */
 export function totalsFor(record: ProjectRecord): RecordTotals {
   const priced = record.lines.filter((l) => l.lineTotal != null);
