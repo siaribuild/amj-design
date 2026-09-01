@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  STAGES, REVIEWERS, cmds, checkPlan, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
   verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
@@ -1896,6 +1896,15 @@ test('a resumed build task is marked done, so the build does not start it over',
   // where runBuild would have - or the next `conduct run build` re-runs work
   // that is already on disk, which is the waste this whole task exists to stop.
   const s = paneRepo('durable-build', 'sess-bt1')
+  // A build task only exists once spec and design have produced theirs, and
+  // next resumes into a loop that looks for the first UNFINISHED stage - so a
+  // fixture that leaves spec undone sends it back to spec, correctly.
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const seeded = runJson(s)
+  seeded.stages = { spec: { code: 0 }, design: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(seeded))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '01-spec.md'), '# spec' + NL)
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
   writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-tasks.json'), JSON.stringify([
     { id: 't1', title: 'first', done_when: 'done', files: ['a.js'], tests: ['a.test.mjs'] },
     { id: 't2', title: 'second', done_when: 'done', files: ['b.js'], tests: ['b.test.mjs'], after: ['t1'] },
@@ -1904,10 +1913,17 @@ test('a resumed build task is marked done, so the build does not start it over',
 
   paned(s, 'next')
 
-  assert.equal(said(s.log, 'agent', 'start').length, 0, 'a live build agent was re-booted')
+  // Not "no agent started at all": since next carries on through a resume it
+  // finalized, t2 legitimately starts here. What must never happen is t1 being
+  // booted a second time - that is the redone work this test exists to stop.
+  const booted = said(s.log, 'agent', 'start').map((a) => a[2])
+  assert.ok(!booted.includes('build-t1'), 'the live build task was re-booted: ' + booted)
+  assert.deepEqual(booted, ['build-t2'],
+    'next should have carried on into the next task, and only that: ' + booted)
   assert.equal(runJson(s).stages['build-t1'].code, 0)
-  assert.deepEqual(runJson(s).tasksDone, ['t1'],
-    'the resumed task was not recorded as done - the build will run it again')
+  assert.deepEqual(runJson(s).tasksDone, ['t1', 't2'],
+    'the resumed task must be recorded as done (or the build redoes it), and the ' +
+    'loop must then finish the remaining tasks rather than stopping to be re-invoked')
 })
 
 test('answer resolves a held build-<task> label, and records the task it finishes', () => {
@@ -2332,4 +2348,129 @@ test('a fix-tier verify is pointed at the ask - the tier never wrote a spec', ()
   assert.match(fix, /00-ask\.md/, 'the fix-tier tester was never told what to verify against')
   assert.doesNotMatch(fix, /01-spec\.md/,
     'the fix tier skips spec, so the tester was sent to read a file that does not exist')
+})
+
+test('a gate is never printed for a stage that did not write what it promised', () => {
+  // Live incident, ops2-openable-panel: ux settled clean (`ok ux ctx 327k`),
+  // wrote neither 03-ux.md nor its mock, and afterStage printed BOTH the
+  // "did not write" warning AND the MOCK GATE - telling the operator to open
+  // docs/mocks/<slug>.html, a file that does not exist. The missing-artifact
+  // check ran and then fell straight through into the gate block. A stage that
+  // did not produce its artifact has not reached its gate.
+  const s = paneRepo('gate-missing-artifact', 'sess-gate-missing', { HERDR_STUB_TRANSCRIPT: '' })
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = runJson(s)
+  run.ui = true
+  run.stages = { spec: { code: 0 }, design: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(run))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
+
+  // Settles clean on the first look - and pane mode never writes 03-ux.md.
+  s.env.HERDR_STUB_STATES = 'idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;idle'
+
+  const out = paned(s, 'run', 'ux')
+
+  assert.match(out, /did not write/, 'the missing artifact must still be reported: ' + out)
+  assert.doesNotMatch(out, /MOCK GATE/,
+    'a stage that produced nothing has not reached its gate - it must not point ' +
+    'the operator at a mock that was never written: ' + out)
+})
+
+test('next keeps advancing after a resume finalizes the stage it picked up', () => {
+  // Live incident, ops2-openable-panel: design finished in its pane and sat
+  // there. `next` found it live, called resume, and returned unconditionally -
+  // so the operator had to invoke next a SECOND time for the run to move on,
+  // and only noticed the stage was done by asking. A resume that finalizes a
+  // stage cleanly is a stage completing; the auto-advance loop must continue
+  // through it exactly as it does for a stage it started itself.
+  const s = paneRepo('next-after-resume', 'sess-after-resume', { HERDR_STUB_TRANSCRIPT: '' })
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const run = runJson(s)
+  run.ui = true
+  run.stages = { spec: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(run))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '01-spec.md'), '# spec' + NL)
+
+  // design exhausts its confirm cycles and is left `running`, untouched.
+  s.env.HERDR_STUB_STATES = 'idle;idle;idle;idle;idle;idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;working;working;working;working;working'
+  paned(s, 'next')
+  assert.equal(runJson(s).stages.design.status, 'running', 'setup: design should be left running')
+
+  // Second call: the agent is idle now, so resume finalizes design - and the
+  // loop must carry straight on into ux rather than stopping to be re-invoked.
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-tasks.json'), '[]' + NL)
+  s.env.HERDR_STUB_STATES = 'idle;idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;idle;idle;idle'
+
+  const out = paned(s, 'next')
+
+  assert.equal(runJson(s).stages.design.code, 0, 'the resumed stage was not finalized')
+  assert.ok(said(s.log, 'agent', 'start').some((a) => a[2] === 'ux'),
+    'next stopped after finalizing the resumed stage instead of advancing to ux: ' + out)
+})
+
+test('every stage is booted under a no-subagent contract, pane and headless alike', () => {
+  // The conductor IS the orchestrator. A stage that dispatches its own
+  // subagents multiplies cost invisibly and escapes --autocompact entirely -
+  // measured once at 16.4M tokens for what should have been a small fix, and
+  // it is why superpowers forbids the same thing ("every reviewer a worker
+  // spawned duplicated the review the controller dispatched anyway"). The
+  // contract must ride on the session itself, not on a paragraph that each
+  // stage's prompt has to remember to include.
+  const flagOf = (argv) => {
+    const i = argv.indexOf('--append-system-prompt')
+    return i === -1 ? null : argv[i + 1]
+  }
+  for (const spec of [...STAGES, ...REVIEWERS]) {
+    if (spec.codex || spec.parallel || spec.sliced === undefined && !spec.agent && !spec.slash) continue
+    for (const argv of [claudeArgs(spec, 'prompt', false), paneArgs(spec, 'sid', false)]) {
+      const t = flagOf(argv)
+      assert.ok(t, (spec.id || 'reviewer') + ' was booted with no --append-system-prompt')
+      assert.match(t, /never dispatch|no subagent/i,
+        (spec.id || 'reviewer') + ' carries no no-subagent contract: ' + t)
+    }
+  }
+})
+
+test('the plan is read against itself before a single developer session starts', () => {
+  // spec-kit runs `analyze` between tasks and implement; superpowers scans the
+  // plan for conflicts before dispatching Task 1. This pipeline had the rule
+  // only as a sentence in CLAUDE.md - "a named-but-never-created test file is
+  // the failure this pipeline has repeated most" - and nothing enforcing it.
+  const design = [
+    '| `scripts/tests/ops2-panel.test.mjs` | Node markup suite. |',
+    'and append a describe block to scripts/tests/web/ops2-line-why.spec.ts',
+  ].join(NL)
+  const spec = [
+    '1. **Given** a panel, **when** it opens, **then** it goes somewhere',
+    '2. **Given** a plain panel, **when** shown, **then** it has no chevron',
+  ].join(NL)
+
+  const ok = checkPlan([
+    { id: 't1', files: ['scripts/tests/ops2-panel.test.mjs'], criteria: ['1'] },
+    { id: 't2', files: ['scripts/tests/web/ops2-line-why.spec.ts'], criteria: ['2'], after: ['t1'] },
+  ], design, spec)
+  assert.deepEqual(ok.fatal, [], 'a coherent plan must pass cleanly')
+  assert.deepEqual(ok.warn, [], 'a coherent plan must not be nagged at: ' + ok.warn)
+
+  const unknownDep = checkPlan([{ id: 't1', after: ['t9'] }], '', '')
+  assert.equal(unknownDep.fatal.length, 1, 'a dependency on a task that does not exist must be fatal')
+  assert.match(unknownDep.fatal[0], /t9/)
+
+  const cycle = checkPlan([
+    { id: 't1', after: ['t2'] }, { id: 't2', after: ['t1'] },
+  ], '', '')
+  assert.equal(cycle.fatal.length > 0, true, 'a dependency cycle must be fatal - no task can ever start')
+  assert.match(cycle.fatal.join(' '), /cycle/i)
+
+  // Inferred from prose, so reported and left to the operator rather than blocking.
+  const uncovered = checkPlan([{ id: 't1', files: ['src/a.ts'], criteria: ['1'] }], design, spec)
+  assert.deepEqual(uncovered.fatal, [], 'a coverage gap is a warning, never a block')
+  assert.equal(uncovered.warn.filter((w) => w.includes('ops2-panel.test.mjs')).length, 1,
+    'the design named a test file no task will write, and it was not reported: ' + uncovered.warn)
+  assert.equal(uncovered.warn.filter((w) => w.includes('criterion 2')).length, 1,
+    'a spec criterion claimed by no task was not reported: ' + uncovered.warn)
 })
