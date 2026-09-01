@@ -3,6 +3,7 @@ import { parseModelJson } from "../estimator/skills/json";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import type {
   CropBoxPt,
+  DarknessProfile,
   DrawingFileReport,
   DrawingFlag,
   DrawingProgressPhase,
@@ -16,9 +17,10 @@ import type {
 } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
-import { compositionFromSchedule } from "./reconcile";
+import { applyStatedWidths, compositionFromSchedule } from "./reconcile";
 import { applyDrawingConsistencyFlags } from "./consistency";
 import { sizesFromRatios } from "../estimator/split";
+import { measureSplit } from "./measure";
 
 const MAX_TURNS = 4;
 const MAX_RECORDS = 60;
@@ -125,7 +127,7 @@ export interface FullDocumentAgentInput {
     widthPx: number;
     heightPx: number;
     repairTag?: string;
-    profile?: unknown;
+    profile?: DarknessProfile;
   }[];
   imageDataUrls: { renderId: string; dataUrl: string; repairTag?: string }[];
   turnsRemaining: number;
@@ -145,7 +147,7 @@ interface StoredRender {
   dpi: number;
   widthPx: number;
   heightPx: number;
-  profile?: unknown;
+  profile?: DarknessProfile;
   cropKey: string | null;
   pngB64: string;
   repairTag?: string;
@@ -337,6 +339,7 @@ METHOD
 - Floor plans establish tag location, room, storey, wall and orientation. Elevations/details establish composition. Never accept schedule type or a generic default as visual proof of a split.
 - A visible chevron identifies an operable sash; use the schedule type only to name that visibly operable sash. Plain panes are fixed. Mullions divide side-by-side units; transoms divide stacked units; arrows identify sliders/stackers.
 - The first turn is text-only. Use it to request only the useful broad plan/elevation pages at 96-120 dpi; request a 250-300 dpi tight crop only when a supplied image does not make a symbol or divider legible.
+- Before replacing floor-plan images with elevation crops, memory MUST list the tag -> room/storey/wall mapping learned from those plans. Later stateless turns depend on that map.
 - Report what is drawn. Conflicts and physically implausible results are low confidence with an actionable flag, never silently rewritten.
 
 EVIDENCE AND OUTPUT
@@ -346,7 +349,7 @@ EVIDENCE AND OUTPUT
 - Preserve the drawing's storey label verbatim; do not force it into a ground/first convention.
 - Return resolved records and any next render requests together. The application validates records, renders requests, and returns the full history on the next turn.
 - Return records only for pendingTags. evidenceRenderId must name a CURRENT attached image from imageDataUrls, never an earlier history render.
-- A renderCatalog repairTag says which rejected opening caused that close-up. Use that crop for the named opening and any adjacent pending opening visibly inside it.
+- A renderCatalog repairTag says which already-located opening caused that close-up. For the named opening, classify its visible operations and proportions; the application retains its original page/frame/location and ignores any attempted relocation.
 - Decline only after the complete-set/face method cannot honestly resolve an opening. Missing visual evidence is a valid decline.
 - A decline from a turn that produces new render evidence stays pending. Reassess that tag against the new images on the next turn.
 - complete=true only when this response plus prior accepted/declined tags covers every pending schedule tag.
@@ -394,7 +397,7 @@ export function makeFullDocumentAgentSkill(
   })}`;
   return {
     id: "full_document_agent_turn",
-    promptVersion: "v4",
+    promptVersion: "v5",
     responseSchema: {
       type: "object",
       properties: {
@@ -445,6 +448,31 @@ function closeUp(frame: CropBoxPt, page: { widthPt: number; heightPt: number }):
   return [Math.max(0, frame[0] - x), Math.max(0, frame[1] - y), Math.min(page.widthPt, frame[2] + x), Math.min(page.heightPt, frame[3] + y)];
 }
 
+function measureRepair(
+  render: StoredRender,
+  frame: CropBoxPt,
+  scheduleWidthMm: number,
+) {
+  if (!render.profile) return null;
+  const renderWidth = render.bboxPt[2] - render.bboxPt[0];
+  const renderHeight = render.bboxPt[3] - render.bboxPt[1];
+  const left = (frame[0] - render.bboxPt[0]) / renderWidth;
+  const right = (frame[2] - render.bboxPt[0]) / renderWidth;
+  const top = (frame[1] - render.bboxPt[1]) / renderHeight;
+  const bottom = (frame[3] - render.bboxPt[1]) / renderHeight;
+  if (right <= left || bottom <= top) return null;
+  const insetX = (right - left) * 0.03;
+  const insetY = (bottom - top) * 0.03;
+  return measureSplit({
+    mullionXs: render.profile.mullionXs
+      .filter((peak) => peak > left + insetX && peak < right - insetX)
+      .map((peak) => (peak - left) / (right - left)),
+    transomYs: render.profile.transomYs
+      .filter((peak) => peak > top + insetY && peak < bottom - insetY)
+      .map((peak) => (peak - top) / (bottom - top)),
+  }, undefined, scheduleWidthMm);
+}
+
 function readingFromProposal(
   proposal: FullAgentProposal,
   row: EnrichScheduleRow,
@@ -459,18 +487,19 @@ function readingFromProposal(
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
   const confidence = flags.length ? "low" : proposal.confidence;
+  const split = applyStatedWidths({
+    axis: proposal.divisionAxis,
+    units: proposal.operations.map((operation, index) => ({
+      role: passive.has(operation) ? "passive" as const : "operable" as const,
+      operation,
+      ratio: ratios[index],
+      derivedWidthMm: widths[index],
+    })),
+  }, row.widthMm, row.commentText);
   return {
     id: "", projectId: "", aiRunId: "", sourceFileId: fileId, externalRef: row.tag,
     splitState: "value",
-    split: {
-      axis: proposal.divisionAxis,
-      units: proposal.operations.map((operation, index) => ({
-        role: passive.has(operation) ? "passive" : "operable",
-        operation,
-        ratio: ratios[index],
-        derivedWidthMm: widths[index],
-      })),
-    },
+    split,
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated", elevation: proposal.elevation,
     roomState: proposal.roomLabel ? "value" : "not_stated", roomLabel: proposal.roomLabel,
@@ -540,10 +569,38 @@ export async function runFullDocumentAgent(args: {
   const renderCache = new Map<string, StoredRender>();
   const repairedTags = new Set<string>();
   const repairQueue = new Map<string, FullAgentRenderRequest>();
+  const repairOrigins = new Map<string, FullAgentProposal>();
   const history: FullAgentHistoryItem[] = [];
   let activeIds: string[] = [];
   let renderSequence = 0;
   let totalRenders = 0;
+
+  const storeRendered = async (
+    id: string,
+    request: FullAgentRenderRequest,
+    image: RenderResponse["images"][number],
+    repairTag?: string,
+  ): Promise<StoredRender | null> => {
+    const page = pageByNo.get(request.pageNo);
+    if (!page || totalRenders >= MAX_TOTAL_RENDERS) return null;
+    const outer: CropBoxPt = [0, 0, page.widthPt, page.heightPt];
+    if (request.bboxPt && !inside(request.bboxPt, outer)) return null;
+    if (image.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) throw new Error("render_image_too_large");
+    const cropKey = await deps.store(id, image.pngB64);
+    const stored: StoredRender = {
+      id, pageNo: request.pageNo, bboxPt: request.bboxPt ?? outer, dpi: request.dpi,
+      widthPx: image.widthPx, heightPx: image.heightPx, profile: image.profile,
+      cropKey, pngB64: image.pngB64,
+      ...(repairTag ? { repairTag } : {}),
+    };
+    const key = JSON.stringify([repairTag ?? null, request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
+    totalRenders++;
+    report.steps.renderCrop.pagesRendered++;
+    if (request.bboxPt) report.steps.renderCrop.cropsMade++;
+    renders.set(id, stored);
+    renderCache.set(key, stored);
+    return stored;
+  };
 
   const addRender = async (
     id: string,
@@ -567,20 +624,7 @@ export async function runFullDocumentAgent(args: {
     report.containerCalls++;
     const image = response.images[0];
     if (!image) return null;
-    if (image.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) throw new Error("render_image_too_large");
-    const cropKey = await deps.store(id, image.pngB64);
-    const stored: StoredRender = {
-      id, pageNo: request.pageNo, bboxPt: request.bboxPt ?? outer, dpi: request.dpi,
-      widthPx: image.widthPx, heightPx: image.heightPx, profile: image.profile,
-      cropKey, pngB64: image.pngB64,
-      ...(repairTag ? { repairTag } : {}),
-    };
-    totalRenders++;
-    report.steps.renderCrop.pagesRendered++;
-    if (request.bboxPt) report.steps.renderCrop.cropsMade++;
-    renders.set(id, stored);
-    renderCache.set(key, stored);
-    return stored;
+    return storeRendered(id, request, image, repairTag);
   };
 
   const selected = selectPages(inspected.inventory, inspected.pages).selected;
@@ -635,31 +679,50 @@ export async function runFullDocumentAgent(args: {
     const accepted: string[] = [];
     const rejected: { tag: string; reason: string }[] = [];
     report.steps.read.attempted += action.records.length + action.declines.length;
-    for (const proposal of action.records) {
-      if (!pending.has(proposal.tag)) {
-        rejected.push({ tag: proposal.tag, reason: "opening_already_resolved" });
+    for (const rawProposal of action.records) {
+      if (!pending.has(rawProposal.tag)) {
+        rejected.push({ tag: rawProposal.tag, reason: "opening_already_resolved" });
         continue;
       }
-      const row = rowByTag.get(proposal.tag);
-      const render = renders.get(proposal.evidenceRenderId);
+      const row = rowByTag.get(rawProposal.tag);
+      const render = renders.get(rawProposal.evidenceRenderId);
       const page = render ? pageByNo.get(render.pageNo) : null;
-      if (!activeRenderIds.has(proposal.evidenceRenderId)) {
-        rejected.push({ tag: proposal.tag, reason: "evidence_render_not_active" });
-        if (turn < MAX_TURNS && render && page && inside(proposal.frameBoxPt, render.bboxPt)
-          && !repairedTags.has(proposal.tag) && !repairQueue.has(proposal.tag)) {
-          repairQueue.set(proposal.tag, {
-            pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page),
+      if (!activeRenderIds.has(rawProposal.evidenceRenderId)) {
+        rejected.push({ tag: rawProposal.tag, reason: "evidence_render_not_active" });
+        if (turn < MAX_TURNS && render && page && inside(rawProposal.frameBoxPt, render.bboxPt)
+          && !repairedTags.has(rawProposal.tag) && !repairQueue.has(rawProposal.tag)) {
+          repairOrigins.set(rawProposal.tag, rawProposal);
+          repairQueue.set(rawProposal.tag, {
+            pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(rawProposal.frameBoxPt, page),
           });
         }
         continue;
       }
+      const origin = render?.repairTag === rawProposal.tag ? repairOrigins.get(rawProposal.tag) : null;
+      const measured = origin && row && render ? measureRepair(render, origin.frameBoxPt, row.widthMm) : null;
+      const proposal: FullAgentProposal = origin ? {
+        ...rawProposal,
+        orientation: origin.orientation,
+        elevation: origin.elevation,
+        roomLabel: origin.roomLabel,
+        storey: origin.storey,
+        evidenceView: origin.evidenceView,
+        frameBoxPt: origin.frameBoxPt,
+        unitRatios: measured?.ratios.length === rawProposal.operations.length ? measured.ratios : rawProposal.unitRatios,
+        divisionAxis: measured?.ratios.length === rawProposal.operations.length ? measured.axis : rawProposal.divisionAxis,
+        basis: [...new Set([...origin.basis, ...rawProposal.basis])].slice(0, 8),
+        note: rawProposal.note ?? origin.note,
+      } : rawProposal;
       if (!row || !render || !render.cropKey || !page || !inside(proposal.frameBoxPt, render.bboxPt)) {
         rejected.push({ tag: proposal.tag, reason: "evidence_render_or_frame_invalid" });
         continue;
       }
-      if (!frameIsLegible(proposal.frameBoxPt, render)) {
-        rejected.push({ tag: proposal.tag, reason: "composition_evidence_not_legible" });
+      const needsCompositionCrop = !render.repairTag && proposal.operations.length > 1;
+      const needsLegibilityRepair = proposal.operations.length > 1 && !frameIsLegible(proposal.frameBoxPt, render);
+      if (needsCompositionCrop || needsLegibilityRepair) {
+        rejected.push({ tag: proposal.tag, reason: needsCompositionCrop ? "composition_crop_required" : "composition_evidence_not_legible" });
         if (turn < MAX_TURNS && !repairedTags.has(proposal.tag) && !repairQueue.has(proposal.tag)) {
+          repairOrigins.set(proposal.tag, proposal);
           repairQueue.set(proposal.tag, {
             pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page),
           });
@@ -695,20 +758,59 @@ export async function runFullDocumentAgent(args: {
       }
       activeIds = [];
     }
-    const newRenders: StoredRender[] = [];
-    await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "render_crops");
-    for (const { request, repairTag } of boundedRequests) {
+    const resolvedCount = proposals.size + declines.size;
+    await deps.onProgress?.(resolvedCount, scheduleRows.length, resolvedCount ? "opening_read" : "render_crops");
+    const scheduled = boundedRequests.map(({ request, repairTag }) => {
+      renderSequence++;
+      return {
+        id: `fd_t${String(turn).padStart(3, "0")}_${String(renderSequence).padStart(2, "0")}`,
+        request,
+        repairTag,
+      };
+    });
+    const rendered = new Map<string, StoredRender>();
+    const repairGroups = new Map<string, typeof scheduled>();
+    for (const item of scheduled) {
+      if (!item.repairTag || !item.request.bboxPt) continue;
+      const key = JSON.stringify([item.request.pageNo, item.request.dpi, item.request.threshold ?? null]);
+      const group = repairGroups.get(key) ?? [];
+      group.push(item);
+      repairGroups.set(key, group);
+    }
+    for (const group of repairGroups.values()) {
+      const first = group[0];
       try {
-        renderSequence++;
-        const id = `fd_t${String(turn).padStart(3, "0")}_${String(renderSequence).padStart(2, "0")}`;
-        const render = await addRender(id, request, repairTag);
-        if (!render) rejected.push({ tag: "*", reason: `render_unavailable_page_${request.pageNo}` });
-        else if (!newRenders.some((item) => item.id === render.id)) newRenders.push(render);
+        const response = await deps.render({
+          pageNo: first.request.pageNo,
+          dpi: first.request.dpi,
+          crops: group.map((item) => item.request.bboxPt!),
+          ...(first.request.threshold != null ? { threshold: first.request.threshold } : {}),
+        });
+        report.containerCalls++;
+        for (const [index, item] of group.entries()) {
+          const image = response.images[index];
+          const stored = image ? await storeRendered(item.id, item.request, image, item.repairTag) : null;
+          if (stored) rendered.set(item.id, stored);
+          else rejected.push({ tag: item.repairTag ?? "*", reason: `render_unavailable_page_${item.request.pageNo}` });
+        }
       } catch (error) {
-        rejected.push({ tag: "*", reason: error instanceof Error && error.message === "render_image_too_large"
-          ? `render_image_too_large_page_${request.pageNo}` : `render_failed_page_${request.pageNo}` });
+        for (const item of group) {
+          rejected.push({ tag: item.repairTag ?? "*", reason: error instanceof Error && error.message === "render_image_too_large"
+            ? `render_image_too_large_page_${item.request.pageNo}` : `render_failed_page_${item.request.pageNo}` });
+        }
       }
     }
+    for (const item of scheduled.filter(({ repairTag }) => !repairTag)) {
+      try {
+        const stored = await addRender(item.id, item.request);
+        if (stored) rendered.set(item.id, stored);
+        else rejected.push({ tag: "*", reason: `render_unavailable_page_${item.request.pageNo}` });
+      } catch (error) {
+        rejected.push({ tag: "*", reason: error instanceof Error && error.message === "render_image_too_large"
+          ? `render_image_too_large_page_${item.request.pageNo}` : `render_failed_page_${item.request.pageNo}` });
+      }
+    }
+    const newRenders = scheduled.flatMap(({ id }) => rendered.get(id) ?? []);
     if (newRenders.length) {
       let activeChars = 0;
       activeIds = [];

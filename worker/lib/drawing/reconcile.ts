@@ -18,6 +18,38 @@ function withOperation(unit: SplitReading["units"][number], operation: OpeningOp
   return { ...unit, operation, role: passive.has(operation) ? "passive" as const : "operable" as const };
 }
 
+/** Printed component widths are facts. Keep the drawing's order/operations,
+ * then let the final unstated components absorb the exact remainder. */
+export function applyStatedWidths(
+  split: SplitReading,
+  widthMm: number,
+  commentText?: string | null,
+): SplitReading {
+  const parsed = parseCompositionComment(commentText);
+  if (!Number.isFinite(widthMm) || widthMm <= 0 || !parsed?.unitWidthMm || !parsed.operation || parsed.unitWidthMm >= widthMm) return split;
+  const count = parsed.count ?? 1;
+  const stated = split.units
+    .map((unit, index) => ({ unit, index }))
+    .filter(({ unit }) => unit.operation === parsed.operation)
+    .slice(0, count)
+    .map(({ index }) => index);
+  if (stated.length !== count) return split;
+  const remainderIndexes = split.units.map((_, index) => index).filter((index) => !stated.includes(index));
+  const remainder = widthMm - parsed.unitWidthMm * stated.length;
+  if (remainder <= 0 || !remainderIndexes.length) return split;
+  const weightTotal = remainderIndexes.reduce((sum, index) => sum + Math.max(0, split.units[index].ratio), 0) || remainderIndexes.length;
+  const remainderWidths = sizesFromRatios(
+    remainderIndexes.map((index) => Math.max(0, split.units[index].ratio) / weightTotal || 1 / remainderIndexes.length),
+    remainder,
+    5,
+  );
+  const widths = split.units.map((_, index) => stated.includes(index) ? parsed.unitWidthMm : remainderWidths[remainderIndexes.indexOf(index)]);
+  return {
+    ...split,
+    units: split.units.map((unit, index) => ({ ...unit, ratio: widths[index] / widthMm, derivedWidthMm: widths[index] })),
+  };
+}
+
 /** Honest fallback for an opening absent from every elevation: it uses only
  * schedule type/comments and is always reconciled as low-confidence. */
 export function compositionFromSchedule(args: {
@@ -56,6 +88,7 @@ export function compositionFromSchedule(args: {
 
 export function reconcileReading(args: {
   split: SplitReading;
+  widthMm: number;
   scheduleType: string | null;
   commentText?: string | null;
   modelConfidence: DrawingConfidence;
@@ -79,6 +112,7 @@ export function reconcileReading(args: {
         indexes.includes(index) ? withOperation(unit, parsed.operation!) : withOperation(unit, "fixed")),
     };
   }
+  composition = applyStatedWidths(composition, args.widthMm, args.commentText);
   const scheduleOperation = operationFromSchedule(args.scheduleType);
   if (scheduleOperation && !composition.units.some((unit) => unit.operation === scheduleOperation)) {
     flags.push("scheduleDrawingMismatch");
