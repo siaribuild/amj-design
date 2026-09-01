@@ -824,7 +824,7 @@ test("an empty price is refused here, and never reaches the endpoint", async ({ 
   const sheet = page.getByTestId("delivery-price-sheet");
   await sheet.getByTestId("delivery-price-figure").locator("input").fill("");
   await sheet.getByTestId("delivery-price-confirm").click();
-  await expect(sheet.getByTestId("delivery-price-problem")).toBeVisible();
+  await expect(sheet.getByTestId("delivery-price-error")).toBeVisible();
   await expect(sheet).toBeVisible();
   expect(calls).toBe(0);
 });
@@ -927,7 +927,7 @@ test("a stored address line cannot be emptied, and the refusal costs no request"
 
   await sheet.getByTestId("delivery-address-suburb").locator("input").fill("");
   await sheet.getByTestId("delivery-address-confirm").click();
-  await expect(sheet.getByTestId("delivery-address-problem")).toBeVisible();
+  await expect(sheet.getByTestId("delivery-address-error")).toBeVisible();
   expect(calls).toBe(0);
 
   // Line 2 is the exception and saves as an explicit clear.

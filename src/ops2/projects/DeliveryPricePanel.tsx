@@ -40,8 +40,10 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
   onSaved: () => void;
 }) {
   const [typed, setTyped] = useState("");
-  const [problem, setProblem] = useState("");
-  const [failed, setFailed] = useState(false);
+  /** ONE error slot. A refusal this panel decided and a save the server lost
+   *  are both "the price did not go in", they clear at the same two moments,
+   *  and they render the same line — two states said one thing twice. */
+  const [error, setError] = useState("");
 
   /** Seeded when the panel OPENS, not when it closes: a panel that tidies
    *  itself afterwards is still holding the last figure while it animates away,
@@ -51,8 +53,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
   useEffect(() => {
     if (!open) return;
     setTyped(amount == null ? "" : amount.toFixed(2));
-    setProblem("");
-    setFailed(false);
+    setError("");
   }, [open, amount]);
 
   const save = async () => {
@@ -61,11 +62,10 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     // Refused HERE, with no request: an empty field is not a zero, and the one
     // thing this panel must never do is send something that un-settles.
     if (!trimmed || !Number.isFinite(value) || value < 0) {
-      setProblem("Enter the delivery price — 0 or more.");
+      setError("Enter the delivery price — 0 or more.");
       return;
     }
-    setProblem("");
-    setFailed(false);
+    setError("");
     const res = await fetch(`/api/ops/projects/${encodeURIComponent(projectId)}/delivery`, {
       method: "PUT",
       credentials: "same-origin",
@@ -75,7 +75,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     // A price that silently does not save is the worst failure available here:
     // the panel would close on a figure that never landed, and delivery is the
     // gate the whole quote is waiting on.
-    if (!res || !res.ok) { setFailed(true); return; }
+    if (!res || !res.ok) { setError("That price was not saved. Try again."); return; }
     onClose();
     onSaved();
   };
@@ -90,10 +90,8 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
       phoneForm="side"
       footer={
         <>
-          {failed && (
-            <p className="lp-mfr__failed" role="alert" data-testid="delivery-price-failed">
-              That price was not saved. Try again.
-            </p>
+          {error && (
+            <p className="lp-mfr__failed" role="alert" data-testid="delivery-price-error">{error}</p>
           )}
           <IonButton expand="block" data-testid="delivery-price-confirm" onClick={save}>
             Save delivery price
@@ -109,13 +107,8 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
           inputMode="decimal"
           value={typed}
           data-testid="delivery-price-figure"
-          onIonInput={(e) => { setTyped(String(e.detail.value ?? "")); setProblem(""); }}
+          onIonInput={(e) => { setTyped(String(e.detail.value ?? "")); setError(""); }}
         />
-        {problem && (
-          <p className="lp-mfr__failed" role="alert" data-testid="delivery-price-problem">
-            {problem}
-          </p>
-        )}
       </div>
     </SidePanel>
   );

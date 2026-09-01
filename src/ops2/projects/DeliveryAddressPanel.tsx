@@ -36,8 +36,9 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ line1: "", line2: "", suburb: "", state: "", postcode: "" });
-  const [problem, setProblem] = useState("");
-  const [failed, setFailed] = useState(false);
+  /** ONE error slot — see DeliveryPricePanel: a refusal this panel decided and
+   *  a save the server lost are the same sentence to the person reading it. */
+  const [error, setError] = useState("");
 
   /** Seeded from the PROJECT on open, and from nothing else. */
   useEffect(() => {
@@ -49,13 +50,12 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
       state: delivery.state ?? "",
       postcode: delivery.postcode ?? "",
     });
-    setProblem("");
-    setFailed(false);
+    setError("");
   }, [open, delivery]);
 
   const field = (key: keyof typeof form) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
-    setProblem("");
+    setError("");
   };
 
   /** The body carries only what CHANGED, so a save can never reach a column the
@@ -87,17 +87,16 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
 
   const save = async () => {
     const body = changes();
-    if (typeof body === "string") { setProblem(body); return; }
-    if (!Object.keys(body).length) { setProblem("Nothing has changed."); return; }
-    setProblem("");
-    setFailed(false);
+    if (typeof body === "string") { setError(body); return; }
+    if (!Object.keys(body).length) { setError("Nothing has changed."); return; }
+    setError("");
     const res = await fetch(`/api/ops/projects/${encodeURIComponent(projectId)}/delivery`, {
       method: "PUT",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
-    if (!res || !res.ok) { setFailed(true); return; }
+    if (!res || !res.ok) { setError("That address was not saved. Try again."); return; }
     setOpen(false);
     onSaved();
   };
@@ -131,13 +130,8 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
         phoneForm="side"
         footer={
           <>
-            {problem && (
-              <p className="lp-mfr__failed" role="alert" data-testid="delivery-address-problem">{problem}</p>
-            )}
-            {failed && (
-              <p className="lp-mfr__failed" role="alert" data-testid="delivery-address-failed">
-                That address was not saved. Try again.
-              </p>
+            {error && (
+              <p className="lp-mfr__failed" role="alert" data-testid="delivery-address-error">{error}</p>
             )}
             <IonButton expand="block" data-testid="delivery-address-confirm" onClick={save}>
               Save address
