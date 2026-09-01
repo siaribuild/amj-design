@@ -511,7 +511,17 @@ export async function paneMode(args) {
   return false
 }
 
+// A run pinned for the life of THIS process, by --slug=<name> or by `next`
+// resolving `.active` once. `.active` moves the moment another feature is
+// started, which is exactly what happens while a long stage or a relaunch is in
+// flight - and every loadRun(activeSlug()) downstream would then be reading a
+// different run than the one the command was given. Pinning is what makes
+// `next`'s own "resolved once" comment true for the stages it goes on to run.
+let pinnedSlug = (process.argv.find((a) => a.startsWith('--slug=')) || '').slice(7) || null
+export const pinSlug = (slug) => { pinnedSlug = slug }
+
 function activeSlug() {
+  if (pinnedSlug) return pinnedSlug
   const p = join(RUNS, '.active')
   if (!existsSync(p)) die('no active run - start one with:  conduct start <slug> "<ask>"')
   return readFileSync(p, 'utf8').trim()
@@ -1439,6 +1449,9 @@ const cmds = {
     // the loop must keep advancing the run it was asked about, never silently
     // pick up whatever is active by the time a stage finishes.
     const slug = activeSlug()
+    // Hold it for the rest of this process, so the stages this loop goes on to
+    // run - and any resume it picks up first - cannot be handed a different run.
+    pinSlug(slug)
     const run = loadRun(slug)
     if (decisionsOpen(run)) return
     // An interrupted stage is picked up BEFORE anything new is started. A held

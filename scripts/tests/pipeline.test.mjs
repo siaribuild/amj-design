@@ -2519,3 +2519,29 @@ test('next carries on after a resume that had to relaunch the stage, not just re
   assert.ok(said(s.log, 'agent', 'start').map((a) => a[2]).includes('ux'),
     'next stopped after a clean relaunch instead of advancing: ' + out)
 })
+
+test('a stage runs against the run it was told to, even when .active moves under it', () => {
+  // Codex stop-gate finding: `next` pins its slug once - its own comment says
+  // that is the point - but every cmds.run it calls re-read `.active`. A second
+  // `conduct start` landing mid-stage (which is exactly when a long relaunch is
+  // in flight) would have the loop execute run A's next stage against run B.
+  const s = paneRepo('slug-pinned', 'sess-pinned', { HERDR_STUB_TRANSCRIPT: '' })
+  const runs = join(s.root, 'docs', 'runs')
+  writeFileSync(join(runs, 'demo', '01-spec.md'), '# spec' + NL)
+
+  // Another feature started while this one was mid-stage: .active now names it.
+  mkdirSync(join(runs, 'other'), { recursive: true })
+  writeFileSync(join(runs, 'other', 'run.json'), JSON.stringify({
+    slug: 'other', base: 'abc12345', branch: 'work', ui: false, stages: {}, tasksDone: [],
+  }))
+  writeFileSync(join(runs, '.active'), 'other')
+
+  s.env.HERDR_STUB_STATES = 'idle'
+  s.env.HERDR_STUB_CONFIRM_STATES = 'idle;idle'
+  paned(s, 'run', 'design', '--slug=demo')
+
+  assert.equal(JSON.parse(readFileSync(join(runs, 'demo', 'run.json'), 'utf8')).stages.design?.code, 0,
+    'the stage did not run against the run it was pinned to')
+  assert.equal(JSON.parse(readFileSync(join(runs, 'other', 'run.json'), 'utf8')).stages.design, undefined,
+    'the stage was executed against whatever .active happened to say - the pin is not real')
+})
