@@ -15,6 +15,8 @@ import { globSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import { createElement as h } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("ops2-record");
@@ -55,6 +57,21 @@ await build({
   jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
   loader: { ".css": "empty" },
 });
+const deliveryOut = join(runDir, "ops2-delivery-bundle.mjs");
+await build({
+  stdin: {
+    contents: `export { OpenablePanel } from ${p("src/ops2/chrome/OpenablePanel.tsx")};
+      export { DeliveryPricePanel } from ${p("src/ops2/projects/DeliveryPricePanel.tsx")};
+      export { DeliveryAddressPanel } from ${p("src/ops2/projects/DeliveryAddressPanel.tsx")};`,
+    resolveDir: projectRoot,
+    sourcefile: "ops2-delivery-entry.tsx",
+    loader: "tsx",
+  },
+  bundle: true, format: "esm", platform: "node", outfile: deliveryOut, logLevel: "silent",
+  jsx: "automatic", external: ["react", "react-dom", "react/jsx-runtime"],
+  loader: { ".css": "empty" },
+});
+const D = await import(`${pathToFileURL(deliveryOut).href}?run=${Date.now()}`);
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { await removeRunDir(runDir); });
 
@@ -398,7 +415,11 @@ test("delivery: 0 is settled, null is not, and the estimate never joins the tota
     lines: [line()],
     delivery: { amount: null, settled: false, estimate: 400 },
   }));
-  assert.equal(unset.delivery.estimate, 400);
+  // The live estimate is NOT parsed onto the record at all any more. D12: a
+  // single price, always — once DeliveryFigure stopped drawing an estimate
+  // beside the settled figure the field had zero readers, and a field nothing
+  // reads is what ponytail exists to stop.
+  assert.equal("estimate" in unset.delivery, false, "no second figure survives on the record");
   assert.equal(M.totalsFor(unset).delivery, null);
   assert.equal(M.totalsFor(unset).total, null, "no total until the figure is settled");
 });
@@ -1160,4 +1181,109 @@ test("the back control names WHERE IT GOES, and the two ways in answer different
   assert.equal(M.drawingSubject(c, unit, "OF-Q-10482").title, "W07A");
   assert.equal(at(drawing, "OF-Q-10482").title, "Drawing");
   assert.equal(at(drawing, "OF-Q-10482").code, "W03");
+});
+
+// ── The delivery surfaces (ops2-delivery-price) ─────────────────────────────
+
+test("OpenablePanel presents whatever it is handed — a heading is the caller's choice", () => {
+  // D18. The totals card is three rows that already say what they are; a
+  // heading above them would be a label for a label. The component used to
+  // REQUIRE one, which is the constraint this removed.
+  const bare = renderToStaticMarkup(h(D.OpenablePanel, {
+    testId: "record-totals",
+    open: { label: "Set the delivery price", onOpen: () => {} },
+    children: h("div", null, "Lines"),
+  }));
+  assert.equal(/<h2/.test(bare), false, "no heading when none was asked for");
+  assert.equal(/aria-label="[^"]*"[^>]*class="lp-panel/.test(bare), false, "and no section label");
+  // The door still says where it goes — which is what a screen reader reads in
+  // a heading's place, and why a headingless card is not a nameless one.
+  assert.match(bare, /aria-label="Set the delivery price"/);
+
+  const titled = renderToStaticMarkup(h(D.OpenablePanel, {
+    title: "Delivery address",
+    testId: "delivery-address",
+    open: { label: "Change the delivery address", onOpen: () => {} },
+    children: h("div", null, "12 Wattle St"),
+  }));
+  assert.match(titled, /<h2 class="lp-panel__title">Delivery address<\/h2>/, "a caller that wants one still gets one");
+});
+
+test("the delivery panels say nothing about tax, in any wording", () => {
+  // Stricter than the console-wide `\bgst\b` rule, and deliberately so: the
+  // line-price panel legitimately says "includes tax" because that control
+  // describes what a SUPPLIER quoted. These two panels display an ops figure,
+  // and ops has one way of showing figures (owner, 2026-09-01). The stored
+  // column is already tax-inclusive, so a caption here would be noise at best
+  // and, if it ever said "ex", a 10% understatement of every delivery charge.
+  for (const file of ["DeliveryPricePanel.tsx", "DeliveryAddressPanel.tsx"]) {
+    const code = readFileSync(join(projectRoot, "src", "ops2", "projects", file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const word of [/\bgst\b/i, /\btax\b/i, /\bincl?\b/i, /\bexcl?\b/i, /inclusive/i, /exclusive/i]) {
+      assert.equal(word.test(code), false, `${file} must not say ${word}`);
+    }
+  }
+});
+
+test("the price panel offers one field and no way to un-settle", () => {
+  // SOURCE-level, not render-level: an Ionic modal renders none of its children
+  // under renderToStaticMarkup, so what the open panel LOOKS like is a browser
+  // question and is asserted in ops2-record.spec.ts. What can be pinned here is
+  // the invariant that matters most, and it is a property of the code:
+  //
+  // `delivery_amount = NULL` is the issue gate. The endpoint still accepts null
+  // so the legacy console can re-arm it (D16), but NOTHING HERE may produce one
+  // — no clear control, and an empty field is refused rather than sent. If a
+  // future edit adds a second request or a nullable body, this fails.
+  const code = readFileSync(join(projectRoot, "src", "ops2", "projects", "DeliveryPricePanel.tsx"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.equal((code.match(/<IonInput/g) ?? []).length, 1, "exactly one field");
+  assert.equal((code.match(/fetch\(/g) ?? []).length, 1, "exactly one request");
+  assert.match(code, /body: JSON\.stringify\(\{ amount: value \}\)/, "the body is one number and nothing else");
+  assert.equal(/amount: null/.test(code), false, "no path builds an un-settle");
+  assert.equal(/estimate/i.test(code), false, "and no second figure (D12)");
+});
+
+test("the address card shows only the parts that exist, and never the account's address", () => {
+  // The customer form still captures suburb and postcode only, so line1/line2/
+  // state arrive NULL on every project today. A partial address is the ORDINARY
+  // case: absent parts close up, with no marker, badge or warning colour.
+  const partial = renderToStaticMarkup(h(D.DeliveryAddressPanel, {
+    projectId: "p1",
+    delivery: { amount: null, settled: false, frozen: null, line1: null, line2: null,
+      suburb: "Preston", state: null, postcode: "3072", zoneLabel: null, editable: true },
+    onSaved: () => {},
+  }));
+  assert.match(partial, /Preston 3072/, "the locality closes up around what is missing");
+  assert.equal(/Not set/.test(partial), false, "a partial address is not an empty one");
+  assert.equal(/missing|unknown|incomplete|required/i.test(partial), false, "and is not drawn as a fault");
+
+  const empty = renderToStaticMarkup(h(D.DeliveryAddressPanel, {
+    projectId: "p1",
+    delivery: { amount: null, settled: false, frozen: null, line1: null, line2: null,
+      suburb: null, state: null, postcode: null, zoneLabel: null, editable: true },
+    onSaved: () => {},
+  }));
+  assert.match(empty, /Not set/, "nothing stored reads as one neutral line");
+  assert.match(empty, /lp-panel--door/, "and the card is still the way to fix that");
+});
+
+test("a locked project's address card is text, with nothing to press and nothing to explain", () => {
+  // D13: no chevron, no tab stop, no reason line. `OpenablePanel` gives this
+  // for free — openability is the PRESENCE of `open`, so a locked record simply
+  // does not pass one.
+  const html = renderToStaticMarkup(h(D.DeliveryAddressPanel, {
+    projectId: "p1",
+    delivery: { amount: 450, settled: true, frozen: null, line1: "12 Wattle St", line2: null,
+      suburb: "Richmond", state: "VIC", postcode: "3121", zoneLabel: null, editable: false },
+    onSaved: () => {},
+  }));
+  assert.match(html, /12 Wattle St/, "the address is still readable");
+  assert.match(html, /Richmond VIC 3121/);
+  assert.equal(/lp-panel--door/.test(html), false, "no door");
+  assert.equal(/<button/.test(html), false, "no tab stop");
+  assert.equal(/<svg/.test(html), false, "no chevron");
+  assert.equal(/issued|locked|cannot|once the quote/i.test(html), false, "and no reason line");
 });

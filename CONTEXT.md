@@ -74,7 +74,11 @@ One configured opening (window/door) on a project: product, dimensions, options,
 _Avoid_: item, row, position
 
 **Price override**:
-An ops-set price on a line that replaces its computed price. The override is the fact; the computed price remains derivable.
+An ops-set price on a line that replaces its computed price. The override is the fact; the computed price remains derivable. A line holds **one price fact**: a typed override and a manufacturer price never coexist — writing either clears the other (last write wins), so no stored working can disagree with the stored total.
+
+**Manufacturer price**:
+The figure AMJ quotes for a whole line (quantity never multiplies it), stored ex-GST on the line beside the uplift percentage that produced the line total. Commercially sensitive cost data, staff-only: never on a customer surface, never readable by a Manufacturer partner account, never in log output — audit entries record the resulting line total only, and never the uplift beside it (total plus uplift derives the cost). Entry is one-way: no clear action and no revert to the computed price; it is replaced only by another manufacturer price or a typed override. Same mutable window as the typed override — before the quote is issued. Its arithmetic (basis conversion first, then uplift, cents rounding at each step, no $10 rounding) has one home: `src/data/manufacturerPrice.ts`.
+_Avoid_: cost price, buy price, supplier rate
 
 ### Catalogue
 
@@ -118,6 +122,12 @@ How a project's zone was resolved: `postcode_zone` (matched), `fallback_zone` (n
 
 **Opening area**:
 The m² measure summed across a project's lines that delivery pricing is computed from.
+
+**Settled delivery**:
+The human-decided delivery figure. `project.delivery_amount` NULL means no human has said a number (the issue gate); `0` is a settled decision (a trade arranging their own freight). Never a truthiness check. Settling is one-way from ops2: the figure can be corrected but never returned to NULL there — only the legacy console un-settles. The stored figure is tax-inclusive, like every customer-facing price.
+
+**Delivery destination**:
+The project's own delivery address (`delivery_line1`/`delivery_line2`/`delivery_suburb`/`delivery_state`/`delivery_postcode`), written by the customer at submit — which today captures suburb and postcode only — and correctable by Staff from the ops2 Project tab. Only the postcode is required; a partial address is ordinary, not an error. The zone resolves off the postcode alone: `delivery_state` and every other line are paperwork and never an input to `resolveZone`. The account address never prefills it (§Account address).
 
 ### Estimator and schedules
 
@@ -224,7 +234,7 @@ The one pressable row and its list container (`src/ops2/chrome/RowList.tsx` — 
 _Avoid_: card list, IonItem
 
 **Openable panel**:
-A line-page card that goes somewhere (`src/ops2/chrome/OpenablePanel.tsx` — `lp-panel--door`). Openability is a property the caller opts into by passing a destination closure and a name for it; it is never a default and never a decoration — a chevron on a panel that opens nothing is a defect. The component owns the four things a door must agree on: the stretched invisible button as a sibling of the content, the chevron centred on the card's right-hand side, the focus ring drawn around the card, and an accessible name that states where the door leads, sourced from the surface's copy module. The page owns the address; the panel is handed a closure. Today the Why panel is the only one; the Specification and Price panels become openable when their screens exist.
+An ops2 card that goes somewhere (`src/ops2/chrome/OpenablePanel.tsx` — `lp-panel--door`). Openability is a property the caller opts into by passing a destination closure and a name for it; it is never a default and never a decoration — a chevron on a panel that opens nothing is a defect. The component owns the four things a door must agree on: the stretched invisible button as a sibling of the content, the chevron centred on the card's right-hand side, the focus ring drawn around the card, and an accessible name that states where the door leads, sourced from the surface's copy module. The heading is the caller's choice, not part of the definition: a panel may render its `<h2>` title (Why, Price, Delivery address) or carry none at all (the record's totals card, whose rows are self-labelling); with no title the section carries no `aria-label` — the door button's name is the card's whole voice. The page owns the address; the panel is handed a closure. Today the Why and Price panels, the record's totals card and the Delivery address card are the doors; the Specification panel becomes openable when its screen exists. A door's closure need not navigate — the Price, Delivery price and Delivery address doors open a SidePanel in place.
 _Avoid_: clickable card, link panel, chevron (as a thing on its own)
 
 ### Referrals

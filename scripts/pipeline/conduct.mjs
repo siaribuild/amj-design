@@ -227,7 +227,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 100000, mcp: true, tiers: ['full'],
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 200000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -511,7 +511,24 @@ export async function paneMode(args) {
   return false
 }
 
+// A run pinned for the life of THIS process, by --slug=<name> or by `next`
+// resolving `.active` once. `.active` moves the moment another feature is
+// started, which is exactly what happens while a long stage or a relaunch is in
+// flight - and every loadRun(activeSlug()) downstream would then be reading a
+// different run than the one the command was given. Pinning is what makes
+// `next`'s own "resolved once" comment true for the stages it goes on to run.
+//
+// The pin is a path segment - join(RUNS, slug, ...) - so it goes through the
+// same gate `start` has always used. Taken raw from argv it was a traversal:
+// `--slug=../../etc` resolved outside docs/runs entirely, to be read from and
+// written to.
+export const pinSlug = (slug) => { pinnedSlug = checkSlug(slug) }
+let pinnedSlug = null
+const slugFlag = process.argv.find((a) => a.startsWith('--slug='))
+if (slugFlag) pinSlug(slugFlag.slice(7))
+
 function activeSlug() {
+  if (pinnedSlug) return pinnedSlug
   const p = join(RUNS, '.active')
   if (!existsSync(p)) die('no active run - start one with:  conduct start <slug> "<ask>"')
   return readFileSync(p, 'utf8').trim()
@@ -545,6 +562,15 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
 // fatal - it holds warm in its pane, which is what pane mode is for.
 const PANE_PERMISSION = 'acceptEdits'
 
+// Rides on the session itself rather than on each prompt, because a rule every
+// prompt has to remember to repeat is a rule one of them will forget. The
+// conductor is the orchestrator: a stage that dispatches its own subagents
+// multiplies spend invisibly and escapes --autocompact, which has no equivalent
+// on the Agent tool (measured once at 16.4M tokens for a small fix). superpowers
+// reached the same rule from the other direction - every reviewer a worker
+// spawned duplicated the review the controller had already dispatched.
+const NO_SUBAGENTS = "You are ONE stage of a scripted pipeline. Never dispatch subagents (the Agent/Task tool) - not helpers, not reviewers, not for exploration. Work the task yourself, in this session. Review and the next stage are the conductor's job, and it has already scheduled them."
+
 // The flags that define the session itself, and so are the same whether the
 // stage is a headless child or an interactive claude booted in a pane - except
 // the permission mode, which is exactly where the two differ.
@@ -559,6 +585,7 @@ function sessionArgs(spec, mcpOk, mode) {
   // Always strict: an inherited user or global config drags its tool
   // definitions - Sanity's are large - into every turn of every stage.
   a.push('--strict-mcp-config')
+  a.push('--append-system-prompt', NO_SUBAGENTS)
   return a
 }
 
@@ -897,6 +924,66 @@ function notesFor(run, afterIds) {
   return sections.length ? sections.join('\n').trim() : null
 }
 
+/**
+ * Read the plan against itself before a single developer session starts.
+ *
+ * spec-kit runs `analyze` between tasks and implement; superpowers scans the
+ * plan for conflicts before dispatching Task 1. Two frameworks arrived at the
+ * same place independently, and this pipeline had the check only as a sentence
+ * in CLAUDE.md - "a named-but-never-created test file is the failure this
+ * pipeline has repeated most" - with nothing enforcing it.
+ *
+ * Structural faults are fatal: they are unambiguous, and they break execution
+ * itself. Coverage gaps are inferred from prose, so they are reported loudly
+ * and left to the operator rather than blocking on a guess.
+ */
+export function checkPlan(tasks, design, spec) {
+  const ids = new Set(tasks.map((t) => t.id))
+  const fatal = []
+  // An empty slice is not an empty feature. runBuild would record build as
+  // code:0 over it and every stage after would report success against a diff
+  // that never happened.
+  if (!tasks.length) fatal.push('the plan has no tasks in it - nothing would be built, and every stage after build would report success over an empty diff')
+  for (const t of tasks)
+    for (const d of t.after || [])
+      if (!ids.has(d)) fatal.push(t.id + ' depends on "' + d + '", which is not a task in this plan')
+
+  // Depth-first, over `after` edges only: a cycle means no task can ever start.
+  const state = new Map()
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const walk = (id, trail) => {
+    if (state.get(id) === 'done') return
+    if (state.get(id) === 'open') { fatal.push('dependency cycle: ' + [...trail, id].join(' -> ')); return }
+    state.set(id, 'open')
+    for (const d of byId.get(id)?.after || []) if (ids.has(d)) walk(d, [...trail, id])
+    state.set(id, 'done')
+  }
+  for (const t of tasks) walk(t.id, [])
+
+  const warn = []
+  const claimedFiles = new Set(tasks.flatMap((t) => t.files || []))
+  // Only test paths: the design names plenty of source files in prose that no
+  // task is meant to touch, but a test file it names is a test it expects.
+  const named = new Set()
+  for (const m of (design || '').matchAll(/scripts\/tests\/[\w./-]+\.(?:mjs|ts|tsx)/g))
+    named.add(m[0])
+  for (const f of named)
+    if (!claimedFiles.has(f))
+      warn.push('the design names ' + f + ' but no task lists it in `files` - it will not be written')
+
+  const claimedCriteria = new Set(tasks.flatMap((t) => (t.criteria || []).map(String)))
+  const specCriteria = [...(spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => m[1])
+  if (specCriteria.length && !claimedCriteria.size)
+    warn.push('no task declares which criteria it satisfies, so none of the spec' + "'" + 's ' +
+      specCriteria.length + ' can be traced to the work that covers it')
+  else
+    for (const c of specCriteria)
+      if (!claimedCriteria.has(c))
+        warn.push('spec criterion ' + c + ' is claimed by no task')
+
+  return { fatal, warn }
+}
+
 async function runBuild(run, spec, panes) {
   const tp = join(RUNS, run.slug, '02-tasks.json')
   // The fix tier collapses spec and design to nothing, so nobody sliced this
@@ -910,6 +997,15 @@ async function runBuild(run, spec, panes) {
           done_when: 'the ask is satisfied, by a test that failed before the fix and passes after',
         }]
       : die('design produced no 02-tasks.json - re-run:  conduct run design')
+  const readIf = (f) => {
+    const fp = join(RUNS, run.slug, f)
+    return existsSync(fp) ? readFileSync(fp, 'utf8') : ''
+  }
+  const { fatal, warn } = checkPlan(tasks, readIf('02-design.md'), readIf('01-spec.md'))
+  for (const w of warn) console.log('  !! ' + w)
+  if (fatal.length)
+    die('this plan cannot be executed as written:\n' + fatal.map((f) => '    - ' + f).join('\n') +
+      '\n  Fix ' + run.dir + '/02-tasks.json, or re-run:  conduct run design')
   const done = new Set(run.tasksDone || [])
   for (const t of tasks) {
     if (done.has(t.id)) { process.stdout.write('  . ' + t.id + ' already done\n'); continue }
@@ -1220,6 +1316,10 @@ function afterStage(run, spec) {
   for (const f of missing)
     console.log('  !! stage "' + spec.id + '" did not write ' + r.dir + '/' + f +
       ' - it was supposed to. Re-run it before continuing.')
+  // Before any gate: a stage that did not write its artifact has not reached
+  // one. Printing MOCK GATE here once pointed an operator at a mock that the
+  // stage never wrote.
+  if (missing.length) return false
   if (spec.gate === 'mock') {
     console.log('\n  == MOCK GATE - implementation does not start until you approve the look.\n')
     console.log('     Open:     docs/mocks/' + r.slug + '.html')
@@ -1255,6 +1355,7 @@ function finished(run, label, spec, s) {
     saveRun(run)
   }
   console.log('\n     next:  node scripts/pipeline/conduct.mjs next\n')
+  return s.code === 0
 }
 
 // --- commands --------------------------------------------------------------
@@ -1359,6 +1460,9 @@ const cmds = {
     // the loop must keep advancing the run it was asked about, never silently
     // pick up whatever is active by the time a stage finishes.
     const slug = activeSlug()
+    // Hold it for the rest of this process, so the stages this loop goes on to
+    // run - and any resume it picks up first - cannot be handed a different run.
+    pinSlug(slug)
     const run = loadRun(slug)
     if (decisionsOpen(run)) return
     // An interrupted stage is picked up BEFORE anything new is started. A held
@@ -1366,7 +1470,11 @@ const cmds = {
     // second claude under a name herdr may still be holding.
     const live = Object.entries(run.stages)
       .find(([, s]) => s.status === 'running' || s.status === 'held')
-    if (live) return cmds.resume(live[0], ...flags)
+    // A resume that finalizes its stage cleanly IS that stage completing, so
+    // the loop carries on through it. Returning unconditionally here made the
+    // operator invoke `next` a second time for a stage that had already
+    // finished - and the only way to notice was to go and look.
+    if (live && !await cmds.resume(live[0], ...flags)) return
     for (;;) {
       const r = loadRun(slug)
       const spec = STAGES.find((s) => inTier(s, r) && (!s.ui || r.ui) && r.stages[s.id]?.code !== 0)
@@ -1479,7 +1587,7 @@ const cmds = {
       delete st.session
       saveRun(run)
     }
-    finished(run, label, spec,
+    return finished(run, label, spec,
       await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null))
   },
 

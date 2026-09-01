@@ -110,18 +110,26 @@ export function PricePanel({ line, reload, editable }: {
         testId="line-price"
         open={editable ? { label: "Set this line's price", onOpen: openFresh } : undefined}
       >
-        <dl className="lp-panel__lines">
-          <div className="lp-panel__line">
+        {/* A LIST, NOT A DESCRIPTION LIST. This panel labels nothing — the row
+            is a figure, not the definition of a term — and a <dd> with no <dt>
+            hands assistive technology a number as the definition of nothing.
+            The rule is the console's and predates this panel; the panel broke
+            it and ops2-record.spec.ts caught it. */}
+        <ul className="lp-panel__lines">
+          <li className="lp-panel__line">
             {/* NEVER $0. An opening nobody has priced is the thing this console
                 exists to find, and a zero is a priced-at-nothing claim about
                 work nobody has costed. */}
-            <dd>{line.lineTotal == null ? "No rate" : whole(line.lineTotal)}</dd>
-          </div>
-        </dl>
+            {line.lineTotal == null ? "No rate" : whole(line.lineTotal)}
+          </li>
+        </ul>
       </OpenablePanel>
 
       <SidePanel open={open} onClose={() => setOpen(false)}
         title="Set this line's price" testId="line-price-sheet"
+        // A price you go in to set is a screen, not a phone gesture — it comes
+        // from the right at every width, the way the Why detail does.
+        phoneForm="side"
         footer={
           <>
             <div className="lp-mfr__readback" aria-live="polite" data-testid="line-price-readback">
