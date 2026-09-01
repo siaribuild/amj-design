@@ -936,3 +936,62 @@ test("a stored address line cannot be emptied, and the refusal costs no request"
   await sheet.getByTestId("delivery-address-confirm").click();
   expect(sent).toEqual({ line2: "" });
 });
+
+test("opening a delivery editor puts focus in the field, not on the card behind it", async ({ page }) => {
+  // Codex P2. `SidePanel` transfers focus only for its back form; these panels
+  // use the default dismiss, so without an explicit focus a keyboard user opens
+  // the panel and focus stays on the stretched card button UNDERNEATH the
+  // modal — which, as SidePanel's own header records, can also swallow Escape.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ amount: null, settled: false }),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await page.getByTestId("record-totals-open").click();
+  await expect(page.getByTestId("delivery-price-sheet")).toBeVisible();
+  const focusedInPrice = await page.evaluate(() =>
+    document.activeElement?.closest("[data-testid='delivery-price-sheet']") != null);
+  expect(focusedInPrice).toBe(true);
+
+  // The price sheet is modal and covers the tabs, so it has to go before the
+  // address half of this journey — reloading is the cleanest reset.
+  await page.reload();
+  await page.getByTestId("record-tab").nth(1).click();
+  await page.getByTestId("delivery-address-open").click();
+  await expect(page.getByTestId("delivery-address-sheet").first()).toBeVisible();
+  const focusedInAddress = await page.evaluate(() =>
+    document.activeElement?.closest("[data-testid='delivery-address-sheet']") != null);
+  expect(focusedInAddress).toBe(true);
+});
+
+test("a double-pressed save sends one request, not two racing ones", async ({ page }) => {
+  // Codex P2. Two overlapping PUTs can land out of order, so the figure the
+  // customer is charged becomes whichever request finished last rather than
+  // whichever the staffer typed last — and the audit log grows a duplicate
+  // claiming the price was set twice. On a money path that is not a nicety.
+  let calls = 0;
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ amount: null, settled: false }),
+  }) }));
+  await page.route("**/api/ops/projects/p_rec/delivery", async (route) => {
+    calls++;
+    // A slow network is the whole point: the second click has to arrive while
+    // the first request is still in flight.
+    await new Promise((r) => setTimeout(r, 600));
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await page.getByTestId("record-totals-open").click();
+  const sheet = page.getByTestId("delivery-price-sheet").first();
+  await sheet.getByTestId("delivery-price-figure").locator("input").fill("450");
+  const confirm = sheet.getByTestId("delivery-price-confirm");
+  await confirm.click();
+  // The control refuses the second press itself; `force` skips Playwright's
+  // own actionability wait so the test asserts the guard rather than the wait.
+  await confirm.click({ force: true }).catch(() => {});
+  await expect(sheet).toBeHidden();
+  expect(calls).toBe(1);
+});

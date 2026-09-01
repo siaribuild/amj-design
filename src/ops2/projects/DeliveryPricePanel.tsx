@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IonButton, IonInput } from "@ionic/react";
 import { SidePanel } from "../chrome/SidePanel";
 
@@ -44,6 +44,12 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
    *  are both "the price did not go in", they clear at the same two moments,
    *  and they render the same line — two states said one thing twice. */
   const [error, setError] = useState("");
+  /** In-flight guard. Without it a second click on a slow network starts a
+   *  second PUT: the two can land out of order, so the figure the customer is
+   *  charged becomes whichever request happened to finish last rather than
+   *  whichever the staffer typed last, and the audit log grows a duplicate
+   *  saying a price was set twice. On a money path that is not a nicety. */
+  const [saving, setSaving] = useState(false);
 
   /** Seeded when the panel OPENS, not when it closes: a panel that tidies
    *  itself afterwards is still holding the last figure while it animates away,
@@ -54,9 +60,40 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     if (!open) return;
     setTyped(amount == null ? "" : amount.toFixed(2));
     setError("");
+    setSaving(false);
   }, [open, amount]);
 
+  /** FOCUS ON THE FIELD, not on the card behind the modal. SidePanel transfers
+   *  focus only for its back form; these panels use the default dismiss, so
+   *  without this a keyboard user opens the panel and focus stays on the
+   *  stretched card button underneath — which, as SidePanel's own header
+   *  records, can also swallow Escape. The trigger is the CONTROL'S OWN MOUNT
+   *  for the same reason documented there: no present event fires. */
+  const focusField = useCallback((el: HTMLIonInputElement | null) => {
+    if (!el) return;
+    // FOCUS THE FIELD, NOT THE CARD BEHIND THE MODAL. SidePanel transfers focus
+    // only for its back form; these panels use the default dismiss, so without
+    // this a keyboard user opens the panel and focus stays on the stretched
+    // card button underneath — which, as SidePanel's header records, can also
+    // swallow Escape.
+    //
+    // The trigger is the control's own MOUNT, for the reason documented there:
+    // no present event fires. But mount is earlier than presentation, and
+    // `setFocus()` on an unpresented overlay is a no-op — so it retries by
+    // frame until it takes. Bounded at 20 frames (~a third of a second): if the
+    // panel never presents, this stops rather than spinning.
+    let frames = 0;
+    const take = () => {
+      if (!el.isConnected || frames++ > 20) return;
+      if (el.querySelector("input") === document.activeElement) return;
+      void el.setFocus();
+      requestAnimationFrame(take);
+    };
+    requestAnimationFrame(take);
+  }, []);
+
   const save = async () => {
+    if (saving) return;
     const trimmed = typed.trim();
     const value = Number(trimmed);
     // Refused HERE, with no request: an empty field is not a zero, and the one
@@ -66,6 +103,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
       return;
     }
     setError("");
+    setSaving(true);
     const res = await fetch(`/api/ops/projects/${encodeURIComponent(projectId)}/delivery`, {
       method: "PUT",
       credentials: "same-origin",
@@ -75,6 +113,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     // A price that silently does not save is the worst failure available here:
     // the panel would close on a figure that never landed, and delivery is the
     // gate the whole quote is waiting on.
+    setSaving(false);
     if (!res || !res.ok) { setError("That price was not saved. Try again."); return; }
     onClose();
     onSaved();
@@ -93,7 +132,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
           {error && (
             <p className="lp-mfr__failed" role="alert" data-testid="delivery-price-error">{error}</p>
           )}
-          <IonButton expand="block" data-testid="delivery-price-confirm" onClick={save}>
+          <IonButton expand="block" disabled={saving} data-testid="delivery-price-confirm" onClick={save}>
             Save delivery price
           </IonButton>
         </>
@@ -101,6 +140,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     >
       <div className="lp-mfr">
         <IonInput
+          ref={focusField}
           label="Delivery price"
           labelPlacement="stacked"
           type="number"

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IonButton, IonInput, IonSelect, IonSelectOption } from "@ionic/react";
 import { OpenablePanel } from "../chrome/OpenablePanel";
 import { SidePanel } from "../chrome/SidePanel";
@@ -39,6 +39,10 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
   /** ONE error slot — see DeliveryPricePanel: a refusal this panel decided and
    *  a save the server lost are the same sentence to the person reading it. */
   const [error, setError] = useState("");
+  /** In-flight guard — see DeliveryPricePanel. Two overlapping PUTs can land
+   *  out of order, and the address that sticks becomes whichever finished
+   *  last rather than whichever was typed last. */
+  const [saving, setSaving] = useState(false);
 
   /** Seeded from the PROJECT on open, and from nothing else. */
   useEffect(() => {
@@ -51,7 +55,35 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
       postcode: delivery.postcode ?? "",
     });
     setError("");
+    setSaving(false);
   }, [open, delivery]);
+
+  /** Focus the first field on open — SidePanel only transfers focus for its
+   *  back form, and these panels use the default dismiss. Keyed to the
+   *  control's own mount, the trigger SidePanel documents as the only one that
+   *  actually fires. */
+  const focusField = useCallback((el: HTMLIonInputElement | null) => {
+    if (!el) return;
+    // FOCUS THE FIELD, NOT THE CARD BEHIND THE MODAL. SidePanel transfers focus
+    // only for its back form; these panels use the default dismiss, so without
+    // this a keyboard user opens the panel and focus stays on the stretched
+    // card button underneath — which, as SidePanel's header records, can also
+    // swallow Escape.
+    //
+    // The trigger is the control's own MOUNT, for the reason documented there:
+    // no present event fires. But mount is earlier than presentation, and
+    // `setFocus()` on an unpresented overlay is a no-op — so it retries by
+    // frame until it takes. Bounded at 20 frames (~a third of a second): if the
+    // panel never presents, this stops rather than spinning.
+    let frames = 0;
+    const take = () => {
+      if (!el.isConnected || frames++ > 20) return;
+      if (el.querySelector("input") === document.activeElement) return;
+      void el.setFocus();
+      requestAnimationFrame(take);
+    };
+    requestAnimationFrame(take);
+  }, []);
 
   const field = (key: keyof typeof form) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -86,16 +118,19 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
   };
 
   const save = async () => {
+    if (saving) return;
     const body = changes();
     if (typeof body === "string") { setError(body); return; }
     if (!Object.keys(body).length) { setError("Nothing has changed."); return; }
     setError("");
+    setSaving(true);
     const res = await fetch(`/api/ops/projects/${encodeURIComponent(projectId)}/delivery`, {
       method: "PUT",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
+    setSaving(false);
     if (!res || !res.ok) { setError("That address was not saved. Try again."); return; }
     setOpen(false);
     onSaved();
@@ -133,14 +168,14 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
             {error && (
               <p className="lp-mfr__failed" role="alert" data-testid="delivery-address-error">{error}</p>
             )}
-            <IonButton expand="block" data-testid="delivery-address-confirm" onClick={save}>
+            <IonButton expand="block" disabled={saving} data-testid="delivery-address-confirm" onClick={save}>
               Save address
             </IonButton>
           </>
         }
       >
         <div className="lp-mfr">
-          <IonInput label="Address line 1" labelPlacement="stacked" maxlength={120}
+          <IonInput ref={focusField} label="Address line 1" labelPlacement="stacked" maxlength={120}
             value={form.line1} data-testid="delivery-address-line1"
             onIonInput={(e) => field("line1")(String(e.detail.value ?? ""))} />
           <IonInput label="Address line 2" labelPlacement="stacked" maxlength={120}
