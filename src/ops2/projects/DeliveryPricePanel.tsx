@@ -92,10 +92,16 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     requestAnimationFrame(take);
   }, []);
 
+  const trimmed = typed.trim();
+  const value = Number(trimmed);
+  /** UNCHANGED IS NOT A SAVE. Pressing Save on a settled figure nobody edited
+   *  would rewrite `delivery_settled_at`, `delivery_settled_by` and the machine
+   *  snapshot, and log "set delivery to $X" — commercial history recording a
+   *  repricing that did not happen. The control is disabled instead. */
+  const unchanged = amount != null && trimmed !== "" && Number.isFinite(value) && value === amount;
+
   const save = async () => {
-    if (saving) return;
-    const trimmed = typed.trim();
-    const value = Number(trimmed);
+    if (saving || unchanged) return;
     // Refused HERE, with no request: an empty field is not a zero, and the one
     // thing this panel must never do is send something that un-settles.
     if (!trimmed || !Number.isFinite(value) || value < 0) {
@@ -132,7 +138,7 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
           {error && (
             <p className="lp-mfr__failed" role="alert" data-testid="delivery-price-error">{error}</p>
           )}
-          <IonButton expand="block" disabled={saving} data-testid="delivery-price-confirm" onClick={save}>
+          <IonButton expand="block" disabled={saving || unchanged} data-testid="delivery-price-confirm" onClick={save}>
             Save delivery price
           </IonButton>
         </>
@@ -146,6 +152,10 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
           type="number"
           inputMode="decimal"
           value={typed}
+          // FROZEN WHILE SAVING. The body is captured at the press; a figure
+          // typed after that would be silently discarded when the response
+          // closes the panel, and the customer charged the older one.
+          disabled={saving}
           data-testid="delivery-price-figure"
           onIonInput={(e) => { setTyped(String(e.detail.value ?? "")); setError(""); }}
         />

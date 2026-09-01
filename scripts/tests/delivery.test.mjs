@@ -13,8 +13,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import {
-  Session, completeAccount, freePort, login, makeRunDir, removeRunDir,
+  Session, completeAccount, freePort, login, makeRunDir, projectRoot, removeRunDir,
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -960,6 +961,23 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await requestJson(s, `/api/ops/projects/${id}/delivery`, body, 403);
       assert.equal((await row(id)).delivery_suburb, null, "nothing written by a refused caller");
       await requestJson(staff, "/api/ops/projects/unknown-id/delivery", body, 404);
+    });
+
+    await t.test("T-B49: the phase gate is in the WRITE, not only in the check before it", async () => {
+      // TOCTOU. The handler SELECTs status_internal, decides the project is
+      // editable, and then UPDATEs. A quote issued in between would be written
+      // to anyway: an issued job silently acquiring a new destination after the
+      // customer has the document. The gate therefore has to be part of the
+      // UPDATE's own predicate, so a row that stopped being editable matches
+      // nothing and the request answers 409 instead of succeeding quietly.
+      //
+      // The race itself is not reproducible from out here; what IS testable is
+      // that the statement carries the guard rather than `WHERE id = ?` alone.
+      const handler = await readFile(join(projectRoot, "worker", "routes", "ops.ts"), "utf8");
+      const put = handler.slice(handler.indexOf('ops.put("/projects/:id/delivery"'));
+      const update = put.slice(put.indexOf("UPDATE project SET"), put.indexOf("UPDATE project SET") + 400);
+      assert.match(update, /status_internal/, "the UPDATE re-checks the phase it was gated on");
+      assert.match(put, /meta\??\.changes/, "and a write that matched nothing is not reported as success");
     });
 
     await t.test("T-B48: an address is stored and returned literally, never interpreted", async () => {

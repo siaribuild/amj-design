@@ -891,8 +891,18 @@ ops.put("/projects/:id/delivery", async (c) => {
   if (state !== undefined) set("delivery_state", state);
   if (postcode !== undefined) set("delivery_postcode", postcode);
 
-  await c.env.DB.prepare(`UPDATE project SET ${sets.join(", ")} WHERE id = ?`)
-    .bind(...binds, id).run();
+  // THE PHASE GATE IS IN THE WRITE, not only in the check above it. Between
+  // that SELECT and this UPDATE a colleague can issue the quote; `WHERE id = ?`
+  // alone would then write a new destination onto an issued job, after the
+  // customer already has the document. The editable set is part of the
+  // predicate, so a row that stopped being editable matches nothing — and a
+  // write that changed nothing is a 409, never a quiet success.
+  const editable = ["draft", ...ISSUABLE_FROM];
+  const written = await c.env.DB.prepare(
+    `UPDATE project SET ${sets.join(", ")}
+      WHERE id = ? AND status_internal IN (${editable.map(() => "?").join(", ")})`,
+  ).bind(...binds, id, ...editable).run();
+  if (written.meta?.changes === 0) return c.json({ error: "locked" }, 409);
 
   const after = await c.env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(id).first<any>();
   const delivery = await buildDeliveryDto(c.env, after);

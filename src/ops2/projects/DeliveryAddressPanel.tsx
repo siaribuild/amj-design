@@ -183,15 +183,17 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
       >
         <div className="lp-mfr">
           <IonInput ref={focusField} label="Address line 1" labelPlacement="stacked" maxlength={120}
-            value={form.line1} data-testid="delivery-address-line1"
+            value={form.line1} disabled={saving} data-testid="delivery-address-line1"
             onIonInput={(e) => field("line1")(String(e.detail.value ?? ""))} />
           <IonInput label="Address line 2" labelPlacement="stacked" maxlength={120}
-            value={form.line2} data-testid="delivery-address-line2"
+            value={form.line2} disabled={saving} data-testid="delivery-address-line2"
             onIonInput={(e) => field("line2")(String(e.detail.value ?? ""))} />
           <IonInput label="Suburb" labelPlacement="stacked" maxlength={80}
-            value={form.suburb} data-testid="delivery-address-suburb"
+            value={form.suburb} disabled={saving} data-testid="delivery-address-suburb"
             onIonInput={(e) => field("suburb")(String(e.detail.value ?? ""))} />
-          <IonSelect label="State" labelPlacement="stacked" value={form.state}
+          {/* Frozen with the rest while a save is in flight — the body was
+              captured at the press, so a later edit would be silently lost. */}
+          <IonSelect label="State" labelPlacement="stacked" value={form.state} disabled={saving}
             data-testid="delivery-address-state"
             onIonChange={(e) => field("state")(String(e.detail.value ?? ""))}>
             {/* The blank option exists only while nothing is stored — once a
@@ -200,7 +202,7 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
             {AU_STATES.map((code) => <IonSelectOption key={code} value={code}>{code}</IonSelectOption>)}
           </IonSelect>
           <IonInput label="Postcode" labelPlacement="stacked" inputMode="numeric" maxlength={4}
-            value={form.postcode} data-testid="delivery-address-postcode"
+            value={form.postcode} disabled={saving} data-testid="delivery-address-postcode"
             onIonInput={(e) => field("postcode")(String(e.detail.value ?? ""))} />
         </div>
       </SidePanel>
