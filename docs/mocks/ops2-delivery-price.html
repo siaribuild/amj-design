@@ -1,0 +1,593 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ops2 — delivery price &amp; delivery address (rev 3)</title>
+<style>
+  :root{
+    /* ops2/theme/colors.css — verbatim steps, only the ones used */
+    --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+    --theme-neutral-150:#edecea; --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb;
+    --theme-neutral-400:#b5b2ab; --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+    --theme-neutral-700:#5c5a56;
+    --theme-ink-700:#2c2a27; --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+    --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-300:#a8c9b4;
+    --theme-sage-400:#7dab8e; --theme-sage-500:#5a7a6a; --theme-sage-600:#4a6858;
+    --theme-attention-50:#fdf4f3; --theme-attention-200:#f5c7c2;
+    --theme-attention-500:#c0392b; --theme-attention-700:#82261d;
+
+    /* ops2/styles/tokens.css */
+    --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+    --ds-surface-sunken:var(--theme-neutral-100);
+    --ds-border-subtle:var(--theme-neutral-200); --ds-border-input:var(--theme-neutral-300);
+    --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+    --ds-text-muted:var(--theme-neutral-500); --ds-text-inverse:var(--theme-neutral-0);
+    --ds-color-brand:var(--theme-sage-500); --ds-color-brand-hover:var(--theme-sage-600);
+    --ds-color-brand-wash:var(--theme-sage-50);
+    --ds-color-error:var(--theme-attention-500); --ds-color-error-text:var(--theme-attention-700);
+    --ds-radius-control:3px; --ds-radius-surface:5px;   /* owner cap: never above --theme-radius-sm */
+
+    /* ops2/theme/spacing.css + typography.css — verbatim */
+    --sp-2xs:.125rem; --sp-xs:.25rem; --sp-sm:.5rem; --sp-md:.75rem; --sp-lg:1rem;
+    --sp-xl:1.5rem; --sp-2xl:2rem; --sp-3xl:3rem;
+    --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.9375rem; --fs-md:1rem; --fs-lg:1.125rem;
+    --fs-xl:1.3125rem;
+    --shadow-sm:0 1px 3px rgba(42,40,38,.06),0 1px 2px rgba(42,40,38,.04);
+    --shadow-lg:0 10px 24px rgba(42,40,38,.08),0 4px 8px rgba(42,40,38,.04);
+    --focus:0 0 0 3px rgba(90,122,106,.3);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ds-surface-page);color:var(--ds-text-primary);
+    font:var(--fs-base)/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  ::selection{background:var(--theme-sage-100);color:var(--ds-text-primary)}
+  .page{max-width:1280px;margin:0 auto;padding:var(--sp-2xl) var(--sp-xl) var(--sp-3xl)}
+  h1{font-family:"Space Grotesk",Inter,sans-serif;font-size:var(--fs-xl);font-weight:600;
+    letter-spacing:-.02em;margin:0 0 var(--sp-sm)}
+  .lede{color:var(--ds-text-secondary);margin:0 0 var(--sp-2xl);max-width:74ch;font-size:var(--fs-sm)}
+  .lede b{color:var(--ds-text-primary);font-weight:600}
+  h2.sec{font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ds-text-muted);font-weight:600;margin:var(--sp-2xl) 0 var(--sp-md);
+    padding-bottom:var(--sp-xs);border-bottom:1px solid var(--ds-border-subtle)}
+  .row{display:flex;gap:var(--sp-xl);align-items:flex-start;flex-wrap:wrap;margin-bottom:var(--sp-xl)}
+  .col{display:flex;flex-direction:column;gap:var(--sp-sm)}
+  .cap{font-size:var(--fs-sm);color:var(--ds-text-secondary);margin:0;max-width:46ch;line-height:1.6}
+  .cap b{color:var(--ds-text-primary);font-weight:600}
+  .cap code{font-size:var(--fs-xs);background:var(--ds-surface-sunken);padding:1px 4px;
+    border-radius:var(--ds-radius-control)}
+  .tag{display:inline-block;font-size:var(--fs-xs);font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--ds-text-muted);background:var(--ds-surface-sunken);
+    border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-control);
+    padding:1px var(--sp-xs);align-self:flex-start}
+
+  /* ── the rail: list + totals (record.css, verbatim shape) ─────────────── */
+  .rail{width:352px}
+  .rl-list{margin:0 0 var(--sp-md);background:var(--ds-surface-card);
+    border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);
+    box-shadow:var(--shadow-sm);overflow:hidden;list-style:none;padding:0}
+  .rl-row{display:flex;align-items:center;gap:var(--sp-md);padding:var(--sp-sm) var(--sp-md);
+    font-size:var(--fs-sm)}
+  .rl-row + .rl-row{border-top:1px solid var(--ds-border-subtle)}
+  .rl-elev{flex:none;width:34px;height:34px;border:1px solid var(--ds-border-input);
+    border-radius:2px;background:var(--ds-surface-sunken)}
+  .rl-body{flex:1;min-width:0}
+  .rl-code{font-family:"Space Grotesk",Inter,sans-serif;font-weight:600;margin-right:var(--sp-sm)}
+  .rl-sub{color:var(--ds-text-muted);font-size:var(--fs-xs);display:block}
+  .rl-money{font-variant-numeric:tabular-nums;font-weight:500}
+
+  /* ── chrome/OpenablePanel.tsx + styles/panel.css — CSS UNCHANGED BY THIS
+     FEATURE. The totals card becomes one of these panels: `--door` already
+     reserves the chevron column and centres the arrow on the card's full
+     height, so nothing in panel.css moves. */
+  .lp-panel{position:relative;padding:var(--sp-sm) var(--sp-md);background:var(--ds-surface-card);
+    border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);
+    box-shadow:var(--shadow-sm)}
+  .lp-panel--door{padding-right:calc(var(--sp-md) + 16px + var(--sp-sm))}
+  .lp-panel--hover{background:var(--ds-color-brand-wash)}
+  .lp-panel--focus{outline:2px solid var(--ds-color-brand);outline-offset:2px}
+  .lp-panel__chev{position:absolute;right:var(--sp-md);top:50%;transform:translateY(-50%);
+    width:16px;height:16px;color:var(--ds-text-muted)}
+  .lp-panel__title{margin:0 0 var(--sp-xs);font-size:var(--fs-xs);font-weight:500;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--ds-text-muted)}
+
+  /* ── the totals rows: plain divs, exactly as today ─────────────────────── */
+  .rec-totals{font-size:var(--fs-sm)}
+  .rec-totals__row{display:flex;align-items:baseline;justify-content:space-between;
+    gap:var(--sp-md);padding:var(--sp-2xs) 0;color:var(--ds-text-secondary)}
+  .rec-totals__row--sum{margin-top:var(--sp-2xs);padding-top:var(--sp-sm);
+    border-top:1px solid var(--ds-border-subtle);color:var(--ds-text-primary);font-weight:600}
+  .rec-totals__figure{flex:none;font-variant-numeric:tabular-nums}
+  .rec-totals__caveat{color:var(--ds-text-muted);font-weight:400}
+  /* NOT SET IS NOT A FAULT (D8). Muted, the weight of the row's own label —
+     `.rec-totals__missing` (error red) is deleted with this. */
+  .rec-totals__unset{flex:none;color:var(--ds-text-muted)}
+
+  /* NEW — the address card's body, appended to record.css */
+  .rec-addr{margin:0;font-size:var(--fs-sm);color:var(--ds-text-primary);line-height:1.55}
+  .rec-addr span{display:block}
+  .rec-addr__unset{margin:0;font-size:var(--fs-sm);color:var(--ds-text-muted)}
+
+  /* ── chrome/SidePanel.tsx, phoneForm="side" ──────────────────────────── */
+  .panel{width:520px;background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+    border-start-start-radius:var(--ds-radius-surface);border-end-start-radius:var(--ds-radius-surface);
+    display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden}
+  .panel__head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-md);
+    padding:var(--sp-md) var(--sp-lg);border-bottom:1px solid var(--ds-border-subtle)}
+  .panel__head h3{margin:0;font-family:"Space Grotesk",Inter,sans-serif;font-size:var(--fs-md);
+    font-weight:600;letter-spacing:-.01em}
+  .panel__done{background:none;border:0;color:var(--ds-color-brand);font:inherit;
+    font-size:var(--fs-sm);font-weight:500;cursor:pointer;padding:var(--sp-xs) var(--sp-sm)}
+  .panel__body{padding:var(--sp-md);flex:1}
+  .panel__foot{border-top:1px solid var(--ds-border-subtle);background:var(--ds-surface-page);
+    padding:var(--sp-sm) var(--sp-md);display:flex;flex-direction:column;gap:var(--sp-sm)}
+
+  /* fields — IonInput / native select, fill="outline", labelPlacement="stacked" */
+  .field{margin-bottom:var(--sp-md)}
+  .field:last-child{margin-bottom:0}
+  .fieldlabel{display:block;font-size:var(--fs-xs);color:var(--ds-text-secondary);
+    margin:0 0 var(--sp-2xs)}
+  .field input,.field select{width:100%;padding:var(--sp-sm) var(--sp-md);font:inherit;
+    font-size:var(--fs-md);border:1px solid var(--ds-border-input);
+    border-radius:var(--ds-radius-control);background:var(--ds-surface-card);
+    color:var(--ds-text-primary);font-variant-numeric:tabular-nums;appearance:none}
+  .field select{background-image:linear-gradient(45deg,transparent 50%,var(--theme-neutral-500) 50%),
+    linear-gradient(135deg,var(--theme-neutral-500) 50%,transparent 50%);
+    background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+  .field--focus input{border-color:var(--ds-color-brand);box-shadow:var(--focus)}
+  .field--bad input,.field--bad select{border-color:var(--ds-color-error)}
+  .field input::placeholder{color:var(--theme-neutral-400)}
+  .why{margin:var(--sp-2xs) 0 0;font-size:var(--fs-xs);color:var(--ds-color-error-text)}
+  .pair{display:grid;grid-template-columns:1fr 8.5rem;gap:var(--sp-md)}
+
+  .btn{display:block;width:100%;padding:var(--sp-sm) var(--sp-md);
+    border-radius:var(--ds-radius-control);font:inherit;font-size:var(--fs-base);font-weight:500;
+    cursor:pointer;border:1px solid transparent}
+  .btn--primary{background:var(--ds-color-brand);color:var(--ds-text-inverse)}
+  .btn--primary[disabled]{opacity:.72;cursor:not-allowed}
+  .alert{margin:0;font-size:var(--fs-sm);color:var(--ds-color-error-text);
+    background:var(--theme-attention-50);border:1px solid var(--theme-attention-200);
+    border-radius:var(--ds-radius-control);padding:var(--sp-sm) var(--sp-md)}
+
+  /* project tab */
+  .tabbar{display:flex;gap:var(--sp-lg);border-bottom:1px solid var(--ds-border-subtle);
+    margin-bottom:var(--sp-md)}
+  .tabbar span{padding:var(--sp-sm) 0;font-size:var(--fs-sm);color:var(--ds-text-muted)}
+  .tabbar span.on{color:var(--ds-text-primary);font-weight:600;
+    box-shadow:inset 0 -2px 0 var(--ds-color-brand)}
+  .pq-empty{margin-top:var(--sp-md);padding:var(--sp-lg);background:var(--ds-surface-card);
+    border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);
+    box-shadow:var(--shadow-sm)}
+  .pq-empty strong{display:block;font-size:var(--fs-sm);margin-bottom:var(--sp-2xs)}
+  .pq-empty span{font-size:var(--fs-xs);color:var(--ds-text-muted)}
+
+  /* phone */
+  .phone{width:375px;border:1px solid var(--ds-border-input);border-radius:var(--ds-radius-surface);
+    background:var(--ds-surface-page);padding:var(--sp-md)}
+  .phone__cap{font-size:var(--fs-xs);color:var(--ds-text-muted);margin:0 0 var(--sp-sm);
+    letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+  .scrim{position:relative;width:375px;height:520px;border:1px solid var(--ds-border-input);
+    border-radius:var(--ds-radius-surface);overflow:hidden;background:var(--ds-surface-page)}
+  .scrim__under{padding:var(--sp-md);filter:blur(1px)}
+  .scrim__veil{position:absolute;inset:0;background:rgba(22,20,18,.8)}
+  .scrim .panel{position:absolute;inset:0 0 0 auto;height:100%;width:330px;
+    border-start-end-radius:0;border-end-end-radius:0}
+  .scrim .panel__body{overflow:auto}
+  .band{padding:var(--sp-sm) 0 var(--sp-md);border-bottom:1px solid var(--ds-border-subtle);
+    margin-bottom:var(--sp-md)}
+  .band__ref{font-family:"Space Grotesk",Inter,sans-serif;font-size:var(--fs-sm);font-weight:600;
+    font-variant-numeric:tabular-nums}
+  .band__cust{font-size:var(--fs-sm);color:var(--ds-text-secondary);margin-left:var(--sp-sm)}
+</style>
+
+<div class="page">
+  <h1>Delivery price &amp; delivery address — ops2 project record</h1>
+  <p class="lede">Two facts, two places. The <b>price</b> is settled from the <b>totals card</b>: the
+  whole card is the door — one chevron centred against the card, the three rows stay plain text
+  (<b>D17</b>). Nothing is drawn below Project total and there is no separate Delivery card
+  (<b>D9</b>). The <b>address</b> is a five-field postal address owned by the project, and it is the
+  first real content on the Project tab (<b>D10</b>). Both open the same right-hand slide-out at
+  every width. Throughout: <b>no tax word anywhere</b> (D11), <b>never two delivery figures on
+  screen</b> (D12), a locked project shows the figures as plain text with <b>no reason line</b>
+  (D13), and <b>unpriced is the ordinary state</b>, not an error (D8).</p>
+
+  <!-- ══════════════ 1 · the totals card is the door ══════════════ -->
+  <h2 class="sec">1 · The totals card is the door — desktop rail, foot of the item list</h2>
+  <div class="row">
+    <div class="col">
+      <span class="tag">Editable · nothing settled</span>
+      <div class="rail">
+        <ul class="rl-list">
+          <li class="rl-row"><span class="rl-elev"></span>
+            <span class="rl-body"><span class="rl-code">W01</span>Awning 1200 × 900
+              <span class="rl-sub">Series 67 · ×4</span></span>
+            <span class="rl-money">$6,420</span></li>
+          <li class="rl-row"><span class="rl-elev"></span>
+            <span class="rl-body"><span class="rl-code">W02</span>Sliding door 2400 × 2100
+              <span class="rl-sub">Series 67 · ×1</span></span>
+            <span class="rl-money">$3,180</span></li>
+        </ul>
+        <section class="lp-panel lp-panel--door">
+          <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <div class="rec-totals">
+            <div class="rec-totals__row"><span>Lines</span>
+              <span class="rec-totals__figure">$9,600</span></div>
+            <div class="rec-totals__row"><span>Delivery</span>
+              <span class="rec-totals__unset">Not set</span></div>
+            <div class="rec-totals__row rec-totals__row--sum"><span>Project total</span>
+              <span class="rec-totals__figure">$9,600</span></div>
+          </div>
+        </section>
+      </div>
+      <p class="cap"><b>No heading on this card.</b> The three rows already say what it is, so
+      <code>OpenablePanel</code>'s <code>title</code> becomes optional and this caller goes without
+      one (D18). The stretched button carries the name instead: a screen reader announces
+      <b>“Set the delivery price”</b>.</p>
+    </div>
+    <div class="col">
+      <span class="tag">Editable · settled · hover + keyboard focus</span>
+      <div class="rail">
+        <section class="lp-panel lp-panel--door lp-panel--hover lp-panel--focus">
+          <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <div class="rec-totals">
+            <div class="rec-totals__row"><span>Lines
+              <span class="rec-totals__caveat">· 1 with no rate</span></span>
+              <span class="rec-totals__figure">$9,600</span></div>
+            <div class="rec-totals__row"><span>Delivery</span>
+              <span class="rec-totals__figure">$450</span></div>
+            <div class="rec-totals__row rec-totals__row--sum"><span>Project total</span>
+              <span class="rec-totals__figure">$10,050</span></div>
+          </div>
+        </section>
+      </div>
+      <p class="cap">One hover wash over the <b>whole card</b> and one focus ring around it — the
+      treatment the line page's Price and Why cards already wear. <b>No row has its own button,
+      wash, ring or label</b> (criterion 16). Delivery prints in whole dollars like every other
+      figure in this console: <code>$450</code>, never <code>$450.00</code>.</p>
+    </div>
+    <div class="col">
+      <span class="tag">Locked · past the issuable window</span>
+      <div class="rail">
+        <section class="lp-panel">
+          <div class="rec-totals">
+            <div class="rec-totals__row"><span>Lines</span>
+              <span class="rec-totals__figure">$9,600</span></div>
+            <div class="rec-totals__row"><span>Delivery</span>
+              <span class="rec-totals__figure">$450</span></div>
+            <div class="rec-totals__row rec-totals__row--sum"><span>Project total</span>
+              <span class="rec-totals__figure">$10,050</span></div>
+          </div>
+        </section>
+      </div>
+      <p class="cap"><b>D13 — the figures only.</b> No chevron, no wash, no tab stop, and no line
+      explaining why. The card simply stops being a door, exactly as a non-editable line's Price
+      card does today.</p>
+    </div>
+  </div>
+  <div class="row">
+    <p class="cap" style="max-width:80ch"><b>What leaves the screen.</b> Today an unsettled delivery
+    reads <span style="color:var(--ds-color-error-text);font-weight:500">no figure</span> in error
+    red and Project total reads <b>“Delivery has not been set”</b> in amber. Both go: unpriced is
+    ordinary (D8), so Delivery reads a muted <b>Not set</b> and <b>Project total prints the figure
+    without a delivery contribution</b> — no amber, no explanation line (criterion 19). The Lines
+    row's <code>· 1 with no rate</code> caveat is the one absence this card still names, unchanged,
+    and the header's corner figure keeps its own caveat, also unchanged.</p>
+  </div>
+
+  <!-- ══════════════ 2 · price slide-out ══════════════ -->
+  <h2 class="sec">2 · The price slide-out — one field, one button</h2>
+  <div class="row">
+    <div class="col">
+      <span class="tag">Nothing settled yet</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery price</h3><button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field field--focus">
+            <span class="fieldlabel">Delivery price</span>
+            <input value="" placeholder="0.00" inputmode="decimal">
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <button class="btn btn--primary">Save delivery price</button>
+        </footer>
+      </aside>
+      <p class="cap"><b>The dignified blank (D8).</b> Empty and focused on open — no machine
+      estimate, no prefilled figure, no zone, no destination echo, and nothing saying the rate table
+      has no answer for this postcode. One field and one button; there is no clear, revert or
+      un-settle control anywhere in the panel (D4, criterion 25).</p>
+    </div>
+    <div class="col">
+      <span class="tag">Correcting a settled figure</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery price</h3><button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field field--focus">
+            <span class="fieldlabel">Delivery price</span>
+            <input value="450.00" inputmode="decimal">
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <button class="btn btn--primary">Save delivery price</button>
+        </footer>
+      </aside>
+      <p class="cap">Opened on a project settled at $450, the field arrives holding
+      <code>450.00</code> — cents here because this is the one place the figure is typed rather than
+      read. <b>Exactly one delivery figure is on screen</b> (D12): no machine estimate beside it, no
+      delta, no “was”.</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <span class="tag">Refused before anything is sent</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery price</h3><button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field field--bad">
+            <span class="fieldlabel">Delivery price</span>
+            <input value="-40" inputmode="decimal">
+            <p class="why">Enter an amount of $0 or more.</p>
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <button class="btn btn--primary">Save delivery price</button>
+        </footer>
+      </aside>
+      <p class="cap">Empty, non-numeric or negative → pressing Save writes the message under the
+      field and <b>sends no request</b>. The button stays pressable rather than greying out, so the
+      refusal is something the staffer is told rather than something they have to deduce.</p>
+    </div>
+    <div class="col">
+      <span class="tag">The save failed</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery price</h3><button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field">
+            <span class="fieldlabel">Delivery price</span>
+            <input value="450" inputmode="decimal">
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <p class="alert" role="alert">That price was not saved. Try again.</p>
+          <button class="btn btn--primary">Save delivery price</button>
+        </footer>
+      </aside>
+      <p class="cap">The panel stays open holding what was typed — the same failure treatment the
+      line price panel uses, in the same place, in the same words. <b>$0 saves</b> and the card then
+      reads <code>$0</code>: a trade arranging its own freight is a settled decision, not a blank.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════ 3 · address card ══════════════ -->
+  <h2 class="sec">3 · Delivery address — the first real content on the Project tab</h2>
+  <div class="row">
+    <div class="col" style="width:352px">
+      <span class="tag">Full address</span>
+      <div class="tabbar"><span>Lines</span><span class="on">Project</span></div>
+      <section class="lp-panel lp-panel--door" aria-label="Delivery address">
+        <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <h2 class="lp-panel__title">Delivery address</h2>
+        <p class="rec-addr"><span>12 Smith Street</span><span>Unit 4</span>
+          <span>Richmond VIC 3121</span></p>
+      </section>
+      <div class="pq-empty">
+        <strong>Progress, payments and files are not built yet.</strong>
+        <span>They are migrating from the legacy console one at a time.</span>
+      </div>
+      <p class="cap">This card <b>keeps its heading</b>: on a tab of unlike cards the title is what
+      distinguishes it, unlike the totals card, whose rows name themselves. It sits above the
+      existing placeholder and sets the pattern progress, payments and files inherit (D6).</p>
+    </div>
+    <div class="col" style="width:352px">
+      <span class="tag">Partial — the ordinary case today</span>
+      <section class="lp-panel lp-panel--door" aria-label="Delivery address">
+        <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <h2 class="lp-panel__title">Delivery address</h2>
+        <p class="rec-addr"><span>Craigieburn 3064</span></p>
+      </section>
+      <p class="cap">The customer's form only ever captured suburb and postcode, so most projects
+      look like this. Absent lines <b>simply do not render</b> — no gap, no “missing”, no marker, no
+      badge (criterion 31). Nothing on this card says the address is incomplete.</p>
+    </div>
+    <div class="col" style="width:352px">
+      <span class="tag">Nothing stored</span>
+      <section class="lp-panel lp-panel--door" aria-label="Delivery address">
+        <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <h2 class="lp-panel__title">Delivery address</h2>
+        <p class="rec-addr__unset">Not set</p>
+      </section>
+      <span class="tag" style="margin-top:var(--sp-md)">Locked</span>
+      <section class="lp-panel" aria-label="Delivery address">
+        <h2 class="lp-panel__title">Delivery address</h2>
+        <p class="rec-addr"><span>12 Smith Street</span><span>Richmond VIC 3121</span></p>
+      </section>
+      <p class="cap">Same vocabulary as the Delivery row — <b>“Not set”</b>, muted, never an error.
+      Locked drops the chevron and the press target and says nothing about why (D13).</p>
+    </div>
+  </div>
+
+  <!-- ══════════════ 4 · address slide-out ══════════════ -->
+  <h2 class="sec">4 · The address slide-out — five fields, one save</h2>
+  <div class="row">
+    <div class="col">
+      <span class="tag">Prefilled from the project only</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery address</h3>
+          <button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field field--focus">
+            <span class="fieldlabel">Address line 1</span>
+            <input value="12 Smith Street">
+          </div>
+          <div class="field">
+            <span class="fieldlabel">Address line 2</span>
+            <input value="Unit 4">
+          </div>
+          <div class="field">
+            <span class="fieldlabel">Suburb</span>
+            <input value="Richmond">
+          </div>
+          <div class="pair">
+            <div class="field">
+              <span class="fieldlabel">State</span>
+              <select><option>VIC</option></select>
+            </div>
+            <div class="field">
+              <span class="fieldlabel">Postcode</span>
+              <input value="3121" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <button class="btn btn--primary">Save address</button>
+        </footer>
+      </aside>
+      <p class="cap"><b>The account address never appears</b> — not as a value, not as a
+      placeholder, not as a hint (criterion 33). A project owns its own destination, and a wrong
+      prefill is the one thing that stops a field being read.
+      <br><br>State is a picker of the eight AU codes and is paperwork only: the delivery zone
+      resolves on the postcode alone, and changing the postcode <b>never moves an already-settled
+      price</b> (D12) — no prompt, no banner, no second figure.</p>
+    </div>
+    <div class="col">
+      <span class="tag">Typing a street address in · refused</span>
+      <aside class="panel">
+        <header class="panel__head"><h3>Delivery address</h3>
+          <button class="panel__done">Done</button></header>
+        <div class="panel__body">
+          <div class="field">
+            <span class="fieldlabel">Address line 1</span>
+            <input value="88 Hume Highway">
+          </div>
+          <div class="field">
+            <span class="fieldlabel">Address line 2</span>
+            <input value="">
+          </div>
+          <div class="field field--bad">
+            <span class="fieldlabel">Suburb</span>
+            <input value="">
+            <p class="why">A suburb is needed.</p>
+          </div>
+          <div class="pair">
+            <div class="field">
+              <span class="fieldlabel">State</span>
+              <select><option></option></select>
+            </div>
+            <div class="field field--bad">
+              <span class="fieldlabel">Postcode</span>
+              <input value="312" inputmode="numeric">
+              <p class="why">Postcode is four digits.</p>
+            </div>
+          </div>
+        </div>
+        <footer class="panel__foot">
+          <button class="btn btn--primary">Save address</button>
+        </footer>
+      </aside>
+      <p class="cap"><b>Replace-only (D14).</b> A stored line 1, suburb, state or postcode can be
+      typed over but never emptied; line 2 can be cleared, and a field that never held anything may
+      stay empty. Each message sits under its own field, all five fields save as <b>one request</b>,
+      and a refusal writes nothing at all. A failed save behaves exactly like the price panel: open,
+      values kept, <i>That address was not saved. Try again.</i></p>
+    </div>
+  </div>
+
+  <!-- ══════════════ 5 · phone ══════════════ -->
+  <h2 class="sec">5 · 375px — the same two doors, the same right-hand slide-out</h2>
+  <div class="row">
+    <div class="col">
+      <div class="phone">
+        <p class="phone__cap">Lines tab · foot of the list</p>
+        <div class="band"><span class="band__ref">AMJ-2508-014</span>
+          <span class="band__cust">Hartley Bros</span></div>
+        <section class="lp-panel lp-panel--door">
+          <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <div class="rec-totals">
+            <div class="rec-totals__row"><span>Lines
+              <span class="rec-totals__caveat">· 1 with no rate</span></span>
+              <span class="rec-totals__figure">$9,600</span></div>
+            <div class="rec-totals__row"><span>Delivery</span>
+              <span class="rec-totals__unset">Not set</span></div>
+            <div class="rec-totals__row rec-totals__row--sum"><span>Project total</span>
+              <span class="rec-totals__figure">$9,600</span></div>
+          </div>
+        </section>
+      </div>
+      <p class="cap">The whole card is the press target at the thumb end of the list — the largest
+      target on the screen. Nothing is drawn below it at any width.</p>
+    </div>
+    <div class="col">
+      <div class="scrim">
+        <div class="scrim__under">
+          <section class="lp-panel lp-panel--door">
+            <div class="rec-totals">
+              <div class="rec-totals__row"><span>Lines</span>
+                <span class="rec-totals__figure">$9,600</span></div>
+              <div class="rec-totals__row"><span>Delivery</span>
+                <span class="rec-totals__unset">Not set</span></div>
+            </div>
+          </section>
+        </div>
+        <div class="scrim__veil"></div>
+        <aside class="panel">
+          <header class="panel__head"><h3>Delivery price</h3>
+            <button class="panel__done">Done</button></header>
+          <div class="panel__body">
+            <div class="field field--focus">
+              <span class="fieldlabel">Delivery price</span>
+              <input value="450" inputmode="decimal">
+            </div>
+          </div>
+          <footer class="panel__foot">
+            <button class="btn btn--primary">Save delivery price</button>
+          </footer>
+        </aside>
+      </div>
+      <p class="cap"><code>phoneForm="side"</code>: it arrives from the right at 375px too, over the
+      ink scrim at 80% behind a 3px blur. A screen you go into, not a phone gesture.</p>
+    </div>
+    <div class="col">
+      <div class="scrim">
+        <div class="scrim__under">
+          <div class="tabbar"><span>Lines</span><span class="on">Project</span></div>
+          <section class="lp-panel lp-panel--door">
+            <h2 class="lp-panel__title">Delivery address</h2>
+            <p class="rec-addr"><span>Craigieburn 3064</span></p>
+          </section>
+        </div>
+        <div class="scrim__veil"></div>
+        <aside class="panel">
+          <header class="panel__head"><h3>Delivery address</h3>
+            <button class="panel__done">Done</button></header>
+          <div class="panel__body">
+            <div class="field field--focus">
+              <span class="fieldlabel">Address line 1</span><input value="">
+            </div>
+            <div class="field">
+              <span class="fieldlabel">Address line 2</span><input value="">
+            </div>
+            <div class="field">
+              <span class="fieldlabel">Suburb</span><input value="Craigieburn">
+            </div>
+            <div class="pair">
+              <div class="field"><span class="fieldlabel">State</span>
+                <select><option></option></select></div>
+              <div class="field"><span class="fieldlabel">Postcode</span>
+                <input value="3064" inputmode="numeric"></div>
+            </div>
+          </div>
+          <footer class="panel__foot">
+            <button class="btn btn--primary">Save address</button>
+          </footer>
+        </aside>
+      </div>
+      <p class="cap">The everyday job: a project that arrived with suburb and postcode, a street
+      line being typed in. Nothing stored is being emptied, so this save is allowed the moment
+      line 1 holds anything.</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,86 @@
+{
+  "run": "ops2-delivery-price",
+  "design": "docs/runs/ops2-delivery-price/02-design.md",
+  "tasks": [
+    {
+      "id": "t1",
+      "tag": "backend-migration",
+      "title": "Migration 0063 + PUT delivery restructure + DTO widening",
+      "files": [
+        "migrations/0063_delivery_address.sql",
+        "worker/routes/ops.ts",
+        "scripts/tests/delivery.test.mjs"
+      ],
+      "tests": ["scripts/tests/delivery.test.mjs"],
+      "after": [],
+      "done_when": "npm run test:delivery green. Migration is exactly the three ADD COLUMNs with the children-affected header comment verbatim from design section 1 — no rebuild, no DROP. ops.ts changes confined to: the import block (add AU_STATES from ../../src/data/accountDetails), buildDeliveryDto lines 462-504 (add line1/line2/state passthrough only), and the PUT /projects/:id/delivery handler lines 752-837 per design section 2. Auth UNCHANGED: resolveStaff stays, 403 for anonymous/customer/manufacturer, refusal body {error} only — the existing anonymous-PUT assertion near line 449 stays 403 and stays untouched. Amount: \"amount\" in body check distinguishes absent (amount group untouched) from null (un-settle, byte-identical to today's null path — existing ~538 test stays green unmodified) from number, which must now pass typeof === \"number\" && Number.isFinite && >= 0 && < 1e12 (string \"250\" -> 400; today's Number(body?.amount) coercion goes). Note processed only when amount key present, today's rules (legacy clears note by omission and must keep working). Address keys: line1 trimmed 1-120 replace-only; line2 trimmed, \"\" -> NULL (clearable), else 1-120; suburb trimmed 1-80 replace-only; state in AU_STATES else 400, never passed to resolveZone; postcode branch semantics unchanged (normalisePostcode, 4 digits, replace-only, zone re-resolves from postcode alone). Validate whole body before any write — any failure = 400 with row byte-untouched; unknown keys (project_id, account_id, user_id, phase) ignored per criterion 47; no known key -> 400 invalid_body. Two-group present-fields-only UPDATE per design section 2: address-only save leaves delivery_amount, settle stamps AND delivery_note byte-untouched; amount-only save leaves the five destination columns byte-untouched. Audit: amount event unchanged; address event records actor + changed field NAMES only, never values; no address value in any worker log line. GET /projects/:id, resolveStaff and worker/lib/delivery.ts untouched. New tests per design section 8 delivery.test.mjs list: migration columns NULL on pre-existing rows + project/order_line/payment counts unchanged with seeded child rows; amount save keeps stamp + audit; amount-key-absent leaves amount group untouched; postcode change re-resolves zone with state never consulted; 400 table (empty line1/suburb/postcode, 81-char suburb, 121-char line1, state \"Victoria\"/\"XX\", postcode \"abc\"/\"312\", amount -1/\"250\"/1e12) each leaving the row unchanged; \"  Richmond  \" -> \"Richmond\"; amount 0 settles; line2 \"\" -> NULL; address subsets stored trimmed with omitted columns byte-identical; 409 locked for amount-only/address-only/both with no column written; 404 opaque on unknown id; 403 for owning customer / other-account customer / manufacturer with nothing written and no existence hint; body project_id/account_id ignored; <script> line1 stored and returned literally; address audit event field-names-only; DTO passthrough of line1/line2/state.",
+      "criteria": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "43", "44", "45", "46", "47", "48", "49"]
+    },
+    {
+      "id": "t2",
+      "tag": "model",
+      "title": "RecordDelivery widening + door-label copy in record.ts",
+      "files": [
+        "src/ops2/projects/record.ts",
+        "scripts/tests/ops2-record.test.mjs"
+      ],
+      "tests": ["scripts/tests/ops2-record.test.mjs"],
+      "after": ["t1"],
+      "done_when": "npm run test:ops2 green. record.ts changes confined to: RecordDelivery interface lines 121-134 (add line1/line2/state: string|null and editable: boolean; DELETE estimate per design section 3), the parseProjectRecord delivery block lines 340-354 (str() for the three new strings; editable: delivery.editable === true, absent fails closed to false; drop the estimate line), and two exported copy consts near waitingSentence (line 656): deliveryPriceDoor = \"Set the delivery price\", deliveryAddressDoor = \"Change the delivery address\". NO new money formatter; money() (685-687), totalsFor (597-621) and cornerFigure (636-643) untouched. Tests: parse of the new fields incl. absent-field defaults (editable fails closed); estimate absent from the parsed record.",
+      "criteria": ["18", "19", "23", "30", "31", "38"]
+    },
+    {
+      "id": "t3",
+      "tag": "chrome",
+      "title": "OpenablePanel title becomes optional (D18)",
+      "files": [
+        "src/ops2/chrome/OpenablePanel.tsx",
+        "scripts/tests/ops2-record.test.mjs"
+      ],
+      "tests": ["scripts/tests/ops2-record.test.mjs"],
+      "after": [],
+      "done_when": "npm run test:ops2 green. Exactly three edits per design section 4: title: string becomes title?: string; the <h2> renders only when title is present; the section carries no aria-label when title is undefined (guard only if the current expression would emit aria-label=\"\"). The door button keeps aria-label={open.label}. NO render-prop, slot, variant, mode or header object; the file is no longer than before. PricePanel.tsx and WhyPanel.tsx are NOT edited and their rendered output is byte-identical; every existing assertion over them stays green untouched. panel.css is NOT edited. Tests appended to ops2-record.test.mjs: OpenablePanel without title renders no <h2> and no section aria-label while the door button still carries open.label.",
+      "criteria": ["40", "41", "42"]
+    },
+    {
+      "id": "t4",
+      "tag": "ui",
+      "title": "DeliveryPricePanel component",
+      "files": [
+        "src/ops2/projects/DeliveryPricePanel.tsx",
+        "scripts/tests/ops2-record.test.mjs"
+      ],
+      "tests": ["scripts/tests/ops2-record.test.mjs"],
+      "after": ["t2"],
+      "done_when": "npm run test:ops2 green. New controlled component per design section 5.2: props {projectId, amount, open, onClose, onSaved}; SidePanel phoneForm=\"side\" testId=\"delivery-price-sheet\" at every viewport width. PricePanel.tsx is the mechanical template (state seeded on OPEN, inline fetch PUT with credentials same-origin, failed flag rendered role=\"alert\" with the panel STAYING OPEN and the typed value retained, footer confirm) but copy NONE of its tax-basis strings — no GST/tax/inc/incl/ex/excl word anywhere in any state. Exactly one editable field labelled \"Delivery price\" (inputMode decimal, focused on open): prefilled amount.toFixed(2) when amount != null, empty string when null — no estimate, no placeholder figure, no second figure of any kind, no unpriced/error styling for the empty case. Save refused client-side with a field-level message and NO request when empty, non-numeric or negative; the body is exactly {amount: Number(value)} — no other key ever, no path producing amount: null, no clear/un-settle control. No note, postcode or zone control. Reuse PricePanel's existing sheet/form CSS classes — no CSS file edit in this task. Tests appended to ops2-record.test.mjs: add DeliveryPricePanel to the esbuild bundle entry so the existing no-tax-token grep covers it; markup asserts exactly one input and no clear/un-settle control.",
+      "criteria": ["21", "22", "23", "24", "25", "27", "29"]
+    },
+    {
+      "id": "t5",
+      "tag": "ui",
+      "title": "DeliveryAddressPanel component",
+      "files": [
+        "src/ops2/projects/DeliveryAddressPanel.tsx",
+        "scripts/tests/ops2-record.test.mjs"
+      ],
+      "tests": ["scripts/tests/ops2-record.test.mjs"],
+      "after": ["t2"],
+      "done_when": "npm run test:ops2 green. New component per design section 5.3 owning card + sheet: props {projectId, delivery, onSaved}. Card: OpenablePanel title=\"Delivery address\" testId=\"delivery-address\", open present ONLY when delivery.editable with label deliveryAddressDoor from record.ts (locked = plain text, no chevron, no tab stop, no reason line, for free). Card body renders only stored lines as the comma-free stacked block (line1 / line2 / \"Suburb STATE 3000\") — absent parts don't render, no missing marker, no badge, no error styling; all columns NULL -> one neutral \"Not set\" line, card still pressable when editable. Sheet: SidePanel phoneForm=\"side\" testId=\"delivery-address-sheet\"; exactly five fields, no price field — Address line 1 (maxLength 120), Address line 2 (maxLength 120), Suburb (maxLength 80), State native select over AU_STATES imported from src/data/accountDetails.ts with a blank option ONLY while no state is stored, Postcode with 4-digit client check. Prefill from delivery only — no account-address value or placeholder anywhere. Replace-only client-side for line1/suburb/state/postcode: emptying a field whose stored value exists -> field-level refusal, no request; line2 IS clearable — emptied stored line2 sends line2: \"\"; a field with no stored value may stay empty and is OMITTED from the body; save sends one PUT carrying only the present fields and never an amount key; save disabled when the body would be empty. No tax words, no note, no zone text, no postcode-change prompt. Reuse PricePanel/t4 CSS classes — no CSS file edit in this task. Tests appended to ops2-record.test.mjs: add DeliveryAddressPanel to the bundle entry (no-tax grep); markup asserts card hides absent lines, neutral empty state, and no account-derived value appears.",
+      "criteria": ["30", "31", "32", "33", "34", "35", "36", "37", "39"]
+    },
+    {
+      "id": "t6",
+      "tag": "ui-wiring",
+      "title": "Totals card as OpenablePanel + page wiring + record.css + browser journeys",
+      "files": [
+        "src/ops2/projects/ProjectRecordPage.tsx",
+        "src/ops2/styles/record.css",
+        "scripts/tests/web/ops2-record.spec.ts"
+      ],
+      "tests": ["scripts/tests/web/ops2-record.spec.ts"],
+      "after": ["t3", "t4", "t5"],
+      "done_when": "npm run test:ops2 green and npm run test:web (ops2-record.spec.ts) green. ProjectRecordPage changes confined to: RecordTotals lines 736-770 becomes an OpenablePanel with NO title, testId=\"record-totals\", open={record.delivery.editable ? {label: deliveryPriceDoor, onOpen} : undefined} wrapping the three existing rows as plain divs — no per-row button, aria-label, hover wash or focus ring on any row; .rec-totals__row--door is NEVER created; nothing renders below the Project-total row and no separate Delivery card exists; delete the stale DELIVERY-IS-TEXT-HERE comment; the Project-total row renders money(t.total ?? t.subtotal) with the rec-totals__absent strings deleted (design section 5.1 criterion-19 ruling). DeliveryFigure lines 776-789 shrinks to two branches: settled -> money(totals.delivery ?? 0) (zero prints a figure, never \"Not set\"), else neutral \"Not set\" span; the estimate branch is DELETED. One useState wires DeliveryPricePanel with onSaved record re-fetch (pattern at lines 490-492). Project-tab placeholder lines 519-525 replaced by DeliveryAddressPanel as the tab's first content inside the record-project-tab wrapper. Footer note lines 536-540 reworded to \"Notes and clarification requests arrive with their own screens.\" record.css changes confined to: padding reconciliation between rec-totals and .lp-panel near line 438 so spacing doesn't double, rewrite the stale comment at lines 455-456 (unpriced is ordinary per D8), delete .rec-totals__missing lines 457-461 and any now-unused rec-totals__absent rule. panel.css NOT edited. ops2-record.spec.ts: DELETE the line-391 \"not built yet\" Project-tab assertion; add journeys per design section 8 web list: totals card is one pressable control with the copy-module accessible name and no <h2>, chevron card-centred, no per-row button/aria; mouse press and keyboard Enter/Space open the right-hand slide-out at phone and desktop widths; NULL-delivery project shows \"Not set\" and a Project total without delivery contribution and without explanation line; nothing below the card; 250 shown alone on open; unpriced_table zone -> plain empty input; 450 -> save -> sheet closes, row and Project total update, no reload; dismiss discards; intercepted 5xx -> panel open, value kept, inline failure; 0 prints a figure never \"Not set\"; locked record and locked address card show figures/text only with no tab stop and no reason line; address card first content on Project tab, partial address without warning; five fields prefilled from project only, never the account address; suburb+postcode save -> card updates, settled figure unchanged, no delta anywhere; clearing stored suburb refused with no request; clearing stored line2 allowed and saves; <script> line1 renders as literal text.",
+      "criteria": ["16", "17", "18", "19", "20", "23", "24", "26", "28", "29", "30", "31", "32", "33", "34", "35", "38", "39", "48"]
+    }
+  ]
+}
