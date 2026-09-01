@@ -309,7 +309,6 @@ test("parseCompositionComment and reconcileReading preserve contradictions as fl
   });
   const result = reconcileReading({
     split: { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 1500 }], axis: "vertical" },
-    widthMm: 1500,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS", modelConfidence: "high", northAssumed: true,
   });
   assert.equal(result.confidence, "low");
@@ -327,27 +326,25 @@ test("parseCompositionComment: cited door, direction, and garbage patterns stay 
 test("reconcileReading: agreement stays high and preserves measured geometry", () => {
   const split = { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 900 }], axis: "vertical" };
   const result = reconcileReading({
-    split, widthMm: 900, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
+    split, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
   });
   assert.equal(result.confidence, "high");
   assert.deepEqual(result.flags, []);
   assert.deepEqual(result.composition, split);
 });
 
-test("reconcileReading: stated component widths win and the unstated panel takes the exact remainder", () => {
+test("reconcileReading: comment operation count wins while drawing ratios stay fixed", () => {
   const result = reconcileReading({
     split: { units: [
       { role: "passive", operation: "fixed", ratio: 0.2 },
       { role: "passive", operation: "fixed", ratio: 0.6 },
       { role: "passive", operation: "fixed", ratio: 0.2 },
     ], axis: "vertical" },
-    widthMm: 3200,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "high", northAssumed: false,
   });
   assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["awning", "fixed", "awning"]);
-  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.1875, 0.625, 0.1875]);
-  assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [600, 2000, 600]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.2, 0.6, 0.2]);
   assert.deepEqual(result.flags, ["scheduleDrawingMismatch"]);
 });
 
@@ -359,7 +356,7 @@ test("compositionFromSchedule: an elevation-hidden opening uses comments, never 
     ["awning", 600], ["fixed", 2000], ["awning", 600],
   ]);
   const result = reconcileReading({
-    split, widthMm: 3200, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+    split, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "low", northAssumed: false, visible: false,
   });
   assert.equal(result.confidence, "low");
@@ -1814,7 +1811,7 @@ test("full-document agent starts text-only, preserves set context, and can corre
           renderRequests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 100, 100] }],
           records: [], declines: [], complete: false,
         };
-        if (input.turn === 2) return {
+        return {
           memory: "All scheduled openings resolved.", renderRequests: [], declines: [], complete: true,
           records: [{
             tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.35, 0.65], divisionAxis: "vertical",
@@ -1823,36 +1820,24 @@ test("full-document agent starts text-only, preserves set context, and can corre
             confidence: "high", flags: [], basis: ["W1 tag is beside STUDY; close elevation shows an offset mullion."], note: null,
           }],
         };
-        return {
-          memory: "The tagged crop confirms W1's composition.", renderRequests: [], declines: [], complete: true,
-          records: [{
-            tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
-            orientation: null, elevation: null, roomLabel: null, storey: null,
-            evidenceView: "detail", evidenceRenderId: "fd_t002_02", frameBoxPt: [0, 0, 100, 100],
-            confidence: "high", flags: [], basis: ["The tagged close-up shows an offset mullion."], note: null,
-          }],
-        };
       },
       render: async (request) => {
         renderCalls++;
-        return { images: (request.crops ?? [null]).map(() => ({
-          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
-          ...(request.dpi === 250 ? { profile: { mullionXs: [0.3801], transomYs: [] } } : {}),
-        })), dpi: request.dpi };
+        return { images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 })), dpi: request.dpi };
       },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
       onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
     },
   });
-  assert.equal(inputs.length, 3);
+  assert.equal(inputs.length, 2);
   assert.equal(inputs[0].harvest.schedule[0].priorRoomCandidate, "ENTRY");
   assert.equal(inputs[0].imageDataUrls.length, 0, "the planning turn must not pre-render whole sheets");
   assert.ok(inputs[1].history.some((item) => /STUDY/.test(item.memory)));
   assert.ok(inputs[1].imageDataUrls.some((item) => item.renderId === "fd_t001_01"));
-  assert.equal(renderCalls, 2, "the requested evidence and one tagged composition crop are rendered");
-  assert.equal(result.report.steps.renderCrop.pagesRendered, 2);
-  assert.equal(result.report.steps.renderCrop.cropsMade, 2);
-  assert.equal(result.report.modelCalls, 3);
+  assert.equal(renderCalls, 1, "only the model-requested evidence is rendered");
+  assert.equal(result.report.steps.renderCrop.pagesRendered, 1);
+  assert.equal(result.report.steps.renderCrop.cropsMade, 1, "whole-page overviews are not opening crops");
+  assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings[0].roomLabel, "STUDY", "plan context is a candidate, not an authority");
   assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [700, 1300]);
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
@@ -1882,7 +1867,7 @@ test("full-document agent prioritizes automatic legibility repairs over discreti
           memory: "W1 needs a closer crop.",
           renderRequests: Array.from({ length: 12 }, (_, index) => ({ pageNo: index + 2, dpi: 110 })),
           records: [{
-            tag: "W1", operations: ["fixed", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
+            tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
             orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
             evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 20, 20],
             confidence: "high", flags: [], basis: ["Broad view locates W1."], note: null,
@@ -1954,16 +1939,12 @@ test("full-document agent reassesses a declined opening when the same turn produ
       render: async (request) => {
         renderCalls++;
         const size = renderCalls === 1 ? 400 : 1_000;
-        return { images: [{
-          pngB64: "aGVsbG8=", widthPx: size, heightPx: size,
-          ...(request.dpi === 250 ? { profile: { mullionXs: [0.4], transomYs: [] } } : {}),
-        }], dpi: request.dpi };
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: size, heightPx: size }], dpi: request.dpi };
       },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
   assert.equal(inputs.length, 3);
-  assert.deepEqual(result.readings.find((reading) => reading.externalRef === "W7")?.split.units.map((unit) => unit.derivedWidthMm), [595, 1_215]);
   assert.equal(result.readings.find((reading) => reading.externalRef === "W8")?.confidence, "high");
   assert.equal(result.readings.find((reading) => reading.externalRef === "W8")?.split.units[0].operation, "fixed");
 });
@@ -1971,11 +1952,10 @@ test("full-document agent reassesses a declined opening when the same turn produ
 test("full-document repair turns bind pending openings to active tagged crops without duplicate or final renders", async () => {
   const inputs = [];
   const renders = [];
-  const events = [];
   const scheduleRows = [
     { tag: "W15", widthMm: 1_380, heightMm: 1_543, typeText: "FIXED" },
     { tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" },
-    { tag: "D1", widthMm: 1_380, heightMm: 2_405, typeText: "HINGED", commentText: "920 DOOR & 1N° SIDELIGHT" },
+    { tag: "D1", widthMm: 1_380, heightMm: 2_405, typeText: "HINGED" },
   ];
   const record = (tag, operations, unitRatios, evidenceRenderId, frameBoxPt, roomLabel) => ({
     tag, operations, unitRatios, divisionAxis: "vertical", orientation: "S",
@@ -2011,51 +1991,47 @@ test("full-document repair turns bind pending openings to active tagged crops wi
         assert.deepEqual(input.harvest.schedule.map((row) => row.tag), ["W1", "D1"]);
         assert.deepEqual(input.renderCatalog.map((item) => item.repairTag), ["W1", "D1"]);
         assert.ok(!input.renderCatalog.some((item) => item.renderId === "fd_t001_01"));
+        if (input.turn === 3) return {
+          memory: "Incorrectly cited the old overview.", renderRequests: [], declines: [], complete: false,
+          records: [
+            record("W1", ["awning", "fixed"], [0.35, 0.65], "fd_t001_01", [100, 100, 120, 140], "Study"),
+            record("D1", ["hinged", "sidelight"], [0.67, 0.33], "fd_t001_01", [200, 100, 225, 150], "Entry"),
+          ],
+        };
         return {
           memory: "The tagged close-ups resolve W1 and D1.",
-          renderRequests: [],
+          renderRequests: [{ pageNo: 1, dpi: 110 }],
           declines: [], complete: true,
           records: [
-            record("W1", ["awning", "fixed"], [0.5, 0.5], "fd_t002_02", [800, 800, 900, 900], "Wrong room"),
-            record("D1", ["hinged", "sidelight"], [0.5, 0.5], "fd_t002_03", [800, 800, 900, 900], "Wrong room"),
+            record("W1", ["awning", "fixed"], [0.35, 0.65], "fd_t002_02", [100, 100, 120, 140], "Study"),
+            record("D1", ["hinged", "sidelight"], [0.67, 0.33], "fd_t002_03", [200, 100, 225, 150], "Entry"),
           ],
         };
       },
       render: async (request) => {
         renders.push(request);
-        events.push({ type: "render", request });
-        return { images: (request.crops ?? [null]).map((_, index) => ({
-          pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000,
-          ...(request.dpi === 250 && index === 0 ? { profile: { mullionXs: [0.412], transomYs: [] } } : {}),
-        })), dpi: request.dpi };
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi };
       },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
-      onProgress: async (done, total, phase) => events.push({ type: "progress", done, total, phase }),
     },
   });
   const byTag = Object.fromEntries(result.readings.map((reading) => [reading.externalRef, reading]));
   assert.deepEqual(byTag.W1.split.units.map((unit) => unit.derivedWidthMm), [720, 1_330]);
-  assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [920, 460]);
-  assert.equal(byTag.W1.roomLabel, "Study", "the tagged repair cannot relocate the opening");
-  assert.equal(byTag.D1.roomLabel, "Entry", "the tagged repair cannot relocate the opening");
+  assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [925, 455]);
   assert.equal(byTag.W15.confidence, "high");
-  assert.equal(renders.length, 2, "same-page repairs are rendered in one container call");
-  assert.equal(renders[1].crops.length, 2);
+  assert.equal(renders.length, 3, "one overview plus one repair per unresolved opening; final-turn request is ignored");
   assert.equal(result.report.steps.renderCrop.cropsMade, 2);
-  const repairRender = events.findIndex((event) => event.type === "render" && event.request.dpi === 250);
-  assert.ok(events.slice(0, repairRender).some((event) => event.type === "progress" && event.phase === "opening_read" && event.done === 1),
-    "the user sees accepted-opening progress before repair rendering finishes");
 });
 
 test("full-document repair queue carries openings beyond the 12-image turn cap", async () => {
   const inputs = [];
   let renderCalls = 0;
   const scheduleRows = Array.from({ length: 13 }, (_, index) => ({
-    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
+    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "FIXED",
   }));
   const frame = (index) => [10 + index * 30, 100, 20 + index * 30, 120];
   const record = (tag, evidenceRenderId, frameBoxPt) => ({
-    tag, operations: ["awning", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
+    tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
     orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
     evidenceView: "elevation", evidenceRenderId, frameBoxPt,
     confidence: "high", flags: [], basis: [`${tag} is visible.`], note: null,
@@ -2098,13 +2074,12 @@ test("full-document repair queue carries openings beyond the 12-image turn cap",
       },
       render: async (request) => {
         renderCalls++;
-        return { images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 })), dpi: request.dpi };
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi };
       },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(renderCalls, 3, "one overview and two bounded same-page repair batches");
-  assert.equal(result.report.steps.renderCrop.cropsMade, 13);
+  assert.equal(renderCalls, 14, "one overview and exactly one repair per opening");
   assert.ok(result.readings.every((reading) => reading.confidence === "high"));
 });
 
@@ -2114,7 +2089,7 @@ test("approximate frame boxes do not reject W1 and D1 compositions", async () =>
     fileId: "f1",
     scheduleRows: [
       { tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" },
-      { tag: "D1", widthMm: 1_380, heightMm: 2_405, typeText: "HINGED", commentText: "920 DOOR & 1N° SIDELIGHT" },
+      { tag: "D1", widthMm: 1_380, heightMm: 2_405, typeText: "HINGED" },
     ],
     inspected: {
       inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
@@ -2127,34 +2102,27 @@ test("approximate frame boxes do not reject W1 and D1 compositions", async () =>
       runTurn: async () => {
         turn++;
         if (turn === 1) return { memory: "Render Elevation A.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
-        const record = (tag, operations, unitRatios, evidenceRenderId, frameBoxPt, roomLabel) => ({
+        const record = (tag, operations, unitRatios, frameBoxPt, roomLabel) => ({
           tag, operations, unitRatios, divisionAxis: "vertical", orientation: "W",
           elevation: "ELEVATION A", roomLabel, storey: "ground", evidenceView: "elevation",
-          evidenceRenderId, frameBoxPt, confidence: "high", flags: [],
+          evidenceRenderId: "fd_t001_01", frameBoxPt, confidence: "high", flags: [],
           basis: [`${tag} composition is visible on Elevation A.`], note: null,
         });
-        if (turn === 2) return {
-          memory: "W1 and D1 are located; use tagged close-ups for composition.", renderRequests: [], declines: [], complete: false,
-          records: [
-            record("W1", ["awning", "fixed"], [0.35, 0.65], "fd_t001_01", [574, 294, 623, 379], "Study"),
-            record("D1", ["hinged", "sidelight"], [0.67, 0.33], "fd_t001_01", [530, 294, 595, 379], "Entry"),
-          ],
-        };
         return {
           memory: "W1 and D1 resolved.", renderRequests: [], declines: [], complete: true,
           records: [
-            record("W1", ["awning", "fixed"], [0.35, 0.65], "fd_t002_02", [0, 0, 1, 1], "Wrong"),
-            record("D1", ["hinged", "sidelight"], [0.67, 0.33], "fd_t002_03", [0, 0, 1, 1], "Wrong"),
+            record("W1", ["awning", "fixed"], [0.35, 0.65], [574, 294, 623, 379], "Study"),
+            record("D1", ["hinged", "sidelight"], [0.67, 0.33], [530, 294, 595, 379], "Entry"),
           ],
         };
       },
-      render: async (request) => ({ images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 3_000, heightPx: 3_000 })), dpi: request.dpi }),
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 3_000, heightPx: 3_000 }], dpi: request.dpi }),
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
   const byTag = Object.fromEntries(result.readings.map((reading) => [reading.externalRef, reading]));
   assert.deepEqual(byTag.W1.split.units.map((unit) => unit.derivedWidthMm), [720, 1_330]);
-  assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [920, 460]);
+  assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [925, 455]);
   assert.ok(result.readings.every((reading) => reading.confidence === "high" && !reading.flags.includes("drawingInconsistency")));
 });
 

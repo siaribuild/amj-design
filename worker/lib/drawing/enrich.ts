@@ -473,7 +473,6 @@ async function enrichFile(
         }
         const reconciled = reconcileReading({
           split,
-          widthMm: row.widthMm,
           scheduleType: row.typeText,
           commentText: row.commentText,
           modelConfidence: read.confidence,
