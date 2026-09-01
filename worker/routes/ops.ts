@@ -912,7 +912,19 @@ ops.put("/projects/:id/delivery", async (c) => {
       WHERE id = ? AND status_internal IN (${editable.map(() => "?").join(", ")})${
         guardPostcode ? " AND delivery_postcode IS ?" : ""}`,
   ).bind(...binds, id, ...editable, ...(guardPostcode ? [project.delivery_postcode] : [])).run();
-  if (written.meta?.changes === 0) return c.json({ error: "locked" }, 409);
+  if (written.meta?.changes === 0) {
+    // TWO REASONS THE GUARDED WRITE CAN MATCH NOTHING, and the console has to
+    // act differently on each: a project issued underneath this request is
+    // PERMANENT (close the editor, re-read), while a destination moved by a
+    // colleague is RECOVERABLE (keep the typed figure, let them press again).
+    // Answering both with a bare "locked" threw away work a staffer had done.
+    // The extra read happens only on the failure path.
+    const now = await c.env.DB.prepare("SELECT status_internal FROM project WHERE id = ?")
+      .bind(id).first<{ status_internal: string }>();
+    const stillEditable = !!now
+      && (now.status_internal === "draft" || ISSUABLE_FROM.has(now.status_internal));
+    return c.json({ error: stillEditable ? "destination_changed" : "locked" }, 409);
+  }
 
   const after = await c.env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(id).first<any>();
   const delivery = await buildDeliveryDto(c.env, after);

@@ -997,6 +997,25 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       assert.match(update, /delivery_postcode IS \?/, "the settle guards the destination it priced");
     });
 
+    await t.test("T-B51: a locked project and a moved destination are different refusals", async () => {
+      // Both make the guarded UPDATE match zero rows, and answering both with a
+      // bare 409 made the panel treat a RECOVERABLE conflict as permanent and
+      // throw away the figure the staffer had typed. The two are told apart on
+      // the failure path so the console can keep the editor open for one and
+      // close it for the other.
+      const { id } = await submitted("Refusal kinds");
+      // The locked case, end to end: issuing takes the project out of the
+      // editable set, and the refusal keeps its existing wording.
+      const handler = await readFile(join(projectRoot, "worker", "routes", "ops.ts"), "utf8");
+      const put = handler.slice(handler.indexOf('ops.put("/projects/:id/delivery"'));
+      assert.match(put, /destination_changed/, "a moved postcode is its own refusal");
+      assert.match(put, /error: \"locked\"/, "and a locked project keeps the one it had");
+      // The row is untouched by either.
+      const before = await row(id);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: {} }, 400);
+      assert.deepEqual(await row(id), before);
+    });
+
     await t.test("T-B48: an address is stored and returned literally, never interpreted", async () => {
       const { id } = await submitted("Literal address");
       const saved = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {

@@ -99,7 +99,12 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
   }, []);
 
   const trimmed = typed.trim();
-  const value = Number(trimmed);
+  /** ROUNDED TO CENTS BEFORE IT IS ANYTHING ELSE. A price is a number of cents;
+   *  `250.123` is not one. Left raw it also broke the unchanged check both
+   *  ways — the field prefills with `toFixed(2)`, so a stored `250.123` came
+   *  back as `250.12`, the panel read that as an edit, and pressing save
+   *  rewrote the settle stamps and logged a repricing nobody performed. */
+  const value = Math.round(Number(trimmed) * 100) / 100;
   /** UNCHANGED IS NOT A SAVE. Pressing Save on a settled figure nobody edited
    *  would rewrite `delivery_settled_at`, `delivery_settled_by` and the machine
    *  snapshot, and log "set delivery to $X" — commercial history recording a
@@ -130,7 +135,18 @@ export function DeliveryPricePanel({ projectId, amount, open, onClose, onSaved }
     // panel was open, so the project is locked and every retry must fail —
     // inviting one would be a lie. Close and re-read instead, which is what the
     // record page already does with a conflict.
-    if (res && res.status === 409) { onClose(); onSaved(); return; }
+    if (res && res.status === 409) {
+      // Only a LOCKED project is permanent. A destination moved by a colleague
+      // is recoverable, so the panel keeps the figure that was typed rather
+      // than discarding a staffer's work — pressing again re-prices against
+      // the new address.
+      const body = await res.json().catch(() => null);
+      if (body?.error === "destination_changed") {
+        setError("The delivery address changed while this was open. Press save again to price it.");
+        return;
+      }
+      onClose(); onSaved(); return;
+    }
     if (!res || !res.ok) { setError("That price was not saved. Try again."); return; }
     onClose();
     onSaved();
