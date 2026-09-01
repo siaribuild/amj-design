@@ -2570,3 +2570,14 @@ test('--slug= is validated like every other slug - it names a run, not a path', 
   }
   assert.equal(attempt('demo'), null, 'a well-formed slug must still be accepted')
 })
+
+test('a plan with no tasks in it cannot certify a build', () => {
+  // Codex stop-gate finding: checkPlan passed an empty task list clean, and
+  // runBuild then recorded build as code:0 ("0 task(s)") and let the run walk on
+  // to verify, review and accept with not one line written. A design that
+  // sliced the work into nothing is a design defect - the loudest kind, because
+  // every downstream stage reports success over an empty diff.
+  const empty = checkPlan([], '# design', '1. **Given** a thing, **when** x, **then** y')
+  assert.equal(empty.fatal.length, 1, 'an empty plan must be fatal: ' + JSON.stringify(empty))
+  assert.match(empty.fatal[0], /no tasks/i)
+})

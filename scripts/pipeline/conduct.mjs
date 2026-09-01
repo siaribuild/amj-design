@@ -940,6 +940,10 @@ function notesFor(run, afterIds) {
 export function checkPlan(tasks, design, spec) {
   const ids = new Set(tasks.map((t) => t.id))
   const fatal = []
+  // An empty slice is not an empty feature. runBuild would record build as
+  // code:0 over it and every stage after would report success against a diff
+  // that never happened.
+  if (!tasks.length) fatal.push('the plan has no tasks in it - nothing would be built, and every stage after build would report success over an empty diff')
   for (const t of tasks)
     for (const d of t.after || [])
       if (!ids.has(d)) fatal.push(t.id + ' depends on "' + d + '", which is not a task in this plan')
