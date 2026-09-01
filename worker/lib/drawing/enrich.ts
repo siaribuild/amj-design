@@ -607,7 +607,11 @@ export async function runDrawingEnrichmentStage(
           const res = await runStage(env, {
             aiRunId: args.aiRunId,
             projectId: args.projectId,
-            skill: makeFullDocumentAgentSkill(args.scheduleRows.map((row) => row.tag), input.harvest.pages.map((page) => page.pageNo)),
+            skill: makeFullDocumentAgentSkill(
+              input.pendingTags,
+              input.harvest.pages.map((page) => page.pageNo),
+              input.imageDataUrls.map((image) => image.renderId),
+            ),
             input,
           });
           if (!res.ok && res.failureKind !== "invalid_output") throw new Error("full_document_agent_provider_failure");

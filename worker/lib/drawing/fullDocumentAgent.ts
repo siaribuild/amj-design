@@ -107,7 +107,7 @@ export interface FullAgentHistoryItem {
   accepted: string[];
   rejected: { tag: string; reason: string }[];
   declined: string[];
-  renders: { renderId: string; pageNo: number; bboxPt: CropBoxPt }[];
+  renders: { renderId: string; pageNo: number; bboxPt: CropBoxPt; repairTag?: string }[];
 }
 
 export interface FullDocumentAgentInput {
@@ -124,9 +124,10 @@ export interface FullDocumentAgentInput {
     dpi: number;
     widthPx: number;
     heightPx: number;
+    repairTag?: string;
     profile?: unknown;
   }[];
-  imageDataUrls: { renderId: string; dataUrl: string }[];
+  imageDataUrls: { renderId: string; dataUrl: string; repairTag?: string }[];
   turnsRemaining: number;
 }
 
@@ -147,6 +148,7 @@ interface StoredRender {
   profile?: unknown;
   cropKey: string | null;
   pngB64: string;
+  repairTag?: string;
 }
 
 const compactText = (value: string, limit: number): string =>
@@ -252,6 +254,7 @@ export function validateFullDocumentTurn(
   raw: unknown,
   tagVocabulary: string[],
   pageNumbers: number[],
+  activeRenderIds?: string[],
 ): FullDocumentTurn | null {
   const value = safeJson(raw);
   if (!value || typeof value !== "object") return null;
@@ -260,6 +263,7 @@ export function validateFullDocumentTurn(
   if (!memory) return null;
   const pages = new Set(pageNumbers);
   const tags = new Set(tagVocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
+  const activeRenders = activeRenderIds == null ? null : new Set(activeRenderIds);
   const renderRequests: FullAgentRenderRequest[] = [];
   for (const request of value.renderRequests.slice(0, MAX_RENDER_REQUESTS)) {
     if (!request || !Number.isInteger(request.pageNo) || !pages.has(request.pageNo)) continue;
@@ -284,6 +288,7 @@ export function validateFullDocumentTurn(
     if (item.orientation != null && !ORIENTATIONS.includes(item.orientation)) continue;
     if (item.evidenceView !== "elevation" && item.evidenceView !== "detail") continue;
     if (typeof item.evidenceRenderId !== "string" || !item.evidenceRenderId.trim()) continue;
+    if (activeRenders && !activeRenders.has(item.evidenceRenderId.trim())) continue;
     if (item.confidence !== "high" && item.confidence !== "low") continue;
     const flags = Array.isArray(item.flags) ? [...new Set(item.flags)] : null;
     if (!flags || !flags.every((flag) => FLAGS.includes(flag as DrawingFlag))) continue;
@@ -340,6 +345,8 @@ EVIDENCE AND OUTPUT
 - unitRatios are visible proportions in outside-view order. Do not emit millimetre unit widths; the application derives them from the schedule.
 - Preserve the drawing's storey label verbatim; do not force it into a ground/first convention.
 - Return resolved records and any next render requests together. The application validates records, renders requests, and returns the full history on the next turn.
+- Return records only for pendingTags. evidenceRenderId must name a CURRENT attached image from imageDataUrls, never an earlier history render.
+- A renderCatalog repairTag says which rejected opening caused that close-up. Use that crop for the named opening and any adjacent pending opening visibly inside it.
 - Decline only after the complete-set/face method cannot honestly resolve an opening. Missing visual evidence is a valid decline.
 - A decline from a turn that produces new render evidence stays pending. Reassess that tag against the new images on the next turn.
 - complete=true only when this response plus prior accepted/declined tags covers every pending schedule tag.
@@ -367,10 +374,27 @@ const recordSchema = {
   required: ["tag", "operations", "unitRatios", "divisionAxis", "orientation", "elevation", "roomLabel", "storey", "evidenceView", "evidenceRenderId", "frameBoxPt", "confidence", "flags", "basis", "note"],
 };
 
-export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<FullDocumentAgentInput, FullDocumentTurn> {
+export function makeFullDocumentAgentSkill(
+  tagVocabulary: string[],
+  pageNumbers: number[],
+  activeRenderIds?: string[],
+): Skill<FullDocumentAgentInput, FullDocumentTurn> {
+  const evidenceRenderId = activeRenderIds?.length
+    ? { type: "string", enum: activeRenderIds }
+    : { type: "string" };
+  const turnRecordSchema = {
+    ...recordSchema,
+    properties: { ...recordSchema.properties, evidenceRenderId },
+  };
+  const promptFor = (input: FullDocumentAgentInput): string => `${AGENT_RULES}\n\nSTATE\n${JSON.stringify({
+    ...input,
+    imageDataUrls: input.imageDataUrls.map(({ renderId, repairTag }) => ({
+      renderId, ...(repairTag ? { repairTag } : {}),
+    })),
+  })}`;
   return {
     id: "full_document_agent_turn",
-    promptVersion: "v3",
+    promptVersion: "v4",
     responseSchema: {
       type: "object",
       properties: {
@@ -384,7 +408,7 @@ export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers:
           },
           required: ["pageNo", "dpi"],
         } },
-        records: { type: "array", maxItems: MAX_RECORDS, items: recordSchema },
+        records: { type: "array", maxItems: MAX_RECORDS, items: turnRecordSchema },
         declines: { type: "array", maxItems: MAX_RECORDS, items: {
           type: "object",
           properties: { tag: { type: "string" }, reason: { type: "string" } },
@@ -394,12 +418,15 @@ export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers:
       },
       required: ["memory", "renderRequests", "records", "declines", "complete"],
     },
-    buildPrompt: (input) => `${AGENT_RULES}\n\nSTATE\n${JSON.stringify({ ...input, imageDataUrls: input.imageDataUrls.map(({ renderId }) => ({ renderId })) })}`,
+    buildPrompt: promptFor,
     buildContent: (input) => [
-      { type: "text", text: `${AGENT_RULES}\n\nSTATE\n${JSON.stringify({ ...input, imageDataUrls: input.imageDataUrls.map(({ renderId }) => ({ renderId })) })}` },
-      ...input.imageDataUrls.map((image) => ({ type: "image_url", image_url: { url: image.dataUrl } })),
+      { type: "text", text: promptFor(input) },
+      ...input.imageDataUrls.flatMap((image) => [
+        { type: "text", text: `CURRENT EVIDENCE IMAGE renderId=${image.renderId}${image.repairTag ? ` repairTag=${image.repairTag}` : ""}` },
+        { type: "image_url", image_url: { url: image.dataUrl } },
+      ]),
     ],
-    validate: (raw) => validateFullDocumentTurn(raw, tagVocabulary, pageNumbers),
+    validate: (raw) => validateFullDocumentTurn(raw, tagVocabulary, pageNumbers, activeRenderIds),
   };
 }
 
@@ -511,17 +538,23 @@ export async function runFullDocumentAgent(args: {
   const declines = new Map<string, string>();
   const renders = new Map<string, StoredRender>();
   const renderCache = new Map<string, StoredRender>();
+  const repairedTags = new Set<string>();
+  const repairQueue = new Map<string, FullAgentRenderRequest>();
   const history: FullAgentHistoryItem[] = [];
   let activeIds: string[] = [];
   let renderSequence = 0;
   let totalRenders = 0;
 
-  const addRender = async (id: string, request: FullAgentRenderRequest): Promise<StoredRender | null> => {
+  const addRender = async (
+    id: string,
+    request: FullAgentRenderRequest,
+    repairTag?: string,
+  ): Promise<StoredRender | null> => {
     const page = pageByNo.get(request.pageNo);
     if (!page) return null;
     const outer: CropBoxPt = [0, 0, page.widthPt, page.heightPt];
     if (request.bboxPt && !inside(request.bboxPt, outer)) return null;
-    const key = JSON.stringify([request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
+    const key = JSON.stringify([repairTag ?? null, request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
     const cached = renderCache.get(key);
     if (cached?.pngB64) return cached;
     if (totalRenders >= MAX_TOTAL_RENDERS) return null;
@@ -540,6 +573,7 @@ export async function runFullDocumentAgent(args: {
       id, pageNo: request.pageNo, bboxPt: request.bboxPt ?? outer, dpi: request.dpi,
       widthPx: image.widthPx, heightPx: image.heightPx, profile: image.profile,
       cropKey, pngB64: image.pngB64,
+      ...(repairTag ? { repairTag } : {}),
     };
     totalRenders++;
     report.steps.renderCrop.pagesRendered++;
@@ -559,20 +593,32 @@ export async function runFullDocumentAgent(args: {
       .filter((tag) => !proposals.has(tag) && !declines.has(tag));
     const pending = new Set(pendingTags);
     if (!pendingTags.length) break;
-    const imageDataUrls = activeIds
+    const activeRenders = activeIds
       .map((id) => renders.get(id))
       .filter((render): render is StoredRender => !!render?.pngB64)
-      .slice(-MAX_ACTIVE_IMAGES)
-      .map((render) => ({ renderId: render.id, dataUrl: `data:image/png;base64,${render.pngB64}` }));
+      .slice(-MAX_ACTIVE_IMAGES);
+    const activeRenderIds = new Set(activeRenders.map((render) => render.id));
+    const imageDataUrls = activeRenders.map((render) => ({
+      renderId: render.id,
+      dataUrl: `data:image/png;base64,${render.pngB64}`,
+      ...(render.repairTag ? { repairTag: render.repairTag } : {}),
+    }));
+    const turnHarvest: FullDocumentHarvest = {
+      ...harvest,
+      schedule: harvest.schedule.filter((row) => pending.has(normalizeOpeningRef(row.tag) ?? row.tag)),
+      tagCandidates: harvest.tagCandidates.filter((candidate) => pending.has(candidate.tag)),
+    };
     let action: FullDocumentTurn | null = null;
     try {
       action = await deps.runTurn({
-        turn, harvest, pendingTags,
+        turn, harvest: turnHarvest, pendingTags,
         acceptedTags: [...proposals.keys()], declinedTags: [...declines.keys()],
         history, turnsRemaining: MAX_TURNS - turn + 1,
-        renderCatalog: [...renders.values()].map((render) => ({
+        renderCatalog: activeRenders.map((render) => ({
           renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt, dpi: render.dpi,
-          widthPx: render.widthPx, heightPx: render.heightPx, ...(render.profile ? { profile: render.profile } : {}),
+          widthPx: render.widthPx, heightPx: render.heightPx,
+          ...(render.repairTag ? { repairTag: render.repairTag } : {}),
+          ...(render.profile ? { profile: render.profile } : {}),
         })),
         imageDataUrls,
       });
@@ -588,7 +634,6 @@ export async function runFullDocumentAgent(args: {
 
     const accepted: string[] = [];
     const rejected: { tag: string; reason: string }[] = [];
-    const repairRequests: FullAgentRenderRequest[] = [];
     report.steps.read.attempted += action.records.length + action.declines.length;
     for (const proposal of action.records) {
       if (!pending.has(proposal.tag)) {
@@ -598,23 +643,45 @@ export async function runFullDocumentAgent(args: {
       const row = rowByTag.get(proposal.tag);
       const render = renders.get(proposal.evidenceRenderId);
       const page = render ? pageByNo.get(render.pageNo) : null;
+      if (!activeRenderIds.has(proposal.evidenceRenderId)) {
+        rejected.push({ tag: proposal.tag, reason: "evidence_render_not_active" });
+        if (turn < MAX_TURNS && render && page && inside(proposal.frameBoxPt, render.bboxPt)
+          && !repairedTags.has(proposal.tag) && !repairQueue.has(proposal.tag)) {
+          repairQueue.set(proposal.tag, {
+            pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page),
+          });
+        }
+        continue;
+      }
       if (!row || !render || !render.cropKey || !page || !inside(proposal.frameBoxPt, render.bboxPt)) {
         rejected.push({ tag: proposal.tag, reason: "evidence_render_or_frame_invalid" });
         continue;
       }
       if (!frameIsLegible(proposal.frameBoxPt, render)) {
         rejected.push({ tag: proposal.tag, reason: "composition_evidence_not_legible" });
-        repairRequests.push({ pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page) });
+        if (turn < MAX_TURNS && !repairedTags.has(proposal.tag) && !repairQueue.has(proposal.tag)) {
+          repairQueue.set(proposal.tag, {
+            pageNo: render.pageNo, dpi: 250, bboxPt: closeUp(proposal.frameBoxPt, page),
+          });
+        }
         continue;
       }
       proposals.set(proposal.tag, proposal);
       declines.delete(proposal.tag);
+      repairQueue.delete(proposal.tag);
       accepted.push(proposal.tag);
     }
-    const requestedByKey = new Map<string, FullAgentRenderRequest>();
-    for (const request of [...repairRequests, ...action.renderRequests]) {
-      const key = JSON.stringify([request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
-      if (!requestedByKey.has(key)) requestedByKey.set(key, request);
+    const requestedByKey = new Map<string, { request: FullAgentRenderRequest; repairTag?: string }>();
+    const candidates: { request: FullAgentRenderRequest; repairTag?: string }[] = turn < MAX_TURNS
+      ? [
+          ...[...repairQueue].map(([repairTag, request]) => ({ request, repairTag })),
+          ...action.renderRequests.map((request) => ({ request })),
+        ]
+      : [];
+    for (const candidate of candidates) {
+      const { request, repairTag } = candidate;
+      const key = JSON.stringify([repairTag ?? null, request.pageNo, request.dpi, request.bboxPt ?? null, request.threshold ?? null]);
+      if (!requestedByKey.has(key)) requestedByKey.set(key, candidate);
     }
     const requested = [...requestedByKey.values()];
     if (requested.length > MAX_RENDER_REQUESTS) {
@@ -630,11 +697,11 @@ export async function runFullDocumentAgent(args: {
     }
     const newRenders: StoredRender[] = [];
     await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "render_crops");
-    for (const request of boundedRequests) {
+    for (const { request, repairTag } of boundedRequests) {
       try {
         renderSequence++;
         const id = `fd_t${String(turn).padStart(3, "0")}_${String(renderSequence).padStart(2, "0")}`;
-        const render = await addRender(id, request);
+        const render = await addRender(id, request, repairTag);
         if (!render) rejected.push({ tag: "*", reason: `render_unavailable_page_${request.pageNo}` });
         else if (!newRenders.some((item) => item.id === render.id)) newRenders.push(render);
       } catch (error) {
@@ -653,6 +720,10 @@ export async function runFullDocumentAgent(args: {
         }
         activeIds.push(render.id);
         activeChars += render.pngB64.length;
+        if (render.repairTag) {
+          repairedTags.add(render.repairTag);
+          repairQueue.delete(render.repairTag);
+        }
       }
     }
     const declined: string[] = [];
@@ -669,7 +740,10 @@ export async function runFullDocumentAgent(args: {
     await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "opening_read");
     history.push({
       turn, memory: action.memory, accepted, rejected, declined,
-      renders: newRenders.map((render) => ({ renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt })),
+      renders: newRenders.map((render) => ({
+        renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt,
+        ...(render.repairTag ? { repairTag: render.repairTag } : {}),
+      })),
     });
     if (action.complete && proposals.size + declines.size === scheduleRows.length) break;
   }
