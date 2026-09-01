@@ -385,6 +385,17 @@ write a file: you are read-only by design and the write will be refused.`,
   { id: 'codex', codex: true },
 ]
 
+// OFF BY OWNER INSTRUCTION, 2026-09-02: "do not use Codex for reviews until
+// further notice." One constant, so bringing them back is one edit and no
+// archaeology.
+//
+// A disabled reviewer is NOT a silently skipped one. runReviews prints that
+// codex is off, because the failure this pipeline has already recorded is a
+// review stage that reports success while producing nothing - a run must never
+// read as having had four reviewers when it had three. The plugin stays
+// installed: this governs the automated stage, not `/codex:review` by hand.
+const CODEX_REVIEWS = false
+
 // --- run state -------------------------------------------------------------
 
 const withDir = (r) => { r.dir = 'docs/runs/' + r.slug; return r }
@@ -1238,7 +1249,12 @@ async function runReviews(run, panes) {
     if (!panes || rv.headless) return runClaude(spec, text, run, label)
     return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
-  await Promise.all([...jobs, runCodex(run), runCodexArchitecture(run)])
+  if (!CODEX_REVIEWS)
+    process.stdout.write('\n  -- codex reviews OFF by owner instruction' +
+      ' (CODEX_REVIEWS in conduct.mjs). This work is UNREVIEWED by Codex;\n' +
+      '     do not present it as reviewed by four reviewers.\n')
+  await Promise.all([...jobs,
+    ...(CODEX_REVIEWS ? [runCodex(run), runCodexArchitecture(run)] : [])])
   // Same bookkeeping runBuild does for 'build': mark the parent stage done so
   // `next` advances past it instead of re-running all four reviewers on a
   // second call - review has no single session of its own to report.
