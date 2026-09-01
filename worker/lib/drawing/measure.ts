@@ -1,12 +1,11 @@
 import type { DarknessProfile, OpeningOperation, SplitAxis, SplitReading, SplitUnit } from "./contract";
+import { sizesFromRatios } from "../estimator/split";
 
 export interface MeasuredSplit {
   ratios: number[];
   axis: SplitAxis;
   derivedWidthsMm: number[];
 }
-
-const round5 = (value: number) => Math.round(value / 5) * 5;
 
 function normalise(values: number[]): number[] | null {
   if (!values.length || values.some((value) => !Number.isFinite(value) || value <= 0)) return null;
@@ -36,7 +35,7 @@ export function measureSplit(
     ?? normalise(overviewProportions ?? [1]);
   if (!ratios) return null;
   const axis: SplitAxis = transoms && transoms.length > 1 ? "horizontal" : "vertical";
-  return { ratios, axis, derivedWidthsMm: ratios.map((ratio) => round5(ratio * scheduleWidthMm)) };
+  return { ratios, axis, derivedWidthsMm: sizesFromRatios(ratios, scheduleWidthMm, 5) };
 }
 
 const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);

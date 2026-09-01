@@ -17,6 +17,8 @@ import type {
 import { MAX_CROPS_PER_PAGE } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { compositionFromSchedule } from "./reconcile";
+import { applyDrawingConsistencyFlags } from "./consistency";
+import { sizesFromRatios } from "../estimator/split";
 
 const MAX_TURNS = 8;
 const MAX_RESEARCH_TURNS = 2;
@@ -343,17 +345,6 @@ function conflictsWithKnownContext(proposal: AgentOpeningProposal, row: EnrichSc
   ) || !!(row.storey && proposal.storey && row.storey !== proposal.storey);
 }
 
-function iou(a: CropBoxPt, b: CropBoxPt): number {
-  const width = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
-  const height = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-  const intersection = width * height;
-  const areaA = (a[2] - a[0]) * (a[3] - a[1]);
-  const areaB = (b[2] - b[0]) * (b[3] - b[1]);
-  return intersection / Math.max(1, areaA + areaB - intersection);
-}
-
-const round5 = (value: number) => Math.round(value / 5) * 5;
-
 function readingFromProposal(
   proposal: AgentOpeningProposal,
   row: EnrichScheduleRow,
@@ -363,6 +354,7 @@ function readingFromProposal(
 ): DrawingReading {
   const ratioTotal = proposal.unitRatios.reduce((sum, ratio) => sum + ratio, 0);
   const ratios = proposal.unitRatios.map((ratio) => ratio / ratioTotal);
+  const widths = sizesFromRatios(ratios, row.widthMm, 5);
   const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
@@ -380,7 +372,7 @@ function readingFromProposal(
         role: passive.has(operation) ? "passive" : "operable",
         operation,
         ratio: ratios[index],
-        derivedWidthMm: round5(ratios[index] * row.widthMm),
+        derivedWidthMm: widths[index],
       })),
     },
     orientationState: proposal.orientation ? "value" : "not_stated",
@@ -389,7 +381,7 @@ function readingFromProposal(
     elevation: proposal.elevation,
     roomState: row.roomLabel || proposal.roomLabel ? "value" : "not_stated",
     roomLabel: row.roomLabel ?? proposal.roomLabel,
-    gapCode: confidence === "high" ? null : "model_declined",
+    gapCode: null,
     gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...((row.storey ?? proposal.storey) ? [`storey:${row.storey ?? proposal.storey}`] : [])].join(" | ").slice(0, 1000),
     cropKey: render.cropKey,
     pageNo: render.pageNo,
@@ -740,33 +732,7 @@ export async function runDrawingAgent(args: {
     const render = renders.get(proposal.evidenceRenderId);
     if (row && render) validated.push({ proposal, row, render });
   }
-  for (let left = 0; left < validated.length; left++) {
-    for (let right = left + 1; right < validated.length; right++) {
-      const a = validated[left];
-      const b = validated[right];
-      if (a.render.pageNo === b.render.pageNo && iou(a.proposal.frameBoxPt, b.proposal.frameBoxPt) > 0.85) {
-        for (const item of [a, b]) {
-          if (!item.proposal.flags.includes("duplicateFrame")) item.proposal.flags.push("duplicateFrame");
-          item.proposal.confidence = "low";
-        }
-      }
-    }
-  }
-  for (let left = 0; left < validated.length; left++) {
-    for (let right = left + 1; right < validated.length; right++) {
-      const a = validated[left];
-      const b = validated[right];
-      if (a.render.pageNo !== b.render.pageNo || a.proposal.elevation !== b.proposal.elevation || a.proposal.storey !== b.proposal.storey) continue;
-      const scheduleRatio = a.row.widthMm / b.row.widthMm;
-      const drawnRatio = (a.proposal.frameBoxPt[2] - a.proposal.frameBoxPt[0]) / (b.proposal.frameBoxPt[2] - b.proposal.frameBoxPt[0]);
-      if ((scheduleRatio > 1.25 && drawnRatio < 0.9) || (scheduleRatio < 0.8 && drawnRatio > 1.1)) {
-        for (const item of [a, b]) {
-          if (!item.proposal.flags.includes("drawingInconsistency")) item.proposal.flags.push("drawingInconsistency");
-          item.proposal.confidence = "low";
-        }
-      }
-    }
-  }
+  applyDrawingConsistencyFlags(validated);
 
   const readings = scheduleRows.map((row) => {
     const tag = normalizeOpeningRef(row.tag) ?? row.tag;

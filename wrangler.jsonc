@@ -129,8 +129,11 @@
     // 'auto': extraction fires on upload, no drawing enrichment. Deploy with
     // `--var AI_EXTRACTION_MODE:auto` to disable advanced drawing parsing.
     // 'auto_drawings': extraction fires AND the plan-parse enrichment stage
-    // runs (02-design-v2.md §4) — flipped only after the release gate scores
-    // 19/19 (docs/runs/plan-parse-method §7.1).
+    // runs (02-design-v2.md §4).
+    // 'agentic_full': extraction fires AND the parallel full-document drawing
+    // agent runs. It starts with the free deterministic PDF harvest, then uses
+    // at most four whole-set model turns. Select it explicitly at deployment;
+    // keeping auto_drawings here preserves the currently deployed behaviour.
     // 'manual': emergency kill-switch, ops-triggered only, unchanged.
     "AI_EXTRACTION_MODE": "auto_drawings",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist

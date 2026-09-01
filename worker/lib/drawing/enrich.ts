@@ -16,6 +16,7 @@ import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
 import { makeDrawingAgentSkill, runDrawingAgent, type DrawingAgentInput, type DrawingAgentTurn } from "./agent";
+import { makeFullDocumentAgentSkill, runFullDocumentAgent, type FullDocumentAgentInput, type FullDocumentTurn } from "./fullDocumentAgent";
 import { runStage } from "../ai/stage";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
@@ -50,6 +51,7 @@ export interface EnrichDeps {
   runNorth?(imageDataUrl: string): Promise<NorthArrowOutput | null>;
   runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }): Promise<OpeningReadResult | null>;
   runAgentTurn?(input: DrawingAgentInput): Promise<DrawingAgentTurn | null>;
+  runFullAgentTurn?(input: FullDocumentAgentInput): Promise<FullDocumentTurn | null>;
 }
 
 function emptyFileReport(fileId: string): DrawingFileReport {
@@ -145,12 +147,39 @@ async function enrichFile(
 
     const strategy = chooseStrategy(inspected.inventory);
     report.steps.strategy = strategy;
-    if (strategy === "scanned" && !deps.runAgentTurn) {
+    if (strategy === "scanned" && !deps.runAgentTurn && !deps.runFullAgentTurn) {
       // Stops here, named — every opening this file might have covered is
       // simply absent from `readings`; resolveMakeUp falls through to the
       // comment/energy/default rungs for them, exactly as if the file were
       // never uploaded (AC-13).
       return { readings: [], report };
+    }
+
+    if (deps.runFullAgentTurn) {
+      currentPhase = "full_document_agent";
+      const agentResult = await runFullDocumentAgent({
+        fileId: args.file.fileId,
+        scheduleRows: args.scheduleRows,
+        inspected,
+        deps: {
+          runTurn: deps.runFullAgentTurn,
+          render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
+          async store(renderId, pngB64) {
+            const key = cropKey(args.projectId, args.aiRunId, `full-agent-${renderId}`);
+            try {
+              const bytes = Uint8Array.from(atob(pngB64), (char) => char.charCodeAt(0));
+              await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
+              return key;
+            } catch {
+              return null;
+            }
+          },
+          onProgress: args.onProgress,
+        },
+      });
+      agentResult.report.steps.strategy = strategy;
+      agentResult.report.containerCalls++;
+      return agentResult;
     }
 
     if (deps.runAgentTurn) {
@@ -444,6 +473,7 @@ async function enrichFile(
         }
         const reconciled = reconcileReading({
           split,
+          widthMm: row.widthMm,
           scheduleType: row.typeText,
           commentText: row.commentText,
           modelConfidence: read.confidence,
@@ -501,11 +531,18 @@ async function enrichFile(
   }
 }
 
+export type DrawingParserMode = "disabled" | "legacy" | "full_document";
+
+export function drawingParserMode(env: Pick<Env, "AI_EXTRACTION_MODE">): DrawingParserMode {
+  const mode = (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase();
+  return mode === "agentic_full" ? "full_document" : mode === "auto_drawings" ? "legacy" : "disabled";
+}
+
 /** pipeline.ts's whole enrichment stage, as one testable unit: the mode
  *  gate, the R2-key lookup and the real EnrichDeps construction, so the
  *  integration itself is under test without a full runAiExtraction/D1
- *  harness. Off (anything but 'auto_drawings'): no DB call, empty result —
- *  the AC-27 property. */
+ *  harness. Disabled modes make no DB call and return an empty result — the
+ *  AC-27 property. */
 export async function runDrawingEnrichmentStage(
   env: Env,
   args: {
@@ -516,7 +553,8 @@ export async function runDrawingEnrichmentStage(
    *  never passes this — see the default branch below. */
   depsOverride?: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingReport | null }> {
-  if ((env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() !== "auto_drawings") {
+  const parserMode = drawingParserMode(env);
+  if (parserMode === "disabled") {
     return { readings: [], report: null };
   }
   if (!args.planPdfDocs.length || !args.scheduleRows.length) return { readings: [], report: null };
@@ -531,7 +569,7 @@ export async function runDrawingEnrichmentStage(
     .filter((f) => f.r2Key);
   if (!files.length) return { readings: [], report: null };
 
-  const deps = depsOverride ?? {
+  const baseDeps: EnrichDeps = {
     inspect: inspectPdf,
     render: renderPage,
     async runElevation(imageDataUrl: string) {
@@ -558,17 +596,38 @@ export async function runDrawingEnrichmentStage(
       });
       return res.data;
     },
-    async runAgentTurn(input: DrawingAgentInput) {
-      const res = await runStage(env, {
-        aiRunId: args.aiRunId,
-        projectId: args.projectId,
-        skill: makeDrawingAgentSkill(args.scheduleRows.map((row) => row.tag), input.pages.map((page) => page.pageNo)),
-        input,
-      });
-      if (!res.ok && res.failureKind !== "invalid_output") throw new Error("drawing_agent_provider_failure");
-      return res.data;
-    },
   };
+  const deps: EnrichDeps = depsOverride
+    ? parserMode === "full_document"
+      ? { ...depsOverride, runAgentTurn: undefined }
+      : { ...depsOverride, runFullAgentTurn: undefined }
+    : parserMode === "full_document"
+    ? {
+        ...baseDeps,
+        runFullAgentTurn: async (input: FullDocumentAgentInput) => {
+          const res = await runStage(env, {
+            aiRunId: args.aiRunId,
+            projectId: args.projectId,
+            skill: makeFullDocumentAgentSkill(args.scheduleRows.map((row) => row.tag), input.harvest.pages.map((page) => page.pageNo)),
+            input,
+          });
+          if (!res.ok && res.failureKind !== "invalid_output") throw new Error("full_document_agent_provider_failure");
+          return res.data;
+        },
+      }
+    : {
+        ...baseDeps,
+        runAgentTurn: async (input: DrawingAgentInput) => {
+          const res = await runStage(env, {
+            aiRunId: args.aiRunId,
+            projectId: args.projectId,
+            skill: makeDrawingAgentSkill(args.scheduleRows.map((row) => row.tag), input.pages.map((page) => page.pageNo)),
+            input,
+          });
+          if (!res.ok && res.failureKind !== "invalid_output") throw new Error("drawing_agent_provider_failure");
+          return res.data;
+        },
+      };
 
   const result = await enrichOpenings(env, { projectId: args.projectId, aiRunId: args.aiRunId, files, scheduleRows: args.scheduleRows, onProgress: args.onProgress }, deps);
   return result;

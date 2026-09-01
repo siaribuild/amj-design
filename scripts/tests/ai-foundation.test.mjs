@@ -18,7 +18,7 @@ await build({
     contents: `
       export * as schema from ${p("worker/lib/ai/schema.ts")};
       export { evaluateEscalation, LOW_CONFIDENCE_THRESHOLD } from ${p("worker/lib/ai/escalation.ts")};
-      export { stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
+      export { stageHashPayload, stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
       export { runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure } from ${p("worker/lib/estimator/skills/runner.ts")};
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
@@ -31,7 +31,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const {
-  schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
+  schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageHashPayload, stageInputHash, stageRawKey, runStage,
   runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
   energyReportExtractor, parseModelJson, outcomeQualityState,
 } = await import(pathToFileURL(outfile).href);
@@ -158,6 +158,20 @@ test("stageInputHash: stable for identical parts; changes with prompt, model, pi
   for (const [k, v] of [["promptVersion", "v2"], ["model", "m2"], ["pipelineVersion", "p2"], ["payload", { a: 2 }], ["stage", "s2"]]) {
     assert.notEqual(await stageInputHash({ ...base, [k]: v }), h, `${k} change must re-run the stage`);
   }
+});
+
+test("stageInputHash: hashes inline images without retaining their base64 in the JSON payload", async () => {
+  const first = { imageDataUrls: [{ renderId: "r1", dataUrl: "data:image/png;base64,QUFBQUFB" }], note: "kept" };
+  const second = { imageDataUrls: [{ renderId: "r1", dataUrl: "data:image/png;base64,QkJCQkJC" }], note: "kept" };
+  const compact = await stageHashPayload(first);
+  assert.doesNotMatch(JSON.stringify(compact), /QUFBQUFB/);
+  assert.match(JSON.stringify(compact), /sha256/);
+  const parts = { pipelineVersion: "p1", stage: "vision", promptVersion: "v1", model: "m1" };
+  assert.notEqual(
+    await stageInputHash({ ...parts, payload: first }),
+    await stageInputHash({ ...parts, payload: second }),
+    "different image bytes must retain different cache identities",
+  );
 });
 
 test("stageRawKey: §7.1 layout, traversal-safe", () => {

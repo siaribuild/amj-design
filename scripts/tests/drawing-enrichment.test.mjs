@@ -23,13 +23,14 @@ await build({
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
+      export { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
       export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
       export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
       export { elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
-      export { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
-      export { enrichOpenings, runDrawingEnrichmentStage } from ${p("worker/lib/drawing/enrich.ts")};
+      export { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
+      export { enrichOpenings, runDrawingEnrichmentStage, drawingParserMode } from ${p("worker/lib/drawing/enrich.ts")};
       export { runGate } from ${p("scripts/drawing-gate.mjs")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
@@ -38,7 +39,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -293,6 +294,9 @@ test("openingReadSkill.validate: invalid operation, missing evidence flag, or ra
 test("measureSplit: deterministic mullion position produces ratios and derived widths", () => {
   const measured = measureSplit({ mullionXs: [0.33], transomYs: [] }, [0.5, 0.5], 2050);
   assert.deepEqual(measured.derivedWidthsMm, [675, 1375]);
+  const offset = measureSplit(undefined, [0.35, 0.65], 2050);
+  assert.deepEqual(offset.derivedWidthsMm, [720, 1330]);
+  assert.equal(offset.derivedWidthsMm.reduce((sum, width) => sum + width, 0), 2050);
   const split = composeMeasuredSplit(["awning", "fixed"], measured);
   assert.equal(split.units[0].operation, "awning");
   assert.equal(split.units[0].role, "operable");
@@ -305,6 +309,7 @@ test("parseCompositionComment and reconcileReading preserve contradictions as fl
   });
   const result = reconcileReading({
     split: { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 1500 }], axis: "vertical" },
+    widthMm: 1500,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS", modelConfidence: "high", northAssumed: true,
   });
   assert.equal(result.confidence, "low");
@@ -319,28 +324,44 @@ test("parseCompositionComment: cited door, direction, and garbage patterns stay 
   assert.equal(parseCompositionComment("refer to architect"), null);
 });
 
+test("reconcileReading: D1 keeps the stated door width and gives the last panel the exact remainder", () => {
+  const result = reconcileReading({
+    split: { units: [
+      { role: "operable", operation: "hinged", ratio: 0.67 },
+      { role: "passive", operation: "fixed", ratio: 0.33 },
+    ], axis: "vertical" },
+    widthMm: 1380, scheduleType: "HINGED", commentText: "920 DOOR & 1N° SIDELIGHT",
+    modelConfidence: "high", northAssumed: false,
+  });
+  assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["hinged", "sidelight"]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [920, 460]);
+  assert.equal(result.composition.units.reduce((sum, unit) => sum + unit.derivedWidthMm, 0), 1380);
+});
+
 test("reconcileReading: agreement stays high and preserves measured geometry", () => {
   const split = { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 900 }], axis: "vertical" };
   const result = reconcileReading({
-    split, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
+    split, widthMm: 900, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
   });
   assert.equal(result.confidence, "high");
   assert.deepEqual(result.flags, []);
   assert.deepEqual(result.composition, split);
 });
 
-test("reconcileReading: comment operation count wins while drawing ratios stay fixed", () => {
+test("reconcileReading: stated component widths win and the unstated panel takes the exact remainder", () => {
   const result = reconcileReading({
     split: { units: [
       { role: "passive", operation: "fixed", ratio: 0.2 },
       { role: "passive", operation: "fixed", ratio: 0.6 },
       { role: "passive", operation: "fixed", ratio: 0.2 },
     ], axis: "vertical" },
+    widthMm: 3200,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "high", northAssumed: false,
   });
   assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["awning", "fixed", "awning"]);
-  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.2, 0.6, 0.2]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.1875, 0.625, 0.1875]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [600, 2000, 600]);
   assert.deepEqual(result.flags, ["scheduleDrawingMismatch"]);
 });
 
@@ -352,7 +373,7 @@ test("compositionFromSchedule: an elevation-hidden opening uses comments, never 
     ["awning", 600], ["fixed", 2000], ["awning", 600],
   ]);
   const result = reconcileReading({
-    split, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+    split, widthMm: 3200, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "low", northAssumed: false, visible: false,
   });
   assert.equal(result.confidence, "low");
@@ -1689,4 +1710,466 @@ test("runDrawingAgent: plan context rejects a conflicting room and remains autho
   assert.equal(result.report.perOpening[0].outcome, "not_read");
   assert.equal(result.readings[0].roomLabel, "STUDY");
   assert.match(result.readings[0].gapNote, /storey:ground/);
+});
+
+test("full-document harvest exposes free coordinate evidence without deciding the room", () => {
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ],
+    },
+    pages: [
+      { pageNo: 1, text: "GROUND FLOOR PLAN STUDY ENTRY W1", words: [
+        { text: "STUDY", x0: 80, top: 90, x1: 130, bottom: 105 },
+        { text: "W1", x0: 145, top: 100, x1: 165, bottom: 115 },
+        { text: "ENTRY", x0: 180, top: 90, x1: 230, bottom: 105 },
+      ] },
+      { pageNo: 2, text: "NORTH ELEVATION", words: [] },
+    ],
+  };
+  const harvest = buildFullDocumentHarvest(inspected, [{
+    tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING",
+    roomLabel: "ENTRY", storey: "ground",
+  }]);
+  assert.equal(harvest.schedule[0].priorRoomCandidate, "ENTRY");
+  assert.equal(harvest.tagCandidates[0].tag, "W1");
+  assert.match(harvest.tagCandidates[0].nearbyText, /STUDY/);
+  assert.match(harvest.tagCandidates[0].nearbyText, /ENTRY/);
+  assert.equal("roomLabel" in harvest.tagCandidates[0], false, "the free harvest must not choose a room");
+});
+
+test("full-document harvest bounds repeated tag context and total page text", () => {
+  const repeatedWords = Array.from({ length: 20 }, (_, index) => ({
+    text: "W1", x0: index * 10, top: 20, x1: index * 10 + 8, bottom: 30,
+  }));
+  const pages = Array.from({ length: 60 }, (_, index) => ({
+    pageNo: index + 1,
+    text: `GROUND FLOOR PLAN ${"ROOM ".repeat(1_000)}`,
+    words: repeatedWords,
+  }));
+  const inspected = {
+    inventory: {
+      pageCount: pages.length, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: pages.map((page) => ({ pageNo: page.pageNo, widthPt: 800, heightPt: 600, rotation: 0, textChars: page.text.length, imageCount: 0, imageAreaFraction: 0 })),
+    },
+    pages,
+  };
+  const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
+  assert.ok(harvest.tagCandidates.length <= FULL_DOCUMENT_AGENT_LIMITS.maxTagCandidatesPerTag);
+  assert.ok(harvest.pages.reduce((sum, page) => sum + page.textExcerpt.length, 0) <= FULL_DOCUMENT_AGENT_LIMITS.maxHarvestTextChars);
+});
+
+test("full-document turn contract batches renders and records and rejects vocabulary escape", () => {
+  const raw = {
+    memory: "North face is page 2; W1 remains to confirm.",
+    renderRequests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 400, 300] }],
+    records: [{
+      tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.35, 0.65], divisionAxis: "vertical",
+      orientation: "N", elevation: "03", roomLabel: "STUDY", storey: "ground",
+      evidenceView: "elevation", evidenceRenderId: "fd_overview_02", frameBoxPt: [20, 20, 120, 160],
+      confidence: "high", flags: [], basis: ["North face order and visible offset mullion."], note: null,
+    }],
+    declines: [],
+    complete: false,
+  };
+  const parsed = validateFullDocumentTurn(raw, ["W1"], [1, 2]);
+  assert.equal(parsed.records[0].roomLabel, "STUDY");
+  assert.equal(parsed.renderRequests[0].dpi, 220);
+  const upperLevel = validateFullDocumentTurn({
+    ...raw, records: [{ ...raw.records[0], storey: "LEVEL 2" }],
+  }, ["W1"], [1, 2]);
+  assert.equal(upperLevel.records[0].storey, "LEVEL 2");
+  const partial = validateFullDocumentTurn({
+    ...raw,
+    records: [raw.records[0], { ...raw.records[0], tag: "W99" }],
+    renderRequests: [...raw.renderRequests, { pageNo: 99, dpi: 220 }],
+  }, ["W1"], [1, 2]);
+  assert.deepEqual(partial.records.map((record) => record.tag), ["W1"]);
+  assert.equal(partial.renderRequests.length, 1);
+  assert.ok(makeFullDocumentAgentSkill(["W1"], [1, 2]).responseSchema.properties.records);
+  assert.ok(FULL_DOCUMENT_AGENT_LIMITS.maxTurns <= 4, "the new path must stay cost-bounded");
+});
+
+test("full-document agent starts text-only, preserves set context, and can correct a prior room candidate", async () => {
+  const inputs = [];
+  const progress = [];
+  const renderRequests = [];
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{
+      tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING",
+      roomLabel: "ENTRY", storey: "ground",
+    }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1 STUDY ENTRY", words: [{ text: "W1", x0: 20, top: 20, x1: 30, bottom: 30 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (input.turn === 1) return {
+          memory: "W1 belongs to STUDY on the north face; crop Elevation A.",
+          renderRequests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 100, 100] }],
+          records: [], declines: [], complete: false,
+        };
+        return {
+          memory: "All scheduled openings resolved.", renderRequests: [], declines: [], complete: true,
+          records: [{
+            tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
+            orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
+            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+            confidence: "high", flags: [], basis: ["W1 tag is beside STUDY; close elevation shows an offset mullion."], note: null,
+          }],
+        };
+      },
+      render: async (request) => {
+        renderRequests.push(request);
+        return { images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [1 / 3], transomYs: [] },
+        })), dpi: request.dpi };
+      },
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+      onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
+    },
+  });
+  assert.equal(inputs.length, 2);
+  assert.equal(inputs[0].harvest.schedule[0].priorRoomCandidate, "ENTRY");
+  assert.equal(inputs[0].imageDataUrls.length, 0, "the planning turn must not pre-render whole sheets");
+  assert.ok(inputs[1].history.some((item) => /STUDY/.test(item.memory)));
+  assert.ok(inputs[1].imageDataUrls.some((item) => item.renderId === "fd_t001_01"));
+  assert.equal(renderRequests.length, 2, "the accepted multi-unit opening gets one deterministic measurement crop");
+  assert.deepEqual(renderRequests[1].crops, [[10, 10, 90, 90]], "measurement uses the exact model-located frame");
+  assert.equal(result.report.steps.renderCrop.pagesRendered, 2);
+  assert.equal(result.report.steps.renderCrop.cropsMade, 2);
+  assert.equal(result.report.modelCalls, 2);
+  assert.equal(result.readings[0].roomLabel, "STUDY", "plan context is a candidate, not an authority");
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [685, 1365], "measured divider wins over the model's 30/70 estimate");
+  assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
+});
+
+test("full-document agent never materializes an unmeasured model split", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        return turn === 1
+          ? { memory: "Render the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false }
+          : {
+              memory: "W1 appears 30/70.", renderRequests: [], declines: [], complete: true,
+              records: [{
+                tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
+                orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+                confidence: "high", flags: [], basis: ["Two apparent panes."], note: null,
+              }],
+            };
+      },
+      render: async (request) => ({
+        images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [], transomYs: [] },
+        })),
+        dpi: request.dpi,
+      }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.equal(result.report.steps.read.returned, 0);
+  assert.equal(result.readings[0].confidence, "low");
+  assert.equal(result.readings[0].split.units.length, 1, "the schedule fallback wins over the model's unsupported two-unit estimate");
+  assert.match(result.readings[0].gapNote, /exact frame crop/i);
+});
+
+test("full-document agent prioritizes automatic legibility repairs over discretionary renders", async () => {
+  const pages = Array.from({ length: 13 }, (_, index) => ({
+    pageNo: index + 1, text: index ? `ELEVATION ${index + 1}` : "ELEVATION A", words: [],
+  }));
+  const captured = [];
+  let turn = 0;
+  await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: pages.length, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: pages.map((page) => ({
+        pageNo: page.pageNo, widthPt: 100, heightPt: 100, rotation: 0, textChars: page.text.length, imageCount: 0, imageAreaFraction: 0,
+      })) },
+      pages,
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { memory: "Get the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
+        if (turn === 2) return {
+          memory: "W1 needs a closer crop.",
+          renderRequests: Array.from({ length: 12 }, (_, index) => ({ pageNo: index + 2, dpi: 110 })),
+          records: [{
+            tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+            orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 20, 20],
+            confidence: "high", flags: [], basis: ["Broad view locates W1."], note: null,
+          }],
+          declines: [], complete: false,
+        };
+        return { memory: "Unable to finish W1.", renderRequests: [], records: [], declines: [{ tag: "W1", reason: "Still illegible." }], complete: true };
+      },
+      render: async (request) => {
+        captured.push(request);
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 100, heightPx: 100 }], dpi: request.dpi };
+      },
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(captured[1].pageNo, 1);
+  assert.equal(captured[1].dpi, 250);
+  assert.ok(captured[1].crops?.length, "the first bounded request after rejection is the automatic close-up");
+  assert.equal(captured.length, 1 + FULL_DOCUMENT_AGENT_LIMITS.maxRenderRequests);
+  assert.ok(!captured.some((request) => request.pageNo === 13), "the last discretionary request yields to the repair crop");
+});
+
+test("accepted low-confidence reads are complete and detail scales are not compared with elevations", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 2_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A AND WINDOW DETAIL", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { memory: "Render the mixed sheet.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
+        const record = (tag, evidenceView, frameBoxPt, flags = [], orientation = "N") => ({
+          tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+          orientation, elevation: "A", roomLabel: null, storey: "ground", evidenceView,
+          evidenceRenderId: "fd_t001_01", frameBoxPt, confidence: "high", flags,
+          basis: ["Distinct visible frame."], note: null,
+        });
+        return {
+          memory: "Both records resolved.", renderRequests: [], declines: [], complete: true,
+          records: [record("W1", "elevation", [10, 10, 30, 40], ["northAssumed"], null), record("W2", "detail", [50, 10, 90, 40])],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.readings[0].gapCode, null, "a flagged but accepted record is not a model decline");
+  assert.equal(result.readings[0].confidence, "low");
+  assert.equal(result.readings[1].confidence, "high", "detail and elevation widths are at unrelated scales");
+  assert.ok(!result.readings[1].flags.includes("drawingInconsistency"));
+});
+
+test("drawing parser mode keeps legacy, full-document, and disabled paths distinct", () => {
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "auto_drawings" }), "legacy");
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "agentic_full" }), "full_document");
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "auto" }), "disabled");
+});
+
+test("full-agent rooms replace prior candidates in the model only when their evidence is trustworthy", () => {
+  const model = {
+    rooms: [
+      { roomId: "ground_entry", name: "ENTRY", level: "ground", areaM2: null, zoneType: null },
+      { roomId: "ground_study", name: "STUDY", level: "ground", areaM2: null, zoneType: null },
+    ],
+    openings: [
+      { externalRef: "W1", roomId: "ground_entry", level: "ground" },
+      { externalRef: "W2", roomId: "ground_entry", level: "ground" },
+      { externalRef: "W3", roomId: "ground_entry", level: "ground" },
+    ],
+  };
+  const knownRooms = [
+    { externalRef: "W1", roomLabel: "ENTRY" },
+    { externalRef: "W2", roomLabel: "ENTRY" },
+    { externalRef: "W3", roomLabel: "ENTRY" },
+  ];
+  applyFullAgentRooms(model, knownRooms, [
+    { externalRef: "W1", roomState: "value", roomLabel: "STUDY", confidence: "high", flags: [] },
+    { externalRef: "W2", roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["agentEvidenceWeak"] },
+    { externalRef: "Ｗ-3", roomState: "value", roomLabel: "GYM", confidence: "high", flags: [] },
+  ]);
+  assert.equal(model.openings[0].roomId, "ground_study");
+  assert.equal(knownRooms[0].roomLabel, "STUDY");
+  assert.equal(model.openings[1].roomId, "ground_entry");
+  assert.equal(knownRooms[1].roomLabel, "ENTRY");
+  const gym = model.rooms.find((room) => room.name === "GYM");
+  assert.ok(gym, "a trustworthy new room is added to the canonical model");
+  assert.equal(model.openings[2].roomId, gym.roomId);
+  assert.equal(knownRooms[2].roomLabel, "GYM");
+});
+
+test("full-document agent cannot overwrite an opening accepted on an earlier turn", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        const record = (tag, operation) => ({
+          tag, operations: [operation], unitRatios: [1], divisionAxis: "vertical",
+          orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+          evidenceView: "elevation", evidenceRenderId: "fd_overview_01", frameBoxPt: [10, 10, 90, 90],
+          confidence: "high", flags: [], basis: ["Visible frame and operation symbol."], note: null,
+        });
+        return turn === 1
+          ? { memory: "W1 resolved; W2 pending.", renderRequests: [], records: [record("W1", "fixed")], declines: [], complete: false }
+          : { memory: "W2 declined.", renderRequests: [], records: [record("W1", "awning")], declines: [{ tag: "W2", reason: "Not visible." }], complete: true };
+      },
+      render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: 110 }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.readings[0].split.units[0].operation, "fixed");
+  assert.equal(result.readings[1].confidence, "low");
+});
+
+test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-document runner", async () => {
+  const fakeDb = {
+    prepare: () => ({
+      bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: "projects/proj_1/runs/f1.pdf" }] }) }),
+    }),
+  };
+  const env = {
+    AI_EXTRACTION_MODE: "agentic_full", DB: fakeDb, PLAN_PARSE: {},
+    FILES: {
+      get: async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }),
+      put: async () => {},
+    },
+  };
+  let fullCalls = 0;
+  let legacyCalls = 0;
+  const deps = {
+    inspect: async () => ({
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    }),
+    render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: 110 }),
+    runElevation: async () => { throw new Error("legacy elevation runner must stay idle"); },
+    runFloorplan: async () => { throw new Error("legacy floor-plan runner must stay idle"); },
+    runOpening: async () => { throw new Error("legacy opening runner must stay idle"); },
+    runAgentTurn: async () => { legacyCalls++; return null; },
+    runFullAgentTurn: async () => {
+      fullCalls++;
+      return {
+        memory: "No drawing evidence for W1.", renderRequests: [], records: [],
+        declines: [{ tag: "W1", reason: "Not visible." }], complete: true,
+      };
+    },
+  };
+  const result = await runDrawingEnrichmentStage(env, {
+    projectId: "proj_1", aiRunId: "run_1",
+    planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1_200, typeText: "AWNING" }],
+  }, deps);
+  assert.equal(fullCalls, 1);
+  assert.equal(legacyCalls, 0);
+  assert.equal(result.report.files[0].modelCalls, 1);
+  assert.equal(result.readings.length, 1, "a declined full-agent read degrades to the existing schedule fallback");
+});
+
+test("full-document agent can resolve the standard 19-opening set in one visual turn after planning", async () => {
+  const scheduleRows = Array.from({ length: 19 }, (_, index) => ({
+    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
+  }));
+  let modelCalls = 0;
+  let renderCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1", scheduleRows,
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return {
+          memory: "Render Elevation A for the complete opening set.",
+          renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false,
+        };
+        return {
+          memory: "All 19 frames resolved together on Elevation A.", renderRequests: [], declines: [], complete: true,
+          records: scheduleRows.map((row, index) => {
+            const x0 = 10 + (index % 5) * 180;
+            const y0 = 10 + Math.floor(index / 5) * 200;
+            return {
+              tag: row.tag, operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
+              orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+              evidenceView: "elevation", evidenceRenderId: "fd_t001_01",
+              frameBoxPt: [x0, y0, x0 + 100, y0 + 100], confidence: "high", flags: [],
+              basis: ["Distinct frame visible in the complete elevation set."], note: null,
+            };
+          }),
+        };
+      },
+      render: async (request) => {
+        renderCalls++;
+        return {
+          images: (request.crops ?? [null]).map(() => ({
+            pngB64: "aGVsbG8=", widthPx: 2_000, heightPx: 2_000,
+            profile: { mullionXs: [0.4], transomYs: [] },
+          })),
+          dpi: request.dpi,
+        };
+      },
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(modelCalls, 2);
+  assert.equal(renderCalls, 3, "nineteen exact crops are batched into 12 + 7 after the one overview");
+  assert.equal(result.report.modelCalls, 2);
+  assert.equal(result.readings.length, 19);
+  assert.ok(result.readings.every((reading) => reading.confidence === "high"));
+  assert.ok(result.readings.every((reading) =>
+    reading.split.units[0].derivedWidthMm === 400 && reading.split.units[1].derivedWidthMm === 600));
+  assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxRecords, 60);
+});
+
+test("deployment config keeps the proven legacy drawing parser as the default", async () => {
+  const config = await readFile(join(projectRoot, "wrangler.jsonc"), "utf8");
+  assert.match(config, /"AI_EXTRACTION_MODE"\s*:\s*"auto_drawings"/);
 });

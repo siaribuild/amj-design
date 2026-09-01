@@ -51,7 +51,8 @@ export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
   // — the 240s figure got a real run killed by this exact lease mid-flight,
   // drawing_report_json never persisted). Tighten once cold-start behaviour
   // is known-good; containerClient's own per-call timeout is the real bound.
-  return (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase() === "auto_drawings" ? 600_000 : AI_JOB_DEADLINE_MS;
+  const mode = (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase();
+  return mode === "auto_drawings" || mode === "agentic_full" ? 600_000 : AI_JOB_DEADLINE_MS;
 }
 
 /** Drawing progress, same shape and same token guard as pipeline.ts's own

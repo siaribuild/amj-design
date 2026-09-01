@@ -27,12 +27,32 @@ const safeSeg = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
 export const stageRawKey = (projectId: string, runId: string, stage: string, inputHash: string): string =>
   `projects/${safeSeg(projectId)}/runs/${safeSeg(runId)}/raw/${safeSeg(stage)}-${safeSeg(inputHash)}.json`;
 
+/** Replace inline image bodies with content digests before JSON serialisation.
+ * Images are processed sequentially so a multimodal turn never duplicates all
+ * active base64 strings into one second, isolate-sized JSON value. */
+export async function stageHashPayload(value: unknown): Promise<unknown> {
+  if (typeof value === "string" && /^data:image\/[^;,]+;base64,/i.test(value)) {
+    return { sha256: await sha256hex(enc.encode(value)), chars: value.length };
+  }
+  if (Array.isArray(value)) {
+    const items: unknown[] = [];
+    for (const item of value) items.push(await stageHashPayload(item));
+    return items;
+  }
+  if (value && typeof value === "object") {
+    const row: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) row[key] = await stageHashPayload(item);
+    return row;
+  }
+  return value;
+}
+
 /** The §6.1-corrected idempotency key. Pure + exported so tests can prove that a
  *  prompt, model or pipeline change produces a DIFFERENT hash (i.e. a re-run). */
 export async function stageInputHash(parts: {
   pipelineVersion: string; stage: string; promptVersion: string; model: string; payload: unknown;
 }): Promise<string> {
-  const payloadHash = await sha256hex(enc.encode(JSON.stringify(parts.payload) ?? "null"));
+  const payloadHash = await sha256hex(enc.encode(JSON.stringify(await stageHashPayload(parts.payload)) ?? "null"));
   return sha256hex(enc.encode(
     `${parts.pipelineVersion}|${parts.stage}|${parts.promptVersion}|${parts.model}|${payloadHash}`,
   ));
