@@ -1796,11 +1796,11 @@ test("full-document turn contract batches renders and records and rejects vocabu
 test("full-document agent starts text-only, preserves set context, and can correct a prior room candidate", async () => {
   const inputs = [];
   const progress = [];
-  let renderCalls = 0;
+  const renderRequests = [];
   const result = await runFullDocumentAgent({
     fileId: "f1",
     scheduleRows: [{
-      tag: "W1", widthMm: 2_000, heightMm: 2_100, typeText: "OFFSET AWNING",
+      tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING",
       roomLabel: "ENTRY", storey: "ground",
     }],
     inspected: {
@@ -1825,7 +1825,7 @@ test("full-document agent starts text-only, preserves set context, and can corre
         return {
           memory: "All scheduled openings resolved.", renderRequests: [], declines: [], complete: true,
           records: [{
-            tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.35, 0.65], divisionAxis: "vertical",
+            tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
             orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
             evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
             confidence: "high", flags: [], basis: ["W1 tag is beside STUDY; close elevation shows an offset mullion."], note: null,
@@ -1833,8 +1833,11 @@ test("full-document agent starts text-only, preserves set context, and can corre
         };
       },
       render: async (request) => {
-        renderCalls++;
-        return { images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 })), dpi: request.dpi };
+        renderRequests.push(request);
+        return { images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [1 / 3], transomYs: [] },
+        })), dpi: request.dpi };
       },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
       onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
@@ -1845,13 +1848,57 @@ test("full-document agent starts text-only, preserves set context, and can corre
   assert.equal(inputs[0].imageDataUrls.length, 0, "the planning turn must not pre-render whole sheets");
   assert.ok(inputs[1].history.some((item) => /STUDY/.test(item.memory)));
   assert.ok(inputs[1].imageDataUrls.some((item) => item.renderId === "fd_t001_01"));
-  assert.equal(renderCalls, 1, "only the model-requested evidence is rendered");
-  assert.equal(result.report.steps.renderCrop.pagesRendered, 1);
-  assert.equal(result.report.steps.renderCrop.cropsMade, 1, "whole-page overviews are not opening crops");
+  assert.equal(renderRequests.length, 2, "the accepted multi-unit opening gets one deterministic measurement crop");
+  assert.deepEqual(renderRequests[1].crops, [[10, 10, 90, 90]], "measurement uses the exact model-located frame");
+  assert.equal(result.report.steps.renderCrop.pagesRendered, 2);
+  assert.equal(result.report.steps.renderCrop.cropsMade, 2);
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings[0].roomLabel, "STUDY", "plan context is a candidate, not an authority");
-  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [700, 1300]);
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [685, 1365], "measured divider wins over the model's 30/70 estimate");
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
+});
+
+test("full-document agent never materializes an unmeasured model split", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        return turn === 1
+          ? { memory: "Render the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false }
+          : {
+              memory: "W1 appears 30/70.", renderRequests: [], declines: [], complete: true,
+              records: [{
+                tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
+                orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+                confidence: "high", flags: [], basis: ["Two apparent panes."], note: null,
+              }],
+            };
+      },
+      render: async (request) => ({
+        images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [], transomYs: [] },
+        })),
+        dpi: request.dpi,
+      }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.equal(result.report.steps.read.returned, 0);
+  assert.equal(result.readings[0].confidence, "low");
+  assert.equal(result.readings[0].split.units.length, 1, "the schedule fallback wins over the model's unsupported two-unit estimate");
+  assert.match(result.readings[0].gapNote, /exact frame crop/i);
 });
 
 test("full-document agent prioritizes automatic legibility repairs over discretionary renders", async () => {
@@ -2064,9 +2111,10 @@ test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-d
 
 test("full-document agent can resolve the standard 19-opening set in one visual turn after planning", async () => {
   const scheduleRows = Array.from({ length: 19 }, (_, index) => ({
-    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "FIXED",
+    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
   }));
-  let calls = 0;
+  let modelCalls = 0;
+  let renderCalls = 0;
   const result = await runFullDocumentAgent({
     fileId: "f1", scheduleRows,
     inspected: {
@@ -2078,8 +2126,8 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
     },
     deps: {
       runTurn: async () => {
-        calls++;
-        if (calls === 1) return {
+        modelCalls++;
+        if (modelCalls === 1) return {
           memory: "Render Elevation A for the complete opening set.",
           renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false,
         };
@@ -2089,7 +2137,7 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
             const x0 = 10 + (index % 5) * 180;
             const y0 = 10 + Math.floor(index / 5) * 200;
             return {
-              tag: row.tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+              tag: row.tag, operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
               orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
               evidenceView: "elevation", evidenceRenderId: "fd_t001_01",
               frameBoxPt: [x0, y0, x0 + 100, y0 + 100], confidence: "high", flags: [],
@@ -2098,14 +2146,26 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
           }),
         };
       },
-      render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 2_000, heightPx: 2_000 }], dpi: 110 }),
+      render: async (request) => {
+        renderCalls++;
+        return {
+          images: (request.crops ?? [null]).map(() => ({
+            pngB64: "aGVsbG8=", widthPx: 2_000, heightPx: 2_000,
+            profile: { mullionXs: [0.4], transomYs: [] },
+          })),
+          dpi: request.dpi,
+        };
+      },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(calls, 2);
+  assert.equal(modelCalls, 2);
+  assert.equal(renderCalls, 3, "nineteen exact crops are batched into 12 + 7 after the one overview");
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings.length, 19);
   assert.ok(result.readings.every((reading) => reading.confidence === "high"));
+  assert.ok(result.readings.every((reading) =>
+    reading.split.units[0].derivedWidthMm === 400 && reading.split.units[1].derivedWidthMm === 600));
   assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxRecords, 60);
 });
 

@@ -13,12 +13,14 @@ import type {
   RenderRequest,
   RenderResponse,
   SplitAxis,
+  SplitReading,
 } from "./contract";
+import { MAX_CROPS_PER_PAGE } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
 import { applyStatedWidths, compositionFromSchedule } from "./reconcile";
 import { applyDrawingConsistencyFlags } from "./consistency";
-import { sizesFromRatios } from "../estimator/split";
+import { composeMeasuredSplit, measureSplit } from "./measure";
 
 const MAX_TURNS = 4;
 const MAX_RECORDS = 60;
@@ -337,7 +339,7 @@ METHOD
 EVIDENCE AND OUTPUT
 - frameBoxPt is the exact opening frame in PAGE PDF points, even when evidenceRenderId is a crop.
 - One render may support several openings only when each record has a distinct exact frameBoxPt.
-- unitRatios are visible proportions in outside-view order. Do not emit millimetre unit widths; the application derives them from the schedule.
+- unitRatios are approximate visible proportions in outside-view order. They help describe the frame but are never accepted as dimensions; the application measures divider positions from an exact frame crop and derives millimetres from the schedule.
 - Preserve the drawing's storey label verbatim; do not force it into a ground/first convention.
 - Return resolved records and any next render requests together. The application validates records, renders requests, and returns the full history on the next turn.
 - Decline only after the complete-set/face method cannot honestly resolve an opening. Missing visual evidence is a valid decline.
@@ -423,23 +425,12 @@ function readingFromProposal(
   fileId: string,
   render: StoredRender,
   page: { widthPt: number; heightPt: number },
+  measuredSplit: SplitReading,
 ): DrawingReading {
-  const total = proposal.unitRatios.reduce((sum, ratio) => sum + ratio, 0);
-  const ratios = proposal.unitRatios.map((ratio) => ratio / total);
-  const widths = sizesFromRatios(ratios, row.widthMm, 5);
-  const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
   const confidence = flags.length ? "low" : proposal.confidence;
-  const split = applyStatedWidths({
-    axis: proposal.divisionAxis,
-    units: proposal.operations.map((operation, index) => ({
-      role: passive.has(operation) ? "passive" as const : "operable" as const,
-      operation,
-      ratio: ratios[index],
-      derivedWidthMm: widths[index],
-    })),
-  }, row.widthMm, row.commentText);
+  const split = applyStatedWidths(measuredSplit, row.widthMm, row.commentText);
   return {
     id: "", projectId: "", aiRunId: "", sourceFileId: fileId, externalRef: row.tag,
     splitState: "value",
@@ -617,7 +608,8 @@ export async function runFullDocumentAgent(args: {
       declines.set(decline.tag, decline.reason);
       declined.push(decline.tag);
     }
-    await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "opening_read");
+    const resolvedWithoutMeasurement = [...proposals.values()].filter((proposal) => proposal.operations.length === 1).length;
+    await deps.onProgress?.(resolvedWithoutMeasurement + declines.size, scheduleRows.length, "opening_read");
 
     const requestedByKey = new Map<string, FullAgentRenderRequest>();
     for (const request of [...repairRequests, ...action.renderRequests]) {
@@ -670,29 +662,115 @@ export async function runFullDocumentAgent(args: {
     if (action.complete && proposals.size + declines.size === scheduleRows.length) break;
   }
 
-  const validated = [...proposals.entries()].map(([tag, proposal]) => ({ tag, proposal, row: rowByTag.get(tag), render: renders.get(proposal.evidenceRenderId) }))
-    .filter((item): item is { tag: string; proposal: FullAgentProposal; row: EnrichScheduleRow; render: StoredRender } => !!item.row && !!item.render);
+  const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
+  const measuredSplits = new Map<string, { split: SplitReading; render: StoredRender }>();
+  const measurementByPage = new Map<number, { tag: string; proposal: FullAgentProposal; row: EnrichScheduleRow; render: StoredRender }[]>();
+  for (const [tag, proposal] of proposals) {
+    const row = rowByTag.get(tag);
+    const render = renders.get(proposal.evidenceRenderId);
+    if (!row || !render) continue;
+    if (proposal.operations.length === 1) {
+      const operation = proposal.operations[0];
+      measuredSplits.set(tag, {
+        split: {
+          axis: proposal.divisionAxis,
+          units: [{
+            role: passive.has(operation) ? "passive" : "operable",
+            operation,
+            ratio: 1,
+            derivedWidthMm: row.widthMm,
+          }],
+        },
+        render,
+      });
+      continue;
+    }
+    const candidates = measurementByPage.get(render.pageNo) ?? [];
+    candidates.push({ tag, proposal, row, render });
+    measurementByPage.set(render.pageNo, candidates);
+  }
+
+  let measurementSequence = 0;
+  for (const [pageNo, candidates] of measurementByPage) {
+    for (let offset = 0; offset < candidates.length; offset += MAX_CROPS_PER_PAGE) {
+      const batch = candidates.slice(offset, offset + MAX_CROPS_PER_PAGE);
+      try {
+        report.containerCalls++;
+        const response = await deps.render({
+          pageNo,
+          dpi: 300,
+          crops: batch.map(({ proposal }) => proposal.frameBoxPt),
+        });
+        report.steps.renderCrop.pagesRendered++;
+        for (let index = 0; index < batch.length; index++) {
+          const candidate = batch[index];
+          const image = response.images[index];
+          const measured = image ? measureSplit(image.profile, undefined, candidate.row.widthMm) : null;
+          const split = measured && measured.axis === candidate.proposal.divisionAxis
+            ? composeMeasuredSplit(candidate.proposal.operations, measured)
+            : null;
+          if (!image || !split) {
+            declines.set(candidate.tag, "Exact frame crop did not yield the reported divider count and axis.");
+            await deps.onProgress?.(measuredSplits.size + declines.size, scheduleRows.length, "opening_read");
+            continue;
+          }
+          measurementSequence++;
+          const id = `fd_measure_${String(measurementSequence).padStart(3, "0")}`;
+          const cropKey = await deps.store(id, image.pngB64).catch(() => null);
+          const render: StoredRender = {
+            id,
+            pageNo,
+            bboxPt: candidate.proposal.frameBoxPt,
+            dpi: response.dpi,
+            widthPx: image.widthPx,
+            heightPx: image.heightPx,
+            profile: image.profile,
+            cropKey: cropKey ?? candidate.render.cropKey,
+            pngB64: "",
+          };
+          renders.set(id, render);
+          report.steps.renderCrop.cropsMade++;
+          measuredSplits.set(candidate.tag, { split, render });
+          await deps.onProgress?.(measuredSplits.size + declines.size, scheduleRows.length, "opening_read");
+        }
+      } catch {
+        for (const candidate of batch) {
+          declines.set(candidate.tag, "Exact frame crop could not be rendered for deterministic divider measurement.");
+          await deps.onProgress?.(measuredSplits.size + declines.size, scheduleRows.length, "opening_read");
+        }
+      }
+    }
+  }
+
+  const validated = [...proposals.entries()].map(([tag, proposal]) => ({
+    tag,
+    proposal,
+    row: rowByTag.get(tag),
+    render: measuredSplits.get(tag)?.render,
+  })).filter((item): item is { tag: string; proposal: FullAgentProposal; row: EnrichScheduleRow; render: StoredRender } =>
+    !!item.row && !!item.render);
   applyDrawingConsistencyFlags(validated);
 
   const readings = scheduleRows.map((row) => {
     const tag = normalizeOpeningRef(row.tag) ?? row.tag;
     const proposal = proposals.get(tag);
-    const render = proposal ? renders.get(proposal.evidenceRenderId) : null;
+    const measured = measuredSplits.get(tag);
+    const render = measured?.render ?? null;
     const page = render ? pageByNo.get(render.pageNo) : null;
-    const reading = proposal && render && page
-      ? readingFromProposal(proposal, row, fileId, render, page)
+    const reading = proposal && measured && render && page
+      ? readingFromProposal(proposal, row, fileId, render, page, measured.split)
       : fallbackReading(row, fileId, declines.get(tag) ?? "Full-document agent budget ended without sufficient visual evidence.");
     report.perOpening.push({
-      tag: row.tag, outcome: proposal && render && page ? "read" : "not_read",
+      tag: row.tag, outcome: proposal && measured && render && page ? "read" : "not_read",
       cropKey: reading.cropKey, pageNo: reading.pageNo, confidence: reading.confidence, flags: reading.flags,
     });
     return reading;
   });
-  report.steps.read.returned = proposals.size;
+  report.steps.read.returned = measuredSplits.size;
   report.steps.read.declined = declines.size;
-  report.steps.placements.fromModelFallback = validated.filter((item) => !!item.proposal.elevation).length;
+  report.steps.placements.fromModelFallback = [...proposals.values()].filter((proposal) => !!proposal.elevation).length;
   report.steps.placements.unplaced = scheduleRows.length - report.steps.placements.fromModelFallback;
-  report.steps.northAssumed = validated.some((item) => !item.proposal.orientation);
+  report.steps.northAssumed = [...proposals.values()].some((proposal) => !proposal.orientation);
   await deps.onProgress?.(scheduleRows.length, scheduleRows.length, "opening_read");
   report.wallMs = Date.now() - startedAt;
   return { readings, report };
