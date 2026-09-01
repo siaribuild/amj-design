@@ -723,7 +723,10 @@ test("a panel that labels nothing is not a description list, in the rendered DOM
   expect(await price.locator("dl").count()).toBe(0);
   expect(await price.locator("dd").count()).toBe(0);
   expect(await price.locator("dt").count()).toBe(0);
-  expect(await price.locator("ul > li").count()).toBe(2);
+  // ONE row, not the two this panel had before the owner deleted the pricing
+  // state ("remove 'priced' as well" — a price is a price). The rule under test
+  // is the markup kind, not the row count.
+  expect(await price.locator("ul > li").count()).toBe(1);
 
   // And the panel that DOES label its facts is still a description list, with
   // one term per definition and no empty term among them.
@@ -735,4 +738,201 @@ test("a panel that labels nothing is not a description list, in the rendered DOM
   expect(terms.length).toBe(await spec.locator("dd").count());
   expect(terms.length).toBeGreaterThan(0);
   expect(terms.every((t) => t.trim().length > 0)).toBe(true);
+});
+
+// ── Delivery: the price door and the address panel ──────────────────────────
+
+/** The delivery half of the record DTO, with a settled figure and an address. */
+const delivered = (over: Record<string, unknown> = {}) => ({
+  amount: 420, settled: true, editable: true,
+  line1: "12 Wattle St", line2: null, suburb: "Richmond", state: "VIC", postcode: "3121",
+  zoneLabel: "Melbourne metro", ...over,
+});
+
+test("the totals card is the door — one control, card-level chevron, no row is pressable", async ({ page }) => {
+  // D17. The first mock made the Delivery ROW a button inside the card; the
+  // owner rejected it in favour of reusing the panel component at card level.
+  // D18 then made `title` optional so this card needs no heading — the three
+  // rows already say what it is.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 })], delivery: delivered(),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  const totals = page.getByTestId("record-totals");
+  await expect(totals).toBeVisible();
+  await expect(totals.locator("h2")).toHaveCount(0);
+  // Exactly ONE control, and it is the card. A row-level button was the thing
+  // rejected, so its absence is asserted rather than assumed.
+  await expect(totals.locator("button")).toHaveCount(1);
+  await expect(totals.locator(".rec-totals__row button")).toHaveCount(0);
+  // The name comes from record.ts's copy module and says where it GOES — which
+  // is what a screen reader reads in a heading's place.
+  await expect(totals.getByTestId("record-totals-open"))
+    .toHaveAttribute("aria-label", "Set the delivery price");
+  // And nothing is drawn below it (D9).
+  await expect(page.getByTestId("delivery-address")).toHaveCount(0);
+});
+
+test("pressing the totals card sets the delivery price, and the card updates without a reload", async ({ page }) => {
+  let sent: unknown = null;
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 })],
+    delivery: delivered({ amount: sent ? 450 : null, settled: !!sent }),
+  }) }));
+  await page.route("**/api/ops/projects/p_rec/delivery", async (route) => {
+    sent = JSON.parse(route.request().postData() ?? "{}");
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await expect(page.getByTestId("record-totals")).toContainText("Not set");
+  await page.getByTestId("record-totals-open").click();
+  const sheet = page.getByTestId("delivery-price-sheet");
+  await expect(sheet).toBeVisible();
+  // ONE figure on screen: no estimate beside the field, no delta, no "the table
+  // now says" (D12) — and no tax word in any state (D11).
+  await expect(sheet).not.toContainText("400");
+  await expect(sheet).not.toContainText(/tax|GST|inc|excl/i);
+
+  await sheet.getByTestId("delivery-price-figure").locator("input").fill("450");
+  await sheet.getByTestId("delivery-price-confirm").click();
+  await expect(sheet).toBeHidden();
+  // The body is one number and nothing else — never an amount: null, which
+  // would re-arm the issue gate from a console that has no un-settle control.
+  expect(sent).toEqual({ amount: 450 });
+  await expect(page.getByTestId("record-totals")).toContainText("$450");
+});
+
+test("an empty price is refused here, and never reaches the endpoint", async ({ page }) => {
+  // `delivery_amount = NULL` is the issue gate. The endpoint still accepts null
+  // so the legacy console can re-arm it (D16); this panel must have no path to
+  // one, and an emptied field is the obvious way a path could appear.
+  let calls = 0;
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ amount: 420, settled: true }),
+  }) }));
+  await page.route("**/api/ops/projects/p_rec/delivery", async (route) => {
+    calls++; await route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  await page.getByTestId("record-totals-open").click();
+  const sheet = page.getByTestId("delivery-price-sheet");
+  await sheet.getByTestId("delivery-price-figure").locator("input").fill("");
+  await sheet.getByTestId("delivery-price-confirm").click();
+  await expect(sheet.getByTestId("delivery-price-problem")).toBeVisible();
+  await expect(sheet).toBeVisible();
+  expect(calls).toBe(0);
+});
+
+test("a settled zero is a figure, and an unset delivery explains nothing", async ({ page }) => {
+  // 0 is a trade customer arranging their own freight — a decision, not a
+  // blank. And an unset delivery is the ORDINARY state (D8): no warning colour,
+  // no explanation line, nothing that reads as a fault.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 })], delivery: delivered({ amount: 0, settled: true }),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+  await expect(page.getByTestId("record-totals")).toContainText("$0");
+  await expect(page.getByTestId("record-totals")).not.toContainText("Not set");
+
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    lines: [line({ lineTotal: 1000 })], delivery: delivered({ amount: null, settled: false }),
+  }) }));
+  await page.reload();
+  const totals = page.getByTestId("record-totals");
+  await expect(totals).toContainText("Not set");
+  await expect(totals).not.toContainText(/has not been set|cannot|issue|blocked/i);
+  await expect(totals).toContainText("$1,000");
+});
+
+test("a locked project shows the figures and offers nothing to press, with no reason given", async ({ page }) => {
+  // D13: past the editable window there is no door, no tab stop and NO reason
+  // line. The owner does not want the console explaining itself.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ editable: false }),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+
+  const totals = page.getByTestId("record-totals");
+  await expect(totals).toContainText("$420");
+  await expect(totals.locator("button")).toHaveCount(0);
+  await expect(totals.locator("svg")).toHaveCount(0);
+  await expect(totals).not.toContainText(/issued|locked|once the quote/i);
+});
+
+test("the delivery address is the Project tab's first content, and comes only from the project", async ({ page }) => {
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ line2: "Unit 3" }),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+  await page.getByTestId("record-tab").nth(1).click();
+
+  const card = page.getByTestId("delivery-address");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("12 Wattle St");
+  await expect(card).toContainText("Unit 3");
+  // "Suburb STATE 3000" — one line, no commas, the way it goes on a parcel.
+  await expect(card).toContainText("Richmond VIC 3121");
+  // It is the FIRST thing on the tab, ahead of the migration note.
+  await expect(page.getByTestId("record-project-tab").locator("> *").first())
+    .toHaveAttribute("data-testid", "delivery-address");
+});
+
+test("a partial address closes up rather than reading as broken", async ({ page }) => {
+  // The customer form still captures suburb and postcode only, so line1/line2/
+  // state are NULL on every project until a staffer fills them in. That is the
+  // ordinary case for now and must not be drawn as an error.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ line1: null, line2: null, state: null }),
+  }) }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+  await page.getByTestId("record-tab").nth(1).click();
+
+  const card = page.getByTestId("delivery-address");
+  await expect(card).toContainText("Richmond 3121");
+  await expect(card).not.toContainText(/missing|incomplete|required|unknown/i);
+  await expect(card).not.toContainText("Not set");
+});
+
+test("a stored address line cannot be emptied, and the refusal costs no request", async ({ page }) => {
+  // D14, replace-only — with line2 as the single exception, because "Unit 3"
+  // genuinely stops being true.
+  let sent: unknown = null;
+  let calls = 0;
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    delivery: delivered({ line2: "Unit 3" }),
+  }) }));
+  await page.route("**/api/ops/projects/p_rec/delivery", async (route) => {
+    calls++; sent = JSON.parse(route.request().postData() ?? "{}");
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(RECORD);
+  await page.getByTestId("record-tab").nth(1).click();
+  await page.getByTestId("delivery-address-open").click();
+
+  const sheet = page.getByTestId("delivery-address-sheet");
+  await expect(sheet).toBeVisible();
+  // Nothing here is the ACCOUNT's address — not as a value, not as a hint.
+  await expect(sheet).not.toContainText(/account|billing/i);
+
+  await sheet.getByTestId("delivery-address-suburb").locator("input").fill("");
+  await sheet.getByTestId("delivery-address-confirm").click();
+  await expect(sheet.getByTestId("delivery-address-problem")).toBeVisible();
+  expect(calls).toBe(0);
+
+  // Line 2 is the exception and saves as an explicit clear.
+  await sheet.getByTestId("delivery-address-suburb").locator("input").fill("Richmond");
+  await sheet.getByTestId("delivery-address-line2").locator("input").fill("");
+  await sheet.getByTestId("delivery-address-confirm").click();
+  expect(sent).toEqual({ line2: "" });
 });

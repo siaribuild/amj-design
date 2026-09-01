@@ -427,12 +427,12 @@ ion-toolbar.ops2-topbar--identity {
 .rl-empty__back:hover { color: var(--ds-text-link-hover); }
 
 /* ── The foot of the list ───────────────────────────────────────────────────*/
+/* The card chrome — padding, surface, border, radius, shadow — now comes from
+   `.lp-panel`, because this block is the CONTENT of an OpenablePanel rather
+   than a card in its own right. Every one of those declarations lived here
+   with byte-identical values; keeping them would double the padding and draw
+   a border inside a border. Only the type scale is this block's own. */
 .rec-totals {
-  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
-  box-shadow: var(--ds-layer-raised);
   font-size: var(--theme-font-size-sm);
 }
 .rec-totals__row {
@@ -452,18 +452,24 @@ ion-toolbar.ops2-topbar--identity {
 }
 .rec-totals__figure { flex: none; font-variant-numeric: tabular-nums; }
 .rec-totals__caveat { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
-/* A delivery with no figure at all is an error and is drawn as one — and the
-   interface is not built around it: there is nothing here to press. */
-.rec-totals__missing {
-  flex: none;
-  color: var(--ds-color-error-text);
-  font-weight: var(--theme-font-weight-medium);
-}
-/* THE ABSENCE, NAMED — never a figure captioned as provisional. */
+/* THE ABSENCE, NAMED — never a figure captioned as provisional. Still here,
+   and still amber, for the LINE case: a card that prints a confident total
+   while a line carries no rate is how $18,000 gets quoted for a $30,000 job.
+   The DELIVERY case left this rule (D8) — see .rec-totals__unset below. */
 .rec-totals__absent {
   flex: none;
   font-weight: var(--theme-font-weight-medium);
   color: var(--ds-color-warning-text);
+}
+/* An unset delivery is the ORDINARY state of a project nobody has priced yet —
+   every zone in the table may still be unpriced, and most projects arrive this
+   way. It was drawn in error red and then warning amber; both said "something
+   is wrong here" about the normal case. It is a neutral absence, and pressing
+   the card is how it stops being one. */
+.rec-totals__unset {
+  flex: none;
+  color: var(--ds-text-muted);
+  font-weight: var(--theme-font-weight-medium);
 }
 
 /* ── The actions panel ──────────────────────────────────────────────────────*/

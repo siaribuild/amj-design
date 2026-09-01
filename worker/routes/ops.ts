@@ -18,6 +18,7 @@ import {
   type DeliveryZone,
 } from "../lib/delivery";
 import { logEvent } from "../lib/activity";
+import { AU_STATES } from "../../src/data/accountDetails";
 import { lineRationale } from "../lib/estimator/rationale";
 import { applicationHistory, tradeStateOf } from "../lib/trade";
 import {
@@ -479,6 +480,12 @@ async function buildDeliveryDto(env: Env, p: Record<string, any>) {
   return {
     postcode: p.delivery_postcode ?? null,
     suburb: p.delivery_suburb ?? null,
+    // The rest of the destination (0063). Straight passthrough: the address is
+    // paperwork, and no line of delivery PRICING reads any of it — the zone
+    // still resolves from the postcode alone.
+    line1: p.delivery_line1 ?? null,
+    line2: p.delivery_line2 ?? null,
+    state: p.delivery_state ?? null,
     zoneId: zone?.id ?? null,
     zoneLabel: zone?.label ?? null,
     basis: resolution.basis,
@@ -766,26 +773,88 @@ ops.put("/projects/:id/delivery", async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({}));
-  // A number >= 0, or an explicit null to un-settle. `0` is a decision
-  // (D11/D14 — a trade customer arranging their own freight); NULL is the
-  // absence of one. Never `?? 0`, never a truthiness check, here or anywhere
-  // this column is read.
-  let amount: number | null;
-  if (body?.amount === null) {
-    amount = null;
-  } else {
-    const n = Number(body?.amount);
-    if (!Number.isFinite(n) || n < 0) return c.json({ error: "invalid_amount" }, 400);
-    amount = n;
+
+  // ── Validate the WHOLE body before writing anything (D10) ────────────────
+  // Two independent groups share this endpoint: the FIGURE (amount + its note
+  // and settle stamps) and the DESTINATION (0063's five address columns). A
+  // body carries either, both, or one field of one — and a key that is absent
+  // means "leave that column alone", which is what lets the address panel save
+  // without touching a settled figure and the price panel save without
+  // touching the address. Nothing is written until every present key is valid,
+  // so a refused body leaves the row byte-identical.
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(body ?? {}, key);
+  const bad = (error: string) => c.json({ error }, 400);
+
+  // A trimmed string field. `max` bounds it; `clearable` decides whether an
+  // emptied value stores NULL (line2 alone) or is refused (D14: the address is
+  // replace-only, so line1/suburb cannot be blanked from this console).
+  const text = (key: string, max: number, clearable: boolean): string | null | undefined => {
+    if (!has(key)) return undefined;
+    if (typeof body[key] !== "string") return null;
+    const trimmed = (body[key] as string).trim();
+    if (!trimmed) return clearable ? "" : null;
+    return trimmed.length > max ? null : trimmed;
+  };
+
+  // `amount` distinguishes three cases and `"amount" in body` is the only way
+  // to tell the first two apart:
+  //   absent -> the figure and its stamps are not this request's business
+  //   null   -> UN-SETTLE, byte-identical to the path that has always existed.
+  //             ops2 renders no control that can produce it; the legacy console
+  //             does, and it is the only way to re-arm the issue gate (D16).
+  //   number -> settle at that figure.
+  // A numeric STRING is refused: `Number("250")` once made "250" and 250 two
+  // spellings of one price, and money does not get two spellings.
+  let amount: number | null = null;
+  if (has("amount")) {
+    if (body.amount === null) {
+      amount = null;
+    } else if (typeof body.amount !== "number" || !Number.isFinite(body.amount)
+      || body.amount < 0 || body.amount >= 1e12) {
+      return bad("invalid_amount");
+    } else {
+      amount = body.amount;
+    }
   }
 
-  let postcode = project.delivery_postcode;
-  if (typeof body?.postcode === "string" && body.postcode.trim()) {
+  const line1 = text("line1", 120, false);
+  if (line1 === null) return bad("invalid_line1");
+  const line2 = text("line2", 120, true);
+  if (line2 === null) return bad("invalid_line2");
+  const suburb = text("suburb", 80, false);
+  if (suburb === null) return bad("invalid_suburb");
+
+  let state: string | undefined;
+  if (has("state")) {
+    const raw = typeof body.state === "string" ? body.state.trim().toUpperCase() : "";
+    if (!(AU_STATES as readonly string[]).includes(raw)) return bad("invalid_state");
+    state = raw;
+  }
+
+  // The postcode branch is unchanged in meaning: four digits or a refusal, and
+  // it is still the ONLY input to zone resolution. `state` is stored beside it
+  // and never consulted — nothing in worker/lib/delivery.ts reads an address.
+  let postcode: string | undefined;
+  if (has("postcode")) {
     const normalised = normalisePostcode(body.postcode);
-    if (!normalised) return c.json({ error: "invalid_postcode" }, 400);
+    if (!normalised) return bad("invalid_postcode");
     postcode = normalised;
   }
-  const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+
+  // The note rides the amount group and keeps today's rules exactly — absent
+  // means NULL, which is how the legacy console clears it. An address-only
+  // body never reaches this, so it cannot clear a note as a side effect (D5).
+  const note = has("amount")
+    ? (typeof body?.note === "string" ? body.note.trim().slice(0, 500) || null : null)
+    : undefined;
+
+  const addressKeys = ["line1", "line2", "suburb", "state", "postcode"].filter(has);
+  if (!has("amount") && !addressKeys.length) return bad("invalid_body");
+
+  // ── The write: present fields only ───────────────────────────────────────
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  const set = (column: string, value: unknown) => { sets.push(`${column} = ?`); binds.push(value); };
 
   // The machine's answer AT THE INSTANT of settling — delivery_settle_json,
   // stamped once and never touched again until the next settle. Without the
@@ -794,44 +863,59 @@ ops.put("/projects/:id/delivery", async (c) => {
   let settleJson: string | null = null;
   let liveEstimate: number | null = null;
   let liveZoneId: string | null = null;
-  if (amount != null) {
-    const [{ zones, ranges }, area] = await Promise.all([
-      loadZonesAndRanges(c.env),
-      loadProjectAreaM2(c.env, id),
-    ]);
-    const resolution = resolveZone(postcode, zones, ranges);
-    if (resolution.zone && zoneIsPriced(resolution.zone)) {
-      const zone = resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number; version?: string };
-      liveEstimate = deliveryCost(area.areaM2, zone);
-      liveZoneId = zone.id;
-      settleJson = JSON.stringify({
-        estimate: liveEstimate, areaM2: area.areaM2, zoneId: zone.id, zoneVersion: zone.version ?? null,
-      });
+  if (has("amount")) {
+    if (amount != null) {
+      const [{ zones, ranges }, area] = await Promise.all([
+        loadZonesAndRanges(c.env),
+        loadProjectAreaM2(c.env, id),
+      ]);
+      const resolution = resolveZone(postcode ?? project.delivery_postcode, zones, ranges);
+      if (resolution.zone && zoneIsPriced(resolution.zone)) {
+        const zone = resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number; version?: string };
+        liveEstimate = deliveryCost(area.areaM2, zone);
+        liveZoneId = zone.id;
+        settleJson = JSON.stringify({
+          estimate: liveEstimate, areaM2: area.areaM2, zoneId: zone.id, zoneVersion: zone.version ?? null,
+        });
+      }
     }
+    set("delivery_amount", amount);
+    set("delivery_note", note ?? null);
+    set("delivery_settled_at", amount != null ? new Date().toISOString() : null);
+    set("delivery_settled_by", amount != null ? staff.id : null);
+    set("delivery_settle_json", settleJson);
   }
+  if (line1 !== undefined) set("delivery_line1", line1);
+  if (line2 !== undefined) set("delivery_line2", line2 === "" ? null : line2);
+  if (suburb !== undefined) set("delivery_suburb", suburb);
+  if (state !== undefined) set("delivery_state", state);
+  if (postcode !== undefined) set("delivery_postcode", postcode);
 
-  await c.env.DB.prepare(
-    `UPDATE project SET delivery_amount = ?, delivery_postcode = ?, delivery_note = ?,
-        delivery_settled_at = ?, delivery_settled_by = ?, delivery_settle_json = ?
-      WHERE id = ?`,
-  ).bind(
-    amount, postcode, note,
-    amount != null ? new Date().toISOString() : null,
-    amount != null ? staff.id : null,
-    settleJson, id,
-  ).run();
+  await c.env.DB.prepare(`UPDATE project SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...binds, id).run();
 
   const after = await c.env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(id).first<any>();
   const delivery = await buildDeliveryDto(c.env, after);
 
   // Lands in the History block for free, with both numbers in it — what makes
   // a staff override a data point rather than an anecdote (D19).
-  await logEvent(c.env, {
-    actor: staff.id, entityType: "project", entityId: id,
-    action: amount == null
-      ? "un-set delivery — the quote cannot be issued until it is set again"
-      : `set delivery to $${amount.toFixed(2)} (machine estimate ${liveEstimate == null ? "n/a" : `$${liveEstimate.toFixed(2)}`}, zone ${liveZoneId ?? "none"})`,
-  });
+  if (has("amount")) {
+    await logEvent(c.env, {
+      actor: staff.id, entityType: "project", entityId: id,
+      action: amount == null
+        ? "un-set delivery — the quote cannot be issued until it is set again"
+        : `set delivery to $${amount.toFixed(2)} (machine estimate ${liveEstimate == null ? "n/a" : `$${liveEstimate.toFixed(2)}`}, zone ${liveZoneId ?? "none"})`,
+    });
+  }
+  // The address event names the FIELDS that changed and never their values —
+  // a delivery address is where a customer's family lives, and an audit log is
+  // read by more people, for longer, than the record it describes.
+  if (addressKeys.length) {
+    await logEvent(c.env, {
+      actor: staff.id, entityType: "project", entityId: id,
+      action: `changed the delivery address (${addressKeys.join(", ")})`,
+    });
+  }
 
   return c.json({ ok: true, delivery });
 });

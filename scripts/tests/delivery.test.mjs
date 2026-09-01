@@ -806,6 +806,171 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const accepted = await requestJson(s, `/api/projects/${id}/accept`, { method: "POST" });
       assert.equal(accepted.body.order.delivery, 640);
     });
+
+    // ── The delivery ADDRESS (ops2-delivery-price, D10/D14/D15) ─────────────
+    // The destination was two columns and is now a postal address. These test
+    // the widened PUT: present-fields-only, validate-then-write, and the two
+    // groups (amount vs address) never touching each other's columns.
+
+    /** A submitted project with a postcode, ready for staff to work on. */
+    const submitted = async (label) => {
+      const slug = label.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT", json: { title: label, items: [aLine()] },
+      });
+      const id = saved.body.project.id;
+      await readyToSubmit(s, slug + "@example.com");
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      return { s, id };
+    };
+    const row = async (id) => (await sql(
+      `SELECT delivery_line1, delivery_line2, delivery_suburb, delivery_state,
+              delivery_postcode, delivery_amount, delivery_note, delivery_settled_at,
+              delivery_settle_json
+         FROM project WHERE id='${id}'`))[0];
+
+    await t.test("T-B39: the three address columns exist and are NULL on a row that predates them", async () => {
+      const { id } = await submitted("Address columns");
+      const before = await row(id);
+      assert.equal(before.delivery_line1, null);
+      assert.equal(before.delivery_line2, null);
+      assert.equal(before.delivery_state, null);
+      // The migration is additive; nothing it did may have reached a child table.
+      const counts = await sql("SELECT (SELECT COUNT(*) FROM quote_line) AS lines, (SELECT COUNT(*) FROM project) AS projects");
+      assert.ok(counts[0].projects > 0 && counts[0].lines > 0, "rows survived the migration");
+    });
+
+    await t.test("T-B40: an address-only save writes the destination and leaves the amount group byte-untouched", async () => {
+      const { id } = await submitted("Address only");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { amount: 640, note: "settled first" },
+      });
+      const before = await row(id);
+      const saved = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT",
+        json: { line1: "  12 Wattle St  ", line2: "Unit 3", suburb: "  Richmond  ", state: "VIC", postcode: "3121" },
+      });
+      const after = await row(id);
+      assert.equal(after.delivery_line1, "12 Wattle St", "trimmed");
+      assert.equal(after.delivery_suburb, "Richmond", "trimmed");
+      assert.equal(after.delivery_state, "VIC");
+      assert.equal(after.delivery_postcode, "3121");
+      // The amount group is a DIFFERENT group and this body did not mention it.
+      assert.equal(after.delivery_amount, before.delivery_amount);
+      assert.equal(after.delivery_note, before.delivery_note, "D5: an address save never clears the note");
+      assert.equal(after.delivery_settled_at, before.delivery_settled_at);
+      assert.equal(after.delivery_settle_json, before.delivery_settle_json);
+      assert.equal(saved.body.delivery.line1, "12 Wattle St", "and the DTO carries it back");
+      assert.equal(saved.body.delivery.state, "VIC");
+    });
+
+    await t.test("T-B41: an amount-only save leaves all five destination columns byte-untouched", async () => {
+      const { id } = await submitted("Amount only");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { line1: "9 Smith Rd", suburb: "Preston", state: "VIC", postcode: "3072" },
+      });
+      const before = await row(id);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 450 } });
+      const after = await row(id);
+      assert.equal(after.delivery_amount, 450);
+      for (const col of ["delivery_line1", "delivery_line2", "delivery_suburb", "delivery_state", "delivery_postcode"]) {
+        assert.equal(after[col], before[col], `${col} untouched by an amount save`);
+      }
+    });
+
+    await t.test("T-B42: line2 is the one clearable field; line1 and suburb are replace-only", async () => {
+      const { id } = await submitted("Clearable line2");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { line1: "1 High St", line2: "Level 4", suburb: "Kew", state: "VIC" },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { line2: "" } });
+      assert.equal((await row(id)).delivery_line2, null, "an emptied line2 stores NULL");
+      // D14: the others cannot be blanked from this endpoint.
+      const before = await row(id);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { line1: "   " } }, 400);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { suburb: "" } }, 400);
+      assert.deepEqual(await row(id), before, "a refused body writes nothing at all");
+    });
+
+    await t.test("T-B43: the whole body is validated before anything is written", async () => {
+      const { id } = await submitted("Validate first");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { line1: "2 Park Ave", suburb: "Carlton", state: "VIC" },
+      });
+      const before = await row(id);
+      const bad = [
+        { line1: "x".repeat(121) },
+        { suburb: "y".repeat(81) },
+        { state: "Victoria" },
+        { state: "XX" },
+        { postcode: "abc" },
+        { postcode: "312" },
+        { amount: -1 },
+        { amount: "250" },            // a numeric STRING is not a number
+        { amount: 1e12 },
+        // A good field beside a bad one must not sneak through.
+        { line1: "3 Valid St", state: "XX" },
+      ];
+      for (const json of bad) {
+        await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json }, 400);
+        assert.deepEqual(await row(id), before, `${JSON.stringify(json)} wrote nothing`);
+      }
+    });
+
+    await t.test("T-B44: unknown keys are ignored; a body with no known key is refused", async () => {
+      const { id } = await submitted("Unknown keys");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { suburb: "Fitzroy", project_id: "someone-else", account_id: "x", phase: "issued" },
+      });
+      assert.equal((await row(id)).delivery_suburb, "Fitzroy", "the known key applied");
+      const before = await row(id);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { nonsense: 1 } }, 400);
+      assert.deepEqual(await row(id), before);
+    });
+
+    await t.test("T-B45: the address audit event records field NAMES, never the values", async () => {
+      const { id } = await submitted("Address audit");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { line1: "77 Secret Lane", suburb: "Toorak", state: "VIC" },
+      });
+      const rows = await sql(`SELECT action FROM audit_event WHERE entity_id='${id}'`);
+      const joined = rows.map((r) => r.action).join(" | ");
+      assert.match(joined, /address/i, "the change is recorded");
+      assert.equal(/77 Secret Lane|Toorak/.test(joined), false, "but never the address itself");
+    });
+
+    await t.test("T-B46: the zone still resolves from the postcode alone — state is never an input", async () => {
+      const { id } = await submitted("State not a zone input");
+      // A state that contradicts the postcode must not move the zone.
+      const saved = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { postcode: "3072", state: "WA" },
+      });
+      const byPostcodeOnly = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.equal(saved.body.delivery.zoneId, byPostcodeOnly.body.delivery.zoneId);
+      assert.equal(saved.body.delivery.state, "WA", "stored, and irrelevant to pricing");
+    });
+
+    await t.test("T-B47: address writes obey the same auth and phase gates as the figure", async () => {
+      const { s, id } = await submitted("Address gates");
+      const body = { method: "PUT", json: { suburb: "Nowhere" } };
+      await requestJson(anon, `/api/ops/projects/${id}/delivery`, body, 403);
+      await requestJson(s, `/api/ops/projects/${id}/delivery`, body, 403);
+      assert.equal((await row(id)).delivery_suburb, null, "nothing written by a refused caller");
+      await requestJson(staff, "/api/ops/projects/unknown-id/delivery", body, 404);
+    });
+
+    await t.test("T-B48: an address is stored and returned literally, never interpreted", async () => {
+      const { id } = await submitted("Literal address");
+      const saved = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { line1: "<script>alert(1)</script>", suburb: "Kew" },
+      });
+      assert.equal(saved.body.delivery.line1, "<script>alert(1)</script>");
+      assert.equal((await row(id)).delivery_line1, "<script>alert(1)</script>");
+    });
+
   } finally {
     if (server) await stop(server);
     await removeRunDir(runDir);

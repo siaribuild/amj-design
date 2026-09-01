@@ -227,7 +227,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 100000, mcp: true, tiers: ['full'],
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 200000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
