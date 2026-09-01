@@ -246,7 +246,20 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
+    // THE ONLY STAGE WHOSE CAP IS NOT 120k, and the reason is measured rather
+    // than preferred. A build task's working set is not what it writes - it is
+    // the PATTERN it copies: the route it sits beside plus the test file it is
+    // modelled on. Measured on ops2-parse-metadata T1, that pair was a
+    // 2,506-line route and a 49k-char test, and at 120k the pair does not fit
+    // beside the turn. Every compact dropped them, the next turn re-read them,
+    // and the run died on the rapid-refill breaker twice - 9.5M context tokens
+    // spent to write one file of five. A cap below the working set does not
+    // save the difference; it pays it repeatedly and then fails.
+    //
+    // 250k is sized off that measurement, not chosen round: pattern pair ~90k,
+    // leaving room for several turns of work before the first compact. Lower it
+    // again the moment tasks stop needing a big pattern beside them.
+    id: 'build', agent: 'developer', sliced: true, compact: 250000, tiers: ['full', 'fix'],
     // Not 02-tasks.json: the fix tier has no architect to write one, and for
     // the full tier runBuild gives a better message about its absence.
     needs: ['00-ask.md'], produces: ['04-build.md'],
@@ -348,17 +361,26 @@ diff-reading review always misses), was anything built the design never named.
 Open a specific file's content ONLY if the path list alone can't answer a
 structural question - never the whole diff up front.
 
-WRITE ${r.dir}/07-review-conformance.md.`,
+Report your findings in your reply, most serious first. Your final message IS
+the report - it is captured to ${r.dir}/07-review-conformance.md. Do not try to
+write a file: you are read-only by design and the write will be refused.`,
   },
   {
     // Headless in EVERY mode, and not by preference: /security-review is
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 100000, headless: true,
+    // 250k, not 100k, and only these two. Both read the WHOLE diff; conformance
+    // reads a path list and survives 100k on the same feature. Measured on
+    // ops2-parse-metadata (1,609 insertions over 12 files): security and
+    // ponytail both died on the rapid-refill breaker at 100k, having produced
+    // nothing, while conformance finished inside 241k total. Cap the stage that
+    // fits; pay for the stage that does not, because a cap below the working set
+    // is spent repeatedly and then fails anyway.
+    id: 'security', slash: '/security-review', compact: 250000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 250000,
   },
   { id: 'codex', codex: true },
 ]
@@ -692,6 +714,16 @@ function runClaude(spec, promptText, run, label) {
         ...(previousSessions && { previousSessions }),
       }
       run.stages[label] = s
+      // THE REPORT IS THE REPLY, for a stage that cannot write one. A reviewer
+      // boots in `plan` mode by design (see BLOCK_HOLDS above) and every
+      // reviewer prompt told it to WRITE its 07-review-*.md - which plan mode
+      // forbids. The result was a gate that exited 0 having produced nothing:
+      // no run in docs/runs/ has ever contained a Claude reviewer's report,
+      // while `review` recorded code 0 and `accept` read the missing files as
+      // "no findings". Capturing the final message is what runCodexJob already
+      // does, and it keeps the reviewer read-only instead of buying the report
+      // with write access to the tree.
+      if (spec.capture && result?.result) writeFileSync(spec.capture, result.result)
       saveRun(run)
       // The headless half of settleStage. A stage that stopped to ask the owner
       // something is held whichever mode it ran in - without this the record
@@ -1019,6 +1051,14 @@ async function runBuild(run, spec, panes) {
 do NOT search the repo for them and do NOT widen the scope:
 ${(t.files || []).map((f) => '  ' + f).join('\n')}
 
+A FILE ON THAT LIST CAN STILL BE TOO BIG TO READ WHOLE. Read the SPAN you need -
+Read with offset/limit, or grep the anchor first and read around it. DONE_WHEN
+names line numbers for exactly this reason. Measured: one task re-read a
+2,506-line route file 14 times across autocompacts, died on the rapid-refill
+breaker after 47 minutes, and had written one of its five files. A single
+whole-file read worth a third of the window cannot survive a compact, so the
+next turn re-reads it, and that is the whole failure.
+
 TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
       : `SCOPE - read the ask and fix exactly that:
   ${run.dir}/00-ask.md
@@ -1186,11 +1226,13 @@ Report findings in your reply, most serious first.`],
 // holding on a question does not stall the rest.
 async function runReviews(run, panes) {
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
-    const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
+    const capture = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    const spec = { agent: rv.agent, compact: rv.compact, readonly: true, capture }
     const text = rv.slash
       ? rv.slash + '\n\nReview the branch diff against ' + run.base +
-        '. Write your findings to ' + run.dir + '/07-review-' + rv.id +
-        '.md and reply with only that path.'
+        '. Report your findings in your reply, most serious first. Your final' +
+        ' message IS the report - it is captured to ' + run.dir + '/07-review-' +
+        rv.id + '.md, so do not try to write a file and do not reply with a path.'
       : rv.prompt(run)
     const label = 'review-' + rv.id
     if (!panes || rv.headless) return runClaude(spec, text, run, label)
