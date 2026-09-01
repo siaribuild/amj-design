@@ -522,7 +522,7 @@ export async function paneMode(args) {
 // same gate `start` has always used. Taken raw from argv it was a traversal:
 // `--slug=../../etc` resolved outside docs/runs entirely, to be read from and
 // written to.
-export const pinSlug = (slug) => { pinnedSlug = slug && checkSlug(slug) }
+export const pinSlug = (slug) => { pinnedSlug = checkSlug(slug) }
 let pinnedSlug = null
 const slugFlag = process.argv.find((a) => a.startsWith('--slug='))
 if (slugFlag) pinSlug(slugFlag.slice(7))

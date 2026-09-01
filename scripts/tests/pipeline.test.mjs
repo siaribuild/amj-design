@@ -2560,7 +2560,9 @@ test('--slug= is validated like every other slug - it names a run, not a path', 
     } catch (e) { return (e.stdout || '') + (e.stderr || '') }
   }
 
-  for (const bad of ['../../etc', '..', 'a/b', 'C:\Windows', 'UPPER']) {
+  // The empty value belongs here too: `--slug=$SLUG` with SLUG unset must say
+  // so, not quietly fall back to .active and run against another feature.
+  for (const bad of ['../../etc', '..', 'a/b', 'C:\\Windows', 'UPPER', '']) {
     const out = attempt(bad)
     assert.ok(out, 'the pin accepted "' + bad + '" - it is used as a path segment')
     assert.match(out, /slug must match/,
