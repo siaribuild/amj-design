@@ -253,9 +253,9 @@ test("maps a stacker slider to a fitting sliding door", () => {
   assert.match(byCode.D03.location, /RIGHT TO LEFT/);
 });
 
-test("glazing: double glazing satisfies YES and upgrades NO without a false conflict", () => {
-  // Same fitting awning twice — YES requires the product's IGU glass, while NO
-  // permits it as an upgrade rather than prohibiting it.
+test("glazing: a double-glazed product satisfies D.GLAZE YES but conflicts with NO", () => {
+  // Same fitting awning twice — YES matches the product's IGU glass (no flag); NO
+  // conflicts with it and must raise a technical glazing issue, never silently pass.
   const fixture = `WINDOW SCHEDULE
 W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
 1 1027 610 2100 CLEAR YES AWNING
@@ -265,8 +265,11 @@ W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
   const no = rows.find((r) => r.code === "W02");
   assert.ok(yes.productSlug, "YES row still maps to a product");
   assert.ok(!yes.review?.glazing, "YES matches the double-glazed product — no glazing flag");
-  assert.ok(!no.review?.glazing, "NO is a minimum baseline; double glazing is an allowed upgrade");
-  assert.equal(no.status, "Ready");
+  assert.ok(no.review?.glazing, "NO conflicts with the double-glazed product — must flag");
+  assert.match(no.review.glazing, /single glazing/i);
+  // Glazing is a TECHNICAL issue — it must not block the customer's submission.
+  assert.equal(reviewClass(no.review), "technical");
+  assert.equal(lineBlocksSubmission(no), false);
 });
 
 test.after(() => removeRunDir(runDir));
