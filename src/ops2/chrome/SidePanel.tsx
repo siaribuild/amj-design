@@ -87,9 +87,11 @@ export function SidePanel({
   /** Below the scrolling content: the panel's own closing note or controls. */
   footer?: ReactNode;
   /**
-   * The PHONE form. `"sheet"` is today's half-height bottom sheet with Ionic's
+   * The PHONE form. `"sheet"` is the half-height bottom sheet with Ionic's
    * drag handle; `"screen"` is full screen with no breakpoints, which is what
-   * R26 asked for and what an `IonModal` does when given neither. The handle
+   * R26 asked for and what an `IonModal` does when given neither; `"side"`
+   * keeps the desk's 520px right-hand panel below the change point, for a
+   * caller whose narrow form is still a screen rather than a phone gesture. The handle
    * disappears on its own, because Ionic renders it only for sheet modals — it
    * is not hidden with CSS.
    *
@@ -98,7 +100,7 @@ export function SidePanel({
    * changing the default would move a surface outside this feature, which is
    * why `FilterSheet.tsx` appears nowhere in this diff.
    */
-  phoneForm?: "sheet" | "screen";
+  phoneForm?: "sheet" | "screen" | "side";
   /**
    * The dismiss control. `"done"` is today's trailing Done button.
    * `{ back }` is a LEADING back control naming where it returns to — R29's
@@ -116,6 +118,16 @@ export function SidePanel({
   // told it is still whatever it opened as.
   const form = wide ? "side" : phoneForm;
   const sheet = form === "sheet";
+  // THE DIRECTION FOLLOWS THE FORM, NOT THE WIDTH. A panel you go INTO — a
+  // detail, an edit — arrives from the right at every size, because that is
+  // where it came from and the animation is the only thing that says so. Only
+  // the SHEET rises from the bottom edge, and it is the one caller that is
+  // conceptually a phone gesture rather than a screen (owner, 2026-08-31:
+  // "why detail should be the same… filter is NOT the same thing
+  // conceptually"). Before this the animation was keyed on `wide`, so a
+  // full-screen panel below the change point arrived with Ionic's default and
+  // no direction at all.
+  const fromRight = !sheet;
 
   /**
    * FOCUS MOVES INTO THE SCREEN, and it has to be asked for.
@@ -161,9 +173,9 @@ export function SidePanel({
       // try to drag itself up from the bottom edge.
       initialBreakpoint={sheet ? 0.5 : undefined}
       breakpoints={sheet ? [0, 0.5] : undefined}
-      enterAnimation={wide ? slideIn : undefined}
-      leaveAnimation={wide ? slideOut : undefined}
-      className={wide ? "pq-sheet pq-sheet--side" : "pq-sheet"}
+      enterAnimation={fromRight ? slideIn : undefined}
+      leaveAnimation={fromRight ? slideOut : undefined}
+      className={form === "side" ? "pq-sheet pq-sheet--side" : "pq-sheet"}
       data-testid={testId}
       // REMOUNT WHEN THE FORM CHANGES. Ionic settles `isSheetModal`, its gesture
       // and its breakpoint during `present()`, so a window crossing the change

@@ -74,7 +74,11 @@ One configured opening (window/door) on a project: product, dimensions, options,
 _Avoid_: item, row, position
 
 **Price override**:
-An ops-set price on a line that replaces its computed price. The override is the fact; the computed price remains derivable.
+An ops-set price on a line that replaces its computed price. The override is the fact; the computed price remains derivable. A line holds **one price fact**: a typed override and a manufacturer price never coexist — writing either clears the other (last write wins), so no stored working can disagree with the stored total.
+
+**Manufacturer price**:
+The figure AMJ quotes for a whole line (quantity never multiplies it), stored ex-GST on the line beside the uplift percentage that produced the line total. Commercially sensitive cost data, staff-only: never on a customer surface, never readable by a Manufacturer partner account, never in log output — audit entries record the resulting line total only, and never the uplift beside it (total plus uplift derives the cost). Entry is one-way: no clear action and no revert to the computed price; it is replaced only by another manufacturer price or a typed override. Same mutable window as the typed override — before the quote is issued. Its arithmetic (basis conversion first, then uplift, cents rounding at each step, no $10 rounding) has one home: `src/data/manufacturerPrice.ts`.
+_Avoid_: cost price, buy price, supplier rate
 
 ### Catalogue
 
@@ -224,7 +228,7 @@ The one pressable row and its list container (`src/ops2/chrome/RowList.tsx` — 
 _Avoid_: card list, IonItem
 
 **Openable panel**:
-A line-page card that goes somewhere (`src/ops2/chrome/OpenablePanel.tsx` — `lp-panel--door`). Openability is a property the caller opts into by passing a destination closure and a name for it; it is never a default and never a decoration — a chevron on a panel that opens nothing is a defect. The component owns the four things a door must agree on: the stretched invisible button as a sibling of the content, the chevron centred on the card's right-hand side, the focus ring drawn around the card, and an accessible name that states where the door leads, sourced from the surface's copy module. The page owns the address; the panel is handed a closure. Today the Why panel is the only one; the Specification and Price panels become openable when their screens exist.
+A line-page card that goes somewhere (`src/ops2/chrome/OpenablePanel.tsx` — `lp-panel--door`). Openability is a property the caller opts into by passing a destination closure and a name for it; it is never a default and never a decoration — a chevron on a panel that opens nothing is a defect. The component owns the four things a door must agree on: the stretched invisible button as a sibling of the content, the chevron centred on the card's right-hand side, the focus ring drawn around the card, and an accessible name that states where the door leads, sourced from the surface's copy module. The page owns the address; the panel is handed a closure. Today the Why and Price panels are the two; the Specification panel becomes openable when its screen exists. A door's closure need not navigate — the Price panel's opens a SidePanel in place.
 _Avoid_: clickable card, link panel, chevron (as a thing on its own)
 
 ### Referrals

@@ -122,6 +122,9 @@ export function PricePanel({ line, reload, editable }: {
 
       <SidePanel open={open} onClose={() => setOpen(false)}
         title="Set this line's price" testId="line-price-sheet"
+        // A price you go in to set is a screen, not a phone gesture — it comes
+        // from the right at every width, the way the Why detail does.
+        phoneForm="side"
         footer={
           <>
             <div className="lp-mfr__readback" aria-live="polite" data-testid="line-price-readback">
