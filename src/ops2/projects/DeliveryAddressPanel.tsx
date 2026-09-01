@@ -117,11 +117,18 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
     return body;
   };
 
+  /** Computed during render so the control can be DISABLED when there is
+   *  nothing to send, rather than enabled and then scolding the person who
+   *  pressed it (03-ux.md § the no-op save). A refusal is different: an
+   *  illegally emptied field still enables the button, because the message
+   *  telling you why belongs to a press. */
+  const draft = changes();
+  const nothingToSave = typeof draft !== "string" && Object.keys(draft).length === 0;
+
   const save = async () => {
-    if (saving) return;
-    const body = changes();
+    if (saving || nothingToSave) return;
+    const body = draft;
     if (typeof body === "string") { setError(body); return; }
-    if (!Object.keys(body).length) { setError("Nothing has changed."); return; }
     setError("");
     setSaving(true);
     const res = await fetch(`/api/ops/projects/${encodeURIComponent(projectId)}/delivery`, {
@@ -168,7 +175,7 @@ export function DeliveryAddressPanel({ projectId, delivery, onSaved }: {
             {error && (
               <p className="lp-mfr__failed" role="alert" data-testid="delivery-address-error">{error}</p>
             )}
-            <IonButton expand="block" disabled={saving} data-testid="delivery-address-confirm" onClick={save}>
+            <IonButton expand="block" disabled={saving || nothingToSave} data-testid="delivery-address-confirm" onClick={save}>
               Save address
             </IonButton>
           </>

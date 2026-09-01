@@ -930,10 +930,20 @@ test("a stored address line cannot be emptied, and the refusal costs no request"
   await expect(sheet.getByTestId("delivery-address-error")).toBeVisible();
   expect(calls).toBe(0);
 
+  // AND WITH NOTHING CHANGED THE CONTROL IS DISABLED, rather than enabled and
+  // then scolding whoever pressed it (03-ux.md, the no-op save).
+  await sheet.getByTestId("delivery-address-suburb").locator("input").fill("Richmond");
+  await expect(sheet.getByTestId("delivery-address-confirm"))
+    .toHaveAttribute("aria-disabled", "true");
+
   // Line 2 is the exception and saves as an explicit clear.
   await sheet.getByTestId("delivery-address-suburb").locator("input").fill("Richmond");
   await sheet.getByTestId("delivery-address-line2").locator("input").fill("");
   await sheet.getByTestId("delivery-address-confirm").click();
+  // WAIT FOR THE PANEL TO CLOSE before reading what was sent. Playwright's
+  // click() does not await the async React handler, so asserting straight after
+  // it races the fetch — a flaky test is worse than no test.
+  await expect(sheet).toBeHidden();
   expect(sent).toEqual({ line2: "" });
 });
 
