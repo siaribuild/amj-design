@@ -951,10 +951,14 @@ export function checkPlan(tasks, design, spec) {
       warn.push('the design names ' + f + ' but no task lists it in `files` - it will not be written')
 
   const claimedCriteria = new Set(tasks.flatMap((t) => (t.criteria || []).map(String)))
-  if (claimedCriteria.size)
-    for (const m of (spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm))
-      if (!claimedCriteria.has(m[1]))
-        warn.push('spec criterion ' + m[1] + ' is claimed by no task')
+  const specCriteria = [...(spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => m[1])
+  if (specCriteria.length && !claimedCriteria.size)
+    warn.push('no task declares which criteria it satisfies, so none of the spec' + "'" + 's ' +
+      specCriteria.length + ' can be traced to the work that covers it')
+  else
+    for (const c of specCriteria)
+      if (!claimedCriteria.has(c))
+        warn.push('spec criterion ' + c + ' is claimed by no task')
 
   return { fatal, warn }
 }
@@ -1559,7 +1563,7 @@ const cmds = {
       delete st.session
       saveRun(run)
     }
-    finished(run, label, spec,
+    return finished(run, label, spec,
       await runPaneStage(spec, promptText, run, label, recoverable ? st.session : null))
   },
 

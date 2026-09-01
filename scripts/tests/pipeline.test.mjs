@@ -2474,3 +2474,48 @@ test('the plan is read against itself before a single developer session starts',
   assert.equal(uncovered.warn.filter((w) => w.includes('criterion 2')).length, 1,
     'a spec criterion claimed by no task was not reported: ' + uncovered.warn)
 })
+
+test('a plan where NO task claims a criterion is reported, not silently passed', () => {
+  // Codex stop-gate finding: the per-criterion loop was guarded on
+  // `claimedCriteria.size`, so a plan that declared no criteria at all skipped
+  // the check entirely and reported zero gaps - the one shape where the
+  // coverage question matters most reads as the cleanest.
+  const spec = [
+    '1. **Given** a panel, **when** it opens, **then** it goes somewhere',
+    '2. **Given** a plain panel, **when** shown, **then** it has no chevron',
+  ].join(NL)
+
+  const none = checkPlan([{ id: 't1', files: ['src/a.ts'] }], '', spec)
+  assert.deepEqual(none.fatal, [], 'an undeclared-criteria plan is a gap, never a block')
+  assert.equal(none.warn.length, 1,
+    'exactly one warning: the plan declares no criteria at all - not one per criterion: ' + none.warn)
+  assert.match(none.warn[0], /no task declares/i)
+
+  // A spec with no numbered criteria has nothing to be uncovered against.
+  assert.deepEqual(checkPlan([{ id: 't1' }], '', 'prose only').warn, [])
+})
+
+test('next carries on after a resume that had to relaunch the stage, not just reattach', () => {
+  // Codex stop-gate finding: only the reattach path returned its `finished(...)`
+  // result. The relaunch path - the agent is gone, the session is resumed into a
+  // fresh pane - fell off the end returning undefined, so `next` read a clean
+  // stage as "not clean" and stopped. Same defect as the one this commit set out
+  // to fix, on the sibling path.
+  const s = paneRepo('next-after-relaunch', 'sess-relaunch',
+    { HERDR_STUB_NOAGENT: '1', HERDR_STUB_TRANSCRIPT: '' })
+  const rj = join(s.root, 'docs', 'runs', 'demo', 'run.json')
+  const seeded = runJson(s)
+  seeded.ui = true
+  seeded.stages = { spec: { code: 0 } }
+  writeFileSync(rj, JSON.stringify(seeded))
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '01-spec.md'), '# spec' + NL)
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-design.md'), '# design' + NL)
+  writeFileSync(join(s.root, 'docs', 'runs', 'demo', '02-tasks.json'), '[]' + NL)
+  interrupted(s, 'design', { session: 'sess-relaunch' })
+
+  const out = paned(s, 'next')
+
+  assert.equal(runJson(s).stages.design.code, 0, 'the relaunched stage was not finalized')
+  assert.ok(said(s.log, 'agent', 'start').map((a) => a[2]).includes('ux'),
+    'next stopped after a clean relaunch instead of advancing: ' + out)
+})
