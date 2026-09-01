@@ -1940,6 +1940,49 @@ test("full-document agent reassesses a declined opening when the same turn produ
   assert.equal(result.readings.find((reading) => reading.externalRef === "W8")?.split.units[0].operation, "fixed");
 });
 
+test("approximate frame boxes do not reject W1 and D1 compositions", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" },
+      { tag: "D1", widthMm: 1_380, heightMm: 2_405, typeText: "HINGED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A W1 D1", words: [] }],
+      timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { memory: "Render Elevation A.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
+        const record = (tag, operations, unitRatios, frameBoxPt, roomLabel) => ({
+          tag, operations, unitRatios, divisionAxis: "vertical", orientation: "W",
+          elevation: "ELEVATION A", roomLabel, storey: "ground", evidenceView: "elevation",
+          evidenceRenderId: "fd_t001_01", frameBoxPt, confidence: "high", flags: [],
+          basis: [`${tag} composition is visible on Elevation A.`], note: null,
+        });
+        return {
+          memory: "W1 and D1 resolved.", renderRequests: [], declines: [], complete: true,
+          records: [
+            record("W1", ["awning", "fixed"], [0.35, 0.65], [574, 294, 623, 379], "Study"),
+            record("D1", ["hinged", "sidelight"], [0.67, 0.33], [530, 294, 595, 379], "Entry"),
+          ],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 3_000, heightPx: 3_000 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  const byTag = Object.fromEntries(result.readings.map((reading) => [reading.externalRef, reading]));
+  assert.deepEqual(byTag.W1.split.units.map((unit) => unit.derivedWidthMm), [720, 1_335]);
+  assert.deepEqual(byTag.D1.split.units.map((unit) => unit.derivedWidthMm), [925, 455]);
+  assert.ok(result.readings.every((reading) => reading.confidence === "high" && !reading.flags.includes("drawingInconsistency")));
+});
+
 test("accepted low-confidence reads are complete and detail scales are not compared with elevations", async () => {
   let turn = 0;
   const result = await runFullDocumentAgent({

@@ -3,13 +3,9 @@ import type { CropBoxPt, DrawingFlag } from "./contract";
 interface ComparableReading {
   proposal: {
     frameBoxPt: CropBoxPt;
-    evidenceView: "elevation" | "detail";
-    elevation: string | null;
-    storey: string | null;
     flags: DrawingFlag[];
     confidence: "high" | "low";
   };
-  row: { widthMm: number };
   render: { pageNo: number };
 }
 
@@ -35,19 +31,6 @@ export function applyDrawingConsistencyFlags(readings: ComparableReading[]): voi
       const a = readings[left], b = readings[right];
       if (a.render.pageNo === b.render.pageNo && iou(a.proposal.frameBoxPt, b.proposal.frameBoxPt) > 0.85) {
         flag([a, b], "duplicateFrame");
-      }
-      if (
-        a.proposal.evidenceView !== "elevation"
-        || b.proposal.evidenceView !== "elevation"
-        || a.render.pageNo !== b.render.pageNo
-        || a.proposal.elevation !== b.proposal.elevation
-        || a.proposal.storey !== b.proposal.storey
-      ) continue;
-      const scheduleRatio = a.row.widthMm / b.row.widthMm;
-      const drawnRatio = (a.proposal.frameBoxPt[2] - a.proposal.frameBoxPt[0])
-        / (b.proposal.frameBoxPt[2] - b.proposal.frameBoxPt[0]);
-      if ((scheduleRatio > 1.25 && drawnRatio < 0.9) || (scheduleRatio < 0.8 && drawnRatio > 1.1)) {
-        flag([a, b], "drawingInconsistency");
       }
     }
   }
