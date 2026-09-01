@@ -1,0 +1,25 @@
+{
+  "__meta": {
+    "source": "Owner-confirmed reference plan set; test oracle only",
+    "note": "Ordered outside-view composition. null widthMm means operation asserted but component width not asserted. Missing room means room is not scored."
+  },
+  "W1": { "room": "STUDY", "composition": [{ "operation": "awning", "widthMm": 720 }, { "operation": "fixed", "widthMm": 1330 }] },
+  "W2": { "room": "MEDIA", "composition": [{ "operation": "fixed", "widthMm": 3500 }] },
+  "W3": { "room": "MEDIA", "composition": [{ "operation": "awning", "widthMm": 1050 }, { "operation": "fixed", "widthMm": 1050 }] },
+  "W4": { "room": "FAMILY", "composition": [{ "operation": "awning", "widthMm": 600 }, { "operation": "fixed", "widthMm": 2000 }, { "operation": "awning", "widthMm": 600 }] },
+  "W5": { "room": "LAUNDRY", "composition": [{ "operation": "awning", "widthMm": null }] },
+  "W6": { "room": "STUDY", "composition": [{ "operation": "awning", "widthMm": null }] },
+  "W7": { "room": "SITTING", "composition": [{ "operation": "awning", "widthMm": 905 }, { "operation": "fixed", "widthMm": 905 }] },
+  "W8": { "composition": [{ "operation": "fixed", "widthMm": null }] },
+  "W9": { "room": "BED 3", "composition": [{ "operation": "awning", "widthMm": 905 }, { "operation": "fixed", "widthMm": 905 }] },
+  "W10": { "composition": [{ "operation": "awning", "widthMm": null }, { "operation": "fixed", "widthMm": null }] },
+  "W11": { "room": "BED 4", "composition": [{ "operation": "awning", "widthMm": 905 }, { "operation": "fixed", "widthMm": 905 }] },
+  "W12": { "room": "BATH", "composition": [{ "operation": "awning", "widthMm": null }] },
+  "W14": { "room": "BED 1", "composition": [{ "operation": "awning", "widthMm": 675 }, { "operation": "fixed", "widthMm": 1375 }] },
+  "W15": { "room": "BED 1", "composition": [{ "operation": "fixed", "widthMm": null }] },
+  "W16": { "room": "BED 1", "composition": [{ "operation": "awning", "widthMm": 720 }, { "operation": "fixed", "widthMm": 1330 }] },
+  "D1": { "composition": [{ "operation": "hinged", "widthMm": 920 }, { "operation": "sidelight", "widthMm": 460 }] },
+  "D2": { "room": "GARAGE", "composition": [{ "operation": "hinged", "widthMm": null }] },
+  "D3": { "room": "FAMILY", "composition": [{ "operation": "sliding", "widthMm": null }, { "operation": "sliding", "widthMm": null }, { "operation": "fixed", "widthMm": null }] },
+  "D4": { "room": "LAUNDRY", "composition": [{ "operation": "hinged", "widthMm": null }] }
+}

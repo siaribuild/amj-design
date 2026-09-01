@@ -172,6 +172,7 @@ export interface DrawingRunStepCounts {
 
 export interface DrawingFileReport {
   fileId: string;
+  sourceFileIds?: string[];
   steps: DrawingRunStepCounts;
   perOpening: { tag: string; outcome: "read" | "not_read"; cropKey: string | null; pageNo: number | null; confidence?: DrawingConfidence | null; flags?: DrawingFlag[] }[];
   wallMs: number;

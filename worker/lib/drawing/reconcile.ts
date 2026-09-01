@@ -4,7 +4,7 @@ import { sizesFromRatios } from "../estimator/split";
 
 const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
 
-function operationFromSchedule(text: string | null | undefined): OpeningOperation | null {
+export function operationFromSchedule(text: string | null | undefined): OpeningOperation | null {
   if (/AWNING/i.test(text ?? "")) return "awning";
   if (/CASEMENT/i.test(text ?? "")) return "casement";
   if (/SLID/i.test(text ?? "")) return "sliding";
@@ -12,6 +12,22 @@ function operationFromSchedule(text: string | null | undefined): OpeningOperatio
   if (/HING|DOOR/i.test(text ?? "")) return "hinged";
   if (/FIXED/i.test(text ?? "")) return "fixed";
   return null;
+}
+
+export function scheduleDrawingMismatch(
+  split: SplitReading,
+  scheduleType: string | null | undefined,
+): { drawing: string; schedule: string } | null {
+  const scheduled = operationFromSchedule(scheduleType);
+  const matches = scheduled === "fixed"
+    ? split.units.every((unit) => unit.operation ? passive.has(unit.operation) : unit.role === "passive")
+    : split.units.some((unit) => unit.operation === scheduled || (!unit.operation && unit.role === "operable"));
+  if (!scheduled || matches) return null;
+  const operations = split.units.map((unit) => unit.operation).filter((operation): operation is OpeningOperation => !!operation);
+  const drawn = operations.length
+    ? operations.map((operation) => operation.toUpperCase()).join(" + ")
+    : split.units.some((unit) => unit.role === "operable") ? "operating unit" : "passive unit";
+  return { drawing: `drawing shows ${drawn}`, schedule: `schedule types ${scheduled.toUpperCase()}` };
 }
 
 function withOperation(unit: SplitReading["units"][number], operation: OpeningOperation) {
@@ -101,6 +117,7 @@ export function reconcileReading(args: {
   visible?: boolean;
 }): { composition: SplitReading; confidence: DrawingConfidence; flags: DrawingFlag[] } {
   const flags: DrawingFlag[] = [];
+  if (args.modelConfidence === "low") flags.push("agentEvidenceWeak");
   const parsed = parseCompositionComment(args.commentText);
   let composition: SplitReading = { ...args.split, units: args.split.units.map((unit) => ({ ...unit })) };
   if (parsed?.count != null && parsed.count !== composition.units.length) flags.push("scheduleDrawingMismatch");
@@ -118,10 +135,7 @@ export function reconcileReading(args: {
     };
   }
   composition = applyStatedWidths(composition, args.widthMm, args.commentText);
-  const scheduleOperation = operationFromSchedule(args.scheduleType);
-  if (scheduleOperation && !composition.units.some((unit) => unit.operation === scheduleOperation)) {
-    flags.push("scheduleDrawingMismatch");
-  }
+  if (scheduleDrawingMismatch(composition, args.scheduleType)) flags.push("scheduleDrawingMismatch");
   const operable = /AWNING|CASEMENT|SLID|LOUVRE|HINGED/i.test(args.scheduleType ?? "");
   if (operable && composition.units.some((unit) => unit.role === "operable" && (unit.derivedWidthMm ?? 0) > 1200)) {
     flags.push("manufacturability");

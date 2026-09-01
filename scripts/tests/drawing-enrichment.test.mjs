@@ -378,6 +378,7 @@ test("compositionFromSchedule: an elevation-hidden opening uses comments, never 
   });
   assert.equal(result.confidence, "low");
   assert.ok(result.flags.includes("notVisibleOnElevations"));
+  assert.ok(result.flags.includes("agentEvidenceWeak"), "model confidence stays distinguishable from field-specific warnings");
 });
 
 // ── assign (§3.3) — pure ───────────────────────────────────────────────────
@@ -1112,6 +1113,19 @@ test("runGate: scores every opening and every stated field, even when split is n
   assert.equal(summary.of, 3);
 });
 
+test("AC-6: semantic gate scores ordered operations and only asserted widths and rooms", async () => {
+  const labels = JSON.parse(await readFile(join(projectRoot, "scripts/tests/fixtures/plan-parse-labels.json"), "utf8"));
+  const readings = [
+    { external_ref: "W8", split_state: "value", split_json: JSON.stringify({ axis: "vertical", units: [{ role: "passive", operation: "fixed", ratio: 1, derivedWidthMm: 1450 }] }), room_state: "value", room_label: "BED 2" },
+    { external_ref: "W10", split_state: "value", split_json: JSON.stringify({ axis: "vertical", units: [{ role: "operable", operation: "awning", ratio: 0.5, derivedWidthMm: 725 }, { role: "passive", operation: "fixed", ratio: 0.5, derivedWidthMm: 725 }] }), room_state: "not_read", room_label: null },
+    { external_ref: "D1", split_state: "value", split_json: JSON.stringify({ axis: "vertical", units: [{ role: "operable", operation: "hinged", ratio: 920 / 1380, derivedWidthMm: 920 }, { role: "passive", operation: "sidelight", ratio: 460 / 1380, derivedWidthMm: 460 }] }), room_state: "not_read", room_label: null },
+  ];
+  const result = runGate(readings, { W8: labels.W8, W10: labels.W10, D1: labels.D1 });
+  assert.deepEqual(result.perOpening.map(({ externalRef, verdict }) => [externalRef, verdict]), [
+    ["D1", "match"], ["W10", "match"], ["W8", "match"],
+  ]);
+});
+
 test("persistReadings: one INSERT per reading, batched, including migration 0061 diagnostics", async () => {
   const batched = [];
   const fakeDb = {
@@ -1377,6 +1391,29 @@ test("flagged agent orientation and room remain review-only", async () => {
   let writes = 0;
   await applyDrawingRoom({ DB: { prepare: () => ({ bind: () => ({ run: async () => { writes++; } }) }) } }, "p1", [reading]);
   assert.equal(writes, 0);
+});
+
+test("AC-3: field-specific warnings block only the field they concern", async () => {
+  const model = { openings: [
+    { externalRef: "W1", wallOrientation: null, wallOrientationSource: null },
+    { externalRef: "W2", wallOrientation: null, wallOrientationSource: null },
+  ] };
+  const readings = [
+    {
+      externalRef: "W1", orientationState: "value", orientation: "N",
+      roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["northAssumed"],
+    },
+    {
+      externalRef: "W2", orientationState: "value", orientation: "E",
+      roomState: "value", roomLabel: "MEDIA", confidence: "low", flags: ["manufacturability"],
+    },
+  ];
+  applyDrawingOrientation(model, readings);
+  assert.equal(model.openings[0].wallOrientation, null, "unresolved north blocks orientation");
+  assert.equal(model.openings[1].wallOrientation, "E", "manufacturability does not concern orientation");
+  const writes = [];
+  await applyDrawingRoom({ DB: { prepare: () => ({ bind: (...args) => ({ run: async () => { writes.push(args); } }) }) } }, "p1", readings);
+  assert.deepEqual(writes.map((args) => args[0]), ["STUDY", "MEDIA"], "neither warning concerns room identity");
 });
 
 test("runDrawingAgent: an unstored render cannot authorize a drawing reading", async () => {
@@ -1789,7 +1826,9 @@ test("full-document turn contract batches renders and records and rejects vocabu
   }, ["W1"], [1, 2]);
   assert.deepEqual(partial.records.map((record) => record.tag), ["W1"]);
   assert.equal(partial.renderRequests.length, 1);
-  assert.ok(makeFullDocumentAgentSkill(["W1"], [1, 2]).responseSchema.properties.records);
+  const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
+  assert.ok(skill.responseSchema.properties.records);
+  assert.equal(skill.promptVersion, "v3", "review instructions must invalidate cached v2 turns");
   assert.ok(FULL_DOCUMENT_AGENT_LIMITS.maxTurns <= 4, "the new path must stay cost-bounded");
 });
 
@@ -1901,6 +1940,122 @@ test("full-document agent never materializes an unmeasured model split", async (
   assert.match(result.readings[0].gapNote, /exact frame crop/i);
 });
 
+test("AC-2: full-document rails flag a composition that omits the scheduled operation", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W10", widthMm: 1_450, heightMm: 1_200, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        return turn === 1
+          ? { memory: "Render the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false }
+          : {
+              memory: "Two fixed panes are visible.", renderRequests: [], declines: [], complete: true,
+              records: [{
+                tag: "W10", operations: ["fixed", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
+                orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+                confidence: "high", flags: [], basis: ["Two plain panes are visible."], note: null,
+              }],
+            };
+      },
+      render: async (request) => ({
+        images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [0.5], transomYs: [] },
+        })),
+        dpi: request.dpi,
+      }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.operation), ["fixed", "fixed"]);
+  assert.ok(result.readings[0].flags.includes("scheduleDrawingMismatch"));
+  assert.equal(result.readings[0].confidence, "low");
+});
+
+test("AC-8: one bounded review turn replaces only schedule-compatible re-reads", async () => {
+  let turn = 0;
+  const inputs = [];
+  const renderRequests = [];
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W3", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W10", widthMm: 1_450, heightMm: 1_200, typeText: "AWNING" },
+      { tag: "W8", widthMm: 1_450, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION C AND D", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        turn++;
+        if (turn === 1) return { memory: "Render both faces.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
+        if (input.reviewRecords) {
+          const ids = new Map(input.imageDataUrls.map((image, index) => [input.reviewRecords[index].tag, image.renderId]));
+          return {
+            memory: "W10 corrected; W8 remains contradictory.", renderRequests: [], declines: [], complete: true,
+            records: input.reviewRecords.map((parent) => ({
+              ...parent,
+              operations: parent.tag === "W10" ? ["awning", "fixed"] : parent.operations,
+              evidenceRenderId: ids.get(parent.tag), confidence: "high", flags: [],
+            })),
+          };
+        }
+        const record = (tag, operations, frameBoxPt, confidence = "high", flags = []) => ({
+          tag, operations, unitRatios: operations.map(() => 1 / operations.length), divisionAxis: "vertical",
+          orientation: "N", elevation: tag === "W10" ? "C" : "D", roomLabel: null, storey: "first",
+          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt,
+          confidence, flags, basis: ["Opening visible."], note: null,
+        });
+        return {
+          memory: "Both openings read.", renderRequests: [], declines: [], complete: true,
+          records: [
+            record("W1", ["fixed"], [0, 50, 20, 80], "low", ["agentEvidenceWeak"]),
+            record("W2", ["fixed"], [30, 50, 50, 80], "low", ["agentEvidenceWeak"]),
+            record("W3", ["fixed"], [60, 50, 80, 80], "low", ["agentEvidenceWeak"]),
+            record("W10", ["fixed", "fixed"], [0, 0, 30, 30]),
+            record("W8", ["awning", "fixed"], [60, 0, 90, 30]),
+          ],
+        };
+      },
+      render: async (request) => {
+        renderRequests.push(request);
+        return { images: (request.crops ?? [null]).map(() => ({
+          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+          profile: { mullionXs: [0.5], transomYs: [] },
+        })), dpi: request.dpi };
+      },
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs.length, 3, "all flagged records share one extra model turn");
+  assert.equal(inputs[2].reviewRecords.length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  assert.deepEqual(inputs[2].reviewRecords.slice(0, 2).map((record) => record.tag), ["W10", "W8"], "schedule conflicts outrank generic weak reads");
+  assert.equal(renderRequests.filter((request) => request.threshold === 250).length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  const w10 = result.readings.find((reading) => reading.externalRef === "W10");
+  const w8 = result.readings.find((reading) => reading.externalRef === "W8");
+  assert.deepEqual(w10.split.units.map((unit) => unit.operation), ["awning", "fixed"]);
+  assert.ok(!w10.flags.includes("scheduleDrawingMismatch"));
+  assert.deepEqual(w8.split.units.map((unit) => unit.operation), ["awning", "fixed"]);
+  assert.ok(w8.flags.includes("scheduleDrawingMismatch"), "a contradictory review cannot replace the original");
+  assert.ok(result.report.steps.read.retriedWithThreshold >= 1);
+});
+
 test("full-document agent prioritizes automatic legibility repairs over discretionary renders", async () => {
   const pages = Array.from({ length: 13 }, (_, index) => ({
     pageNo: index + 1, text: index ? `ELEVATION ${index + 1}` : "ELEVATION A", words: [],
@@ -2004,17 +2159,20 @@ test("full-agent rooms replace prior candidates in the model only when their evi
       { externalRef: "W1", roomId: "ground_entry", level: "ground" },
       { externalRef: "W2", roomId: "ground_entry", level: "ground" },
       { externalRef: "W3", roomId: "ground_entry", level: "ground" },
+      { externalRef: "W4", roomId: "ground_entry", level: "ground" },
     ],
   };
   const knownRooms = [
     { externalRef: "W1", roomLabel: "ENTRY" },
     { externalRef: "W2", roomLabel: "ENTRY" },
     { externalRef: "W3", roomLabel: "ENTRY" },
+    { externalRef: "W4", roomLabel: "ENTRY" },
   ];
   applyFullAgentRooms(model, knownRooms, [
     { externalRef: "W1", roomState: "value", roomLabel: "STUDY", confidence: "high", flags: [] },
     { externalRef: "W2", roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["agentEvidenceWeak"] },
     { externalRef: "Ｗ-3", roomState: "value", roomLabel: "GYM", confidence: "high", flags: [] },
+    { externalRef: "W4", roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["northAssumed"] },
   ]);
   assert.equal(model.openings[0].roomId, "ground_study");
   assert.equal(knownRooms[0].roomLabel, "STUDY");
@@ -2024,6 +2182,8 @@ test("full-agent rooms replace prior candidates in the model only when their evi
   assert.ok(gym, "a trustworthy new room is added to the canonical model");
   assert.equal(model.openings[2].roomId, gym.roomId);
   assert.equal(knownRooms[2].roomLabel, "GYM");
+  assert.equal(model.openings[3].roomId, "ground_study", "orientation uncertainty does not erase room evidence");
+  assert.equal(knownRooms[3].roomLabel, "STUDY");
 });
 
 test("full-document agent cannot overwrite an opening accepted on an earlier turn", async () => {
@@ -2107,6 +2267,69 @@ test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-d
   assert.equal(legacyCalls, 0);
   assert.equal(result.report.files[0].modelCalls, 1);
   assert.equal(result.readings.length, 1, "a declined full-agent read degrades to the existing schedule fallback");
+});
+
+test("AC-7: agentic_full combines PDFs into one namespaced plan-set run", async () => {
+  const inputs = [];
+  const renders = [];
+  const bytesByKey = new Map([["one.pdf", new Uint8Array([1])], ["two.pdf", new Uint8Array([2])]]);
+  const env = {
+    FILES: {
+      get: async (key) => ({ arrayBuffer: async () => bytesByKey.get(key).buffer }),
+      put: async () => {},
+    },
+    PLAN_PARSE: {},
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "p", aiRunId: "r",
+    files: [{ fileId: "f1", r2Key: "one.pdf" }, { fileId: "f2", r2Key: "two.pdf" }],
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+  }, {
+    inspect: async (_ns, _project, bytes) => ({
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: bytes[0] === 1 ? "WINDOW SCHEDULE W1" : "ELEVATION A W1", words: [] }],
+    }),
+    render: async (_ns, _project, bytes, request) => {
+      renders.push({ byte: bytes[0], pageNo: request.pageNo });
+      return { images: (request.crops ?? [null]).map(() => ({
+        pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+        profile: { mullionXs: [], transomYs: [] },
+      })), dpi: request.dpi };
+    },
+    runElevation: async () => null,
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+    runFullAgentTurn: async (input) => {
+      inputs.push(input);
+      return input.turn === 1
+        ? { memory: "Elevation is in the second file.", renderRequests: [{ pageNo: 2, dpi: 150 }], records: [], declines: [], complete: false }
+        : {
+            memory: "W1 resolved; W2 not visible.", renderRequests: [], declines: [{ tag: "W2", reason: "Not visible." }], complete: true,
+            records: [{
+              tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+              orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+              evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+              confidence: "high", flags: [], basis: ["W1 visible in file two."], note: null,
+            }],
+          };
+    },
+  });
+  assert.equal(inputs.filter((input) => input.turn === 1).length, 1, "the opening set is not rerun per PDF");
+  assert.deepEqual(inputs[0].harvest.pages.map(({ pageNo, sourceFileId, sourcePageNo }) => ({ pageNo, sourceFileId, sourcePageNo })), [
+    { pageNo: 1, sourceFileId: "f1", sourcePageNo: 1 },
+    { pageNo: 2, sourceFileId: "f2", sourcePageNo: 1 },
+  ]);
+  assert.ok(renders.every((render) => render.byte === 2 && render.pageNo === 1), "global page 2 routes to file two, local page 1");
+  assert.equal(result.readings.length, 2);
+  assert.equal(result.readings[0].sourceFileId, "f2");
+  assert.equal(result.readings[0].pageNo, 1);
+  assert.equal(result.readings[1].sourceFileId, null, "a plan-set fallback must not invent a file foreign key");
+  assert.deepEqual(result.report.files[0].sourceFileIds, ["f1", "f2"]);
 });
 
 test("full-document agent can resolve the standard 19-opening set in one visual turn after planning", async () => {

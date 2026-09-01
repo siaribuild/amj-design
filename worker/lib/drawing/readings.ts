@@ -3,10 +3,30 @@
 // (drawing_reading rows, ai_runs.drawing_report_json) is the D1-touching
 // half of this file; grown alongside the pure functions below as enrich.ts
 // (the orchestrator) needs them.
-import type { DrawingReading, Orientation } from "./contract";
+import type { DrawingFlag, DrawingReading, Orientation } from "./contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import { normalizeOpeningRef } from "../ai/energyMap";
+
+type DrawingField = "split" | "room" | "orientation";
+
+const NON_BLOCKING_FLAGS: Record<DrawingField, ReadonlySet<DrawingFlag>> = {
+  split: new Set(["northAssumed", "manufacturability"]),
+  room: new Set(["northAssumed", "manufacturability", "scheduleDrawingMismatch"]),
+  orientation: new Set(["manufacturability", "scheduleDrawingMismatch"]),
+};
+
+/** Field-scoped trust: new/unknown flags block by default. A low reading may
+ * pass one field only when its low status is entirely caused by flags that do
+ * not concern that field; genuine model uncertainty carries agentEvidenceWeak. */
+export function drawingFieldBlocked(
+  reading: { confidence?: string | null; flags?: unknown[] },
+  field: DrawingField,
+): boolean {
+  const flags = Array.isArray(reading.flags) ? reading.flags : [];
+  if (!flags.length) return reading.confidence === "low";
+  return flags.some((flag) => typeof flag !== "string" || !NON_BLOCKING_FLAGS[field].has(flag as DrawingFlag));
+}
 
 /** Orientation is a PLAIN ASSIGNMENT, not `??=`: a high-confidence drawing
  *  reading outranks the plan-context fallback already present on the model. */
@@ -17,7 +37,7 @@ export function applyDrawingOrientation(
   const byRef = new Map(readings.map((r) => [r.externalRef, r]));
   for (const opening of model.openings) {
     const reading = byRef.get(opening.externalRef);
-    if (reading?.orientationState === "value" && reading.orientation && reading.confidence !== "low" && !(reading.flags?.length)) {
+    if (reading?.orientationState === "value" && reading.orientation && !drawingFieldBlocked(reading, "orientation")) {
       opening.wallOrientation = reading.orientation;
       opening.wallOrientationSource = "plan";
     }
@@ -53,8 +73,7 @@ export function applyFullAgentRooms(
     if (
       reading.roomState !== "value"
       || !reading.roomLabel
-      || reading.confidence === "low"
-      || reading.flags?.length
+      || drawingFieldBlocked(reading, "room")
     ) continue;
     const openingKey = key(reading.externalRef);
     const opening = openings.get(openingKey);
@@ -82,7 +101,7 @@ export async function applyDrawingRoom(
   readings: { externalRef: string; roomState: string; roomLabel: string | null; confidence?: string | null; flags?: unknown[] }[],
 ): Promise<void> {
   for (const r of readings) {
-    if (r.roomState !== "value" || !r.roomLabel || r.confidence === "low" || r.flags?.length) continue;
+    if (r.roomState !== "value" || !r.roomLabel || drawingFieldBlocked(r, "room")) continue;
     await env.DB.prepare(
       `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
     ).bind(r.roomLabel, projectId, r.externalRef).run();

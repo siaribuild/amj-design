@@ -26,8 +26,9 @@ import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
 import { drawingParserMode, runDrawingEnrichmentStage } from "../drawing/enrich";
 import { setDrawingProgress } from "./jobs";
-import { applyDrawingOrientation, applyDrawingRoom, applyFullAgentRooms, applyKnownRooms, persistReadings, conflictReason } from "../drawing/readings";
+import { applyDrawingOrientation, applyDrawingRoom, applyFullAgentRooms, applyKnownRooms, persistReadings, conflictReason, drawingFieldBlocked } from "../drawing/readings";
 import type { DrawingReading } from "../drawing/contract";
+import { scheduleDrawingMismatch } from "../drawing/reconcile";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
@@ -162,9 +163,7 @@ export function buildSplitHints(
   lines: MergedLine[],
   drawingReadings: DrawingReading[],
 ): { splitHints: Map<string, SplitHint>; flags: Map<string, string[]> } {
-  const readingByTag = new Map(drawingReadings
-    .filter((r) => r.splitState === "value" && r.split && r.confidence === "high" && (r.flags?.length ?? 0) === 0)
-    .map((r) => [r.externalRef, { splitState: r.splitState, units: r.split!.units, axis: r.split!.axis }] as const));
+  const readingByTag = new Map(drawingReadings.map((r) => [r.externalRef, r]));
   const splitHints = new Map<string, SplitHint>();
   const flags = new Map<string, string[]>();
   const flag = (tag: string, reason: string) => {
@@ -180,13 +179,16 @@ export function buildSplitHints(
   }
   for (const l of lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
-    const reading = readingByTag.get(l.tag) ?? null;
-    // AC-9: schedule says FIXED, the drawing shows an operating unit — the
-    // reason string names both sides, the same channel a split proposal
-    // uses (§3.5), so it reaches the reviewer with zero new machinery.
-    if (reading && (l.typeText ?? "").trim().toLowerCase() === "fixed" && reading.units.some((u) => u.role === "operable")) {
-      flag(l.tag, conflictReason("drawing shows operating unit", "schedule types FIXED"));
-    }
+    const rawReading = readingByTag.get(l.tag) ?? null;
+    const mismatch = rawReading?.split ? scheduleDrawingMismatch(rawReading.split, l.typeText) : null;
+    if (mismatch) flag(l.tag, conflictReason(mismatch.drawing, mismatch.schedule));
+    const reading = rawReading
+      && rawReading.splitState === "value"
+      && rawReading.split
+      && !drawingFieldBlocked(rawReading, "split")
+      && !mismatch
+      ? { splitState: rawReading.splitState, units: rawReading.split.units, axis: rawReading.split.axis }
+      : null;
     const parsedComment = parseSplitHint(l.notes);
     const commentHint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }

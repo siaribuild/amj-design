@@ -641,6 +641,98 @@ export async function enrichOpenings(
   },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingReport }> {
+  if (deps.runFullAgentTurn && args.files.length > 1) {
+    const prepared: { file: EnrichFile; bytes: Uint8Array; inspected: InspectResponse }[] = [];
+    const failedReports: DrawingFileReport[] = [];
+    let inspectCalls = 0;
+    for (const file of args.files) {
+      const failed = emptyFileReport(file.fileId);
+      try {
+        const obj = await env.FILES.get(file.r2Key);
+        if (!obj) { failed.steps.failedPhase = "r2_lookup"; failedReports.push(failed); continue; }
+        const bytes = new Uint8Array(await obj.arrayBuffer());
+        await args.onProgress?.(0, args.scheduleRows.length, "inventory");
+        let inspected: InspectResponse;
+        inspectCalls++;
+        try {
+          inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, bytes);
+        } catch (error) {
+          if (!(error instanceof ContainerClientError) || error.code !== "timeout") throw error;
+          inspectCalls++;
+          inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, bytes);
+        }
+        prepared.push({ file, bytes, inspected });
+      } catch {
+        failed.steps.failedPhase = "inventory";
+        failedReports.push(failed);
+      }
+    }
+    if (!prepared.length) return { readings: [], report: { files: failedReports } };
+
+    const pageSources = new Map<number, { fileId: string; pageNo: number }>();
+    const inventoryPages: InspectResponse["inventory"]["pages"] = [];
+    const pages: InspectResponse["pages"] = [];
+    let nextPageNo = 1;
+    for (const item of prepared) {
+      const localToGlobal = new Map<number, number>();
+      for (const page of item.inspected.inventory.pages) {
+        const pageNo = nextPageNo++;
+        localToGlobal.set(page.pageNo, pageNo);
+        pageSources.set(pageNo, { fileId: item.file.fileId, pageNo: page.pageNo });
+        inventoryPages.push({ ...page, pageNo });
+      }
+      pages.push(...item.inspected.pages.flatMap((page) => {
+        const pageNo = localToGlobal.get(page.pageNo);
+        return pageNo ? [{ ...page, pageNo }] : [];
+      }));
+    }
+    const timings = prepared.map((item) => item.inspected.timings).filter((value): value is NonNullable<typeof value> => !!value);
+    const inspected: InspectResponse = {
+      inventory: {
+        pageCount: inventoryPages.length,
+        producer: "plan-set",
+        fonts: [...new Set(prepared.flatMap((item) => item.inspected.inventory.fonts))],
+        hasAttachments: prepared.some((item) => item.inspected.inventory.hasAttachments),
+        pages: inventoryPages,
+      },
+      pages,
+      ...(timings.length ? { timings: {
+        inventoryMs: timings.reduce((sum, value) => sum + value.inventoryMs, 0),
+        textMs: timings.reduce((sum, value) => sum + value.textMs, 0),
+        wordsMs: timings.reduce((sum, value) => sum + value.wordsMs, 0),
+        totalMs: timings.reduce((sum, value) => sum + value.totalMs, 0),
+      } } : {}),
+    };
+    const byFileId = new Map(prepared.map((item) => [item.file.fileId, item]));
+    const result = await runFullDocumentAgent({
+      fileId: "plan-set",
+      scheduleRows: args.scheduleRows,
+      inspected,
+      pageSources,
+      deps: {
+        runTurn: deps.runFullAgentTurn,
+        render: (request) => {
+          const source = pageSources.get(request.pageNo);
+          const item = source ? byFileId.get(source.fileId) : null;
+          if (!source || !item) throw new Error("plan_set_page_missing");
+          return deps.render(env.PLAN_PARSE, args.projectId, item.bytes, { ...request, pageNo: source.pageNo });
+        },
+        async store(renderId, pngB64) {
+          const key = cropKey(args.projectId, args.aiRunId, `full-agent-${renderId}`);
+          try {
+            await env.FILES.put(key, Uint8Array.from(atob(pngB64), (char) => char.charCodeAt(0)), { httpMetadata: { contentType: "image/png" } });
+            return key;
+          } catch { return null; }
+        },
+        onProgress: args.onProgress,
+      },
+    });
+    result.report.sourceFileIds = prepared.map((item) => item.file.fileId);
+    result.report.containerCalls += inspectCalls;
+    result.report.steps.strategy = chooseStrategy(inspected.inventory);
+    return { readings: result.readings, report: { files: [result.report, ...failedReports] } };
+  }
+
   const readings: DrawingReading[] = [];
   const files: DrawingFileReport[] = [];
   for (const file of args.files) {

@@ -34,6 +34,15 @@ function deepEqual(a, b) {
 
 const FIELDS = ["split", "orientation", "elevation", "room"];
 
+function compositionMatches(split, expected) {
+  if (!split || split.units?.length !== expected.length) return false;
+  return expected.every((unit, index) => {
+    const actual = split.units[index];
+    return actual?.operation === unit.operation
+      && (unit.widthMm == null || actual.derivedWidthMm === unit.widthMm);
+  });
+}
+
 /** One opening's verdict: every labelled field is scored independently. */
 export function compareOpening(reading, label) {
   if (!reading) {
@@ -41,7 +50,14 @@ export function compareOpening(reading, label) {
   }
   const fields = {};
   let allMatch = true;
+  if (label?.composition) {
+    const match = compositionMatches(valueOf(reading, "split"), label.composition);
+    fields.composition = match ? "match" : "mismatch";
+    if (!match) allMatch = false;
+  }
   for (const field of FIELDS) {
+    if (field === "split" && label?.composition) continue;
+    if (label && !Object.hasOwn(label, field) && !(field === "split" && label.drawn === false)) continue;
     if (field === "split" && label?.drawn === false) {
       fields[field] = "not_drawn";
       continue;
@@ -66,7 +82,7 @@ export function compareOpening(reading, label) {
  *  drawn evidence, so they cannot be a scored miss. */
 export function runGate(readings, labels) {
   const byRef = new Map(readings.map((r) => [r.external_ref, r]));
-  const allRefs = new Set([...byRef.keys(), ...Object.keys(labels)]);
+  const allRefs = new Set([...byRef.keys(), ...Object.keys(labels).filter((key) => !key.startsWith("__"))]);
   const perOpening = [...allRefs].sort().map((externalRef) => ({
     externalRef,
     ...compareOpening(byRef.get(externalRef), labels[externalRef]),
