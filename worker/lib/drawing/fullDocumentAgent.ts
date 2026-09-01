@@ -16,7 +16,7 @@ import type {
 } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
-import { compositionFromSchedule } from "./reconcile";
+import { applyStatedWidths, compositionFromSchedule } from "./reconcile";
 import { applyDrawingConsistencyFlags } from "./consistency";
 import { sizesFromRatios } from "../estimator/split";
 
@@ -431,18 +431,19 @@ function readingFromProposal(
   const flags = [...proposal.flags];
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
   const confidence = flags.length ? "low" : proposal.confidence;
+  const split = applyStatedWidths({
+    axis: proposal.divisionAxis,
+    units: proposal.operations.map((operation, index) => ({
+      role: passive.has(operation) ? "passive" as const : "operable" as const,
+      operation,
+      ratio: ratios[index],
+      derivedWidthMm: widths[index],
+    })),
+  }, row.widthMm, row.commentText);
   return {
     id: "", projectId: "", aiRunId: "", sourceFileId: fileId, externalRef: row.tag,
     splitState: "value",
-    split: {
-      axis: proposal.divisionAxis,
-      units: proposal.operations.map((operation, index) => ({
-        role: passive.has(operation) ? "passive" : "operable",
-        operation,
-        ratio: ratios[index],
-        derivedWidthMm: widths[index],
-      })),
-    },
+    split,
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated", elevation: proposal.elevation,
     roomState: proposal.roomLabel ? "value" : "not_stated", roomLabel: proposal.roomLabel,

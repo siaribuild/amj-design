@@ -309,6 +309,7 @@ test("parseCompositionComment and reconcileReading preserve contradictions as fl
   });
   const result = reconcileReading({
     split: { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 1500 }], axis: "vertical" },
+    widthMm: 1500,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS", modelConfidence: "high", northAssumed: true,
   });
   assert.equal(result.confidence, "low");
@@ -323,28 +324,43 @@ test("parseCompositionComment: cited door, direction, and garbage patterns stay 
   assert.equal(parseCompositionComment("refer to architect"), null);
 });
 
+test("reconcileReading: D1 keeps the stated door width and gives the last panel the exact remainder", () => {
+  const result = reconcileReading({
+    split: { units: [
+      { role: "operable", operation: "hinged", ratio: 0.67 },
+      { role: "passive", operation: "sidelight", ratio: 0.33 },
+    ], axis: "vertical" },
+    widthMm: 1380, scheduleType: "HINGED", commentText: "920 DOOR & 1N° SIDELIGHT",
+    modelConfidence: "high", northAssumed: false,
+  });
+  assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [920, 460]);
+  assert.equal(result.composition.units.reduce((sum, unit) => sum + unit.derivedWidthMm, 0), 1380);
+});
+
 test("reconcileReading: agreement stays high and preserves measured geometry", () => {
   const split = { units: [{ role: "operable", operation: "awning", ratio: 1, derivedWidthMm: 900 }], axis: "vertical" };
   const result = reconcileReading({
-    split, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
+    split, widthMm: 900, scheduleType: "AWNING", modelConfidence: "high", northAssumed: false,
   });
   assert.equal(result.confidence, "high");
   assert.deepEqual(result.flags, []);
   assert.deepEqual(result.composition, split);
 });
 
-test("reconcileReading: comment operation count wins while drawing ratios stay fixed", () => {
+test("reconcileReading: stated component widths win and the unstated panel takes the exact remainder", () => {
   const result = reconcileReading({
     split: { units: [
       { role: "passive", operation: "fixed", ratio: 0.2 },
       { role: "passive", operation: "fixed", ratio: 0.6 },
       { role: "passive", operation: "fixed", ratio: 0.2 },
     ], axis: "vertical" },
+    widthMm: 3200,
     scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "high", northAssumed: false,
   });
   assert.deepEqual(result.composition.units.map((unit) => unit.operation), ["awning", "fixed", "awning"]);
-  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.2, 0.6, 0.2]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.ratio), [0.1875, 0.625, 0.1875]);
+  assert.deepEqual(result.composition.units.map((unit) => unit.derivedWidthMm), [600, 2000, 600]);
   assert.deepEqual(result.flags, ["scheduleDrawingMismatch"]);
 });
 
@@ -356,7 +372,7 @@ test("compositionFromSchedule: an elevation-hidden opening uses comments, never 
     ["awning", 600], ["fixed", 2000], ["awning", 600],
   ]);
   const result = reconcileReading({
-    split, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
+    split, widthMm: 3200, scheduleType: "AWNING", commentText: "2x 600mm WIDE AWNINGS",
     modelConfidence: "low", northAssumed: false, visible: false,
   });
   assert.equal(result.confidence, "low");
