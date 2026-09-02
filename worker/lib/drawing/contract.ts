@@ -164,7 +164,7 @@ export interface DrawingRunStepCounts {
   selectPages: { selected: { pageNo: number; tier: string; reason: string }[]; of: number };
   elevationRegions: { pageNo: number; labels: string[] }[];
   renderCrop: { pagesRendered: number; cropsMade: number };
-  read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number };
+  read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number; targetedReviews: number };
   placements: { fromText: number; fromModelFallback: number; unplaced: number };
   northAssumed: boolean;
   failedPhase?: string;
@@ -174,9 +174,28 @@ export interface DrawingFileReport {
   fileId: string;
   sourceFileIds?: string[];
   steps: DrawingRunStepCounts;
-  perOpening: { tag: string; outcome: "read" | "not_read"; cropKey: string | null; pageNo: number | null; confidence?: DrawingConfidence | null; flags?: DrawingFlag[] }[];
+  perOpening: {
+    tag: string;
+    outcome: "read" | "not_read";
+    cropKey: string | null;
+    pageNo: number | null;
+    confidence?: DrawingConfidence | null;
+    flags?: DrawingFlag[];
+    attempts?: number;
+    acceptedTurn?: number | null;
+    corrections?: {
+      turn: number;
+      reasons: string[];
+      stage?: "main" | "escalation";
+      outcome?: "rejected" | "replaced" | "kept" | "failed";
+    }[];
+  }[];
   wallMs: number;
   modelCalls: number;
+  cachedTurns?: number;
+  repairedTurns?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   containerCalls: number;
   inspectTimings?: { inventoryMs: number; textMs: number; wordsMs: number; totalMs: number };
 }

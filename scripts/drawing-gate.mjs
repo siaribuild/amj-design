@@ -33,6 +33,18 @@ function deepEqual(a, b) {
 }
 
 const FIELDS = ["split", "orientation", "elevation", "room"];
+const LABEL_FIELDS = new Set([...FIELDS, "composition", "drawn", "pageNo"]);
+
+function invalidLabel(label) {
+  if (!label || typeof label !== "object" || Array.isArray(label)) return "missing label";
+  const keys = Object.keys(label);
+  const unknown = keys.filter((key) => !LABEL_FIELDS.has(key));
+  if (unknown.length) return `unknown field(s): ${unknown.join(", ")}`;
+  if (!keys.some((key) => FIELDS.includes(key) || key === "composition" || key === "pageNo") && label.drawn !== false) {
+    return "no scored fields";
+  }
+  return null;
+}
 
 function compositionMatches(split, expected) {
   if (!split || split.units?.length !== expected.length) return false;
@@ -45,6 +57,10 @@ function compositionMatches(split, expected) {
 
 /** One opening's verdict: every labelled field is scored independently. */
 export function compareOpening(reading, label) {
+  const labelError = invalidLabel(label);
+  if (labelError) {
+    return { verdict: "mismatch", fields: { label: "mismatch" }, note: `invalid label: ${labelError}` };
+  }
   if (!reading) {
     return { verdict: "not_read", gapCode: reading?.gap_code ?? null };
   }

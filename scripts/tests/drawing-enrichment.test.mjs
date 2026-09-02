@@ -1113,6 +1113,24 @@ test("runGate: scores every opening and every stated field, even when split is n
   assert.equal(summary.of, 3);
 });
 
+test("runGate: labels must contain only known fields and assert something scoreable", () => {
+  const reading = {
+    external_ref: "W1",
+    orientation_state: "value",
+    orientation: "N",
+  };
+
+  for (const label of [undefined, {}, { orientaton: "N" }, { orientation: "N", orientaton: "N" }, { drawn: true }]) {
+    const result = runGate([reading], { W1: label });
+    assert.equal(result.perOpening[0].verdict, "mismatch");
+    assert.equal(result.summary.matched, 0);
+    assert.match(result.perOpening[0].note, /invalid label/i);
+  }
+
+  assert.equal(runGate([reading], { W1: { orientation: "N" } }).summary.matched, 1);
+  assert.equal(runGate([reading], { W1: { drawn: false } }).summary.matched, 1);
+});
+
 test("AC-6: semantic gate scores ordered operations and only asserted widths and rooms", async () => {
   const labels = JSON.parse(await readFile(join(projectRoot, "scripts/tests/fixtures/plan-parse-labels.json"), "utf8"));
   const readings = [
@@ -1799,37 +1817,248 @@ test("full-document harvest bounds repeated tag context and total page text", ()
   assert.ok(harvest.pages.reduce((sum, page) => sum + page.textExcerpt.length, 0) <= FULL_DOCUMENT_AGENT_LIMITS.maxHarvestTextChars);
 });
 
-test("full-document turn contract batches renders and records and rejects vocabulary escape", () => {
-  const raw = {
-    memory: "North face is page 2; W1 remains to confirm.",
-    renderRequests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 400, 300] }],
-    records: [{
+const hybridRecord = (overrides = {}) => ({
+  tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+  orientation: "N", elevation: "A", roomLabel: null, storey: "ground", faceOpeningCount: 1,
+  planPageNo: null, wallOrder: null,
+  evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
+  confidence: "high", flags: [], basis: ["Visible opening on elevation A."], note: null,
+  ...overrides,
+});
+
+test("full-document contract accepts render-relative evidence boxes and rejects page-space model boxes", () => {
+  const accepted = validateFullDocumentTurn({
+    action: "emit", memory: "W1 resolved.", records: [hybridRecord()], declines: [],
+  }, ["W1"], [1, 2]);
+  assert.deepEqual(accepted.records[0].frameBoxNorm, [0.1, 0.1, 0.9, 0.9]);
+  assert.equal(validateFullDocumentTurn({
+    action: "emit", memory: "Old coordinate contract.",
+    records: [{ ...hybridRecord(), frameBoxNorm: undefined, frameBoxPt: [20, 20, 120, 160] }], declines: [],
+  }, ["W1"], [1, 2]).records.length, 0);
+});
+
+test("full-document agent binds a plan tag to wall order and maps crop-relative evidence back to page space", async () => {
+  const inputs = [];
+  const progress = [];
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 2_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 24, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1", words: [{ text: "W1", x0: 100, top: 200, x1: 120, bottom: 215 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (input.turn === 1) return {
+          action: "get_text_tokens", pages: [1], memory: "Map W1 to its plan wall.",
+        };
+        if (input.turn === 2) return {
+          action: "render", memory: "Inspect elevation A.",
+          requests: [{ pageNo: 2, dpi: 220, bboxPt: [200, 100, 600, 500] }],
+        };
+        if (input.turn === 3) return {
+          action: "emit", memory: "Identity is not yet tied to the plan.", declines: [],
+          records: [hybridRecord({ planPageNo: null, wallOrder: null, evidenceRenderId: "fd_t002_01", frameBoxPt: [0.25, 0.25, 0.75, 0.75], frameBoxNorm: [0.25, 0.25, 0.75, 0.75] })],
+        };
+        return {
+          action: "emit", memory: "W1 is first on its plan wall.", declines: [],
+          records: [hybridRecord({ planPageNo: 1, wallOrder: 1, evidenceRenderId: "fd_t002_01", frameBoxPt: [0.25, 0.25, 0.75, 0.75], frameBoxNorm: [0.25, 0.25, 0.75, 0.75] })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_200, heightPx: 1_200 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+      onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
+    },
+  });
+  assert.deepEqual(inputs[3].observations[0].rejected, [{ tag: "W1", reasons: ["identity_evidence_required"] }]);
+  assert.deepEqual(result.readings[0].regionJson, [0.3, 0.25, 0.5, 0.5]);
+  assert.deepEqual(result.report.perOpening[0].corrections, [{ turn: 3, reasons: ["identity_evidence_required"] }]);
+  assert.equal(result.report.perOpening[0].acceptedTurn, 4);
+  assert.deepEqual([...new Set(progress.map((item) => item.phase))], [
+    "elevation_inventory", "floorplan_location", "render_crops", "opening_read",
+  ]);
+});
+
+test("full-document parsing preserves visually read geometry regardless of downstream product limits", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 4_000, heightMm: 1_200, typeText: "AWNING" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => ++turn === 1
+        ? { action: "render", memory: "Inspect elevation A.", requests: [{ pageNo: 1, dpi: 110 }] }
+        : { action: "emit", memory: "One awning sash is drawn.", declines: [], records: [hybridRecord({ operations: ["awning"] })] },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.equal(result.readings[0].split.units[0].derivedWidthMm, 4_000);
+  assert.equal(result.readings[0].flags.includes("manufacturability"), false);
+});
+
+test("full-document agent stops correcting one opening after two rejected attempts and records both", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 100, heightPt: 100, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1", words: [{ text: "W1", x0: 20, top: 20, x1: 30, bottom: 30 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => ++turn === 1
+        ? { action: "render", memory: "Inspect elevation A.", requests: [{ pageNo: 2, dpi: 110 }] }
+        : { action: "emit", memory: "Missing plan binding.", declines: [], records: [hybridRecord()] },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(turn, 3, "one initial investigation plus two rejected emits is the hard stop");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.deepEqual(result.report.perOpening[0].corrections, [
+    { turn: 2, reasons: ["identity_evidence_required"] },
+    { turn: 3, reasons: ["identity_evidence_required"] },
+  ]);
+});
+
+test("full-document report counts provider calls, repairs, tokens, and replayed turns truthfully", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => ++turn === 1
+        ? {
+            data: { action: "render", memory: "Replay the face render.", requests: [{ pageNo: 1, dpi: 110 }] },
+            cached: true, modelCalls: 0, repaired: false, inputTokens: 0, outputTokens: 0,
+          }
+        : {
+            data: { action: "emit", memory: "W1 resolved.", declines: [], records: [hybridRecord()] },
+            cached: false, modelCalls: 2, repaired: true, inputTokens: 1_200, outputTokens: 180,
+          },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.report.modelCalls, 2);
+  assert.equal(result.report.cachedTurns, 1);
+  assert.equal(result.report.repairedTurns, 1);
+  assert.equal(result.report.inputTokens, 1_200);
+  assert.equal(result.report.outputTokens, 180);
+});
+
+test("full-document provider-call budget includes schema repairs", async () => {
+  let turns = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => {
+        turns++;
+        return { data: null, cached: false, modelCalls: 2, repaired: false, inputTokens: 100, outputTokens: 10 };
+      },
+      render: async () => ({ images: [], dpi: 110 }),
+      store: async () => null,
+    },
+  });
+  assert.equal(turns, 8, "two provider requests per failed turn consume the same 16-call budget");
+  assert.equal(result.report.modelCalls, FULL_DOCUMENT_AGENT_LIMITS.maxProviderCalls);
+});
+
+test("full-document turn contract exposes the six adaptive tools and rejects vocabulary escape", () => {
+  const record = {
       tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.35, 0.65], divisionAxis: "vertical",
-      orientation: "N", elevation: "03", roomLabel: "STUDY", storey: "ground",
-      evidenceView: "elevation", evidenceRenderId: "fd_overview_02", frameBoxPt: [20, 20, 120, 160],
+      orientation: "N", elevation: "03", roomLabel: "STUDY", storey: "ground", faceOpeningCount: 1,
+      planPageNo: 1, wallOrder: 1,
+      evidenceView: "elevation", evidenceRenderId: "fd_overview_02", frameBoxNorm: [0.1, 0.1, 0.6, 0.8],
       confidence: "high", flags: [], basis: ["North face order and visible offset mullion."], note: null,
-    }],
-    declines: [],
-    complete: false,
   };
-  const parsed = validateFullDocumentTurn(raw, ["W1"], [1, 2]);
-  assert.equal(parsed.records[0].roomLabel, "STUDY");
-  assert.equal(parsed.renderRequests[0].dpi, 220);
-  const upperLevel = validateFullDocumentTurn({
-    ...raw, records: [{ ...raw.records[0], storey: "LEVEL 2" }],
-  }, ["W1"], [1, 2]);
-  assert.equal(upperLevel.records[0].storey, "LEVEL 2");
-  const partial = validateFullDocumentTurn({
-    ...raw,
-    records: [raw.records[0], { ...raw.records[0], tag: "W99" }],
-    renderRequests: [...raw.renderRequests, { pageNo: 99, dpi: 220 }],
-  }, ["W1"], [1, 2]);
-  assert.deepEqual(partial.records.map((record) => record.tag), ["W1"]);
-  assert.equal(partial.renderRequests.length, 1);
+  assert.deepEqual(validateFullDocumentTurn({ action: "list_pages", memory: "Map the set." }, ["W1"], [1, 2]).action, "list_pages");
+  assert.deepEqual(validateFullDocumentTurn({ action: "get_page_text", pages: [2], memory: "Read the title." }, ["W1"], [1, 2]).pages, [2]);
+  assert.deepEqual(validateFullDocumentTurn({ action: "get_text_tokens", pages: [1], memory: "Locate W1." }, ["W1"], [1, 2]).pages, [1]);
+  assert.equal(validateFullDocumentTurn({
+    action: "render", requests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 400, 300] }], memory: "Read the face.",
+  }, ["W1"], [1, 2]).requests[0].dpi, 220);
+  assert.equal(validateFullDocumentTurn({
+    action: "measure_lines", requests: [{ renderId: "r_face", axis: "vertical" }], memory: "Measure the mullion.",
+  }, ["W1"], [1, 2]).action, "measure_lines");
+  assert.equal(validateFullDocumentTurn({ action: "emit", records: [record], memory: "W1 resolved." }, ["W1"], [1, 2]).records[0].roomLabel, "STUDY");
+  assert.deepEqual(
+    validateFullDocumentTurn({ action: "emit", records: [{ ...record, tag: "W99" }], memory: "Invalid." }, ["W1"], [1, 2]).contractRejections,
+    [{ tag: "W99", reasons: ["unknown_tag"] }],
+  );
+  assert.equal(validateFullDocumentTurn({ action: "finish", memory: "Coverage complete." }, ["W1"], [1, 2]).action, "finish");
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
-  assert.ok(skill.responseSchema.properties.records);
-  assert.equal(skill.promptVersion, "v3", "review instructions must invalidate cached v2 turns");
-  assert.ok(FULL_DOCUMENT_AGENT_LIMITS.maxTurns <= 4, "the new path must stay cost-bounded");
+  assert.ok(skill.responseSchema.properties.action);
+  assert.equal(skill.promptVersion, "v5", "the tool-loop contract must invalidate cached page-coordinate answers");
+});
+
+test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
+  const inputs = [];
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (input.turn === 1) return { action: "finish", memory: "Too early." };
+        if (input.turn === 2) return { action: "render", requests: [{ pageNo: 1, dpi: 200 }], memory: "Render A." };
+        const evidenceRenderId = input.turn === 3 ? "missing" : "fd_t002_01";
+        return {
+          action: "emit", memory: "Emit W1.", records: [{
+            tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+            orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+            evidenceView: "elevation", evidenceRenderId, frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
+            confidence: "high", flags: [], basis: ["Visible fixed frame on Elevation A."], note: null,
+          }],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(inputs[1].observations[0].reason, "finish_not_allowed_with_pending_openings");
+  assert.deepEqual(inputs[3].observations[0].rejected, [{ tag: "W1", reasons: ["evidence_render_or_frame_invalid"] }]);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.equal(result.readings[0].split.units[0].operation, "fixed");
 });
 
 test("full-document agent starts text-only, preserves set context, and can correct a prior room candidate", async () => {
@@ -1857,16 +2086,16 @@ test("full-document agent starts text-only, preserves set context, and can corre
       runTurn: async (input) => {
         inputs.push(input);
         if (input.turn === 1) return {
+          action: "render",
           memory: "W1 belongs to STUDY on the north face; crop Elevation A.",
-          renderRequests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 100, 100] }],
-          records: [], declines: [], complete: false,
+          requests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 100, 100] }],
         };
         return {
-          memory: "All scheduled openings resolved.", renderRequests: [], declines: [], complete: true,
+          action: "emit", memory: "All scheduled openings resolved.", declines: [],
           records: [{
             tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
-            orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
-            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+            orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground", planPageNo: 1, wallOrder: 1,
+            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
             confidence: "high", flags: [], basis: ["W1 tag is beside STUDY; close elevation shows an offset mullion."], note: null,
           }],
         };
@@ -1885,19 +2114,19 @@ test("full-document agent starts text-only, preserves set context, and can corre
   assert.equal(inputs.length, 2);
   assert.equal(inputs[0].harvest.schedule[0].priorRoomCandidate, "ENTRY");
   assert.equal(inputs[0].imageDataUrls.length, 0, "the planning turn must not pre-render whole sheets");
-  assert.ok(inputs[1].history.some((item) => /STUDY/.test(item.memory)));
+  assert.match(inputs[1].workingMemory, /STUDY/);
+  assert.equal(inputs[1].observations[0].tool, "render");
   assert.ok(inputs[1].imageDataUrls.some((item) => item.renderId === "fd_t001_01"));
-  assert.equal(renderRequests.length, 2, "the accepted multi-unit opening gets one deterministic measurement crop");
-  assert.deepEqual(renderRequests[1].crops, [[10, 10, 90, 90]], "measurement uses the exact model-located frame");
-  assert.equal(result.report.steps.renderCrop.pagesRendered, 2);
-  assert.equal(result.report.steps.renderCrop.cropsMade, 2);
+  assert.equal(renderRequests.length, 1, "the face render is reused as evidence without a compulsory per-opening crop");
+  assert.equal(result.report.steps.renderCrop.pagesRendered, 1);
+  assert.equal(result.report.steps.renderCrop.cropsMade, 1);
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings[0].roomLabel, "STUDY", "plan context is a candidate, not an authority");
-  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [685, 1365], "measured divider wins over the model's 30/70 estimate");
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [615, 1435]);
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
 });
 
-test("full-document agent never materializes an unmeasured model split", async () => {
+test("full-document agent keeps an evidence-backed split when optional line measurement disagrees", async () => {
   let turn = 0;
   const result = await runFullDocumentAgent({
     fileId: "f1",
@@ -1912,13 +2141,13 @@ test("full-document agent never materializes an unmeasured model split", async (
       runTurn: async () => {
         turn++;
         return turn === 1
-          ? { memory: "Render the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false }
+          ? { action: "render", memory: "Render the face.", requests: [{ pageNo: 1, dpi: 110 }] }
           : {
-              memory: "W1 appears 30/70.", renderRequests: [], declines: [], complete: true,
+              action: "emit", memory: "W1 appears 30/70.", declines: [],
               records: [{
                 tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
-                orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground",
-                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+                orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground", planPageNo: null, wallOrder: null,
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
                 confidence: "high", flags: [], basis: ["Two apparent panes."], note: null,
               }],
             };
@@ -1933,11 +2162,14 @@ test("full-document agent never materializes an unmeasured model split", async (
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(result.report.perOpening[0].outcome, "not_read");
-  assert.equal(result.report.steps.read.returned, 0);
-  assert.equal(result.readings[0].confidence, "low");
-  assert.equal(result.readings[0].split.units.length, 1, "the schedule fallback wins over the model's unsupported two-unit estimate");
-  assert.match(result.readings[0].gapNote, /exact frame crop/i);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.equal(result.report.steps.read.returned, 1);
+  assert.equal(result.readings[0].confidence, "high");
+  assert.deepEqual(
+    result.readings[0].split.units.map((unit) => unit.derivedWidthMm),
+    [615, 1_435],
+    "the schedule fixes the overall width and the agent owns the visible 30/70 composition",
+  );
 });
 
 test("AC-2: full-document rails flag a composition that omits the scheduled operation", async () => {
@@ -1955,13 +2187,13 @@ test("AC-2: full-document rails flag a composition that omits the scheduled oper
       runTurn: async () => {
         turn++;
         return turn === 1
-          ? { memory: "Render the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false }
+          ? { action: "render", memory: "Render the face.", requests: [{ pageNo: 1, dpi: 110 }] }
           : {
-              memory: "Two fixed panes are visible.", renderRequests: [], declines: [], complete: true,
+              action: "emit", memory: "Two fixed panes are visible.", declines: [],
               records: [{
                 tag: "W10", operations: ["fixed", "fixed"], unitRatios: [0.5, 0.5], divisionAxis: "vertical",
-                orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
-                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
+                orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
                 confidence: "high", flags: [], basis: ["Two plain panes are visible."], note: null,
               }],
             };
@@ -2004,32 +2236,34 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
       runTurn: async (input) => {
         inputs.push(input);
         turn++;
-        if (turn === 1) return { memory: "Render both faces.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
-        if (input.reviewRecords) {
-          const ids = new Map(input.imageDataUrls.map((image, index) => [input.reviewRecords[index].tag, image.renderId]));
+        if (turn === 1) return { action: "render", memory: "Render both faces.", requests: [{ pageNo: 1, dpi: 110 }] };
+        if (input.escalationRecord) {
+          const parent = input.escalationRecord;
           return {
-            memory: "W10 corrected; W8 remains contradictory.", renderRequests: [], declines: [], complete: true,
-            records: input.reviewRecords.map((parent) => ({
+            action: "emit", memory: "Targeted record checked.", declines: [],
+            records: [{
               ...parent,
               operations: parent.tag === "W10" ? ["awning", "fixed"] : parent.operations,
-              evidenceRenderId: ids.get(parent.tag), confidence: "high", flags: [],
-            })),
+              evidenceRenderId: input.imageDataUrls[0].renderId,
+              frameBoxNorm: [0, 0, 1, 1],
+              confidence: "high", flags: [],
+            }],
           };
         }
-        const record = (tag, operations, frameBoxPt, confidence = "high", flags = []) => ({
+        const record = (tag, operations, frameBoxNorm, confidence = "high", flags = []) => ({
           tag, operations, unitRatios: operations.map(() => 1 / operations.length), divisionAxis: "vertical",
-          orientation: "N", elevation: tag === "W10" ? "C" : "D", roomLabel: null, storey: "first",
-          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt,
+          orientation: "N", elevation: tag === "W10" ? "C" : "D", roomLabel: null, storey: "first", planPageNo: null, wallOrder: null,
+          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm,
           confidence, flags, basis: ["Opening visible."], note: null,
         });
         return {
-          memory: "Both openings read.", renderRequests: [], declines: [], complete: true,
+          action: "emit", memory: "Both openings read.", declines: [],
           records: [
-            record("W1", ["fixed"], [0, 50, 20, 80], "low", ["agentEvidenceWeak"]),
-            record("W2", ["fixed"], [30, 50, 50, 80], "low", ["agentEvidenceWeak"]),
-            record("W3", ["fixed"], [60, 50, 80, 80], "low", ["agentEvidenceWeak"]),
-            record("W10", ["fixed", "fixed"], [0, 0, 30, 30]),
-            record("W8", ["awning", "fixed"], [60, 0, 90, 30]),
+            record("W1", ["fixed"], [0, 0.5, 0.2, 0.8], "low", ["agentEvidenceWeak"]),
+            record("W2", ["fixed"], [0, 0.5, 0.2, 0.8], "low", ["agentEvidenceWeak"]),
+            record("W3", ["fixed"], [0.6, 0.5, 0.8, 0.8], "low", ["agentEvidenceWeak"]),
+            record("W10", ["fixed", "fixed"], [0, 0, 0.3, 0.3]),
+            record("W8", ["awning", "fixed"], [0.6, 0, 0.9, 0.3]),
           ],
         };
       },
@@ -2043,9 +2277,9 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(inputs.length, 3, "all flagged records share one extra model turn");
-  assert.equal(inputs[2].reviewRecords.length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
-  assert.deepEqual(inputs[2].reviewRecords.slice(0, 2).map((record) => record.tag), ["W10", "W8"], "schedule conflicts outrank generic weak reads");
+  const escalations = inputs.filter((input) => input.escalationRecord);
+  assert.equal(escalations.length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  assert.deepEqual(escalations.map((input) => input.escalationRecord.tag), ["W10", "W8", "W3"], "schedule conflicts outrank generic weak reads and duplicate identities do not consume close-up slots");
   assert.equal(renderRequests.filter((request) => request.threshold === 250).length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
   const w10 = result.readings.find((reading) => reading.externalRef === "W10");
   const w8 = result.readings.find((reading) => reading.externalRef === "W8");
@@ -2053,13 +2287,16 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
   assert.ok(!w10.flags.includes("scheduleDrawingMismatch"));
   assert.deepEqual(w8.split.units.map((unit) => unit.operation), ["awning", "fixed"]);
   assert.ok(w8.flags.includes("scheduleDrawingMismatch"), "a contradictory review cannot replace the original");
-  assert.ok(result.report.steps.read.retriedWithThreshold >= 1);
+  assert.equal(result.report.steps.read.retriedWithThreshold, 0);
+  assert.equal(result.report.steps.read.targetedReviews, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  assert.ok(result.report.perOpening.find((item) => item.tag === "W10").corrections.some((item) =>
+    item.stage === "escalation" && item.outcome === "replaced"));
+  assert.ok(result.report.perOpening.find((item) => item.tag === "W8").corrections.some((item) =>
+    item.stage === "escalation" && item.outcome === "kept"));
 });
 
-test("full-document agent prioritizes automatic legibility repairs over discretionary renders", async () => {
-  const pages = Array.from({ length: 13 }, (_, index) => ({
-    pageNo: index + 1, text: index ? `ELEVATION ${index + 1}` : "ELEVATION A", words: [],
-  }));
+test("full-document agent accepts several openings from a legible face render without forced close-ups", async () => {
+  const pages = [{ pageNo: 1, text: "ELEVATION A", words: [] }];
   const captured = [];
   let turn = 0;
   await runFullDocumentAgent({
@@ -2075,19 +2312,16 @@ test("full-document agent prioritizes automatic legibility repairs over discreti
     deps: {
       runTurn: async () => {
         turn++;
-        if (turn === 1) return { memory: "Get the face.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
-        if (turn === 2) return {
-          memory: "W1 needs a closer crop.",
-          renderRequests: Array.from({ length: 12 }, (_, index) => ({ pageNo: index + 2, dpi: 110 })),
+        if (turn === 1) return { action: "render", memory: "Get the face.", requests: [{ pageNo: 1, dpi: 200 }] };
+        return {
+          action: "emit", memory: "W1 is legible on the face.", declines: [],
           records: [{
             tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
-            orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
-            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 20, 20],
-            confidence: "high", flags: [], basis: ["Broad view locates W1."], note: null,
+            orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+            evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.25, 0.3],
+            confidence: "high", flags: [], basis: ["Face view visibly shows one plain frame."], note: null,
           }],
-          declines: [], complete: false,
         };
-        return { memory: "Unable to finish W1.", renderRequests: [], records: [], declines: [{ tag: "W1", reason: "Still illegible." }], complete: true };
       },
       render: async (request) => {
         captured.push(request);
@@ -2096,11 +2330,8 @@ test("full-document agent prioritizes automatic legibility repairs over discreti
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(captured[1].pageNo, 1);
-  assert.equal(captured[1].dpi, 250);
-  assert.ok(captured[1].crops?.length, "the first bounded request after rejection is the automatic close-up");
-  assert.equal(captured.length, 1 + FULL_DOCUMENT_AGENT_LIMITS.maxRenderRequests);
-  assert.ok(!captured.some((request) => request.pageNo === 13), "the last discretionary request yields to the repair crop");
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].dpi, 200);
 });
 
 test("accepted low-confidence reads are complete and detail scales are not compared with elevations", async () => {
@@ -2121,16 +2352,16 @@ test("accepted low-confidence reads are complete and detail scales are not compa
     deps: {
       runTurn: async () => {
         turn++;
-        if (turn === 1) return { memory: "Render the mixed sheet.", renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false };
-        const record = (tag, evidenceView, frameBoxPt, flags = [], orientation = "N") => ({
+        if (turn === 1) return { action: "render", memory: "Render the mixed sheet.", requests: [{ pageNo: 1, dpi: 110 }] };
+        const record = (tag, evidenceView, frameBoxNorm, flags = [], orientation = "N") => ({
           tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
-          orientation, elevation: "A", roomLabel: null, storey: "ground", evidenceView,
-          evidenceRenderId: "fd_t001_01", frameBoxPt, confidence: "high", flags,
+          orientation, elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null, evidenceView,
+          evidenceRenderId: "fd_t001_01", frameBoxNorm, confidence: "high", flags,
           basis: ["Distinct visible frame."], note: null,
         });
         return {
-          memory: "Both records resolved.", renderRequests: [], declines: [], complete: true,
-          records: [record("W1", "elevation", [10, 10, 30, 40], ["northAssumed"], null), record("W2", "detail", [50, 10, 90, 40])],
+          action: "emit", memory: "Both records resolved.", declines: [],
+          records: [record("W1", "elevation", [0.1, 0.1, 0.3, 0.4], ["northAssumed"], null), record("W2", "detail", [0.5, 0.1, 0.9, 0.4])],
         };
       },
       render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi }),
@@ -2141,6 +2372,115 @@ test("accepted low-confidence reads are complete and detail scales are not compa
   assert.equal(result.readings[0].confidence, "low");
   assert.equal(result.readings[1].confidence, "high", "detail and elevation widths are at unrelated scales");
   assert.ok(!result.readings[1].flags.includes("drawingInconsistency"));
+});
+
+test("full-document close rail flags reversed width order on the same face without rewriting either record", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 2_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        if (input.escalationRecord) return { action: "finish", memory: "Leave the flagged parent for Ops." };
+        turn++;
+        if (turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
+        const record = (tag, frameBoxNorm) => ({
+          tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+          orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm,
+          confidence: "high", flags: [], basis: ["Distinct frame on Elevation A."], note: null,
+        });
+        return {
+          action: "emit", memory: "Both frames identified.", declines: [],
+          records: [record("W1", [0.05, 0.1, 0.75, 0.5]), record("W2", [0.76, 0.1, 0.96, 0.5])],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.ok(result.readings.every((reading) => reading.flags.includes("drawingInconsistency")));
+  assert.deepEqual(result.readings.map((reading) => reading.split.units[0].derivedWidthMm), [1_000, 2_000]);
+});
+
+test("full-document close rail flags a reported face-count mismatch without inventing a record", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        if (input.escalationRecord) return { action: "finish", memory: "Leave the face flag for Ops." };
+        turn++;
+        if (turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
+        const record = (tag, frameBoxNorm) => ({
+          tag, operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
+          orientation: "N", elevation: "A", roomLabel: null, storey: "ground", faceOpeningCount: 3, planPageNo: null, wallOrder: null,
+          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm,
+          confidence: "high", flags: [], basis: ["Elevation A visibly contains three scheduled frames."], note: null,
+        });
+        return {
+          action: "emit", memory: "Two of three face records identified.", declines: [],
+          records: [record("W1", [0.05, 0.1, 0.35, 0.5]), record("W2", [0.55, 0.1, 0.85, 0.5])],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 1_000 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.readings.length, 2);
+  assert.ok(result.readings.every((reading) => reading.flags.includes("drawingInconsistency")));
+});
+
+test("full-document identity rail checks wall order even when face count is not stated", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
+    ],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        if (input.escalationRecord) return { action: "finish", memory: "Keep the flagged parent." };
+        if (++turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
+        return {
+          action: "emit", memory: "Both records emitted.", declines: [],
+          records: [
+            hybridRecord({ tag: "W1", wallOrder: 1, faceOpeningCount: null, frameBoxNorm: [0.7, 0.1, 0.9, 0.5] }),
+            hybridRecord({ tag: "W2", wallOrder: 2, faceOpeningCount: null, frameBoxNorm: [0.1, 0.1, 0.3, 0.5] }),
+          ],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.ok(result.readings.every((reading) => reading.flags.includes("drawingInconsistency")));
 });
 
 test("drawing parser mode keeps legacy, full-document, and disabled paths distinct", () => {
@@ -2206,13 +2546,14 @@ test("full-document agent cannot overwrite an opening accepted on an earlier tur
         turn++;
         const record = (tag, operation) => ({
           tag, operations: [operation], unitRatios: [1], divisionAxis: "vertical",
-          orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
-          evidenceView: "elevation", evidenceRenderId: "fd_overview_01", frameBoxPt: [10, 10, 90, 90],
+          orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+          evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
           confidence: "high", flags: [], basis: ["Visible frame and operation symbol."], note: null,
         });
-        return turn === 1
-          ? { memory: "W1 resolved; W2 pending.", renderRequests: [], records: [record("W1", "fixed")], declines: [], complete: false }
-          : { memory: "W2 declined.", renderRequests: [], records: [record("W1", "awning")], declines: [{ tag: "W2", reason: "Not visible." }], complete: true };
+        if (turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
+        return turn === 2
+          ? { action: "emit", memory: "W1 resolved; W2 pending.", records: [record("W1", "fixed")], declines: [] }
+          : { action: "emit", memory: "W2 declined.", records: [record("W1", "awning")], declines: [{ tag: "W2", reason: "Not visible." }] };
       },
       render: async () => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 }], dpi: 110 }),
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
@@ -2253,8 +2594,8 @@ test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-d
     runFullAgentTurn: async () => {
       fullCalls++;
       return {
-        memory: "No drawing evidence for W1.", renderRequests: [], records: [],
-        declines: [{ tag: "W1", reason: "Not visible." }], complete: true,
+        action: "emit", memory: "No drawing evidence for W1.", records: [],
+        declines: [{ tag: "W1", reason: "Not visible." }],
       };
     },
   };
@@ -2269,13 +2610,13 @@ test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-d
   assert.equal(result.readings.length, 1, "a declined full-agent read degrades to the existing schedule fallback");
 });
 
-test("AC-7: agentic_full combines PDFs into one namespaced plan-set run", async () => {
-  const inputs = [];
-  const renders = [];
-  const bytesByKey = new Map([["one.pdf", new Uint8Array([1])], ["two.pdf", new Uint8Array([2])]]);
+test("agentic_full refuses a multi-PDF plan set before loading files", async () => {
+  let gets = 0;
+  let inspections = 0;
+  let turns = 0;
   const env = {
     FILES: {
-      get: async (key) => ({ arrayBuffer: async () => bytesByKey.get(key).buffer }),
+      get: async () => { gets++; return { arrayBuffer: async () => new ArrayBuffer(1) }; },
       put: async () => {},
     },
     PLAN_PARSE: {},
@@ -2283,53 +2624,25 @@ test("AC-7: agentic_full combines PDFs into one namespaced plan-set run", async 
   const result = await enrichOpenings(env, {
     projectId: "p", aiRunId: "r",
     files: [{ fileId: "f1", r2Key: "one.pdf" }, { fileId: "f2", r2Key: "two.pdf" }],
-    scheduleRows: [
-      { tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
-      { tag: "W2", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" },
-    ],
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
   }, {
-    inspect: async (_ns, _project, bytes) => ({
+    inspect: async () => { inspections++; return ({
       inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
         { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
       ] },
-      pages: [{ pageNo: 1, text: bytes[0] === 1 ? "WINDOW SCHEDULE W1" : "ELEVATION A W1", words: [] }],
-    }),
-    render: async (_ns, _project, bytes, request) => {
-      renders.push({ byte: bytes[0], pageNo: request.pageNo });
-      return { images: (request.crops ?? [null]).map(() => ({
-        pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
-        profile: { mullionXs: [], transomYs: [] },
-      })), dpi: request.dpi };
-    },
+      pages: [{ pageNo: 1, text: "ELEVATION A W1", words: [] }],
+    }); },
+    render: async () => { throw new Error("multi-PDF input must not render"); },
     runElevation: async () => null,
     runFloorplan: async () => null,
     runOpening: async () => null,
-    runFullAgentTurn: async (input) => {
-      inputs.push(input);
-      return input.turn === 1
-        ? { memory: "Elevation is in the second file.", renderRequests: [{ pageNo: 2, dpi: 150 }], records: [], declines: [], complete: false }
-        : {
-            memory: "W1 resolved; W2 not visible.", renderRequests: [], declines: [{ tag: "W2", reason: "Not visible." }], complete: true,
-            records: [{
-              tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
-              orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
-              evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxPt: [10, 10, 90, 90],
-              confidence: "high", flags: [], basis: ["W1 visible in file two."], note: null,
-            }],
-          };
-    },
+    runFullAgentTurn: async () => { turns++; throw new Error("multi-PDF input must not call the model"); },
   });
-  assert.equal(inputs.filter((input) => input.turn === 1).length, 1, "the opening set is not rerun per PDF");
-  assert.deepEqual(inputs[0].harvest.pages.map(({ pageNo, sourceFileId, sourcePageNo }) => ({ pageNo, sourceFileId, sourcePageNo })), [
-    { pageNo: 1, sourceFileId: "f1", sourcePageNo: 1 },
-    { pageNo: 2, sourceFileId: "f2", sourcePageNo: 1 },
-  ]);
-  assert.ok(renders.every((render) => render.byte === 2 && render.pageNo === 1), "global page 2 routes to file two, local page 1");
-  assert.equal(result.readings.length, 2);
-  assert.equal(result.readings[0].sourceFileId, "f2");
-  assert.equal(result.readings[0].pageNo, 1);
-  assert.equal(result.readings[1].sourceFileId, null, "a plan-set fallback must not invent a file foreign key");
-  assert.deepEqual(result.report.files[0].sourceFileIds, ["f1", "f2"]);
+  assert.equal(gets, 0);
+  assert.equal(inspections, 0);
+  assert.equal(turns, 0);
+  assert.deepEqual(result.readings, []);
+  assert.deepEqual(result.report.files.map((file) => file.steps.failedPhase), ["multiple_plan_pdfs", "multiple_plan_pdfs"]);
 });
 
 test("full-document agent can resolve the standard 19-opening set in one visual turn after planning", async () => {
@@ -2351,19 +2664,20 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
       runTurn: async () => {
         modelCalls++;
         if (modelCalls === 1) return {
+          action: "render",
           memory: "Render Elevation A for the complete opening set.",
-          renderRequests: [{ pageNo: 1, dpi: 110 }], records: [], declines: [], complete: false,
+          requests: [{ pageNo: 1, dpi: 110 }],
         };
         return {
-          memory: "All 19 frames resolved together on Elevation A.", renderRequests: [], declines: [], complete: true,
+          action: "emit", memory: "All 19 frames resolved together on Elevation A.", declines: [],
           records: scheduleRows.map((row, index) => {
             const x0 = 10 + (index % 5) * 180;
             const y0 = 10 + Math.floor(index / 5) * 200;
             return {
               tag: row.tag, operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
-              orientation: "N", elevation: "A", roomLabel: null, storey: "ground",
+              orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
               evidenceView: "elevation", evidenceRenderId: "fd_t001_01",
-              frameBoxPt: [x0, y0, x0 + 100, y0 + 100], confidence: "high", flags: [],
+              frameBoxNorm: [x0 / 1_000, y0 / 1_000, (x0 + 100) / 1_000, (y0 + 100) / 1_000], confidence: "high", flags: [],
               basis: ["Distinct frame visible in the complete elevation set."], note: null,
             };
           }),
@@ -2383,12 +2697,12 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
     },
   });
   assert.equal(modelCalls, 2);
-  assert.equal(renderCalls, 3, "nineteen exact crops are batched into 12 + 7 after the one overview");
+  assert.equal(renderCalls, 1, "one face render can evidence the whole face without compulsory per-opening crops");
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings.length, 19);
   assert.ok(result.readings.every((reading) => reading.confidence === "high"));
   assert.ok(result.readings.every((reading) =>
-    reading.split.units[0].derivedWidthMm === 400 && reading.split.units[1].derivedWidthMm === 600));
+    reading.split.units[0].derivedWidthMm === 300 && reading.split.units[1].derivedWidthMm === 700));
   assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxRecords, 60);
 });
 

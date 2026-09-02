@@ -45,11 +45,12 @@ Before promotion, `agentic_full` must produce 19/19 on three consecutive runs
 with model, prompt version, duration and cost recorded. The legacy semantic
 output must not regress.
 
-## AC-7 — Multiple uploaded PDFs form one plan set
+## AC-7 — One plan PDF per full-document run
 
-When a project supplies several plan PDFs, Stage A preserves file identity but
-the full-document agent reasons over one combined plan-set context. Duplicate
-schedule tags across files cannot become last-write-wins readings.
+`agentic_full` accepts one plan PDF containing the schedule and drawings. If the
+pipeline supplies several plan PDFs, advanced drawing enrichment is skipped and
+the existing schedule result remains available; PDFs are never combined into a
+single in-memory agent context.
 
 ## AC-8 — Bounded escalation
 

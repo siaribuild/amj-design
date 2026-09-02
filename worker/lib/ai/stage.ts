@@ -77,6 +77,10 @@ export interface StageResult<O> {
   stageRunId: string | null;
   warnings: string[];
   failureKind: SkillFailureKind | null;
+  modelCalls: number;
+  repaired: boolean;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 interface CachedRow { id: string; result_r2_key: string | null }
@@ -118,6 +122,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
           ok: true, data, cached: true,
           escalation: { triggered: false, reasons: [], taken: false },
           stageRunId: hit.id, warnings: ["stage_replayed"], failureKind: null,
+          modelCalls: 0, repaired: false, inputTokens: 0, outputTokens: 0,
         };
       }
     }
@@ -140,6 +145,10 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   let run = await runSkill(env, skill, input, {
     telemetry: { aiRunId, projectId },
   });
+  let modelCalls = run.modelCalls;
+  let inputTokens = run.inputTokens;
+  let outputTokens = run.outputTokens;
+  let repaired = run.repaired;
 
   // ── Escalation decision — always EVALUATED, only conditionally TAKEN ─────────
   const signals: StageSignals = { ...(args.signals?.(run.data, run) ?? {}) };
@@ -151,6 +160,10 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
       model: escalationModel(env),
       telemetry: { aiRunId, projectId },
     });
+    modelCalls += escalated.modelCalls;
+    inputTokens += escalated.inputTokens;
+    outputTokens += escalated.outputTokens;
+    repaired ||= escalated.repaired;
     if (escalated.ok) { run = escalated; taken = true; }
   }
 
@@ -185,12 +198,12 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   ).bind(
     run.modelId, skill.promptVersion, status, r2Key, run.outputHash,
     decision.triggered ? 1 : 0, decision.reasons.length ? JSON.stringify(decision.reasons) : null, taken ? 1 : 0,
-    run.inputTokens || null, run.outputTokens || null, stageRunId,
+    inputTokens || null, outputTokens || null, stageRunId,
   ).run().catch(() => { /* the stage record is observability, never a blocker */ });
 
   return {
     ok: run.ok, data: run.data, cached: false,
     escalation: { ...decision, taken }, stageRunId, warnings: run.warnings,
-    failureKind: run.failureKind,
+    failureKind: run.failureKind, modelCalls, repaired, inputTokens, outputTokens,
   };
 }

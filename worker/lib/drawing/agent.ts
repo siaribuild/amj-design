@@ -439,7 +439,7 @@ function emptyReport(fileId: string, inspected: InspectResponse): DrawingFileRep
       selectPages: { selected: [], of: inspected.inventory.pageCount },
       elevationRegions: [],
       renderCrop: { pagesRendered: 0, cropsMade: 0 },
-      read: { attempted: 0, returned: 0, declined: 0, retriedWithThreshold: 0 },
+      read: { attempted: 0, returned: 0, declined: 0, retriedWithThreshold: 0, targetedReviews: 0 },
       placements: { fromText: 0, fromModelFallback: 0, unplaced: 0 },
       northAssumed: false,
     },

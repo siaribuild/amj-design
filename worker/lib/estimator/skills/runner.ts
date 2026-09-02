@@ -282,11 +282,12 @@ export async function runSkill<I, O>(
     return {
       ok: false, data: null, warnings: ["skill_call_failed", "skill_call_transient", "skill_call_error:ai_unavailable"],
       modelId: model, promptVersion: skill.promptVersion, outputHash: null, repaired: false,
-      inputTokens: 0, outputTokens: 0, failureKind: "provider_unavailable",
+      modelCalls: 0, inputTokens: 0, outputTokens: 0, failureKind: "provider_unavailable",
     };
   }
   const warnings: string[] = [];
   let inputTokens = 0, outputTokens = 0;
+  let modelCalls = 0;
   let rawText = "";
   let repaired = false;
 
@@ -296,6 +297,7 @@ export async function runSkill<I, O>(
     skill,
   );
   try {
+    modelCalls++;
     const out: any = await callModel(
       env,
       model,
@@ -323,7 +325,7 @@ export async function runSkill<I, O>(
     warnings.push(failureWarning(failureKind));
     return {
       ok: false, data: null, warnings, modelId: model, promptVersion: skill.promptVersion,
-      outputHash: null, repaired, inputTokens, outputTokens, failureKind,
+      outputHash: null, repaired, modelCalls, inputTokens, outputTokens, failureKind,
     };
   }
 
@@ -345,6 +347,7 @@ export async function runSkill<I, O>(
         "INVALID RESPONSE:",
         rawText.slice(0, 16000),
       ].join("\n\n");
+      modelCalls++;
       const out: any = await callModel(
         env,
         model,
@@ -373,7 +376,7 @@ export async function runSkill<I, O>(
   const outputHash = await sha256hex(new TextEncoder().encode(rawText)).catch(() => null);
   return {
     ok: data != null, data, warnings, modelId: model, promptVersion: skill.promptVersion,
-    outputHash, repaired, inputTokens, outputTokens, failureKind: data != null ? null : failureKind,
+    outputHash, repaired, modelCalls, inputTokens, outputTokens, failureKind: data != null ? null : failureKind,
     ...(data == null ? { rejectedRaw: rawText.slice(0, 20000) } : {}),
   };
 }

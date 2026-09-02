@@ -6,8 +6,8 @@
    surface named conflicts through the existing ops review channel.
 3. [x] RED/GREEN: make drawing flags field-scoped so orientation and
    manufacturability warnings do not erase unrelated facts.
-4. [x] RED/GREEN: combine multiple uploaded plan PDFs into one namespaced plan-set
-   harvest and prevent duplicate last-write-wins readings.
+4. [x] RED/GREEN: enforce the one-plan-PDF boundary before loading bytes or
+   calling the full-document agent.
 5. [x] RED/GREEN: add bounded targeted escalation and re-run deterministic rails on
    any proposed replacement.
 6. [x] Run focused suites after each slice, then the full gate with the recorded

@@ -42,6 +42,8 @@ export interface SkillRun<TOutput> {
   rejectedRaw?: string;
   /** True when the §22.3 single repair pass produced the accepted output. */
   repaired: boolean;
+  /** Actual provider requests, including a schema-repair request when attempted. */
+  modelCalls: number;
   inputTokens: number;
   outputTokens: number;
   /** Machine-readable failure class for queue retry policy and diagnostics. */

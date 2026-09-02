@@ -75,13 +75,14 @@ export function documentChecklist(
     if (total == null) return "";
     switch (phase?.drawingsPhase) {
       case "inventory": return ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
-      case "elevation_inventory": return " · finding elevation views";
-      case "floorplan_location": return ` · locating ${total} opening${total === 1 ? "" : "s"}`;
+      case "elevation_inventory": return " · finding relevant drawing views";
+      case "floorplan_location": return ` · mapping ${total} opening${total === 1 ? "" : "s"} to walls`;
       case "orientation": return " · checking drawing orientation";
-      case "render_crops": return " · preparing opening details";
+      case "render_crops": return " · reading elevation faces";
       case "opening_read": {
-        const currentOpening = Math.min(total, done + (done < total ? 1 : 0));
-        return ` · opening ${currentOpening} of ${total}`;
+        return done > 0
+          ? ` · ${Math.min(done, total)} of ${total} openings processed`
+          : ` · analysing ${total} opening${total === 1 ? "" : "s"}`;
       }
       default:
         return done > 0

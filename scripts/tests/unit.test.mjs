@@ -1660,7 +1660,7 @@ test("documentChecklist: a drawing read gets its own row, driven by counts, betw
   ]);
   assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 20 openings found");
   assert.equal(steps[current].key, "reading_openings", "still reading openings — not yet on the thermal step");
-  assert.match(steps[current].detail, /opening 8 of 20/);
+  assert.equal(steps[current].detail, " · 7 of 20 openings processed");
 });
 
 test("documentChecklist: page-wide drawing work is named instead of displaying a frozen opening zero", () => {
@@ -1669,7 +1669,16 @@ test("documentChecklist: page-wide drawing work is named instead of displaying a
   });
   assert.equal(steps.find((step) => step.key === "extracting_schedule").detail, " · 19 openings found");
   assert.equal(steps[current].key, "reading_openings");
-  assert.equal(steps[current].detail, " · finding elevation views");
+  assert.equal(steps[current].detail, " · finding relevant drawing views");
+});
+
+test("documentChecklist: face-batched agent milestones describe real work without fake opening counts", () => {
+  assert.equal(M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19, drawingsPhase: "floorplan_location",
+  }).steps[3].detail, " · mapping 19 openings to walls");
+  assert.equal(M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19, drawingsPhase: "render_crops",
+  }).steps[3].detail, " · reading elevation faces");
 });
 
 test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {
@@ -1677,7 +1686,14 @@ test("documentChecklist: all openings read (done === total) still shows as the c
     stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
   });
   assert.equal(steps[current].key, "reading_openings", "19/19 must stay the visible resting state, not snap to building_envelope");
-  assert.match(steps[current].detail, /opening 19 of 19/);
+  assert.equal(steps[current].detail, " · 19 of 19 openings processed");
+});
+
+test("documentChecklist: opening-read phase does not claim the first opening before an emit completes", () => {
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 0, drawingsTotal: 19, drawingsPhase: "opening_read",
+  });
+  assert.equal(steps[current].detail, " · analysing 19 openings");
 });
 
 test("documentChecklist: no drawings counts — today's six steps, unchanged, current on the real stage", () => {
