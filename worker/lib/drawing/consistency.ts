@@ -32,7 +32,6 @@ const iou = (a: CropBoxPt, b: CropBoxPt): number => {
 const flag = (items: ComparableReading[], value: DrawingFlag): void => {
   for (const item of items) {
     if (!item.proposal.flags.includes(value)) item.proposal.flags.push(value);
-    item.proposal.confidence = "low";
   }
 };
 
@@ -93,6 +92,19 @@ export function applyDrawingConsistencyFlags(
     const ordered = face.filter((reading) => reading.proposal.wallOrder != null);
     if (new Set(ordered.map((reading) => reading.proposal.wallOrder)).size !== ordered.length) {
       flag(ordered, "drawingInconsistency");
+    }
+    const elevationOrder = ordered
+      .filter((reading) => reading.proposal.evidenceView === "elevation")
+      .sort((a, b) => a.proposal.wallOrder! - b.proposal.wallOrder!);
+    if (elevationOrder.length > 2) {
+      const directions = new Set<number>();
+      for (let index = 1; index < elevationOrder.length; index++) {
+        const previous = frameBox(elevationOrder[index - 1]);
+        const current = frameBox(elevationOrder[index]);
+        const delta = (current[0] + current[2]) - (previous[0] + previous[2]);
+        if (delta) directions.add(Math.sign(delta));
+      }
+      if (directions.size > 1) flag(elevationOrder, "drawingInconsistency");
     }
   }
 }

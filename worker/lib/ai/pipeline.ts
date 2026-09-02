@@ -26,7 +26,7 @@ import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
 import { drawingParserMode, runDrawingEnrichmentStage } from "../drawing/enrich";
 import { setDrawingProgress } from "./jobs";
-import { applyDrawingOrientation, applyDrawingRoom, applyFullAgentRooms, applyKnownRooms, persistReadings, conflictReason, drawingFieldBlocked } from "../drawing/readings";
+import { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, persistReadings, conflictReason, drawingFieldBlocked } from "../drawing/readings";
 import type { DrawingReading } from "../drawing/contract";
 import { scheduleDrawingMismatch } from "../drawing/reconcile";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
@@ -820,9 +820,6 @@ export async function runAiExtraction(
     drawingReadings = result.readings;
     drawingReport = result.report;
     applyDrawingOrientation(model, drawingReadings);
-    if (drawingParserMode(env) === "full_document") {
-      applyFullAgentRooms(model, knownRooms, drawingReadings);
-    }
     if (drawingReport) {
       await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
         .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});

@@ -30,7 +30,7 @@ await build({
       export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
       export { elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill } from ${p("worker/lib/drawing/skills.ts")};
       export { assignOpenings } from ${p("worker/lib/drawing/assign.ts")};
-      export { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
+      export { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, conflictReason, persistReadings } from ${p("worker/lib/drawing/readings.ts")};
       export { enrichOpenings, runDrawingEnrichmentStage, drawingParserMode } from ${p("worker/lib/drawing/enrich.ts")};
       export { runGate } from ${p("scripts/drawing-gate.mjs")};
     `,
@@ -40,7 +40,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2569,7 +2569,7 @@ test("full-document turn contract exposes bounded adaptive tools and rejects voc
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
   assert.ok(skill.responseSchema.properties.action);
   assert.match(skill.buildPrompt({ imageDataUrls: [] }), /recovered.*planEvidenceRenderId/i);
-  assert.equal(skill.promptVersion, "v11", "recovered-composition validation must invalidate cached weaker answers");
+  assert.equal(skill.promptVersion, "v12", "geometry-priority instructions must invalidate cached weaker answers");
 });
 
 test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
@@ -2608,7 +2608,7 @@ test("full-document emit rejection returns to the same agent and finish cannot h
   assert.equal(result.readings[0].split.units[0].operation, "fixed");
 });
 
-test("full-document agent starts text-only, preserves set context, and can correct a prior room candidate", async () => {
+test("full-document agent starts text-only, preserves set context, and abstains from optional room labels", async () => {
   const inputs = [];
   const progress = [];
   const renderRequests = [];
@@ -2672,7 +2672,8 @@ test("full-document agent starts text-only, preserves set context, and can corre
   assert.equal(result.report.steps.renderCrop.pagesRendered, 1);
   assert.equal(result.report.steps.renderCrop.cropsMade, 1);
   assert.equal(result.report.modelCalls, 2);
-  assert.equal(result.readings[0].roomLabel, "STUDY", "plan context is a candidate, not an authority");
+  assert.equal(result.readings[0].roomState, "not_stated");
+  assert.equal(result.readings[0].roomLabel, null, "geometry evidence must not overwrite deterministic room context");
   assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [615, 1435]);
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
 });
@@ -3064,6 +3065,16 @@ test("full-document identity rail allows a mirrored face", () => {
   assert.deepEqual(readings.map((reading) => reading.proposal.flags), [[], []]);
 });
 
+test("full-document identity rail rejects a non-monotonic wall-order join", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 50]),
+    comparableWallReading(2, [70, 10, 90, 50]),
+    comparableWallReading(3, [40, 10, 60, 50]),
+  ];
+  applyDrawingConsistencyFlags(readings);
+  assert.ok(readings.every((reading) => reading.proposal.flags.includes("drawingInconsistency")));
+});
+
 test("full-document identity rail still rejects duplicate wall orders", () => {
   const readings = [
     comparableWallReading(1, [10, 10, 30, 50]),
@@ -3073,47 +3084,32 @@ test("full-document identity rail still rejects duplicate wall orders", () => {
   assert.ok(readings.every((reading) => reading.proposal.flags.includes("drawingInconsistency")));
 });
 
+test("deterministic consistency flags do not become model-evidence weakness", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 50]),
+    comparableWallReading(1, [70, 10, 90, 50]),
+  ];
+  applyDrawingConsistencyFlags(readings);
+  assert.deepEqual(readings.map((reading) => reading.proposal.confidence), ["high", "high"]);
+  assert.ok(readings.every((reading) => reading.proposal.flags.includes("drawingInconsistency")));
+});
+
+test("full-document prompt prioritises opening geometry and excludes room labels", () => {
+  const prompt = makeFullDocumentAgentSkill(["W1"], [1, 2]).buildPrompt({
+    turn: 1,
+    harvest: { schedule: [], pages: [], tagCandidates: [] },
+    pendingTags: ["W1"], acceptedTags: [], declinedTags: [], workingMemory: "", observations: [],
+    renderCatalog: [], imageDataUrls: [], turnsRemaining: 1,
+  });
+  assert.match(prompt, /faceOpeningCount is the number of openings on that face at the same storey/i);
+  assert.match(prompt, /Room labels are out of scope/i);
+  assert.match(prompt, /always set roomLabel to null/i);
+});
+
 test("drawing parser mode keeps legacy, full-document, and disabled paths distinct", () => {
   assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "auto_drawings" }), "legacy");
   assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "agentic_full" }), "full_document");
   assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "auto" }), "disabled");
-});
-
-test("full-agent rooms replace prior candidates in the model only when their evidence is trustworthy", () => {
-  const model = {
-    rooms: [
-      { roomId: "ground_entry", name: "ENTRY", level: "ground", areaM2: null, zoneType: null },
-      { roomId: "ground_study", name: "STUDY", level: "ground", areaM2: null, zoneType: null },
-    ],
-    openings: [
-      { externalRef: "W1", roomId: "ground_entry", level: "ground" },
-      { externalRef: "W2", roomId: "ground_entry", level: "ground" },
-      { externalRef: "W3", roomId: "ground_entry", level: "ground" },
-      { externalRef: "W4", roomId: "ground_entry", level: "ground" },
-    ],
-  };
-  const knownRooms = [
-    { externalRef: "W1", roomLabel: "ENTRY" },
-    { externalRef: "W2", roomLabel: "ENTRY" },
-    { externalRef: "W3", roomLabel: "ENTRY" },
-    { externalRef: "W4", roomLabel: "ENTRY" },
-  ];
-  applyFullAgentRooms(model, knownRooms, [
-    { externalRef: "W1", roomState: "value", roomLabel: "STUDY", confidence: "high", flags: [] },
-    { externalRef: "W2", roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["agentEvidenceWeak"] },
-    { externalRef: "Ｗ-3", roomState: "value", roomLabel: "GYM", confidence: "high", flags: [] },
-    { externalRef: "W4", roomState: "value", roomLabel: "STUDY", confidence: "low", flags: ["northAssumed"] },
-  ]);
-  assert.equal(model.openings[0].roomId, "ground_study");
-  assert.equal(knownRooms[0].roomLabel, "STUDY");
-  assert.equal(model.openings[1].roomId, "ground_entry");
-  assert.equal(knownRooms[1].roomLabel, "ENTRY");
-  const gym = model.rooms.find((room) => room.name === "GYM");
-  assert.ok(gym, "a trustworthy new room is added to the canonical model");
-  assert.equal(model.openings[2].roomId, gym.roomId);
-  assert.equal(knownRooms[2].roomLabel, "GYM");
-  assert.equal(model.openings[3].roomId, "ground_study", "orientation uncertainty does not erase room evidence");
-  assert.equal(knownRooms[3].roomLabel, "STUDY");
 });
 
 test("full-document agent cannot overwrite an opening accepted on an earlier turn", async () => {

@@ -467,6 +467,8 @@ The deterministic harvest supplies free facts from the PDF text layer. Schedule 
 
 Work face by face. Derive this set's elevation names, outside-view order, mirroring and north from this set. One elevation-face render should resolve several openings together using tag count, relative scheduled widths and head-height order. Use a tight 300 dpi crop only for something genuinely unclear.
 
+Opening geometry is the job: composition, unit order and proportions, elevation, storey and orientation. Room labels are out of scope: always set roomLabel to null. faceOpeningCount is the number of openings on that face at the same storey, not the total across storeys.
+
 Composition is judged from an elevation or architectural detail. Mullions divide side-by-side units; transoms divide stacked units; chevrons identify an operable sash whose operation is named from the schedule type; plain panes are fixed; arrows identify sliding panels; dense horizontal lines identify louvres. A schedule type names a visible operation but never proves a split.
 
 unitRatios describe the visible proportions in outside-view order. The Worker applies them to the authoritative schedule width, with the final unit taking the exact remainder. measure_lines is optional evidence: use it when useful, but a darkness profile is not the decision-maker and disagreement is not a reason to discard what the drawing visibly shows.
@@ -518,7 +520,7 @@ const recordSchema = {
 export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<FullDocumentAgentInput, FullDocumentTurn> {
   return {
     id: "full_document_agent_turn",
-    promptVersion: "v11",
+    promptVersion: "v12",
     responseSchema: {
       type: "object",
       properties: {
@@ -608,7 +610,7 @@ function readingFromProposal(
     split,
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated", elevation: proposal.elevation,
-    roomState: proposal.roomLabel ? "value" : "not_stated", roomLabel: proposal.roomLabel,
+    roomState: "not_stated", roomLabel: null,
     gapCode: null,
     gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...(proposal.storey ? [`storey:${proposal.storey}`] : [])].join(" | ").slice(0, 1000),
     cropKey: render.cropKey, pageNo: render.sourcePageNo, sheetRef: proposal.elevation,
