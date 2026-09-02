@@ -3587,6 +3587,74 @@ test("runDrawingEnrichmentStage: one cached site-plan north read completes every
   assert.equal(second.report.files[0].modelCalls, 2, "a cached north read must add no model call");
 });
 
+test("full-document fallback preserves deterministic Stage A heading and elevation", async () => {
+  const pages = [
+    { pageNo: 1, text: "GROUND FLOOR PLAN", words: [] },
+    { pageNo: 2, text: "ELEVATION A", words: [] },
+  ];
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: pages.map((page) => ({
+        pageNo: page.pageNo, widthPt: 1_000, heightPt: 800, rotation: 0,
+        textChars: page.text.length, imageCount: 0, imageAreaFraction: 0,
+      })),
+    },
+    pages,
+  };
+  const scheduleRows = [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" }];
+  const harvest = buildFullDocumentHarvest(inspected, scheduleRows);
+  harvest.placements = [{
+    tag: "W1", pageNo: 1, elevation: "A", orderOnWall: 1,
+    roomLabelCandidate: null, storey: "ground", orientation: "E",
+  }];
+
+  const result = await runFullDocumentAgent({
+    fileId: "f1", scheduleRows, inspected, harvest,
+    deps: {
+      runTurn: async () => ({
+        action: "emit", memory: "W1 could not be read visually.", records: [],
+        declines: [{ tag: "W1", reason: "Elevation image unavailable.", facePageNo: 2, elevation: "A", storey: "ground" }],
+      }),
+      render: async () => ({ images: [], dpi: 110 }),
+      store: async () => null,
+    },
+  });
+
+  assert.equal(result.readings[0].orientationState, "value");
+  assert.equal(result.readings[0].orientation, "E");
+  assert.equal(result.readings[0].elevationState, "value");
+  assert.equal(result.readings[0].elevation, "A");
+  assert.equal(result.readings[0].sheetRef, "A");
+  assert.match(result.readings[0].gapNote, /storey:ground/);
+  const model = { openings: [{ externalRef: "W1", wallOrientation: null, wallOrientationSource: null }] };
+  applyDrawingOrientation(model, result.readings);
+  assert.equal(model.openings[0].wallOrientation, "E");
+  assert.equal(model.openings[0].wallOrientationSource, "plan");
+});
+
+test("full-document agent retries one provider failure and then stops", async () => {
+  let calls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN ELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async () => { calls++; throw new Error("provider timeout"); },
+      render: async () => ({ images: [], dpi: 110 }),
+      store: async () => null,
+    },
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(result.report.modelCalls, 2);
+  assert.equal(result.report.steps.failedPhase, "full_document_agent");
+});
 test("agentic_full refuses a multi-PDF plan set before loading files", async () => {
   let gets = 0;
   let inspections = 0;

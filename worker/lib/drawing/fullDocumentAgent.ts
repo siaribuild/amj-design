@@ -733,17 +733,25 @@ function readingFromProposal(
   };
 }
 
-function fallbackReading(row: EnrichScheduleRow, fileId: string | null, note: string): DrawingReading {
+function fallbackReading(
+  row: EnrichScheduleRow,
+  fileId: string | null,
+  note: string,
+  placement?: FullDocumentHarvest["placements"][number],
+): DrawingReading {
   const split = compositionFromSchedule({ widthMm: row.widthMm, scheduleType: row.typeText, commentText: row.commentText });
+  const orientation = placement?.orientation ?? null;
+  const elevation = placement?.elevation ?? null;
+  const storey = placement?.storey ?? row.storey;
   return {
     id: "", projectId: "", aiRunId: "", sourceFileId: fileId, externalRef: row.tag,
     splitState: split ? "value" : "not_read", split,
-    orientationState: "not_read", orientation: null,
-    elevationState: "not_read", elevation: null,
+    orientationState: orientation ? "value" : placement ? "not_stated" : "not_read", orientation,
+    elevationState: elevation ? "value" : "not_read", elevation,
     roomState: row.roomLabel ? "value" : "not_read", roomLabel: row.roomLabel ?? null,
-    gapCode: "model_declined", gapNote: [note, ...(row.storey ? [`storey:${row.storey}`] : [])].join(" | "),
-    cropKey: null, pageNo: null, sheetRef: null, regionJson: null,
-    confidence: "low", flags: ["notVisibleOnElevations", "agentEvidenceWeak"],
+    gapCode: "model_declined", gapNote: [note, ...(storey ? [`storey:${storey}`] : [])].join(" | "),
+    cropKey: null, pageNo: null, sheetRef: elevation, regionJson: null,
+    confidence: "low", flags: ["notVisibleOnElevations"],
   };
 }
 
@@ -953,6 +961,7 @@ export async function runFullDocumentAgent(args: {
     return [...new Set(reasons)];
   };
 
+  let providerRetryUsed = false;
   for (let turn = 1; turn <= MAX_TURNS && report.modelCalls < MAX_PROVIDER_CALLS; turn++) {
     const pendingTags = scheduleRows.map((row) => normalizeOpeningRef(row.tag) ?? row.tag)
       .filter((tag) => !proposals.has(tag) && !declines.has(tag));
@@ -994,6 +1003,12 @@ export async function runFullDocumentAgent(args: {
         report.modelCalls++;
       }
     } catch {
+      report.modelCalls++;
+      if (!providerRetryUsed && report.modelCalls < MAX_PROVIDER_CALLS) {
+        providerRetryUsed = true;
+        turn--;
+        continue;
+      }
       report.steps.failedPhase = "full_document_agent";
       break;
     }
@@ -1345,6 +1360,7 @@ export async function runFullDocumentAgent(args: {
           ?? (report.steps.failedPhase === "floorplan_location"
             ? "No floor-plan page with a retained schedule-tag candidate was identified."
             : "Full-document agent budget ended without sufficient visual evidence."),
+        placementByTag.get(tag),
       );
     report.perOpening.push({
       tag: row.tag, outcome: proposal && render && page ? "read" : "not_read",
