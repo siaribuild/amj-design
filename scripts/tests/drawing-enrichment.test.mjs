@@ -2027,6 +2027,7 @@ test("full-document plan recovery refuses a schedule table that merely contains 
 
 test("full-document page-role recovery admits a rendered EXTERNAL VIEWS sheet as elevation evidence", async () => {
   let modelCalls = 0;
+  const inputs = [];
   const result = await runFullDocumentAgent({
     fileId: "f1",
     scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
@@ -2044,7 +2045,8 @@ test("full-document page-role recovery admits a rendered EXTERNAL VIEWS sheet as
       ],
     },
     deps: {
-      runTurn: async () => {
+      runTurn: async (input) => {
+        inputs.push(input);
         modelCalls++;
         if (modelCalls === 1) return {
           action: "identify_page_roles",
@@ -2069,8 +2071,103 @@ test("full-document page-role recovery admits a rendered EXTERNAL VIEWS sheet as
   });
   assert.equal(modelCalls, 3);
   assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.deepEqual(inputs[1].harvest.pages.find((page) => page.pageNo === 2).tiers, [],
+    "recovered roles must not be laundered into deterministic page tiers");
   assert.ok(result.report.steps.selectPages.selected.some((page) =>
     page.pageNo === 2 && page.tier === "elevation" && page.reason.includes("agent recovery")));
+});
+
+test("full-document page-role recovery cannot promote a schedule-only sheet to elevation evidence", async () => {
+  let modelCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [
+          { text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 },
+          { text: "S08", x0: 100, top: 116, x1: 125, bottom: 131 },
+        ] },
+        { pageNo: 2, text: "WINDOW SCHEDULE W1 1000 1200", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return {
+          action: "identify_page_roles", floorplanPages: [], elevationPages: [2], detailPages: [],
+          memory: "Page 2 is claimed as an elevation.",
+        };
+        if (modelCalls === 2) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read page 2." };
+        return {
+          action: "emit", memory: "W1 resolved from page 2.", declines: [],
+          records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+            facePageNo: 2, evidenceRenderId: "fd_t002_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(modelCalls, 1);
+  assert.equal(result.report.steps.failedPhase, "elevation_inventory");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+});
+
+test("full-document recovered elevation needs a stored whole-page overview before a crop can authorize composition", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [
+          { text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 },
+          { text: "S08", x0: 100, top: 116, x1: 125, bottom: 131 },
+        ] },
+        { pageNo: 2, text: "EXTERNAL VIEWS", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return {
+          action: "identify_page_roles", floorplanPages: [], elevationPages: [2], detailPages: [],
+          memory: "Page 2 may contain elevations.",
+        };
+        if (turn === 2) return {
+          action: "render", requests: [{ pageNo: 2, dpi: 220, bboxPt: [100, 100, 500, 500] }],
+          memory: "Read one crop from page 2.",
+        };
+        if (turn === 3) return {
+          action: "emit", memory: "W1 resolved.", declines: [], records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+            facePageNo: 2, evidenceRenderId: "fd_t002_01",
+          })],
+        };
+        return {
+          action: "emit", records: [], memory: "W1 cannot be verified.",
+          declines: [{ tag: "W1", reason: "Recovered page lacks a whole-page overview.", facePageNo: 2, elevation: "A", storey: "ground" }],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.deepEqual(result.report.perOpening[0].corrections, [
+    { turn: 3, reasons: ["recovered_page_overview_required"] },
+  ]);
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
 });
 
 test("full-document unclassified page evidence remains rejected without page-role recovery", async () => {
@@ -2472,7 +2569,7 @@ test("full-document turn contract exposes bounded adaptive tools and rejects voc
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
   assert.ok(skill.responseSchema.properties.action);
   assert.match(skill.buildPrompt({ imageDataUrls: [] }), /recovered.*planEvidenceRenderId/i);
-  assert.equal(skill.promptVersion, "v10", "identity-evidence provenance must invalidate cached weaker answers");
+  assert.equal(skill.promptVersion, "v11", "recovered-composition validation must invalidate cached weaker answers");
 });
 
 test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
