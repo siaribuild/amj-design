@@ -97,6 +97,16 @@ function* records(sinceMs, cwdFilter) {
  * the machine, a scan-and-filter over every transcript costs a full-machine read
  * per stage and can only ever guess at ownership.
  */
+/** Just the session's own transcript - no subagent files. See finalReply. */
+function parentFiles(sessionId) {
+  const out = []
+  for (const dir of DIRS()) {
+    const main = join(dir, sessionId + '.jsonl')
+    if (existsSync(main)) out.push(main)
+  }
+  return out
+}
+
 function sessionFiles(sessionId) {
   const out = []
   for (const dir of DIRS()) {
@@ -127,7 +137,14 @@ function sessionFiles(sessionId) {
 export function finalReply(sessionId) {
   if (!sessionId) return ''
   let last = ''
-  for (const file of sessionFiles(sessionId)) {
+  // THE PARENT TRANSCRIPT ONLY. `sessionFiles` also returns every subagent
+  // transcript, and returns them AFTER the parent - so scanning the lot and
+  // keeping the last text found overwrites the reviewer's verdict with whatever
+  // its last child happened to say, regardless of chronology. That text then
+  // gets written as the report and the gate passes without the reviewer's
+  // actual findings, which is the failure this capture path exists to prevent.
+  // Codex P1, 2026-09-02.
+  for (const file of parentFiles(sessionId)) {
     for (const line of readFileSync(file, 'utf8').split(NL)) {
       if (!line.trim()) continue
       let d
