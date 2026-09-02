@@ -35,7 +35,10 @@ const flag = (items: ComparableReading[], value: DrawingFlag): void => {
   }
 };
 
-export function applyDrawingConsistencyFlags(readings: ComparableReading[]): void {
+export function applyDrawingConsistencyFlags(
+  readings: ComparableReading[],
+  { coverageComplete = true }: { coverageComplete?: boolean } = {},
+): void {
   for (let left = 0; left < readings.length; left++) {
     for (let right = left + 1; right < readings.length; right++) {
       const a = readings[left], b = readings[right];
@@ -61,27 +64,22 @@ export function applyDrawingConsistencyFlags(readings: ComparableReading[]): voi
   }
   const faces = new Map<string, ComparableReading[]>();
   for (const reading of readings) {
-    const key = JSON.stringify([
-      reading.render.pageNo,
-      reading.proposal.elevation,
-      reading.proposal.storey,
-      reading.proposal.evidenceView,
-    ]);
+    if (!reading.proposal.elevation || !reading.proposal.storey) continue;
+    const key = JSON.stringify([reading.proposal.elevation, reading.proposal.storey]);
     const face = faces.get(key) ?? [];
     face.push(reading);
     faces.set(key, face);
   }
   for (const face of faces.values()) {
-    const counted = face.filter((reading) => reading.proposal.faceOpeningCount != null);
-    if (counted.some((reading) => reading.proposal.faceOpeningCount !== face.length)) {
+    const counts = face.flatMap((reading) => reading.proposal.faceOpeningCount ?? []);
+    if (new Set(counts).size > 1
+      || counts.some((count) => count < face.length)
+      || (coverageComplete && counts.some((count) => count > face.length))
+    ) {
       flag(face, "drawingInconsistency");
     }
-    const ordered = face.filter((reading) => reading.proposal.wallOrder != null)
-      .sort((a, b) => a.proposal.wallOrder! - b.proposal.wallOrder!);
-    if (new Set(ordered.map((reading) => reading.proposal.wallOrder)).size !== ordered.length
-      || ordered.some((reading, index, all) => index > 0
-        && frameBox(reading)[0] < frameBox(all[index - 1])[0])
-    ) {
+    const ordered = face.filter((reading) => reading.proposal.wallOrder != null);
+    if (new Set(ordered.map((reading) => reading.proposal.wallOrder)).size !== ordered.length) {
       flag(ordered, "drawingInconsistency");
     }
   }

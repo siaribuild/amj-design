@@ -81,6 +81,22 @@ function inDimensionChain(tagWord: PageWord, words: PageWord[]): boolean {
     && Math.min(Math.abs(word.x0 - tagWord.x1), Math.abs(tagWord.x0 - word.x1)) <= height * 2);
 }
 
+export function openingTagWords(words: PageWord[], vocabulary: Set<string>): { tag: string; word: PageWord }[] {
+  const byTag = new Map<string, PageWord[]>();
+  for (const word of words) {
+    const tag = normalizeOpeningRef(word.text);
+    if (!tag || !vocabulary.has(tag) || inDimensionChain(word, words)) continue;
+    const matches = byTag.get(tag) ?? [];
+    matches.push(word);
+    byTag.set(tag, matches);
+  }
+  return [...byTag].flatMap(([tag, matches]) => {
+    const scored = matches.map((word) => ({ word, score: sheetRefScore(word, words) }));
+    const best = Math.max(...scored.map(({ score }) => score));
+    return scored.filter(({ score }) => best === 0 || score === best).map(({ word }) => ({ tag, word }));
+  });
+}
+
 function nearestEdge(word: PageWord, box: Footprint): Edge {
   const [x, y] = centre(word);
   const distances: [Edge, number][] = [
@@ -170,10 +186,7 @@ export function locateFloorplanPage(
   }
 
   const wordsByTag = new Map<string, PageWord[]>();
-  for (const word of page.words) {
-    const tag = normalizeOpeningRef(word.text);
-    if (!tag || !normalizedVocabulary.has(tag)) continue;
-    if (inDimensionChain(word, page.words)) continue;
+  for (const { tag, word } of openingTagWords(page.words, normalizedVocabulary)) {
     const current = wordsByTag.get(tag) ?? [];
     current.push(word);
     wordsByTag.set(tag, current);

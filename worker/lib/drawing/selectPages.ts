@@ -24,10 +24,13 @@ const TIER_PATTERNS: [PageTier, RegExp][] = [
   ],
   [
     "elevation",
-    /\bELEVATIONS?\s*[-:]?\s*[A-D]\b/im,
+    /(?:\bELEVATIONS?\s*[-:]?\s*[A-D]\b|^[ \t]*(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)[ \t]+ELEVATIONS?[ \t]*$)/im,
   ],
   ["siteplan", /\bsite\s*plan\b/i],
-  ["floorplan", /\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b/i],
+  [
+    "floorplan",
+    /(?:\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b|^[ \t]*(?:(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+)\s+PLAN|PLAN\s*[-:]?\s*(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+))[ \t]*$)/im,
+  ],
 ];
 
 function classify(text: string): { tier: PageTier; reason: string }[] {
