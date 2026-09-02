@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt, finalReply } from './measure.mjs'
 import {
   available as herdrAvailable, ensureCockpit, launchStage, writePrompt, watch, notify,
   agentPrompt, splitPane, paneReady, agentInfo,
@@ -811,7 +811,7 @@ async function holdWarm(run, label, reason, started) {
  * The stage is done. Meter it from its own transcript by the id we recorded,
  * free the claude, and leave the pane and its scrollback exactly where they are.
  */
-async function finalizePane(run, label, started) {
+async function finalizePane(run, label, started, spec) {
   const s = run.stages[label]
   // Pane transcripts are written live, so there is no flush race to sleep
   // through here; anything still missing heals on the next report (refreshRun).
@@ -823,6 +823,16 @@ async function finalizePane(run, label, started) {
     seconds: Math.round((Date.now() - started) / 1000),
   })
   delete s.holdReason
+  // THE PANE'S REPORT. `runClaude` captures from the `result` object it
+  // streamed; a pane stage has no such object, so its reply comes from the
+  // transcript. Without this a pane reviewer was marked done having written
+  // nothing, and the gate passed on silence - Codex P1, 2026-09-02. An empty
+  // reply is deliberately NOT written: the gate must see no report, not an
+  // empty one it might mistake for a clean review.
+  if (spec?.capture) {
+    const reply = finalReply(s.session)
+    if (reply.trim()) writeFileSync(spec.capture, reply)
+  }
   saveRun(run)
   // Free the process, keep the evidence.
   await agentPrompt(label, '/exit').catch((e) => console.log('  .. ' + label + ' would not /exit (' + e.message + ')'))
@@ -850,7 +860,7 @@ const CONFIRM_MS = 2000
 const CONFIRM_RETRIES = 5
 
 /** Wait for the agent to settle, then hold it warm or finish it off. */
-async function settleStage(run, label, started) {
+async function settleStage(run, label, started, spec) {
   for (let attempt = 0; ; attempt++) {
     const r = await watch(label)
     if (r.state === 'lost') {
@@ -876,7 +886,7 @@ async function settleStage(run, label, started) {
       return run.stages[label]
     }
     if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
-    return finalizePane(run, label, started)
+    return finalizePane(run, label, started, spec)
   }
 }
 
@@ -944,7 +954,7 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
     run.stages[label].pendingLine = boot.pendingLine
     return holdWarm(run, label, 'blocked-launch', started)
   }
-  return settleStage(run, label, started)
+  return settleStage(run, label, started, spec)
 }
 
 // --- sliced build: one short session per task -------------------------------
@@ -1269,59 +1279,59 @@ async function runReviews(run, panes) {
   //
   // Checked here rather than in each launch path because the requirement
   // belongs to the GATE, not to how a particular reviewer happened to boot.
-  const held = []
+  // THE GATE, STATED ONCE. A reviewer is in exactly one of three states, and
+  // only the first satisfies the gate:
+  //
+  //   REPORTED  - exited 0 AND left a non-empty 07-review-<id>.md
+  //   FAILED    - exited non-zero, or exited 0 with no report (which is not a
+  //               review; plan mode forbade the write, or nothing captured it)
+  //   WAITING   - held warm for the owner, so it has no report YET
+  //
+  // This was patched four times, each patch fixing one route to a false pass
+  // and opening another, because it kept describing the states instead of
+  // deciding on them. So: classify every enabled reviewer, then write the
+  // rollup only if every one of them REPORTED.
+  const held = [], failed = []
   for (const rv of REVIEWERS) {
     if (rv.codex && !CODEX_REVIEWS) continue
     const label = 'review-' + rv.id
-    // A HELD REVIEWER IS NOT A MISSING ONE. It is alive in its pane waiting for
-    // the owner, and it has no report yet for exactly that reason - it has not
-    // finished. Stamping it `code: 1` here would mark a live agent finished and
-    // failed, collapsing the distinction `runReviews` is built around: one
-    // reviewer holding must not stall or condemn the others. Its report is
-    // checked when it settles, not while it waits - which is why a hold must
-    // also stop `review` being rolled up as done, below. Skipping the stamp
-    // WITHOUT that would be the same bypass by a kinder route: the gate would
-    // pass on a reviewer that never reported.
-    if (run.stages[label]?.status === 'held') { held.push(rv.id); continue }
-    const p = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
-    if (existsSync(p) && readFileSync(p, 'utf8').trim()) continue
-    run.stages[label] = { ...(run.stages[label] || {}), code: 1, missingReport: true }
-    process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + p + ').\n' +
-      '     Its process may have exited 0; that is not a review. This work is\n' +
-      '     UNREVIEWED by ' + rv.id + ' - do not present it as reviewed.\n')
+    const st = run.stages[label]
+    if (st?.status === 'held') { held.push(rv.id); continue }
+    const path = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    const reported = existsSync(path) && !!readFileSync(path, 'utf8').trim()
+    if (reported && (st?.code ?? 0) === 0) continue
+    failed.push(rv.id)
+    if (!reported) {
+      run.stages[label] = { ...(st || {}), code: 1, missingReport: true }
+      process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + path + ').\n' +
+        '     Its process may have exited 0; that is not a review.\n')
+    } else {
+      process.stdout.write('\n  !! ' + label + ' exited ' + st.code + '.\n')
+    }
   }
-  // A HOLD IS NOT A PASS. `review` is rolled up as done so `next` advances
-  // instead of re-running four reviewers - but rolling it up while a reviewer
-  // is still held would advance the run to `accept` on a review that never
-  // happened, which is the mandatory gate bypassed by patience rather than by
-  // error. The stage stays open, the run stays put, and the held reviewer is
-  // named so the owner knows which pane is waiting for them.
-  // WRITE NOTHING, rather than inventing a held parent. `review` is a rollup
-  // with no session of its own, so a `status: 'held'` on it is a state the rest
-  // of this file cannot act on: `finished` returns early and never prints the
-  // gate, `resume` has no session to reattach to, and `plan` reads code 1 as a
-  // failure with no route out. Leaving the rollup UNWRITTEN says the one true
-  // thing - the stage is not done - in the vocabulary every other path already
-  // speaks, so `next` re-runs review once the held reviewer has been answered
-  // and its pane freed. The per-reviewer records keep their own `held` status,
-  // which `resume` and the pane logic do understand.
-  if (held.length) {
-    // DELETE, not merely decline to write. A re-review runs against a run whose
-    // previous round already wrote `code: 0` here; leaving that record standing
-    // means the hold is invisible and `next` advances to `accept` on the
-    // strength of a rollup describing a review that has since been superseded.
-    // The absent key is the only honest record: this stage is not done now,
-    // whatever was true last round.
+
+  // NOT DONE IS AN ABSENT KEY, in either failing case. `review` is a rollup
+  // with no session, so it cannot carry a `held` or `error` status that
+  // `finished`, `resume` or `plan` know how to act on - inventing one
+  // deadlocked the flow. And it must be DELETED rather than merely left
+  // unwritten, because a re-review runs against a run whose previous round
+  // already wrote `code: 0` here, and `next` reads only this key.
+  if (held.length || failed.length) {
     delete run.stages['review']
     saveRun(run)
-    process.stdout.write('\n  == REVIEW HELD - ' + held.join(', ') + ' stopped for you and has\n' +
-      '     produced no report, so the gate is NOT satisfied and `accept` must not run.\n' +
-      '     Answer it in its pane and let it finish, then:  conduct run review\n')
+    if (failed.length)
+      process.stdout.write('\n  == REVIEW INCOMPLETE - ' + failed.join(', ') + ' did not\n' +
+        '     produce a clean report. This work is UNREVIEWED by those reviewers;\n' +
+        '     do not present it as reviewed. Re-run:  conduct run review\n')
+    if (held.length)
+      process.stdout.write('\n  == REVIEW HELD - ' + held.join(', ') + ' stopped for you.\n' +
+        '     Answer it and let it finish, then:  conduct run review\n')
     return
   }
-  // Same bookkeeping runBuild does for 'build': mark the parent stage done so
-  // `next` advances past it instead of re-running all four reviewers on a
-  // second call - review has no single session of its own to report.
+
+  // Same bookkeeping runBuild does for 'build': mark the parent done so `next`
+  // advances instead of re-running every reviewer on a second call - review
+  // has no single session of its own to report.
   run.stages['review'] = { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, rollup: true }
   saveRun(run)
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
@@ -1348,12 +1358,19 @@ async function runReviews(run, panes) {
  * `build-<task>` or a `review-<reviewer>`; `fix-<n>` is the developer shape
  * cmds.fix uses. Needed on a relaunch, which has to rebuild the same argv.
  */
-export function stageSpec(label) {
+export function stageSpec(label, run) {
   const stage = STAGES.find((s) => s.id === label)
   if (stage) return stage
   if (label.startsWith('build-')) return STAGES.find((s) => s.id === 'build')
   const rv = REVIEWERS.find((r) => 'review-' + r.id === label)
-  if (rv) return { agent: rv.agent, compact: rv.compact, readonly: true }
+  // `capture` IS part of the launch spec, so rebuilding one without it does not
+  // reproduce the launch - it produces a reviewer that runs, settles, and
+  // writes no report. That is the gate passing on silence again, reached this
+  // time by `resume` and `answer` rather than by a first run. Codex, 2026-09-02.
+  if (rv) return {
+    agent: rv.agent, compact: rv.compact, readonly: true,
+    ...(run && { capture: join(RUNS, run.slug, '07-review-' + rv.id + '.md') }),
+  }
   return { agent: 'developer', compact: 120000 }
 }
 
@@ -1675,14 +1692,14 @@ const cmds = {
     const run = loadRun(activeSlug())
     const st = run.stages[label]
     if (!st) die('no stage "' + label + '" in this run')
-    const spec = stageSpec(label)
+    const spec = stageSpec(label, run)
     const started = Date.parse(st.startedAt) || Date.now()
     const panes = await paneMode(flags)
 
     if (panes && st.mode === 'pane' && await agentInfo(label)) {
       console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
         st.session + '. Nothing re-booted.')
-      return finished(run, label, spec, await settleStage(run, label, started))
+      return finished(run, label, spec, await settleStage(run, label, started, spec))
     }
     if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
       '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
@@ -1720,7 +1737,7 @@ const cmds = {
     // A gate is held by an AGENT, and its label may be `build-<task>` or
     // `review-<id>` as readily as a stage id. STAGES.find resolves only the
     // last kind; stageSpec resolves all three, which is what it exists for.
-    const spec = stageSpec(id)
+    const spec = stageSpec(id, run)
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
@@ -1742,7 +1759,7 @@ const cmds = {
       delete st.holdReason
       run.gateStage = null
       saveRun(run)
-      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now()))
+      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now(), spec))
       return
     }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
@@ -1767,6 +1784,17 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
       seconds: (st.seconds || 0) + Math.round((Date.now() - started) / 1000),
     })
     delete st.holdReason
+    // AND THE REPORT, on this path too. The headless answer spawns with
+    // stdio inherit, so there is no result object for `runClaude` to capture
+    // from and no `finalizePane` to read the transcript - a reviewer answered
+    // this way ran, settled and wrote nothing. That is the FOURTH way this
+    // gate has been reached without evidence (first run, pane completion,
+    // resume, and here); enumerating the paths is what finally closed it,
+    // rather than fixing whichever one was reported last.
+    if (spec?.capture) {
+      const reply = finalReply(sid)
+      if (reply.trim()) writeFileSync(spec.capture, reply)
+    }
     run.stages[id] = st
     run.gateStage = null
     saveRun(run)
