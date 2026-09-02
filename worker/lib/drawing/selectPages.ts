@@ -3,7 +3,7 @@
 // runs BEFORE any rendering, from step 3's text/word output (AC-12).
 import type { Inventory, PageText } from "./contract";
 
-export type PageTier = "elevation" | "floorplan" | "schedule" | "siteplan";
+export type PageTier = "detail" | "elevation" | "floorplan" | "schedule" | "siteplan";
 
 export interface SelectedPage {
   pageNo: number;
@@ -17,7 +17,7 @@ export type Strategy = "text_vector" | "text_raster" | "scanned";
  *  guess (AC-13): a document nobody could read must be reportable as such. */
 // Ordering is stable output ordering only. A sheet may carry more than one
 // tier (most importantly, schedules commonly share an elevation sheet).
-const TITLE_META = String.raw`(?:[ \t]+(?:SCALE[ \t]+\d+(?:\.\d+)?\s*[:/]\s*\d+(?:\.\d+)?|(?:SHEET[ \t]+)?[A-Z]{1,3}[- ]?\d{1,4}|REV(?:ISION)?[ \t]+[A-Z0-9]+))*[ \t]*$`;
+const TITLE_META = String.raw`(?:[ \t]+(?:(?:SCALE[ \t]+)?\d+(?:\.\d+)?\s*[:/]\s*\d+(?:\.\d+)?|(?:SHEET[ \t]+)?[A-Z]{1,3}[- ]?\d{1,4}|REV(?:ISION)?[ \t]+[A-Z0-9]+))*[ \t]*$`;
 const TIER_PATTERNS: [PageTier, RegExp][] = [
   [
     "schedule",

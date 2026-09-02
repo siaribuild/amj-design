@@ -52,6 +52,12 @@ function footprint(words: PageWord[], geo: Pick<PageInventory, "widthPt" | "heig
   return result;
 }
 
+export const hasPlanFootprint = (
+  words: PageWord[],
+  geo: Pick<PageInventory, "widthPt" | "heightPt">,
+  vocabulary: Set<string>,
+): boolean => !!footprint(words, geo, vocabulary);
+
 function distanceToFootprint(word: PageWord, box: Footprint): number {
   const [x, y] = centre(word);
   const dx = x < box.x0 ? box.x0 - x : x > box.x1 ? x - box.x1 : 0;
@@ -85,7 +91,7 @@ export function openingTagWords(
   words: PageWord[],
   vocabulary: Set<string>,
   geo?: Pick<PageInventory, "widthPt" | "heightPt">,
-): { tag: string; word: PageWord; ambiguous: boolean }[] {
+): { tag: string; word: PageWord; ambiguous: boolean; identityEvidence: "sheet_reference" | "visual_required" }[] {
   const byTag = new Map<string, PageWord[]>();
   for (const word of words) {
     const tag = normalizeOpeningRef(word.text);
@@ -105,7 +111,10 @@ export function openingTagWords(
       if (nearPlan.length) selected = nearPlan;
     }
     const ambiguous = selected.length > 1;
-    return selected.map(({ word }) => ({ tag, word, ambiguous }));
+    return selected.map(({ word }) => ({
+      tag, word, ambiguous,
+      identityEvidence: best > 0 ? "sheet_reference" : "visual_required",
+    }));
   });
 }
 

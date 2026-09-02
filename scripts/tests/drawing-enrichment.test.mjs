@@ -115,7 +115,8 @@ test("selectPages: side facade names and title-block metadata remain elevation s
   const pages = [
     "SIDE ELEVATION", "LEFT ELEVATION", "RIGHT ELEVATION",
     "LEFT SIDE ELEVATION", "RIGHT SIDE ELEVATION",
-    "EAST ELEVATION SCALE 1:100", "SOUTH ELEVATION A2", "SIDE ELEVATION REV B",
+    "EAST ELEVATION SCALE 1:100", "EAST ELEVATION 1:100", "RIGHT SIDE ELEVATION 1 / 100 A2",
+    "SOUTH ELEVATION A2", "SIDE ELEVATION REV B",
   ].map((text, index) => pt(index + 1, text));
   const { selected } = selectPages(inv(pages.map((page) => pageFacts({ pageNo: page.pageNo }))), pages);
   assert.deepEqual(selected.map(({ pageNo, tier }) => [pageNo, tier]), pages.map((page) => [page.pageNo, "elevation"]));
@@ -1828,6 +1829,7 @@ test("full-document harvest exposes free coordinate evidence without deciding th
   assert.equal(harvest.schedule[0].priorRoomCandidate, "ENTRY");
   assert.equal(harvest.tagCandidates[0].tag, "W1");
   assert.equal(harvest.tagCandidates[0].id, "W1_p1_1", "a sole tag without a sheet reference remains usable");
+  assert.equal(harvest.tagCandidates[0].identityEvidence, "visual_required");
   assert.match(harvest.tagCandidates[0].nearbyText, /STUDY/);
   assert.match(harvest.tagCandidates[0].nearbyText, /ENTRY/);
   assert.equal("roomLabel" in harvest.tagCandidates[0], false, "the free harvest must not choose a room");
@@ -1847,8 +1849,8 @@ test("full-document harvest drops a legend decoy when the plan tag has an adjace
     ] }],
   };
   const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
-  assert.deepEqual(harvest.tagCandidates.map(({ id, boxPt }) => ({ id, boxPt })), [
-    { id: "W1_p1_1", boxPt: [120, 200, 140, 215] },
+  assert.deepEqual(harvest.tagCandidates.map(({ id, boxPt, identityEvidence }) => ({ id, boxPt, identityEvidence })), [
+    { id: "W1_p1_1", boxPt: [120, 200, 140, 215], identityEvidence: "sheet_reference" },
   ]);
 });
 
@@ -1882,7 +1884,7 @@ test("full-document harvest marks two plausible no-reference tag occurrences amb
   ].map(([text, x0, top]) => ({ text, x0, top, x1: x0 + 55, bottom: top + 15 }));
   words.push(
     { text: "W1", x0: 100, top: 250, x1: 120, bottom: 265 },
-    { text: "W1", x0: 720, top: 250, x1: 740, bottom: 265 },
+    { text: "W1", x0: 819, top: 250, x1: 839, bottom: 265 },
   );
   const inspected = {
     inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
@@ -1892,6 +1894,7 @@ test("full-document harvest marks two plausible no-reference tag occurrences amb
   const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
   assert.equal(harvest.tagCandidates.length, 2);
   assert.ok(harvest.tagCandidates.every((candidate) => candidate.ambiguous));
+  assert.ok(harvest.tagCandidates.every((candidate) => candidate.identityEvidence === "visual_required"));
 });
 
 test("full-document agent fails closed after one invalid plan-page recovery", async () => {
@@ -1906,7 +1909,10 @@ test("full-document agent fails closed after one invalid plan-page recovery", as
       pages: [{ pageNo: 1, text: "LEVEL 1", words: [] }],
     },
     deps: {
-      runTurn: async () => { modelCalls++; return { action: "identify_plan_pages", pages: [1], memory: "Page 1 may be a plan." }; },
+      runTurn: async () => {
+        modelCalls++;
+        return { action: "identify_page_roles", floorplanPages: [1], elevationPages: [], detailPages: [], memory: "Page 1 may be a plan." };
+      },
       render: async () => { throw new Error("no render without a validated plan page"); },
       store: async () => null,
       onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
@@ -1931,18 +1937,34 @@ test("full-document agent recovers one missed plan page before reading", async (
         { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
       ] },
       pages: [
-        { pageNo: 1, text: "LEVEL 1", words: [{ text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 }] },
+        { pageNo: 1, text: "LEVEL 1", words: [
+          { text: "BEDROOM", x0: 100, top: 100, x1: 170, bottom: 115 },
+          { text: "KITCHEN", x0: 500, top: 100, x1: 565, bottom: 115 },
+          { text: "HALL", x0: 100, top: 400, x1: 140, bottom: 415 },
+          { text: "LIVING", x0: 500, top: 400, x1: 555, bottom: 415 },
+          { text: "W1", x0: 90, top: 250, x1: 110, bottom: 265 },
+        ] },
         { pageNo: 2, text: "ELEVATION A", words: [] },
       ],
     },
     deps: {
       runTurn: async () => {
         modelCalls++;
-        if (modelCalls === 1) return { action: "identify_plan_pages", pages: [1], memory: "Page 1 is the plan." };
-        if (modelCalls === 2) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read Elevation A." };
+        if (modelCalls === 1) return {
+          action: "identify_page_roles", floorplanPages: [1], elevationPages: [], detailPages: [],
+          memory: "Page 1 is the plan.",
+        };
+        if (modelCalls === 2) return {
+          action: "render",
+          requests: [{ pageNo: 1, dpi: 150 }, { pageNo: 2, dpi: 200 }],
+          memory: "Verify the recovered plan and read Elevation A.",
+        };
         return {
           action: "emit", memory: "W1 resolved.", declines: [],
-          records: [hybridRecord({ planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1, facePageNo: 2, evidenceRenderId: "fd_t002_01" })],
+          records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planEvidenceRenderId: "fd_t002_01", planPageNo: 1,
+            wallOrder: 1, facePageNo: 2, evidenceRenderId: "fd_t002_02",
+          })],
         };
       },
       render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
@@ -1952,6 +1974,179 @@ test("full-document agent recovers one missed plan page before reading", async (
   assert.equal(modelCalls, 3);
   assert.equal(result.report.perOpening[0].outcome, "read");
   assert.ok(result.report.steps.selectPages.selected.some((page) => page.pageNo === 1 && page.tier === "floorplan"));
+});
+
+test("full-document plan recovery refuses a schedule table that merely contains every opening tag", async () => {
+  let modelCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 100, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "WINDOW SCHEDULE", words: [
+          { text: "WINDOW", x0: 50, top: 50, x1: 110, bottom: 65 },
+          { text: "SCHEDULE", x0: 300, top: 50, x1: 370, bottom: 65 },
+          { text: "TYPE", x0: 600, top: 50, x1: 640, bottom: 65 },
+          { text: "W1", x0: 80, top: 180, x1: 100, bottom: 195 },
+          { text: "FIXED", x0: 300, top: 180, x1: 350, bottom: 195 },
+          { text: "1000", x0: 600, top: 180, x1: 640, bottom: 195 },
+          { text: "GLAZING", x0: 50, top: 350, x1: 120, bottom: 365 },
+          { text: "CLEAR", x0: 600, top: 350, x1: 650, bottom: 365 },
+        ] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return {
+          action: "identify_page_roles", floorplanPages: [1], elevationPages: [], detailPages: [],
+          memory: "Page 1 lists W1.",
+        };
+        if (modelCalls === 2) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read elevation A." };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [],
+          records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+            facePageNo: 2, evidenceRenderId: "fd_t002_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(modelCalls, 1);
+  assert.equal(result.report.steps.failedPhase, "floorplan_location");
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+});
+
+test("full-document page-role recovery admits a rendered EXTERNAL VIEWS sheet as elevation evidence", async () => {
+  let modelCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [
+          { text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 },
+          { text: "S08", x0: 100, top: 116, x1: 125, bottom: 131 },
+        ] },
+        { pageNo: 2, text: "EXTERNAL VIEWS", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return {
+          action: "identify_page_roles",
+          floorplanPages: [], elevationPages: [2], detailPages: [],
+          memory: "Page 2 contains the external elevations.",
+        };
+        if (modelCalls === 2) return {
+          action: "render", requests: [{ pageNo: 2, dpi: 200 }],
+          memory: "Read the external views.",
+        };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [],
+          records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+            facePageNo: 2, evidenceRenderId: "fd_t002_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(modelCalls, 3);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.ok(result.report.steps.selectPages.selected.some((page) =>
+    page.pageNo === 2 && page.tier === "elevation" && page.reason.includes("agent recovery")));
+});
+
+test("full-document unclassified page evidence remains rejected without page-role recovery", async () => {
+  let modelCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 3, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 3, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [{ text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+        { pageNo: 3, text: "EXTERNAL VIEWS", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return {
+          action: "render", requests: [{ pageNo: 3, dpi: 200 }],
+          memory: "Read page 3 without classifying it.",
+        };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [],
+          records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+            facePageNo: 3, evidenceRenderId: "fd_t001_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.report.perOpening[0].outcome, "not_read");
+  assert.ok(result.report.perOpening[0].corrections[0].reasons.includes("evidence_page_not_elevation_or_detail"));
+});
+
+test("full-document page-role recovery can be used only once", async () => {
+  const inputs = [];
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [{ text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async (input) => {
+        inputs.push(input);
+        if (inputs.length <= 2) return {
+          action: "identify_page_roles",
+          floorplanPages: [], elevationPages: [2], detailPages: [],
+          memory: "Classify page 2.",
+        };
+        return {
+          action: "emit", records: [], memory: "W1 cannot be read.",
+          declines: [{ tag: "W1", reason: "Not visible." }],
+        };
+      },
+      render: async () => ({ images: [], dpi: 110 }),
+      store: async () => null,
+    },
+  });
+  assert.equal(result.report.modelCalls, 3);
+  assert.deepEqual(inputs[2].observations, [{ tool: "identify_page_roles", error: "recovery_already_used" }]);
 });
 
 test("full-document harvest bounds repeated tag context and total page text", () => {
@@ -2007,7 +2202,10 @@ test("full-document agent binds a plan tag to wall order and maps crop-relative 
         { pageNo: 2, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 11, imageCount: 0, imageAreaFraction: 0 },
       ] },
       pages: [
-        { pageNo: 1, text: "GROUND FLOOR PLAN W1", words: [{ text: "W1", x0: 100, top: 200, x1: 120, bottom: 215 }] },
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1 S08", words: [
+          { text: "W1", x0: 100, top: 200, x1: 120, bottom: 215 },
+          { text: "S08", x0: 100, top: 216, x1: 125, bottom: 231 },
+        ] },
         { pageNo: 2, text: "ELEVATION A", words: [] },
       ],
     },
@@ -2075,6 +2273,47 @@ test("full-document ambiguous plan candidate requires a stored plan render", asy
         };
       },
       render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.deepEqual(result.report.perOpening[0].corrections, [{ turn: 2, reasons: ["identity_visual_evidence_required"] }]);
+  assert.equal(result.report.perOpening[0].acceptedTurn, 4);
+});
+
+test("full-document no-reference plan candidate requires visual verification even when unique", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1", words: [
+          { text: "LIVING", x0: 200, top: 100, x1: 260, bottom: 115 },
+          { text: "KITCHEN", x0: 600, top: 100, x1: 670, bottom: 115 },
+          { text: "BEDROOM", x0: 200, top: 450, x1: 275, bottom: 465 },
+          { text: "GARAGE", x0: 600, top: 450, x1: 660, bottom: 465 },
+          { text: "W1", x0: 180, top: 280, x1: 200, bottom: 295 },
+        ] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read Elevation A." };
+        if (turn === 3) return { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "Verify W1 is a plan callout." };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [], records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planEvidenceRenderId: turn === 4 ? "fd_t003_01" : null,
+            planPageNo: 1, wallOrder: 1, facePageNo: 2, evidenceRenderId: "fd_t001_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 1_000, heightPx: 800 }], dpi: request.dpi }),
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
@@ -2204,7 +2443,13 @@ test("full-document turn contract exposes bounded adaptive tools and rejects voc
   assert.deepEqual(validateFullDocumentTurn({ action: "list_pages", memory: "Map the set." }, ["W1"], [1, 2]).action, "list_pages");
   assert.deepEqual(validateFullDocumentTurn({ action: "get_page_text", pages: [2], memory: "Read the title." }, ["W1"], [1, 2]).pages, [2]);
   assert.deepEqual(validateFullDocumentTurn({ action: "get_text_tokens", pages: [1], memory: "Locate W1." }, ["W1"], [1, 2]).pages, [1]);
-  assert.deepEqual(validateFullDocumentTurn({ action: "identify_plan_pages", pages: [1], memory: "Recover the missed plan." }, ["W1"], [1, 2]).pages, [1]);
+  assert.deepEqual(
+    validateFullDocumentTurn({
+      action: "identify_page_roles", floorplanPages: [1], elevationPages: [2], detailPages: [],
+      memory: "Recover missing roles.",
+    }, ["W1"], [1, 2]).elevationPages,
+    [2],
+  );
   assert.equal(validateFullDocumentTurn({
     action: "render", requests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 400, 300] }], memory: "Read the face.",
   }, ["W1"], [1, 2]).requests[0].dpi, 220);
@@ -2226,7 +2471,8 @@ test("full-document turn contract exposes bounded adaptive tools and rejects voc
   assert.equal(validateFullDocumentTurn({ action: "finish", memory: "Coverage complete." }, ["W1"], [1, 2]).action, "finish");
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
   assert.ok(skill.responseSchema.properties.action);
-  assert.equal(skill.promptVersion, "v7", "plan recovery, visual identity, and face context must invalidate cached answers");
+  assert.match(skill.buildPrompt({ imageDataUrls: [] }), /recovered.*planEvidenceRenderId/i);
+  assert.equal(skill.promptVersion, "v10", "identity-evidence provenance must invalidate cached weaker answers");
 });
 
 test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
@@ -2281,7 +2527,10 @@ test("full-document agent starts text-only, preserves set context, and can corre
         { pageNo: 2, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
       ] },
       pages: [
-        { pageNo: 1, text: "GROUND FLOOR PLAN W1 STUDY ENTRY", words: [{ text: "W1", x0: 20, top: 20, x1: 30, bottom: 30 }] },
+        { pageNo: 1, text: "GROUND FLOOR PLAN W1 S08 STUDY ENTRY", words: [
+          { text: "W1", x0: 20, top: 20, x1: 30, bottom: 30 },
+          { text: "S08", x0: 20, top: 31, x1: 35, bottom: 41 },
+        ] },
         { pageNo: 2, text: "ELEVATION A", words: [] },
       ],
       timings: { inventoryMs: 1, textMs: 1, wordsMs: 1, totalMs: 3 },
