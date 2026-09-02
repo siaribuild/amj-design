@@ -1269,6 +1269,7 @@ async function runReviews(run, panes) {
   //
   // Checked here rather than in each launch path because the requirement
   // belongs to the GATE, not to how a particular reviewer happened to boot.
+  const held = []
   for (const rv of REVIEWERS) {
     if (rv.codex && !CODEX_REVIEWS) continue
     const label = 'review-' + rv.id
@@ -1277,14 +1278,46 @@ async function runReviews(run, panes) {
     // finished. Stamping it `code: 1` here would mark a live agent finished and
     // failed, collapsing the distinction `runReviews` is built around: one
     // reviewer holding must not stall or condemn the others. Its report is
-    // checked when it settles, not while it waits.
-    if (run.stages[label]?.status === 'held') continue
+    // checked when it settles, not while it waits - which is why a hold must
+    // also stop `review` being rolled up as done, below. Skipping the stamp
+    // WITHOUT that would be the same bypass by a kinder route: the gate would
+    // pass on a reviewer that never reported.
+    if (run.stages[label]?.status === 'held') { held.push(rv.id); continue }
     const p = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
     if (existsSync(p) && readFileSync(p, 'utf8').trim()) continue
     run.stages[label] = { ...(run.stages[label] || {}), code: 1, missingReport: true }
     process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + p + ').\n' +
       '     Its process may have exited 0; that is not a review. This work is\n' +
       '     UNREVIEWED by ' + rv.id + ' - do not present it as reviewed.\n')
+  }
+  // A HOLD IS NOT A PASS. `review` is rolled up as done so `next` advances
+  // instead of re-running four reviewers - but rolling it up while a reviewer
+  // is still held would advance the run to `accept` on a review that never
+  // happened, which is the mandatory gate bypassed by patience rather than by
+  // error. The stage stays open, the run stays put, and the held reviewer is
+  // named so the owner knows which pane is waiting for them.
+  // WRITE NOTHING, rather than inventing a held parent. `review` is a rollup
+  // with no session of its own, so a `status: 'held'` on it is a state the rest
+  // of this file cannot act on: `finished` returns early and never prints the
+  // gate, `resume` has no session to reattach to, and `plan` reads code 1 as a
+  // failure with no route out. Leaving the rollup UNWRITTEN says the one true
+  // thing - the stage is not done - in the vocabulary every other path already
+  // speaks, so `next` re-runs review once the held reviewer has been answered
+  // and its pane freed. The per-reviewer records keep their own `held` status,
+  // which `resume` and the pane logic do understand.
+  if (held.length) {
+    // DELETE, not merely decline to write. A re-review runs against a run whose
+    // previous round already wrote `code: 0` here; leaving that record standing
+    // means the hold is invisible and `next` advances to `accept` on the
+    // strength of a rollup describing a review that has since been superseded.
+    // The absent key is the only honest record: this stage is not done now,
+    // whatever was true last round.
+    delete run.stages['review']
+    saveRun(run)
+    process.stdout.write('\n  == REVIEW HELD - ' + held.join(', ') + ' stopped for you and has\n' +
+      '     produced no report, so the gate is NOT satisfied and `accept` must not run.\n' +
+      '     Answer it in its pane and let it finish, then:  conduct run review\n')
+    return
   }
   // Same bookkeeping runBuild does for 'build': mark the parent stage done so
   // `next` advances past it instead of re-running all four reviewers on a
