@@ -1258,6 +1258,34 @@ async function runReviews(run, panes) {
       '     do not present it as reviewed by four reviewers.\n')
   await Promise.all([...jobs,
     ...(CODEX_REVIEWS ? [runCodex(run), runCodexArchitecture(run)] : [])])
+  // THE GATE ASSERTS ITS OWN EVIDENCE. A reviewer is not "done" because its
+  // process exited - it is done when its report exists and has something in it.
+  // Two ways this pipeline has already failed that test: plan mode forbade the
+  // write, so conformance exited 0 having produced nothing; and `spec.capture`
+  // is consumed by runClaude only, so a pane-mode reviewer (herdr available)
+  // still writes nothing while finalizePane marks it done. Both end the same
+  // way - `accept` reads an absent 07-review-*.md as "no findings" and the
+  // mandatory gate passes on silence.
+  //
+  // Checked here rather than in each launch path because the requirement
+  // belongs to the GATE, not to how a particular reviewer happened to boot.
+  for (const rv of REVIEWERS) {
+    if (rv.codex && !CODEX_REVIEWS) continue
+    const label = 'review-' + rv.id
+    // A HELD REVIEWER IS NOT A MISSING ONE. It is alive in its pane waiting for
+    // the owner, and it has no report yet for exactly that reason - it has not
+    // finished. Stamping it `code: 1` here would mark a live agent finished and
+    // failed, collapsing the distinction `runReviews` is built around: one
+    // reviewer holding must not stall or condemn the others. Its report is
+    // checked when it settles, not while it waits.
+    if (run.stages[label]?.status === 'held') continue
+    const p = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    if (existsSync(p) && readFileSync(p, 'utf8').trim()) continue
+    run.stages[label] = { ...(run.stages[label] || {}), code: 1, missingReport: true }
+    process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + p + ').\n' +
+      '     Its process may have exited 0; that is not a review. This work is\n' +
+      '     UNREVIEWED by ' + rv.id + ' - do not present it as reviewed.\n')
+  }
   // Same bookkeeping runBuild does for 'build': mark the parent stage done so
   // `next` advances past it instead of re-running all four reviewers on a
   // second call - review has no single session of its own to report.
