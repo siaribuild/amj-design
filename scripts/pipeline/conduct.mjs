@@ -385,16 +385,19 @@ write a file: you are read-only by design and the write will be refused.`,
   { id: 'codex', codex: true },
 ]
 
-// OFF BY OWNER INSTRUCTION, 2026-09-02: "do not use Codex for reviews until
-// further notice." One constant, so bringing them back is one edit and no
-// archaeology.
+// ON. Turned off by the owner on 2026-09-02 ("do not use Codex for reviews
+// until further notice") to protect tokens for parallel Codex work, and turned
+// back on by him the same day once that work freed up. Left as one constant
+// because it has now been flipped twice: this is a spending dial, not a
+// judgement about Codex, and it will be flipped again.
 //
-// A disabled reviewer is NOT a silently skipped one. runReviews prints that
-// codex is off, because the failure this pipeline has already recorded is a
-// review stage that reports success while producing nothing - a run must never
-// read as having had four reviewers when it had three. The plugin stays
-// installed: this governs the automated stage, not `/codex:review` by hand.
-const CODEX_REVIEWS = false
+// Whichever way it points, a disabled reviewer is NOT a silently skipped one.
+// runReviews prints when codex is off, because the failure this pipeline has
+// already recorded is a review stage that reports success while producing
+// nothing - a run must never read as having had four reviewers when it had
+// three. The plugin stays installed either way: this governs the automated
+// stage, not `/codex:review` by hand.
+const CODEX_REVIEWS = true
 
 // --- run state -------------------------------------------------------------
 
