@@ -23,7 +23,7 @@
 
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt, finalReply } from './measure.mjs'
@@ -1248,7 +1248,63 @@ Report findings in your reply, most serious first.`],
 // completion is awaited - a fan-out that starts the second only once the first
 // has finished is a sequential loop wearing a costume - and one reviewer
 // holding on a question does not stall the rest.
+/**
+ * Every report this run is REQUIRED to produce, as {id, file} - the one list
+ * the cleanup and the gate both derive from.
+ *
+ * It is a function and not a constant because membership depends on the run:
+ * codex is a toggle (CODEX_REVIEWS), and the architecture review exists only
+ * on the full tier, since a fix-tier run has no design stage and so no
+ * architecture to review.
+ *
+ * The architecture reviewer is the reason this exists. It writes
+ * 07-review-architecture.md but is NOT in REVIEWERS - it is called directly by
+ * runReviews - so every loop written over REVIEWERS silently omitted it: it was
+ * never cleared between rounds and never gated at all. Deriving both from here
+ * is what stops the next loop making the same omission.
+ */
+function expectedReports(run) {
+  const out = REVIEWERS
+    .filter((rv) => !(rv.codex && !CODEX_REVIEWS))
+    .map((rv) => ({ id: rv.id, file: '07-review-' + rv.id + '.md' }))
+  if (CODEX_REVIEWS && (run.tier || 'full') === 'full')
+    out.push({ id: 'codex-architecture', file: '07-review-architecture.md' })
+  return out
+}
+
+/**
+ * Every report a review round COULD produce, enabled or not - which is a
+ * different list from `expectedReports`, and the difference matters.
+ *
+ * The gate asks which reports must exist; cleanup must clear every report that
+ * could exist. Clearing only the enabled set leaves a DISABLED reviewer's file
+ * from an earlier round sitting on disk, and `accept` reads every
+ * 07-review-*.md as coverage - so turning a reviewer off makes its last report
+ * immortal and it goes on vouching for code it never saw. Codex has already
+ * been toggled twice on this run.
+ */
+function allReportFiles() {
+  return [
+    ...REVIEWERS.map((rv) => '07-review-' + rv.id + '.md'),
+    '07-review-architecture.md',
+  ]
+}
+
 async function runReviews(run, panes) {
+  // CLEAR LAST ROUND'S REPORTS FIRST. The gate accepts a non-empty
+  // 07-review-<id>.md as proof a reviewer ran - but on a RE-review those files
+  // are already on disk from the previous round, describing a tree that has
+  // since moved. A reviewer that then fails to produce anything is covered by
+  // its own stale report and the gate passes on evidence about different code.
+  // Observed on this very run: two reports sat describing the branch as it was
+  // 15 commits earlier, complete with findings already fixed.
+  //
+  // Deleting them makes "the file exists" mean "produced THIS round" by
+  // construction, rather than by comparing timestamps and hoping. The cost is
+  // that a failed re-review leaves no report at all - which is the honest
+  // outcome, and louder than a stale one.
+  for (const file of allReportFiles())
+    rmSync(join(RUNS, run.slug, file), { force: true })
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
     const capture = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
     const spec = { agent: rv.agent, compact: rv.compact, readonly: true, capture }
@@ -1292,15 +1348,14 @@ async function runReviews(run, panes) {
   // deciding on them. So: classify every enabled reviewer, then write the
   // rollup only if every one of them REPORTED.
   const held = [], failed = []
-  for (const rv of REVIEWERS) {
-    if (rv.codex && !CODEX_REVIEWS) continue
-    const label = 'review-' + rv.id
+  for (const r of expectedReports(run)) {
+    const label = 'review-' + r.id
     const st = run.stages[label]
-    if (st?.status === 'held') { held.push(rv.id); continue }
-    const path = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    if (st?.status === 'held') { held.push(r.id); continue }
+    const path = join(RUNS, run.slug, r.file)
     const reported = existsSync(path) && !!readFileSync(path, 'utf8').trim()
     if (reported && (st?.code ?? 0) === 0) continue
-    failed.push(rv.id)
+    failed.push(r.id)
     if (!reported) {
       run.stages[label] = { ...(st || {}), code: 1, missingReport: true }
       process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + path + ').\n' +
