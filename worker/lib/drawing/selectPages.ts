@@ -17,6 +17,7 @@ export type Strategy = "text_vector" | "text_raster" | "scanned";
  *  guess (AC-13): a document nobody could read must be reportable as such. */
 // Ordering is stable output ordering only. A sheet may carry more than one
 // tier (most importantly, schedules commonly share an elevation sheet).
+const TITLE_META = String.raw`(?:[ \t]+(?:SCALE[ \t]+\d+(?:\.\d+)?\s*[:/]\s*\d+(?:\.\d+)?|(?:SHEET[ \t]+)?[A-Z]{1,3}[- ]?\d{1,4}|REV(?:ISION)?[ \t]+[A-Z0-9]+))*[ \t]*$`;
 const TIER_PATTERNS: [PageTier, RegExp][] = [
   [
     "schedule",
@@ -24,12 +25,12 @@ const TIER_PATTERNS: [PageTier, RegExp][] = [
   ],
   [
     "elevation",
-    /(?:\bELEVATIONS?\s*[-:]?\s*[A-D]\b|^[ \t]*(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS)[ \t]+ELEVATIONS?[ \t]*$)/im,
+    new RegExp(String.raw`(?:\bELEVATIONS?\s*[-:]?\s*[A-D]\b|^[ \t]*(?:(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS|SIDE)|(?:LEFT|RIGHT)(?:[ \t]+SIDE)?)[ \t]+ELEVATIONS?${TITLE_META})`, "im"),
   ],
   ["siteplan", /\bsite\s*plan\b/i],
   [
     "floorplan",
-    /(?:\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b|^[ \t]*(?:(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+)\s+PLAN|PLAN\s*[-:]?\s*(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+))[ \t]*$)/im,
+    new RegExp(String.raw`(?:\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b|^[ \t]*(?:(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+)\s+PLAN|PLAN\s*[-:]?\s*(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+))${TITLE_META})`, "im"),
   ],
 ];
 

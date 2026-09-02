@@ -8,6 +8,7 @@ interface ComparableReading {
     confidence: "high" | "low";
     elevation?: string | null;
     storey?: string | null;
+    facePageNo?: number | null;
     evidenceView?: "elevation" | "detail";
     faceOpeningCount?: number | null;
     wallOrder?: number | null;
@@ -35,9 +36,20 @@ const flag = (items: ComparableReading[], value: DrawingFlag): void => {
   }
 };
 
+export function drawingFaceKey(
+  value: Pick<ComparableReading["proposal"], "facePageNo" | "elevation" | "storey">,
+): string | null {
+  return value.facePageNo != null && value.elevation && value.storey
+    ? JSON.stringify([value.facePageNo, value.elevation, value.storey])
+    : null;
+}
+
 export function applyDrawingConsistencyFlags(
   readings: ComparableReading[],
-  { coverageComplete = true }: { coverageComplete?: boolean } = {},
+  {
+    incompleteFaces = new Set<string>(),
+    unknownCoverage = false,
+  }: { incompleteFaces?: ReadonlySet<string>; unknownCoverage?: boolean } = {},
 ): void {
   for (let left = 0; left < readings.length; left++) {
     for (let right = left + 1; right < readings.length; right++) {
@@ -64,17 +76,17 @@ export function applyDrawingConsistencyFlags(
   }
   const faces = new Map<string, ComparableReading[]>();
   for (const reading of readings) {
-    if (!reading.proposal.elevation || !reading.proposal.storey) continue;
-    const key = JSON.stringify([reading.proposal.elevation, reading.proposal.storey]);
+    const key = drawingFaceKey(reading.proposal);
+    if (!key) continue;
     const face = faces.get(key) ?? [];
     face.push(reading);
     faces.set(key, face);
   }
-  for (const face of faces.values()) {
+  for (const [key, face] of faces) {
     const counts = face.flatMap((reading) => reading.proposal.faceOpeningCount ?? []);
     if (new Set(counts).size > 1
       || counts.some((count) => count < face.length)
-      || (coverageComplete && counts.some((count) => count > face.length))
+      || (!unknownCoverage && !incompleteFaces.has(key) && counts.some((count) => count > face.length))
     ) {
       flag(face, "drawingInconsistency");
     }

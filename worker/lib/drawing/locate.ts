@@ -81,7 +81,11 @@ function inDimensionChain(tagWord: PageWord, words: PageWord[]): boolean {
     && Math.min(Math.abs(word.x0 - tagWord.x1), Math.abs(tagWord.x0 - word.x1)) <= height * 2);
 }
 
-export function openingTagWords(words: PageWord[], vocabulary: Set<string>): { tag: string; word: PageWord }[] {
+export function openingTagWords(
+  words: PageWord[],
+  vocabulary: Set<string>,
+  geo?: Pick<PageInventory, "widthPt" | "heightPt">,
+): { tag: string; word: PageWord; ambiguous: boolean }[] {
   const byTag = new Map<string, PageWord[]>();
   for (const word of words) {
     const tag = normalizeOpeningRef(word.text);
@@ -90,10 +94,18 @@ export function openingTagWords(words: PageWord[], vocabulary: Set<string>): { t
     matches.push(word);
     byTag.set(tag, matches);
   }
+  const planBox = geo ? footprint(words, geo, vocabulary) : null;
   return [...byTag].flatMap(([tag, matches]) => {
     const scored = matches.map((word) => ({ word, score: sheetRefScore(word, words) }));
     const best = Math.max(...scored.map(({ score }) => score));
-    return scored.filter(({ score }) => best === 0 || score === best).map(({ word }) => ({ tag, word }));
+    let selected = scored.filter(({ score }) => best === 0 || score === best);
+    if (best === 0 && planBox) {
+      const cap = Math.hypot(planBox.x1 - planBox.x0, planBox.bottom - planBox.top) * 0.2;
+      const nearPlan = selected.filter(({ word }) => distanceToFootprint(word, planBox) <= cap);
+      if (nearPlan.length) selected = nearPlan;
+    }
+    const ambiguous = selected.length > 1;
+    return selected.map(({ word }) => ({ tag, word, ambiguous }));
   });
 }
 
@@ -186,7 +198,7 @@ export function locateFloorplanPage(
   }
 
   const wordsByTag = new Map<string, PageWord[]>();
-  for (const { tag, word } of openingTagWords(page.words, normalizedVocabulary)) {
+  for (const { tag, word } of openingTagWords(page.words, normalizedVocabulary, geo)) {
     const current = wordsByTag.get(tag) ?? [];
     current.push(word);
     wordsByTag.set(tag, current);

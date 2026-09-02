@@ -24,7 +24,7 @@ await build({
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
-      export { applyDrawingConsistencyFlags } from ${p("worker/lib/drawing/consistency.ts")};
+      export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
       export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
       export { compositionFromSchedule, reconcileReading } from ${p("worker/lib/drawing/reconcile.ts")};
@@ -40,7 +40,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, applyDrawingConsistencyFlags, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, applyFullAgentRooms, conflictReason, persistReadings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -111,11 +111,21 @@ test("selectPages: named facade title lines are elevation sheets", () => {
   ]);
 });
 
+test("selectPages: side facade names and title-block metadata remain elevation sheets", () => {
+  const pages = [
+    "SIDE ELEVATION", "LEFT ELEVATION", "RIGHT ELEVATION",
+    "LEFT SIDE ELEVATION", "RIGHT SIDE ELEVATION",
+    "EAST ELEVATION SCALE 1:100", "SOUTH ELEVATION A2", "SIDE ELEVATION REV B",
+  ].map((text, index) => pt(index + 1, text));
+  const { selected } = selectPages(inv(pages.map((page) => pageFacts({ pageNo: page.pageNo }))), pages);
+  assert.deepEqual(selected.map(({ pageNo, tier }) => [pageNo, tier]), pages.map((page) => [page.pageNo, "elevation"]));
+});
+
 test("selectPages: level plan title forms are floor plans but section levels are not", () => {
   const pages = [
     pt(1, "LEVEL 1 PLAN"),
     pt(2, "PLAN - LEVEL 2"),
-    pt(3, "GROUND LEVEL PLAN"),
+    pt(3, "GROUND LEVEL PLAN A2"),
     pt(4, "SECTION A\nLEVEL 1 10.000"),
   ];
   const { selected } = selectPages(inv(pages.map((page) => pageFacts({ pageNo: page.pageNo }))), pages);
@@ -1842,7 +1852,49 @@ test("full-document harvest drops a legend decoy when the plan tag has an adjace
   ]);
 });
 
-test("full-document agent fails closed without a classified floor plan", async () => {
+test("full-document harvest drops a no-reference legend decoy outside the plan footprint", () => {
+  const planWords = [
+    ["LIVING", 180, 120], ["KITCHEN", 420, 120], ["BEDROOM", 650, 120],
+    ["HALL", 180, 350], ["BATH", 420, 350], ["GARAGE", 650, 350],
+    ["ENTRY", 180, 540], ["LAUNDRY", 420, 540], ["STORE", 650, 540],
+  ].map(([text, x0, top]) => ({ text, x0, top, x1: x0 + 55, bottom: top + 15 }));
+  const inspected = {
+    inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 1_000, heightPt: 700, rotation: 0, textChars: 80, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN", words: [
+      ...planWords,
+      { text: "W1", x0: 100, top: 250, x1: 120, bottom: 265 },
+      { text: "W1", x0: 930, top: 500, x1: 950, bottom: 515 },
+      { text: "DENOTES", x0: 955, top: 500, x1: 995, bottom: 515 },
+    ] }],
+  };
+  const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
+  assert.deepEqual(harvest.tagCandidates.map(({ boxPt, ambiguous }) => ({ boxPt, ambiguous })), [
+    { boxPt: [100, 250, 120, 265], ambiguous: false },
+  ]);
+});
+
+test("full-document harvest marks two plausible no-reference tag occurrences ambiguous", () => {
+  const words = [
+    ["LIVING", 180, 120], ["KITCHEN", 420, 120], ["BEDROOM", 650, 120],
+    ["HALL", 180, 350], ["BATH", 420, 350], ["GARAGE", 650, 350],
+    ["ENTRY", 180, 540], ["LAUNDRY", 420, 540], ["STORE", 650, 540],
+  ].map(([text, x0, top]) => ({ text, x0, top, x1: x0 + 55, bottom: top + 15 }));
+  words.push(
+    { text: "W1", x0: 100, top: 250, x1: 120, bottom: 265 },
+    { text: "W1", x0: 720, top: 250, x1: 740, bottom: 265 },
+  );
+  const inspected = {
+    inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 1_000, heightPt: 700, rotation: 0, textChars: 80, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN", words }],
+  };
+  const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
+  assert.equal(harvest.tagCandidates.length, 2);
+  assert.ok(harvest.tagCandidates.every((candidate) => candidate.ambiguous));
+});
+
+test("full-document agent fails closed after one invalid plan-page recovery", async () => {
   let modelCalls = 0;
   const progress = [];
   const result = await runFullDocumentAgent({
@@ -1851,21 +1903,55 @@ test("full-document agent fails closed without a classified floor plan", async (
     inspected: {
       inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
         pages: [{ pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 }] },
-      pages: [{ pageNo: 1, text: "LEVEL 1", words: [{ text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 }] }],
+      pages: [{ pageNo: 1, text: "LEVEL 1", words: [] }],
     },
     deps: {
-      runTurn: async () => { modelCalls++; return null; },
+      runTurn: async () => { modelCalls++; return { action: "identify_plan_pages", pages: [1], memory: "Page 1 may be a plan." }; },
       render: async () => { throw new Error("no render without a validated plan page"); },
       store: async () => null,
       onProgress: async (done, total, phase) => progress.push({ done, total, phase }),
     },
   });
-  assert.equal(modelCalls, 0);
+  assert.equal(modelCalls, 1);
   assert.equal(result.report.steps.failedPhase, "floorplan_location");
   assert.equal(result.report.perOpening[0].outcome, "not_read");
   assert.equal(result.readings[0].confidence, "low");
   assert.match(result.readings[0].gapNote, /floor-plan page/i);
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
+});
+
+test("full-document agent recovers one missed plan page before reading", async () => {
+  let modelCalls = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "LEVEL 1", words: [{ text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 }] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        modelCalls++;
+        if (modelCalls === 1) return { action: "identify_plan_pages", pages: [1], memory: "Page 1 is the plan." };
+        if (modelCalls === 2) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read Elevation A." };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [],
+          records: [hybridRecord({ planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1, facePageNo: 2, evidenceRenderId: "fd_t002_01" })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(modelCalls, 3);
+  assert.equal(result.report.perOpening[0].outcome, "read");
+  assert.ok(result.report.steps.selectPages.selected.some((page) => page.pageNo === 1 && page.tier === "floorplan"));
 });
 
 test("full-document harvest bounds repeated tag context and total page text", () => {
@@ -1892,7 +1978,7 @@ test("full-document harvest bounds repeated tag context and total page text", ()
 const hybridRecord = (overrides = {}) => ({
   tag: "W1", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical",
   orientation: "N", elevation: "A", roomLabel: null, storey: "ground", faceOpeningCount: 1,
-  planCandidateId: null, planPageNo: null, wallOrder: null,
+  planCandidateId: null, planEvidenceRenderId: null, planPageNo: null, wallOrder: null, facePageNo: null,
   evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
   confidence: "high", flags: [], basis: ["Visible opening on elevation A."], note: null,
   ...overrides,
@@ -1956,6 +2042,44 @@ test("full-document agent binds a plan tag to wall order and maps crop-relative 
   assert.deepEqual([...new Set(progress.map((item) => item.phase))], [
     "elevation_inventory", "floorplan_location", "render_crops", "opening_read",
   ]);
+});
+
+test("full-document ambiguous plan candidate requires a stored plan render", async () => {
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1",
+    scheduleRows: [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "GROUND FLOOR PLAN", words: [
+          { text: "W1", x0: 100, top: 100, x1: 120, bottom: 115 },
+          { text: "W1", x0: 600, top: 400, x1: 620, bottom: 415 },
+        ] },
+        { pageNo: 2, text: "ELEVATION A", words: [] },
+      ],
+    },
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { action: "render", requests: [{ pageNo: 2, dpi: 200 }], memory: "Read Elevation A." };
+        if (turn === 3) return { action: "render", requests: [{ pageNo: 1, dpi: 150 }], memory: "Disambiguate the two W1 occurrences." };
+        return {
+          action: "emit", memory: "W1 resolved.", declines: [], records: [hybridRecord({
+            planCandidateId: "W1_p1_1", planEvidenceRenderId: turn === 4 ? "fd_t003_01" : null,
+            planPageNo: 1, wallOrder: 1, facePageNo: 2, evidenceRenderId: "fd_t001_01",
+          })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 600 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.deepEqual(result.report.perOpening[0].corrections, [{ turn: 2, reasons: ["identity_visual_evidence_required"] }]);
+  assert.equal(result.report.perOpening[0].acceptedTurn, 4);
 });
 
 test("full-document parsing preserves visually read geometry regardless of downstream product limits", async () => {
@@ -2069,17 +2193,18 @@ test("full-document provider-call budget includes schema repairs", async () => {
   assert.equal(result.report.modelCalls, FULL_DOCUMENT_AGENT_LIMITS.maxProviderCalls);
 });
 
-test("full-document turn contract exposes the six adaptive tools and rejects vocabulary escape", () => {
+test("full-document turn contract exposes bounded adaptive tools and rejects vocabulary escape", () => {
   const record = {
       tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.35, 0.65], divisionAxis: "vertical",
       orientation: "N", elevation: "03", roomLabel: "STUDY", storey: "ground", faceOpeningCount: 1,
-      planCandidateId: "W1_p1_1", planPageNo: 1, wallOrder: 1,
+      planCandidateId: "W1_p1_1", planEvidenceRenderId: null, planPageNo: 1, wallOrder: 1, facePageNo: 2,
       evidenceView: "elevation", evidenceRenderId: "fd_overview_02", frameBoxNorm: [0.1, 0.1, 0.6, 0.8],
       confidence: "high", flags: [], basis: ["North face order and visible offset mullion."], note: null,
   };
   assert.deepEqual(validateFullDocumentTurn({ action: "list_pages", memory: "Map the set." }, ["W1"], [1, 2]).action, "list_pages");
   assert.deepEqual(validateFullDocumentTurn({ action: "get_page_text", pages: [2], memory: "Read the title." }, ["W1"], [1, 2]).pages, [2]);
   assert.deepEqual(validateFullDocumentTurn({ action: "get_text_tokens", pages: [1], memory: "Locate W1." }, ["W1"], [1, 2]).pages, [1]);
+  assert.deepEqual(validateFullDocumentTurn({ action: "identify_plan_pages", pages: [1], memory: "Recover the missed plan." }, ["W1"], [1, 2]).pages, [1]);
   assert.equal(validateFullDocumentTurn({
     action: "render", requests: [{ pageNo: 2, dpi: 220, bboxPt: [0, 0, 400, 300] }], memory: "Read the face.",
   }, ["W1"], [1, 2]).requests[0].dpi, 220);
@@ -2088,13 +2213,20 @@ test("full-document turn contract exposes the six adaptive tools and rejects voc
   }, ["W1"], [1, 2]).action, "measure_lines");
   assert.equal(validateFullDocumentTurn({ action: "emit", records: [record], memory: "W1 resolved." }, ["W1"], [1, 2]).records[0].roomLabel, "STUDY");
   assert.deepEqual(
+    validateFullDocumentTurn({
+      action: "emit", records: [], memory: "W1 declined on face A.",
+      declines: [{ tag: "W1", reason: "Illegible.", facePageNo: 2, elevation: "A", storey: "ground" }],
+    }, ["W1"], [1, 2]).declines[0],
+    { tag: "W1", reason: "Illegible.", facePageNo: 2, elevation: "A", storey: "ground" },
+  );
+  assert.deepEqual(
     validateFullDocumentTurn({ action: "emit", records: [{ ...record, tag: "W99" }], memory: "Invalid." }, ["W1"], [1, 2]).contractRejections,
     [{ tag: "W99", reasons: ["unknown_tag"] }],
   );
   assert.equal(validateFullDocumentTurn({ action: "finish", memory: "Coverage complete." }, ["W1"], [1, 2]).action, "finish");
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
   assert.ok(skill.responseSchema.properties.action);
-  assert.equal(skill.promptVersion, "v6", "the candidate-bound identity contract must invalidate cached page-only answers");
+  assert.equal(skill.promptVersion, "v7", "plan recovery, visual identity, and face context must invalidate cached answers");
 });
 
 test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
@@ -2527,7 +2659,7 @@ const comparableWallReading = (wallOrder, frameBoxPt, proposal = {}, pageNo = 1)
   frameBoxPt,
   proposal: {
     flags: [], confidence: "high", elevation: "A", storey: "ground",
-    evidenceView: "elevation", faceOpeningCount: null, wallOrder,
+    evidenceView: "elevation", facePageNo: 1, faceOpeningCount: null, wallOrder,
     ...proposal,
   },
   row: { widthMm: 1_000 },
@@ -2543,11 +2675,37 @@ test("full-document face count joins detail evidence to its architectural face",
   assert.deepEqual(readings.map((reading) => reading.proposal.flags), [[], []]);
 });
 
-test("full-document incomplete coverage does not poison successful face readings", () => {
+test("full-document face count keeps repeated elevation letters on separate sheets", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 50], { facePageNo: 6, faceOpeningCount: 1 }, 6),
+    comparableWallReading(1, [10, 10, 30, 50], { facePageNo: 9, faceOpeningCount: 1 }, 9),
+  ];
+  applyDrawingConsistencyFlags(readings);
+  assert.deepEqual(readings.map((reading) => reading.proposal.flags), [[], []]);
+});
+
+test("full-document incomplete coverage does not poison successful readings on that face", () => {
   const readings = [
     comparableWallReading(1, [10, 10, 30, 50], { faceOpeningCount: 2 }),
   ];
-  applyDrawingConsistencyFlags(readings, { coverageComplete: false });
+  applyDrawingConsistencyFlags(readings, { incompleteFaces: new Set([drawingFaceKey(readings[0].proposal)]) });
+  assert.deepEqual(readings[0].proposal.flags, []);
+});
+
+test("full-document decline on another face does not disable this face count", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 50], { faceOpeningCount: 2 }),
+  ];
+  const otherFace = drawingFaceKey({ facePageNo: 9, elevation: "D", storey: "ground" });
+  applyDrawingConsistencyFlags(readings, { incompleteFaces: new Set([otherFace]) });
+  assert.ok(readings[0].proposal.flags.includes("drawingInconsistency"));
+});
+
+test("full-document unlocated decline conservatively suspends under-count checks", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 50], { faceOpeningCount: 2 }),
+  ];
+  applyDrawingConsistencyFlags(readings, { unknownCoverage: true });
   assert.deepEqual(readings[0].proposal.flags, []);
 });
 
