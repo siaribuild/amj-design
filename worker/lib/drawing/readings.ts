@@ -12,7 +12,7 @@ type DrawingField = "split" | "room" | "orientation";
 const NON_BLOCKING_FLAGS: Record<DrawingField, ReadonlySet<DrawingFlag>> = {
   split: new Set(["northAssumed", "manufacturability"]),
   room: new Set(["northAssumed", "manufacturability", "scheduleDrawingMismatch"]),
-  orientation: new Set(["manufacturability", "scheduleDrawingMismatch"]),
+  orientation: new Set(["manufacturability", "scheduleDrawingMismatch", "drawingInconsistency"]),
 };
 
 /** Field-scoped trust: new/unknown flags block by default. A low reading may

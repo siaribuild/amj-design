@@ -1081,6 +1081,7 @@ export async function runAiExtraction(
         `UPDATE opening_instance SET
            group_code = COALESCE(?, group_code), family = COALESCE(?, family),
            operation_type = COALESCE(?, operation_type),
+           storey = COALESCE(?, storey), orientation = COALESCE(?, orientation),
            width_mm = COALESCE(?, width_mm), height_mm = COALESCE(?, height_mm),
            requirements_json = ?,
            quote_line_id = COALESCE(?, quote_line_id), qty = COALESCE(?, qty),
@@ -1094,6 +1095,7 @@ export async function runAiExtraction(
            )`,
       ).bind(unless("group_code", o.parentRef), unless("family", o.elementType === "door" ? "doors" : "windows"),
         unless("operation_type", operationFrom(o.configuration.familyRequested)),
+        unless("storey", o.level), unless("orientation", o.wallOrientation),
         unless("width_mm", o.widthMm), unless("height_mm", o.heightMm),
         locked.includes("requirements_json") ? existing.requirements_json : reqJson(o), quoteLine?.id ?? null,
         unless("qty", quoteLine?.qty ?? o.quantity), unless("options_json", JSON.stringify(scheduleOptions)),
@@ -1101,16 +1103,16 @@ export async function runAiExtraction(
     } else {
       upserts.push(env.DB.prepare(
         `INSERT INTO opening_instance
-           (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm,
+           (id, project_id, external_ref, group_code, family, operation_type, storey, orientation, width_mm, height_mm,
             requirements_json, quote_line_id, qty, options_json, context_json, requirement_basis,
             source_generation, status)
-         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'extracted'
+         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'extracted'
            WHERE EXISTS (
              SELECT 1 FROM project
               WHERE id=? AND ai_generation=? AND status_customer='draft'
            )`,
       ).bind(uuid(), projectId, o.externalRef, o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o),
+        operationFrom(o.configuration.familyRequested), o.level, o.wallOrientation, o.widthMm, o.heightMm, reqJson(o),
         quoteLine?.id ?? null, quoteLine?.qty ?? o.quantity, JSON.stringify(scheduleOptions),
         JSON.stringify(context), requirementBasis, sourceGeneration, projectId, sourceGeneration));
     }

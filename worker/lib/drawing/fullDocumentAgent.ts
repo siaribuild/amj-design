@@ -22,10 +22,11 @@ import { applyStatedWidths, compositionFromSchedule, scheduleDrawingMismatch } f
 import { applyDrawingConsistencyFlags, drawingFaceKey } from "./consistency";
 import { sizesFromRatios } from "../estimator/split";
 import { hasPlanFootprint, locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
+import { elevationRegions } from "./elevationRegions";
 
 const MAX_TURNS = 16;
 const MAX_PROVIDER_CALLS = 16;
-const MAX_ESCALATIONS = 3;
+const MAX_ESCALATIONS = 8;
 const MAX_REJECTIONS_PER_TAG = 2;
 const MAX_RECORDS = 60;
 const MAX_RENDER_REQUESTS = 6;
@@ -192,7 +193,7 @@ export interface FullDocumentAgentInput {
   }[];
   imageDataUrls: { renderId: string; dataUrl: string }[];
   turnsRemaining: number;
-  escalationRecord?: FullAgentProposal;
+  escalationRecords?: FullAgentProposal[];
 }
 
 export interface FullDocumentAgentDeps {
@@ -783,7 +784,26 @@ export async function runFullDocumentAgent(args: {
   const fallbackSourceFileId = sourceFileIds.length === 1 ? sourceFileIds[0] : null;
   const report = emptyReport(fileId, inspected);
   const harvest = args.harvest ?? buildFullDocumentHarvest(inspected, scheduleRows, sourceByPage);
-  const orientationByTag = new Map(harvest.placements.map((placement) => [placement.tag, placement.orientation]));
+  const placementByTag = new Map(harvest.placements.map((placement) => [placement.tag, placement]));
+  const placementFaceCounts = new Map<string, number>();
+  for (const placement of harvest.placements) {
+    const key = JSON.stringify([placement.pageNo, placement.elevation, placement.storey]);
+    placementFaceCounts.set(key, (placementFaceCounts.get(key) ?? 0) + 1);
+  }
+  const applyPlacement = (proposal: FullAgentProposal): void => {
+    const placement = placementByTag.get(proposal.tag);
+    proposal.orientation = placement?.orientation ?? null;
+    if (!placement) return;
+    proposal.elevation = placement.elevation;
+    proposal.storey = placement.storey ?? proposal.storey;
+    proposal.planPageNo = placement.pageNo;
+    proposal.wallOrder = placement.orderOnWall;
+    if (placement.storey) {
+      proposal.faceOpeningCount = placementFaceCounts.get(JSON.stringify([
+        placement.pageNo, placement.elevation, placement.storey,
+      ])) ?? proposal.faceOpeningCount;
+    }
+  };
   const pageByNo = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
   const rowByTag = new Map(scheduleRows.map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row]));
   const proposals = new Map<string, FullAgentProposal>();
@@ -913,6 +933,17 @@ export async function runFullDocumentAgent(args: {
     if (proposal.evidenceView === "elevation") {
       proposal.facePageNo ??= render.pageNo;
       if (proposal.facePageNo !== render.pageNo) reasons.push("face_page_mismatch");
+      const regions = elevationRegions(textByNo.get(render.pageNo)?.words ?? [], page.widthPt, page.heightPt);
+      const region = regions.find((item) => item.label === proposal.elevation);
+      if (proposal.elevation && regions.length) {
+        const evidence = pageBox(proposal, render);
+        const centreX = (evidence[0] + evidence[2]) / 2;
+        const centreY = (evidence[1] + evidence[3]) / 2;
+        if (!region || centreX < region.region[0] || centreX > region.region[2]
+          || centreY < region.region[1] || centreY > region.region[3]) {
+          reasons.push("evidence_page_elevation_mismatch");
+        }
+      }
     } else if (proposal.facePageNo != null) {
       if (!deterministicCompositionPageNos.has(proposal.facePageNo)
         && !(recoveredCompositionPageNos.has(proposal.facePageNo) && hasStoredPageOverview(proposal.facePageNo))) {
@@ -1143,7 +1174,7 @@ export async function runFullDocumentAgent(args: {
     }
     report.steps.read.attempted += records.length + ambiguities.length;
     for (const proposal of records) {
-      proposal.orientation = orientationByTag.get(proposal.tag) ?? null;
+      applyPlacement(proposal);
       attempts.set(proposal.tag, (attempts.get(proposal.tag) ?? 0) + 1);
       const reasons = proposalRejectionReasons(proposal, pending);
       if (reasons.length) {
@@ -1200,18 +1231,23 @@ export async function runFullDocumentAgent(args: {
     const page = render ? pageByNo.get(render.pageNo) : null;
     if (!proposal || !render || !page) return null;
     const preview = readingFromProposal(proposal, row, render, page);
-    return !preview.flags.includes("duplicateFrame") && (preview.confidence !== "high" || preview.flags.length)
+    const wholePage = render.bboxPt[0] === 0 && render.bboxPt[1] === 0
+      && render.bboxPt[2] === page.widthPt && render.bboxPt[3] === page.heightPt;
+    const riskyOverview = wholePage && proposal.operations.length > 1 && (
+      (/AWNING/i.test(row.typeText ?? "") && proposal.operations[0] !== "awning")
+      || /DOOR|HING/i.test(row.typeText ?? "")
+    );
+    return !preview.flags.includes("duplicateFrame") && (preview.confidence !== "high" || preview.flags.length || riskyOverview)
       ? { tag, row, proposal, page, flags: preview.flags }
       : null;
   }).filter((item): item is NonNullable<typeof item> => !!item)
     .sort((a, b) => Number(b.flags.includes("scheduleDrawingMismatch")) - Number(a.flags.includes("scheduleDrawingMismatch")))
     .slice(0, MAX_ESCALATIONS);
 
-  for (const candidate of reviewCandidates) {
-    if (report.modelCalls >= MAX_PROVIDER_CALLS) break;
-    report.steps.read.targetedReviews++;
-    let reviewOutcome: "replaced" | "kept" | "failed" = "kept";
-    try {
+  if (reviewCandidates.length && report.modelCalls < MAX_PROVIDER_CALLS) {
+    const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
+    let reviewChars = 0;
+    for (const candidate of reviewCandidates) {
       const render = await addRender(`fd_review_${candidate.tag}`, {
         pageNo: candidate.page.pageNo,
         dpi: 300,
@@ -1219,28 +1255,36 @@ export async function runFullDocumentAgent(args: {
         threshold: 250,
       });
       if (!render?.cropKey) continue;
+      if (reviews.length >= MAX_ACTIVE_IMAGES || reviewChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) break;
+      reviews.push({ candidate, render });
+      reviewChars += render.pngB64.length;
+    }
+    report.steps.read.targetedReviews += reviews.length;
+    const outcomes = new Map(reviews.map(({ candidate }) => [candidate.tag, "kept" as "replaced" | "kept" | "failed"]));
+    if (reviews.length) try {
+      const reviewTags = new Set(reviews.map(({ candidate }) => candidate.tag));
       const result = await deps.runTurn({
         turn: 1,
         harvest: {
           ...harvest,
-          schedule: harvest.schedule.filter((row) => row.tag === candidate.tag),
-          tagCandidates: harvest.tagCandidates.filter((item) => item.tag === candidate.tag),
+          schedule: harvest.schedule.filter((row) => reviewTags.has(row.tag)),
+          tagCandidates: harvest.tagCandidates.filter((item) => reviewTags.has(item.tag)),
         },
-        pendingTags: [candidate.tag],
+        pendingTags: [...reviewTags],
         acceptedTags: [],
         declinedTags: [],
-        workingMemory: "Fresh targeted review: confirm or correct this one record from the close-up.",
-        observations: [{
+        workingMemory: "Fresh targeted review: confirm or correct each parent record from its matching close-up.",
+        observations: reviews.map(({ candidate, render }) => ({
           tool: "render", renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt,
           parentRecord: candidate.proposal, parentFlags: candidate.flags,
-        }],
-        renderCatalog: [{
+        })),
+        renderCatalog: reviews.map(({ render }) => ({
           renderId: render.id, pageNo: render.pageNo, bboxPt: render.bboxPt, dpi: render.dpi,
           widthPx: render.widthPx, heightPx: render.heightPx,
-        }],
-        imageDataUrls: [{ renderId: render.id, dataUrl: `data:image/png;base64,${render.pngB64}` }],
+        })),
+        imageDataUrls: reviews.map(({ render }) => ({ renderId: render.id, dataUrl: `data:image/png;base64,${render.pngB64}` })),
         turnsRemaining: 1,
-        escalationRecord: candidate.proposal,
+        escalationRecords: reviews.map(({ candidate }) => candidate.proposal),
       });
       const action = result && "data" in result ? result.data : result;
       if (result && "data" in result) {
@@ -1252,19 +1296,22 @@ export async function runFullDocumentAgent(args: {
       } else {
         report.modelCalls++;
       }
-      if (action?.action !== "emit") continue;
-      const proposed = action.records.find((record) => record.tag === candidate.tag);
-      if (proposed) proposed.orientation = orientationByTag.get(proposed.tag) ?? null;
-      if (!proposed || proposed.evidenceRenderId !== render.id || proposed.confidence !== "high" || proposed.flags.length) continue;
-      if (proposalRejectionReasons(proposed, new Set([candidate.tag])).length) continue;
-      const preview = readingFromProposal(proposed, candidate.row, render, candidate.page);
-      if (preview.confidence !== "high" || preview.flags.length) continue;
-      proposals.set(candidate.tag, proposed);
-      reviewOutcome = "replaced";
+      if (action?.action === "emit") for (const { candidate, render } of reviews) {
+        const proposed = action.records.find((record) => record.tag === candidate.tag);
+        if (proposed) applyPlacement(proposed);
+        if (!proposed || proposed.evidenceRenderId !== render.id || proposed.confidence !== "high" || proposed.flags.length) continue;
+        if (proposalRejectionReasons(proposed, reviewTags).length) continue;
+        const preview = readingFromProposal(proposed, candidate.row, render, candidate.page);
+        if (preview.confidence !== "high" || preview.flags.length) continue;
+        proposals.set(candidate.tag, proposed);
+        outcomes.set(candidate.tag, "replaced");
+      }
     } catch {
-      reviewOutcome = "failed";
+      for (const { candidate } of reviews) outcomes.set(candidate.tag, "failed");
       /* The original evidence remains available for ops review. */
-    } finally {
+    }
+    for (const { candidate } of reviews) {
+      const reviewOutcome = outcomes.get(candidate.tag) ?? "kept";
       attempts.set(candidate.tag, (attempts.get(candidate.tag) ?? 0) + 1);
       const history = corrections.get(candidate.tag) ?? [];
       history.push({
@@ -1310,8 +1357,12 @@ export async function runFullDocumentAgent(args: {
   });
   report.steps.read.returned = proposals.size;
   report.steps.read.declined = declines.size;
-  report.steps.placements.fromModelFallback = [...proposals.values()].filter((proposal) => !!proposal.elevation).length;
-  report.steps.placements.unplaced = scheduleRows.length - report.steps.placements.fromModelFallback;
+  const placedTags = new Set(harvest.placements.map((placement) => placement.tag));
+  report.steps.placements.fromText = scheduleRows.filter((row) => placedTags.has(normalizeOpeningRef(row.tag) ?? row.tag)).length;
+  report.steps.placements.fromModelFallback = [...proposals.values()]
+    .filter((proposal) => !placedTags.has(proposal.tag) && !!proposal.elevation).length;
+  report.steps.placements.unplaced = scheduleRows.length
+    - report.steps.placements.fromText - report.steps.placements.fromModelFallback;
   report.steps.northAssumed = [...proposals.values()].some((proposal) => !proposal.orientation);
   await deps.onProgress?.(scheduleRows.length, scheduleRows.length, "opening_read");
   report.wallMs = Date.now() - startedAt;

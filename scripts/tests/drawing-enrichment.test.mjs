@@ -1238,6 +1238,16 @@ test("runGate: scores every opening and every stated field, even when split is n
   assert.equal(summary.of, 3);
 });
 
+test("applyDrawingOrientation: a composition consistency warning cannot suppress Stage A heading", () => {
+  const model = { openings: [{ externalRef: "W1", wallOrientation: null, wallOrientationSource: null }] };
+  applyDrawingOrientation(model, [{
+    externalRef: "W1", orientationState: "value", orientation: "E",
+    confidence: "low", flags: ["drawingInconsistency"],
+  }]);
+  assert.equal(model.openings[0].wallOrientation, "E");
+  assert.equal(model.openings[0].wallOrientationSource, "plan");
+});
+
 test("runGate: labels must contain only known fields and assert something scoreable", () => {
   const reading = {
     external_ref: "W1",
@@ -2508,6 +2518,60 @@ test("full-document agent binds a plan tag to wall order and maps crop-relative 
   ]);
 });
 
+test("full-document agent rejects an elevation page that contradicts the Stage A placement", async () => {
+  const elevationWords = (label) => [
+    { text: "ELEVATION", x0: 20, top: 80, x1: 60, bottom: 90 },
+    { text: label, x0: 65, top: 80, x1: 72, bottom: 90 },
+  ];
+  const pages = [
+    { pageNo: 1, text: "GROUND FLOOR PLAN", words: [] },
+    { pageNo: 2, text: "ELEVATION B", words: elevationWords("B") },
+    { pageNo: 3, text: "ELEVATION A", words: elevationWords("A") },
+  ];
+  const inspected = {
+    inventory: {
+      pageCount: 3, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: pages.map((page) => ({
+        pageNo: page.pageNo, widthPt: 100, heightPt: 100, rotation: 0,
+        textChars: page.text.length, imageCount: 0, imageAreaFraction: 0,
+      })),
+    },
+    pages,
+  };
+  const scheduleRows = [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }];
+  const harvest = buildFullDocumentHarvest(inspected, scheduleRows);
+  harvest.placements = [{
+    tag: "W1", pageNo: 1, elevation: "A", orderOnWall: 1,
+    roomLabelCandidate: null, storey: "ground", orientation: "E",
+  }];
+  let turn = 0;
+  const result = await runFullDocumentAgent({
+    fileId: "f1", scheduleRows, inspected, harvest,
+    deps: {
+      runTurn: async () => {
+        turn++;
+        if (turn === 1) return { action: "render", memory: "Try B.", requests: [{ pageNo: 2, dpi: 200 }] };
+        if (turn === 2) return {
+          action: "emit", memory: "W1 appears on B.", declines: [],
+          records: [hybridRecord({ elevation: "B", facePageNo: 2, evidenceRenderId: "fd_t001_01" })],
+        };
+        if (turn === 3) return { action: "render", memory: "Try A.", requests: [{ pageNo: 3, dpi: 200 }] };
+        return {
+          action: "emit", memory: "W1 confirmed on A.", declines: [],
+          records: [hybridRecord({ facePageNo: 3, evidenceRenderId: "fd_t003_01" })],
+        };
+      },
+      render: async (request) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 500, heightPx: 500 }], dpi: request.dpi }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.equal(result.readings[0].pageNo, 3);
+  assert.equal(result.readings[0].elevation, "A");
+  assert.equal(result.readings[0].orientation, "E");
+  assert.ok(result.report.perOpening[0].corrections.some((item) =>
+    item.reasons.includes("evidence_page_elevation_mismatch")));
+});
+
 test("full-document ambiguous plan candidate requires a stored plan render", async () => {
   let turn = 0;
   const result = await runFullDocumentAgent({
@@ -2934,7 +2998,24 @@ test("AC-2: full-document rails flag a composition that omits the scheduled oper
   assert.equal(result.readings[0].confidence, "low");
 });
 
-test("AC-8: one bounded review turn replaces only schedule-compatible re-reads", async () => {
+test("AC-2: an awning schedule does not accept an all-awning multi-unit drawing", () => {
+  const result = reconcileReading({
+    split: {
+      axis: "vertical",
+      units: [
+        { role: "operable", operation: "awning", ratio: 0.5, derivedWidthMm: 700 },
+        { role: "operable", operation: "awning", ratio: 0.5, derivedWidthMm: 700 },
+      ],
+    },
+    widthMm: 1_400,
+    scheduleType: "AWNING",
+    modelConfidence: "high",
+    northAssumed: false,
+  });
+  assert.ok(result.flags.includes("scheduleDrawingMismatch"));
+});
+
+test("AC-8: one bounded batch review replaces only schedule-compatible re-reads", async () => {
   let turn = 0;
   const inputs = [];
   const renderRequests = [];
@@ -2958,17 +3039,16 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
         inputs.push(input);
         turn++;
         if (turn === 1) return { action: "render", memory: "Render both faces.", requests: [{ pageNo: 1, dpi: 110 }] };
-        if (input.escalationRecord) {
-          const parent = input.escalationRecord;
+        if (input.escalationRecords) {
           return {
-            action: "emit", memory: "Targeted record checked.", declines: [],
-            records: [{
+            action: "emit", memory: "Targeted records checked.", declines: [],
+            records: input.escalationRecords.map((parent) => ({
               ...parent,
               operations: parent.tag === "W10" ? ["awning", "fixed"] : parent.operations,
-              evidenceRenderId: input.imageDataUrls[0].renderId,
+              evidenceRenderId: input.imageDataUrls.find((image) => image.renderId.includes(parent.tag)).renderId,
               frameBoxNorm: [0, 0, 1, 1],
               confidence: "high", flags: [],
-            }],
+            })),
           };
         }
         const record = (tag, operations, frameBoxNorm, confidence = "high", flags = []) => ({
@@ -2998,10 +3078,10 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  const escalations = inputs.filter((input) => input.escalationRecord);
-  assert.equal(escalations.length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
-  assert.deepEqual(escalations.map((input) => input.escalationRecord.tag), ["W10", "W8", "W3"], "schedule conflicts outrank generic weak reads and duplicate identities do not consume close-up slots");
-  assert.equal(renderRequests.filter((request) => request.threshold === 250).length, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  const escalations = inputs.filter((input) => input.escalationRecords);
+  assert.equal(escalations.length, 1, "all close-ups share one provider call");
+  assert.deepEqual(escalations[0].escalationRecords.map((record) => record.tag), ["W10", "W8", "W3"], "schedule conflicts outrank generic weak reads and duplicate identities do not consume close-up slots");
+  assert.equal(renderRequests.filter((request) => request.threshold === 250).length, 3);
   const w10 = result.readings.find((reading) => reading.externalRef === "W10");
   const w8 = result.readings.find((reading) => reading.externalRef === "W8");
   assert.deepEqual(w10.split.units.map((unit) => unit.operation), ["awning", "fixed"]);
@@ -3009,7 +3089,7 @@ test("AC-8: one bounded review turn replaces only schedule-compatible re-reads",
   assert.deepEqual(w8.split.units.map((unit) => unit.operation), ["awning", "fixed"]);
   assert.ok(w8.flags.includes("scheduleDrawingMismatch"), "a contradictory review cannot replace the original");
   assert.equal(result.report.steps.read.retriedWithThreshold, 0);
-  assert.equal(result.report.steps.read.targetedReviews, FULL_DOCUMENT_AGENT_LIMITS.maxEscalations);
+  assert.equal(result.report.steps.read.targetedReviews, 3);
   assert.ok(result.report.perOpening.find((item) => item.tag === "W10").corrections.some((item) =>
     item.stage === "escalation" && item.outcome === "replaced"));
   assert.ok(result.report.perOpening.find((item) => item.tag === "W8").corrections.some((item) =>
@@ -3095,7 +3175,7 @@ test("accepted low-confidence reads are complete and detail scales are not compa
   assert.ok(!result.readings[1].flags.includes("drawingInconsistency"));
 });
 
-test("full-document close rail flags reversed width order on the same face without rewriting either record", async () => {
+test("full-document consistency does not treat approximate locator-box widths as schedule measurements", async () => {
   let turn = 0;
   const result = await runFullDocumentAgent({
     fileId: "f1",
@@ -3111,7 +3191,7 @@ test("full-document close rail flags reversed width order on the same face witho
     },
     deps: {
       runTurn: async (input) => {
-        if (input.escalationRecord) return { action: "finish", memory: "Leave the flagged parent for Ops." };
+        if (input.escalationRecords) return { action: "finish", memory: "No review needed." };
         turn++;
         if (turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
         const record = (tag, frameBoxNorm) => ({
@@ -3129,7 +3209,7 @@ test("full-document close rail flags reversed width order on the same face witho
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.ok(result.readings.every((reading) => reading.flags.includes("drawingInconsistency")));
+  assert.ok(result.readings.every((reading) => !reading.flags.includes("drawingInconsistency")));
   assert.deepEqual(result.readings.map((reading) => reading.split.units[0].derivedWidthMm), [1_000, 2_000]);
 });
 
@@ -3149,7 +3229,7 @@ test("full-document close rail flags a reported face-count mismatch without inve
     },
     deps: {
       runTurn: async (input) => {
-        if (input.escalationRecord) return { action: "finish", memory: "Leave the face flag for Ops." };
+        if (input.escalationRecords) return { action: "finish", memory: "Leave the face flag for Ops." };
         turn++;
         if (turn === 1) return { action: "render", memory: "Render A.", requests: [{ pageNo: 1, dpi: 200 }] };
         const record = (tag, frameBoxNorm) => ({
@@ -3242,6 +3322,16 @@ test("full-document identity rail rejects a non-monotonic wall-order join", () =
   ];
   applyDrawingConsistencyFlags(readings);
   assert.ok(readings.every((reading) => reading.proposal.flags.includes("drawingInconsistency")));
+});
+
+test("full-document identity rail ignores sub-frame coordinate jitter", () => {
+  const readings = [
+    comparableWallReading(1, [10, 10, 30, 30]),
+    comparableWallReading(2, [9, 35, 29, 55]),
+    comparableWallReading(3, [70, 10, 90, 30]),
+  ];
+  applyDrawingConsistencyFlags(readings);
+  assert.deepEqual(readings.map((reading) => reading.proposal.flags), [[], [], []]);
 });
 
 test("full-document identity rail still rejects duplicate wall orders", () => {
@@ -3466,7 +3556,8 @@ test("runDrawingEnrichmentStage: one cached site-plan north read completes every
       return {
         action: "emit", memory: "W1 resolved.", declines: [],
         records: [hybridRecord({
-          operations: ["awning"], orientation: "N", planCandidateId: "W1_p2_1", planPageNo: 2, wallOrder: 1,
+          operations: ["awning"], orientation: "N", elevation: "D", storey: "first", faceOpeningCount: 99,
+          planCandidateId: "W1_p2_1", planPageNo: 1, wallOrder: 9,
           facePageNo: 3, evidenceRenderId: "fd_t001_01",
         })],
       };
@@ -3489,6 +3580,9 @@ test("runDrawingEnrichmentStage: one cached site-plan north read completes every
   assert.deepEqual(harvests[1], harvests[0]);
   assert.equal(first.readings[0].orientation, "S", "Stage A heading must override a conflicting model proposal");
   assert.equal(second.readings[0].orientation, "S");
+  assert.equal(first.readings[0].elevation, "A", "Stage A placement must override a conflicting model elevation");
+  assert.match(first.readings[0].gapNote, /storey:ground/, "Stage A placement must override a conflicting model storey");
+  assert.ok(!first.readings[0].flags.includes("drawingInconsistency"), "model-invented face counts must not poison a Stage A placement");
   assert.equal(first.report.files[0].modelCalls, 3, "the report must include the north read and both full-agent turns");
   assert.equal(second.report.files[0].modelCalls, 2, "a cached north read must add no model call");
 });
