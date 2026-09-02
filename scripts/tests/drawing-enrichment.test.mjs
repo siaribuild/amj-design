@@ -70,6 +70,38 @@ test("selectPages: tags each page's tier from its title-block text, with a state
   assert.ok(selected.every((s) => s.reason.length > 0));
 });
 
+test("selectPages: incidental page text cannot turn an elevation or index into a floor plan", () => {
+  const pages = [
+    { pageNo: 1, text: "INDEX A1 SITE PLAN A3 GROUND FLOOR PLAN A5 ELEVATIONS", words: [
+      { text: "A0", x0: 900, top: 760, x1: 920, bottom: 775 },
+    ] },
+    { pageNo: 2, text: "BOUNDARY NOTES SITE PLAN", words: [
+      { text: "SITE", x0: 500, top: 740, x1: 535, bottom: 755 },
+      { text: "PLAN", x0: 540, top: 740, x1: 575, bottom: 755 },
+    ] },
+    { pageNo: 6, text: "FIRST FLOOR CEILING RL 5.650 ELEVATION A", words: [
+      { text: "ELEVATIONS", x0: 500, top: 740, x1: 590, bottom: 755 },
+    ] },
+  ];
+  const { selected } = selectPages(inv(pages.map((page) => pageFacts({ pageNo: page.pageNo, widthPt: 1_000, heightPt: 800 }))), pages);
+  assert.deepEqual(selected.map(({ pageNo, tier }) => ({ pageNo, tier })), [
+    { pageNo: 2, tier: "siteplan" },
+    { pageNo: 6, tier: "elevation" },
+  ]);
+});
+
+test("selectPages: elevation title remains visible inside a multi-column title-block row", () => {
+  const page = { pageNo: 6, text: "FIRST FLOOR CEILING RL 5.650 ELEVATION A", words: [
+    { text: "PROPOSED", x0: 300, top: 740, x1: 370, bottom: 755 },
+    { text: "RESIDENCE", x0: 375, top: 740, x1: 450, bottom: 755 },
+    { text: "ELEVATIONS", x0: 500, top: 740, x1: 590, bottom: 755 },
+    { text: "DRAWN", x0: 650, top: 740, x1: 700, bottom: 755 },
+    { text: "BY", x0: 705, top: 740, x1: 725, bottom: 755 },
+  ] };
+  const { selected } = selectPages(inv([pageFacts({ pageNo: 6, widthPt: 1_000, heightPt: 800 })]), [page]);
+  assert.deepEqual(selected.map(({ tier }) => tier), ["elevation"]);
+});
+
 test("selectPages: returns classification only; authoritative schedule rows own vocabulary", () => {
   const result = selectPages(inv([pageFacts({ pageNo: 1 })]), [pt(1, "WINDOW SCHEDULE\nW1")]);
   assert.deepEqual(Object.keys(result), ["selected"]);
@@ -228,6 +260,52 @@ test("locateFloorplanPage: the S08 tag beats a nearby W1/S7 legend decoy", () =>
   assert.equal(result.placements.W1.roomLabel, "BEDROOM");
 });
 
+test("locateFloorplanPage: sheet-referenced tag envelope ignores page notes and finds all four faces", () => {
+  const words = [
+    ["W1", 250, 350], ["W2", 500, 600], ["W3", 750, 350], ["D1", 500, 200],
+  ].flatMap(([text, x0, top]) => [
+    { text, x0, top, x1: x0 + 24, bottom: top + 15 },
+    { text: "S08", x0, top: top + 16, x1: x0 + 26, bottom: top + 31 },
+  ]);
+  words.push(
+    { text: "A", x0: 205, top: 350, x1: 215, bottom: 365 },
+    { text: "B", x0: 500, top: 635, x1: 510, bottom: 650 },
+    { text: "C", x0: 890, top: 350, x1: 900, bottom: 365 },
+    { text: "D", x0: 500, top: 160, x1: 510, bottom: 175 },
+    { text: "STUDY", x0: 300, top: 340, x1: 350, bottom: 355 },
+    { text: "KITCHEN", x0: 480, top: 540, x1: 550, bottom: 555 },
+    { text: "MEALS", x0: 650, top: 340, x1: 700, bottom: 355 },
+    { text: "ENTRY", x0: 480, top: 250, x1: 530, bottom: 265 },
+    { text: "CONSTRUCTION", x0: 30, top: 40, x1: 130, bottom: 55 },
+    { text: "SPECIFICATION", x0: 850, top: 700, x1: 970, bottom: 715 },
+  );
+  const result = locateFloorplanPage({ pageNo: 4, text: "GROUND FLOOR PLAN", words }, { widthPt: 1_000, heightPt: 800 }, ["W1", "W2", "W3", "D1"]);
+  assert.deepEqual(result.markerEdges, { A: "left", B: "bottom", C: "right", D: "top" });
+  assert.deepEqual(Object.fromEntries(Object.entries(result.placements).map(([tag, value]) => [tag, value.elevation])), {
+    W1: "A", W2: "B", W3: "C", D1: "D",
+  });
+});
+
+test("locateFloorplanPage: title block owns storey over incidental schedule text", () => {
+  const words = [
+    ["W1", 250, 350], ["W2", 500, 600], ["W3", 750, 350], ["D1", 500, 200],
+  ].flatMap(([text, x0, top]) => [
+    { text, x0, top, x1: x0 + 24, bottom: top + 15 },
+    { text: "S08", x0, top: top + 16, x1: x0 + 26, bottom: top + 31 },
+  ]);
+  words.push(
+    { text: "A", x0: 205, top: 350, x1: 215, bottom: 365 },
+    { text: "B", x0: 500, top: 635, x1: 510, bottom: 650 },
+    { text: "C", x0: 790, top: 350, x1: 800, bottom: 365 },
+    { text: "D", x0: 500, top: 160, x1: 510, bottom: 175 },
+    { text: "GROUND", x0: 500, top: 740, x1: 560, bottom: 755 },
+    { text: "FLOOR", x0: 565, top: 740, x1: 610, bottom: 755 },
+    { text: "PLAN", x0: 615, top: 740, x1: 650, bottom: 755 },
+  );
+  const result = locateFloorplanPage({ pageNo: 4, text: "FIRST FLOOR DOOR SCHEDULE GROUND FLOOR PLAN", words }, { widthPt: 1_000, heightPt: 800 }, ["W1", "W2", "W3", "D1"]);
+  assert.ok(Object.values(result.placements).every(({ storey }) => storey === "ground"));
+});
+
 test("locateFloorplanPage: missing word geometry returns an attributable fallback set", () => {
   const result = locateFloorplanPage({ pageNo: 2, text: "GROUND FLOOR PLAN", words: [] }, { widthPt: 1000, heightPt: 800 }, ["W1"]);
   assert.deepEqual(result.placements, {});
@@ -260,8 +338,18 @@ test("resolveNorth: explicit site-plan text resolves before vision; absence stay
 });
 
 test("northArrowSkill: normalises supported bearings and refuses unsupported output", () => {
-  assert.deepEqual(northArrowSkill.validate({ northArrowDegrees: 450, source: "arrow" }), { northArrowDegrees: 90, source: "arrow" });
+  assert.deepEqual(northArrowSkill.validate({
+    northArrowDegrees: 450, source: "arrow", evidenceBoxNorm: [0.8, 0.1, 0.9, 0.3],
+  }), {
+    northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.8, 0.1, 0.9, 0.3],
+  });
+  assert.deepEqual(northArrowSkill.validate({
+    northArrowDegrees: 2, source: "survey_bearings", evidenceBoxNorm: [0.3, 0.2, 0.7, 0.8],
+  }), {
+    northArrowDegrees: 2, source: "survey_bearings", evidenceBoxNorm: [0.3, 0.2, 0.7, 0.8],
+  });
   assert.equal(northArrowSkill.validate({ northArrowDegrees: "right", source: "arrow" }), null);
+  assert.equal(northArrowSkill.validate({ northArrowDegrees: 0, source: "arrow", evidenceBoxNorm: [0.9, 0.1, 0.8, 0.3] }), null);
 });
 
 test("mapPool: caps concurrency and preserves input order", async () => {
@@ -1835,6 +1923,71 @@ test("full-document harvest exposes free coordinate evidence without deciding th
   assert.equal("roomLabel" in harvest.tagCandidates[0], false, "the free harvest must not choose a room");
 });
 
+test("full-document harvest publishes the complete free Stage A metadata contract", () => {
+  const tagged = [
+    ["W1", 250, 350], ["W2", 500, 600], ["W3", 750, 350], ["D1", 500, 200],
+  ].flatMap(([text, x0, top]) => [
+    { text, x0, top, x1: x0 + 24, bottom: top + 15 },
+    { text: "S08", x0, top: top + 16, x1: x0 + 26, bottom: top + 31 },
+  ]);
+  const inspected = {
+    inventory: { pageCount: 3, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+      { pageNo: 2, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 4, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 80, imageCount: 0, imageAreaFraction: 0 },
+      { pageNo: 6, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+    ] },
+    pages: [
+      { pageNo: 2, text: "SITE PLAN NORTH COMPASS 268°22'10\"", words: [
+        { text: "NORTH", x0: 45, top: 10, x1: 55, bottom: 20 },
+        { text: "COMPASS", x0: 40, top: 50, x1: 60, bottom: 60 },
+        { text: "268°22'10\"", x0: 300, top: 300, x1: 370, bottom: 315 },
+        { text: "SITE", x0: 500, top: 740, x1: 535, bottom: 755 },
+        { text: "PLAN", x0: 540, top: 740, x1: 575, bottom: 755 },
+        { text: "A1", x0: 900, top: 760, x1: 920, bottom: 775 },
+      ] },
+      { pageNo: 4, text: "GROUND FLOOR PLAN", words: [
+        ...tagged,
+        { text: "A", x0: 205, top: 350, x1: 215, bottom: 365 },
+        { text: "B", x0: 500, top: 635, x1: 510, bottom: 650 },
+        { text: "C", x0: 790, top: 350, x1: 800, bottom: 365 },
+        { text: "D", x0: 500, top: 160, x1: 510, bottom: 175 },
+        { text: "STUDY", x0: 300, top: 340, x1: 350, bottom: 355 },
+        { text: "GROUND", x0: 500, top: 740, x1: 560, bottom: 755 },
+        { text: "FLOOR", x0: 565, top: 740, x1: 610, bottom: 755 },
+        { text: "PLAN", x0: 615, top: 740, x1: 650, bottom: 755 },
+        { text: "A3", x0: 900, top: 760, x1: 920, bottom: 775 },
+      ] },
+      { pageNo: 6, text: "ELEVATIONS FIRST FLOOR RL 5.650", words: [
+        { text: "RL", x0: 300, top: 200, x1: 320, bottom: 215 },
+        { text: "5.650", x0: 325, top: 200, x1: 365, bottom: 215 },
+        { text: "ELEVATIONS", x0: 500, top: 740, x1: 590, bottom: 755 },
+        { text: "A5", x0: 900, top: 760, x1: 920, bottom: 775 },
+      ] },
+    ],
+  };
+  const schedule = ["W1", "W2", "W3", "D1"].map((tag) => ({ tag, widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }));
+  const harvest = buildFullDocumentHarvest(inspected, schedule);
+  assert.equal(harvest.version, 1);
+  assert.deepEqual(harvest.pages.map(({ pageNo, sheetId, tiers }) => ({ pageNo, sheetId, tiers })), [
+    { pageNo: 2, sheetId: "A1", tiers: ["siteplan"] },
+    { pageNo: 4, sheetId: "A3", tiers: ["floorplan"] },
+    { pageNo: 6, sheetId: "A5", tiers: ["elevation"] },
+  ]);
+  assert.deepEqual(harvest.elevationMarkers.map(({ label, edge }) => ({ label, edge })), [
+    { label: "A", edge: "left" }, { label: "B", edge: "bottom" },
+    { label: "C", edge: "right" }, { label: "D", edge: "top" },
+  ]);
+  assert.deepEqual(Object.fromEntries(harvest.placements.map(({ tag, elevation, orientation }) => [tag, { elevation, orientation }])), {
+    W1: { elevation: "A", orientation: "W" }, W2: { elevation: "B", orientation: "S" },
+    W3: { elevation: "C", orientation: "E" }, D1: { elevation: "D", orientation: "N" },
+  });
+  assert.equal(harvest.roomLabelCandidates.some(({ text }) => text === "STUDY"), true);
+  assert.deepEqual(harvest.rlDatums, [{ pageNo: 6, text: "RL 5.650", yPt: 207.5 }]);
+  assert.equal(harvest.northEvidence.resolution.northArrowDegrees, 0);
+  assert.equal(harvest.northEvidence.requiresVisualRead, false);
+  assert.deepEqual(harvest.northEvidence.bearings.map(({ text }) => text), ["268°22'10\""]);
+});
+
 test("full-document harvest drops a legend decoy when the plan tag has an adjacent sheet reference", () => {
   const inspected = {
     inventory: {
@@ -1851,6 +2004,22 @@ test("full-document harvest drops a legend decoy when the plan tag has an adjace
   const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W1", widthMm: 1_000, heightMm: 1_200, typeText: "FIXED" }]);
   assert.deepEqual(harvest.tagCandidates.map(({ id, boxPt, identityEvidence }) => ({ id, boxPt, identityEvidence })), [
     { id: "W1_p1_1", boxPt: [120, 200, 140, 215], identityEvidence: "sheet_reference" },
+  ]);
+});
+
+test("full-document harvest keeps a sheet-referenced plan tag beside its scheduled width", () => {
+  const inspected = {
+    inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [{ pageNo: 1, widthPt: 1_000, heightPt: 700, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 }] },
+    pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN 2050 W14 S08", words: [
+      { text: "2050", x0: 100, top: 200, x1: 130, bottom: 215 },
+      { text: "W14", x0: 134, top: 200, x1: 160, bottom: 215 },
+      { text: "S08", x0: 134, top: 216, x1: 160, bottom: 231 },
+    ] }],
+  };
+  const harvest = buildFullDocumentHarvest(inspected, [{ tag: "W14", widthMm: 2_050, heightMm: 1_200, typeText: "FIXED" }]);
+  assert.deepEqual(harvest.tagCandidates.map(({ tag, identityEvidence }) => ({ tag, identityEvidence })), [
+    { tag: "W14", identityEvidence: "sheet_reference" },
   ]);
 });
 
@@ -2569,7 +2738,7 @@ test("full-document turn contract exposes bounded adaptive tools and rejects voc
   const skill = makeFullDocumentAgentSkill(["W1"], [1, 2]);
   assert.ok(skill.responseSchema.properties.action);
   assert.match(skill.buildPrompt({ imageDataUrls: [] }), /recovered.*planEvidenceRenderId/i);
-  assert.equal(skill.promptVersion, "v12", "geometry-priority instructions must invalidate cached weaker answers");
+  assert.equal(skill.promptVersion, "v13", "Stage A orientation authority must invalidate cached weaker answers");
 });
 
 test("full-document emit rejection returns to the same agent and finish cannot hide missing coverage", async () => {
@@ -3194,6 +3363,134 @@ test("runDrawingEnrichmentStage: agentic_full routes only to the parallel full-d
   assert.equal(legacyCalls, 0);
   assert.equal(result.report.files[0].modelCalls, 1);
   assert.equal(result.readings.length, 1, "a declined full-agent read degrades to the existing schedule fallback");
+});
+
+test("runDrawingEnrichmentStage: Stage A harvest is hash-bound and byte-identical on rerun", async () => {
+  const sourceKey = "projects/proj_1/runs/f1.pdf";
+  const stored = new Map();
+  const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: sourceKey, checksum: "pdf-sha" }] }) }) }) };
+  const env = {
+    AI_EXTRACTION_MODE: "agentic_full", DB: fakeDb, PLAN_PARSE: {},
+    FILES: {
+      get: async (key) => key === sourceKey
+        ? { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+        : stored.has(key) ? { text: async () => stored.get(key) } : null,
+      put: async (key, value) => { if (key.endsWith(".harvest-v1.json")) stored.set(key, value); },
+    },
+  };
+  const harvests = [];
+  const deps = {
+    inspect: async () => ({
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+        pages: [{ pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 30, imageCount: 0, imageAreaFraction: 0 }] },
+      pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN ELEVATION A", words: [] }],
+      timings: { inventoryMs: 1, textMs: 0, wordsMs: 1, totalMs: 2 },
+    }),
+    render: async () => ({ images: [], dpi: 110 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+    runFullAgentTurn: async (input) => {
+      harvests.push(JSON.stringify(input.harvest));
+      return { action: "emit", memory: "W1 not visible.", records: [], declines: [{ tag: "W1", reason: "Not visible." }] };
+    },
+  };
+  const args = {
+    projectId: "proj_1", aiRunId: "run_1", planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1_200, typeText: "AWNING" }],
+  };
+  await runDrawingEnrichmentStage(env, args, deps);
+  await runDrawingEnrichmentStage(env, { ...args, aiRunId: "run_2" }, deps);
+  assert.equal(stored.size, 1);
+  assert.equal(harvests.length, 2);
+  assert.equal(harvests[1], harvests[0]);
+});
+
+test("runDrawingEnrichmentStage: one cached site-plan north read completes every Stage A heading", async () => {
+  const sourceKey = "projects/proj_1/runs/f1.pdf";
+  const stored = new Map();
+  const fakeDb = { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f1", r2_key: sourceKey, checksum: "pdf-sha" }] }) }) }) };
+  const env = {
+    AI_EXTRACTION_MODE: "agentic_full", DB: fakeDb, PLAN_PARSE: {},
+    FILES: {
+      get: async (key) => key === sourceKey
+        ? { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+        : stored.has(key) ? { text: async () => stored.get(key) } : null,
+      put: async (key, value) => { if (key.endsWith(".harvest-v1.json")) stored.set(key, value); },
+    },
+  };
+  const words = [
+    { text: "KITCHEN", x0: 300, top: 250, x1: 360, bottom: 265 },
+    { text: "MEALS", x0: 600, top: 250, x1: 650, bottom: 265 },
+    { text: "FAMILY", x0: 300, top: 500, x1: 360, bottom: 515 },
+    { text: "STUDY", x0: 600, top: 500, x1: 650, bottom: 515 },
+    { text: "W1", x0: 285, top: 350, x1: 305, bottom: 365 },
+    { text: "S08", x0: 285, top: 366, x1: 310, bottom: 381 },
+    { text: "A", x0: 245, top: 350, x1: 255, bottom: 365 },
+    { text: "B", x0: 480, top: 550, x1: 490, bottom: 565 },
+    { text: "C", x0: 690, top: 350, x1: 700, bottom: 365 },
+    { text: "D", x0: 480, top: 200, x1: 490, bottom: 215 },
+    { text: "GROUND", x0: 450, top: 740, x1: 510, bottom: 755 },
+    { text: "FLOOR", x0: 515, top: 740, x1: 560, bottom: 755 },
+    { text: "PLAN", x0: 565, top: 740, x1: 600, bottom: 755 },
+  ];
+  let northCalls = 0;
+  const renderRequests = [];
+  const harvests = [];
+  const deps = {
+    inspect: async () => ({
+      inventory: { pageCount: 3, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 80, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 3, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [
+        { pageNo: 1, text: "SITE PLAN", words: [{ text: "SITE", x0: 450, top: 740, x1: 490, bottom: 755 }, { text: "PLAN", x0: 495, top: 740, x1: 535, bottom: 755 }] },
+        { pageNo: 2, text: "GROUND FLOOR PLAN", words },
+        { pageNo: 3, text: "ELEVATIONS", words: [{ text: "ELEVATIONS", x0: 450, top: 740, x1: 540, bottom: 755 }] },
+      ],
+      timings: { inventoryMs: 1, textMs: 0, wordsMs: 1, totalMs: 2 },
+    }),
+    render: async (_namespace, _projectId, _bytes, request) => {
+      renderRequests.push(request);
+      return { images: [{ pngB64: "aGVsbG8=", widthPx: 500, heightPx: 400 }], dpi: request.dpi };
+    },
+    runNorth: async () => {
+      northCalls++;
+      return { northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.8, 0.1, 0.9, 0.3] };
+    },
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+    runFullAgentTurn: async (input) => {
+      if (input.turn === 1) {
+        harvests.push(structuredClone(input.harvest));
+        return { action: "render", memory: "Read elevation A.", requests: [{ pageNo: 3, dpi: 200 }] };
+      }
+      return {
+        action: "emit", memory: "W1 resolved.", declines: [],
+        records: [hybridRecord({
+          operations: ["awning"], orientation: "N", planCandidateId: "W1_p2_1", planPageNo: 2, wallOrder: 1,
+          facePageNo: 3, evidenceRenderId: "fd_t001_01",
+        })],
+      };
+    },
+  };
+  const args = {
+    projectId: "proj_1", aiRunId: "run_1", planPdfDocs: [{ fileId: "f1" }],
+    scheduleRows: [{ tag: "W1", widthMm: 600, heightMm: 1_200, typeText: "AWNING" }],
+  };
+  const first = await runDrawingEnrichmentStage(env, args, deps);
+  const second = await runDrawingEnrichmentStage(env, { ...args, aiRunId: "run_2" }, deps);
+
+  assert.equal(northCalls, 1, "the hash-bound harvest must reuse a successful north read");
+  assert.deepEqual(renderRequests, [{ pageNo: 1, dpi: 100 }, { pageNo: 3, dpi: 200 }, { pageNo: 3, dpi: 200 }]);
+  assert.equal(harvests[0].northEvidence.requiresVisualRead, false);
+  assert.deepEqual(harvests[0].northEvidence.visualEvidence, {
+    pageNo: 1, boxNorm: [0.8, 0.1, 0.9, 0.3], source: "arrow",
+  });
+  assert.deepEqual(harvests[0].placements.map(({ tag, orientation }) => [tag, orientation]), [["W1", "S"]]);
+  assert.deepEqual(harvests[1], harvests[0]);
+  assert.equal(first.readings[0].orientation, "S", "Stage A heading must override a conflicting model proposal");
+  assert.equal(second.readings[0].orientation, "S");
+  assert.equal(first.report.files[0].modelCalls, 3, "the report must include the north read and both full-agent turns");
+  assert.equal(second.report.files[0].modelCalls, 2, "a cached north read must add no model call");
 });
 
 test("agentic_full refuses a multi-PDF plan set before loading files", async () => {

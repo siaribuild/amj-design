@@ -21,7 +21,7 @@ import { selectPages } from "./selectPages";
 import { applyStatedWidths, compositionFromSchedule, scheduleDrawingMismatch } from "./reconcile";
 import { applyDrawingConsistencyFlags, drawingFaceKey } from "./consistency";
 import { sizesFromRatios } from "../estimator/split";
-import { hasPlanFootprint, locateFloorplanPage, openingTagWords } from "./locate";
+import { hasPlanFootprint, locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 
 const MAX_TURNS = 16;
 const MAX_PROVIDER_CALLS = 16;
@@ -51,6 +51,7 @@ const FLAGS: DrawingFlag[] = [
 ];
 
 export interface FullDocumentHarvest {
+  version: 1;
   schedule: {
     tag: string;
     widthMm: number;
@@ -66,6 +67,7 @@ export interface FullDocumentHarvest {
     sourcePageNo?: number;
     widthPt: number;
     heightPt: number;
+    sheetId: string | null;
     tiers: string[];
     textExcerpt: string;
   }[];
@@ -77,6 +79,25 @@ export interface FullDocumentHarvest {
     nearbyText: string;
     ambiguous: boolean;
     identityEvidence: "sheet_reference" | "visual_required";
+  }[];
+  elevationMarkers: { pageNo: number; label: string; boxPt: CropBoxPt; edge: Edge }[];
+  roomLabelCandidates: { pageNo: number; text: string; boxPt: CropBoxPt }[];
+  rlDatums: { pageNo: number; text: string; yPt: number }[];
+  northEvidence: {
+    labels: { pageNo: number; text: string; boxPt: CropBoxPt }[];
+    bearings: { pageNo: number; text: string; boxPt: CropBoxPt }[];
+    resolution: { northArrowDegrees: number; source: string } | null;
+    requiresVisualRead: boolean;
+    visualEvidence: { pageNo: number; boxNorm: CropBoxPt; source: "arrow" | "compass" | "survey_bearings" } | null;
+  };
+  placements: {
+    tag: string;
+    pageNo: number;
+    elevation: string;
+    orderOnWall: number;
+    roomLabelCandidate: string | null;
+    storey: "ground" | "first" | null;
+    orientation: Orientation | null;
   }[];
 }
 
@@ -217,6 +238,46 @@ export function buildFullDocumentHarvest(
   }
   const tags = new Set(scheduleRows.map((row) => normalizeOpeningRef(row.tag)).filter((tag): tag is string => !!tag));
   const inventoryByPage = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
+  const floorplanPageNos = new Set(selected.filter(({ tier }) => tier === "floorplan").map(({ pageNo }) => pageNo));
+  const elevationPageNos = new Set(selected.filter(({ tier }) => tier === "elevation").map(({ pageNo }) => pageNo));
+  const northPageNos = new Set(selected.filter(({ tier }) => tier === "siteplan" || tier === "floorplan").map(({ pageNo }) => pageNo));
+  const located = inspected.pages.filter((page) => floorplanPageNos.has(page.pageNo)).map((page) => {
+    const geo = inventoryByPage.get(page.pageNo);
+    return geo ? { page, result: locateFloorplanPage(page, geo, [...tags]) } : null;
+  }).filter((item): item is NonNullable<typeof item> => !!item);
+  const northPages = inspected.pages.filter((page) => northPageNos.has(page.pageNo));
+  const northResolution = resolveNorth(northPages);
+  const facingByPage = new Map(located.map(({ page, result }) => [
+    page.pageNo,
+    northResolution ? orientationsFromNorth(result.markerEdges, northResolution.northArrowDegrees) : {},
+  ]));
+  const wordBox = (word: InspectResponse["pages"][number]["words"][number]): CropBoxPt => [word.x0, word.top, word.x1, word.bottom];
+  const elevationMarkers = located.flatMap(({ page, result }) => Object.entries(result.markerEdges).map(([label, edge]) => {
+    const matching = page.words.filter((word) => word.text.trim().toUpperCase() === label);
+    const marker = [...matching].sort((a, b) => {
+      const edgeValue = (word: typeof a): number => edge === "left" ? word.x0 : edge === "right" ? -word.x1 : edge === "top" ? word.top : -word.bottom;
+      return edgeValue(a) - edgeValue(b);
+    })[0];
+    return marker ? { pageNo: page.pageNo, label, boxPt: wordBox(marker), edge } : null;
+  })).filter((item): item is NonNullable<typeof item> => !!item)
+    .sort((a, b) => a.pageNo - b.pageNo || a.label.localeCompare(b.label));
+  const placements = located.flatMap(({ page, result }) => Object.entries(result.placements).map(([tag, placement]) => ({
+    tag, pageNo: page.pageNo, elevation: placement.elevation, orderOnWall: placement.orderOnWall,
+    roomLabelCandidate: placement.roomLabel, storey: placement.storey ?? null,
+    orientation: facingByPage.get(page.pageNo)?.[placement.elevation]?.facing ?? null,
+  }))).sort((a, b) => a.pageNo - b.pageNo || a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+  const roomLabelCandidates = inspected.pages.filter((page) => floorplanPageNos.has(page.pageNo)).flatMap((page) => page.words
+    .filter((word) => /^[A-Z][A-Z'-]{1,}$/.test(word.text.trim()) && !tags.has(normalizeOpeningRef(word.text) ?? "") && !/^S\d+$/i.test(word.text.trim()))
+    .slice(0, 200)
+    .map((word) => ({ pageNo: page.pageNo, text: word.text.trim().toUpperCase(), boxPt: wordBox(word) })));
+  const rlDatums = inspected.pages.filter((page) => elevationPageNos.has(page.pageNo)).flatMap((page) => page.words.flatMap((word) => {
+    if (word.text.trim().toUpperCase() !== "RL") return [];
+    const value = page.words.filter((candidate) => /^-?\d+(?:\.\d+)?$/.test(candidate.text.trim())
+      && Math.abs((candidate.top + candidate.bottom - word.top - word.bottom) / 2) <= Math.max(candidate.bottom - candidate.top, word.bottom - word.top, 1))
+      .sort((a, b) => Math.abs(a.x0 - word.x1) - Math.abs(b.x0 - word.x1))[0];
+    return value ? [{ pageNo: page.pageNo, text: `RL ${value.text.trim()}`, yPt: (value.top + value.bottom) / 2 }] : [];
+  }));
+  const northEvidenceWords = northPages.flatMap((page) => page.words.map((word) => ({ pageNo: page.pageNo, word })));
   const hitsByTag = new Map<string, { tag: string; page: InspectResponse["pages"][number]; word: InspectResponse["pages"][number]["words"][number]; rank: number; ambiguous: boolean; identityEvidence: "sheet_reference" | "visual_required" }[]>();
   for (const page of inspected.pages) {
     const geo = inventoryByPage.get(page.pageNo);
@@ -265,6 +326,7 @@ export function buildFullDocumentHarvest(
     excerptChars -= excerpt.length;
   }
   return {
+    version: 1,
     schedule: scheduleRows.map((row) => ({
       tag: normalizeOpeningRef(row.tag) ?? row.tag,
       widthMm: row.widthMm,
@@ -285,11 +347,57 @@ export function buildFullDocumentHarvest(
         } : {}),
         widthPt: inventory?.widthPt ?? 0,
         heightPt: inventory?.heightPt ?? 0,
+        sheetId: page.words.filter((word) => word.top >= (inventory?.heightPt ?? 0) * 0.85 && /^[A-Z]{1,3}-?\d{1,3}$/i.test(word.text.trim()))
+          .sort((a, b) => b.x1 - a.x1)[0]?.text.trim().toUpperCase() ?? null,
         tiers,
         textExcerpt: excerpts.get(page.pageNo) ?? "",
       };
     }),
     tagCandidates,
+    elevationMarkers,
+    roomLabelCandidates,
+    rlDatums,
+    northEvidence: {
+      labels: northEvidenceWords.filter(({ word }) => /^(?:N|NORTH)$/i.test(word.text.trim()))
+        .map(({ pageNo, word }) => ({ pageNo, text: word.text.trim().toUpperCase(), boxPt: wordBox(word) })),
+      bearings: northEvidenceWords.filter(({ word }) => /^\d{1,3}°\d{1,2}['’]\d{1,2}["”]$/.test(word.text.trim()))
+        .map(({ pageNo, word }) => ({ pageNo, text: word.text.trim(), boxPt: wordBox(word) })),
+      resolution: northResolution,
+      requiresVisualRead: !northResolution,
+      visualEvidence: null,
+    },
+    placements,
+  };
+}
+
+export function applyVisualNorthToHarvest(
+  harvest: FullDocumentHarvest,
+  pageNo: number,
+  north: { northArrowDegrees: number; source: "arrow" | "compass" | "survey_bearings"; evidenceBoxNorm: CropBoxPt },
+): FullDocumentHarvest {
+  const [x0, y0, x1, y1] = north.evidenceBoxNorm;
+  if (!Number.isFinite(north.northArrowDegrees)
+    || !north.evidenceBoxNorm.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+    || x0 >= x1 || y0 >= y1) return harvest;
+  const degrees = ((north.northArrowDegrees % 360) + 360) % 360;
+  const markersByPage = new Map<number, Record<string, Edge>>();
+  for (const marker of harvest.elevationMarkers) {
+    const markers = markersByPage.get(marker.pageNo) ?? {};
+    markers[marker.label] = marker.edge;
+    markersByPage.set(marker.pageNo, markers);
+  }
+  return {
+    ...harvest,
+    northEvidence: {
+      ...harvest.northEvidence,
+      resolution: { northArrowDegrees: degrees, source: `page ${pageNo} ${north.source}` },
+      requiresVisualRead: false,
+      visualEvidence: { pageNo, boxNorm: north.evidenceBoxNorm, source: north.source },
+    },
+    placements: harvest.placements.map((placement) => ({
+      ...placement,
+      orientation: orientationsFromNorth(markersByPage.get(placement.pageNo) ?? {}, degrees)[placement.elevation]?.facing ?? null,
+    })),
   };
 }
 
@@ -467,7 +575,7 @@ The deterministic harvest supplies free facts from the PDF text layer. Schedule 
 
 Work face by face. Derive this set's elevation names, outside-view order, mirroring and north from this set. One elevation-face render should resolve several openings together using tag count, relative scheduled widths and head-height order. Use a tight 300 dpi crop only for something genuinely unclear.
 
-Opening geometry is the job: composition, unit order and proportions, elevation, storey and orientation. Room labels are out of scope: always set roomLabel to null. faceOpeningCount is the number of openings on that face at the same storey, not the total across storeys.
+Opening geometry is the job: composition, unit order and proportions, elevation and storey. Orientation is authoritative Stage A metadata: copy the matching harvested placement orientation or null, never infer it from an elevation. Room labels are out of scope: always set roomLabel to null. faceOpeningCount is the number of openings on that face at the same storey, not the total across storeys.
 
 Composition is judged from an elevation or architectural detail. Mullions divide side-by-side units; transoms divide stacked units; chevrons identify an operable sash whose operation is named from the schedule type; plain panes are fixed; arrows identify sliding panels; dense horizontal lines identify louvres. A schedule type names a visible operation but never proves a split.
 
@@ -520,7 +628,7 @@ const recordSchema = {
 export function makeFullDocumentAgentSkill(tagVocabulary: string[], pageNumbers: number[]): Skill<FullDocumentAgentInput, FullDocumentTurn> {
   return {
     id: "full_document_agent_turn",
-    promptVersion: "v12",
+    promptVersion: "v13",
     responseSchema: {
       type: "object",
       properties: {
@@ -664,6 +772,7 @@ export async function runFullDocumentAgent(args: {
   fileId: string;
   scheduleRows: EnrichScheduleRow[];
   inspected: InspectResponse;
+  harvest?: FullDocumentHarvest;
   pageSources?: Map<number, { fileId: string; pageNo: number }>;
   deps: FullDocumentAgentDeps;
 }): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
@@ -673,7 +782,8 @@ export async function runFullDocumentAgent(args: {
   const sourceFileIds = [...new Set([...sourceByPage.values()].map((source) => source.fileId))];
   const fallbackSourceFileId = sourceFileIds.length === 1 ? sourceFileIds[0] : null;
   const report = emptyReport(fileId, inspected);
-  const harvest = buildFullDocumentHarvest(inspected, scheduleRows, sourceByPage);
+  const harvest = args.harvest ?? buildFullDocumentHarvest(inspected, scheduleRows, sourceByPage);
+  const orientationByTag = new Map(harvest.placements.map((placement) => [placement.tag, placement.orientation]));
   const pageByNo = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
   const rowByTag = new Map(scheduleRows.map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row]));
   const proposals = new Map<string, FullAgentProposal>();
@@ -826,7 +936,7 @@ export async function runFullDocumentAgent(args: {
       const result = await deps.runTurn({
         turn,
         harvest: turn === 1 ? harvest : {
-          schedule: harvest.schedule,
+          ...harvest,
           pages: harvest.pages.map((page) => ({ ...page, textExcerpt: "" })),
           tagCandidates: harvest.tagCandidates.filter((candidate) => pendingTags.includes(candidate.tag)),
         },
@@ -1033,6 +1143,7 @@ export async function runFullDocumentAgent(args: {
     }
     report.steps.read.attempted += records.length + ambiguities.length;
     for (const proposal of records) {
+      proposal.orientation = orientationByTag.get(proposal.tag) ?? null;
       attempts.set(proposal.tag, (attempts.get(proposal.tag) ?? 0) + 1);
       const reasons = proposalRejectionReasons(proposal, pending);
       if (reasons.length) {
@@ -1111,8 +1222,8 @@ export async function runFullDocumentAgent(args: {
       const result = await deps.runTurn({
         turn: 1,
         harvest: {
+          ...harvest,
           schedule: harvest.schedule.filter((row) => row.tag === candidate.tag),
-          pages: harvest.pages,
           tagCandidates: harvest.tagCandidates.filter((item) => item.tag === candidate.tag),
         },
         pendingTags: [candidate.tag],
@@ -1143,6 +1254,7 @@ export async function runFullDocumentAgent(args: {
       }
       if (action?.action !== "emit") continue;
       const proposed = action.records.find((record) => record.tag === candidate.tag);
+      if (proposed) proposed.orientation = orientationByTag.get(proposed.tag) ?? null;
       if (!proposed || proposed.evidenceRenderId !== render.id || proposed.confidence !== "high" || proposed.flags.length) continue;
       if (proposalRejectionReasons(proposed, new Set([candidate.tag])).length) continue;
       const preview = readingFromProposal(proposed, candidate.row, render, candidate.page);
