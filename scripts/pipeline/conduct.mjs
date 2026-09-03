@@ -938,12 +938,19 @@ function notesFor(run, afterIds) {
  */
 export function checkSpec(text) {
   const out = []
-  const nums = [...(text || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => Number(m[1]))
-  if (!nums.length) {
-    out.push('no numbered Given-When-Then criteria - the tester has nothing to execute')
-  } else {
-    // Contiguous from 1: a gap is a criterion that was written and then lost,
-    // which is invisible in prose and obvious here.
+  // A criterion is recognised by its SHAPE, not by a numeric prefix. This repo
+  // writes at least three forms and all of them are accepted specs: "1.
+  // **Given**", a bold "**AC-1 - ...**" heading with a plain Given beneath, and
+  // an italic "*Given*". Keying on the first alone reported plan-parse and
+  // plan-parse-method - dozens of criteria each - as having none, and a warning
+  // that fires on good work teaches you to stop reading warnings.
+  const criteria = ((text || '').match(/^\s*(?:\d+\.\s+)?[*_]{0,2}Given\b/gm) || []).length
+  if (!criteria) out.push('no Given-When-Then criteria - the tester has nothing to execute')
+
+  // The contiguity check belongs ONLY to the numbered convention. AC-1 / L-S1
+  // carry their own sequences and must never be measured against 1..n.
+  const nums = [...(text || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => Number(m[1]))
+  if (nums.length > 1) {
     const missing = []
     for (let i = 1; i < Math.max(...nums); i++) if (!nums.includes(i)) missing.push(i)
     if (missing.length)
@@ -1275,6 +1282,10 @@ export function stageSpec(label) {
   if (label.startsWith('build-')) return STAGES.find((s) => s.id === 'build')
   const rv = REVIEWERS.find((r) => 'review-' + r.id === label)
   if (rv) return { agent: rv.agent, compact: rv.compact, readonly: true }
+  // fix-<n> is the nth fix session, so n IS the number of rounds spent before
+  // it - and a resumed fix has to come back at the model it was escalated to,
+  // not the pinned one it already failed at.
+  if (label.startsWith('fix-')) return fixSpec(Number(label.slice('fix-'.length)) || 0)
   return { agent: 'developer', compact: 120000 }
 }
 

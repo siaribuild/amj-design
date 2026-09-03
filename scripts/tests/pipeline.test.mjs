@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
   verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
@@ -2619,7 +2619,7 @@ test('the spec is checked for the things that make it unbuildable, before anyone
   ].join(NL)
   assert.deepEqual(checkSpec(good), [], 'a complete spec must not be nagged at')
 
-  assert.ok(checkSpec('## Problem' + NL + 'no criteria here').some((w) => /no numbered Given/i.test(w)),
+  assert.ok(checkSpec('## Problem' + NL + 'no criteria here').some((w) => /no Given-When-Then criteria/i.test(w)),
     'a spec with no Given-When-Then criteria is not a spec')
 
   const gaps = checkSpec([
@@ -2635,4 +2635,56 @@ test('the spec is checked for the things that make it unbuildable, before anyone
     'an ASSUMED tag exists to be vetoed, so it must be surfaced: ' + gaps)
   assert.ok(gaps.some((w) => /out of scope/i.test(w)),
     'a spec with no out-of-scope section must be reported: ' + gaps)
+})
+
+test('an escalated fix keeps its model when it is resumed, not just when it is started', () => {
+  // Codex stop-gate finding: cmds.resume rebuilds the spec through stageSpec,
+  // whose fix- branch fell through to the generic developer spec. So a fix
+  // round that WAS escalated silently dropped back to the pinned model the
+  // moment it was interrupted and picked up again - which is precisely the
+  // long, hard fix that earned the escalation.
+  assert.equal(stageSpec('fix-0').model, undefined, 'the first round is not escalated')
+  assert.equal(stageSpec('fix-1').model, 'opus', 'a resumed second round lost its escalation')
+  assert.equal(stageSpec('fix-7').model, 'opus', 'every later resumed round stays escalated')
+  assert.equal(stageSpec('fix-1').agent, 'developer', 'a fix is still the developer')
+})
+
+test('checkSpec reads the criterion shapes this repo actually writes', () => {
+  // Codex stop-gate finding: the check keyed on a literal "N. **Given**", so
+  // every spec using the AC-<n> / L-S<n> heading convention - plan-parse,
+  // plan-parse-method, plan-parse-19-of-19, all accepted specs with dozens of
+  // criteria - would be told it had none at all. A warning that fires on good
+  // work is worse than no warning: it teaches you to stop reading them.
+  const acHeadings = [
+    '**AC-1 - the target case, end to end.**',
+    'Given the reference plan set, When the drawing read runs, Then W1 reads vertical',
+    '', '**AC-2 - declining is a first-class answer.**',
+    'Given an opening crop the model cannot read, When it declines, Then the unit is unread',
+    '', '## Out of scope', 'Everything else.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(acHeadings), [],
+    'the AC-<n> heading convention must read as criteria: ' + checkSpec(acHeadings))
+
+  const italic = [
+    '**L-S1 - elevation sheets are told apart.**',
+    '*Given* REF and pages {4,5}, *when* the read begins, *then* they are classified',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(italic), [], 'italic Given must read as a criterion: ' + checkSpec(italic))
+
+  // The numbering-gap check belongs only to the numbered convention. AC-1/L-S1
+  // carry their own sequences and must never be measured against 1..n.
+  const numbered = [
+    '1. **Given** a panel, **when** clicked, **then** it opens',
+    '3. **Given** a plain panel, **when** shown, **then** no chevron',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.ok(checkSpec(numbered).some((w) => /number/i.test(w)),
+    'a gap in the numbered convention is still a lost criterion: ' + checkSpec(numbered))
+  assert.deepEqual(checkSpec(acHeadings).filter((w) => /number/i.test(w)), [],
+    'the AC convention must never be measured against 1..n')
+
+  // Still catches the thing it was built for.
+  assert.ok(checkSpec('## Problem' + NL + 'prose only, no criteria at all')
+    .some((w) => /no Given/i.test(w)), 'a spec with no criteria at all must still be reported')
 })
