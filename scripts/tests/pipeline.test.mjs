@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, checkPlan, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
   verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
@@ -2580,4 +2580,129 @@ test('a plan with no tasks in it cannot certify a build', () => {
   const empty = checkPlan([], '# design', '1. **Given** a thing, **when** x, **then** y')
   assert.equal(empty.fatal.length, 1, 'an empty plan must be fatal: ' + JSON.stringify(empty))
   assert.match(empty.fatal[0], /no tasks/i)
+})
+
+test('a fix round that has already failed once is escalated to a stronger model, not to the owner', () => {
+  // superpowers escalates the MODEL before it escalates to the human: rounds
+  // 1-3 resume the same implementer, 4-5 get a fresh one a tier up. Here the
+  // developer is pinned to sonnet in .claude/agents/developer.md, so a finding
+  // it could not fix went round after round at the same capability until the
+  // cap sent it to the owner. One cheap attempt, then a stronger one, then ask.
+  const first = fixSpec(0)
+  assert.equal(first.model, undefined,
+    'the first attempt must run on the agent\'s own pinned model, not a costly one')
+
+  const second = fixSpec(1)
+  assert.equal(second.model, 'opus',
+    'a finding the pinned developer already failed on must go up a tier, not sideways')
+  assert.equal(fixSpec(2).model, 'opus', 'every later round stays escalated')
+
+  // And the escalation has to actually reach the session, or it is decoration.
+  const argv = claudeArgs({ agent: 'developer', compact: 120000, model: 'opus' }, 'p', false)
+  assert.equal(argv[argv.indexOf('--model') + 1], 'opus',
+    'a spec carrying a model must boot with --model')
+  assert.equal(claudeArgs({ agent: 'developer', compact: 120000 }, 'p', false).includes('--model'), false,
+    'a spec with no model must not pin one - the agent file owns that choice')
+})
+
+test('the spec is checked for the things that make it unbuildable, before anyone designs from it', () => {
+  // spec-kit ships `checklist` - "unit tests for English" - to validate that
+  // requirements are complete, clear and consistent before the plan is drawn.
+  // Its full version is an LLM pass; the structural half is free, and it is the
+  // half that catches a spec nobody can build from.
+  const good = [
+    '## Problem', 'Staff cannot tell which panels open.', '',
+    '## Acceptance criteria',
+    '1. **Given** a panel with a destination, **when** it renders, **then** a chevron is shown',
+    '2. **Given** a panel with none, **when** it renders, **then** no chevron is shown',
+    '', '## Out of scope', 'Other panels.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(good), [], 'a complete spec must not be nagged at')
+
+  assert.ok(checkSpec('## Problem' + NL + 'no criteria here').some((w) => /no Given-When-Then criteria/i.test(w)),
+    'a spec with no Given-When-Then criteria is not a spec')
+
+  const gaps = checkSpec([
+    '1. **Given** a panel, **when** clicked, **then** it does something appropriate',
+    '3. **Given** a thing, **when** TBD, **then** [NEEDS CLARIFICATION]',
+    'ASSUMED: the owner wants this centred.',
+  ].join(NL))
+  assert.ok(gaps.some((w) => /unresolved|TBD|CLARIFICATION/i.test(w)),
+    'an unresolved placeholder must be reported: ' + gaps)
+  assert.ok(gaps.some((w) => /2/.test(w) && /number/i.test(w)),
+    'criteria that skip a number must be reported - one of them was lost: ' + gaps)
+  assert.ok(gaps.some((w) => /ASSUMED/.test(w)),
+    'an ASSUMED tag exists to be vetoed, so it must be surfaced: ' + gaps)
+  assert.ok(gaps.some((w) => /out of scope/i.test(w)),
+    'a spec with no out-of-scope section must be reported: ' + gaps)
+})
+
+test('an escalated fix keeps its model when it is resumed, not just when it is started', () => {
+  // Codex stop-gate finding: cmds.resume rebuilds the spec through stageSpec,
+  // whose fix- branch fell through to the generic developer spec. So a fix
+  // round that WAS escalated silently dropped back to the pinned model the
+  // moment it was interrupted and picked up again - which is precisely the
+  // long, hard fix that earned the escalation.
+  assert.equal(stageSpec('fix-0').model, undefined, 'the first round is not escalated')
+  assert.equal(stageSpec('fix-1').model, 'opus', 'a resumed second round lost its escalation')
+  assert.equal(stageSpec('fix-7').model, 'opus', 'every later resumed round stays escalated')
+  assert.equal(stageSpec('fix-1').agent, 'developer', 'a fix is still the developer')
+})
+
+test('checkSpec reads the criterion shapes this repo actually writes', () => {
+  // Codex stop-gate finding: the check keyed on a literal "N. **Given**", so
+  // every spec using the AC-<n> / L-S<n> heading convention - plan-parse,
+  // plan-parse-method, plan-parse-19-of-19, all accepted specs with dozens of
+  // criteria - would be told it had none at all. A warning that fires on good
+  // work is worse than no warning: it teaches you to stop reading them.
+  const acHeadings = [
+    '**AC-1 - the target case, end to end.**',
+    'Given the reference plan set, When the drawing read runs, Then W1 reads vertical',
+    '', '**AC-2 - declining is a first-class answer.**',
+    'Given an opening crop the model cannot read, When it declines, Then the unit is unread',
+    '', '## Out of scope', 'Everything else.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(acHeadings), [],
+    'the AC-<n> heading convention must read as criteria: ' + checkSpec(acHeadings))
+
+  const italic = [
+    '**L-S1 - elevation sheets are told apart.**',
+    '*Given* REF and pages {4,5}, *when* the read begins, *then* they are classified',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(italic), [], 'italic Given must read as a criterion: ' + checkSpec(italic))
+
+  // The numbering-gap check belongs only to the numbered convention. AC-1/L-S1
+  // carry their own sequences and must never be measured against 1..n.
+  const numbered = [
+    '1. **Given** a panel, **when** clicked, **then** it opens',
+    '3. **Given** a plain panel, **when** shown, **then** no chevron',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.ok(checkSpec(numbered).some((w) => /number/i.test(w)),
+    'a gap in the numbered convention is still a lost criterion: ' + checkSpec(numbered))
+  assert.deepEqual(checkSpec(acHeadings).filter((w) => /number/i.test(w)), [],
+    'the AC convention must never be measured against 1..n')
+
+  // Still catches the thing it was built for.
+  assert.ok(checkSpec('## Problem' + NL + 'prose only, no criteria at all')
+    .some((w) => /no Given/i.test(w)), 'a spec with no criteria at all must still be reported')
+})
+
+test('a lone numbered criterion still reports the ones missing before it', () => {
+  // Codex stop-gate finding: guarding the contiguity check with `nums.length > 1`
+  // was meant to keep the AC-<n> convention out of it - but AC headings never
+  // match the numbered pattern in the first place, so the guard bought nothing
+  // and silenced the sharpest case it had. A spec whose only numbered criterion
+  // is "2." has lost criterion 1 outright, which is exactly what this catches.
+  const lost = ['2. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.ok(checkSpec(lost).some((w) => /skip number 1\b/.test(w)),
+    'a single criterion numbered 2 means criterion 1 was lost: ' + checkSpec(lost))
+
+  // And one correctly numbered criterion is not a gap.
+  const fine = ['1. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
+    'a spec with exactly one criterion, correctly numbered, is not a gap')
 })
