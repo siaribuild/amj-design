@@ -428,6 +428,11 @@ test("measureSplit: deterministic mullion position produces ratios and derived w
   assert.equal(split.units[1].role, "passive");
 });
 
+test("measureSplit: a double-stroke mullion is one physical divider", () => {
+  const measured = measureSplit({ mullionXs: [0.49, 0.51], transomYs: [] }, undefined, 1_800);
+  assert.deepEqual(measured?.derivedWidthsMm, [900, 900]);
+});
+
 test("parseCompositionComment and reconcileReading preserve contradictions as flags", () => {
   assert.deepEqual(parseCompositionComment("2x 600mm WIDE AWNINGS RIGHT TO LEFT"), {
     count: 2, unitWidthMm: 600, operation: "awning", direction: "rtl",
@@ -2841,7 +2846,7 @@ test("full-document emit rejection returns to the same agent and finish cannot h
   assert.equal(result.readings[0].split.units[0].operation, "fixed");
 });
 
-test("full-document agent starts text-only, preserves set context, and abstains from optional room labels", async () => {
+test("full-document agent starts text-only, preserves set context, and measures the final frame", async () => {
   const inputs = [];
   const progress = [];
   const renderRequests = [];
@@ -2901,21 +2906,26 @@ test("full-document agent starts text-only, preserves set context, and abstains 
   assert.match(inputs[1].workingMemory, /STUDY/);
   assert.equal(inputs[1].observations[0].tool, "render");
   assert.ok(inputs[1].imageDataUrls.some((item) => item.renderId === "fd_t001_01"));
-  assert.equal(renderRequests.length, 1, "the face render is reused as evidence without a compulsory per-opening crop");
-  assert.equal(result.report.steps.renderCrop.pagesRendered, 1);
-  assert.equal(result.report.steps.renderCrop.cropsMade, 1);
+  assert.equal(renderRequests.length, 2, "the face overview is followed by one exact frame measurement");
+  assert.equal(result.report.steps.renderCrop.pagesRendered, 2);
+  assert.equal(result.report.steps.renderCrop.cropsMade, 2);
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings[0].roomState, "not_stated");
   assert.equal(result.readings[0].roomLabel, null, "geometry evidence must not overwrite deterministic room context");
-  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [615, 1435]);
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [685, 1365]);
   assert.deepEqual(progress.at(-1), { done: 1, total: 1, phase: "opening_read" });
 });
 
-test("full-document agent keeps an evidence-backed split when optional line measurement disagrees", async () => {
+test("full-document agent measures each composite from its own frame, never a neighbouring schedule fact", async () => {
   let turn = 0;
+  const renderRequests = [];
   const result = await runFullDocumentAgent({
     fileId: "f1",
-    scheduleRows: [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "AWNING" }],
+    scheduleRows: [
+      { tag: "W20", widthMm: 1_800, heightMm: 1_200, typeText: "AWNING", commentText: "1x 600mm WIDE AWNING" },
+      { tag: "W21", widthMm: 1_800, heightMm: 1_200, typeText: "AWNING" },
+      { tag: "W22", widthMm: 1_800, heightMm: 1_200, typeText: "AWNING" },
+    ],
     inspected: {
       inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
         { pageNo: 1, widthPt: 100, heightPt: 100, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
@@ -2928,33 +2938,35 @@ test("full-document agent keeps an evidence-backed split when optional line meas
         return turn === 1
           ? { action: "render", memory: "Render the face.", requests: [{ pageNo: 1, dpi: 110 }] }
           : {
-              action: "emit", memory: "W1 appears 30/70.", declines: [],
-              records: [{
-                tag: "W1", operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], divisionAxis: "vertical",
-                orientation: "N", elevation: "A", roomLabel: "STUDY", storey: "ground", planPageNo: null, wallOrder: null,
-                evidenceView: "elevation", evidenceRenderId: "fd_t001_01", frameBoxNorm: [0.1, 0.1, 0.9, 0.9],
+              action: "emit", memory: "Both frames appear 30/70.", declines: [],
+              records: ["W20", "W21", "W22"].map((tag, index) => ({
+                tag, operations: ["awning", "fixed"], unitRatios: [1 / 3, 2 / 3], divisionAxis: "vertical",
+                orientation: "N", elevation: "A", roomLabel: null, storey: "ground", planPageNo: null, wallOrder: null,
+                evidenceView: "elevation", evidenceRenderId: "fd_t001_01",
+                frameBoxNorm: [0.05 + index * 0.31, 0.1, 0.3 + index * 0.31, 0.9],
                 confidence: "high", flags: [], basis: ["Two apparent panes."], note: null,
-              }],
+              })),
             };
       },
-      render: async (request) => ({
-        images: (request.crops ?? [null]).map(() => ({
-          pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
-          profile: { mullionXs: [], transomYs: [] },
-        })),
-        dpi: request.dpi,
-      }),
+      render: async (request) => {
+        renderRequests.push(request);
+        return {
+          images: (request.crops ?? [null]).map((_, index) => ({
+            pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600,
+            profile: { mullionXs: request.crops ? [[0.4], [0.5], []][index] : [], transomYs: [] },
+          })),
+          dpi: request.dpi,
+        };
+      },
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
     },
   });
-  assert.equal(result.report.perOpening[0].outcome, "read");
-  assert.equal(result.report.steps.read.returned, 1);
-  assert.equal(result.readings[0].confidence, "high");
-  assert.deepEqual(
-    result.readings[0].split.units.map((unit) => unit.derivedWidthMm),
-    [615, 1_435],
-    "the schedule fixes the overall width and the agent owns the visible 30/70 composition",
-  );
+  assert.equal(renderRequests.length, 2, "both exact frame crops share one batched page render");
+  assert.equal(renderRequests[1].crops.length, 3);
+  assert.deepEqual(result.readings[0].split.units.map((unit) => unit.derivedWidthMm), [600, 1_200]);
+  assert.deepEqual(result.readings[1].split.units.map((unit) => unit.derivedWidthMm), [900, 900]);
+  assert.equal(result.readings[2].splitState, "not_read");
+  assert.equal(result.readings[2].gapCode, "division_unreadable");
 });
 
 test("AC-2: full-document rails flag a composition that omits the scheduled operation", async () => {
@@ -3742,12 +3754,12 @@ test("full-document agent can resolve the standard 19-opening set in one visual 
     },
   });
   assert.equal(modelCalls, 2);
-  assert.equal(renderCalls, 1, "one face render can evidence the whole face without compulsory per-opening crops");
+  assert.equal(renderCalls, 3, "nineteen exact crops are batched into two page renders after the face overview");
   assert.equal(result.report.modelCalls, 2);
   assert.equal(result.readings.length, 19);
   assert.ok(result.readings.every((reading) => reading.confidence === "high"));
   assert.ok(result.readings.every((reading) =>
-    reading.split.units[0].derivedWidthMm === 300 && reading.split.units[1].derivedWidthMm === 700));
+    reading.split.units[0].derivedWidthMm === 400 && reading.split.units[1].derivedWidthMm === 600));
   assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxRecords, 60);
 });
 

@@ -23,6 +23,7 @@ import { applyDrawingConsistencyFlags, drawingFaceKey } from "./consistency";
 import { sizesFromRatios } from "../estimator/split";
 import { hasPlanFootprint, locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 import { elevationRegions } from "./elevationRegions";
+import { composeMeasuredSplit, measureSplit } from "./measure";
 
 const MAX_TURNS = 16;
 const MAX_PROVIDER_CALLS = 16;
@@ -580,7 +581,7 @@ Opening geometry is the job: composition, unit order and proportions, elevation 
 
 Composition is judged from an elevation or architectural detail. Mullions divide side-by-side units; transoms divide stacked units; chevrons identify an operable sash whose operation is named from the schedule type; plain panes are fixed; arrows identify sliding panels; dense horizontal lines identify louvres. A schedule type names a visible operation but never proves a split.
 
-unitRatios describe the visible proportions in outside-view order. The Worker applies them to the authoritative schedule width, with the final unit taking the exact remainder. measure_lines is optional evidence: use it when useful, but a darkness profile is not the decision-maker and disagreement is not a reason to discard what the drawing visibly shows.
+unitRatios are rough visible-proportion hints in outside-view order; they do not authorize final dimensions. The Worker measures every composite from that record's own frame crop and applies the authoritative schedule width, with the final unit taking the exact remainder. Never transfer a component width or ratio between opening tags. A schedule note applies only to its own tag. measure_lines can help you inspect a render, but final proportions come from the matching frame's deterministic profile.
 
 Opening identity comes from the floor plan. If deterministic page roles omit a needed floor plan, elevation or detail, your first action must be identify_page_roles; classify all missing roles together because this recovery action is available only once. A recovered elevation or detail is provisional: render its whole page before using any crop from it, and do not nominate a page already classified only as schedule, floor plan or site plan. A nominated floor plan must contain retained schedule-tag candidates. Copy planCandidateId from the exact harvested tag occurrence you used, report its planPageNo, and report the opening's one-based wallOrder along that wall whenever the harvest contains a floor-plan candidate. If that candidate is marked ambiguous, has identityEvidence visual_required, or belongs to a recovered floor-plan page, also report a stored planEvidenceRenderId whose page-space box contains it. For visual_required candidates, verify from the plan image that the token is an opening callout attached to plan geometry; schedule rows, legends and explanatory prose cannot bind an opening. wallOrder is plan-side order before elevation mirroring, not elevation-image x order; state in basis whether the outside view runs with or against that order. The elevation/detail then establishes composition. facePageNo identifies the canonical elevation sheet for the architectural face; for an elevation view it is that render's page, while a detail may name its parent elevation page or null when the link is unknown. Every resolved record needs a stored evidenceRenderId, a frameBoxNorm [x0,y0,x1,y1] relative to that rendered image in the 0..1 range, and a concise basis. Report conflicts as low confidence with a flag; never silently rewrite the drawing. Product availability and manufacturability are not parsing rules. If an opening is genuinely unreadable after research, include it in emit.declines with a drawing-specific reason and its facePageNo/elevation/storey when known.
 
@@ -691,6 +692,7 @@ function readingFromProposal(
   row: EnrichScheduleRow,
   render: StoredRender,
   page: { widthPt: number; heightPt: number },
+  measuredSplit?: SplitReading | null,
 ): DrawingReading {
   const frameBoxPt = pageBox(proposal, render);
   const total = proposal.unitRatios.reduce((sum, ratio) => sum + ratio, 0);
@@ -711,17 +713,25 @@ function readingFromProposal(
     flags.push("scheduleDrawingMismatch");
   }
   if (proposal.confidence === "low" && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
+  if (measuredSplit === null && !flags.includes("agentEvidenceWeak")) flags.push("agentEvidenceWeak");
   const confidence = flags.length ? "low" : proposal.confidence;
-  const split = applyStatedWidths(proposedSplit, row.widthMm, row.commentText);
+  const split = measuredSplit === undefined
+    ? applyStatedWidths(proposedSplit, row.widthMm, row.commentText)
+    : measuredSplit;
   return {
     id: "", projectId: "", aiRunId: "", sourceFileId: render.sourceFileId, externalRef: row.tag,
-    splitState: "value",
+    splitState: split ? "value" : "not_read",
     split,
     orientationState: proposal.orientation ? "value" : "not_stated", orientation: proposal.orientation,
     elevationState: proposal.elevation ? "value" : "not_stated", elevation: proposal.elevation,
     roomState: "not_stated", roomLabel: null,
-    gapCode: null,
-    gapNote: [...proposal.basis, ...(proposal.note ? [proposal.note] : []), ...(proposal.storey ? [`storey:${proposal.storey}`] : [])].join(" | ").slice(0, 1000),
+    gapCode: split ? null : "division_unreadable",
+    gapNote: [
+      ...(split ? [] : ["The opening's own frame profile did not match its visible unit count."]),
+      ...proposal.basis,
+      ...(proposal.note ? [proposal.note] : []),
+      ...(proposal.storey ? [`storey:${proposal.storey}`] : []),
+    ].join(" | ").slice(0, 1000),
     cropKey: render.cropKey, pageNo: render.sourcePageNo, sheetRef: proposal.elevation,
     regionJson: [
       frameBoxPt[0] / page.widthPt,
@@ -1346,13 +1356,94 @@ export async function runFullDocumentAgent(args: {
   })).filter((item): item is { tag: string; proposal: FullAgentProposal; frameBoxPt: CropBoxPt; row: EnrichScheduleRow; render: StoredRender } =>
     !!item.row && !!item.render && !!item.frameBoxPt), consistencyCoverage());
 
+  const measuredByTag = new Map<string, { split: SplitReading | null; render: StoredRender }>();
+  const pendingByPage = new Map<number, {
+    tag: string; proposal: FullAgentProposal; row: EnrichScheduleRow; boxPt: CropBoxPt;
+  }[]>();
+  const recordMeasurement = (
+    tag: string,
+    proposal: FullAgentProposal,
+    row: EnrichScheduleRow,
+    render: StoredRender,
+  ): void => {
+    const measured = measureSplit(render.profile, undefined, row.widthMm);
+    const composed = measured?.axis === proposal.divisionAxis
+      ? composeMeasuredSplit(proposal.operations, measured)
+      : null;
+    measuredByTag.set(tag, {
+      split: composed ? applyStatedWidths(composed, row.widthMm, row.commentText) : null,
+      render,
+    });
+  };
+  for (const [tag, proposal] of proposals) {
+    if (proposal.operations.length < 2) continue;
+    const row = rowByTag.get(tag);
+    const evidence = renders.get(proposal.evidenceRenderId);
+    if (!row || !evidence) continue;
+    const boxPt = pageBox(proposal, evidence);
+    const existing = [...renders.values()].find((render) => render.pageNo === evidence.pageNo
+      && render.dpi >= 300 && !!render.profile
+      && render.bboxPt.every((value, index) => Math.abs(value - boxPt[index]) < 0.01));
+    if (existing) {
+      recordMeasurement(tag, proposal, row, existing);
+      continue;
+    }
+    const pending = pendingByPage.get(evidence.pageNo) ?? [];
+    pending.push({ tag, proposal, row, boxPt });
+    pendingByPage.set(evidence.pageNo, pending);
+  }
+  let measurementRenderNo = 0;
+  for (const [pageNo, pending] of pendingByPage) {
+    for (let offset = 0; offset < pending.length; offset += MAX_MEASURE_REQUESTS) {
+      const available = MAX_TOTAL_RENDERS - totalRenders;
+      const batch = pending.slice(offset, offset + Math.min(MAX_MEASURE_REQUESTS, available));
+      if (!batch.length) break;
+      try {
+        await deps.onProgress?.(proposals.size + declines.size, scheduleRows.length, "render_crops");
+        report.containerCalls++;
+        const response = await deps.render({ pageNo, dpi: 300, crops: batch.map((item) => item.boxPt) });
+        report.steps.renderCrop.pagesRendered++;
+        for (const [index, item] of batch.entries()) {
+          const image = response.images[index];
+          if (!image || image.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) continue;
+          const id = `fd_measure_${String(++measurementRenderNo).padStart(3, "0")}`;
+          const cropKey = await deps.store(id, image.pngB64);
+          const source = sourceByPage.get(pageNo) ?? { fileId, pageNo };
+          const render: StoredRender = {
+            id, pageNo, sourceFileId: source.fileId, sourcePageNo: source.pageNo,
+            bboxPt: item.boxPt, dpi: response.dpi,
+            widthPx: image.widthPx, heightPx: image.heightPx, profile: image.profile,
+            cropKey, pngB64: "",
+          };
+          totalRenders++;
+          report.steps.renderCrop.cropsMade++;
+          renders.set(id, render);
+          renderCache.set(JSON.stringify([pageNo, 300, item.boxPt, null]), render);
+          recordMeasurement(item.tag, item.proposal, item.row, render);
+        }
+      } catch {
+        // Missing measurement is represented as division_unreadable below.
+      }
+    }
+  }
+
   const readings = scheduleRows.map((row) => {
     const tag = normalizeOpeningRef(row.tag) ?? row.tag;
     const proposal = proposals.get(tag);
-    const render = proposal ? renders.get(proposal.evidenceRenderId) ?? null : null;
+    const measurement = proposal?.operations.length && proposal.operations.length > 1
+      ? measuredByTag.get(tag)
+      : undefined;
+    const originalRender = proposal ? renders.get(proposal.evidenceRenderId) ?? null : null;
+    const render = measurement?.render ?? originalRender;
     const page = render ? pageByNo.get(render.pageNo) : null;
     const reading = proposal && render && page
-      ? readingFromProposal(proposal, row, render, page)
+      ? readingFromProposal(
+        measurement ? { ...proposal, evidenceRenderId: render.id, frameBoxNorm: [0, 0, 1, 1] } : proposal,
+        row,
+        render,
+        page,
+        proposal.operations.length > 1 ? measurement?.split ?? null : undefined,
+      )
       : fallbackReading(
         row,
         fallbackSourceFileId,
@@ -1363,7 +1454,7 @@ export async function runFullDocumentAgent(args: {
         placementByTag.get(tag),
       );
     report.perOpening.push({
-      tag: row.tag, outcome: proposal && render && page ? "read" : "not_read",
+      tag: row.tag, outcome: proposal && render && page && reading.splitState === "value" ? "read" : "not_read",
       cropKey: reading.cropKey, pageNo: reading.pageNo, confidence: reading.confidence, flags: reading.flags,
       attempts: attempts.get(tag) ?? 0,
       acceptedTurn: acceptedTurns.get(tag) ?? null,
@@ -1371,7 +1462,8 @@ export async function runFullDocumentAgent(args: {
     });
     return reading;
   });
-  report.steps.read.returned = proposals.size;
+  report.steps.read.returned = readings.filter((reading) =>
+    proposals.has(normalizeOpeningRef(reading.externalRef) ?? reading.externalRef) && reading.splitState === "value").length;
   report.steps.read.declined = declines.size;
   const placedTags = new Set(harvest.placements.map((placement) => placement.tag));
   report.steps.placements.fromText = scheduleRows.filter((row) => placedTags.has(normalizeOpeningRef(row.tag) ?? row.tag)).length;
