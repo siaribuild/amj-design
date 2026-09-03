@@ -1135,6 +1135,7 @@ export function checkPlan(tasks, design, spec) {
 }
 
 async function runBuild(run, spec, panes) {
+
   const tp = join(RUNS, run.slug, '02-tasks.json')
   // The fix tier collapses spec and design to nothing, so nobody sliced this
   // build: the ask IS the task, and it is ONE developer session. Still

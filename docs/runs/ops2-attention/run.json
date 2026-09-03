@@ -1,0 +1,38 @@
+{
+  "slug": "ops2-attention",
+  "tier": "full",
+  "base": "284f89ff",
+  "branch": "apertly-main",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 125312,
+      "outputTokens": 6361,
+      "turns": 3,
+      "source": "transcript",
+      "session": "fbedcb29-f8b3-4fd7-a959-9225f3da82b1",
+      "seconds": 92
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1269502,
+      "outputTokens": 28193,
+      "turns": 22,
+      "source": "transcript",
+      "session": "dd80feec-0f3b-4bb5-a676-900c9c425864",
+      "seconds": 626
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 1923569,
+      "outputTokens": 56115,
+      "turns": 20,
+      "source": "transcript",
+      "session": "c79f5cbf-e94e-4590-8133-1ff6a9b1b75f",
+      "seconds": 806
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-09-03T04:05:58.330Z"
+}
