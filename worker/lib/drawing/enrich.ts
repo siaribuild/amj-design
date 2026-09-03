@@ -17,7 +17,7 @@ import { assignOpenings, type ElevationPageGeometry, type Placement } from "./as
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
 import { makeDrawingAgentSkill, runDrawingAgent, type DrawingAgentInput, type DrawingAgentTurn } from "./agent";
 import { applyVisualNorthToHarvest, buildFullDocumentHarvest, makeFullDocumentAgentSkill, runFullDocumentAgent, type FullAgentTurnResult, type FullDocumentAgentInput, type FullDocumentHarvest, type FullDocumentTurn } from "./fullDocumentAgent";
-import { runStage } from "../ai/stage";
+import { runStage, StageCallError } from "../ai/stage";
 import { sha256hex, sha256hexText } from "../ai/hash";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
@@ -661,7 +661,7 @@ export async function runDrawingEnrichmentStage(
             skill: makeFullDocumentAgentSkill(args.scheduleRows.map((row) => row.tag), input.harvest.pages.map((page) => page.pageNo)),
             input,
           });
-          if (!res.ok && res.failureKind !== "invalid_output") throw new Error("full_document_agent_provider_failure");
+          if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
           return {
             data: res.data,
             cached: res.cached,

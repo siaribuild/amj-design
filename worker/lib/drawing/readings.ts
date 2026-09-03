@@ -7,11 +7,10 @@ import type { DrawingFlag, DrawingReading, Orientation } from "./contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
 
-type DrawingField = "split" | "room" | "orientation";
+type DrawingField = "split" | "orientation";
 
 const NON_BLOCKING_FLAGS: Record<DrawingField, ReadonlySet<DrawingFlag>> = {
   split: new Set(["northAssumed", "manufacturability"]),
-  room: new Set(["northAssumed", "manufacturability", "scheduleDrawingMismatch"]),
   orientation: new Set(["manufacturability", "scheduleDrawingMismatch", "drawingInconsistency", "notVisibleOnElevations"]),
 };
 
@@ -43,36 +42,19 @@ export function applyDrawingOrientation(
   }
 }
 
-/** Room label → `quote_line.room_label`, guarded to rows that are still
- *  empty (§3.5) — a human's own label is never overwritten. Runs after
- *  `runProjectEstimate` materialises lines (readings apply before that has
- *  a row to guard, so this is a separate, later call). */
-export async function applyDrawingRoom(
+/** Schedule comments are customer-visible line notes. Keep the empty-only
+ * guard so a customer's own note is never overwritten. */
+export async function applyScheduleNotes(
   env: Pick<Env, "DB">,
   projectId: string,
-  readings: { externalRef: string; roomState: string; roomLabel: string | null; confidence?: string | null; flags?: unknown[] }[],
+  notes: { externalRef: string; note: string | null }[],
 ): Promise<void> {
-  for (const r of readings) {
-    if (r.roomState !== "value" || !r.roomLabel || drawingFieldBlocked(r, "room")) continue;
-    await env.DB.prepare(
+  const statements = notes
+    .map(({ externalRef, note }) => ({ externalRef, note: note?.trim().slice(0, 500) || null }))
+    .filter((item): item is { externalRef: string; note: string } => !!item.note)
+    .map(({ externalRef, note }) => env.DB.prepare(
       `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
-    ).bind(r.roomLabel, projectId, r.externalRef).run();
-  }
-}
-
-/** Plan-context rooms are independent of drawing composition confidence.
- * Persist them after quote lines exist, while keeping the same empty-only
- * guard that protects customer-entered labels. */
-export async function applyKnownRooms(
-  env: Pick<Env, "DB">,
-  projectId: string,
-  rooms: { externalRef: string; roomLabel: string | null }[],
-): Promise<void> {
-  const statements = rooms
-    .filter((room): room is { externalRef: string; roomLabel: string } => !!room.roomLabel)
-    .map((room) => env.DB.prepare(
-      `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
-    ).bind(room.roomLabel, projectId, room.externalRef));
+    ).bind(note, projectId, externalRef));
   if (statements.length) await env.DB.batch(statements);
 }
 
