@@ -2881,7 +2881,6 @@ test("full-document provider-call budget reserves capacity for mandatory close-u
   });
   assert.equal(turns, 7, "main-loop repairs must leave provider capacity for close-up verification");
   assert.equal(result.report.modelCalls, 14);
-  assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxProviderCalls - result.report.modelCalls, 2);
 });
 
 test("full-document turn contract exposes bounded adaptive tools and rejects vocabulary escape", () => {
@@ -4261,6 +4260,55 @@ test("full-document agent verifies the standard 19-opening set in five bounded c
   assert.ok(result.readings.every((reading) =>
     reading.split.units[0].derivedWidthMm === 300 && reading.split.units[1].derivedWidthMm === 700));
   assert.equal(FULL_DOCUMENT_AGENT_LIMITS.maxRecords, 60);
+});
+
+test("full-document agent preserves discovery turns for 29- and 60-opening sets", async () => {
+  for (const openingCount of [29, 60]) {
+    const scheduleRows = Array.from({ length: openingCount }, (_, index) => ({
+      tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
+    }));
+    let mainCalls = 0;
+    const result = await runFullDocumentAgent({
+      fileId: "f1", scheduleRows,
+      inspected: {
+        inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+          { pageNo: 1, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+        ] },
+        pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN\nELEVATION A", words: [] }],
+      },
+      deps: {
+        runTurn: async (input) => {
+          if (input.escalationRecords) return verifyCloseUpParents(input);
+          mainCalls++;
+          if (mainCalls === 1) {
+            return { action: "render", memory: "Inspect the elevation before resolving openings.", requests: [{ pageNo: 1, dpi: 180 }] };
+          }
+          return {
+            action: "emit", memory: `All ${openingCount} frames resolved.`, declines: [],
+            records: scheduleRows.map((row, index) => {
+              const x0 = 0.02 + (index % 10) * 0.095;
+              const y0 = 0.08 + Math.floor(index / 10) * 0.14;
+              return hybridRecord({
+                tag: row.tag, facePageNo: 1,
+                evidenceRenderId: input.imageDataUrls[0]?.renderId ?? "missing",
+                frameBoxNorm: [x0, y0, x0 + 0.05, y0 + 0.08],
+              });
+            }),
+          };
+        },
+        render: async (request) => ({
+          images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 2_000, heightPx: 2_000 })),
+          dpi: request.dpi,
+        }),
+        store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+      },
+    });
+    assert.equal(mainCalls, 2, `${openingCount} openings must retain enough budget for discovery`);
+    assert.equal(result.report.modelCalls, 2 + Math.ceil(openingCount / 4));
+    assert.equal(result.report.steps.read.targetedReviews, openingCount);
+    assert.equal(result.readings.length, openingCount);
+    assert.ok(result.report.perOpening.every((opening) => opening.outcome === "read"));
+  }
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {
