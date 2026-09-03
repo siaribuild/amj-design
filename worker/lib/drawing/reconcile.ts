@@ -1,9 +1,10 @@
 import type { DrawingConfidence, DrawingFlag, OpeningOperation, SplitReading } from "./contract";
 import { parseCompositionComment } from "./comments";
+import { sizesFromRatios } from "../estimator/split";
 
 const passive = new Set<OpeningOperation>(["fixed", "sidelight"]);
 
-function operationFromSchedule(text: string | null | undefined): OpeningOperation | null {
+export function operationFromSchedule(text: string | null | undefined): OpeningOperation | null {
   if (/AWNING/i.test(text ?? "")) return "awning";
   if (/CASEMENT/i.test(text ?? "")) return "casement";
   if (/SLID/i.test(text ?? "")) return "sliding";
@@ -13,8 +14,64 @@ function operationFromSchedule(text: string | null | undefined): OpeningOperatio
   return null;
 }
 
+export function scheduleDrawingMismatch(
+  split: SplitReading,
+  scheduleType: string | null | undefined,
+): { drawing: string; schedule: string } | null {
+  const scheduled = operationFromSchedule(scheduleType);
+  const matches = scheduled === "awning" && split.units.length > 1
+    ? split.units.some((unit) => unit.operation === "awning" || (!unit.operation && unit.role === "operable"))
+      && split.units.some((unit) => unit.operation ? unit.operation !== "awning" : unit.role === "passive")
+    : scheduled === "fixed"
+    ? split.units.every((unit) => unit.operation ? passive.has(unit.operation) : unit.role === "passive")
+    : split.units.some((unit) => unit.operation === scheduled || (!unit.operation && unit.role === "operable"));
+  if (!scheduled || matches) return null;
+  const operations = split.units.map((unit) => unit.operation).filter((operation): operation is OpeningOperation => !!operation);
+  const drawn = operations.length
+    ? operations.map((operation) => operation.toUpperCase()).join(" + ")
+    : split.units.some((unit) => unit.role === "operable") ? "operating unit" : "passive unit";
+  return { drawing: `drawing shows ${drawn}`, schedule: `schedule types ${scheduled.toUpperCase()}` };
+}
+
 function withOperation(unit: SplitReading["units"][number], operation: OpeningOperation) {
   return { ...unit, operation, role: passive.has(operation) ? "passive" as const : "operable" as const };
+}
+
+/** Printed component widths are facts. Keep the drawing's order/operations,
+ * then let the final unstated components absorb the exact remainder. */
+export function applyStatedWidths(
+  split: SplitReading,
+  widthMm: number,
+  commentText?: string | null,
+): SplitReading {
+  const parsed = parseCompositionComment(commentText);
+  if (!Number.isFinite(widthMm) || widthMm <= 0 || !parsed?.unitWidthMm || !parsed.operation || parsed.unitWidthMm >= widthMm) return split;
+  const count = parsed.count ?? 1;
+  const stated = split.units
+    .map((unit, index) => ({ unit, index }))
+    .filter(({ unit }) => unit.operation === parsed.operation)
+    .slice(0, count)
+    .map(({ index }) => index);
+  if (stated.length !== count) return split;
+  const remainderIndexes = split.units.map((_, index) => index).filter((index) => !stated.includes(index));
+  const remainder = widthMm - parsed.unitWidthMm * stated.length;
+  if (remainder <= 0 || !remainderIndexes.length) return split;
+  const weightTotal = remainderIndexes.reduce((sum, index) => sum + Math.max(0, split.units[index].ratio), 0) || remainderIndexes.length;
+  const remainderWidths = sizesFromRatios(
+    remainderIndexes.map((index) => Math.max(0, split.units[index].ratio) / weightTotal || 1 / remainderIndexes.length),
+    remainder,
+    5,
+  );
+  const widths = split.units.map((_, index) => stated.includes(index) ? parsed.unitWidthMm : remainderWidths[remainderIndexes.indexOf(index)]);
+  const sidelightIndex = parsed.sidelight && remainderIndexes.length === 1 ? remainderIndexes[0] : -1;
+  return {
+    ...split,
+    units: split.units.map((unit, index) => ({
+      ...(index === sidelightIndex ? withOperation(unit, "sidelight") : unit),
+      ratio: widths[index] / widthMm,
+      derivedWidthMm: widths[index],
+    })),
+  };
 }
 
 /** Honest fallback for an opening absent from every elevation: it uses only
@@ -30,9 +87,10 @@ export function compositionFromSchedule(args: {
   if (parsed?.sidelight) {
     const doorRatio = parsed.unitWidthMm && parsed.unitWidthMm < args.widthMm
       ? parsed.unitWidthMm / args.widthMm : 0.75;
+    const widths = sizesFromRatios([doorRatio, 1 - doorRatio], args.widthMm, 5);
     return { axis: "vertical", units: [
-      { role: "operable", operation: "hinged", ratio: doorRatio, derivedWidthMm: Math.round(args.widthMm * doorRatio / 5) * 5 },
-      { role: "passive", operation: "sidelight", ratio: 1 - doorRatio, derivedWidthMm: Math.round(args.widthMm * (1 - doorRatio) / 5) * 5 },
+      { role: "operable", operation: "hinged", ratio: doorRatio, derivedWidthMm: widths[0] },
+      { role: "passive", operation: "sidelight", ratio: 1 - doorRatio, derivedWidthMm: widths[1] },
     ] };
   }
   const count = Math.max(1, parsed?.count ?? 1);
@@ -44,14 +102,17 @@ export function compositionFromSchedule(args: {
       { role: passive.has(operation) ? "passive" : "operable", operation, ratio: sideRatio, derivedWidthMm: parsed.unitWidthMm },
     ] };
   }
-  return { axis: "vertical", units: Array.from({ length: count }, () => ({
+  const ratios = Array.from({ length: count }, () => 1 / count);
+  const widths = sizesFromRatios(ratios, args.widthMm, 5);
+  return { axis: "vertical", units: ratios.map((ratio, index) => ({
     role: passive.has(operation) ? "passive" as const : "operable" as const,
-    operation, ratio: 1 / count, derivedWidthMm: Math.round(args.widthMm / count / 5) * 5,
+    operation, ratio, derivedWidthMm: widths[index],
   })) };
 }
 
 export function reconcileReading(args: {
   split: SplitReading;
+  widthMm: number;
   scheduleType: string | null;
   commentText?: string | null;
   modelConfidence: DrawingConfidence;
@@ -59,6 +120,7 @@ export function reconcileReading(args: {
   visible?: boolean;
 }): { composition: SplitReading; confidence: DrawingConfidence; flags: DrawingFlag[] } {
   const flags: DrawingFlag[] = [];
+  if (args.modelConfidence === "low") flags.push("agentEvidenceWeak");
   const parsed = parseCompositionComment(args.commentText);
   let composition: SplitReading = { ...args.split, units: args.split.units.map((unit) => ({ ...unit })) };
   if (parsed?.count != null && parsed.count !== composition.units.length) flags.push("scheduleDrawingMismatch");
@@ -75,10 +137,8 @@ export function reconcileReading(args: {
         indexes.includes(index) ? withOperation(unit, parsed.operation!) : withOperation(unit, "fixed")),
     };
   }
-  const scheduleOperation = operationFromSchedule(args.scheduleType);
-  if (scheduleOperation && !composition.units.some((unit) => unit.operation === scheduleOperation)) {
-    flags.push("scheduleDrawingMismatch");
-  }
+  composition = applyStatedWidths(composition, args.widthMm, args.commentText);
+  if (scheduleDrawingMismatch(composition, args.scheduleType)) flags.push("scheduleDrawingMismatch");
   const operable = /AWNING|CASEMENT|SLID|LOUVRE|HINGED/i.test(args.scheduleType ?? "");
   if (operable && composition.units.some((unit) => unit.role === "operable" && (unit.derivedWidthMm ?? 0) > 1200)) {
     flags.push("manufacturability");

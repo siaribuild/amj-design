@@ -16,8 +16,14 @@ import type { ReactNode } from "react";
  * the page composes the destination from its own resolved record.
  */
 export function OpenablePanel({ title, testId, busy, open, children }: {
-  /** The `<h2>` text AND the section's accessible name — one fact, one prop. */
-  title: string;
+  /** The `<h2>` text AND the section's accessible name — one fact, one prop.
+   *  OPTIONAL (owner, 2026-09-01): a panel presents whatever content it is
+   *  handed, and a heading is the caller's choice, not this component's
+   *  requirement. The totals card is three rows that already say what they
+   *  are; a heading above them would be a label for a label. An openable
+   *  panel still announces itself either way — the door carries `open.label`,
+   *  which names the destination. */
+  title?: string;
   /** The door's test id is derived (`${testId}-open`), so a second consumer
    *  cannot name it differently. */
   testId: string;
@@ -51,7 +57,7 @@ export function OpenablePanel({ title, testId, busy, open, children }: {
           />
         </>
       )}
-      <h2 className="lp-panel__title">{title}</h2>
+      {title && <h2 className="lp-panel__title">{title}</h2>}
       {children}
     </section>
   );

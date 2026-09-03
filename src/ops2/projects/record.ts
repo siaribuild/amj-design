@@ -126,11 +126,19 @@ export interface RecordDelivery {
    *  Wins over the project's live leg, which by then is only an estimate of a
    *  question already answered. */
   frozen: number | null;
-  /** What the live rate table says it should be, whether or not it is settled. */
-  estimate: number | null;
+  /** The destination, as an ADDRESS (0063). The zone still resolves from the
+   *  postcode alone — none of the rest is an input to a price. */
+  line1: string | null;
+  line2: string | null;
   suburb: string | null;
+  state: string | null;
   postcode: string | null;
   zoneLabel: string | null;
+  /** Whether this project is still inside the window the endpoint will accept
+   *  a write in. Openability is derived from it, so it FAILS CLOSED: a record
+   *  that cannot prove it is editable renders no door rather than a door onto
+   *  a 409. */
+  editable: boolean;
 }
 
 export interface ProjectRecord {
@@ -347,10 +355,13 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
       // NOT a truthiness check, ever: 0 is settled — a trade waiver — and only
       // NULL is unset. The issue gate turns on exactly this distinction.
       settled: delivery.settled === true,
-      estimate: num(delivery.estimate),
+      line1: str(delivery.line1),
+      line2: str(delivery.line2),
       suburb: str(delivery.suburb),
+      state: str(delivery.state),
       postcode: str(delivery.postcode),
       zoneLabel: str(delivery.zoneLabel),
+      editable: delivery.editable === true,
     },
     actions: Array.isArray(b.actions) ? b.actions.flatMap(parseAction) : [],
     orderNo: order ? str(order.orderNo) : null,
@@ -590,9 +601,10 @@ export interface RecordTotals {
  * reviewer reads $18,000 for a job that will be $30,000 — the arithmetic is
  * right and the label is a lie.
  *
- * Delivery is added only when SETTLED. The live estimate is shown beside it as
- * an estimate, never folded into the total: it moves with the rate table, and a
- * total that changes because someone edited a zone is not a total.
+ * Delivery is added only when SETTLED, and a machine estimate is never shown
+ * anywhere near it — a single price, always (D12, owner 2026-09-01). The
+ * estimate moves with the rate table, so a total that changed because someone
+ * edited a zone would not be a total; it is simply not on this surface.
  */
 export function totalsFor(record: ProjectRecord): RecordTotals {
   const priced = record.lines.filter((l) => l.lineTotal != null);
@@ -651,6 +663,13 @@ export function ageLabel(record: ProjectRecord): string | null {
   if (days === 0) return "today";
   return days === 1 ? "1 day" : `${days} days`;
 }
+
+/** Door labels. They name the DESTINATION rather than saying the card is
+ *  pressable, because that string is the accessible name a screen reader
+ *  reads in place of the card — and the totals card has no heading of its own
+ *  to fall back on. */
+export const deliveryPriceDoor = "Set the delivery price";
+export const deliveryAddressDoor = "Change the delivery address";
 
 /** The status sentence, in the owner's wording — "the customer", not "customer". */
 export function waitingSentence(record: ProjectRecord): string {

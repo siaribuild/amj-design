@@ -45,8 +45,9 @@ const {
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
 
-test("aiJobDeadlineMs: 600s under auto_drawings while the freshly-provisioned container is tested (owner, 2026-08-29), 120s otherwise", () => {
+test("aiJobDeadlineMs: drawing parsers receive 600s while non-drawing modes keep the 120s lease", () => {
   assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto_drawings" }), 600_000);
+  assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "agentic_full" }), 600_000);
   assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto" }), 120_000);
   assert.equal(aiJobDeadlineMs({}), 120_000);
 });

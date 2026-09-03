@@ -679,6 +679,33 @@ test("AC-19 a drawing instruction lets a split compete on an opening one unit fi
   assert.deepEqual(ranks, ranks.map((_, i) => i + 1), "one dense ranking over both forms");
 });
 
+test("D1 drawing evidence becomes a 925 mm hinged door plus 455 mm sidelight composite", async () => {
+  const door = {
+    ...splitProduct("amj80t-casement-door", { operation: "hinged", maxWidthMm: 1_300 }),
+    family: "doors", series: "hinged-door",
+  };
+  const fixed = splitProduct("amj80st-fixed-window", { operation: "fixed", maxWidthMm: 3_000 });
+  const { hint } = resolveMakeUp("D1", {
+    reading: {
+      splitState: "value", axis: "vertical",
+      units: [{ role: "operable", ratio: 0.67 }, { role: "passive", ratio: 0.33 }],
+    },
+    commentHint: null, typeText: "HINGED", fallbackOp: "hinged",
+    energyComponents: null, energyAxis: "vertical",
+  });
+  const result = await selectWithSplits(
+    { family: "doors", operationType: "hinged", widthMm: 1_380, heightMm: 2_405, externalRef: "D1" },
+    hint,
+    splitCtx([door, fixed], { section: "door", primaryCategory: "doors", alternateCategory: "windows" }),
+  );
+
+  assert.ok(result.selectedSplit);
+  assert.deepEqual(result.selectedSplit.plan.map((unit) => unit.segment.widthMm), [925, 455]);
+  assert.deepEqual(result.selectedSplit.units.map((unit) => unit.result.selected.candidate.slug), [
+    "amj80t-casement-door", "amj80st-fixed-window",
+  ]);
+});
+
 test("AC-20 a split is priced as the SUM of its units and measured as their averaged cell", async () => {
   // The spec's worked example: two 1 m² units at $700 and $500, Uw 3.6 and 4.4,
   // against a 4.0 cap. The averaged cell is exactly 4.0, so the make-up MEETS a

@@ -18,7 +18,7 @@ await build({
     contents: `
       export * as schema from ${p("worker/lib/ai/schema.ts")};
       export { evaluateEscalation, LOW_CONFIDENCE_THRESHOLD } from ${p("worker/lib/ai/escalation.ts")};
-      export { stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
+      export { stageHashPayload, stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
       export { runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure } from ${p("worker/lib/estimator/skills/runner.ts")};
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
@@ -31,7 +31,7 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const {
-  schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
+  schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageHashPayload, stageInputHash, stageRawKey, runStage,
   runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
   energyReportExtractor, parseModelJson, outcomeQualityState,
 } = await import(pathToFileURL(outfile).href);
@@ -70,7 +70,13 @@ function fakeEnv({ responses = [], stageHit = null, vars = {} } = {}) {
     AI_GATEWAY_ID: "gw-test",
     DB: {
       prepare: (sql) => ({ bind: (...args) => ({
-        first: async () => (sql.includes("FROM ai_stage_runs") ? stageHit : null),
+        first: async () => {
+          if (/INSERT INTO ai_stage_runs/.test(sql)) {
+            dbWrites.push({ sql, args });
+            return { id: args[0] };
+          }
+          return sql.includes("FROM ai_stage_runs") ? stageHit : null;
+        },
         run: async () => { dbWrites.push({ sql, args }); return {}; },
         all: async () => ({ results: [] }),
       }) }),
@@ -160,6 +166,20 @@ test("stageInputHash: stable for identical parts; changes with prompt, model, pi
   }
 });
 
+test("stageInputHash: hashes inline images without retaining their base64 in the JSON payload", async () => {
+  const first = { imageDataUrls: [{ renderId: "r1", dataUrl: "data:image/png;base64,QUFBQUFB" }], note: "kept" };
+  const second = { imageDataUrls: [{ renderId: "r1", dataUrl: "data:image/png;base64,QkJCQkJC" }], note: "kept" };
+  const compact = await stageHashPayload(first);
+  assert.doesNotMatch(JSON.stringify(compact), /QUFBQUFB/);
+  assert.match(JSON.stringify(compact), /sha256/);
+  const parts = { pipelineVersion: "p1", stage: "vision", promptVersion: "v1", model: "m1" };
+  assert.notEqual(
+    await stageInputHash({ ...parts, payload: first }),
+    await stageInputHash({ ...parts, payload: second }),
+    "different image bytes must retain different cache identities",
+  );
+});
+
 test("stageRawKey: §7.1 layout, traversal-safe", () => {
   assert.equal(
     stageRawKey("prj_1", "run_1", "schedule_parser", "abc123"),
@@ -228,6 +248,31 @@ test("runner: transport failure fails soft (degradation, not an exception)", asy
   assert.ok(!run.ok);
   assert.ok(run.warnings.includes("skill_call_failed"));
   assert.equal(run.failureKind, "permanent_request");
+});
+
+test("runner: provider failures emit a capped structured ops log", async () => {
+  const entries = [];
+  const original = console.error;
+  console.error = (entry) => entries.push(entry);
+  try {
+    const { env } = fakeEnv({ responses: [new Error(`2021: Invalid User Credentials ${"x".repeat(300)}`)] });
+    await runSkill(env, testSkill, {}, { telemetry: { aiRunId: "run-1", projectId: "project-1" } });
+  } finally {
+    console.error = original;
+  }
+
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0], {
+    event: "ai_model_call_error",
+    aiRunId: "run-1",
+    projectId: "project-1",
+    skill: "test_skill",
+    model: DEFAULT_PRIMARY_MODEL,
+    failureKind: "transient_provider",
+    error: entries[0].error,
+  });
+  assert.match(entries[0].error, /^Error: 2021: Invalid User Credentials/);
+  assert.equal(entries[0].error.length, 200);
 });
 
 test("runner: provider errors retain retry semantics", () => {
@@ -350,6 +395,23 @@ test("stage: failed skill call persists a 'failed' stage record and fails soft",
   const stageWrite = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
   assert.ok(started, "the running stage is visible before the provider returns");
   assert.equal(stageWrite.args[2], "failed");
+});
+
+test("stage: a same-input retry updates the unique stage row with diagnostics and zero token counts", async () => {
+  const { env, dbWrites } = fakeEnv({ responses: [new Error("HTTP 503 upstream unavailable")] });
+  const res = await runStage(env, { aiRunId: "r", projectId: "p", skill: testSkill, input: {} });
+
+  assert.equal(res.failureKind, "transient_provider");
+  const started = dbWrites.find((w) => /INSERT INTO ai_stage_runs/.test(w.sql));
+  assert.match(started.sql, /ON CONFLICT\s*\(ai_run_id,\s*stage,\s*input_hash\)\s*DO UPDATE/i);
+  const completed = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
+  assert.match(completed.sql, /WHERE ai_run_id=\? AND stage=\? AND input_hash=\?/i);
+  assert.equal(completed.args[8], 0, "a provider failure before usage reports a known zero, not NULL");
+  assert.equal(completed.args[9], 0);
+  assert.deepEqual(JSON.parse(completed.args[10]), {
+    failureKind: "transient_provider",
+    warnings: res.warnings,
+  });
 });
 
 // ── Vendor schema shape (§13.4) ──────────────────────────────────────────────

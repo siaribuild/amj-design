@@ -1,0 +1,39 @@
+{
+  "slug": "ops2-delivery-price",
+  "tier": "full",
+  "base": "f721febb",
+  "branch": "feat/ops2-delivery-price",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 187201,
+      "outputTokens": 10450,
+      "turns": 4,
+      "source": "transcript",
+      "session": "b7da5209-505c-4530-b0a9-8cd228a69c2c",
+      "seconds": 153
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1310322,
+      "outputTokens": 57304,
+      "turns": 23,
+      "source": "transcript",
+      "session": "a3016668-7e77-44b8-9129-6bb940dba633",
+      "seconds": 1069
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 4129461,
+      "outputTokens": 42893,
+      "turns": 34,
+      "source": "transcript",
+      "session": "7a6be8e9-0adb-49f8-92e8-adad86e98cd7",
+      "seconds": 519
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-09-01T02:29:35.264Z",
+  "gateStage": "ux"
+}

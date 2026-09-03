@@ -361,6 +361,21 @@ test("buildSplitHints: schedule says FIXED but the drawing shows an operating un
   assert.ok(flags.get("W2").some((f) => f === "drawing shows operating unit | schedule types FIXED"));
 });
 
+test("AC-2: scheduled AWNING rejects an all-fixed drawing and names both sides for ops", () => {
+  const lines = [{ tag: "W10", widthMm: 1450, heightMm: 1200, typeText: "AWNING", notes: null, split: null }];
+  const readings = [{
+    externalRef: "W10", splitState: "value",
+    split: { units: [
+      { role: "passive", operation: "fixed", ratio: 0.5 },
+      { role: "passive", operation: "fixed", ratio: 0.5 },
+    ], axis: "vertical" },
+    confidence: "high", flags: [],
+  }];
+  const { splitHints, flags } = buildSplitHints(lines, readings);
+  assert.equal(splitHints.has("W10"), false, "contradictory drawing geometry must not shape the estimate");
+  assert.ok(flags.get("W10").includes("drawing shows FIXED + FIXED | schedule types AWNING"));
+});
+
 test("buildSplitHints: low or flagged agent evidence is review-only and cannot shape the estimate", () => {
   const lines = [{ tag: "W3", widthMm: 1200, heightMm: 1200, typeText: "AWNING", notes: "AWNING + CASEMENT", split: null }];
   const readings = [{
@@ -371,6 +386,26 @@ test("buildSplitHints: low or flagged agent evidence is review-only and cannot s
   const { splitHints, flags } = buildSplitHints(lines, readings);
   assert.equal(splitHints.get("W3").source, "schedule_comment");
   assert.ok(flags.get("W3").includes("drawing evidence needs review: agentEvidenceWeak"));
+});
+
+test("AC-3: orientation and manufacturability warnings do not discard valid composition", () => {
+  const lines = [
+    { tag: "W4", widthMm: 1800, heightMm: 1200, typeText: "AWNING", notes: null, split: null },
+    { tag: "W5", widthMm: 1800, heightMm: 1200, typeText: "AWNING", notes: null, split: null },
+  ];
+  const split = { units: [
+    { role: "operable", operation: "awning", ratio: 0.5 },
+    { role: "passive", operation: "fixed", ratio: 0.5 },
+  ], axis: "vertical" };
+  const readings = [
+    { externalRef: "W4", splitState: "value", split, confidence: "low", flags: ["northAssumed"] },
+    { externalRef: "W5", splitState: "value", split, confidence: "low", flags: ["manufacturability"] },
+  ];
+  const { splitHints, flags } = buildSplitHints(lines, readings);
+  assert.equal(splitHints.get("W4").source, "plans");
+  assert.equal(splitHints.get("W5").source, "plans");
+  assert.ok(flags.get("W4").includes("drawing evidence needs review: northAssumed"));
+  assert.ok(flags.get("W5").includes("drawing evidence needs review: manufacturability"));
 });
 
 test("parentTagOf: thermal children map to their architectural parent", () => {

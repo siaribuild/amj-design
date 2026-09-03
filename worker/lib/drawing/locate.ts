@@ -52,6 +52,26 @@ function footprint(words: PageWord[], geo: Pick<PageInventory, "widthPt" | "heig
   return result;
 }
 
+function tagFootprint(words: PageWord[], geo: Pick<PageInventory, "widthPt" | "heightPt">, vocabulary: Set<string>): Footprint | null {
+  const scored = words.map((word) => ({ word, tag: normalizeOpeningRef(word.text), score: sheetRefScore(word, words) }))
+    .filter((item): item is { word: PageWord; tag: string; score: number } => !!item.tag && vocabulary.has(item.tag) && item.score > 0);
+  const best = Math.max(0, ...scored.map(({ score }) => score));
+  const tags = scored.filter(({ score }) => score === best);
+  if (new Set(tags.map(({ tag }) => tag)).size < 4) return null;
+  const centres = tags.map(({ word }) => centre(word));
+  const result = {
+    x0: Math.min(...centres.map(([x]) => x)), top: Math.min(...centres.map(([, y]) => y)),
+    x1: Math.max(...centres.map(([x]) => x)), bottom: Math.max(...centres.map(([, y]) => y)),
+  };
+  return result.x1 - result.x0 >= geo.widthPt * 0.1 && result.bottom - result.top >= geo.heightPt * 0.1 ? result : null;
+}
+
+export const hasPlanFootprint = (
+  words: PageWord[],
+  geo: Pick<PageInventory, "widthPt" | "heightPt">,
+  vocabulary: Set<string>,
+): boolean => !!footprint(words, geo, vocabulary);
+
 function distanceToFootprint(word: PageWord, box: Footprint): number {
   const [x, y] = centre(word);
   const dx = x < box.x0 ? box.x0 - x : x > box.x1 ? x - box.x1 : 0;
@@ -79,6 +99,37 @@ function inDimensionChain(tagWord: PageWord, words: PageWord[]): boolean {
     && /^\d{3,}(?:\.\d+)?$/.test(word.text.trim())
     && sameLineWord(tagWord, word)
     && Math.min(Math.abs(word.x0 - tagWord.x1), Math.abs(tagWord.x0 - word.x1)) <= height * 2);
+}
+
+export function openingTagWords(
+  words: PageWord[],
+  vocabulary: Set<string>,
+  geo?: Pick<PageInventory, "widthPt" | "heightPt">,
+): { tag: string; word: PageWord; ambiguous: boolean; identityEvidence: "sheet_reference" | "visual_required" }[] {
+  const byTag = new Map<string, PageWord[]>();
+  for (const word of words) {
+    const tag = normalizeOpeningRef(word.text);
+    if (!tag || !vocabulary.has(tag) || (inDimensionChain(word, words) && sheetRefScore(word, words) === 0)) continue;
+    const matches = byTag.get(tag) ?? [];
+    matches.push(word);
+    byTag.set(tag, matches);
+  }
+  const planBox = geo ? tagFootprint(words, geo, vocabulary) ?? footprint(words, geo, vocabulary) : null;
+  return [...byTag].flatMap(([tag, matches]) => {
+    const scored = matches.map((word) => ({ word, score: sheetRefScore(word, words) }));
+    const best = Math.max(...scored.map(({ score }) => score));
+    let selected = scored.filter(({ score }) => best === 0 || score === best);
+    if (planBox) {
+      const cap = Math.hypot(planBox.x1 - planBox.x0, planBox.bottom - planBox.top) * 0.2;
+      const nearPlan = selected.filter(({ word }) => distanceToFootprint(word, planBox) <= cap);
+      selected = nearPlan;
+    }
+    const ambiguous = selected.length > 1;
+    return selected.map(({ word }) => ({
+      tag, word, ambiguous,
+      identityEvidence: best > 0 ? "sheet_reference" : "visual_required",
+    }));
+  });
 }
 
 function nearestEdge(word: PageWord, box: Footprint): Edge {
@@ -154,26 +205,25 @@ export function locateFloorplanPage(
   vocabulary: string[],
 ): { placements: Record<string, TextPlacement>; markerEdges: Record<string, Edge>; unplaced: string[] } {
   const normalizedVocabulary = new Set(vocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
-  const box = footprint(page.words, geo, normalizedVocabulary);
+  const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
   if (!box) return { placements: {}, markerEdges: {}, unplaced: [...normalizedVocabulary] };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
+  const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
+  const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
 
   const markerByEdge = new Map<Edge, string>();
   const ambiguousEdges = new Set<Edge>();
   for (const word of page.words) {
     const label = word.text.trim().toUpperCase();
     if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
-    if (distanceToFootprint(word, box) > footprintDiagonal * 0.2) continue;
+    if (distanceToFootprint(word, box) > footprintDiagonal * 0.25) continue;
     const edge = nearestEdge(word, box);
     if (markerByEdge.has(edge) && markerByEdge.get(edge) !== label) ambiguousEdges.add(edge);
     markerByEdge.set(edge, label);
   }
 
   const wordsByTag = new Map<string, PageWord[]>();
-  for (const word of page.words) {
-    const tag = normalizeOpeningRef(word.text);
-    if (!tag || !normalizedVocabulary.has(tag)) continue;
-    if (inDimensionChain(word, page.words)) continue;
+  for (const { tag, word } of openingTagWords(page.words, normalizedVocabulary, geo)) {
     const current = wordsByTag.get(tag) ?? [];
     current.push(word);
     wordsByTag.set(tag, current);
@@ -197,7 +247,7 @@ export function locateFloorplanPage(
     onEdge.forEach((candidate, index) => {
       placements[candidate.tag] = {
         elevation: markerByEdge.get(edge)!, orderOnWall: index + 1,
-        roomLabel: candidate.roomLabel, storey: storeyOf(page.text),
+        roomLabel: candidate.roomLabel, storey,
       };
     });
   }

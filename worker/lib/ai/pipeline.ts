@@ -24,10 +24,11 @@ import { readSourced, type CompassPoint, type ThermalModelInputs } from "../esti
 import { resolveActiveDefaultBand, type ActiveDefaultBand } from "../estimator/thermal/defaultBand";
 import { coerceCoherent } from "../estimator/thermal/precedence";
 import { proposeSplit, parseSplitHint, resolveMakeUp, type SplitHint } from "../estimator/split";
-import { runDrawingEnrichmentStage } from "../drawing/enrich";
+import { drawingParserMode, runDrawingEnrichmentStage } from "../drawing/enrich";
 import { setDrawingProgress } from "./jobs";
-import { applyDrawingOrientation, applyDrawingRoom, applyKnownRooms, persistReadings, conflictReason } from "../drawing/readings";
+import { applyDrawingOrientation, applyScheduleNotes, persistReadings, conflictReason, drawingFieldBlocked } from "../drawing/readings";
 import type { DrawingReading } from "../drawing/contract";
+import { scheduleDrawingMismatch } from "../drawing/reconcile";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate, type TierCounts } from "../estimator/estimate";
@@ -162,9 +163,7 @@ export function buildSplitHints(
   lines: MergedLine[],
   drawingReadings: DrawingReading[],
 ): { splitHints: Map<string, SplitHint>; flags: Map<string, string[]> } {
-  const readingByTag = new Map(drawingReadings
-    .filter((r) => r.splitState === "value" && r.split && r.confidence === "high" && (r.flags?.length ?? 0) === 0)
-    .map((r) => [r.externalRef, { splitState: r.splitState, units: r.split!.units, axis: r.split!.axis }] as const));
+  const readingByTag = new Map(drawingReadings.map((r) => [r.externalRef, r]));
   const splitHints = new Map<string, SplitHint>();
   const flags = new Map<string, string[]>();
   const flag = (tag: string, reason: string) => {
@@ -180,13 +179,16 @@ export function buildSplitHints(
   }
   for (const l of lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
-    const reading = readingByTag.get(l.tag) ?? null;
-    // AC-9: schedule says FIXED, the drawing shows an operating unit — the
-    // reason string names both sides, the same channel a split proposal
-    // uses (§3.5), so it reaches the reviewer with zero new machinery.
-    if (reading && (l.typeText ?? "").trim().toLowerCase() === "fixed" && reading.units.some((u) => u.role === "operable")) {
-      flag(l.tag, conflictReason("drawing shows operating unit", "schedule types FIXED"));
-    }
+    const rawReading = readingByTag.get(l.tag) ?? null;
+    const mismatch = rawReading?.split ? scheduleDrawingMismatch(rawReading.split, l.typeText) : null;
+    if (mismatch) flag(l.tag, conflictReason(mismatch.drawing, mismatch.schedule));
+    const reading = rawReading
+      && rawReading.splitState === "value"
+      && rawReading.split
+      && !drawingFieldBlocked(rawReading, "split")
+      && !mismatch
+      ? { splitState: rawReading.splitState, units: rawReading.split.units, axis: rawReading.split.axis }
+      : null;
     const parsedComment = parseSplitHint(l.notes);
     const commentHint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
@@ -784,10 +786,6 @@ export async function runAiExtraction(
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
-  const knownRooms = model.openings.map((opening) => ({
-    externalRef: opening.externalRef,
-    roomLabel: drawingContextForOpening(model, opening.externalRef).roomLabel,
-  }));
 
   // Plan-parse enrichment (02-design-v2.md §4) — runDrawingEnrichmentStage
   // owns the mode gate, the R2-key lookup and the container/model wiring
@@ -817,6 +815,9 @@ export async function runAiExtraction(
     const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
     drawingReadings = result.readings;
     drawingReport = result.report;
+    const failedDrawingPhases = new Set((result.report?.files ?? []).flatMap((file) =>
+      file.steps.failedPhase ? [file.steps.failedPhase] : []));
+    warnings.push(...[...failedDrawingPhases].map((phase) => `drawing_enrichment_failed_phase:${phase}`));
     applyDrawingOrientation(model, drawingReadings);
     if (drawingReport) {
       await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
@@ -1079,6 +1080,7 @@ export async function runAiExtraction(
         `UPDATE opening_instance SET
            group_code = COALESCE(?, group_code), family = COALESCE(?, family),
            operation_type = COALESCE(?, operation_type),
+           storey = COALESCE(?, storey), orientation = COALESCE(?, orientation),
            width_mm = COALESCE(?, width_mm), height_mm = COALESCE(?, height_mm),
            requirements_json = ?,
            quote_line_id = COALESCE(?, quote_line_id), qty = COALESCE(?, qty),
@@ -1092,6 +1094,7 @@ export async function runAiExtraction(
            )`,
       ).bind(unless("group_code", o.parentRef), unless("family", o.elementType === "door" ? "doors" : "windows"),
         unless("operation_type", operationFrom(o.configuration.familyRequested)),
+        unless("storey", o.level), unless("orientation", o.wallOrientation),
         unless("width_mm", o.widthMm), unless("height_mm", o.heightMm),
         locked.includes("requirements_json") ? existing.requirements_json : reqJson(o), quoteLine?.id ?? null,
         unless("qty", quoteLine?.qty ?? o.quantity), unless("options_json", JSON.stringify(scheduleOptions)),
@@ -1099,16 +1102,16 @@ export async function runAiExtraction(
     } else {
       upserts.push(env.DB.prepare(
         `INSERT INTO opening_instance
-           (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm,
+           (id, project_id, external_ref, group_code, family, operation_type, storey, orientation, width_mm, height_mm,
             requirements_json, quote_line_id, qty, options_json, context_json, requirement_basis,
             source_generation, status)
-         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'extracted'
+         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'extracted'
            WHERE EXISTS (
              SELECT 1 FROM project
               WHERE id=? AND ai_generation=? AND status_customer='draft'
            )`,
       ).bind(uuid(), projectId, o.externalRef, o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o),
+        operationFrom(o.configuration.familyRequested), o.level, o.wallOrientation, o.widthMm, o.heightMm, reqJson(o),
         quoteLine?.id ?? null, quoteLine?.qty ?? o.quantity, JSON.stringify(scheduleOptions),
         JSON.stringify(context), requirementBasis, sourceGeneration, projectId, sourceGeneration));
     }
@@ -1126,20 +1129,14 @@ export async function runAiExtraction(
     processingToken: opts.processingToken,
   }, { splitHints, scheduleTypes });
 
-  // Room application stays after estimate because quote_line rows do not
-  // exist earlier. Plan rooms do not depend on whether composition AI could
-  // read the drawing; drawing-only rooms retain their confidence guard.
+  // Schedule comments become the quote's line notes after the estimator has
+  // materialised quote_line rows. Inferred room names are deliberately not
+  // customer-visible: a wrong room is worse than an empty note.
   try {
-    await applyKnownRooms(env, projectId, knownRooms);
+    await applyScheduleNotes(env, projectId, merged.lines.flatMap((line) =>
+      line.tag ? [{ externalRef: line.tag, note: line.notes ?? null }] : []));
   } catch (err) {
-    warnings.push(`plan_rooms_persist_failed:${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (drawingReadings.length) {
-    try {
-      await applyDrawingRoom(env, projectId, drawingReadings);
-    } catch (err) {
-      warnings.push(`drawing_readings_persist_failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    warnings.push(`schedule_notes_persist_failed:${err instanceof Error ? err.message : String(err)}`);
   }
 
   phase("estimate_and_pricing", {

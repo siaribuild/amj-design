@@ -255,6 +255,17 @@ test("material schedule glazing instructions constrain the exact eligible varian
     scheduleRequirements: { doubleGlazed: true, glassDescription: "Low-E argon" },
   }, configurations);
   assert.deepEqual(lowEArgon.eligibleVariantIds, ["double-low-e", "catalogue-low-e"]);
+
+  const singleBaseline = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    scheduleRequirements: { doubleGlazed: false },
+  }, configurations);
+  assert.equal(singleBaseline.passed, true);
+  assert.deepEqual(
+    singleBaseline.eligibleVariantIds,
+    ["single", "double", "double-low-e", "catalogue-low-e"],
+    "double glazing is an eligible upgrade when the schedule does not require it",
+  );
 });
 
 test("human-approved thermal precedent is a conservative eligibility floor, not a certification claim", () => {

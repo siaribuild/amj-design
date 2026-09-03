@@ -11,13 +11,17 @@ import { OpsPage } from "../chrome/OpsPage";
 import { SidePanel } from "../chrome/SidePanel";
 import { RecordLines } from "./lines";
 import { LineReview } from "./LineReview";
+import { PricePanel } from "./PricePanel";
+import { OpenablePanel } from "../chrome/OpenablePanel";
+import { DeliveryPricePanel } from "./DeliveryPricePanel";
+import { DeliveryAddressPanel } from "./DeliveryAddressPanel";
 import { WhyPanel } from "./WhyPanel";
 import { useLineRationale, type RationaleLoad } from "./useLineRationale";
 import { drawingSuffix, VIEWER_FROM_RECORD, WHY_SUFFIX, WHY_FROM_RECORD } from "./lineRoute";
 import { useProjectRecord, requestFor } from "./useProjectRecord";
 import {
-  ageLabel, cornerFigure, money, needsAttention, otherActions, pendingPrimary,
-  primaryAction, totalsFor, visibleLines, waitingSentence,
+  ageLabel, cornerFigure, deliveryPriceDoor, money, needsAttention, otherActions,
+  pendingPrimary, primaryAction, totalsFor, visibleLines, waitingSentence,
   type ProjectRecord, type RecordAction, type RecordTotals,
 } from "./record";
 
@@ -81,6 +85,7 @@ export function ProjectRecordPage() {
   // silently drop the filter the reviewer was working under.
   const [filterOn, setFilterOn] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [priceOpen, setPriceOpen] = useState(false);
   const [confirming, setConfirming] = useState<RecordAction | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -435,7 +440,7 @@ export function ProjectRecordPage() {
                   onOpen={openLine}
                   onClearFilter={() => setFilterOn(false)}
                 />
-                <RecordTotals record={record} />
+                <RecordTotals record={record} onOpenPrice={() => setPriceOpen(true)} />
               </div>
               {wide && (
                 <div className="rec-zones__canvas" data-testid="record-canvas">
@@ -486,6 +491,10 @@ export function ProjectRecordPage() {
                       <LineReview
                         line={selected}
                         onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
+                        price={(
+                          <PricePanel line={selected} reload={reload}
+                            editable={record.orderNo == null && selected.lineKind !== "composite_parent"} />
+                        )}
                         why={(
                           <WhyPanel
                             load={canvasWhy}
@@ -511,15 +520,30 @@ export function ProjectRecordPage() {
               )}
             </div>
           ) : (
-            <div className="pq-empty" data-testid="record-project-tab">
-              <strong>Progress, payments and files are not built yet.</strong>
-              <IonNote className="ds-type-caption">
-                They are migrating from the legacy console one at a time. Until then
-                this project's history lives there.
-              </IonNote>
+            <div data-testid="record-project-tab">
+              {/* The first real content on this tab. Progress, payments and
+                  files follow it from the legacy console one at a time. */}
+              <DeliveryAddressPanel projectId={record.id} delivery={record.delivery} onSaved={reload} />
+              <div className="pq-empty">
+                <strong>Progress, payments and files are not built yet.</strong>
+                <IonNote className="ds-type-caption">
+                  They are migrating from the legacy console one at a time. Until
+                  then this project's history lives there.
+                </IonNote>
+              </div>
             </div>
           )}
         </>
+      )}
+
+      {record && (
+        <DeliveryPricePanel
+          projectId={record.id}
+          amount={record.delivery.amount}
+          open={priceOpen}
+          onClose={() => setPriceOpen(false)}
+          onSaved={reload}
+        />
       )}
 
       {record && (
@@ -724,61 +748,69 @@ function AttentionPill({ count, filterOn, onToggle }: {
  * provisional. "so far" was invented for this panel and is gone; "estimate" is
  * on Quote's own _Avoid_ line, so an unconfirmed delivery says "not confirmed".
  *
- * DELIVERY IS TEXT HERE. It is a figure and a state, with nothing to press:
- * there is no delivery screen in this build, and the owner limited this change
- * to the review surface.
+ * THE WHOLE CARD IS THE DOOR to the delivery price (owner, 2026-09-01: "make
+ * the whole card clickable / reuse the component, making chevron being present
+ * on the card level rather than on the line level"). Not the Delivery row — a
+ * row-sized control inside a card was drawn once and rejected. The card's three
+ * rows are one editable fact and two derived ones, so pressing a card that
+ * reads `Lines $9,600` opens a delivery editor; that was put to the owner and
+ * overruled, and the chevron does not move back to the row.
+ *
+ * It carries NO TITLE. `OpenablePanel` stopped requiring one for exactly this
+ * caller: the three rows already say what the card is, and a heading above them
+ * would be a label for a label. The door's own `aria-label` names the
+ * destination, which is what a screen reader reads in a heading's place.
  */
-function RecordTotals({ record }: { record: ProjectRecord }) {
+function RecordTotals({ record, onOpenPrice }: { record: ProjectRecord; onOpenPrice: () => void }) {
   const t = totalsFor(record);
   return (
-    <div className="rec-totals" data-testid="record-totals">
-      <div className="rec-totals__row">
-        <span>
-          Lines
-          {t.unpriced > 0 && (
-            <span className="rec-totals__caveat"> · {t.unpriced} with no rate</span>
-          )}
-        </span>
-        <span className="rec-totals__figure">{money(t.lines)}</span>
-      </div>
-      <div className="rec-totals__row" data-settled={t.deliverySettled}>
-        <span>Delivery</span>
-        <DeliveryFigure record={record} totals={t} />
-      </div>
-      <div className="rec-totals__row rec-totals__row--sum">
-        <span>Project total</span>
-        {t.total != null ? (
-          <span className="rec-totals__figure">{money(t.total)}</span>
-        ) : (
-          // THE ABSENCE, NAMED. Not a number under a caption saying it is not
-          // really the number — a reviewer reads the figure and skims the
-          // caption, which is how $18,000 gets quoted for a $30,000 job.
-          <span className="rec-totals__absent">
-            {t.unpriced > 0
-              ? `${t.unpriced} line${t.unpriced === 1 ? " has" : "s have"} no rate`
-              : "Delivery has not been set"}
+    <OpenablePanel
+      testId="record-totals"
+      open={record.delivery.editable ? { label: deliveryPriceDoor, onOpen: onOpenPrice } : undefined}
+    >
+      <div className="rec-totals">
+        <div className="rec-totals__row">
+          <span>
+            Lines
+            {t.unpriced > 0 && (
+              <span className="rec-totals__caveat"> · {t.unpriced} with no rate</span>
+            )}
           </span>
-        )}
+          <span className="rec-totals__figure">{money(t.lines)}</span>
+        </div>
+        <div className="rec-totals__row" data-settled={t.deliverySettled}>
+          <span>Delivery</span>
+          <DeliveryFigure totals={t} />
+        </div>
+        <div className="rec-totals__row rec-totals__row--sum">
+          <span>Project total</span>
+          {/* TWO DIFFERENT ABSENCES, and only one of them was retired.
+              An UNSET DELIVERY is the ordinary state of a project nobody has
+              priced yet (D8/criterion 19): the total prints the lines and says
+              nothing about it — no warning, no explanation line.
+              A LINE WITH NO RATE is not ordinary and its warning stays. It is
+              what stops a reviewer reading $18,000 off a card for a $30,000
+              job, which is the failure this row was rewritten to prevent. */}
+          {t.unpriced > 0 ? (
+            <span className="rec-totals__absent">
+              {`${t.unpriced} line${t.unpriced === 1 ? " has" : "s have"} no rate`}
+            </span>
+          ) : (
+            <span className="rec-totals__figure">{money(t.total ?? t.subtotal)}</span>
+          )}
+        </div>
       </div>
-    </div>
+    </OpenablePanel>
   );
 }
 
-/** Settled ⇒ the figure, and `0` is a figure — a trade arranging its own
- *  freight. Unsettled with a live rate ⇒ that rate, said to be unconfirmed.
- *  Nothing at all ⇒ the absence, drawn as the fault it is, with no imperative:
- *  there is nothing on this screen to press. */
-function DeliveryFigure({ record, totals }: { record: ProjectRecord; totals: RecordTotals }) {
-  if (totals.deliverySettled) {
-    return <span className="rec-totals__figure">{money(totals.delivery ?? 0)}</span>;
-  }
-  if (record.delivery.estimate != null) {
-    return (
-      <span className="rec-totals__figure">
-        {money(record.delivery.estimate)}
-        <span className="rec-totals__caveat"> not confirmed</span>
-      </span>
-    );
-  }
-  return <span className="rec-totals__missing">no figure</span>;
+/** Two branches, and only two. Settled ⇒ the figure, where `0` IS a figure — a
+ *  trade customer arranging their own freight, not a blank. Otherwise the
+ *  absence, stated neutrally: there is no machine estimate shown beside it and
+ *  no second figure anywhere on this card (D12), and an unset delivery is the
+ *  ordinary state of a project nobody has priced yet, not a fault. */
+function DeliveryFigure({ totals }: { totals: RecordTotals }) {
+  return totals.deliverySettled
+    ? <span className="rec-totals__figure">{money(totals.delivery ?? 0)}</span>
+    : <span className="rec-totals__unset">Not set</span>;
 }

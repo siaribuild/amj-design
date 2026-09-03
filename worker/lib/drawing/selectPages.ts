@@ -3,7 +3,7 @@
 // runs BEFORE any rendering, from step 3's text/word output (AC-12).
 import type { Inventory, PageText } from "./contract";
 
-export type PageTier = "elevation" | "floorplan" | "schedule" | "siteplan";
+export type PageTier = "detail" | "elevation" | "floorplan" | "schedule" | "siteplan";
 
 export interface SelectedPage {
   pageNo: number;
@@ -17,23 +17,25 @@ export type Strategy = "text_vector" | "text_raster" | "scanned";
  *  guess (AC-13): a document nobody could read must be reportable as such. */
 // Ordering is stable output ordering only. A sheet may carry more than one
 // tier (most importantly, schedules commonly share an elevation sheet).
-const TIER_PATTERNS: [PageTier, RegExp][] = [
-  [
-    "schedule",
-    /\b(?:window|door)?\s*schedule\b/i,
-  ],
+const TITLE_META = String.raw`(?:[ \t]+(?:(?:SCALE[ \t]+)?\d+(?:\.\d+)?\s*[:/]\s*\d+(?:\.\d+)?|(?:SHEET[ \t]+)?[A-Z]{1,3}[- ]?\d{1,4}|REV(?:ISION)?[ \t]+[A-Z0-9]+))*[ \t]*$`;
+const TITLE_TIER_PATTERNS: [PageTier, RegExp][] = [
   [
     "elevation",
-    /\bELEVATIONS?\s*[-:]?\s*[A-D]\b/im,
+    new RegExp(String.raw`(?:\bELEVATIONS\b|\bELEVATIONS?\s*[-:]?\s*[A-D]\b|^[ \t]*(?:(?:NORTH|SOUTH|EAST|WEST|FRONT|REAR|LHS|RHS|SIDE)|(?:LEFT|RIGHT)(?:[ \t]+SIDE)?)[ \t]+ELEVATIONS?${TITLE_META})`, "im"),
   ],
   ["siteplan", /\bsite\s*plan\b/i],
-  ["floorplan", /\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b/i],
+  [
+    "floorplan",
+    new RegExp(String.raw`(?:\b(?:floor\s*plan|ground\s*floor|first\s*floor|upper\s*floor)\b|^[ \t]*(?:(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+)\s+PLAN|PLAN\s*[-:]?\s*(?:(?:GROUND|LOWER|UPPER|FIRST|SECOND)\s+LEVEL|LEVEL\s*[A-Z0-9]+))${TITLE_META})`, "im"),
+  ],
 ];
 
-function classify(text: string): { tier: PageTier; reason: string }[] {
+function classify(text: string, titleText: string): { tier: PageTier; reason: string }[] {
   const hits: { tier: PageTier; reason: string }[] = [];
-  for (const [tier, pattern] of TIER_PATTERNS) {
-    const match = pattern.exec(text);
+  const schedule = /\b(?:window|door|opening|joinery)\s*schedule\b/i.exec(text);
+  if (schedule) hits.push({ tier: "schedule", reason: `text: "${schedule[0].trim()}"` });
+  for (const [tier, pattern] of TITLE_TIER_PATTERNS) {
+    const match = pattern.exec(titleText);
     if (match) hits.push({ tier, reason: `title text: "${match[0].trim()}"` });
   }
   return hits;
@@ -44,7 +46,11 @@ function classify(text: string): { tier: PageTier; reason: string }[] {
 export function selectPages(_inv: Inventory, pages: PageText[]): { selected: SelectedPage[] } {
   const selected: SelectedPage[] = [];
   for (const page of pages) {
-    const hits = classify(page.text);
+    const geo = _inv.pages.find((item) => item.pageNo === page.pageNo);
+    const titleWords = geo && page.words.length
+      ? page.words.filter((word) => word.top >= geo.heightPt * 0.85).sort((a, b) => a.top - b.top || a.x0 - b.x0)
+      : [];
+    const hits = classify(page.text, titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
     for (const hit of hits) selected.push({ pageNo: page.pageNo, tier: hit.tier, reason: hit.reason });
   }
   return { selected };

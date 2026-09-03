@@ -49,7 +49,7 @@ test("the drawing read is its own step, counted, and silent about what it could 
   const steps = page.locator("ol").first();
   await expect(steps).toBeVisible({ timeout: 30_000 });
   await expect(steps).toContainText("Extracting the schedule · 20 openings found");
-  const drawingRow = steps.getByText("Reading your drawings · opening 8 of 20").locator("..");
+  const drawingRow = steps.getByText("Reading your drawings · 7 of 20 openings processed").locator("..");
   await expect(drawingRow).toBeVisible();
   await expect(drawingRow).toContainText(/\b[1-9]\d*s\b/, { timeout: 5_000 });
   // A gap is not a customer's to resolve — they cannot add a split, an

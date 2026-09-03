@@ -3,9 +3,28 @@
 // (drawing_reading rows, ai_runs.drawing_report_json) is the D1-touching
 // half of this file; grown alongside the pure functions below as enrich.ts
 // (the orchestrator) needs them.
-import type { DrawingReading, Orientation } from "./contract";
+import type { DrawingFlag, DrawingReading, Orientation } from "./contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
+
+type DrawingField = "split" | "orientation";
+
+const NON_BLOCKING_FLAGS: Record<DrawingField, ReadonlySet<DrawingFlag>> = {
+  split: new Set(["northAssumed", "manufacturability"]),
+  orientation: new Set(["manufacturability", "scheduleDrawingMismatch", "drawingInconsistency", "notVisibleOnElevations"]),
+};
+
+/** Field-scoped trust: new/unknown flags block by default. A low reading may
+ * pass one field only when its low status is entirely caused by flags that do
+ * not concern that field; genuine model uncertainty carries agentEvidenceWeak. */
+export function drawingFieldBlocked(
+  reading: { confidence?: string | null; flags?: unknown[] },
+  field: DrawingField,
+): boolean {
+  const flags = Array.isArray(reading.flags) ? reading.flags : [];
+  if (!flags.length) return reading.confidence === "low";
+  return flags.some((flag) => typeof flag !== "string" || !NON_BLOCKING_FLAGS[field].has(flag as DrawingFlag));
+}
 
 /** Orientation is a PLAIN ASSIGNMENT, not `??=`: a high-confidence drawing
  *  reading outranks the plan-context fallback already present on the model. */
@@ -16,43 +35,26 @@ export function applyDrawingOrientation(
   const byRef = new Map(readings.map((r) => [r.externalRef, r]));
   for (const opening of model.openings) {
     const reading = byRef.get(opening.externalRef);
-    if (reading?.orientationState === "value" && reading.orientation && reading.confidence !== "low" && !(reading.flags?.length)) {
+    if (reading?.orientationState === "value" && reading.orientation && !drawingFieldBlocked(reading, "orientation")) {
       opening.wallOrientation = reading.orientation;
       opening.wallOrientationSource = "plan";
     }
   }
 }
 
-/** Room label → `quote_line.room_label`, guarded to rows that are still
- *  empty (§3.5) — a human's own label is never overwritten. Runs after
- *  `runProjectEstimate` materialises lines (readings apply before that has
- *  a row to guard, so this is a separate, later call). */
-export async function applyDrawingRoom(
+/** Schedule comments are customer-visible line notes. Keep the empty-only
+ * guard so a customer's own note is never overwritten. */
+export async function applyScheduleNotes(
   env: Pick<Env, "DB">,
   projectId: string,
-  readings: { externalRef: string; roomState: string; roomLabel: string | null; confidence?: string | null; flags?: unknown[] }[],
+  notes: { externalRef: string; note: string | null }[],
 ): Promise<void> {
-  for (const r of readings) {
-    if (r.roomState !== "value" || !r.roomLabel || r.confidence === "low" || r.flags?.length) continue;
-    await env.DB.prepare(
+  const statements = notes
+    .map(({ externalRef, note }) => ({ externalRef, note: note?.trim().slice(0, 500) || null }))
+    .filter((item): item is { externalRef: string; note: string } => !!item.note)
+    .map(({ externalRef, note }) => env.DB.prepare(
       `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
-    ).bind(r.roomLabel, projectId, r.externalRef).run();
-  }
-}
-
-/** Plan-context rooms are independent of drawing composition confidence.
- * Persist them after quote lines exist, while keeping the same empty-only
- * guard that protects customer-entered labels. */
-export async function applyKnownRooms(
-  env: Pick<Env, "DB">,
-  projectId: string,
-  rooms: { externalRef: string; roomLabel: string | null }[],
-): Promise<void> {
-  const statements = rooms
-    .filter((room): room is { externalRef: string; roomLabel: string } => !!room.roomLabel)
-    .map((room) => env.DB.prepare(
-      `UPDATE quote_line SET room_label=? WHERE project_id=? AND external_ref=? AND (room_label IS NULL OR room_label='')`,
-    ).bind(room.roomLabel, projectId, room.externalRef));
+    ).bind(note, projectId, externalRef));
   if (statements.length) await env.DB.batch(statements);
 }
 

@@ -16,7 +16,7 @@ export const gstAdjust = (incAmount: number, mode: GstMode) =>
 /** Short label to sit beside a displayed price. */
 export const gstSuffix = (mode: GstMode) => (mode === "ex" ? "ex GST" : "inc GST");
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** The GST contained in one GST-inclusive amount, and that amount net of it.
  *  One taxable supply, rounded once — the unit the rule below is built from. */

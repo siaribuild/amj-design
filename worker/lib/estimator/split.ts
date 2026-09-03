@@ -380,7 +380,7 @@ function proportionalParts(source: number[], target: number): number[] {
  *  if a manufacturer ever needs a different granularity.` */
 const DIVISION_STEP_MM = 5;
 
-function sizesFromRatios(ratios: number[], totalAlong: number, stepMm: number): number[] {
+export function sizesFromRatios(ratios: number[], totalAlong: number, stepMm: number): number[] {
   if (!ratios.length) return [];
   const sizes = ratios.map((r) => Math.round((totalAlong * r) / stepMm) * stepMm);
   const lastIndex = sizes.length - 1;
