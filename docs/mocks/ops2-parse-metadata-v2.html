@@ -1,0 +1,334 @@
+<title>Parse Audit Tab</title>
+<style>
+  :root {
+    --n0:#fff; --n50:#f7f7f6; --n100:#eeeeec; --n200:#e2e2df;
+    --n500:#8a8a85; --n700:#55554f; --n900:#23231f;
+    --sage:#6b7f6e; --sage-50:#eef2ee;
+    --warn:#8a6d3b; --warn-50:#fbf4e6;
+    --r:5px;
+    --sp:16px;
+    color-scheme: light;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--n100); color:var(--n900);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--n700); margin:0 0 28px; max-width:70ch; }
+  .note { background:var(--warn-50); border:1px solid #e8dcc0; border-radius:var(--r); padding:10px 14px; margin:0 0 28px; color:#5c4a28; max-width:80ch; }
+  .states { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:20px; align-items:start; }
+  .state > h2 { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--n500); margin:0 0 8px; font-weight:600; }
+  .state > .cap { font-size:12px; color:var(--n700); margin:0 0 10px; }
+
+  /* device frame */
+  .screen { background:var(--n50); border:1px solid var(--n200); border-radius:var(--r); overflow:hidden; }
+  .bar { background:var(--n0); border-bottom:1px solid var(--n200); padding:10px 14px 0; }
+  .back { font-size:12px; color:var(--sage); margin-bottom:6px; }
+  .title { font-size:16px; font-weight:600; margin-bottom:2px; }
+  .meta { font-size:12px; color:var(--n500); margin-bottom:10px; }
+  .tabs { display:flex; gap:18px; }
+  .tab { font-size:13px; padding:0 0 8px; color:var(--n500); border-bottom:2px solid transparent; cursor:default; }
+  .tab[aria-selected="true"] { color:var(--n900); border-bottom-color:var(--sage); font-weight:600; }
+  .body { padding:14px; display:flex; flex-direction:column; gap:12px; }
+
+  /* panels */
+  .panel { background:var(--n0); border:1px solid var(--n200); border-radius:var(--r); padding:12px 14px; position:relative; }
+  .panel h3 { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--n500); margin:0 0 8px; font-weight:600; }
+  .door::after {
+    content:"›"; position:absolute; right:12px; top:11px; color:var(--n500); font-size:18px; line-height:1;
+  }
+  dl.kv { display:grid; grid-template-columns:minmax(7.5rem,auto) 1fr; gap:4px 14px; margin:0; font-size:13px; }
+  dl.kv dt { color:var(--n500); }
+  dl.kv dd { margin:0; font-variant-numeric:tabular-nums; }
+  .crop { display:block; width:100%; border:1px solid var(--n200); border-radius:3px; background:var(--n50); }
+  .absent { color:var(--n500); font-style:italic; margin:0; font-size:13px; }
+  .state-word { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--n700); background:var(--n100); padding:1px 5px; border-radius:3px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:0; list-style:none; }
+  .chip { font-size:12px; background:var(--warn-50); color:var(--warn); border:1px solid #e8dcc0; border-radius:3px; padding:1px 7px; }
+  .chip.ok { background:var(--sage-50); color:var(--sage); border-color:#d5e0d6; }
+
+  /* door detail */
+  .sheet { background:var(--n0); border:1px solid var(--n200); border-radius:var(--r); overflow:hidden; }
+  .sheet-head { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--n200); }
+  .sheet-head .b { color:var(--sage); font-size:12px; }
+  .sheet-head .t { font-weight:600; }
+  .sheet-body { padding:14px; display:flex; flex-direction:column; gap:18px; }
+  .grp > h4 {
+    font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--n500);
+    margin:0 0 7px; font-weight:600; padding-bottom:5px; border-bottom:1px solid var(--n100);
+  }
+  ul.lines { margin:0; padding:0; list-style:none; font-size:13px; display:flex; flex-direction:column; gap:3px; }
+  ul.lines li::before { content:"— "; color:var(--n500); }
+  table.units { width:100%; border-collapse:collapse; font-size:13px; }
+  table.units th { text-align:left; font-weight:500; color:var(--n500); font-size:12px; padding:0 10px 4px 0; }
+  table.units td { padding:3px 10px 3px 0; border-top:1px solid var(--n100); font-variant-numeric:tabular-nums; }
+  .trail { display:flex; flex-direction:column; gap:0; }
+  .turn { display:grid; grid-template-columns:auto 1fr; gap:0 12px; padding:8px 0; border-top:1px solid var(--n100); }
+  .turn:first-child { border-top:0; }
+  .turn .n { font-size:12px; color:var(--n500); white-space:nowrap; padding-top:1px; }
+  .turn .why { display:flex; flex-wrap:wrap; gap:5px; }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; background:var(--n100); color:var(--n700); border-radius:3px; padding:1px 6px; }
+  .outcome { font-size:12px; color:var(--n700); }
+  .outcome.kept { color:var(--sage); }
+  .legend { margin:34px 0 0; padding:16px; background:var(--n0); border:1px solid var(--n200); border-radius:var(--r); }
+  .legend h3 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--n500); margin:0 0 10px; }
+  .legend ul { margin:0; padding-left:18px; font-size:13px; color:var(--n700); }
+  .legend li { margin-bottom:6px; }
+  .legend li:last-child { margin-bottom:0; }
+  @media (max-width:700px) { .states { grid-template-columns:1fr; } }
+</style>
+
+<div class="wrap">
+  <h1>Metadata tab — parse audit</h1>
+  <p class="sub">
+    Three states side by side: the tab as it opens, and each door opened. Colours are approximate;
+    what is being decided here is whether the material behind a door reads, and how the run report's
+    22 fields are grouped.
+  </p>
+
+  <div class="note">
+    <strong>Not decided by this mock:</strong> the crop is a placeholder box — the real one is the
+    PNG the parser cut from the customer's PDF. Numbers are illustrative.
+  </div>
+
+  <div class="states">
+
+    <!-- ── 1. surface ─────────────────────────────────────────── -->
+    <div class="state">
+      <h2>1 · The tab</h2>
+      <p class="cap">Crop first, then the five facts. Nothing computed, nothing interpreted.</p>
+      <div class="screen">
+        <div class="bar">
+          <div class="back">‹ OF-Q-31001</div>
+          <div class="title">W05</div>
+          <div class="meta">1810 × 1210 · Awning + Fixed</div>
+          <div class="tabs">
+            <div class="tab">Opening</div>
+            <div class="tab" aria-selected="true">Metadata</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="panel">
+            <h3>Image</h3>
+            <svg class="crop" viewBox="0 0 320 150" role="img" aria-label="Crop of opening W05">
+              <rect width="320" height="150" fill="#fbfbfa"/>
+              <rect x="40" y="24" width="240" height="102" fill="none" stroke="#55554f" stroke-width="2.5"/>
+              <line x1="124" y1="24" x2="124" y2="126" stroke="#55554f" stroke-width="2"/>
+              <line x1="40" y1="24" x2="124" y2="75" stroke="#8a8a85" stroke-width="1" stroke-dasharray="4 3"/>
+              <line x1="40" y1="126" x2="124" y2="75" stroke="#8a8a85" stroke-width="1" stroke-dasharray="4 3"/>
+              <text x="160" y="142" font-size="9" fill="#8a8a85" font-family="sans-serif">W05 — elevation A</text>
+            </svg>
+          </div>
+
+          <div class="panel door">
+            <h3>Reading</h3>
+            <dl class="kv">
+              <dt>Heading</dt><dd>N</dd>
+              <dt>Elevation</dt><dd>A</dd>
+              <dt>Room</dt><dd><span class="state-word">not_read</span></dd>
+              <dt>Confidence</dt><dd>high</dd>
+              <dt>Flags</dt>
+              <dd>
+                <ul class="chips">
+                  <li class="chip">notVisibleOnElevations</li>
+                  <li class="chip">agentEvidenceWeak</li>
+                </ul>
+              </dd>
+            </dl>
+          </div>
+
+          <div class="panel door">
+            <h3>Run</h3>
+            <dl class="kv">
+              <dt>Started</dt><dd>2 Sep 2026, 14:12</dd>
+              <dt>This opening</dt><dd>read</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 2. reading door ───────────────────────────────────── -->
+    <div class="state">
+      <h2>2 · Reading door</h2>
+      <p class="cap">Four groups. The correction trail is last and only appears when the agent was corrected.</p>
+      <div class="sheet">
+        <div class="sheet-head"><span class="b">‹ Metadata</span><span class="t">Reading</span></div>
+        <div class="sheet-body">
+
+          <div class="grp">
+            <h4>What it read</h4>
+            <dl class="kv">
+              <dt>Heading</dt><dd>N</dd>
+              <dt>Elevation</dt><dd>A</dd>
+              <dt>Composition</dt><dd>vertical, 2 units</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>What it did not</h4>
+            <dl class="kv">
+              <dt>Room</dt><dd><span class="state-word">not_read</span></dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>Units</h4>
+            <table class="units">
+              <tr><th>#</th><th>Role</th><th>Operation</th><th>Share</th><th>Derived</th></tr>
+              <tr><td>1</td><td>operable</td><td>awning</td><td>0.35</td><td>634 mm</td></tr>
+              <tr><td>2</td><td>passive</td><td>fixed</td><td>0.65</td><td>1176 mm</td></tr>
+            </table>
+          </div>
+
+          <div class="grp">
+            <h4>Flags in full · confidence high</h4>
+            <ul class="chips">
+              <li class="chip">notVisibleOnElevations</li>
+            </ul>
+          </div>
+
+          <div class="grp">
+            <h4>Why it read that</h4>
+            <ul class="lines">
+              <li>plan tag and wall order bind identity</li>
+              <li>elevation fixes composition</li>
+              <li>storey:ground</li>
+            </ul>
+          </div>
+
+          <div class="grp">
+            <h4>Evidence</h4>
+            <dl class="kv">
+              <dt>Document</dt><dd>Rev-C-Plans.pdf</dd>
+              <dt>Page</dt><dd>6</dd>
+              <dt>Sheet</dt><dd>A-201</dd>
+              <dt>Region</dt><dd>0.10, 0.20 → 0.40, 0.80</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>Corrections · accepted on attempt 3 of 4</h4>
+            <div class="trail">
+              <div class="turn">
+                <div class="n">Turn 1</div>
+                <div>
+                  <div class="why"><span class="code">identity_tag_not_on_plan_page</span></div>
+                  <div class="outcome">rejected</div>
+                </div>
+              </div>
+              <div class="turn">
+                <div class="n">Turn 2</div>
+                <div>
+                  <div class="why">
+                    <span class="code">evidence_render_or_frame_invalid</span>
+                    <span class="code">basis_required</span>
+                  </div>
+                  <div class="outcome">replaced</div>
+                </div>
+              </div>
+              <div class="turn">
+                <div class="n">Turn 3</div>
+                <div>
+                  <div class="why"><span class="code">—</span></div>
+                  <div class="outcome kept">kept · escalation</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 3. run door ───────────────────────────────────────── -->
+    <div class="state">
+      <h2>3 · Run door</h2>
+      <p class="cap">The 22 fields in five groups, ordered as the run happened. Cost and failure last.</p>
+      <div class="sheet">
+        <div class="sheet-head"><span class="b">‹ Metadata</span><span class="t">Run</span></div>
+        <div class="sheet-body">
+
+          <div class="grp">
+            <h4>This run</h4>
+            <dl class="kv">
+              <dt>Started</dt><dd>2 Sep 2026, 14:12</dd>
+              <dt>This opening</dt><dd>read</dd>
+              <dt>Document</dt><dd>Rev-C-Plans.pdf</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>The document</h4>
+            <dl class="kv">
+              <dt>Pages</dt><dd>20</dd>
+              <dt>Fonts</dt><dd>7</dd>
+              <dt>Images</dt><dd>12</dd>
+              <dt>Attachments</dt><dd>none</dd>
+              <dt>Strategy</dt><dd>text_vector</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>What it looked at</h4>
+            <dl class="kv">
+              <dt>Pages read</dt><dd>20</dd>
+              <dt>Pages selected</dt><dd>4 of 20</dd>
+              <dt>Crops rendered</dt><dd>19</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>What it read</h4>
+            <dl class="kv">
+              <dt>Attempted</dt><dd>19</dd>
+              <dt>Returned</dt><dd>17</dd>
+              <dt>Declined</dt><dd>2</dd>
+              <dt>Retried with threshold</dt><dd>1</dd>
+              <dt>Targeted reviews</dt><dd>3</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>Where it placed them</h4>
+            <dl class="kv">
+              <dt>From text</dt><dd>15</dd>
+              <dt>From model fallback</dt><dd>2</dd>
+              <dt>Unplaced</dt><dd>2</dd>
+              <dt>North assumed</dt><dd>no</dd>
+            </dl>
+          </div>
+
+          <div class="grp">
+            <h4>Cost and health</h4>
+            <dl class="kv">
+              <dt>Wall time</dt><dd>3 m 41 s</dd>
+              <dt>Model calls</dt><dd>28</dd>
+              <dt>Container calls</dt><dd>9</dd>
+              <dt>Tokens in / out</dt><dd>486k / 31k</dd>
+              <dt>Turns cached</dt><dd>6</dd>
+              <dt>Turns repaired</dt><dd>2</dd>
+              <dt>Failed phase</dt><dd>none</dd>
+              <dt>Provider</dt><dd>no failure</dd>
+            </dl>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>What this mock is asking you to approve</h3>
+    <ul>
+      <li><strong>The Run door's five groups</strong>, in run order: the document, what it looked at, what it read, where it placed them, then cost and health. This is the part that was a 22-field wall.</li>
+      <li><strong>The Reading door's split</strong> between what was read and what was not — so <span class="state-word">not_stated</span> and <span class="state-word">not_read</span> sit together instead of scattered among real values. Only the four stored facts carry a state; storey has no column and appears where it actually lives, in the reasoning lines.</li>
+      <li><strong>The correction trail</strong> as one row per turn: the codes that rejected it, and what happened. Absent entirely when the opening was read first time.</li>
+      <li><strong>Flags are listed, never counted</strong> — on the surface and again in full behind the door. There are seven possible values, so a count only hides which one fired.</li>
+      <li><strong>Codes stay raw</strong> — <span class="code">identity_tag_not_on_plan_page</span>, not a sentence explaining it.</li>
+      <li><strong>Attempts</strong> appear only in the correction heading, behind the door, per your Q14.</li>
+    </ul>
+  </div>
+</div>
