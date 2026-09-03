@@ -16,8 +16,9 @@ import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
 import { makeDrawingAgentSkill, runDrawingAgent, type DrawingAgentInput, type DrawingAgentTurn } from "./agent";
-import { makeFullDocumentAgentSkill, runFullDocumentAgent, type FullAgentTurnResult, type FullDocumentAgentInput, type FullDocumentTurn } from "./fullDocumentAgent";
-import { runStage } from "../ai/stage";
+import { applyVisualNorthToHarvest, buildFullDocumentHarvest, makeFullDocumentAgentSkill, runFullDocumentAgent, type FullAgentTurnResult, type FullDocumentAgentInput, type FullDocumentHarvest, type FullDocumentTurn } from "./fullDocumentAgent";
+import { runStage, StageCallError } from "../ai/stage";
+import { sha256hex, sha256hexText } from "../ai/hash";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
 import { locateFloorplanPage, orientationsFromNorth, resolveNorth, type Edge, type Storey } from "./locate";
@@ -28,6 +29,7 @@ import { compositionFromSchedule, reconcileReading } from "./reconcile";
 export interface EnrichFile {
   fileId: string;
   r2Key: string;
+  checksum?: string | null;
 }
 export interface EnrichScheduleRow {
   tag: string;
@@ -122,6 +124,25 @@ async function enrichFile(
     const obj = await env.FILES.get(args.file.r2Key);
     if (!obj) return { readings: [], report };
     const pdfBytes = new Uint8Array(await obj.arrayBuffer());
+    let cachedHarvest: FullDocumentHarvest | null = null;
+    let harvestCache: { key: string; pdfSha256: string; scheduleSha256: string } | null = null;
+    if (deps.runFullAgentTurn) {
+      const pdfSha256 = args.file.checksum ?? await sha256hex(pdfBytes);
+      const scheduleSha256 = await sha256hexText(JSON.stringify(args.scheduleRows));
+      const key = `projects/${args.projectId}/runs/harvest/${args.file.fileId}.harvest-v1.json`;
+      harvestCache = { key, pdfSha256, scheduleSha256 };
+      try {
+        const cached = await env.FILES.get(key);
+        const parsed = cached ? JSON.parse(await cached.text()) as {
+          pdfSha256?: unknown; scheduleSha256?: unknown; harvest?: FullDocumentHarvest;
+        } : null;
+        if (parsed?.pdfSha256 === pdfSha256 && parsed.scheduleSha256 === scheduleSha256
+          && parsed.harvest?.version === 1 && Array.isArray(parsed.harvest.pages)
+          && Array.isArray(parsed.harvest.schedule) && Array.isArray(parsed.harvest.tagCandidates)) {
+          cachedHarvest = parsed.harvest;
+        }
+      } catch { /* corrupt or unavailable cache: rebuild from the PDF */ }
+    }
 
     if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "inventory");
     currentPhase = "inventory";
@@ -157,10 +178,38 @@ async function enrichFile(
 
     if (deps.runFullAgentTurn) {
       currentPhase = "full_document_agent";
+      let harvest = cachedHarvest ?? buildFullDocumentHarvest(inspected, args.scheduleRows);
+      let northContainerCalls = 0;
+      let northModelCalls = 0;
+      if (harvest.northEvidence.requiresVisualRead && deps.runNorth) {
+        const northPage = harvest.pages.find((page) => page.tiers.includes("siteplan"))
+          ?? harvest.pages.find((page) => page.tiers.includes("floorplan"));
+        if (northPage) {
+          await args.onProgress?.(0, args.scheduleRows.length, "orientation");
+          try {
+            northContainerCalls++;
+            const rendered = await deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, { pageNo: northPage.pageNo, dpi: 100 });
+            const image = rendered.images[0];
+            if (image) {
+              northModelCalls++;
+              const north = await deps.runNorth(`data:image/png;base64,${image.pngB64}`);
+              if (north) harvest = applyVisualNorthToHarvest(harvest, northPage.pageNo, north);
+            }
+          } catch { /* Orientation remains not_stated; the drawing read can continue. */ }
+        }
+      }
+      if ((!cachedHarvest || harvest !== cachedHarvest) && harvestCache) {
+        await env.FILES.put(harvestCache.key, JSON.stringify({
+          pdfSha256: harvestCache.pdfSha256,
+          scheduleSha256: harvestCache.scheduleSha256,
+          harvest,
+        }), { httpMetadata: { contentType: "application/json" } }).catch(() => {});
+      }
       const agentResult = await runFullDocumentAgent({
         fileId: args.file.fileId,
         scheduleRows: args.scheduleRows,
         inspected,
+        harvest,
         deps: {
           runTurn: deps.runFullAgentTurn,
           render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
@@ -178,7 +227,8 @@ async function enrichFile(
         },
       });
       agentResult.report.steps.strategy = strategy;
-      agentResult.report.containerCalls++;
+      agentResult.report.containerCalls += 1 + northContainerCalls;
+      agentResult.report.modelCalls += northModelCalls;
       return agentResult;
     }
 
@@ -561,11 +611,11 @@ export async function runDrawingEnrichmentStage(
 
   const placeholders = args.planPdfDocs.map(() => "?").join(",");
   const keys = await env.DB.prepare(
-    `SELECT id, r2_key FROM file_asset WHERE project_id=? AND id IN (${placeholders})`,
-  ).bind(args.projectId, ...args.planPdfDocs.map((d) => d.fileId)).all<{ id: string; r2_key: string }>();
-  const r2KeyByFileId = new Map((keys.results ?? []).map((r) => [r.id, r.r2_key]));
+    `SELECT id, r2_key, checksum FROM file_asset WHERE project_id=? AND id IN (${placeholders})`,
+  ).bind(args.projectId, ...args.planPdfDocs.map((d) => d.fileId)).all<{ id: string; r2_key: string; checksum: string | null }>();
+  const fileById = new Map((keys.results ?? []).map((r) => [r.id, r]));
   const files = args.planPdfDocs
-    .map((d) => ({ fileId: d.fileId, r2Key: r2KeyByFileId.get(d.fileId) ?? "" }))
+    .map((d) => ({ fileId: d.fileId, r2Key: fileById.get(d.fileId)?.r2_key ?? "", checksum: fileById.get(d.fileId)?.checksum ?? null }))
     .filter((f) => f.r2Key);
   if (!files.length) return { readings: [], report: null };
 
@@ -611,7 +661,7 @@ export async function runDrawingEnrichmentStage(
             skill: makeFullDocumentAgentSkill(args.scheduleRows.map((row) => row.tag), input.harvest.pages.map((page) => page.pageNo)),
             input,
           });
-          if (!res.ok && res.failureKind !== "invalid_output") throw new Error("full_document_agent_provider_failure");
+          if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
           return {
             data: res.data,
             cached: res.cached,

@@ -16,8 +16,7 @@ import type { Env } from "../../types";
 
 export class PlanParseContainer extends Container<Env> {
   defaultPort = 8080;
-  // The instance sleeps 2 minutes after its last request and stops billing
-  // then — a run's ~22-24 model calls happen in the Worker, between
-  // container calls, so the container would otherwise sit idle mid-run.
-  sleepAfter = "2m";
+  // Model calls leave the container idle between render requests; four minutes
+  // covers the observed provider gap without holding test instances for 10m.
+  sleepAfter = "4m";
 }

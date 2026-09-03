@@ -36,9 +36,10 @@ export type AiPhase =
   | { kind: "failed"; diagnostic?: SafeDiagnostic | null };
 
 export interface DocumentChecklistStep {
-  key: AiProgressStage | "reading_openings";
+  key: string;
   label: string;
   detail: string;
+  startedAt?: number;
 }
 
 const BASE_STEPS: { key: AiProgressStage; label: string }[] = [
@@ -53,7 +54,7 @@ const BASE_STEPS: { key: AiProgressStage; label: string }[] = [
 /** The checklist the customer sees, plus which row is current — computed
  *  once so the component only renders it.
  *
- *  A drawing read gets its OWN row, driven by counts rather than a stage:
+ *  Drawing milestones get their own append-only rows, driven by counts rather than a stage:
  *  there is no `reading_openings` progress_stage and there will not be one
  *  (0059's own rationale — extending the CHECK is a table rebuild). It runs
  *  inside the same DB window as "building the envelope" but is conceptually
@@ -68,28 +69,29 @@ export function documentChecklist(
     drawingsTotal?: number;
     drawingsPhase?: DrawingProgressPhase;
   } | undefined,
+  stageLog: StageLogEntry[] = [],
 ): { steps: DocumentChecklistStep[]; current: number } {
   const total = phase?.drawingsTotal;
   const done = phase?.drawingsDone ?? 0;
-  const drawingDetail = (): string => {
-    if (total == null) return "";
-    switch (phase?.drawingsPhase) {
-      case "inventory": return ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+  const drawingDetail = (drawingDone: number, drawingTotal: number, drawingPhase?: DrawingProgressPhase): string => {
+    switch (drawingPhase) {
+      case "inventory": return ` · preparing ${drawingTotal} opening read${drawingTotal === 1 ? "" : "s"}`;
       case "elevation_inventory": return " · finding relevant drawing views";
-      case "floorplan_location": return ` · mapping ${total} opening${total === 1 ? "" : "s"} to walls`;
+      case "floorplan_location": return ` · mapping ${drawingTotal} opening${drawingTotal === 1 ? "" : "s"} to walls`;
       case "orientation": return " · checking drawing orientation";
       case "render_crops": return " · reading elevation faces";
       case "opening_read": {
-        return done > 0
-          ? ` · ${Math.min(done, total)} of ${total} openings processed`
-          : ` · analysing ${total} opening${total === 1 ? "" : "s"}`;
+        return drawingDone > 0
+          ? ` · ${Math.min(drawingDone, drawingTotal)} of ${drawingTotal} openings processed`
+          : ` · analysing ${drawingTotal} opening${drawingTotal === 1 ? "" : "s"}`;
       }
       default:
-        return done > 0
-          ? ` · opening ${Math.min(done, total)} of ${total}`
-          : ` · preparing ${total} opening read${total === 1 ? "" : "s"}`;
+        return drawingDone > 0
+          ? ` · opening ${Math.min(drawingDone, drawingTotal)} of ${drawingTotal}`
+          : ` · preparing ${drawingTotal} opening read${drawingTotal === 1 ? "" : "s"}`;
     }
   };
+  const observedDrawings = stageLog.filter((entry) => entry.stage === "reading_openings" && entry.drawing);
   const steps: DocumentChecklistStep[] = [];
   for (const s of BASE_STEPS) {
     steps.push({
@@ -100,24 +102,33 @@ export function documentChecklist(
         : "",
     });
     if (s.key === "extracting_schedule" && total != null) {
-      steps.push({
-        key: "reading_openings",
+      const drawingRows = observedDrawings.length
+        ? observedDrawings
+        : [{ stage: "reading_openings" as const, at: undefined, drawing: { done, total, phase: phase?.drawingsPhase } }];
+      drawingRows.forEach((entry, index) => steps.push({
+        key: observedDrawings.length ? `reading_openings:${index}` : "reading_openings",
         label: "Reading your drawings",
-        detail: drawingDetail(),
-      });
+        detail: drawingDetail(entry.drawing!.done, entry.drawing!.total, entry.drawing!.phase),
+        startedAt: entry.at,
+      }));
     }
   }
   // done === total still holds here: the resting "19 of 19" state must stay
   // visible until the stage actually moves on, not snap to the thermal-check
   // label the instant the last opening ticks (owner correction 2026-08-29).
   const stillReadingDrawings = phase?.stage === "building_envelope" && total != null;
-  const currentKey = stillReadingDrawings ? "reading_openings" : phase?.stage;
-  const current = steps.findIndex((s) => s.key === currentKey);
+  const current = stillReadingDrawings
+    ? steps.map((step) => step.key.startsWith("reading_openings")).lastIndexOf(true)
+    : steps.findIndex((step) => step.key === phase?.stage);
   return { steps, current: current < 0 ? 0 : current };
 }
 
-export type StageLogKey = AiProgressStage | "reading_openings_complete";
-export type StageLogEntry = { stage: StageLogKey; at: number };
+export type StageLogKey = AiProgressStage | "reading_openings" | "reading_openings_complete";
+export type StageLogEntry = {
+  stage: StageLogKey;
+  at: number;
+  drawing?: { done: number; total: number; phase?: DrawingProgressPhase };
+};
 
 /** True once the run has either completed every drawing read or advanced past
  * drawing work. The latter matters when drawing inspection fails before the
@@ -129,7 +140,7 @@ export function drawingProgressEnded(run: Pick<ExtractionRun, "progressStage" | 
   return hasDrawingWork && (completed || leftDrawingStage);
 }
 
-/** Duration for one visible checklist row. The drawing row is virtual: it
+/** Duration for one visible checklist row. The drawing rows are virtual: they
  * shares the server's building_envelope stage with the thermal step, so the
  * observed drawing-completion marker is the boundary between those two rows. */
 export function checklistStepDuration(
@@ -142,28 +153,29 @@ export function checklistStepDuration(
   const markerAt = stageLog.find((entry) => entry.stage === "reading_openings_complete")?.at;
   const key = steps[index]?.key;
   if (!key) return null;
-  const startFor = (stepKey: DocumentChecklistStep["key"]): number | undefined => {
-    if (stepKey === "reading_openings") {
+  const startFor = (step: DocumentChecklistStep): number | undefined => {
+    if (step.startedAt != null) return step.startedAt;
+    if (step.key === "reading_openings") {
       return stageLog.find((entry) => entry.stage === "building_envelope")?.at;
     }
-    if (stepKey === "building_envelope" && markerAt != null) return markerAt;
-    return stageLog.find((entry) => entry.stage === stepKey)?.at;
+    if (step.key === "building_envelope" && markerAt != null) return markerAt;
+    return stageLog.find((entry) => entry.stage === step.key)?.at;
   };
-  const start = startFor(key);
+  const start = startFor(steps[index]);
   if (start == null) return null;
 
   // Completion is observable before the DB stage changes. Freeze the drawing
   // duration there, even though that row deliberately remains current until
   // the server advances to thermal/product work.
-  if (key === "reading_openings" && markerAt != null) {
+  if (key.startsWith("reading_openings") && markerAt != null && !steps[index + 1]?.key.startsWith("reading_openings")) {
     return Math.max(0, markerAt - start);
   }
   if (index === current) return Math.max(0, now - start);
   for (let next = index + 1; next < steps.length; next++) {
     // Without the completion marker, drawing and thermal have the same server
     // timestamp; that is not a real boundary.
-    if (key === "reading_openings" && steps[next].key === "building_envelope" && markerAt == null) continue;
-    const nextStart = startFor(steps[next].key);
+    if (key.startsWith("reading_openings") && steps[next].key === "building_envelope" && markerAt == null) continue;
+    const nextStart = startFor(steps[next]);
     if (nextStart != null && nextStart >= start) return Math.max(0, nextStart - start);
   }
   return null;
@@ -363,6 +375,15 @@ export function useProjectDocuments(
     setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
   };
   const recordRunProgress = (run: ExtractionRun) => {
+    if (run.drawingsTotal != null && run.drawingsPhase) {
+      setStageLog((prev) => {
+        const last = [...prev].reverse().find((entry) => entry.stage === "reading_openings")?.drawing;
+        const next = { done: run.drawingsDone ?? 0, total: run.drawingsTotal!, phase: run.drawingsPhase };
+        return last?.done === next.done && last.total === next.total && last.phase === next.phase
+          ? prev
+          : [...prev, { stage: "reading_openings", at: Date.now(), drawing: next }];
+      });
+    }
     if (drawingProgressEnded(run)) {
       recordStage("reading_openings_complete");
     }

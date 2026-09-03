@@ -1,6 +1,8 @@
 import type { DarknessProfile, OpeningOperation, SplitAxis, SplitReading, SplitUnit } from "./contract";
 import { sizesFromRatios } from "../estimator/split";
 
+const PARALLEL_STROKE_GAP = 0.03;
+
 export interface MeasuredSplit {
   ratios: number[];
   axis: SplitAxis;
@@ -16,7 +18,12 @@ function normalise(values: number[]): number[] | null {
 
 function ratiosFromPeaks(peaks: number[]): number[] | null {
   const sorted = [...new Set(peaks.filter((peak) => peak > 0.04 && peak < 0.96))].sort((a, b) => a - b);
-  const boundaries = [0, ...sorted, 1];
+  const groups: number[][] = [];
+  for (const peak of sorted) {
+    if (groups.length && peak - groups.at(-1)!.at(-1)! <= PARALLEL_STROKE_GAP) groups.at(-1)!.push(peak);
+    else groups.push([peak]);
+  }
+  const boundaries = [0, ...groups.map((group) => group.reduce((sum, peak) => sum + peak, 0) / group.length), 1];
   return normalise(boundaries.slice(1).map((boundary, index) => boundary - boundaries[index]));
 }
 

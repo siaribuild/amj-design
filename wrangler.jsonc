@@ -75,7 +75,7 @@
     {
       "class_name": "PlanParseContainer",
       "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:80327a502963969a01af99afee1e13a1d90260fe",
-      "instance_type": "basic",
+      "instance_type": { "vcpu": 1, "memory_mib": 4096, "disk_mb": 4000 },
       "max_instances": 5
     }
   ],
@@ -132,10 +132,10 @@
     // runs (02-design-v2.md §4).
     // 'agentic_full': extraction fires AND the parallel full-document drawing
     // agent runs. It starts with the free deterministic PDF harvest, then uses
-    // at most four whole-set model turns. Select it explicitly at deployment;
-    // keeping auto_drawings here preserves the currently deployed behaviour.
+    // bounded whole-set model turns. This is the production default; deploy with
+    // auto_drawings or auto explicitly when the fallback path is required.
     // 'manual': emergency kill-switch, ops-triggered only, unchanged.
-    "AI_EXTRACTION_MODE": "auto_drawings",
+    "AI_EXTRACTION_MODE": "agentic_full",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an
     // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:

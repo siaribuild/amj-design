@@ -37,7 +37,12 @@ import type { Env } from "../../types";
 // Its free PDF harvest, persistent set context, evidence-backed crop loop and
 // room-correction precedence can produce different output for the same input;
 // the legacy auto_drawings path remains available unchanged.
-export const PIPELINE_VERSION = "2026-08-31.2";
+// 2026-09-03.1: full-document v19 adds page-role and identity recovery,
+// mandatory per-opening close-up verification, drawing-only composition,
+// bounded per-batch correction and stable provider diagnostics. The same plan
+// can produce materially different readings, so older stage archives must not
+// replay into this pipeline.
+export const PIPELINE_VERSION = "2026-09-03.1";
 // 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
 // additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";

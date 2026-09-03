@@ -1681,6 +1681,29 @@ test("documentChecklist: face-batched agent milestones describe real work withou
   }).steps[3].detail, " · reading elevation faces");
 });
 
+test("documentChecklist: observed drawing milestones remain as separate rows with separate durations", () => {
+  const log = [
+    { stage: "building_envelope", at: 10_000 },
+    { stage: "reading_openings", at: 12_000, drawing: { done: 0, total: 19, phase: "elevation_inventory" } },
+    { stage: "reading_openings", at: 22_000, drawing: { done: 0, total: 19, phase: "render_crops" } },
+    { stage: "reading_openings", at: 42_000, drawing: { done: 6, total: 19, phase: "opening_read" } },
+  ];
+  const { steps, current } = M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 6, drawingsTotal: 19, drawingsPhase: "opening_read",
+  }, log);
+  const drawingSteps = steps.filter((step) => step.key.startsWith("reading_openings"));
+
+  assert.deepEqual(drawingSteps.map((step) => step.detail), [
+    " · finding relevant drawing views",
+    " · reading elevation faces",
+    " · 6 of 19 openings processed",
+  ]);
+  assert.equal(steps[current].key, drawingSteps[2].key);
+  assert.equal(M.checklistStepDuration(steps, current, log, 50_000, steps.indexOf(drawingSteps[0])), 10_000);
+  assert.equal(M.checklistStepDuration(steps, current, log, 50_000, steps.indexOf(drawingSteps[1])), 20_000);
+  assert.equal(M.checklistStepDuration(steps, current, log, 50_000, steps.indexOf(drawingSteps[2])), 8_000);
+});
+
 test("documentChecklist: all openings read (done === total) still shows as the current row, not yet jumped to thermal (owner correction 2026-08-29)", () => {
   const { steps, current } = M.documentChecklist({
     stage: "building_envelope", drawingsDone: 19, drawingsTotal: 19, drawingsPhase: "opening_read",
