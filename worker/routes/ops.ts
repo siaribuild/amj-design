@@ -20,6 +20,7 @@ import {
 import { logEvent } from "../lib/activity";
 import { AU_STATES } from "../../src/data/accountDetails";
 import { lineRationale } from "../lib/estimator/rationale";
+import { lineCropKey, lineMeta } from "../lib/drawing/meta";
 import { applicationHistory, tradeStateOf } from "../lib/trade";
 import {
   splitLine, mergeComposite, recomputeComposite,
@@ -746,6 +747,47 @@ ops.get("/projects/:id/lines/:lineId/rationale", async (c) => {
     projectId: c.req.param("id"), lineId: c.req.param("lineId"),
   });
   return dto ? c.json(dto) : c.json({ error: "not_found" }, 404);
+});
+
+// GET /api/ops/projects/:id/lines/:lineId/meta — the Metadata (parse audit)
+// tab (design docs/runs/ops2-parse-metadata/02-design.md §3.3). Route ladder
+// copied verbatim from the rationale route above; the deep module is the
+// only place the entry SELECT, the latest-run query and the allow-list live.
+ops.get("/projects/:id/lines/:lineId/meta", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const dto = await lineMeta(c.env, {
+    projectId: c.req.param("id"), lineId: c.req.param("lineId"),
+  });
+  return dto ? c.json(dto) : c.json({ error: "not_found" }, 404);
+});
+
+// GET /api/ops/projects/:id/lines/:lineId/meta/crop — the reading's crop
+// image, streamed straight from R2. No key/path/filename parameter (AC-26):
+// the ONLY way to reach an object is through this line's own latest reading,
+// resolved server-side. Header pattern: staff download route, ops.ts:2274-2308.
+ops.get("/projects/:id/lines/:lineId/meta/crop", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+  const resolved = await lineCropKey(c.env, { projectId, lineId: c.req.param("lineId") });
+  if (!resolved?.cropKey) return c.json({ error: "not_found" }, 404);
+  const obj = await c.env.FILES.get(resolved.cropKey);
+  if (!obj) return c.json({ error: "not_found" }, 404); // AC-27: purged between parse and view
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "project", entityId: projectId,
+    action: `viewed parse crop for ${resolved.externalRef}`,
+  });
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": "image/png",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
 });
 
 // PUT /api/ops/projects/:id/delivery { amount, postcode?, note? } — E7. Settles,

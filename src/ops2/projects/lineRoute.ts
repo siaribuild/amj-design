@@ -27,7 +27,7 @@
  * `scripts/tests/ops2-navigation.test.mjs` holds it.
  */
 
-export type LineView = "line" | "drawing" | "unit" | "why";
+export type LineView = "line" | "drawing" | "unit" | "why" | "meta" | "metaReading" | "metaRun";
 
 export interface LineRoute {
   view: LineView;
@@ -114,6 +114,15 @@ export const WHY_FROM_LINE = { whyFrom: "line" } as const;
  *  one shared key would cause. Two doors, two values, one reader. */
 export const WHY_FROM_RECORD = { whyFrom: "record" } as const;
 
+/** The meta tab's expansion mark — PRESENCE ONLY, unlike the two marks above.
+ *
+ *  The tab strip is the metadata screen's one door: no second surface opens
+ *  it, so there is no VALUE to carry, only whether it was opened from a page
+ *  in this session at all. A separate key from `whyFrom`, for the same reason
+ *  the viewer and the rationale do not share one: a why entry read as a meta
+ *  entry (or the reverse) would answer the wrong screen's back question. */
+export const META_EXP_FROM_TAB = { metaExpFromTab: true } as const;
+
 type Door = "line" | "record";
 
 /** The door this viewer was opened through, or `null` for a cold arrival that
@@ -133,6 +142,12 @@ export function whyDoor(state: unknown): Door | null {
   return from === "record" || from === "line" ? from : null;
 }
 
+/** Whether this meta expansion was opened from the tab strip in this session
+ *  — presence only, there being exactly one door to ask about. */
+export function metaDoor(state: unknown): boolean {
+  return (state as { metaExpFromTab?: unknown } | null | undefined)?.metaExpFromTab === true;
+}
+
 /** The address an opener sends the reviewer to. The parser accepts what this
  *  builds, untouched — the round trip is asserted, so the two cannot drift. */
 export function drawingSuffix(unitIndex: number | null): string {
@@ -143,6 +158,13 @@ export function drawingSuffix(unitIndex: number | null): string {
  *  `why` of its own: its facts arrive inside its parent's rationale, because
  *  the estimator recommends a product per OPENING. */
 export const WHY_SUFFIX = "/why";
+
+/** The metadata tab's own addresses — the summary, and its two expansions.
+ *  Same siblinghood as `/why`: one suffix admitted at a time, so none of these
+ *  can stack with `/drawing` or `/why` either. */
+export const META_SUFFIX = "/meta";
+export const META_READING_SUFFIX = "/meta/reading";
+export const META_RUN_SUFFIX = "/meta/run";
 
 const at = (view: LineView, unitIndex: number | null, canonical: string, given: string): LineRoute =>
   ({ view, unitIndex, canonical, normalise: canonical !== given });
@@ -164,11 +186,34 @@ const at = (view: LineView, unitIndex: number | null, canonical: string, given: 
  *   • `/why` on a line with no detail → the line page.
  *   • anything else outside the grammar → the line page.
  */
-export function parseLineRoute(suffix: string, unitCount: number, hasWhy: boolean): LineRoute {
+export function parseLineRoute(
+  suffix: string,
+  unitCount: number,
+  hasWhy: boolean,
+  // Defaulted, not required like `hasWhy`: LinePage does not feed this yet
+  // (next task), and a caller that hasn't wired it up gets the same answer as
+  // `hasMeta === false` — no meta address is ever served.
+  hasMeta: boolean = false,
+): LineRoute {
   if (suffix === "") return at("line", null, "", suffix);
 
   if (suffix === WHY_SUFFIX) {
     return hasWhy ? at("why", null, WHY_SUFFIX, suffix) : at("line", null, "", suffix);
+  }
+
+  // Judged exactly like `hasWhy`: valid whenever `hasMeta`, regardless of
+  // whether the metadata behind it is empty (AC-20) — content emptiness is
+  // the tab's problem to render, not the grammar's to gate.
+  if (suffix === META_SUFFIX) {
+    return hasMeta ? at("meta", null, META_SUFFIX, suffix) : at("line", null, "", suffix);
+  }
+  if (suffix === META_READING_SUFFIX) {
+    return hasMeta
+      ? at("metaReading", null, META_READING_SUFFIX, suffix)
+      : at("line", null, "", suffix);
+  }
+  if (suffix === META_RUN_SUFFIX) {
+    return hasMeta ? at("metaRun", null, META_RUN_SUFFIX, suffix) : at("line", null, "", suffix);
   }
 
   const drawing = /^\/drawing(\/.*)?$/.exec(suffix);

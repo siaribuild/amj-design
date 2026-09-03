@@ -50,6 +50,15 @@ const seedEmail = (id) => {
 export const seedUserCount = seedUserRows.length;
 export const demoEmail = seedEmail("u_demo");
 export const staffEmail = seedEmail("u_staff");
+// wrangler 4.111 resolves the account and validates the containers image's
+// OWNER even for `--local` dev with containers disabled. The token is fake
+// (nothing remote is called with it), but the account id must match the image
+// ref in wrangler.jsonc — it is the public account hash from that ref, not a
+// credential.
+export const wranglerLocalAuthEnv = {
+  CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential",
+  CLOUDFLARE_ACCOUNT_ID: "c3834ff3509fa7cb4c9769a6dee6c2d8",
+};
 const needsShell = (command) => process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
 
 export async function makeRunDir(label) {

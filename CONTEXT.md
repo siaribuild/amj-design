@@ -157,6 +157,10 @@ _Avoid_: thermal source of truth (there is a ladder, not a single source)
 The exact image the model was shown for a drawing reading, stored per run so a reviewer checks the reading against the pixels without reopening the PDF. A fragment of a customer's drawings — customer data: staff-only (manufacturer partners excluded), audit-logged on access, never on a customer-facing surface. It exists only during the internal review window (owner ruling 2026-08-29): crops die at whichever comes first of the draft being cleared, the quote being issued to the client, or the quote being voided — review evidence, never a record kept with the project. A labelling corpus is a deliberate copy made before issue, never a shared default.
 _Avoid_: training data (a crop is review evidence; a corpus is a separate, deliberate copy)
 
+**Metadata tab**:
+The staff-only parse-audit surface on a parsed line in ops2: the crop the model was shown, the reading it produced (facts, states, flags, reasoning), and what the latest drawing run did with that one opening. Read-only forever — nothing on it edits, and its data shapes must never anticipate edits. It lives by the crop-evidence window: available pre-issue, gone once the crops die, and its absence is the endpoint's own 404, not a separate flag.
+_Avoid_: parse debug view (it is an audit of what was read, not a developer tool)
+
 **Estimator (the subsystem)**:
 Distinct from the Estimator persona above — one word, two senses, both live. The subsystem that derives line configurations and recommendations from parsed schedules. It proposes, never decides: staff review every quote before issue and may change anything. What it learns is captured at quote issue and is currently dark — recorded and shown to staff, moving no recommendation.
 _Avoid_: quote (an estimator output is not a quote)

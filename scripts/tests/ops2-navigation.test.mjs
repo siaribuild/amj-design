@@ -26,7 +26,7 @@ await build({
   stdin: {
     contents: `
       export { DESTINATIONS, TAB_DESTINATION_IDS, SECTIONS, HOME_PATH, RAIL_MEDIA_QUERY, destinationByPath, destinationRootFor, isDestinationActive } from ${p("src/ops2/nav/destinations.ts")};
-      export { lineSuffixOf, parseLineRoute, drawingSuffix, WHY_SUFFIX, viewerDoor, whyDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD, WHY_FROM_LINE, WHY_FROM_RECORD } from ${p("src/ops2/projects/lineRoute.ts")};
+      export { lineSuffixOf, parseLineRoute, drawingSuffix, WHY_SUFFIX, viewerDoor, whyDoor, VIEWER_FROM_LINE, VIEWER_FROM_RECORD, WHY_FROM_LINE, WHY_FROM_RECORD, META_SUFFIX, META_READING_SUFFIX, META_RUN_SUFFIX, metaDoor, META_EXP_FROM_TAB } from ${p("src/ops2/projects/lineRoute.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ops2-nav-entry.ts",
@@ -318,6 +318,55 @@ test("WHY-AC-44 the why screen is a sibling of the drawing, and cannot stack wit
   assert.equal(M.parseLineRoute("/why", 2, false).view, "line");
 });
 
+// ─── The `meta` view and its two children (parse metadata) ─────────────────
+
+test("the meta grammar: /meta and its two children, judged exactly like why", () => {
+  // Same shape as `/why`: all three suffixes are valid whenever `hasMeta`,
+  // regardless of whether the metadata behind them has any content — an empty
+  // expansion is still a served address (AC-20). `unitCount`/`hasWhy` are
+  // irrelevant to this branch, same as `/why` is irrelevant to drawing.
+  assert.deepEqual(M.parseLineRoute(M.META_SUFFIX, 0, false, true),
+    { view: "meta", unitIndex: null, canonical: M.META_SUFFIX, normalise: false });
+  assert.deepEqual(M.parseLineRoute(M.META_READING_SUFFIX, 0, false, true),
+    { view: "metaReading", unitIndex: null, canonical: M.META_READING_SUFFIX, normalise: false });
+  assert.deepEqual(M.parseLineRoute(M.META_RUN_SUFFIX, 0, false, true),
+    { view: "metaRun", unitIndex: null, canonical: M.META_RUN_SUFFIX, normalise: false });
+
+  // `hasMeta` false normalises every one of the three, by replace, to the line
+  // page — a line with no metadata behind it has nothing to show (AC-5/6).
+  for (const suffix of [M.META_SUFFIX, M.META_READING_SUFFIX, M.META_RUN_SUFFIX]) {
+    const route = M.parseLineRoute(suffix, 0, false, false);
+    assert.equal(route.view, "line", `${suffix} with hasMeta false lands on the line page`);
+    assert.equal(route.canonical, "");
+    assert.equal(route.normalise, true);
+    assert.equal(route.unitIndex, null);
+  }
+
+  // The drawing and why grammars are untouched by the new sibling.
+  for (const hasMeta of [false, true]) {
+    assert.equal(M.parseLineRoute("/drawing", 2, false, hasMeta).view, "drawing");
+    assert.equal(M.parseLineRoute("/why", 2, true, hasMeta).view, "why");
+  }
+});
+
+test("the meta expansion's history mark — presence only, like why's single-door case", () => {
+  // One mark, one question: was this expansion opened from the tab in this
+  // session? No second question — there is exactly one door, the tab strip on
+  // the line page — so presence alone is read, not a value.
+  assert.equal(M.metaDoor(M.META_EXP_FROM_TAB), true);
+  assert.equal(M.metaDoor(null), false, "pasted, emailed or reloaded — nothing of ours behind it");
+  assert.equal(M.metaDoor(undefined), false);
+  assert.equal(M.metaDoor({}), false);
+  assert.equal(M.metaDoor({ metaExpFromTab: false }), false);
+  assert.equal(M.metaDoor("tab"), false, "a bare string is not the state");
+  // A DIFFERENT SURFACE'S MARK IS NOT THIS ONE. The why screen's own mark must
+  // not be read as this one, or an expansion opened cold from a `why` entry
+  // would misread as a warm tab open.
+  assert.equal(M.metaDoor(M.WHY_FROM_LINE), false);
+  assert.equal(M.metaDoor(M.WHY_FROM_RECORD), false);
+  assert.equal(M.whyDoor(M.META_EXP_FROM_TAB), null);
+});
+
 test("WHY-AC-7c / FB-AC-45 the why screen's history mark names WHICH door it came through", () => {
   // The viewer has two doors and its mark's VALUE names which. The rationale has
   // exactly one — the panel on the line page — so only PRESENCE is asked: was
@@ -435,4 +484,71 @@ test("the opener builds the address the parser accepts, and the two cannot drift
     assert.equal(route.normalise, false, `u${i} round trip`);
     assert.equal(route.unitIndex, i);
   }
+});
+
+// ─── LinePage wiring (T5): tabs, readiness gate, closeChild, body switch ───
+
+test("LinePage: the meta tabs render only once the read has resolved, so a manual line or a purged crop shows none (AC-1/5/6/8)", () => {
+  // No renderer precedent for LinePage (react-router + IonRouter hooks, no
+  // jsdom here) — the same reason ops2-frame.test.mjs trusts `useProjectRecord`
+  // wiring by reading the source rather than mounting it. `hasMeta` admits
+  // `ready` OR `error`, and withholds ONLY on `missing`. A 404 (manual line,
+  // never parsed; purged crop) is `missing` and means this line serves no
+  // `/meta`. A 500 or a dropped connection is `error` and says nothing about
+  // whether the address exists - codex P2: collapsing the two made a transient
+  // failure indistinguishable from a manual line, vanishing the tabs and
+  // rewriting a pasted `/meta` link to Opening with no retry.
+  //
+  // Asserted as the SHAPE OF THE RULE, not one verbatim line. The previous
+  // version pinned `meta.status === "ready"` exactly and so failed the moment
+  // the rule was corrected - a test defending the defect it was written beside.
+  // Rendered behaviour is covered for real in ops2-line-meta.spec.ts.
+  const linePage = read("src/ops2/projects/LinePage.tsx");
+  const hasMetaRule = linePage.match(/const hasMeta = ([^;]+);/);
+  assert.ok(hasMetaRule, "hasMeta must be a single derived rule");
+  assert.match(hasMetaRule[1], /"ready"/, "a resolved read shows the tabs");
+  assert.match(hasMetaRule[1], /"error"/,
+    "a failed read keeps the address - only a 404 (missing) withholds the tabs");
+  assert.doesNotMatch(hasMetaRule[1], /"missing"/,
+    "missing is the one state that withholds, by omission from the rule");
+  assert.match(linePage, /controls=\{hasMeta \?/,
+    "the controls slot must be gated on hasMeta, not always rendered");
+  assert.match(linePage, /data-testid="line-tab"/);
+  assert.match(linePage, /data-tab="opening"/);
+  assert.match(linePage, /data-tab="meta"/);
+  // AC-8: no count, no dot — the record page's tabs carry a `pq-count` span,
+  // the line's must not borrow it.
+  assert.doesNotMatch(linePage, /data-tab="meta"[\s\S]{0,200}pq-count/);
+});
+
+test("LinePage: a deep `/meta*` link renders the existing skeleton, never the Opening body, while the meta read is still loading (AC-3)", () => {
+  const linePage = read("src/ops2/projects/LinePage.tsx");
+  assert.match(linePage, /metaPending/, "the pending flag must exist");
+  assert.match(linePage, /meta\.status === "loading"[\s\S]{0,80}startsWith\(META_SUFFIX\)/,
+    "pending is true only while meta is loading AND the live suffix is a meta address");
+  assert.match(linePage, /load\.status === "loading" \|\| metaPending/,
+    "the existing skeleton block must also fire on a pending meta suffix");
+  assert.match(linePage, /record && line && !metaPending/,
+    "the Opening/Metadata body must not render at all while pending");
+  // The readiness gate that drives the normalise effect waits on meta too —
+  // the same wait-before-normalise reasoning already applied to rationale.
+  assert.match(linePage, /rationale\.status !== "loading" && meta\.status !== "loading"/);
+});
+
+test("LinePage: tab press replaces (grows no history); an expansion pushes through the tab's own door; closeChild lands a cold meta-expansion close on /meta (AC-21)", () => {
+  const linePage = read("src/ops2/projects/LinePage.tsx");
+  // The two tabs are one page wearing two faces — flipping them is a replace,
+  // exactly like normalise-by-replace above it, never a push.
+  assert.match(linePage, /history\.replace\(linePath\)/);
+  assert.match(linePage, /history\.replace\(linePath \+ META_SUFFIX\)/);
+  // Expansions push, carrying the tab's own presence-only door mark — reusing
+  // the opener-ref focus-return pattern the drawing/why doors already use.
+  assert.match(linePage, /history\.push\(linePath \+ META_READING_SUFFIX, META_EXP_FROM_TAB\)/);
+  assert.match(linePage, /history\.push\(linePath \+ META_RUN_SUFFIX, META_EXP_FROM_TAB\)/);
+  // closeChild: the cold-replace target is `/meta`, not the bare line path,
+  // when the entry being left is one of the two expansions — and the mark
+  // check that decides warm-vs-cold now reads all three doors, not two.
+  assert.match(linePage, /startsWith\("\/meta\/"\)[\s\S]{0,40}META_SUFFIX/);
+  assert.match(linePage,
+    /viewerDoor\(history\.location\.state\) \|\| whyDoor\(history\.location\.state\) \|\| metaDoor\(history\.location\.state\)/);
 });

@@ -705,3 +705,16 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
+
+/* THE PARSER'S OWN CROP — the one thing on the Metadata tab that no existing
+   class covers. Everything else on that tab is `lp-body`, `lp-panel`,
+   `lp-panel__lines` and `wd__blk`, because a panel with a title and lines and a
+   slide-out block are shapes this stylesheet already owns.
+   `max-width` is the whole point: the crop is a PNG at whatever pixel size the
+   render produced, so unconstrained it sets the panel's width and overflows the
+   phone (AC-9). */
+.lp-crop {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
