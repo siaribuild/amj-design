@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, checkPlan, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
   verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
 } from '../pipeline/conduct.mjs'
@@ -2580,4 +2580,59 @@ test('a plan with no tasks in it cannot certify a build', () => {
   const empty = checkPlan([], '# design', '1. **Given** a thing, **when** x, **then** y')
   assert.equal(empty.fatal.length, 1, 'an empty plan must be fatal: ' + JSON.stringify(empty))
   assert.match(empty.fatal[0], /no tasks/i)
+})
+
+test('a fix round that has already failed once is escalated to a stronger model, not to the owner', () => {
+  // superpowers escalates the MODEL before it escalates to the human: rounds
+  // 1-3 resume the same implementer, 4-5 get a fresh one a tier up. Here the
+  // developer is pinned to sonnet in .claude/agents/developer.md, so a finding
+  // it could not fix went round after round at the same capability until the
+  // cap sent it to the owner. One cheap attempt, then a stronger one, then ask.
+  const first = fixSpec(0)
+  assert.equal(first.model, undefined,
+    'the first attempt must run on the agent\'s own pinned model, not a costly one')
+
+  const second = fixSpec(1)
+  assert.equal(second.model, 'opus',
+    'a finding the pinned developer already failed on must go up a tier, not sideways')
+  assert.equal(fixSpec(2).model, 'opus', 'every later round stays escalated')
+
+  // And the escalation has to actually reach the session, or it is decoration.
+  const argv = claudeArgs({ agent: 'developer', compact: 120000, model: 'opus' }, 'p', false)
+  assert.equal(argv[argv.indexOf('--model') + 1], 'opus',
+    'a spec carrying a model must boot with --model')
+  assert.equal(claudeArgs({ agent: 'developer', compact: 120000 }, 'p', false).includes('--model'), false,
+    'a spec with no model must not pin one - the agent file owns that choice')
+})
+
+test('the spec is checked for the things that make it unbuildable, before anyone designs from it', () => {
+  // spec-kit ships `checklist` - "unit tests for English" - to validate that
+  // requirements are complete, clear and consistent before the plan is drawn.
+  // Its full version is an LLM pass; the structural half is free, and it is the
+  // half that catches a spec nobody can build from.
+  const good = [
+    '## Problem', 'Staff cannot tell which panels open.', '',
+    '## Acceptance criteria',
+    '1. **Given** a panel with a destination, **when** it renders, **then** a chevron is shown',
+    '2. **Given** a panel with none, **when** it renders, **then** no chevron is shown',
+    '', '## Out of scope', 'Other panels.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(good), [], 'a complete spec must not be nagged at')
+
+  assert.ok(checkSpec('## Problem' + NL + 'no criteria here').some((w) => /no numbered Given/i.test(w)),
+    'a spec with no Given-When-Then criteria is not a spec')
+
+  const gaps = checkSpec([
+    '1. **Given** a panel, **when** clicked, **then** it does something appropriate',
+    '3. **Given** a thing, **when** TBD, **then** [NEEDS CLARIFICATION]',
+    'ASSUMED: the owner wants this centred.',
+  ].join(NL))
+  assert.ok(gaps.some((w) => /unresolved|TBD|CLARIFICATION/i.test(w)),
+    'an unresolved placeholder must be reported: ' + gaps)
+  assert.ok(gaps.some((w) => /2/.test(w) && /number/i.test(w)),
+    'criteria that skip a number must be reported - one of them was lost: ' + gaps)
+  assert.ok(gaps.some((w) => /ASSUMED/.test(w)),
+    'an ASSUMED tag exists to be vetoed, so it must be surfaced: ' + gaps)
+  assert.ok(gaps.some((w) => /out of scope/i.test(w)),
+    'a spec with no out-of-scope section must be reported: ' + gaps)
 })

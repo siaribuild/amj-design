@@ -141,7 +141,7 @@ export function parseSeverity(args) {
 const STAGES = [
   {
     id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
-    needs: ['00-ask.md'], produces: ['01-spec.md'],
+    needs: ['00-ask.md'], produces: ['01-spec.md'], check: checkSpec,
     prompt: (r) => `Write the spec for this feature.
 
 READ ONLY THESE (do not search the codebase for background):
@@ -586,6 +586,9 @@ function sessionArgs(spec, mcpOk, mode) {
   // definitions - Sanity's are large - into every turn of every stage.
   a.push('--strict-mcp-config')
   a.push('--append-system-prompt', NO_SUBAGENTS)
+  // Only when a stage asks for one. Left off, the agent file owns the choice
+  // (developer is pinned to sonnet there), which is where it belongs.
+  if (spec.model) a.push('--model', spec.model)
   return a
 }
 
@@ -922,6 +925,46 @@ function notesFor(run, afterIds) {
   const sections = readFileSync(p, 'utf8').split(/^(?=## )/m)
     .filter((sec) => wanted.has((sec.match(/^## (\S+)/) || [])[1]))
   return sections.length ? sections.join('\n').trim() : null
+}
+
+/**
+ * The structural half of spec-kit`s `checklist` - "unit tests for English".
+ *
+ * Its full version is an LLM pass over clarity and completeness. This is the
+ * half a script can do for nothing, and it is the half that catches a spec
+ * nobody can build from: no criteria, a criterion lost between two numbers, a
+ * placeholder nobody resolved, an assumption that was never put to the owner.
+ * Reported, never fatal - every one of these is a judgement the operator makes.
+ */
+export function checkSpec(text) {
+  const out = []
+  const nums = [...(text || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => Number(m[1]))
+  if (!nums.length) {
+    out.push('no numbered Given-When-Then criteria - the tester has nothing to execute')
+  } else {
+    // Contiguous from 1: a gap is a criterion that was written and then lost,
+    // which is invisible in prose and obvious here.
+    const missing = []
+    for (let i = 1; i < Math.max(...nums); i++) if (!nums.includes(i)) missing.push(i)
+    if (missing.length)
+      out.push('criteria skip number ' + missing.join(', ') + ' - one was written and lost, or the numbering is wrong')
+  }
+
+  const placeholders = (text || '').match(/\bTBD\b|\bTODO\b|\[NEEDS CLARIFICATION[^\]]*\]|\?\?\?/g)
+  if (placeholders)
+    out.push('unresolved placeholder in the spec: ' + [...new Set(placeholders)].join(', '))
+
+  // ASSUMED exists to be vetoed. A spec stage that writes one and is never
+  // read again has made the decision by default, which is the thing the tag
+  // was invented to prevent.
+  const assumed = ((text || '').match(/^.*\bASSUMED:/gm) || []).length
+  if (assumed)
+    out.push(assumed + ' ASSUMED tag(s) - each is a decision taken on the owner`s behalf until he vetoes it')
+
+  if (!/^#+\s*out of scope/im.test(text || ''))
+    out.push('no `Out of scope` section - what this feature is NOT is how it stops growing')
+
+  return out
 }
 
 /**
@@ -1281,6 +1324,20 @@ const CAPS = {
   fix: { cap: FIX_CAP, field: 'fixRounds', what: 'fix sessions' },
 }
 
+/**
+ * The session a fix round runs as, given how many have already been spent.
+ *
+ * superpowers escalates the model before it escalates to the human - rounds
+ * 1-3 resume the implementer, 4-5 get a fresh one a tier up. The developer here
+ * is pinned to sonnet in its agent file, so before this a finding it could not
+ * fix was retried at the same capability until the cap handed it to the owner.
+ * One cheap attempt, then a stronger one, and only then his time.
+ */
+export function fixSpec(roundsSpent) {
+  const spec = { agent: 'developer', compact: 120000 }
+  return roundsSpent > 0 ? { ...spec, model: 'opus' } : spec
+}
+
 function cycleCapped(run, kind = 'verify') {
   const c = CAPS[kind]
   const spent = run[c.field] || 0
@@ -1313,6 +1370,11 @@ function afterStage(run, spec) {
     if (decisionsOpen(r)) { r.gateStage = r.gateStage || spec.id; saveRun(r); return false }
   }
   const missing = (spec.produces || []).filter((f) => !existsSync(join(RUNS, r.slug, f)))
+  // A stage that declares a check has it run over its own first artifact, so
+  // the reading happens once, here, rather than in each stage`s own branch.
+  if (spec.check && !missing.length && spec.produces?.length)
+    for (const w of spec.check(readFileSync(join(RUNS, r.slug, spec.produces[0]), 'utf8')))
+      console.log('  !! ' + w)
   for (const f of missing)
     console.log('  !! stage "' + spec.id + '" did not write ' + r.dir + '/' + f +
       ' - it was supposed to. Re-run it before continuing.')
@@ -1685,7 +1747,9 @@ ${run.dir}/06-verify.md - read only the one this finding came from.
 If it is a code defect: write the failing test that captures it FIRST, watch it
 fail, then fix. Commit. Append what you did to ${run.dir}/04-build.md.
 If you believe the finding is wrong, say so and change nothing.`
-    await runClaude({ agent: 'developer', compact: 120000 }, prompt, run,
+    // fixRounds was incremented above, so round 1 reads 1 here: the count of
+    // rounds already SPENT before this one is one less.
+    await runClaude(fixSpec((run.fixRounds || 1) - 1), prompt, run,
       'fix-' + Object.keys(run.stages).filter((k) => k.startsWith('fix-')).length)
     console.log('\n  re-verify before accepting:  conduct run verify\n')
   },
