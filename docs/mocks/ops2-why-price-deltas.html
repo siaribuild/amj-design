@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops2 — Price deltas on the “Why this product?” ladder — UX mock (r2)</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   FRAMEFLOW TOKENS — copied verbatim from src/ops2/theme/*.css and
+   src/ops2/styles/tokens.css. No invented values. ops2 ships LIGHT ONLY:
+   there is no prefers-color-scheme block anywhere in src/ops2/, so this mock
+   has none either.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-200:#cddfd4;
+  --theme-sage-300:#a8c9b4; --theme-sage-400:#7dab8e; --theme-sage-500:#5a7a6a;
+  --theme-sage-600:#4a6858; --theme-sage-700:#3f5a4c;
+  --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+  --theme-neutral-150:#edecea; --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb;
+  --theme-neutral-400:#b5b2ab; --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+  --theme-neutral-700:#5c5a56; --theme-neutral-800:#3a3835; --theme-neutral-900:#2a2826;
+  --theme-ink-700:#2c2a27; --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+  --theme-warning-500:#8a6a2a; --theme-warning-700:#624410;
+  --theme-info-500:#4a6b8a;
+
+  /* Space Grotesk and Inter are loaded from Google Fonts by src/ops2/theme/
+     fonts.css. A mock makes no external request, so the letterforms fall
+     through to the system face — every size, weight, tracking and leading
+     below is the real value. */
+  --theme-font-display:'Space Grotesk',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --theme-font-sans:'Inter',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --theme-font-size-xs:0.75rem; --theme-font-size-sm:0.8125rem;
+  --theme-font-size-base:0.9375rem; --theme-font-size-md:1rem;
+  --theme-font-size-lg:1.125rem; --theme-font-size-xl:1.3125rem;
+  --theme-font-size-2xl:1.625rem;
+  --theme-font-weight-regular:400; --theme-font-weight-medium:500; --theme-font-weight-semibold:600;
+  --theme-letter-spacing-wide:0.025em; --theme-letter-spacing-wider:0.05em;
+  --theme-letter-spacing-tight:-0.02em;
+  --theme-line-height-none:1; --theme-line-height-snug:1.25; --theme-line-height-normal:1.5;
+
+  --theme-spacing-2xs:0.125rem; --theme-spacing-xs:0.25rem; --theme-spacing-sm:0.5rem;
+  --theme-spacing-md:0.75rem; --theme-spacing-lg:1rem; --theme-spacing-xl:1.5rem;
+
+  --theme-radius-xs:3px; --theme-radius-sm:5px;
+  --theme-shadow-sm:0 1px 3px rgba(42,40,38,.06),0 1px 2px rgba(42,40,38,.04);
+  --theme-shadow-lg:0 10px 24px rgba(42,40,38,.08),0 4px 8px rgba(42,40,38,.04);
+
+  /* semantic layer — src/ops2/styles/tokens.css */
+  --ds-color-brand:var(--theme-sage-500); --ds-color-brand-wash:var(--theme-sage-50);
+  --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+  --ds-text-muted:var(--theme-neutral-500);
+  --ds-text-link:var(--theme-sage-600); --ds-text-link-hover:var(--theme-sage-700);
+  --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+  --ds-border-subtle:var(--theme-neutral-200); --ds-border-default:var(--theme-neutral-300);
+  --ds-border-focus:var(--theme-sage-500);
+  --ds-color-warning:var(--theme-warning-500); --ds-color-warning-text:var(--theme-warning-700);
+  --ds-layer-raised:var(--theme-shadow-sm); --ds-layer-overlay:var(--theme-shadow-lg);
+  /* THE OWNER'S CAP. Radii never exceed --theme-radius-sm. */
+  --ds-radius-surface:var(--theme-radius-sm);
+  --ds-radius-control:var(--theme-radius-xs);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+:focus-visible{outline:2px solid var(--ds-border-focus);outline-offset:2px;border-radius:var(--ds-radius-control)}
+body{
+  background:var(--theme-neutral-200); color:var(--ds-text-primary);
+  font-family:var(--theme-font-sans); font-size:var(--theme-font-size-base);
+  line-height:var(--theme-line-height-normal); padding:32px 20px 96px; -webkit-font-smoothing:antialiased;
+}
+
+/* ── The mock's own scaffolding (never part of the product) ───────────────── */
+.doc{max-width:1560px;margin:0 auto}
+.doc h1{font-family:var(--theme-font-display);font-size:var(--theme-font-size-2xl);font-weight:600;line-height:var(--theme-line-height-snug);letter-spacing:var(--theme-letter-spacing-tight)}
+.doc>p.lede{max-width:66ch;color:var(--theme-neutral-700);margin-top:8px}
+.rules{max-width:86ch;margin-top:16px;padding:12px 16px;background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised);font-size:var(--theme-font-size-sm);color:var(--theme-neutral-700)}
+.rules+.rules{margin-top:12px}
+.rules strong{display:block;margin-bottom:4px;color:var(--ds-text-primary)}
+.rules li{margin-left:18px;margin-top:3px}
+.rules--fb{border-left:3px solid var(--ds-color-brand)}
+.sect{margin-top:48px}
+.sect>h2{font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;line-height:var(--theme-line-height-snug);padding-bottom:8px;border-bottom:1px solid var(--theme-neutral-400)}
+.sect>p.note{max-width:86ch;margin-top:10px;color:var(--theme-neutral-700);font-size:var(--theme-font-size-sm)}
+.grid{display:flex;flex-wrap:wrap;gap:32px 26px;margin-top:24px;align-items:flex-start}
+.cap{font-size:var(--theme-font-size-xs);letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--theme-neutral-600);font-weight:500;line-height:var(--theme-line-height-none);margin-bottom:8px}
+.cap em{text-transform:none;letter-spacing:0;font-weight:400;font-style:normal;color:var(--theme-neutral-500)}
+.ann{max-width:48ch;margin-top:10px;font-size:var(--theme-font-size-xs);line-height:var(--theme-line-height-normal);color:var(--theme-neutral-700)}
+.ann b{color:var(--ds-text-primary)}
+.ann+.ann{margin-top:8px}
+.ruling{display:inline-block;margin-right:4px;padding:1px 5px;background:var(--theme-sage-100);color:var(--theme-sage-700);border-radius:var(--ds-radius-control);font-size:10.5px;font-weight:600;letter-spacing:var(--theme-letter-spacing-wide)}
+.tag-old{background:var(--theme-neutral-200);color:var(--theme-neutral-700)}
+.tag-bad{background:#f6e7e4;color:#7a3b2e}
+
+/* ── Device frames ───────────────────────────────────────────────────────── */
+.phone{width:375px;flex:none}
+.tablet{width:834px;flex:none}
+.desk{width:720px;flex:none}
+.half{width:352px;flex:none}
+.screen{
+  background:var(--ds-surface-page);
+  border:1px solid var(--theme-neutral-400);
+  border-radius:var(--ds-radius-surface); overflow:hidden;
+  box-shadow:var(--ds-layer-overlay); position:relative;
+}
+
+/* ── ops2 chrome behind the panel: the line page ─────────────────────────── */
+.ops-top{
+  display:flex;align-items:baseline;gap:var(--theme-spacing-sm);
+  padding:var(--theme-spacing-sm) var(--theme-spacing-lg);
+  background:var(--ds-surface-card); border-bottom:1px solid var(--ds-border-subtle);
+}
+.ops-back{display:inline-flex;align-items:center;gap:var(--theme-spacing-2xs);flex:none;font-size:var(--theme-font-size-xs);color:var(--ds-text-link)}
+.ops-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--theme-font-display);font-size:var(--theme-font-size-xl);font-weight:600;line-height:var(--theme-line-height-snug)}
+/* `.lp-body` — line.css, verbatim. The detail now uses this same shape. */
+.lp-body{display:flex;flex-direction:column;gap:var(--theme-spacing-md);padding:var(--theme-spacing-lg);max-width:72ch}
+
+/* ── The card and its optional door — panel.css, verbatim ────────────────── */
+.lp-panel{
+  padding:var(--theme-spacing-sm) var(--theme-spacing-md);
+  background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);
+  box-shadow:var(--ds-layer-raised);
+}
+.lp-panel--door{position:relative;padding-right:calc(var(--theme-spacing-md) + 16px + var(--theme-spacing-sm))}
+.lp-panel__chev{position:absolute;right:var(--theme-spacing-md);top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--ds-text-muted)}
+.lp-panel__title{
+  margin:0 0 var(--theme-spacing-xs);font-family:var(--theme-font-sans);
+  font-size:var(--theme-font-size-xs);font-weight:var(--theme-font-weight-medium);
+  letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--ds-text-muted);
+}
+.lp-panel__lines{display:grid;grid-template-columns:minmax(6rem,auto) 1fr;gap:var(--theme-spacing-2xs) var(--theme-spacing-md);margin:0;font-size:var(--theme-font-size-sm)}
+.lp-panel__lines>div{display:contents}
+.lp-panel__lines dt{color:var(--ds-text-muted)}
+.lp-panel__lines dd{margin:0;color:var(--ds-text-primary)}
+.lp-panel__more{margin:var(--theme-spacing-xs) 0 0;font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.lp-why__fig{font-family:var(--theme-font-display);font-weight:var(--theme-font-weight-medium);font-variant-numeric:tabular-nums}
+.lp-why__origin{display:block;margin-top:var(--theme-spacing-2xs);font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.ops2-rows{margin:0;padding:0;list-style:none;overflow:hidden}
+.ops2-absent{font-style:italic;color:var(--ds-text-muted)}
+
+/* ── The slide-out (SidePanel) — projects.css, verbatim ──────────────────── */
+.stage{position:relative;overflow:hidden}
+.scrim{position:absolute;inset:0;background:rgba(22,20,18,.8);backdrop-filter:blur(3px)}
+.sheet{
+  position:absolute;top:0;right:0;bottom:0;width:min(88%,520px);
+  background:var(--ds-surface-page);
+  border-start-start-radius:var(--ds-radius-surface);
+  border-end-start-radius:var(--ds-radius-surface);
+  box-shadow:var(--ds-layer-overlay); display:flex;flex-direction:column;
+}
+/* NEW — the `screen` form below the 1024px change point is FULL BLEED, at
+   every width below it and not only on a phone. See section D. */
+.sheet--screen{inset:0;width:auto;border-radius:0;box-shadow:none}
+/* What ships TODAY at tablet width: Ionic stock modal, centred and inset. */
+.sheet--stock{
+  inset:auto;top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);
+  width:600px;height:80%;border-radius:8px;
+}
+.sheet__bar{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);padding:var(--theme-spacing-sm) var(--theme-spacing-md);background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.sheet__bar h3{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-lg);font-weight:600;line-height:var(--theme-line-height-snug)}
+.sheet__back{display:inline-flex;align-items:center;gap:var(--theme-spacing-2xs);flex:none;background:none;border:0;font:inherit;font-size:var(--theme-font-size-xs);color:var(--ds-text-link);cursor:pointer;padding:var(--theme-spacing-2xs) var(--theme-spacing-2xs) var(--theme-spacing-2xs) 0;border-radius:var(--ds-radius-control)}
+@media (hover:hover){.sheet__back:hover{color:var(--ds-text-link-hover)}}
+.sheet__body{flex:1;overflow:auto;background:var(--ds-surface-page)}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE DETAIL — src/ops2/styles/line.css `.wd*`.
+   CHANGED (owner, 2026-09-04): the screen is no longer one column of headed
+   blocks. It is the LINE PAGE OWN SHAPE — `lp-body` on the page ground,
+   carrying `lp-panel` cards. Nothing below re-implements a card, a title, a
+   key/value grid or a list container: each is the console’s existing rule,
+   reused by name.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* `.wd` IS `.lp-body` with the panel’s own padding. The blocks and their
+   headings (`.wd__blk`, `.wd__blk-h`) are DELETED — `.wd__blk-h` was a
+   byte-identical copy of `.lp-panel__title`. */
+.wd{display:flex;flex-direction:column;gap:var(--theme-spacing-md);padding:var(--theme-spacing-md);background:var(--ds-surface-page)}
+/* `.wd__kv` is DELETED too: `.lp-panel__lines` is the same grid, already
+   shared by the line page’s own panels. */
+.wd__fig,.wd__row-figs{font-family:var(--theme-font-display);font-weight:var(--theme-font-weight-medium);font-variant-numeric:tabular-nums}
+.wd__fig{color:var(--ds-text-primary)}
+.wd__origin{display:block;font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.wd__reason{margin:0;font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.wd__closing{padding:0 var(--theme-spacing-xs) var(--theme-spacing-sm)}
+
+/* THE COMPARISON — two sides of ONE card now, not two bordered boxes inside a
+   third. A card inside a card is a card too many (rows.css, the architect’s
+   ruling on the unit list); the wash alone says which side is the line’s. */
+.wd__cmp{display:grid;gap:var(--theme-spacing-sm)}
+@media (min-width:480px){.wd__cmp{grid-template-columns:1fr 1fr}}
+.phone .wd__cmp,.narrow .wd__cmp{grid-template-columns:1fr}
+.wd__card{display:grid;gap:var(--theme-spacing-2xs);padding:var(--theme-spacing-sm);border-radius:var(--ds-radius-control);font-size:var(--theme-font-size-sm)}
+.wd__card--current{background:var(--ds-color-brand-wash)}
+.wd__who{font-size:var(--theme-font-size-xs);letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--ds-text-muted)}
+.wd__what{color:var(--ds-text-primary);font-weight:var(--theme-font-weight-medium)}
+.wd__verd{font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary)}
+.wd__verd--warn{color:var(--ds-color-warning-text)}
+
+/* THE LADDER — a LIST OF ROWS INSIDE ONE CARD. Five cards would give five
+   borders to one idea; the rows belong to each other and their alignment down
+   the right-hand column is the point. The card drops its side padding so the
+   rows reach its edge — the rule the unit list already uses, extended to the
+   generic `.ops2-rows` container rather than copied under a new name. */
+.lp-panel--rows{padding-inline:0}
+.lp-panel--rows>.lp-panel__title,.lp-panel--rows>.lp-panel__more,.lp-panel--rows>.wd__reason{padding-inline:var(--theme-spacing-md)}
+.wd__row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  column-gap:var(--theme-spacing-md);
+  row-gap:2px;
+  padding:var(--theme-spacing-sm) var(--theme-spacing-md);
+  font-size:var(--theme-font-size-sm);
+}
+/* The hairline belongs to the PAIR, not to either row — rows.css’s own rule,
+   applied to a row that is deliberately NOT pressable. */
+.wd__row+.wd__row{border-top:1px solid var(--ds-border-subtle)}
+.wd__row--chosen{background:var(--ds-color-brand-wash)}
+.wd__row-name{grid-column:1;color:var(--ds-text-primary);overflow-wrap:anywhere}
+.wd__row--chosen .wd__row-name{font-weight:var(--theme-font-weight-medium)}
+.wd__row-mark{color:var(--ds-text-muted);font-weight:var(--theme-font-weight-regular)}
+/* Figures and verdict on one line: one clause about one candidate. */
+.wd__row-meta{grid-column:1;display:flex;flex-wrap:wrap;gap:0 var(--theme-spacing-sm);font-size:var(--theme-font-size-xs)}
+.wd__row-figs{color:var(--ds-text-secondary)}
+.wd__row-verdict{color:var(--ds-text-muted)}
+.wd__row-verdict::before{content:"· ";color:var(--ds-text-muted)}
+/* THE ONE MONEY FIGURE. Body face, semibold, tabular — deliberately NOT the
+   display face of `.wd__fig`, so a dollar amount never reads as a thermal
+   figure. NEVER COLOURED: green-for-cheaper would make this a recommendation,
+   and the ladder explains a decision already taken (R28). The sign carries the
+   direction and nothing else needs to. */
+.wd__row-delta{
+  grid-column:2;grid-row:1;justify-self:end;align-self:baseline;
+  font-weight:var(--theme-font-weight-semibold);
+  font-variant-numeric:tabular-nums;
+  color:var(--ds-text-primary);
+  white-space:nowrap;
+}
+/* `$---` is a fact about the record, not an amount. Muted and regular so it
+   cannot be mistaken for a figure; NOT italic like `.ops2-absent`, because
+   italic dashes read as damage rather than as absence. */
+.wd__row-delta--absent{font-weight:var(--theme-font-weight-regular);color:var(--ds-text-muted)}
+
+/* ── The mock own before/after and state-table helpers ───────────────────── */
+.slab{background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised);padding:var(--theme-spacing-md)}
+/* The screen as it ships TODAY, for the before/after only: one column of headed
+   blocks on white, no card edges anywhere. line.css, verbatim. */
+.o-wd{display:grid;gap:var(--theme-spacing-lg);padding:var(--theme-spacing-md);background:var(--ds-surface-card)}
+.o-blk{display:grid;gap:var(--theme-spacing-xs)}
+.o-blk-h{margin:0;font-size:var(--theme-font-size-xs);font-weight:500;letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--ds-text-muted)}
+.o-kv{display:grid;grid-template-columns:minmax(4rem,auto) 1fr;gap:var(--theme-spacing-2xs) var(--theme-spacing-md);margin:0;font-size:var(--theme-font-size-sm)}
+.o-kv>div{display:contents}
+.o-kv dt{color:var(--ds-text-muted)}
+.o-kv dd{margin:0;color:var(--ds-text-primary)}
+.o-row{display:grid;gap:2px;padding-block:var(--theme-spacing-2xs);border-top:1px solid var(--ds-border-subtle);font-size:var(--theme-font-size-sm)}
+.o-row:first-child{border-top:0}
+.o-top{display:flex;gap:var(--theme-spacing-sm);justify-content:space-between;align-items:baseline}
+.o-name{color:var(--ds-text-primary);overflow-wrap:anywhere}
+.o-figs{flex:none;color:var(--ds-text-secondary);font-family:var(--theme-font-display);font-weight:500;font-variant-numeric:tabular-nums}
+.o-verd{font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.states{width:100%;border-collapse:collapse;font-size:var(--theme-font-size-sm);background:var(--ds-surface-card)}
+.states th{text-align:left;font-size:var(--theme-font-size-xs);letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase;color:var(--ds-text-muted);font-weight:500;padding:8px 12px;border-bottom:1px solid var(--ds-border-default)}
+.states td{padding:9px 12px;border-bottom:1px solid var(--ds-border-subtle);vertical-align:top;color:var(--theme-neutral-700)}
+.states td:first-child{color:var(--ds-text-primary);white-space:nowrap}
+.states .cell{font-weight:600;font-variant-numeric:tabular-nums;color:var(--ds-text-primary)}
+.states .cell--absent{font-weight:400;color:var(--ds-text-muted)}
+.states code,.rules code,.ann code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--theme-neutral-100);padding:1px 4px;border-radius:var(--ds-radius-control)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>Price deltas on the &ldquo;Why this product?&rdquo; ladder</h1>
+<p class="lede">The estimator arrives at this screen with one question &mdash; <em>was it worth it?</em> &mdash; and
+today the screen cannot answer it. Two products met the caps; only one was picked; the ladder shows both and
+says nothing about why the other lost. The figure that closes that sentence is already on disk. This adds it,
+and only it &mdash; and re-lays the screen it lands on, because a third fact could not be read on the screen as
+it stands.</p>
+
+<div class="rules rules--fb">
+  <strong>Revision 2 &mdash; what changed after your review of 2026-09-04</strong>
+  <ul>
+    <li><b>&ldquo;Difficult to read. Organise better. Panels. Lists (of panels).&rdquo;</b> The detail is no longer
+    one scroll of headed blocks. It is now the <b>line page’s own shape</b>: <code>lp-body</code> on the page ground,
+    carrying <code>lp-panel</code> cards &mdash; the same card the specification, review and units panels are. The
+    ladder is <b>one card containing a list of rows</b>, not five loose blocks and not five cards. See <b>A</b>.</li>
+    <li><b>Nothing is re-implemented.</b> Three <code>wd__</code> rules are <b>deleted</b> because the console already
+    had them: <code>.wd__blk-h</code> was a byte-identical copy of <code>.lp-panel__title</code>, <code>.wd__kv</code>
+    of <code>.lp-panel__lines</code>, and the block wrapper of <code>.lp-panel</code> itself. Net CSS after this
+    feature is <b>smaller</b> than before it.</li>
+    <li><b>&ldquo;on ipad there&rsquo;s a modal centered popup - that is NOT how our default sideout panel
+    works (REUSE COMPONENTS!!!)&rdquo;</b> Correct, and it is a defect in <code>SidePanel</code> that predates this feature. Fixed in the
+    shared component, so every caller of the full-screen form is fixed at once. See <b>D</b>.</li>
+    <li><b>&ldquo;B2 &mdash; do we have a state like that?&rdquo;</b> Shipped, R11: when a person has changed the
+    make-up, the platform’s recommendation stays and the line’s own configuration is shown beside it. Not an
+    invention.</li>
+    <li><b>Still nothing pressable.</b> Cards here are containers, not doors &mdash; <code>OpenablePanel</code> takes
+    openability as the presence of <code>open</code>, and these pass none. The only control on the screen is still
+    back.</li>
+  </ul>
+</div>
+
+<div class="rules">
+  <strong>What this mock holds itself to</strong>
+  <ul>
+    <li><b>One number per candidate.</b> No GST wording, no basis switch, no second figure, no total. An amount, or nothing.</li>
+    <li><b>The money is an explanation, not a comparison.</b> Nothing coloured green or red, nothing that invites a switch.</li>
+    <li><b>The chosen row carries no amount.</b> It is the baseline the others are measured from &mdash; &ldquo;+$0&rdquo; would claim a direction that does not exist.</li>
+    <li><b>An uncalculable delta reads <code>$---</code></b> &mdash; never <code>$0</code>, never a blank cell, never a hidden row.</li>
+    <li><b>Membership does not change.</b> The chosen product and the next four by rank, exactly as today.</li>
+    <li><b>No date stamp, no &ldquo;as at selection&rdquo;, no staleness hedge</b> anywhere near the amount.</li>
+  </ul>
+</div>
+
+<div class="sect">
+  <h2>A &middot; The screen, re-organised &mdash; one column of headings becomes cards</h2>
+  <p class="note">Both frames are the same content at the same width. On the left, what ships today: headings on
+  one white field, so the eye has to read to the end of a block to find out it was not the block it wanted. On the
+  right, the console’s own card grammar &mdash; each fact has an edge, and a card can be skipped whole. The ladder
+  rows sit inside <b>one</b> card, because five products at four different prices are one idea and their alignment
+  down the right-hand column is the entire point of the change.</p>
+
+  <div class="grid">
+    <div class="half">
+      <div class="cap"><span class="ruling tag-old">TODAY</span> one field, four headings</div>
+      <div class="slab" style="padding:0">
+        <div class="o-wd">
+          <div class="o-blk">
+            <h3 class="o-blk-h">What it had to meet</h3>
+            <dl class="o-kv">
+              <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+              <div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+            </dl>
+          </div>
+          <div class="o-blk">
+            <h3 class="o-blk-h">What else was considered</h3>
+            <ul style="list-style:none;display:grid;gap:var(--theme-spacing-xs)">
+              <li class="o-row"><div class="o-top"><span class="o-name" style="font-weight:500">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="o-figs">Uw 3.72 &middot; SHGC 0.41</span></div><div class="o-verd">met the caps</div></li>
+              <li class="o-row"><div class="o-top"><span class="o-name">AMJ67T Awning</span><span class="o-figs">Uw 3.41 &middot; SHGC 0.39</span></div><div class="o-verd">met the caps</div></li>
+              <li class="o-row"><div class="o-top"><span class="o-name">AMJ45 Sliding Window</span><span class="o-figs">Uw 3.88 &middot; SHGC 0.43</span></div><div class="o-verd">met the caps</div></li>
+              <li class="o-row"><div class="o-top"><span class="o-name">AMJ50 Awning</span><span class="o-figs">Uw 4.10 &middot; SHGC 0.52</span></div><div class="o-verd">missed both caps</div></li>
+            </ul>
+            <p class="wd__reason">The chosen product and the next four by rank. No price, nothing to price, and nothing here changes the line.</p>
+          </div>
+          <p class="wd__reason">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+        </div>
+      </div>
+      <p class="ann">Four facts, one surface, no boundaries. And there is nowhere for a price to go: the first line
+      of each row is already full, so an amount would push the product name into truncation at the exact width most
+      of this console is read at.</p>
+    </div>
+
+    <div class="half">
+      <div class="cap"><span class="ruling">AFTER</span> cards, and one card holding the list</div>
+      <div class="slab" style="padding:0">
+        <div class="wd">
+          <section class="lp-panel">
+            <h3 class="lp-panel__title">What it had to meet</h3>
+            <dl class="lp-panel__lines">
+              <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+              <div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+            </dl>
+          </section>
+          <section class="lp-panel lp-panel--rows">
+            <h3 class="lp-panel__title">What else was considered</h3>
+            <ul class="ops2-rows">
+              <li class="wd__row wd__row--chosen">
+                <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
+                <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
+              </li>
+              <li class="wd__row">
+                <span class="wd__row-name">AMJ67T Awning</span>
+                <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
+                <span class="wd__row-delta">+$65</span>
+              </li>
+              <li class="wd__row">
+                <span class="wd__row-name">AMJ45 Sliding Window</span>
+                <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span>
+                <span class="wd__row-delta">+$50</span>
+              </li>
+              <li class="wd__row">
+                <span class="wd__row-name">AMJ50 Awning</span>
+                <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
+                <span class="wd__row-delta">&minus;$30</span>
+              </li>
+            </ul>
+            <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+          </section>
+          <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+        </div>
+      </div>
+      <p class="ann"><b>Each fact has an edge.</b> The requirement is a card; the ladder is a card; a reader looking
+      for the ladder skips one object rather than reading three paragraphs. The ground behind them is the page colour
+      the line page and the drawing viewer already use, so a card looks like a card.</p>
+      <p class="ann"><b>The rows reach the card’s edge</b> and the hairline runs the full width &mdash; the rule the
+      line page unit list already carries, reused rather than re-typed. <span class="ruling">REUSE</span></p>
+      <p class="ann"><b>The chosen row is tinted, not badged.</b> The brand wash is the console’s existing
+      &ldquo;this is the one&rdquo; treatment on a row (<code>rows.css</code>); it costs no new colour and no new
+      state, and the words <em>&middot; chosen</em> still carry it for a reader who cannot see the tint.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sect">
+  <h2>B &middot; Desk &mdash; the populated ladder, and the answer it now gives</h2>
+  <p class="note">The estimator question, answered by looking: the two products that were <em>cheaper</em> than the
+  pick both failed on thermal, and the two that met the caps both cost more. That is the whole story, and it is
+  readable in one downward scan of the right-hand column. Above 1024px the detail is the desk’s right-hand slide-out
+  &mdash; 520px, arriving from the right, over the ink at 80% behind a 3px blur &mdash; exactly as it ships.</p>
+
+  <div class="grid">
+    <div class="desk">
+      <div class="cap">B1 &middot; Desk &mdash; machine-recommended, everything priced</div>
+      <div class="screen stage" style="min-height:610px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-2214</span><span class="ops-title">W03 &middot; Awning 1200 &times; 900</span></div>
+        <div class="lp-body">
+          <section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+            <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ67 Awning</dd></div><div><dt>Glazing</dt><dd>Clear 6.38</dd></div></dl></section>
+          <section class="lp-panel lp-panel--door"><h2 class="lp-panel__title">Why this product</h2>
+            <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <dl class="lp-panel__lines"><div><dt>Had to meet</dt><dd><span class="lp-why__fig">Uw &le; 3.90 &middot; SHGC &le; 0.44</span></dd></div></dl></section>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd">
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines">
+                  <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                  <div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                </dl>
+              </section>
+              <section class="lp-panel lp-panel--rows">
+                <h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen">
+                    <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ67T Awning</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta">+$65</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ45 Sliding Window</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta">+$50</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ50 Awning</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
+                    <span class="wd__row-delta">&minus;$30</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ40 Fixed</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span>
+                    <span class="wd__row-delta">&minus;$50</span>
+                  </li>
+                </ul>
+                <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+              </section>
+              <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b>The answer, in one scan.</b> <em>+$65</em> and <em>+$50</em> against products that met the
+      caps; <em>&minus;$30</em> and <em>&minus;$50</em> against products that did not. The platform paid $50 for the
+      cheapest option that actually met the requirement &mdash; the sentence the estimator came here to be able to
+      write.</p>
+      <p class="ann"><b>Right-aligned, tabular, one column.</b> Amounts that shift left and right with the length of
+      the product name beside them get read five times instead of once. <span class="ruling">D5 &middot; AC19</span></p>
+    </div>
+
+    <div class="desk">
+      <div class="cap">B2 &middot; Desk &mdash; a person changed the line <em>(R11, shipped &mdash; the amounts are still measured from the platform’s pick)</em></div>
+      <div class="screen stage" style="min-height:700px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-2214</span><span class="ops-title">W07 &middot; Awning 1800 &times; 1200</span></div>
+        <div class="lp-body">
+          <section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+            <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ45 Sliding Window</dd></div><div><dt>Glazing</dt><dd>LowE 6.38</dd></div></dl></section>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W07</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd">
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines">
+                  <div><dt>Uw</dt><dd><span class="wd__fig">&le; 4.20</span><span class="wd__origin">modelled by the platform from the plan</span></dd></div>
+                  <div><dt>SHGC</dt><dd><span class="wd__fig">0.35&ndash;0.55</span><span class="wd__origin">modelled by the platform from the plan</span></dd></div>
+                </dl>
+              </section>
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">The platform’s pick, and this line’s</h3>
+                <div class="wd__cmp">
+                  <div class="wd__card">
+                    <div class="wd__who">Platform recommended</div>
+                    <div class="wd__what">AMJ67 Awning</div>
+                    <div class="wd__fig">Uw 3.72 &middot; SHGC 0.41</div>
+                    <div class="wd__verd">met the caps</div>
+                  </div>
+                  <div class="wd__card wd__card--current">
+                    <div class="wd__who">On this line now</div>
+                    <div class="wd__what">AMJ45 Sliding Window</div>
+                    <div class="wd__fig">Uw 4.35 &middot; SHGC 0.38</div>
+                    <div class="wd__verd wd__verd--warn">missed the Uw cap</div>
+                  </div>
+                </div>
+              </section>
+              <section class="lp-panel lp-panel--rows">
+                <h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen">
+                    <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; the platform’s pick</span></span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ45 Sliding Window</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.38</span><span class="wd__row-verdict">missed the Uw cap</span></span>
+                    <span class="wd__row-delta">&minus;$120</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ70 Awning</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.55 &middot; SHGC 0.44</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta">+$210</span>
+                  </li>
+                </ul>
+                <p class="lp-panel__more">Three candidates were recorded for this opening &mdash; the list is what exists, with nothing padded and no remainder counted. Each amount is that product’s difference from the chosen one.</p>
+              </section>
+              <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b>The comparison is now one card with two sides</b>, not two bordered boxes inside a third. A
+      card inside a card is a card too many &mdash; the architect’s own ruling on the unit list. The brand wash still
+      says which side is the line’s, and the labels still say it in words.</p>
+      <p class="ann"><b>The amounts do not re-base.</b> The row marked <em>&middot; the platform’s pick</em> is the
+      baseline even though a person has since moved the line &mdash; so <em>&minus;$120</em> reads &ldquo;$120 cheaper
+      than what the platform picked&rdquo;, which is what the record actually holds. <span class="ruling">R11</span></p>
+      <p class="ann"><b>Short ladder, short note.</b> Three rows get the existing &ldquo;what exists&rdquo; sentence
+      with the same clause appended, so an amount is never on screen without a sentence saying what it is measured
+      from.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sect">
+  <h2>C &middot; The cells that are not amounts</h2>
+  <p class="note">Four of the five states in one ladder, and the state that has no amounts at all. The point of both
+  frames is that no cell can be mistaken for another: a recorded tie, an uncalculable delta and the baseline row all
+  look like exactly what they are.</p>
+
+  <div class="grid">
+    <div class="desk">
+      <div class="cap">C1 &middot; Desk &mdash; one unpriced candidate, one true tie, a split, and a 36-character name</div>
+      <div class="screen stage" style="min-height:560px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-2301</span><span class="ops-title">W12 &middot; Sliding door 2400 &times; 2100</span></div>
+        <div class="lp-body"><section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+          <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ90 Sliding Door</dd></div></dl></section></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W12</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd">
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines">
+                  <div><dt>Uw</dt><dd><span class="wd__fig">&le; 4.60</span><span class="wd__origin">a default value the platform applies</span></dd></div>
+                </dl>
+              </section>
+              <section class="lp-panel lp-panel--rows">
+                <h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen">
+                    <span class="wd__row-name">AMJ90 Sliding Door<span class="wd__row-mark"> &middot; chosen</span></span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ90 Sliding Door Thermally Broken</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.60 &middot; SHGC 0.52</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta">+$1,840</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ88 Stacker</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta">$0</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">Split: sliding + fixed</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">2 units</span><span class="wd__row-verdict">within the 5% band</span></span>
+                    <span class="wd__row-delta">+$95</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ92 Sliding Door</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.80 &middot; SHGC 0.58</span><span class="wd__row-verdict">missed the Uw cap</span></span>
+                    <span class="wd__row-delta wd__row-delta--absent">$---</span>
+                  </li>
+                </ul>
+                <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+              </section>
+              <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b><code>$0</code> and <code>$---</code> are never the same object.</b> <code>$0</code> is a
+      recorded fact &mdash; two products at the same total &mdash; and wears the amount’s ink and weight.
+      <code>$---</code> is the absence of a fact and is muted and regular. Neither is italic: italic dashes read as
+      damage.</p>
+      <p class="ann"><b>The 36-character name wraps and the column does not move.</b> The name owns the first column
+      alone and is free to run to two lines; the amount stays where the eye left it. <span class="ruling">AC19</span></p>
+      <p class="ann"><b>A split carries an amount like anything else</b> &mdash; its figures cell still says
+      <em>2 units</em>, because a make-up has no single assembly figure and nothing is invented for it.</p>
+    </div>
+
+    <div class="desk">
+      <div class="cap">C2 &middot; Desk &mdash; a run recorded before price was carried on the candidate contract <em>(AC6)</em></div>
+      <div class="screen stage" style="min-height:470px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-1902</span><span class="ops-title">W01 &middot; Awning 900 &times; 600</span></div>
+        <div class="lp-body"><section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+          <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ67 Awning</dd></div></dl></section></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W01</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd">
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines">
+                  <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                </dl>
+              </section>
+              <section class="lp-panel lp-panel--rows">
+                <h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen">
+                    <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ67T Awning</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
+                    <span class="wd__row-delta wd__row-delta--absent">$---</span>
+                  </li>
+                  <li class="wd__row">
+                    <span class="wd__row-name">AMJ50 Awning</span>
+                    <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
+                    <span class="wd__row-delta wd__row-delta--absent">$---</span>
+                  </li>
+                </ul>
+                <p class="lp-panel__more">Three candidates were recorded for this opening &mdash; the list is what exists, with nothing padded and no remainder counted. Each amount is that product’s difference from the chosen one.</p>
+              </section>
+              <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b>No banner, no apology, no empty panel.</b> An old record simply has no amounts to show, and
+      <code>$---</code> already says so per row. A &ldquo;price unavailable for older runs&rdquo; notice would be a
+      second sentence about the same absence &mdash; and would put a date-shaped hedge on a screen banned from
+      carrying one (<span class="ruling">AC8</span>).</p>
+    </div>
+  </div>
+</div>
+
+<div class="sect">
+  <h2>D &middot; Tablet, 834px &mdash; the slide-out, fixed</h2>
+  <p class="note">Your second rejection, and it is a real defect that predates this feature. <code>WhyDetail</code>
+  asks <code>SidePanel</code> for its <code>screen</code> form; <code>projects.css</code> has sizing rules for the
+  <code>--side</code> form and <b>none at all</b> for the plain one, so between phone width and the 1024px rail change
+  point it falls through to the stock Ionic modal &mdash; a centred, rounded, inset card floating on a backdrop. The
+  component own comment claims &ldquo;full screen with no breakpoints&rdquo;; the behaviour disagrees, and the
+  behaviour is wrong. <b>The fix belongs in the <code>SidePanel</code> stylesheet</b>, so every caller of the
+  full-screen form is fixed at once and this feature re-implements no panel.</p>
+
+  <div class="grid">
+    <div class="tablet">
+      <div class="cap"><span class="ruling tag-bad">TODAY &mdash; DEFECT</span> 834px &middot; stock centred modal</div>
+      <div class="screen stage narrow" style="height:560px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-2214</span><span class="ops-title">W03 &middot; Awning 1200 &times; 900</span></div>
+        <div class="lp-body"><section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+          <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ67 Awning</dd></div><div><dt>Glazing</dt><dd>Clear 6.38</dd></div></dl></section></div>
+        <div class="scrim"></div>
+        <div class="sheet sheet--stock">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd">
+              <section class="lp-panel"><h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines"><div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span></dd></div><div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span></dd></div></dl></section>
+              <section class="lp-panel lp-panel--rows"><h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                  <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann">A dialog that happens to be near the middle. It is not the console’s slide-out, it is not a screen,
+      and the back control in its bar promises a navigation this shape does not perform.</p>
+    </div>
+
+    <div class="tablet">
+      <div class="cap"><span class="ruling">AFTER</span> 834px &middot; the same full-bleed screen the phone gets</div>
+      <div class="screen stage narrow" style="height:560px">
+        <div class="ops-top"><span class="ops-back">&#8592; QT-2214</span><span class="ops-title">W03 &middot; Awning 1200 &times; 900</span></div>
+        <div class="lp-body"><section class="lp-panel"><h2 class="lp-panel__title">Specification</h2>
+          <dl class="lp-panel__lines"><div><dt>Product</dt><dd>AMJ67 Awning</dd></div></dl></section></div>
+        <div class="sheet sheet--screen">
+          <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
+          <div class="sheet__body">
+            <div class="wd" style="max-width:72ch">
+              <section class="lp-panel">
+                <h3 class="lp-panel__title">What it had to meet</h3>
+                <dl class="lp-panel__lines">
+                  <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                  <div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                </dl>
+              </section>
+              <section class="lp-panel lp-panel--rows">
+                <h3 class="lp-panel__title">What else was considered</h3>
+                <ul class="ops2-rows">
+                  <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                  <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                  <li class="wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
+                  <li class="wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
+                  <li class="wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
+                </ul>
+                <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+              </section>
+              <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b>A screen, not an overlay.</b> Edge to edge, no scrim behind it, no rounded corner floating on
+      the page, and it arrives from the right exactly as it does at every other width. The measure stays at the
+      console’s own <code>72ch</code>, so the cards do not stretch into an 800px-wide line of text.</p>
+      <p class="ann"><b>Above 1024px nothing changes</b> &mdash; the desk keeps its 520px right-hand slide-out (frames
+      B). This fix only replaces the stock modal that was appearing below the change point.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sect">
+  <h2>E &middot; Phone, 375px &mdash; full screen, and the column still holds</h2>
+  <p class="note">Half this console’s use is on a phone. The cards keep their edges, the rows keep their two columns,
+  and the amount never gives way to the product name.</p>
+
+  <div class="grid">
+    <div class="phone">
+      <div class="cap">E1 &middot; 375px &mdash; populated</div>
+      <div class="screen" style="height:600px;display:flex;flex-direction:column">
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W03</button><h3>Why this product</h3></div>
+        <div class="sheet__body">
+          <div class="wd">
+            <section class="lp-panel">
+              <h3 class="lp-panel__title">What it had to meet</h3>
+              <dl class="lp-panel__lines">
+                <div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+                <div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span><span class="wd__origin">parsed from an energy report</span></dd></div>
+              </dl>
+            </section>
+            <section class="lp-panel lp-panel--rows">
+              <h3 class="lp-panel__title">What else was considered</h3>
+              <ul class="ops2-rows">
+                <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
+              </ul>
+              <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+            </section>
+            <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+          </div>
+        </div>
+      </div>
+      <p class="ann">Five amounts, one right edge, at the width this is most often read at.</p>
+    </div>
+
+    <div class="phone">
+      <div class="cap">E2 &middot; 375px &mdash; long names, a tie, an unpriced candidate</div>
+      <div class="screen" style="height:600px;display:flex;flex-direction:column">
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W12</button><h3>Why this product</h3></div>
+        <div class="sheet__body">
+          <div class="wd">
+            <section class="lp-panel lp-panel--rows">
+              <h3 class="lp-panel__title">What else was considered</h3>
+              <ul class="ops2-rows">
+                <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ90 Sliding Door<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ90 Sliding Door Thermally Broken</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.60 &middot; SHGC 0.52</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$1,840</span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ88 Stacker</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">$0</span></li>
+                <li class="wd__row"><span class="wd__row-name">Split: sliding + fixed</span><span class="wd__row-meta"><span class="wd__row-figs">2 units</span><span class="wd__row-verdict">within the 5% band</span></span><span class="wd__row-delta">+$95</span></li>
+                <li class="wd__row"><span class="wd__row-name">AMJ92 Sliding Door</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.80 &middot; SHGC 0.58</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta wd__row-delta--absent">$---</span></li>
+              </ul>
+              <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+      <p class="ann">The longest real product name wraps to two lines inside its own column; <code>+$1,840</code> stays
+      on the right edge with the rest. Nothing truncates, nothing overlaps. <span class="ruling">AC19</span></p>
+    </div>
+
+    <div class="phone">
+      <div class="cap">E3 &middot; 375px &mdash; a line with no recorded run <em>(same cards, absences named)</em></div>
+      <div class="screen" style="height:440px;display:flex;flex-direction:column">
+        <div class="sheet__bar"><button class="sheet__back"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>W05</button><h3>Why this product</h3></div>
+        <div class="sheet__body">
+          <div class="wd">
+            <p class="wd__reason" style="padding-inline:var(--theme-spacing-xs)">A person selected this product for this line.</p>
+            <section class="lp-panel">
+              <h3 class="lp-panel__title">What it had to meet</h3>
+              <p class="wd__reason ops2-absent">Not recorded for this line.</p>
+            </section>
+            <section class="lp-panel">
+              <h3 class="lp-panel__title">This line’s figures</h3>
+              <p class="wd__fig" style="font-size:var(--theme-font-size-sm)">Uw 3.72 &middot; SHGC 0.41</p>
+            </section>
+            <section class="lp-panel">
+              <h3 class="lp-panel__title">What else was considered</h3>
+              <p class="wd__reason ops2-absent">No alternatives were recorded for this line.</p>
+            </section>
+            <p class="wd__reason wd__closing">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
+          </div>
+        </div>
+      </div>
+      <p class="ann"><b>The same cards on every kind.</b> A screen whose shape changes has to be read before its
+      content can be &mdash; so a card that has nothing to show says so, and never disappears. No amounts exist here
+      at all, because no candidates do.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sect">
+  <h2>F &middot; Every state the amount cell has, and the card that is not changing</h2>
+
+  <div class="grid">
+    <div style="width:640px;flex:none">
+      <div class="cap">F1 &middot; The amount cell &mdash; five states, one rule each</div>
+      <div class="slab" style="padding:0;overflow:hidden">
+        <table class="states">
+          <thead><tr><th>Cell</th><th>When</th><th>Treatment</th></tr></thead>
+          <tbody>
+            <tr><td><span class="cell">+$65</span></td><td>dearer than the chosen product (<code>&gt; 0</code>)</td><td>ink, semibold, tabular, explicit <code>+</code></td></tr>
+            <tr><td><span class="cell">&minus;$200</span></td><td>cheaper (<code>&lt; 0</code>)</td><td>identical treatment &mdash; never green, never a chip</td></tr>
+            <tr><td><span class="cell">$0</span></td><td>a recorded tie (<code>=== 0</code>, runner-up)</td><td>identical treatment, unsigned</td></tr>
+            <tr><td><span class="cell cell--absent">$---</span></td><td><code>null</code>, or a record predating price</td><td>muted, regular weight, not italic</td></tr>
+            <tr><td><em style="color:var(--ds-text-muted)">nothing</em></td><td>the chosen row</td><td>no element at all &mdash; no placeholder, no reserved space</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="ann"><b>Read aloud, the sign disappears.</b> Most screen readers announce &ldquo;+$65&rdquo; as
+      &ldquo;sixty-five dollars&rdquo;, losing the direction that is the whole point. Each amount therefore carries a
+      spoken label the eye never sees: <em>&ldquo;$65 dearer than the chosen product&rdquo;</em>,
+      <em>&ldquo;$200 cheaper than the chosen product&rdquo;</em>,
+      <em>&ldquo;the same price as the chosen product&rdquo;</em>,
+      <em>&ldquo;no price difference was recorded&rdquo;</em>.</p>
+    </div>
+
+    <div class="half">
+      <div class="cap">F2 &middot; The summary card behind the door &mdash; <em>unchanged</em></div>
+      <div class="slab" style="background:var(--ds-surface-page)">
+        <section class="lp-panel lp-panel--door">
+          <h2 class="lp-panel__title">Why this product</h2>
+          <svg class="lp-panel__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <dl class="lp-panel__lines">
+            <div><dt>Had to meet</dt><dd><span class="lp-why__fig">Uw &le; 3.90 &middot; SHGC &le; 0.44</span><span class="lp-why__origin">parsed from an energy report</span></dd></div>
+            <div><dt>This one</dt><dd><span class="lp-why__fig">Uw 3.72 &middot; SHGC 0.41</span></dd></div>
+            <div><dt>Chosen</dt><dd>the cheapest that met the caps</dd></div>
+          </dl>
+        </section>
+      </div>
+      <p class="ann"><b>No amount on the card.</b> Its whole budget is three lines and each answers <em>what</em>; the
+      amounts answer <em>why the others lost</em>, which is a five-row comparison and belongs with the five rows. A
+      single amount here would have nothing visible to be a difference from. Say the word at approval and it becomes a
+      fourth line &mdash; that is the one open question on this mock.</p>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

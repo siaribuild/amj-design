@@ -1,0 +1,38 @@
+{
+  "slug": "ops2-why-price-deltas",
+  "tier": "full",
+  "base": "9cb41bfd",
+  "branch": "feat/ops2-why-price-deltas",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 118204,
+      "outputTokens": 4267,
+      "turns": 3,
+      "source": "transcript",
+      "session": "dabc20e6-4c0a-41c4-a6d1-85996332953c",
+      "seconds": 67
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1199165,
+      "outputTokens": 25701,
+      "turns": 19,
+      "source": "transcript",
+      "session": "ef4dd9bb-80d7-4a8c-96c7-d4e65b5de848",
+      "seconds": 495
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 1681018,
+      "outputTokens": 61022,
+      "turns": 19,
+      "source": "transcript",
+      "session": "5bd5f6c5-a30a-4904-9536-4047b1463780",
+      "seconds": 774
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-09-03T16:16:51.275Z"
+}
