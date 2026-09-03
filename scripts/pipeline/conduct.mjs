@@ -950,7 +950,7 @@ export function checkSpec(text) {
   // The contiguity check belongs ONLY to the numbered convention. AC-1 / L-S1
   // carry their own sequences and must never be measured against 1..n.
   const nums = [...(text || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => Number(m[1]))
-  if (nums.length > 1) {
+  if (nums.length) {
     const missing = []
     for (let i = 1; i < Math.max(...nums); i++) if (!nums.includes(i)) missing.push(i)
     if (missing.length)

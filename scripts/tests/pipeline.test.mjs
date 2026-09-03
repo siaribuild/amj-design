@@ -2688,3 +2688,21 @@ test('checkSpec reads the criterion shapes this repo actually writes', () => {
   assert.ok(checkSpec('## Problem' + NL + 'prose only, no criteria at all')
     .some((w) => /no Given/i.test(w)), 'a spec with no criteria at all must still be reported')
 })
+
+test('a lone numbered criterion still reports the ones missing before it', () => {
+  // Codex stop-gate finding: guarding the contiguity check with `nums.length > 1`
+  // was meant to keep the AC-<n> convention out of it - but AC headings never
+  // match the numbered pattern in the first place, so the guard bought nothing
+  // and silenced the sharpest case it had. A spec whose only numbered criterion
+  // is "2." has lost criterion 1 outright, which is exactly what this catches.
+  const lost = ['2. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.ok(checkSpec(lost).some((w) => /skip number 1\b/.test(w)),
+    'a single criterion numbered 2 means criterion 1 was lost: ' + checkSpec(lost))
+
+  // And one correctly numbered criterion is not a gap.
+  const fine = ['1. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
+    'a spec with exactly one criterion, correctly numbered, is not a gap')
+})
