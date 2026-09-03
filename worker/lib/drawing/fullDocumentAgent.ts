@@ -36,6 +36,8 @@ const MAX_TEXT_PAGES = 4;
 const MAX_TOTAL_RENDERS = 60;
 const MAX_ACTIVE_IMAGES = 8;
 const MAX_CLOSE_UP_BATCH = 4;
+const MIN_MAIN_PROVIDER_CALLS = 6;
+const MAX_SHARED_CLOSE_UP_RETRIES = 2;
 const MAX_ACTIVE_IMAGE_B64_CHARS = 12 * 1024 * 1024;
 const MAX_TAG_CANDIDATES_PER_TAG = 4;
 const MAX_HARVEST_TEXT_CHARS = 48_000;
@@ -889,8 +891,12 @@ export async function runFullDocumentAgent(args: {
   };
   const pageByNo = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
   const rowByTag = new Map(scheduleRows.map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row]));
-  const closeUpCallReserve = Math.ceil(scheduleRows.length / MAX_CLOSE_UP_BATCH) * 2;
-  const mainProviderCallLimit = Math.max(1, MAX_PROVIDER_CALLS - closeUpCallReserve);
+  const closeUpBatchCount = Math.ceil(scheduleRows.length / MAX_CLOSE_UP_BATCH);
+  const mainProviderCallLimit = Math.max(
+    MIN_MAIN_PROVIDER_CALLS,
+    MAX_PROVIDER_CALLS - closeUpBatchCount - MAX_SHARED_CLOSE_UP_RETRIES,
+  );
+  const providerCallLimit = mainProviderCallLimit + closeUpBatchCount + MAX_SHARED_CLOSE_UP_RETRIES;
   const proposals = new Map<string, FullAgentProposal>();
   const declines = new Map<string, FullAgentDecline>();
   const attempts = new Map<string, number>();
@@ -1108,7 +1114,7 @@ export async function runFullDocumentAgent(args: {
           : error.failureKind === "transient_provider" ? 5_000
             : null
         : 5_000;
-      if (retryDelayMs != null && !providerRetryUsed && report.modelCalls < MAX_PROVIDER_CALLS) {
+      if (retryDelayMs != null && !providerRetryUsed && report.modelCalls < mainProviderCallLimit) {
         providerRetryUsed = true;
         await (deps.waitBeforeRetry?.(retryDelayMs) ?? new Promise((resolve) => setTimeout(resolve, retryDelayMs)));
         turn--;
@@ -1378,7 +1384,8 @@ export async function runFullDocumentAgent(args: {
   ]);
   await deps.onProgress?.(verificationProcessed.size, scheduleRows.length, "opening_read");
   let reviewIndex = 0;
-  while (reviewIndex < reviewCandidates.length && report.modelCalls < MAX_PROVIDER_CALLS) {
+  let closeUpRetriesUsed = 0;
+  while (reviewIndex < reviewCandidates.length && report.modelCalls < providerCallLimit) {
     const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
     let reviewChars = 0;
     while (reviewIndex < reviewCandidates.length && reviews.length < MAX_CLOSE_UP_BATCH) {
@@ -1436,7 +1443,13 @@ export async function runFullDocumentAgent(args: {
         escalationRecords: reviews.map(({ candidate }) => candidate.proposal),
       };
       let action: FullDocumentTurn | null = null;
-      for (let attempt = 0; attempt < 2 && report.modelCalls < MAX_PROVIDER_CALLS; attempt++) {
+      for (let attempt = 0; attempt < 2 && report.modelCalls < providerCallLimit; attempt++) {
+        const remainingBatches = Math.ceil((reviewCandidates.length - reviewIndex) / MAX_CLOSE_UP_BATCH);
+        if (attempt === 1) {
+          if (closeUpRetriesUsed >= MAX_SHARED_CLOSE_UP_RETRIES
+            || report.modelCalls + remainingBatches >= providerCallLimit) break;
+          closeUpRetriesUsed++;
+        }
         const input: FullDocumentAgentInput = attempt === 0 ? reviewInput : {
           ...reviewInput,
           turn: 2,
@@ -1582,7 +1595,9 @@ export async function runFullDocumentAgent(args: {
 
 export const FULL_DOCUMENT_AGENT_LIMITS = {
   maxTurns: MAX_TURNS,
-  maxProviderCalls: MAX_PROVIDER_CALLS,
+  maxProviderCalls: MIN_MAIN_PROVIDER_CALLS
+    + Math.ceil(MAX_RECORDS / MAX_CLOSE_UP_BATCH)
+    + MAX_SHARED_CLOSE_UP_RETRIES,
   maxEscalations: MAX_ESCALATIONS,
   maxRecords: MAX_RECORDS,
   maxRenderRequests: MAX_RENDER_REQUESTS,
