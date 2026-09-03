@@ -2706,3 +2706,26 @@ test('a lone numbered criterion still reports the ones missing before it', () =>
   assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
     'a spec with exactly one criterion, correctly numbered, is not a gap')
 })
+
+test('a reviewer that exits 0 without a report is a gate that never ran', () => {
+  // The defect this whole branch exists to close, and the one nothing was
+  // asserting: reviewers boot read-only (--permission-mode plan) and are told
+  // to WRITE their report, which plan mode forbids. Each exited 0 having
+  // produced nothing, `review` was stamped code: 0 on that silence, and
+  // `accept` read the absent 07-review-*.md as "no findings". Every feature
+  // before this was gated by Codex alone without anyone being told.
+  //
+  // The gate's own comment says it was patched four times, each patch fixing
+  // one route to a false pass and opening another. That is the shape of a bug
+  // no test was watching.
+  const s = reviewRepo('review-no-report', { HERDR_STUB_STATES: 'idle;idle' })
+
+  const out = paned(s, 'run', 'review')
+
+  const st = runJson(s).stages
+  assert.equal('review' in st, false,
+    'the review rollup must be ABSENT when a reviewer produced no report - ' +
+    'a present code:0 here is the gate passing on silence: ' + JSON.stringify(st.review))
+  assert.match(out, /produced NO REPORT/,
+    'a reviewer that wrote nothing must say so, not exit quietly: ' + out)
+})
