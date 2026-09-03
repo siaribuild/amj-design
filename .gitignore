@@ -64,6 +64,7 @@ sanity/backups/
 # history). A guard one deletion away from failing is not a guard.
 containers/**/out/
 **/plan-parse/out/
+/tmp/
 
 # pipeline v2 raw stage transcripts (large, reproducible)
 docs/runs/*/logs/
