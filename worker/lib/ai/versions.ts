@@ -42,7 +42,9 @@ import type { Env } from "../../types";
 // bounded per-batch correction and stable provider diagnostics. The same plan
 // can produce materially different readings, so older stage archives must not
 // replay into this pipeline.
-export const PIPELINE_VERSION = "2026-09-03.1";
+// 2026-09-04.1: provider-call budgeting scales mandatory close-up capacity with
+// the opening count while preserving discovery turns for larger schedules.
+export const PIPELINE_VERSION = "2026-09-04.1";
 // 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
 // additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";
