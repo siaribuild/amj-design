@@ -322,6 +322,14 @@ export async function runSkill<I, O>(
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     warnings.push(`skill_call_error:${msg.slice(0, 200)}`);
     const failureKind = classifyProviderFailure(e);
+    if (opts?.telemetry) console.error({
+      event: "ai_model_call_error",
+      ...opts.telemetry,
+      skill: skill.id,
+      model,
+      failureKind,
+      error: msg.slice(0, 200),
+    });
     warnings.push(failureWarning(failureKind));
     return {
       ok: false, data: null, warnings, modelId: model, promptVersion: skill.promptVersion,
