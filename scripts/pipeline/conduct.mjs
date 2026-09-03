@@ -138,6 +138,19 @@ export function parseSeverity(args) {
 // Dollars are not the measure either: the owner is on a subscription, so this
 // conductor prints tokens and time and never a currency figure.
 
+// The architect writes 02-tasks.json as a bare array — the shape the stage
+// prompt shows and the shape both readers below iterate. It has twice written
+// `{ feature, design, tasks: [...] }` instead, which is a reasonable-looking
+// file that made `conduct plan` throw "tasks is not iterable" and would have
+// made the build die at the gate. Read it in one place, accept either, and the
+// two readers stop caring which the model felt like producing.
+function readTasks(file) {
+  const raw = JSON.parse(readFileSync(file, 'utf8'))
+  const tasks = Array.isArray(raw) ? raw : raw?.tasks
+  if (!Array.isArray(tasks)) throw new Error(file + ': no task array (expected [...] or { tasks: [...] })')
+  return tasks
+}
+
 const STAGES = [
   {
     id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
@@ -985,11 +998,12 @@ export function checkPlan(tasks, design, spec) {
 }
 
 async function runBuild(run, spec, panes) {
+
   const tp = join(RUNS, run.slug, '02-tasks.json')
   // The fix tier collapses spec and design to nothing, so nobody sliced this
   // build: the ask IS the task, and it is ONE developer session. Still
   // test-first - Probity does not care which tier a change was sized at.
-  const tasks = existsSync(tp) ? JSON.parse(readFileSync(tp, 'utf8'))
+  const tasks = existsSync(tp) ? readTasks(tp)
     : run.tier === 'fix'
       ? [{
           id: 't1',
@@ -1718,7 +1732,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tp = join(RUNS, run.slug, '02-tasks.json')
     if (existsSync(tp)) {
-      const tasks = JSON.parse(readFileSync(tp, 'utf8'))
+      const tasks = readTasks(tp)
       const done = new Set(run.tasksDone || [])
       console.log('\n  BUILD TASKS')
       for (const t of tasks) {

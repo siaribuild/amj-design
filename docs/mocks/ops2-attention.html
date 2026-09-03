@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops2 Attention — the console's gate</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS — copied verbatim from src/ops2/theme/*.css and src/ops2/styles/tokens.css.
+   Nothing below invents a colour, a radius or a step.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-200:#cddfd4;
+  --theme-sage-400:#7dab8e; --theme-sage-500:#5a7a6a; --theme-sage-600:#4a6858;
+  --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+  --theme-neutral-150:#edecea; --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb;
+  --theme-neutral-400:#b5b2ab; --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+  --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+  --theme-positive-500:#2c7a54;
+  --theme-warning-500:#8a6a2a; --theme-warning-50:#fdf9f0; --theme-warning-700:#624410;
+  --theme-attention-50:#fdf4f3; --theme-attention-200:#f5c7c2; --theme-attention-500:#c0392b;
+  --theme-attention-700:#82261d;
+  --theme-info-500:#4c6a88;
+
+  --ds-color-brand:var(--theme-sage-500); --ds-color-brand-wash:var(--theme-sage-50);
+  --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+  --ds-text-muted:var(--theme-neutral-500); --ds-text-inverse:var(--theme-neutral-0);
+  --ds-text-link:var(--theme-sage-600);
+  --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+  --ds-surface-sunken:var(--theme-neutral-100); --ds-surface-brand:var(--theme-sage-500);
+  --ds-surface-darker:var(--theme-ink-900);
+  --ds-border-subtle:var(--theme-neutral-200); --ds-border-default:var(--theme-neutral-300);
+  --ds-border-focus:var(--theme-sage-500);
+  --ds-color-warning:var(--theme-warning-500);
+  --ds-color-error:var(--theme-attention-500); --ds-color-error-subtle:var(--theme-attention-50);
+  --ds-color-info:var(--theme-info-500);
+  --ds-layer-raised:0 1px 3px rgba(42,40,38,.06), 0 1px 2px rgba(42,40,38,.04);
+  --ds-radius-surface:5px; --ds-radius-control:3px;
+
+  --theme-spacing-2xs:.125rem; --theme-spacing-xs:.25rem; --theme-spacing-sm:.5rem;
+  --theme-spacing-md:.75rem; --theme-spacing-lg:1rem; --theme-spacing-xl:1.5rem;
+  --theme-spacing-2xl:2rem;
+  --theme-font-display:'Space Grotesk','Inter',system-ui,sans-serif;
+  --theme-font-sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --theme-font-weight-regular:400; --theme-font-weight-medium:500;
+  --theme-font-weight-semibold:600; --theme-font-weight-bold:700;
+  --theme-font-size-xs:.75rem; --theme-font-size-sm:.8125rem; --theme-font-size-base:.9375rem;
+  --theme-font-size-md:1rem; --theme-font-size-lg:1.125rem; --theme-font-size-xl:1.3125rem;
+  --theme-font-size-2xl:1.625rem;
+  --theme-letter-spacing-tight:-.02em; --theme-letter-spacing-wide:.025em;
+  --theme-letter-spacing-wider:.05em;
+  --theme-line-height-snug:1.25; --theme-line-height-normal:1.5; --theme-line-height-none:1;
+}
+
+/* ── The mock page's own chrome. NOT product. ───────────────────────────── */
+*{box-sizing:border-box}
+body{margin:0;background:#e9e7e2;font-family:var(--theme-font-sans);color:var(--ds-text-primary)}
+.doc{max-width:1180px;margin:0 auto;padding:32px 20px 90px}
+.doc h1{font-family:var(--theme-font-display);font-size:1.5rem;margin:0 0 6px}
+.doc>p.lede{margin:0 0 8px;max-width:66ch;font-size:.875rem;color:#55524d;line-height:1.55}
+.sec{margin:44px 0 0;padding-top:22px;border-top:2px solid #cfccc6}
+.sec>h2{font-family:var(--theme-font-display);font-size:1.125rem;margin:0 0 4px}
+.sec>p.note{margin:0 0 18px;max-width:72ch;font-size:.8125rem;color:#55524d;line-height:1.55}
+.row-of-frames{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.frame{background:var(--ds-surface-page);border:1px solid #c4c1bb;border-radius:6px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.frame--phone{width:375px;flex:none}
+.frame--desk{width:100%;max-width:1080px}
+.cap{font-size:.6875rem;letter-spacing:.04em;text-transform:uppercase;color:#6a6660;margin:0 0 6px;font-weight:600}
+.cap em{text-transform:none;letter-spacing:0;font-style:normal;font-weight:400;color:#55524d}
+.stack{display:flex;flex-direction:column;gap:6px}
+.ann{max-width:34ch;font-size:.75rem;line-height:1.5;color:#55524d;margin:8px 0 0}
+.ann code{background:#fff;border:1px solid #d6d3cd;border-radius:3px;padding:0 3px;font-size:.6875rem}
+.sec>p.note code{background:#fff;border:1px solid #d6d3cd;border-radius:3px;padding:0 3px;font-size:.75rem}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRODUCT SURFACE — ops2's existing vocabulary.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ops2{font-family:var(--theme-font-sans);color:var(--ds-text-primary);font-size:var(--theme-font-size-base)}
+
+/* the page body — chrome/OpsPage.tsx + nav.css */
+.ops2-page__body{padding:var(--theme-spacing-lg);max-width:72ch}
+.ops2-page__band{margin:calc(-1 * var(--theme-spacing-lg)) calc(-1 * var(--theme-spacing-lg)) var(--theme-spacing-lg);
+  padding:var(--theme-spacing-lg) var(--theme-spacing-lg) 0;
+  background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.ops2-page__head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--theme-spacing-md);min-height:2.75rem}
+.ops2-page__title{margin:0 0 var(--theme-spacing-sm)}
+.ds-type-heading-lg{font-family:var(--theme-font-display);font-size:var(--theme-font-size-2xl);font-weight:var(--theme-font-weight-semibold);line-height:var(--theme-line-height-snug);letter-spacing:var(--theme-letter-spacing-tight)}
+.ds-type-heading-md{font-family:var(--theme-font-display);font-size:var(--theme-font-size-xl);font-weight:var(--theme-font-weight-semibold);line-height:var(--theme-line-height-snug)}
+.ds-type-body-md{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-base);font-weight:400;line-height:var(--theme-line-height-normal)}
+.ds-type-caption{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-xs);font-weight:400;line-height:var(--theme-line-height-normal)}
+.ds-type-label-md{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-xs);font-weight:500;line-height:1;letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase}
+.ds-surface-card{background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised)}
+
+/* the desk top bar — nav.css */
+.ops2-topbar{display:flex;align-items:center;min-height:56px;padding:0 var(--theme-spacing-md) 0 var(--theme-spacing-lg);
+  background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.ops2-topbar__title{margin:0;flex:1 1 auto;color:var(--ds-text-primary)}
+.ops2-bell{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:var(--ds-radius-control);
+  background:transparent;color:var(--ds-text-secondary);cursor:pointer}
+.ops2-account{display:flex;align-items:center;gap:var(--theme-spacing-sm);min-height:44px;padding:var(--theme-spacing-xs) var(--theme-spacing-sm);
+  border:0;border-radius:var(--ds-radius-control);background:transparent;text-align:start;font-family:var(--theme-font-sans);cursor:pointer}
+.ops2-account__avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:var(--ds-radius-surface);
+  background:var(--ds-surface-brand);color:var(--ds-text-inverse);font-size:var(--theme-font-size-xs);font-weight:600;letter-spacing:var(--theme-letter-spacing-wide)}
+.ops2-account__who{display:flex;flex-direction:column;gap:1px}
+.ops2-account__name{font-size:var(--theme-font-size-sm);font-weight:500}
+.ops2-account__role{font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.ops2-account--topbar{color:var(--ds-text-primary)}
+
+/* the rail — nav.css */
+.desk{display:grid;grid-template-columns:224px 1fr;min-height:560px}
+.ops2-nav{background:var(--ds-surface-darker);padding:var(--theme-spacing-lg) var(--theme-spacing-md);display:flex;flex-direction:column;gap:var(--theme-spacing-lg)}
+.ops2-wordmark{display:inline-flex;align-items:baseline;gap:var(--theme-spacing-xs);padding:0 var(--theme-spacing-sm)}
+.ops2-wordmark__name{font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;letter-spacing:var(--theme-letter-spacing-tight);color:var(--ds-text-inverse)}
+.ops2-wordmark__suffix{color:color-mix(in srgb,var(--ds-text-inverse) 52%,var(--ds-surface-darker))}
+.ops2-nav__sections{display:flex;flex-direction:column;gap:var(--theme-spacing-lg)}
+.ops2-nav__section-label{margin:0 0 var(--theme-spacing-xs);padding:0 var(--theme-spacing-sm);color:color-mix(in srgb,var(--ds-text-inverse) 46%,var(--ds-surface-darker))}
+.ops2-nav__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.ops2-nav__item{display:flex;align-items:center;gap:var(--theme-spacing-md);min-height:44px;padding:0 var(--theme-spacing-sm);
+  border-radius:var(--ds-radius-control);color:color-mix(in srgb,var(--ds-text-inverse) 82%,var(--ds-surface-darker));
+  font-size:var(--theme-font-size-base);text-decoration:none}
+.ops2-nav__item[aria-current="page"]{background:var(--ds-surface-brand);color:var(--ds-text-inverse);font-weight:500}
+.ops2-nav__icon{flex:none;width:18px;height:18px}
+.ops2-nav__foot{margin-top:auto;padding-top:var(--theme-spacing-md);border-top:1px solid color-mix(in srgb,var(--ds-text-inverse) 12%,var(--ds-surface-darker))}
+.ops2-account--rail{width:100%;color:var(--ds-text-inverse)}
+.ops2-account--rail .ops2-account__role{color:color-mix(in srgb,var(--ds-text-inverse) 58%,var(--ds-surface-darker))}
+.new-dest{outline:2px dashed #d4a03c;outline-offset:2px}
+
+/* the phone tab bar — nav.css */
+.ops2-tabbar{display:grid;grid-template-columns:repeat(4,1fr);background:var(--ds-surface-card);border-top:1px solid var(--ds-border-subtle)}
+.ops2-tab{position:relative;display:grid;justify-items:center;gap:2px;padding:8px 0 10px;color:var(--ds-text-muted);font-size:.625rem}
+.ops2-tab svg{width:22px;height:22px}
+.ops2-tab[aria-selected="true"]{color:var(--ds-text-primary);font-weight:500}
+.ops2-tab[aria-selected="true"]::before{content:"";position:absolute;inset-block-start:0;inset-inline:20%;height:2px;background:var(--ds-surface-brand)}
+
+/* the row and the list — chrome/RowList.tsx + styles/rows.css, unchanged */
+.ops2-rows{margin:0;padding:0;list-style:none;overflow:hidden}
+.ops2-row + .ops2-row{border-top:1px solid var(--ds-border-subtle)}
+.ops2-row__open{display:flex;align-items:center;gap:var(--theme-spacing-sm);width:100%;min-height:44px;
+  padding:var(--theme-spacing-sm) var(--theme-spacing-md);background:var(--ds-surface-card);border:0;text-align:left;
+  font:inherit;color:inherit;cursor:pointer}
+.ops2-row:hover > .ops2-row__open{background:var(--ds-color-brand-wash)}
+.ops2-row__chev{flex:none;width:16px;height:16px;color:var(--ds-text-muted)}
+.is-focus > .ops2-row__open{outline:2px solid var(--ds-border-focus);outline-offset:-2px}
+
+/* THE ONLY NEW STYLESHEET — src/ops2/styles/attention.css */
+.att-groups{display:flex;flex-direction:column;gap:var(--theme-spacing-xl)}
+.att-group__head{display:flex;align-items:center;gap:var(--theme-spacing-sm);margin:0 0 var(--theme-spacing-sm)}
+.att-group__head svg{flex:none;width:18px;height:18px;color:var(--ds-text-muted)}
+.att-group__head h2{margin:0;font-family:var(--theme-font-display);font-size:var(--theme-font-size-md);
+  font-weight:var(--theme-font-weight-semibold);color:var(--ds-text-primary)}
+.att-row{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);flex:1 1 auto;min-width:0}
+.att-row__count{flex:none;min-width:1.5ch;font-size:var(--theme-font-size-md);font-weight:var(--theme-font-weight-semibold);
+  font-variant-numeric:tabular-nums;color:var(--ds-text-primary)}
+.att-row__noun{min-width:0;font-size:var(--theme-font-size-base);color:var(--ds-text-primary);line-height:var(--theme-line-height-normal)}
+.att-rows .ops2-row__open{padding-block:var(--theme-spacing-md)}
+
+/* the shared state treatments — styles/projects.css, reused verbatim */
+.pq-empty,.pq-error{display:flex;flex-direction:column;align-items:flex-start;gap:var(--theme-spacing-xs);
+  padding:var(--theme-spacing-2xl) var(--theme-spacing-lg);background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface)}
+.pq-empty{align-items:center;text-align:center}
+.pq-error{flex-direction:row;align-items:center;padding:var(--theme-spacing-lg);
+  border-color:var(--theme-attention-200);background:var(--ds-color-error-subtle);gap:var(--theme-spacing-md)}
+.pq-error svg{flex:none;width:1.5rem;height:1.5rem;color:var(--ds-color-error)}
+.pq-error > div{flex:1 1 auto;display:flex;flex-direction:column;gap:var(--theme-spacing-2xs)}
+.pq-empty strong,.pq-error strong{font-size:var(--theme-font-size-base);font-weight:600}
+.pq-empty .ds-type-caption,.pq-error .ds-type-caption{color:var(--ds-text-secondary)}
+.ion-btn-outline{align-self:center;flex:none;padding:6px 12px;border:1px solid var(--ds-border-default);
+  border-radius:var(--ds-radius-control);background:transparent;color:var(--ds-text-primary);
+  font-family:inherit;font-size:var(--theme-font-size-sm);font-weight:500;cursor:pointer;white-space:nowrap}
+.pq-skeleton{display:flex;flex-direction:column;gap:var(--theme-spacing-sm);margin-top:0}
+.sk{display:block;border-radius:var(--ds-radius-surface);background:var(--theme-neutral-150);
+  animation:sk 1.6s ease-in-out infinite}
+@keyframes sk{0%,100%{opacity:.55}50%{opacity:1}}
+
+/* the projects queue, for the landing frame — styles/projects.css, unchanged */
+.pq-controls{display:flex;align-items:stretch;justify-content:space-between;gap:var(--theme-spacing-sm) var(--theme-spacing-lg);min-height:calc(2.75rem + 2px)}
+.pq-chips{display:flex;gap:var(--theme-spacing-lg);align-items:center}
+.pq-chip{position:relative;display:flex;align-items:center;gap:6px;border:0;background:transparent;padding:0 2px;
+  font-family:inherit;font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary);cursor:pointer;align-self:stretch}
+.pq-chip[aria-pressed="true"]{color:var(--ds-text-primary);font-weight:500}
+.pq-chip[aria-pressed="true"]::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ds-surface-brand)}
+.pq-chip b{font-variant-numeric:tabular-nums;font-weight:600}
+.pq-cards .ops2-row__open{padding-block:19px}
+.pq-card{display:grid;gap:2px;width:100%;min-width:0}
+.pq-card__top,.pq-card__bottom{display:flex;align-items:baseline;justify-content:space-between;gap:var(--theme-spacing-sm);min-width:0}
+.pq-card__bottom{margin-top:var(--theme-spacing-2xs);font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary)}
+.pq-ref{font-size:var(--theme-font-size-xs);font-weight:600;letter-spacing:var(--theme-letter-spacing-wide);text-transform:uppercase;color:var(--ds-text-muted)}
+.pq-title{font-size:var(--theme-font-size-base)}
+.pq-money{flex:none;font-size:var(--theme-font-size-base);font-weight:700;font-variant-numeric:tabular-nums}
+.ops2-row[data-edge="warning"] > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-warning)}
+.ops2-row[data-edge="info"] > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-info)}
+
+/* the placeholder destination root — nav.css */
+.ops2-page__blurb{margin:0 0 var(--theme-spacing-sm);color:var(--ds-text-secondary)}
+.ops2-page__pending{margin:0;color:var(--ds-text-muted)}
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-attention" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="256" r="196"/><path d="M256 144v130" stroke-linecap="round"/><circle cx="256" cy="352" r="20" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-projects" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round">
+    <path d="M160 128h288M160 256h288M160 384h288"/><circle cx="72" cy="128" r="16" fill="currentColor" stroke="none"/>
+    <circle cx="72" cy="256" r="16" fill="currentColor" stroke="none"/><circle cx="72" cy="384" r="16" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-products" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M256 64 448 160v192L256 448 64 352V160z"/><path d="M64 160l192 96 192-96M256 256v192"/></symbol>
+  <symbol id="i-pricing" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M64 64h176l208 208-176 176L64 240z"/><circle cx="150" cy="150" r="26"/></symbol>
+  <symbol id="i-customers" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="176" r="88"/><path d="M96 432c22-80 84-128 160-128s138 48 160 128" stroke-linecap="round"/></symbol>
+  <symbol id="i-enquiries" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M416 96H96a32 32 0 0 0-32 32v192a32 32 0 0 0 32 32h64v72l88-72h168a32 32 0 0 0 32-32V128a32 32 0 0 0-32-32z"/></symbol>
+  <symbol id="i-files" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M64 128h136l48 56h200v232H64z"/></symbol>
+  <symbol id="i-audit" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round">
+    <circle cx="256" cy="256" r="196"/><path d="M256 136v128l88 56"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="256" r="72"/><path d="M256 40v56M256 416v56M40 256h56M416 256h56M104 104l40 40M368 368l40 40M408 104l-40 40M144 368l-40 40" stroke-linecap="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M184 112l144 144-144 144"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round">
+    <path d="M256 64c-70 0-112 48-112 128 0 88-32 112-48 136h320c-16-24-48-48-48-136 0-80-42-128-112-128z"/>
+    <path d="M216 384a40 40 0 0 0 80 0" stroke-linecap="round"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round">
+    <path d="M85 400h342c18 0 29-19 20-35L277 68c-9-16-33-16-42 0L65 365c-9 16 2 35 20 35z"/>
+    <path d="M256 190v104" stroke-linecap="round"/><circle cx="256" cy="345" r="18" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-search" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round">
+    <circle cx="220" cy="220" r="150"/><path d="M330 330l120 120"/></symbol>
+  <symbol id="i-more" viewBox="0 0 512 512" fill="currentColor">
+    <circle cx="256" cy="128" r="34"/><circle cx="256" cy="256" r="34"/><circle cx="256" cy="384" r="34"/></symbol>
+</svg>
+
+<div class="doc">
+<h1>ops2 — Attention</h1>
+<p class="lede">The console's gate and its landing screen: <strong>which area needs a person, and how much is waiting
+behind each door.</strong> Not a metrics page, and never a working area — a row leads, it never acts. There is no
+approve, no assign, no dismiss and no mark-read anywhere on this screen.</p>
+<p class="lede">Everything is drawn from what the console already has: <code>OpsPage</code>'s frame and its
+<code>&lt;h1&gt;</code>, the one <code>RowList</code>/<code>Row</code>, and the queue's own <code>.pq-empty</code> /
+<code>.pq-error</code> / <code>.pq-skeleton</code> treatments. The only new CSS is the group heading (about ten lines).</p>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>1 · Desk, 1440 — everything waiting</h2>
+  <p class="note">Three groups, one per destination that has work. Group order is fixed — Projects, Enquiries,
+  Customers — so a group appearing or vanishing never moves the ones above it. Inside Projects the counts read in
+  lifecycle order. The number leads every row, so the screen answers from a standing start.
+  <strong>Enquiries is a new destination</strong> in the rail (dashed, below).</p>
+
+  <div class="frame frame--desk ops2">
+    <div class="desk">
+      <nav class="ops2-nav">
+        <div class="ops2-wordmark"><span class="ops2-wordmark__name">OpenFrame<span class="ops2-wordmark__suffix"> ops</span></span></div>
+        <div class="ops2-nav__sections">
+          <div>
+            <p class="ops2-nav__section-label ds-type-label-md">WORKSPACE</p>
+            <ul class="ops2-nav__list">
+              <li><a class="ops2-nav__item" aria-current="page" href="#"><svg class="ops2-nav__icon"><use href="#i-attention"/></svg><span>Attention</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-projects"/></svg><span>Projects</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-products"/></svg><span>Products</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-pricing"/></svg><span>Pricing</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-customers"/></svg><span>Customers</span></a></li>
+              <li><a class="ops2-nav__item new-dest" href="#"><svg class="ops2-nav__icon"><use href="#i-enquiries"/></svg><span>Enquiries</span></a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="ops2-nav__section-label ds-type-label-md">SYSTEM</p>
+            <ul class="ops2-nav__list">
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-files"/></svg><span>Files</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-audit"/></svg><span>Audit</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-settings"/></svg><span>Settings</span></a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="ops2-nav__foot">
+          <button class="ops2-account ops2-account--rail">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+      </nav>
+
+      <div>
+        <div class="ops2-topbar">
+          <h1 class="ops2-topbar__title ds-type-heading-md">Attention</h1>
+          <button class="ops2-bell" aria-label="Attention"><svg width="20" height="20"><use href="#i-bell"/></svg></button>
+          <button class="ops2-account ops2-account--topbar">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+
+        <div class="ops2-page__body">
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">4</span><span class="att-row__noun">new submissions</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">ready to issue</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">3</span><span class="att-row__noun">awaiting payment</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-enquiries"/></svg><h2>Enquiries</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">waiting for a reply</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-customers"/></svg><h2>Customers</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">trade application waiting on a decision</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ann" style="max-width:74ch">The body keeps <code>OpsPage</code>'s reading measure rather than spreading six
+  counts across a 27-inch monitor — the eye travels down one column, not across a wall.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>2 · Phone, 375 — the same screen, the same order</h2>
+  <p class="note">No top bar at this width (the console's existing rule): the page says its own name in the white band,
+  and the tab bar carries the destinations. Attention is the first tab and the landing route, so the console opens
+  <em>on</em> this screen. Long row copy wraps rather than truncating — a count nobody can read is worse than two lines.</p>
+
+  <div class="row-of-frames">
+    <div>
+      <p class="cap">populated <em>— all three groups</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:600px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">4</span><span class="att-row__noun">new submissions</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">ready to issue</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">3</span><span class="att-row__noun">awaiting payment</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-enquiries"/></svg><h2>Enquiries</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">waiting for a reply</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-customers"/></svg><h2>Customers</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">trade application waiting on a decision</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="ops2-tabbar">
+          <div class="ops2-tab" aria-selected="true"><svg><use href="#i-attention"/></svg>Attention</div>
+          <div class="ops2-tab"><svg><use href="#i-projects"/></svg>Projects</div>
+          <div class="ops2-tab"><svg><use href="#i-products"/></svg>Products</div>
+          <div class="ops2-tab"><svg><use href="#i-more"/></svg>More</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">one group only <em>— nothing waiting outside Projects</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:600px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">12</span><span class="att-row__noun">new submissions</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">awaiting payment</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="ops2-tabbar">
+          <div class="ops2-tab" aria-selected="true"><svg><use href="#i-attention"/></svg>Attention</div>
+          <div class="ops2-tab"><svg><use href="#i-projects"/></svg>Projects</div>
+          <div class="ops2-tab"><svg><use href="#i-products"/></svg>Products</div>
+          <div class="ops2-tab"><svg><use href="#i-more"/></svg>More</div>
+        </div>
+      </div>
+      <p class="ann"><strong>Zero is absence, everywhere.</strong> A count of nought draws no row; a group whose counts
+      are all nought draws no heading either. Never a dimmed row, never a grey “0” — nobody should have to read a
+      number to learn there is nothing to do.</p>
+    </div>
+
+    <div>
+      <p class="cap">long content <em>— big numbers, wrapping copy</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:600px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">148</span><span class="att-row__noun">new submissions</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">36</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-customers"/></svg><h2>Customers</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">17</span><span class="att-row__noun">trade applications waiting on a decision</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
+      <p class="ann">The number sits in its own leading slot, tabular, so 1 and 148 start at the same place and the
+      nouns line up down the card.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>3 · Nothing waiting — and the two ways that could be a lie</h2>
+  <p class="note">This is the screen's whole integrity. <strong>“Nothing is waiting” is only ever said when the console
+  actually counted and the answer was nought.</strong> If the counts could not be read — the request failed, or the
+  endpoint answered <code>degraded</code> — the screen says so and shows <em>no counts at all</em>, not even ones that
+  might be right. The two failures are indistinguishable to the reader on purpose: both mean “I cannot tell you”.</p>
+
+  <div class="row-of-frames">
+    <div>
+      <p class="cap">empty <em>— counted, and the answer was nought</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:420px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-empty">
+            <strong>Nothing is waiting.</strong>
+            <span class="ds-type-caption">Every queue is clear. New submissions, unanswered enquiries and trade
+            applications appear here as they arrive.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap">counts unavailable <em>— failed request, or <code>degraded: true</code></em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:420px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-error" role="alert">
+            <svg><use href="#i-warning"/></svg>
+            <div>
+              <strong>Can't tell you what's waiting.</strong>
+              <span class="ds-type-caption">The counts didn't load, so none are shown. This is not an empty console —
+              try again, or open Projects directly.</span>
+            </div>
+            <button class="ion-btn-outline">Try again</button>
+          </div>
+        </div>
+      </div>
+      <p class="ann">The panel replaces the groups entirely and never sits above a partial list. <strong>Try again</strong>
+      re-requests; on a clean answer the groups render and the panel goes.</p>
+    </div>
+
+    <div>
+      <p class="cap">not a staff account <em>— direct URL, 401/403</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:420px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-error" role="alert">
+            <svg><use href="#i-warning"/></svg>
+            <div>
+              <strong>This account can't see what's waiting.</strong>
+              <span class="ds-type-caption">The console is for staff accounts. Ask an administrator if you should have
+              access.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ann">Same panel, different words, and <strong>no retry</strong> — pressing again would fail the same way.
+      No zeros, no cached counts.</p>
+    </div>
+
+    <div>
+      <p class="cap">loading <em>— the shape that is coming</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:420px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-skeleton" aria-busy="true">
+            <span class="sk" style="width:7rem;height:1rem;margin-bottom:.25rem"></span>
+            <span class="sk" style="height:134px"></span>
+            <span class="sk" style="width:7rem;height:1rem;margin:.75rem 0 .25rem"></span>
+            <span class="sk" style="height:45px"></span>
+          </div>
+        </div>
+      </div>
+      <p class="ann">A skeleton of the coming shape, never a spinner — the console's existing rule and its existing
+      class. Returning to Attention from another destination re-fetches; a slow old response can never overwrite a
+      newer one.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>4 · What a press does</h2>
+  <p class="note">Every row is a door, and lands somewhere the work is actually visible. The four Projects rows open the
+  queue with the wait filter that count belongs to already lit — exactly the screen the reader would have by tapping
+  that chip themselves, and <strong>All</strong> clears it back to the whole queue. The count and the list it opens
+  cannot disagree, because both answer the same question.</p>
+
+  <div class="row-of-frames">
+    <div>
+      <p class="cap">press “4 new submissions” → Projects, <em>Needs us</em> lit</p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:520px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head">
+              <div><h1 class="ops2-page__title ds-type-heading-lg">Projects</h1></div>
+              <div><button class="ops2-bell" aria-label="Search"><svg width="20" height="20"><use href="#i-search"/></svg></button></div>
+            </div>
+            <div class="pq-controls">
+              <div class="pq-chips">
+                <button class="pq-chip" aria-pressed="false">All <b>36</b></button>
+                <button class="pq-chip" aria-pressed="true">Needs us <b>7</b></button>
+                <button class="pq-chip" aria-pressed="false">Customer <b>29</b></button>
+              </div>
+            </div>
+          </div>
+          <ul class="ops2-rows pq-cards ds-surface-card">
+            <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-2418</span><span class="ds-type-caption" style="color:var(--ds-text-muted)">2d</span></span>
+                <span class="pq-title">Harrison St duplex</span>
+                <span class="pq-card__bottom"><span>Bayside Windows · 12 lines</span><span class="pq-money">$18,420</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+            <li class="ops2-row" data-edge="warning"><button class="ops2-row__open">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-2417</span><span class="ds-type-caption" style="color:var(--ds-text-muted)">3d</span></span>
+                <span class="pq-title">Kingsford shopfront</span>
+                <span class="pq-card__bottom"><span>Delta Glass · 4 lines</span><span class="pq-money">$6,180</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+          </ul>
+        </div>
+      </div>
+      <p class="ann">The URL carries <code>?wait=us</code> for one hop and is then stripped, so changing chips or
+      pressing Back never re-applies a stale instruction. <em>Awaiting payment</em> lands the same way, on
+      <code>?wait=customer</code>.</p>
+    </div>
+
+    <div>
+      <p class="cap">press “2 waiting for a reply” → Enquiries <em>(new destination, placeholder for now)</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:520px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Enquiries</h1></div></div>
+          </div>
+          <p class="ops2-page__blurb ds-type-body-md">Incoming enquiries that are not yet projects.</p>
+          <p class="ops2-page__pending ds-type-caption">This destination isn't built yet.</p>
+        </div>
+        <div class="ops2-tabbar">
+          <div class="ops2-tab"><svg><use href="#i-attention"/></svg>Attention</div>
+          <div class="ops2-tab"><svg><use href="#i-projects"/></svg>Projects</div>
+          <div class="ops2-tab"><svg><use href="#i-products"/></svg>Products</div>
+          <div class="ops2-tab" aria-selected="true"><svg><use href="#i-more"/></svg>More</div>
+        </div>
+      </div>
+      <p class="ann">The same treatment <code>/customers</code>, <code>/pricing</code>, <code>/files</code> and
+      <code>/audit</code> already have — it says what the place is for rather than apologising. The enquiries queue
+      behind it is separate work. <strong>The trade-applications row lands on Customers</strong>, a placeholder in the
+      same way today.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>5 · Desk states, for completeness</h2>
+  <p class="note">Same panels, same words, in the same column.</p>
+  <div class="stack" style="gap:18px">
+    <div class="frame frame--desk ops2">
+      <div class="ops2-topbar">
+        <h1 class="ops2-topbar__title ds-type-heading-md">Attention</h1>
+        <button class="ops2-bell" aria-label="Attention"><svg width="20" height="20"><use href="#i-bell"/></svg></button>
+        <button class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">LK</span>
+          <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span></button>
+      </div>
+      <div class="ops2-page__body">
+        <div class="pq-empty">
+          <strong>Nothing is waiting.</strong>
+          <span class="ds-type-caption">Every queue is clear. New submissions, unanswered enquiries and trade
+          applications appear here as they arrive.</span>
+        </div>
+      </div>
+    </div>
+    <div class="frame frame--desk ops2">
+      <div class="ops2-topbar">
+        <h1 class="ops2-topbar__title ds-type-heading-md">Attention</h1>
+        <button class="ops2-bell" aria-label="Attention"><svg width="20" height="20"><use href="#i-bell"/></svg></button>
+        <button class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">LK</span>
+          <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span></button>
+      </div>
+      <div class="ops2-page__body">
+        <div class="pq-error" role="alert">
+          <svg><use href="#i-warning"/></svg>
+          <div>
+            <strong>Can't tell you what's waiting.</strong>
+            <span class="ds-type-caption">The counts didn't load, so none are shown. This is not an empty console —
+            try again, or open Projects directly.</span>
+          </div>
+          <button class="ion-btn-outline">Try again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>6 · Row states — pointer and keyboard</h2>
+  <p class="note">Nothing new: the console's one row component already owns hover, press and focus, and Attention adds
+  no state to it. No leading edge on these rows — that mark stays reserved for the “critically wrong” kind of item,
+  the day a source for it exists.</p>
+  <div class="frame frame--phone ops2" style="padding:16px;background:var(--ds-surface-page)">
+    <ul class="ops2-rows att-rows ds-surface-card">
+      <li class="ops2-row"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">4</span><span class="att-row__noun">new submissions</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+      <li class="ops2-row"><button class="ops2-row__open" style="background:var(--ds-color-brand-wash)"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+      <li class="ops2-row is-focus"><button class="ops2-row__open"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">ready to issue</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></button></li>
+    </ul>
+  </div>
+  <p class="ann" style="max-width:70ch">Top: rest. Middle: hover / press wash. Bottom: keyboard focus ring, inset so it
+  draws against the row's own edge rather than over the hairline it shares. Each row reads to a screen reader as one
+  link — “4 new submissions” — under its group's heading; the whole screen is one <code>&lt;h1&gt;</code>, three
+  <code>&lt;h2&gt;</code>s and a handful of links.</p>
+</section>
+
+</div>
+</body>
+</html>

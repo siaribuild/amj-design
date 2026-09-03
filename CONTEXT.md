@@ -225,6 +225,10 @@ _Avoid_: icon, thumbnail, pictogram
 **Line page**:
 The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** attaches here when built. **"Why this product?"** is live: every rationale kind carries a door to the detail at `…/why`, which states what was recorded and names what was not — the record's desk canvas carries the same panel. Its line is always resolved from its project's own record — never fetched by bare line id.
 
+**Attention (destination)**:
+The console's gate and landing surface (`HOME_PATH`, `src/ops2/attention/`): one group per destination that has work waiting, counts inside, every count a link to the area that owns it. It carries no action that changes data; zero is drawn as absence, and a degraded count is drawn as failure — never as zero. Distinct from the record's Attention filter below, which scopes one record's line list.
+_Avoid_: dashboard, home screen, metrics page
+
 **Attention filter**:
 The record's pill — drawn only when at least one line needs attention, never as a permanent status line (owner: "no pill when the filter is cleared"). One predicate, `needsAttention` (`src/ops2/projects/record.ts`): `needsReview` or no rate — the same test that paints a row's leading edge and prints its badge, so the pill's count, the filter's set and the list's marks cannot disagree. Pressing it toggles the line list down to exactly those rows. It is a scanning aid; whether the quote can issue remains the server's answer alone (`worker/lib/issue.ts`), whose refusal renders separately and never at the same time as the pill.
 _Avoid_: warning banner, error list, blocker queue, attention band
