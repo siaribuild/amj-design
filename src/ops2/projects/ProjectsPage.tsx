@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useHistory, useLocation } from "react-router-dom";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
 } from "@ionic/react";
@@ -10,7 +11,7 @@ import { FilterSheet } from "./FilterSheet";
 import { ProjectCards, ProjectTable } from "./rows";
 import { useProjectQueue } from "./useProjectQueue";
 import {
-  EMPTY_QUERY, REFINEMENTS, chipStates, emptyStateFor,
+  EMPTY_QUERY, REFINEMENTS, chipFromSearch, chipStates, emptyStateFor,
   refinementStates, selectProjects, type QueueQuery,
 } from "./queue";
 
@@ -63,6 +64,19 @@ export function ProjectsPage() {
   const [query, setQuery] = useState<QueueQuery>(EMPTY_QUERY);
   const [searching, setSearching] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const location = useLocation();
+  const history = useHistory();
+
+  // `?wait=` from a notification link is a one-shot instruction, not initial
+  // state: `IonRouterOutlet` keeps this page mounted across navigation, so a
+  // second visit with a stale/absent param must not re-apply an old chip.
+  // Applied via effect, then the param is stripped so a refresh doesn't repeat it.
+  useEffect(() => {
+    const chip = chipFromSearch(location.search);
+    if (chip === null) return;
+    setQuery({ ...EMPTY_QUERY, chip });
+    history.replace(PROJECTS.path);
+  }, [location.search]);
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array
