@@ -57,3 +57,23 @@ npm run test:ops2 (both suites): 9/9 + 13/13 pass. typecheck:gate: green.
 Next task: useSummary.ts has no dedicated structural test of its own
 (only exercised indirectly) — same red-first constraint applies if one
 is added later.
+
+## T4 - Project queue consumes ?wait= as a one-shot instruction
+
+Files: src/ops2/projects/queue.ts, src/ops2/projects/ProjectsPage.tsx,
+scripts/tests/ops2-projects.test.mjs.
+
+New: chipFromSearch(search) parses ?wait=, validates against WAIT_CHIPS'
+own keys, returns ChipKey|null (invalid/absent -> null). Test covers
+us/customer/all/bogus/empty (5 cases, "?wait= from a notification link...").
+
+ProjectsPage: useLocation/useHistory (react-router-dom v5, already the
+ops2 router per package.json overrides) added; effect keyed on
+location.search applies a non-null chip via setQuery({...EMPTY_QUERY,
+chip}) then history.replace(PROJECTS.path) to strip the param. Initial
+useState still EMPTY_QUERY, unchanged — effect exists because
+IonRouterOutlet keeps the page mounted.
+
+npm run test:ops2: 103/103 pass. typecheck:gate: green (0 fatal).
+
+Next task: no follow-up known from this task.
