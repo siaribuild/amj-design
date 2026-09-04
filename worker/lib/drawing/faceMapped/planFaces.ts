@@ -1,6 +1,6 @@
 import { normalizeOpeningRef } from "../../ai/energyMap";
-import type { PageInventory, PageText, PageWord } from "../contract";
-import { alongWall, openingTagWords, planPageFacts, type Edge } from "../locate";
+import type { CropBoxPt, PageInventory, PageText, PageWord } from "../contract";
+import { alongWall, openingTagWords, planPageFacts, printedStorey, type Edge } from "../locate";
 import type { PlanOpeningPlacement, PlanPlacementOutcome } from "./contract";
 
 /**
@@ -127,6 +127,9 @@ interface Candidate {
   vouched: boolean;
   alongPt: number;
   wallLengthPt: number;
+  /** Set where a look at the plan said where along the wall this opening is,
+   * which is the only trustworthy answer when tags sit on leader lines. */
+  recoveredFraction: number | null;
   refusal: string | null;
   basis: string[];
 }
@@ -145,6 +148,14 @@ export function placeOpeningsOnPlan(args: {
   /** The document's elevation sheets, which is where it prints the names of
    * its own faces. */
   elevationPages?: PlanPage[];
+  /** Which wall a look at the plan put a candidate against, by candidate id.
+   * A wall named this way is placed but never called verified: the drawing did
+   * not say it, something reading the drawing did. */
+  faceByCandidate?: Map<string, { elevation: string; alongWallFraction: number | null }>;
+  /** What each sheet is titled, where something has read it — a document
+   * whose title block is drawn rather than written has no other way to say
+   * which storey a plan is. */
+  sheetTitles?: Map<number, string>;
   roster: string[];
 }): PlanPlacementOutcome[] {
   const rows = args.roster.map((tag) => normalizeOpeningRef(tag) ?? tag);
@@ -160,6 +171,8 @@ export function placeOpeningsOnPlan(args: {
   for (const { page, geometry } of args.pages) {
     const facts = planPageFacts(page, geometry, [...vocabulary], faceNames.size ? faceNames : undefined);
     const { walls: wallNames, tied: markersTied } = nameWalls(facts.markerCandidates);
+    const title = args.sheetTitles?.get(geometry.pageNo);
+    const storey = (title ? printedStorey(title) : null) ?? facts.storeyLabel;
     const seen = new Map<string, number>();
 
     for (const { tag, word, ambiguous, identityEvidence } of openingTagWords(page.words, vocabulary, geometry)) {
@@ -169,27 +182,33 @@ export function placeOpeningsOnPlan(args: {
       const found = candidates.get(tag) ?? [];
       if (!facts.footprint) {
         found.push({
-          tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storeyLabel, elevation: null,
-          vouched: false, alongPt: 0, wallLengthPt: 0,
+          tag, planCandidateId, word, pageNo: geometry.pageNo, storey, elevation: null,
+          vouched: false, alongPt: 0, wallLengthPt: 0, recoveredFraction: null,
           refusal: "no building footprint on the plan page", basis: [],
         });
         candidates.set(tag, found);
         continue;
       }
       const { edge, alongPt, wallLengthPt, corner } = alongWall(word, facts.footprint);
-      const elevation = wallNames[edge] ?? null;
+      const recovered = args.faceByCandidate?.get(planCandidateId);
+      const recoveredFace = recovered?.elevation;
+      const elevation = wallNames[edge] ?? recoveredFace ?? null;
       const refusal = corner ? "the tag sits at a corner, against two walls at once"
-        : markersTied ? "the plan's wall markers can be read more than one way"
+        : markersTied && !recoveredFace ? "the plan's wall markers can be read more than one way"
         : !elevation ? "the plan does not name this wall"
-        : !facts.storeyLabel ? "the plan sheet does not say which storey it is"
+        : !storey ? "the plan sheet does not say which storey it is"
         : null;
       found.push({
-        tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storeyLabel, elevation,
-        vouched: !ambiguous && identityEvidence === "sheet_reference",
-        alongPt, wallLengthPt, refusal,
+        tag, planCandidateId, word, pageNo: geometry.pageNo, storey, elevation,
+        vouched: !ambiguous && identityEvidence === "sheet_reference" && !recoveredFace,
+        // A recovered opening is placed where it was seen, not where its tag
+        // was printed; the tag only identified which opening was being asked
+        // about.
+        alongPt: recovered?.alongWallFraction != null ? recovered.alongWallFraction * wallLengthPt : alongPt,
+        wallLengthPt, recoveredFraction: recovered?.alongWallFraction ?? null, refusal,
         basis: [
           `plan page ${geometry.pageNo}`,
-          `wall marked ${elevation}`,
+          recoveredFace ? `wall read as ${elevation}` : `wall marked ${elevation}`,
           `${Math.round(alongPt)}pt along a ${Math.round(wallLengthPt)}pt wall`,
         ],
       });
@@ -266,9 +285,10 @@ export function placeOpeningsOnPlan(args: {
         planEvidenceBoxPt: [candidate.word.x0, candidate.word.top, candidate.word.x1, candidate.word.bottom],
         wallOrder: index + 1,
         faceOpeningCount: ordered.length,
-        alongWallFraction: candidate.wallLengthPt > 0
-          ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt))
-          : null,
+        alongWallFraction: candidate.recoveredFraction
+          ?? (candidate.wallLengthPt > 0
+            ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt))
+            : null),
         distanceFromStartPt: candidate.wallLengthPt > 0 ? candidate.alongPt : null,
         // Placed either way — refusing an unvouched tag would lose openings on
         // every set that does not print sheet references — but a placement the

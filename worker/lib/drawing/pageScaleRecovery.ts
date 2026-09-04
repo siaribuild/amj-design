@@ -104,3 +104,84 @@ export async function recoverPageScales(args: {
   });
   return recovered;
 }
+
+/** What one look at a sheet can settle: what it is drawn at, and what it says
+ * it is. A sheet states both in the same place, so asking twice would be paying
+ * twice for one glance. */
+export interface SheetFacts {
+  ratio: number | null;
+  /** The drawing title exactly as printed, so a storey can be read from it by
+   * whatever rule reads storeys — this does not interpret it. */
+  title: string | null;
+  role: "floorplan" | "elevation" | null;
+}
+
+export interface SheetReadInput {
+  pageNo: number;
+  imageDataUrl: string;
+}
+
+export interface SheetFactsDeps {
+  render(request: RenderRequest): Promise<RenderResponse>;
+  readSheet(input: SheetReadInput): Promise<{ pageNo?: number; ratio?: unknown; title?: unknown } | null>;
+}
+
+/** A drawing title says what the sheet is. Keyed on the words a title has to
+ * contain to mean either thing, not on a catalogue of title styles: PLAN for
+ * the sheets that place openings, ELEVATION for the sheets that draw them. */
+function roleOf(title: string | null): SheetFacts["role"] {
+  if (!title) return null;
+  const upper = title.toUpperCase();
+  if (/\bELEVATIONS?\b/.test(upper)) return "elevation";
+  if (/\bPLAN\b/.test(upper) && !/\bSITE\b|\bROOF\b|\bLANDSCAPE\b/.test(upper)) return "floorplan";
+  return null;
+}
+
+/**
+ * Reads what a sheet is, and what it is drawn at, from the drawing itself.
+ *
+ * The same rules as the scale-only path: text first and enforced here, one
+ * render per page at most, capped, and one page's failure costs that page.
+ * A document whose titles are drawn as graphics has no other way to be read at
+ * all — nothing downstream can find a floor plan it was never told about.
+ */
+export async function recoverSheetFacts(args: {
+  inspected: InspectResponse;
+  pageNos: number[];
+  stated: Map<number, number | null>;
+  deps: SheetFactsDeps;
+}): Promise<Map<number, SheetFacts>> {
+  const known = new Set(args.inspected.inventory.pages.map((page) => page.pageNo));
+  const wanted = [...new Set(args.pageNos)]
+    .filter((pageNo) => known.has(pageNo))
+    .slice(0, MAX_RECOVERY_PAGES);
+
+  const read = await mapPool(wanted, RECOVERY_CONCURRENCY, async (pageNo) => {
+    try {
+      const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
+      const image = render.images[0];
+      if (!image?.pngB64) return null;
+      const answer = await args.deps.readSheet({
+        pageNo,
+        imageDataUrl: `data:image/png;base64,${image.pngB64}`,
+      });
+      if (!answer || (answer.pageNo !== undefined && answer.pageNo !== pageNo)) return null;
+      const title = typeof answer.title === "string" && answer.title.trim() ? answer.title.trim() : null;
+      // A scale the text already settled is never overwritten by a look at the
+      // page; the title is new either way.
+      const ratio = args.stated.has(pageNo)
+        ? args.stated.get(pageNo) ?? null
+        : validateStatedScale({ pageNo, ratio: answer.ratio }, pageNo);
+      return { ratio, title, role: roleOf(title) };
+    } catch {
+      return null;
+    }
+  });
+
+  const facts = new Map<number, SheetFacts>();
+  wanted.forEach((pageNo, at) => {
+    const answer = read[at];
+    if (answer) facts.set(pageNo, answer);
+  });
+  return facts;
+}

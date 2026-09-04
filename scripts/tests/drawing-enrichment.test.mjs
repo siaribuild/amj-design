@@ -26,7 +26,8 @@ await build({
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
       export { placeOpeningsOnPlan } from ${p("worker/lib/drawing/faceMapped/planFaces.ts")};
-      export { recoverPageScales, validateStatedScale } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
+      export { planFaceRecoveryRequest, validatePlanFaceAnswer } from ${p("worker/lib/drawing/faceMapped/planFacesSkill.ts")};
+      export { recoverPageScales, validateStatedScale, recoverSheetFacts } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
@@ -46,7 +47,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, placeOpeningsOnPlan, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2211,6 +2212,97 @@ const planRooms = [
   { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
 ];
 
+test("plan recovery: only the unplaced are asked about, in the document's own words (P2-AC9, AC11, AC12)", () => {
+  const plan = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540), tagWord("W3", 217, 400),
+    ...planRooms,
+    // Only the top wall is named, so W2 and W3 cannot be placed from text.
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+  ]);
+  const first = placeOpeningsOnPlan({ pages: [plan], roster: ["W1", "W2", "W3"] });
+  const asked = planFaceRecoveryRequest({ outcomes: first, pages: [plan], roster: ["W1", "W2", "W3"] });
+  assert.deepEqual(asked.map((page) => page.pageNo), [4]);
+  assert.deepEqual(asked[0].candidates.map((c) => c.tag).sort(), ["W2", "W3"],
+    "an opening the plan already placed is not sent to a model");
+  assert.equal(asked[0].candidates.every((c) => /^W[23]_p4_1$/.test(c.planCandidateId)), true);
+
+  const answered = validatePlanFaceAnswer(
+    [
+      { planCandidateId: asked[0].candidates.find((c) => c.tag === "W2").planCandidateId, elevation: "B" },
+      { planCandidateId: asked[0].candidates.find((c) => c.tag === "W3").planCandidateId, elevation: "A" },
+      { planCandidateId: "W9_p4_1", elevation: "A" },
+      { planCandidateId: asked[0].candidates[0].planCandidateId, elevation: "SOUTH" },
+    ],
+    new Set(asked[0].candidates.map((c) => c.planCandidateId)),
+    new Set(["A", "B", "C", "D"]),
+  );
+  assert.equal(answered.size, 2, "a candidate nobody asked about, and a face the document never names, are refused");
+
+  // Where a tag is printed is not where its opening is: a set that carries its
+  // tags on leader lines stacks them in a column, and ordering those by their
+  // own geometry puts several openings at the same point on the wall. What
+  // named the wall saw the opening, so it says where along it too.
+  const positioned = validatePlanFaceAnswer(
+    [
+      { planCandidateId: asked[0].candidates.find((c) => c.tag === "W2").planCandidateId, elevation: "B", alongWallFraction: 0.8 },
+      { planCandidateId: asked[0].candidates.find((c) => c.tag === "W3").planCandidateId, elevation: "B", alongWallFraction: 0.2 },
+    ],
+    new Set(asked[0].candidates.map((c) => c.planCandidateId)),
+    new Set(["A", "B", "C", "D"]),
+  );
+  const ordered = placeOpeningsOnPlan({
+    pages: [plan], roster: ["W1", "W2", "W3"], faceByCandidate: positioned,
+  });
+  const onB = ordered.filter((o) => o.state === "resolved" && o.placement.elevation === "B")
+    .map((o) => o.placement).sort((a, b) => a.wallOrder - b.wallOrder);
+  assert.deepEqual(onB.map((p) => p.tag), ["W3", "W2"],
+    "two openings on one wall are ordered by where they were seen, not by where their tags were printed");
+  assert.deepEqual(onB.map((p) => p.alongWallFraction), [0.2, 0.8]);
+
+  const second = placeOpeningsOnPlan({
+    pages: [plan],
+    roster: ["W1", "W2", "W3"],
+    faceByCandidate: answered,
+  });
+  const byTag = Object.fromEntries(second.map((o) => [o.placement?.tag ?? o.tag, o]));
+  assert.equal(byTag.W2.placement.elevation, "B");
+  assert.equal(byTag.W3.placement.elevation, "A");
+  assert.equal(byTag.W2.placement.confidence, "ambiguous", "a wall a model named is not a wall the drawing named");
+  assert.equal(byTag.W1.placement.elevation, "D", "and what the text settled is untouched");
+});
+
+test("plan placement: the copyright strip is not a storey (P2-AC5)", () => {
+  // Measured on a real sheet whose title block is graphics: the only text low
+  // on the page is "THIS PLAN, DESIGN OR IDEAS MAY NOT BE COPIED", and reading
+  // a storey out of it gives every opening a storey called THIS.
+  const plan = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540),
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "THIS", x0: 60, top: 700, x1: 100, bottom: 714 },
+    { text: "PLAN,", x0: 105, top: 700, x1: 150, bottom: 714 },
+    { text: "DESIGN", x0: 155, top: 700, x1: 210, bottom: 714 },
+    { text: "MAY", x0: 215, top: 700, x1: 250, bottom: 714 },
+    { text: "NOT", x0: 255, top: 700, x1: 285, bottom: 714 },
+    { text: "BE", x0: 290, top: 700, x1: 310, bottom: 714 },
+    { text: "COPIED", x0: 315, top: 700, x1: 370, bottom: 714 },
+  ], "THIS PLAN, DESIGN OR IDEAS MAY NOT BE COPIED");
+  const bare = placeOpeningsOnPlan({ pages: [plan], roster: ["W1", "W2"] });
+  assert.equal(bare.every((o) => o.state === "unresolved"), true,
+    "a sheet that never says which storey it is does not get one invented: "
+    + JSON.stringify(bare.map((o) => o.placement?.storey)));
+
+  // Told what the sheet is titled, it places them on that storey.
+  const titled = placeOpeningsOnPlan({
+    pages: [plan],
+    roster: ["W1", "W2"],
+    sheetTitles: new Map([[4, "GROUND FLOOR PLAN"]]),
+  });
+  assert.equal(titled.every((o) => o.state === "resolved"), true, JSON.stringify(titled));
+  assert.equal(titled[0].placement.storey, "GROUND FLOOR");
+});
+
 test("plan placement: the document's own face names are the vocabulary (P2-AC5, AC17)", () => {
   // Names this code has never heard of, on a storey it has never heard of.
   const plan = planSheet([
@@ -2418,6 +2510,34 @@ test("scale recovery: one sheet's failure costs that sheet, not the run (AC19)",
   });
   assert.deepEqual([...recovered.entries()], [[1, 100], [4, 100]],
     "a render that throws and a provider that rejects cost their own sheets and nothing else");
+});
+
+test("sheet recovery: a sheet whose title is drawn, not written, still gets a role (AC25)", async () => {
+  const inspected = {
+    inventory: { pageCount: 3, producer: "test", fonts: [], hasAttachments: false,
+      pages: [1, 2, 3].map((pageNo) => ({ pageNo, widthPt: 1_684, heightPt: 1_191, rotation: 0, textChars: 900, imageCount: 0, imageAreaFraction: 0 })) },
+    pages: [1, 2, 3].map((pageNo) => ({ pageNo, text: "", words: [] })),
+  };
+  const recovered = await recoverSheetFacts({
+    inspected,
+    pageNos: [1, 2, 3],
+    stated: new Map(),
+    deps: {
+      render: async ({ dpi }) => ({ images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi }),
+      readSheet: async ({ pageNo }) => ({
+        pageNo,
+        ratio: pageNo === 1 ? null : 100,
+        title: pageNo === 1 ? "TITLE / GENERAL NOTES" : pageNo === 2 ? "FIRST FLOOR PLAN" : "ELEVATIONS",
+      }),
+    },
+  });
+  assert.deepEqual([...recovered.entries()].map(([pageNo, facts]) => [pageNo, facts.role, facts.ratio]), [
+    [1, null, null],
+    [2, "floorplan", 100],
+    [3, "elevation", 100],
+  ], "one look at a sheet answers what it is and what it is drawn at");
+  assert.equal(recovered.get(2).title, "FIRST FLOOR PLAN",
+    "the title is kept as printed, for the storey to be read from");
 });
 
 test("scale recovery: text first is enforced here, not trusted to the caller (AC18)", async () => {

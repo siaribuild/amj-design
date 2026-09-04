@@ -230,12 +230,20 @@ export interface PlanPageFacts {
 
 /** The name a plan sheet gives its own storey: whatever it puts before the
  * word PLAN in its title. Keyed on the word the sheet must print rather than
- * on a list of storeys we happen to know. */
-function printedStorey(titleText: string): string | null {
+ * on a list of storeys we happen to know.
+ *
+ * The determiners exist because a sheet whose title block is drawn as graphics
+ * leaves only its copyright line in the text layer — "THIS PLAN, DESIGN OR
+ * IDEAS MAY NOT BE COPIED" — and reading a storey out of that files every
+ * opening under a storey called THIS. */
+const NOT_A_STOREY = /^(?:THIS|THESE|THAT|THE|A|AN|ANY|ALL|NO|EACH|EVERY|SUCH|SITE|ROOF|LANDSCAPE)$/;
+
+export function printedStorey(titleText: string): string | null {
   const match = /\b([A-Z][A-Z0-9]*(?:\s+[A-Z0-9]+){0,2})\s+PLAN\b/.exec(titleText.toUpperCase());
   if (!match) return null;
   const label = match[1].replace(/\s+/g, " ").trim();
-  return label && label !== "PLAN" ? label : null;
+  if (!label || label === "PLAN") return null;
+  return NOT_A_STOREY.test(label.split(" ")[0]) ? null : label;
 }
 
 export function planPageFacts(
