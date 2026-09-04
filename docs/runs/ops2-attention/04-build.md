@@ -259,3 +259,32 @@ feature. Kept the new `ops2-worker` entry as-is.
 Verify: `npm run typecheck:gate` green (58 pre-existing non-fatal, none
 new). `npm run test:ops2` 102/102. `npx playwright test ops2-attention`
 12/12.
+
+## Review finding fix — `07-review-architecture.md` #3
+
+**Medium — Projects' `?wait=` effect watched the GLOBAL location with no
+pathname guard.** `IonRouterOutlet` keeps `ProjectsPage` mounted across
+navigation (the whole reason `?wait=` is applied via effect, not initial
+state), so the effect fired for a search string belonging to a DIFFERENT
+route. Navigating to a sibling such as `/products?wait=customer` ran
+`chipFromSearch`, set the Projects chip, and called
+`history.replace(PROJECTS.path)` — yanking the reader off the page they
+asked for onto Projects.
+
+Red first: added `"a sibling route's own ?wait= is ignored by a Projects
+page kept mounted behind it"` to `scripts/tests/web/ops2-projects.spec.ts`.
+Repro needed real browser history, not `page.goto` for the second hop —
+`goto` reloads the document and never mounts Projects at all. Sequence:
+`page.goto(PRODUCTS + "?wait=customer")` (entry A), click the Projects rail
+link (client-side push to entry B, mounts `ProjectsPage`), `page.goBack()`
+back to entry A. Ran red: URL landed on `/ops2/projects` instead of staying
+on `/ops2/products?wait=customer` — confirmed the yank.
+
+Fix: guarded the effect on `location.pathname === PROJECTS.path`, added
+`location.pathname` to its dependency array. One-shot semantics unchanged —
+a stale/absent param on the Projects route itself still doesn't re-apply,
+and the param is still stripped after use.
+
+Verify: `npx playwright test ops2-projects ops2-attention` 30/30. `npm run
+typecheck:gate` green (61 pre-existing non-fatal, none new). `npm run
+test:ops2` 122/122.
