@@ -11,9 +11,12 @@
 // stages hand off through files on disk instead of through a model's context.
 //
 // Three levers, in measured order of impact:
-//   1. Context per turn is capped (--autocompact). Context tokens are the sum of
-//      context re-sent each turn; an uncapped 1M window is why single runs hit
-//      182M. Capping at ~120k takes a straight multiple off every role.
+//   1. Context per turn WAS capped (--autocompact). Context tokens are the sum
+//      of context re-sent each turn; an uncapped 1M window is why single runs
+//      hit 182M, and capping at ~120k took a straight multiple off every role.
+//      TURNED OFF by the owner on 2026-09-05 because it was failing stages
+//      rather than merely metering them - see CONTEXT_CAP for what happened and
+//      what it costs. Levers 2 and 3 still stand.
 //   2. The orchestrator is gone. This script costs nothing.
 //   3. Long roles are sliced into short, scoped runs and handed exact paths.
 //      Splitting an N-turn run into k runs divides its quadratic term by k.
@@ -162,6 +165,29 @@ function readTasks(file) {
   if (!Array.isArray(tasks)) throw new Error(file + ': no task array (expected [...] or { tasks: [...] })')
   return tasks
 }
+
+/**
+ * The per-stage context cap, or null for none.
+ *
+ * REMOVED BY THE OWNER, 2026-09-05, after three stages died on it rather than
+ * on their work: build-T5 and polish each hit "autocompact is thrashing - the
+ * context refilled to the limit within 3 turns of the previous compact, 3 times
+ * in a row" and exited having written nothing. Polish had made TEN ordinary file
+ * reads. This repo's source carries more rationale comment than code on purpose,
+ * so a stage that must hold a mock plus the chrome it composes from is over the
+ * line before it has done anything, and the cap converts that into a stage
+ * failure instead of a larger bill.
+ *
+ * WHAT IT COSTS, stated rather than buried: this was lever 1 of the three in the
+ * header note, and the measured one - an uncapped window is what turned single
+ * v1 runs into 182M context tokens. Expect runs to cost materially more. Levers
+ * 2 (no orchestrator) and 3 (sliced roles, exact paths) are untouched and still
+ * carry most of the structural saving.
+ *
+ * The per-stage `compact:` values below are LEFT IN PLACE deliberately: setting
+ * this back to a number restores the old behaviour exactly, in one line.
+ */
+const CONTEXT_CAP = null
 
 const STAGES = [
   {
@@ -645,9 +671,8 @@ const NO_SUBAGENTS = "You are ONE stage of a scripted pipeline. Never dispatch s
 function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
-  // Lever 1. Context tokens are the sum of context re-sent per turn; an
-  // uncapped 1M window is what turns a long run into 182M.
-  a.push('--autocompact', String(spec.compact || 120000))
+  // Lever 1, OFF BY OWNER DECISION (2026-09-05). See CONTEXT_CAP.
+  if (CONTEXT_CAP !== null) a.push('--autocompact', String(spec.compact || CONTEXT_CAP))
   a.push('--permission-mode', spec.readonly ? 'plan' : mode)
   if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
   // Always strict: an inherited user or global config drags its tool
@@ -1726,11 +1751,9 @@ const cmds = {
       (tier === 'full' ? `
 
   Next - the grill. It is the one stage that talks to you, so it does not run
-  here. In its own herdr pane, in this directory (--autocompact caps the
-  window the same way every conducted stage does - a long interactive grill
-  with none would grow toward the default and resend it on every turn):
+  here. In its own herdr pane, in this directory:
 
-      claude --autocompact 100000
+      claude
       > /grilling      (then paste the ask)
 
   Put its conclusions, and the actors-and-needs section, into
