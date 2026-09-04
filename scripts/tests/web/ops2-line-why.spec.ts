@@ -1339,3 +1339,54 @@ test("MP-6 an emptied uplift is not zero — Confirm stays shut", async ({ page 
   await expect(page.getByTestId("line-price-work")).toContainText("$1,240.00");
   await expect(page.getByTestId("line-price-confirm")).not.toHaveAttribute("aria-disabled", "true");
 });
+
+// Criterion 19 — the name, the thermal verdict and the delta are readable at a
+// glance at every ops2 width. Added by verification: WHY-AC-D1 asserts the
+// delta text but only at 1280, and a figure that reads at the desk can still
+// overlap or clip on a phone, which no node test can see.
+for (const width of [375, 768, 1280]) {
+  test(`WHY-AC-D2 the delta reads beside the name at ${width}px, with no clip and no overlap`, async ({ page }) => {
+    await serve(page);
+    await page.setViewportSize({ width, height: 900 });
+    await openLine(page, "l1");
+    await page.getByTestId("line-why-open").click();
+    const detail = page.getByTestId("line-why-detail");
+    const rows = detail.getByTestId("why-ladder-row");
+    await expect(rows).toHaveCount(5);
+
+    for (let i = 1; i < 5; i += 1) {
+      const row = rows.nth(i);
+      const delta = row.getByTestId("why-row-delta");
+      const name = row.locator(".wd__row-name");
+      await expect(delta).toBeVisible();
+      await expect(name).toBeVisible();
+
+      // Nothing is cut off: the delta and the name each fit the box drawn for
+      // them, and the row itself does not scroll sideways.
+      for (const part of [delta, name, row]) {
+        const clipped = await part.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(clipped, `clipped at ${width}px, row ${i}`).toBeLessThanOrEqual(1);
+      }
+
+      // And they do not sit on top of one another. The name is a stretched grid
+      // item, so its box is far wider than its glyphs: measure the text itself,
+      // and take both rectangles in the SAME frame or a mid-slide panel gives
+      // two readings from different moments.
+      const geom = await row.evaluate((el) => {
+        const nameEl = el.querySelector(".wd__row-name");
+        const deltaEl = el.querySelector('[data-testid="why-row-delta"]');
+        if (!nameEl || !deltaEl) return null;
+        const r = document.createRange();
+        r.selectNodeContents(nameEl);
+        const ink = r.getBoundingClientRect();
+        const d = deltaEl.getBoundingClientRect();
+        return { ink: { right: ink.right, top: ink.top, bottom: ink.bottom }, d: { left: d.left, right: d.right, top: d.top, bottom: d.bottom } };
+      });
+      if (!geom) throw new Error(`no geometry at ${width}px, row ${i}`);
+      const apart = geom.d.left >= geom.ink.right - 1
+        || geom.d.top >= geom.ink.bottom - 1
+        || geom.ink.top >= geom.d.bottom - 1;
+      expect(apart, `name text and delta overlap at ${width}px, row ${i}: ${JSON.stringify(geom)}`).toBe(true);
+    }
+  });
+}

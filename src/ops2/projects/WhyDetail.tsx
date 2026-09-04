@@ -108,7 +108,7 @@ function Body({ dto }: { dto: Recommendation }) {
                     // A bare "+" is not spoken. The class and the label are both
                     // chosen from the RENDERED string, so "this is not an amount"
                     // has one source of truth.
-                    aria-label={deltaLabel(c.deltaToSelected, i === 0) ?? undefined}
+                    aria-label={deltaLabel(c.deltaToSelected, false)}
                   >
                     {delta}
                   </span>
@@ -274,7 +274,7 @@ function Split({ dto, composite }: { dto: Recommendation; composite: NonNullable
 function Bands({ units }: { units: RationaleUnit[] }) {
   return (
     <OpenablePanel title={DETAIL.bands} testId="why-bands" className="lp-panel--rows">
-      <RowList className="wd__lites">
+      <RowList>
         {units.map((u) => {
           const band = unitBandText(u.band);
           return (

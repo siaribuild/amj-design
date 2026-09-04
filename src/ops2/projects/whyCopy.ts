@@ -566,6 +566,11 @@ export function candidateFigures(c: RationaleCandidate): string {
     : figuresText(c.figures);
 }
 
+/** Whole dollars, unsigned — the shape queue.ts and record.ts already use on
+ *  ops. Both delta functions round and format the same way, and did it twice;
+ *  the SIGN is theirs to add, because one spells it and the other says it. */
+const money = (rounded: number): string => `$${Math.abs(rounded).toLocaleString("en-AU")}`;
+
 /** D1 reversal — one raw dollar delta per runner-up row. `chosen` mutes it
  *  (criterion 4). null: "$---" — a fact about the record, never $0 or a blank
  *  (D4). Whole dollars, same shape as queue.ts/record.ts money on ops. */
@@ -573,8 +578,7 @@ export function deltaText(delta: number | null, chosen: boolean): string | null 
   if (chosen) return null;
   if (delta == null) return "$---";
   const r = Math.round(delta);
-  const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
-  return r === 0 ? figure : `${r < 0 ? "-" : "+"}${figure}`;
+  return r === 0 ? money(r) : `${r < 0 ? "-" : "+"}${money(r)}`;
 }
 
 /** THE SAME FACT, SPOKEN. A bare "+" does not survive being read aloud: most
@@ -590,9 +594,8 @@ export function deltaLabel(delta: number | null, chosen: boolean): string | null
   // tie — collapsed into one for everybody else. Name the absence as absence.
   if (delta == null) return "no price was recorded for this product";
   const r = Math.round(delta);
-  const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
   if (r === 0) return "the same price as the chosen product";
-  return `${figure} ${r < 0 ? "cheaper" : "dearer"} than the chosen product`;
+  return `${money(r)} ${r < 0 ? "cheaper" : "dearer"} than the chosen product`;
 }
 
 /** WHY-AC-34 — a lite's own band. `null` when none was recorded, and NOTHING is

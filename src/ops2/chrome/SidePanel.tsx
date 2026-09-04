@@ -180,8 +180,7 @@ export function SidePanel({
       breakpoints={sheet ? [0, 0.5] : undefined}
       enterAnimation={fromRight ? slideIn : undefined}
       leaveAnimation={fromRight ? slideOut : undefined}
-      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}`
-        + `${form === "screen" ? " pq-sheet--screen" : ""}`}
+      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}`}
       data-testid={testId}
       // REMOUNT WHEN THE FORM CHANGES. Ionic settles `isSheetModal`, its gesture
       // and its breakpoint during `present()`, so a window crossing the change

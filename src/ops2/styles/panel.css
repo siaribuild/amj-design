@@ -26,8 +26,7 @@
  * own inset, because they are the card's and not the list's. */
 .lp-panel--rows { padding-inline: 0; }
 .lp-panel--rows > .lp-panel__title,
-.lp-panel--rows > .lp-panel__more,
-.lp-panel--rows > .wd__reason {
+.lp-panel--rows > .lp-panel__more {
   padding-inline: var(--theme-spacing-md);
 }
 
