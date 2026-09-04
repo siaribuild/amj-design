@@ -111,45 +111,60 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     // content-stream order instead lets another column's word fall between
     // `1` and `100`, and the split forms vanish.
     for (const words of textLines(page.words)) {
-      let at = 0;
-      while (at < words.length) {
-        let consumed = 0;
-        for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
-          const window = words.slice(at, at + size);
-          if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
-          // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
-          // part of the sentence, not of the ratio.
-          const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
-          if (!match) continue;
-          consumed = size;
-          const ratio = Number(match[1]);
-          const prior = at > 0 ? words[at - 1] : null;
-          const qualifier = subject(words, at, -1) === "not_a_scale"
-            || (subject(words, at, -1) === null && subject(words, at + size - 1, 1) === "not_a_scale");
-          // 1:0 parses but cannot scale anything, and no drawing is printed
-          // smaller than 1:20000 — both are text that merely looks like a scale.
-          if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
-            const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
-              ? [prior, ...window] : window;
-            const box: CropBoxPt = [
-              Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
-              Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
-            ];
-            found.push({
-              pageNo: page.pageNo,
-              ratio,
-              text: evidence.map((word) => word.text.trim()).join(" "),
-              evidenceBoxPt: box,
-              source: "printed",
-            });
-          }
-          break;
-        }
-        at += Math.max(consumed, 1);
+      // Every ratio on the row is located first, because each one bounds the
+      // next one's phrase.
+      const ratios = ratioWindows(words);
+      const owner = new Map<number, number>();
+      ratios.forEach(({ at, size }, index) => {
+        for (let word = at; word < at + size; word++) owner.set(word, index);
+      });
+      for (const [index, { at, size, ratio }] of ratios.entries()) {
+        const window = words.slice(at, at + size);
+        const prior = at > 0 ? words[at - 1] : null;
+        const left = subject(words, at, -1, owner, index);
+        const qualifier = left === "not_a_scale"
+          || (left === null && subject(words, at + size - 1, 1, owner, index) === "not_a_scale");
+        // 1:0 parses but cannot scale anything, and no drawing is printed
+        // smaller than 1:20000 — both are text that merely looks like a scale.
+        if (ratio < 1 || ratio > MAX_SCALE_RATIO || qualifier) continue;
+        const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
+          ? [prior, ...window] : window;
+        found.push({
+          pageNo: page.pageNo,
+          ratio,
+          text: evidence.map((word) => word.text.trim()).join(" "),
+          evidenceBoxPt: [
+            Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
+            Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
+          ],
+          source: "printed",
+        });
       }
     }
     return found;
   });
+}
+
+/** Where the ratios are on one printed row, each as the words that spell it. */
+function ratioWindows(words: PageWord[]): { at: number; size: number; ratio: number }[] {
+  const found: { at: number; size: number; ratio: number }[] = [];
+  let at = 0;
+  while (at < words.length) {
+    let consumed = 0;
+    for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
+      const window = words.slice(at, at + size);
+      if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
+      // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
+      // part of the sentence, not of the ratio.
+      const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
+      if (!match) continue;
+      consumed = size;
+      found.push({ at, size, ratio: Number(match[1]) });
+      break;
+    }
+    at += Math.max(consumed, 1);
+  }
+  return found;
 }
 
 /** What each page is drawn at — the scale half of Phase A's document map.
@@ -173,14 +188,22 @@ export function pageScales(inspected: InspectResponse): Map<number, number> {
  * The phrase ends where the printing does — at a gap too wide to be one run of
  * words — so a ratio cannot inherit a subject from the next column of a title
  * block, and a note as long as `PITCH OF ROOF TO BE 1:4` still keeps its own. */
-function subject(words: PageWord[], from: number, step: -1 | 1): "scale" | "not_a_scale" | null {
+function subject(
+  words: PageWord[],
+  from: number,
+  step: -1 | 1,
+  owner: Map<number, number>,
+  self: number,
+): "scale" | "not_a_scale" | null {
   for (let at = from + step; at >= 0 && at < words.length; at += step) {
     if (!adjacent(words[at], words[at - step])) return null;
-    const printed = words[at].text.trim();
     // Another ratio ends this one's phrase: a SCALE label printed for the
     // ratio beside it cannot reach across that ratio to vouch for a second.
-    if (SCALE_RATIO.test(printed.replace(/[.,;]+$/, ""))) return null;
-    const text = printed.replace(/[^A-Za-z]/g, "");
+    // The boundary is the ratio the row's own scan found, so a ratio the PDF
+    // split across three words bounds the phrase exactly as one token does.
+    const at_owner = owner.get(at);
+    if (at_owner !== undefined && at_owner !== self) return null;
+    const text = words[at].text.trim().replace(/[^A-Za-z]/g, "");
     if (SCALE_LABEL.test(text)) return "scale";
     if (NOT_A_SCALE.test(text)) return "not_a_scale";
   }

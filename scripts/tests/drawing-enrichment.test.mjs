@@ -2107,6 +2107,16 @@ test("page scale: one ratio's phrase stops at the next ratio", () => {
   assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
 });
 
+test("page scale: a ratio split across words is a boundary like any other", () => {
+  const sheet = scaleSheet(line(300, [
+    ["SCALE", 100, 40], ["1", 145, 8], [":", 156, 4], ["100", 163, 24],
+    [";", 192, 8], ["1", 204, 8], [":", 215, 4], ["20", 222, 16], ["GRADE", 245, 45],
+  ]));
+  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
+    "how the PDF happened to tokenise a ratio cannot change which words vouch for it");
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
+});
+
 test("page scale: the things a plan measures but is not drawn at", () => {
   const sheet = scaleSheet([
     ...line(100, [["DRIVEWAY", 100, 65], ["1:10", 170, 35]]),
