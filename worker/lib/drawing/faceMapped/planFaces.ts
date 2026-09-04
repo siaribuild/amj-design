@@ -18,6 +18,43 @@ export interface PlanPage {
 
 const EDGES: Edge[] = ["top", "right", "bottom", "left"];
 
+const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?)$/;
+const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
+
+/**
+ * What this document calls its faces, read from the sheets that draw them.
+ *
+ * A set writes `ELEVATION A` or `WEST ELEVATION` or `FRONT ELEVATION`, and
+ * whichever it writes is the vocabulary its plan will mark its walls with.
+ * Reading it here is what lets placement work on a document nobody anticipated,
+ * instead of on the documents whose conventions happen to be in a regex.
+ */
+export function documentFaceNames(pages: PlanPage[]): Set<string> {
+  const names = new Set<string>();
+  for (const { page } of pages) {
+    const rows = new Map<number, PageWord[]>();
+    for (const word of page.words) {
+      const line = Math.round((word.top + word.bottom) / 2 / 6);
+      rows.set(line, [...(rows.get(line) ?? []), word]);
+    }
+    for (const row of rows.values()) {
+      const ordered = [...row].sort((a, b) => a.x0 - b.x0);
+      ordered.forEach((word, at) => {
+        if (!VIEW_TITLE.test(word.text.trim().toUpperCase())) return;
+        for (const neighbour of [ordered[at - 1], ordered[at + 1]]) {
+          if (!neighbour) continue;
+          const label = neighbour.text.trim().toUpperCase().replace(/[.,:]$/, "");
+          if (!FACE_NAME.test(label) || VIEW_TITLE.test(label)) continue;
+          const gap = neighbour.x0 > word.x1 ? neighbour.x0 - word.x1 : word.x0 - neighbour.x1;
+          if (gap > Math.max(word.bottom - word.top, 1) * 2) continue;
+          names.add(label);
+        }
+      });
+    }
+  }
+  return names;
+}
+
 /**
  * Which label names which wall, decided across the whole sheet at once.
  *
@@ -105,6 +142,9 @@ interface Candidate {
  */
 export function placeOpeningsOnPlan(args: {
   pages: PlanPage[];
+  /** The document's elevation sheets, which is where it prints the names of
+   * its own faces. */
+  elevationPages?: PlanPage[];
   roster: string[];
 }): PlanPlacementOutcome[] {
   const rows = args.roster.map((tag) => normalizeOpeningRef(tag) ?? tag);
@@ -115,9 +155,10 @@ export function placeOpeningsOnPlan(args: {
   // Every printed occurrence is collected first and judged after. Resolving
   // them as they arrive lets a third occurrence overwrite the refusal the
   // second one earned.
+  const faceNames = documentFaceNames(args.elevationPages ?? []);
   const candidates = new Map<string, Candidate[]>();
   for (const { page, geometry } of args.pages) {
-    const facts = planPageFacts(page, geometry, [...vocabulary]);
+    const facts = planPageFacts(page, geometry, [...vocabulary], faceNames.size ? faceNames : undefined);
     const { walls: wallNames, tied: markersTied } = nameWalls(facts.markerCandidates);
     const seen = new Map<string, number>();
 
@@ -128,7 +169,7 @@ export function placeOpeningsOnPlan(args: {
       const found = candidates.get(tag) ?? [];
       if (!facts.footprint) {
         found.push({
-          tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation: null,
+          tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storeyLabel, elevation: null,
           vouched: false, alongPt: 0, wallLengthPt: 0,
           refusal: "no building footprint on the plan page", basis: [],
         });
@@ -140,10 +181,10 @@ export function placeOpeningsOnPlan(args: {
       const refusal = corner ? "the tag sits at a corner, against two walls at once"
         : markersTied ? "the plan's wall markers can be read more than one way"
         : !elevation ? "the plan does not name this wall"
-        : !facts.storey ? "the plan sheet does not say which storey it is"
+        : !facts.storeyLabel ? "the plan sheet does not say which storey it is"
         : null;
       found.push({
-        tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation,
+        tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storeyLabel, elevation,
         vouched: !ambiguous && identityEvidence === "sheet_reference",
         alongPt, wallLengthPt, refusal,
         basis: [

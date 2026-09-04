@@ -2162,7 +2162,7 @@ test("plan placement: openings on one wall get plan-side ordinals and a position
     "ordinals run along the wall in plan order, whatever order the tags were printed in");
   assert.deepEqual(onD.map((p) => p.wallOrder), [1, 2, 3, 4]);
   assert.deepEqual(onD.map((p) => p.faceOpeningCount), [4, 4, 4, 4]);
-  assert.equal(onD.every((p) => p.storey === "ground"), true);
+  assert.equal(onD.every((p) => p.storey === "GROUND FLOOR"), true);
   const fractions = onD.map((p) => p.alongWallFraction);
   assert.equal(fractions.every((f) => f !== null && f >= 0 && f <= 1), true, `fractions within the wall: ${fractions}`);
   assert.deepEqual([...fractions].sort((a, b) => a - b), fractions, "position along the wall rises with the ordinal");
@@ -2210,6 +2210,36 @@ const planRooms = [
   { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
   { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
 ];
+
+test("plan placement: the document's own face names are the vocabulary (P2-AC5, AC17)", () => {
+  // Names this code has never heard of, on a storey it has never heard of.
+  const plan = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540),
+    ...planRooms,
+    { text: "FRONT", x0: 470, top: 250, x1: 520, bottom: 264 },
+    { text: "REAR", x0: 475, top: 540, x1: 515, bottom: 554 },
+  ], "LEVEL 2 PLAN");
+  const elevations = {
+    page: {
+      pageNo: 9,
+      text: "FRONT ELEVATION REAR ELEVATION",
+      words: [
+        { text: "FRONT", x0: 100, top: 700, x1: 150, bottom: 714 },
+        { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+        { text: "REAR", x0: 500, top: 700, x1: 540, bottom: 714 },
+        { text: "ELEVATION", x0: 545, top: 700, x1: 620, bottom: 714 },
+      ],
+    },
+    geometry: { pageNo: 9, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 },
+  };
+  const outcomes = placeOpeningsOnPlan({ pages: [plan], elevationPages: [elevations], roster: ["W1", "W2"] });
+  const byTag = Object.fromEntries(outcomes.map((o) => [o.placement?.tag ?? o.tag, o]));
+  assert.equal(byTag.W1.state, "resolved", JSON.stringify(byTag.W1));
+  assert.equal(byTag.W1.placement.elevation, "FRONT");
+  assert.equal(byTag.W2.placement.elevation, "REAR");
+  assert.equal(byTag.W1.placement.storey, "LEVEL 2",
+    "the storey is what the sheet calls itself, not a word from a list of ours");
+});
 
 test("plan placement: a plan that names no walls places nothing (P2-AC5, AC8)", () => {
   // Naming the walls by compass instead would look like progress and join

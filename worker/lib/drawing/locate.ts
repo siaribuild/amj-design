@@ -29,14 +29,21 @@ function percentile(values: number[], fraction: number): number {
 /** A text footprint is deliberately robust rather than exact: its purpose is
  * to identify the nearest exterior wall for printed tags. Opening tags,
  * dimensions, marker letters and the title-block strips cannot define it. */
-function footprint(words: PageWord[], geo: Pick<PageInventory, "widthPt" | "heightPt">, vocabulary: Set<string>): Footprint | null {
+function footprint(
+  words: PageWord[],
+  geo: Pick<PageInventory, "widthPt" | "heightPt">,
+  vocabulary: Set<string>,
+  faceNames?: Set<string>,
+): Footprint | null {
   const usable = words.filter((word) => {
     const text = word.text.trim();
     const upper = text.toUpperCase();
     const [x, y] = centre(word);
     if (!text || x >= geo.widthPt * 0.85 || y >= geo.heightPt * 0.85) return false;
     if (vocabulary.has(normalizeOpeningRef(text) ?? "")) return false;
-    if (/^(?:S\d{1,3}|[A-D])$/i.test(upper) || STOP.has(upper)) return false;
+    // A wall's name marks the building, it is not part of it — the same
+    // reason A-D are excluded, applied to whatever this document calls them.
+    if (/^(?:S\d{1,3}|[A-D])$/i.test(upper) || STOP.has(upper) || faceNames?.has(upper)) return false;
     if (/^(?:\d{3,}(?:\.\d+)?|\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?)$/i.test(text)) return false;
     return true;
   });
@@ -209,6 +216,10 @@ export interface PlanPageFacts {
    * and keying by label would drop one of them. */
   labelByEdge: [Edge, string][];
   ambiguousEdges: Edge[];
+  /** What the sheet calls its storey, in its own words — "GROUND FLOOR",
+   * "LEVEL 2", "BASEMENT". Null where the sheet titles itself something this
+   * cannot read as a storey at all. */
+  storeyLabel: string | null;
   /** Every label near a wall, with how near, before anything is accepted or
    * refused. A plan that prints section marks beside its elevation markers
    * leaves no edge decidable on its own, and a caller that can weigh the whole
@@ -217,23 +228,41 @@ export interface PlanPageFacts {
   storey: Storey | null;
 }
 
+/** The name a plan sheet gives its own storey: whatever it puts before the
+ * word PLAN in its title. Keyed on the word the sheet must print rather than
+ * on a list of storeys we happen to know. */
+function printedStorey(titleText: string): string | null {
+  const match = /\b([A-Z][A-Z0-9]*(?:\s+[A-Z0-9]+){0,2})\s+PLAN\b/.exec(titleText.toUpperCase());
+  if (!match) return null;
+  const label = match[1].replace(/\s+/g, " ").trim();
+  return label && label !== "PLAN" ? label : null;
+}
+
 export function planPageFacts(
   page: PageText,
   geo: Pick<PageInventory, "widthPt" | "heightPt">,
   vocabulary: string[],
+  /** What this document calls its faces, read from its own elevation sheets.
+   * Absent, the legacy A-D convention stands and the existing engine is
+   * unaffected. */
+  faceNames?: Set<string>,
 ): PlanPageFacts {
   const normalizedVocabulary = new Set(vocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
-  const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
+  const box = tagFootprint(page.words, geo, normalizedVocabulary)
+    ?? footprint(page.words, geo, normalizedVocabulary, faceNames);
   const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
-  const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
-  if (!box) return { footprint: null, labelByEdge: [], ambiguousEdges: [], markerCandidates: [], storey };
+  const titleText = titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text;
+  const storey = storeyOf(titleText);
+  const storeyLabel = printedStorey(titleText) ?? (storey ? storey.toUpperCase() + " FLOOR" : null);
+  if (!box) return { footprint: null, labelByEdge: [], ambiguousEdges: [], markerCandidates: [], storey, storeyLabel };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
   const markerByEdge = new Map<Edge, string>();
   const ambiguous = new Set<Edge>();
   const markerCandidates: { label: string; edge: Edge; distancePt: number }[] = [];
   for (const word of page.words) {
     const label = word.text.trim().toUpperCase();
-    if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
+    const isMarker = faceNames ? faceNames.has(label) : /^[A-D]$/.test(label);
+    if (!isMarker || inside(word, box)) continue;
     const distancePt = distanceToFootprint(word, box);
     if (distancePt > footprintDiagonal * 0.25) continue;
     const edge = nearestEdge(word, box);
@@ -247,6 +276,7 @@ export function planPageFacts(
     markerCandidates,
     ambiguousEdges: [...ambiguous],
     storey,
+    storeyLabel,
   };
 }
 
