@@ -25,7 +25,6 @@ export interface PlanOpeningPlacement {
    * one, otherwise the direction it faces. Never a vocabulary of ours. The
    * handover calls this the elevation, and Phase D consumes that name. */
   elevation: string;
-  elevationEvidence: "marker" | "orientation";
   planEvidenceBoxPt: CropBoxPt;
   wallOrder: number;
   faceOpeningCount: number;

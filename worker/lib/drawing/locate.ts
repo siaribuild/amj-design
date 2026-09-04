@@ -208,7 +208,6 @@ export interface PlanPageFacts {
   /** Wall to label. The lossless direction: one label can sit beside two walls,
    * and keying by label would drop one of them. */
   labelByEdge: [Edge, string][];
-  markerEdges: Record<string, Edge>;
   ambiguousEdges: Edge[];
   /** Every label near a wall, with how near, before anything is accepted or
    * refused. A plan that prints section marks beside its elevation markers
@@ -227,7 +226,7 @@ export function planPageFacts(
   const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
   const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
   const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
-  if (!box) return { footprint: null, labelByEdge: [], markerEdges: {}, ambiguousEdges: [], markerCandidates: [], storey };
+  if (!box) return { footprint: null, labelByEdge: [], ambiguousEdges: [], markerCandidates: [], storey };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
   const markerByEdge = new Map<Edge, string>();
   const ambiguous = new Set<Edge>();
@@ -246,9 +245,6 @@ export function planPageFacts(
     footprint: box,
     labelByEdge: [...markerByEdge],
     markerCandidates,
-    markerEdges: Object.fromEntries([...markerByEdge]
-      .filter(([edge]) => !ambiguous.has(edge))
-      .map(([edge, label]) => [label, edge])) as Record<string, Edge>,
     ambiguousEdges: [...ambiguous],
     storey,
   };

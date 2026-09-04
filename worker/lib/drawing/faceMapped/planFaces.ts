@@ -1,6 +1,6 @@
 import { normalizeOpeningRef } from "../../ai/energyMap";
 import type { PageInventory, PageText, PageWord } from "../contract";
-import { alongWall, openingTagWords, orientationsFromNorth, planPageFacts, type Edge } from "../locate";
+import { alongWall, openingTagWords, planPageFacts, type Edge } from "../locate";
 import type { PlanOpeningPlacement, PlanPlacementOutcome } from "./contract";
 
 /**
@@ -85,7 +85,6 @@ interface Candidate {
   pageNo: number;
   storey: string | null;
   elevation: string | null;
-  elevationEvidence: "marker" | "orientation";
   /** What the locator made of this occurrence: whether a rival could not be
    * told from it, and whether the drawing referenced it at all. */
   vouched: boolean;
@@ -107,7 +106,6 @@ interface Candidate {
 export function placeOpeningsOnPlan(args: {
   pages: PlanPage[];
   roster: string[];
-  north: number | null;
 }): PlanPlacementOutcome[] {
   const rows = args.roster.map((tag) => normalizeOpeningRef(tag) ?? tag);
   const named = new Map<string, number>();
@@ -120,8 +118,6 @@ export function placeOpeningsOnPlan(args: {
   const candidates = new Map<string, Candidate[]>();
   for (const { page, geometry } of args.pages) {
     const facts = planPageFacts(page, geometry, [...vocabulary]);
-    const edgeFacing = args.north === null ? {} : orientationsFromNorth(
-      { top: "top", right: "right", bottom: "bottom", left: "left" }, args.north);
     const { walls: wallNames, tied: markersTied } = nameWalls(facts.markerCandidates);
     const seen = new Map<string, number>();
 
@@ -133,29 +129,26 @@ export function placeOpeningsOnPlan(args: {
       if (!facts.footprint) {
         found.push({
           tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation: null,
-          elevationEvidence: "orientation", vouched: false, alongPt: 0, wallLengthPt: 0,
+          vouched: false, alongPt: 0, wallLengthPt: 0,
           refusal: "no building footprint on the plan page", basis: [],
         });
         candidates.set(tag, found);
         continue;
       }
       const { edge, alongPt, wallLengthPt, corner } = alongWall(word, facts.footprint);
-      const marker = wallNames[edge];
-      const direction = edgeFacing[edge]?.facing;
-      const elevation = marker ?? direction ?? null;
+      const elevation = wallNames[edge] ?? null;
       const refusal = corner ? "the tag sits at a corner, against two walls at once"
         : markersTied ? "the plan's wall markers can be read more than one way"
-        : !elevation ? "the plan names no wall here and no north to face it by"
+        : !elevation ? "the plan does not name this wall"
         : !facts.storey ? "the plan sheet does not say which storey it is"
         : null;
       found.push({
         tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation,
-        elevationEvidence: marker ? "marker" : "orientation",
         vouched: !ambiguous && identityEvidence === "sheet_reference",
         alongPt, wallLengthPt, refusal,
         basis: [
           `plan page ${geometry.pageNo}`,
-          marker ? `wall marked ${marker}` : `wall faces ${direction}`,
+          `wall marked ${elevation}`,
           `${Math.round(alongPt)}pt along a ${Math.round(wallLengthPt)}pt wall`,
         ],
       });
@@ -229,7 +222,6 @@ export function placeOpeningsOnPlan(args: {
         planCandidateId: candidate.planCandidateId,
         storey: candidate.storey!,
         elevation: candidate.elevation!,
-        elevationEvidence: candidate.elevationEvidence,
         planEvidenceBoxPt: [candidate.word.x0, candidate.word.top, candidate.word.x1, candidate.word.bottom],
         wallOrder: index + 1,
         faceOpeningCount: ordered.length,
