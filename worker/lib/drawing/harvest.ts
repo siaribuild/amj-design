@@ -2,7 +2,7 @@ import { normalizeOpeningRef } from "../ai/energyMap";
 import type { CropBoxPt, InspectResponse, Orientation, PageWord } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
-import { drawingViewRegions, horizontalGap, sameLine, type DrawingViewRegion } from "./elevationRegions";
+import { horizontalGap } from "./elevationRegions";
 import { locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 
 export const MAX_TAG_CANDIDATES_PER_TAG = 4;
@@ -65,7 +65,6 @@ export interface DrawingScaleCandidate {
   ratio: number;
   text: string;
   evidenceBoxPt: CropBoxPt;
-  viewRegionPt: CropBoxPt | null;
   source: "printed" | "inferred";
 }
 
@@ -89,44 +88,25 @@ const MAX_OPEN_LINES = 3;
  * and a merged row sorts a word from above between `1` and `100`. */
 const sharesRow = (a: PageWord, b: PageWord): boolean =>
   Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
-    > Math.max(Math.min(a.bottom - a.top, b.bottom - b.top), 1) * 0.5;
+    > Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 0.5;
 
 const adjacent = (a: PageWord, b: PageWord): boolean =>
   sharesRow(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
 
-/** A scale belongs to the title it is printed under, which is not always the
- * band it lands in: stacked views end at their own title line, so a ratio one
- * line below its title falls inside the next view. Bind to the nearest title,
- * and only when it is clearly nearest — a ratio equidistant from two views
- * names neither, and that is the ambiguity the caller must see.
- *
- * Distance to the title is the whole rule. Excluding the bottom of the sheet
- * as "title block" would throw away the commonest layout there is: a title
- * printed under its own view, near the foot of the page. */
-const VIEW_BIND_MARGIN = 0.5;
-
-function boundView(regions: DrawingViewRegion[], centreX: number, centreY: number): CropBoxPt | null {
-  if (!regions.length) return null;
-  const away = (region: DrawingViewRegion): number =>
-    Math.hypot(region.titlePt[0] - centreX, region.titlePt[1] - centreY);
-  const ranked = [...regions].sort((a, b) => away(a) - away(b));
-  if (ranked.length === 1) return [...ranked[0].region];
-  return away(ranked[0]) <= away(ranked[1]) * VIEW_BIND_MARGIN ? [...ranked[0].region] : null;
-}
-
-/** Printed view scales, one candidate per printed ratio. A sheet often carries
- * several views at different scales, so nothing here collapses to a single page
- * answer — the caller decides whether the candidates covering a view agree.
+/** Every printed ratio on a page that is a drawing scale, one candidate each.
+ * Scale is a property of the page: the sheets this product reads print one
+ * scale in their title block and the views share it, so nothing here tries to
+ * attach a ratio to a particular view — `pageScaleRatio` asks whether what is
+ * printed agrees.
  *
  * ponytail: `1:100 @ A3` keeps the ratio and drops the paper size, and
  * `1:1,000` is not read at all. Both fail towards fewer candidates, which the
- * scale-conflict rule already handles; widen only if a real set needs it. */
+ * agreement rule already handles; widen only if a real set needs it. */
 export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCandidate[] {
   const geometryByPage = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
   return inspected.pages.flatMap((page) => {
     const geometry = geometryByPage.get(page.pageNo);
     if (!geometry) return [];
-    const regions = drawingViewRegions(page.words, geometry.widthPt, geometry.heightPt);
     const found: DrawingScaleCandidate[] = [];
     // A ratio is read from the words printed beside it. Scanning the page in
     // content-stream order instead lets another column's word fall between
@@ -161,7 +141,6 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
               ratio,
               text: evidence.map((word) => word.text.trim()).join(" "),
               evidenceBoxPt: box,
-              viewRegionPt: boundView(regions, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2),
               source: "printed",
             });
           }
@@ -172,6 +151,21 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     }
     return found;
   });
+}
+
+/** What each page is drawn at — the scale half of Phase A's document map.
+ * A page's scale is the ratio everything printed on it agrees about. Two
+ * ratios that disagree leave the page absent from the map: a conflict is for
+ * ops to see, never a vote to settle, and a wrong scale sizes a wrong crop. */
+export function pageScales(inspected: InspectResponse): Map<number, number> {
+  const scales = new Map<number, number>();
+  for (const candidate of viewScaleCandidates(inspected)) {
+    const seen = scales.get(candidate.pageNo);
+    if (seen === undefined) scales.set(candidate.pageNo, candidate.ratio);
+    else if (seen !== candidate.ratio) scales.set(candidate.pageNo, Number.NaN);
+  }
+  for (const [pageNo, ratio] of [...scales]) if (Number.isNaN(ratio)) scales.delete(pageNo);
+  return scales;
 }
 
 /** What the ratio at `from` is a ratio *of*, read by walking one direction

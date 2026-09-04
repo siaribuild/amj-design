@@ -24,7 +24,7 @@ await build({
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
-      export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates } from ${p("worker/lib/drawing/harvest.ts")};
+      export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
@@ -44,7 +44,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2010,54 +2010,46 @@ const scaleSheet = (words) => ({
 });
 const line = (top, entries) => entries.map(([text, x0, width]) => ({ text, x0, top, x1: x0 + width, bottom: top + 15 }));
 
-test("view scale: every printed form is read and bound to the elevation it titles", () => {
+test("page scale: the document map says what each page is drawn at, and stays silent where it cannot", () => {
+  const sheet = (pageNo, words) => ({
+    geometry: { pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 },
+    page: { pageNo, text: "", words },
+  });
+  const sheets = [
+    // One sheet scale, printed once: the ordinary case.
+    sheet(1, line(700, [["SCALE", 800, 40], ["1:100", 845, 40]])),
+    // The same scale printed beside each view: still one answer.
+    sheet(2, [...line(300, [["SCALE", 100, 40], ["1:200", 145, 40]]),
+      ...line(600, [["SCALE", 100, 40], ["1:200", 145, 40]])]),
+    // Two ratios that disagree: a conflict for ops, not a vote to settle.
+    sheet(3, [...line(300, [["SCALE", 100, 40], ["1:100", 145, 40]]),
+      ...line(600, [["SCALE", 100, 40], ["1:50", 145, 35]])]),
+    // Nothing printed: the map says nothing rather than guessing.
+    sheet(4, line(300, [["GROUND", 100, 60], ["FLOOR", 165, 50], ["PLAN", 220, 40]])),
+  ];
+  const scales = pageScales({
+    inventory: { pageCount: sheets.length, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: sheets.map((item) => item.geometry) },
+    pages: sheets.map((item) => item.page),
+  });
+  assert.deepEqual([...scales.entries()], [[1, 100], [2, 200]]);
+  assert.equal(scales.has(3), false, "two scales that disagree leave the page without one");
+  assert.equal(scales.has(4), false);
+});
+
+test("page scale: every printed form is read", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10], ["Scale", 210, 40], ["1", 255, 8], [":", 266, 4], ["50", 274, 16]]),
+    ...line(600, [["Scale", 210, 40], ["1", 255, 8], [":", 266, 4], ["100", 274, 24]]),
   ]));
   assert.deepEqual(candidates.map(({ ratio, text, source }) => ({ ratio, text, source })), [
     { ratio: 100, text: "SCALE 1:100", source: "printed" },
-    { ratio: 50, text: "Scale 1 : 50", source: "printed" },
-  ], "two views on one sheet keep two scales; neither becomes the page's answer");
+    { ratio: 100, text: "Scale 1 : 100", source: "printed" },
+  ]);
   assert.deepEqual(candidates[0].evidenceBoxPt, [210, 300, 295, 315]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5]);
-  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
 });
 
-test("view scale: a view named by the document binds as readily as a lettered one", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["NORTH", 100, 60], ["ELEVATION", 165, 80], ["SCALE", 260, 40], ["1:100", 305, 40]]),
-    ...line(600, [["SOUTH", 100, 60], ["ELEVATION", 165, 80], ["SCALE", 260, 40], ["1:50", 305, 40]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
-    "NORTH ELEVATION is a drawing title, so its scale binds to its half of the sheet");
-  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
-});
-
-test("view scale: a scale binds to the title nearest it, and to no view when two are equally close", () => {
-  const stacked = (scaleTop) => [
-    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10]]),
-    ...line(scaleTop, [["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10]]),
-    ...line(scaleTop + 300, [["SCALE", 210, 40], ["1:50", 255, 40]]),
-  ];
-  const below = viewScaleCandidates(scaleSheet(stacked(325)));
-  assert.deepEqual(below.map(({ ratio }) => ratio), [100, 50]);
-  assert.deepEqual(below[0].viewRegionPt, [0, 0, 1_000, 307.5],
-    "a scale printed under its own title belongs to that view, not to the band the point falls in");
-  assert.deepEqual(below[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
-
-  const midway = viewScaleCandidates(scaleSheet([
-    ...line(200, [["ELEVATION", 100, 80], ["A", 185, 10]]),
-    ...line(400, [["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10]]),
-  ]));
-  assert.equal(midway[0].viewRegionPt, null,
-    "equidistant between two titles is ambiguous, and ambiguity is not a binding");
-});
-
-test("view scale: a bare ratio is read, an unusable one is refused, and an untitled sheet binds to no view", () => {
+test("page scale: a bare ratio is read and an unusable one is refused", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(100, [["1:200", 100, 40]]),
     ...line(200, [["1", 100, 8], ["/", 111, 6], ["100", 120, 24]]),
@@ -2068,88 +2060,10 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
     { ratio: 200, text: "1:200" },
     { ratio: 100, text: "1 / 100" },
   ], "1:0 cannot scale anything and 1:abc is not a ratio");
-  assert.equal(candidates[0].viewRegionPt, null, "a sheet with no drawing title binds its scale to no view");
   assert.equal(candidates[0].pageNo, 1);
 });
 
-test("view scale: the nearer keyword decides, however many words away it is", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(100, [["FALL", 100, 35], ["TO", 140, 20], ["OUTLET", 165, 55], ["1:100", 225, 40]]),
-    ...line(200, [["RAMP", 100, 40], ["UP", 145, 20], ["AT", 170, 20], ["1:20", 195, 35]]),
-    ...line(300, [["SCALE", 100, 40], ["1:50", 145, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
-    "a drainage note names its subject once and then runs on; the phrase decides, not the touching token");
-});
-
-test("view scale: a detail printed beside an elevation keeps its own scale", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["DETAIL", 100, 55], ["A", 160, 10], ["SCALE", 185, 40], ["1:10", 230, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 10]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
-    "a detail at 1:10 beside an elevation at 1:100 is two views, not one view in conflict with itself");
-  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
-});
-
-test("view scale: a fall stays a fall through a colon, a connector or an at sign", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(100, [["FALL:", 100, 40], ["1:100", 145, 40]]),
-    ...line(200, [["FALL", 100, 35], ["TO", 140, 20], ["1:100", 165, 40]]),
-    ...line(300, [["RAMP", 100, 40], ["@", 145, 12], ["1:20", 162, 35]]),
-    ...line(400, [["SCALE", 100, 40], ["1:50", 145, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
-    "a drainage note keeps its meaning across the punctuation and connectors drawings print it with");
-});
-
-test("view scale: TYPICAL SECTION is a drawing, not a reference to one", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["TYPICAL", 100, 60], ["SECTION", 165, 70], ["SCALE", 245, 40], ["1:20", 290, 35]]),
-    ...line(600, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [20, 100]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
-    "a qualifier in front of a title names the drawing; only a reference verb points away from it");
-  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
-});
-
-test("view scale: tight line spacing does not fold two rows into one", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    // A title block sets its rows about one text height apart. Folding them
-    // together sorts a word from the row above between the ratio's tokens.
-    { text: "TITLE", x0: 260, top: 300, x1: 300, bottom: 315 },
-    { text: "1", x0: 255, top: 316, x1: 263, bottom: 331 },
-    { text: ":", x0: 266, top: 316, x1: 270, bottom: 331 },
-    { text: "100", x0: 274, top: 316, x1: 298, bottom: 331 },
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
-});
-
-test("view scale: two views side by side stay side by side, however their titles sit", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40]]),
-    ...line(420, [["ELEVATION", 650, 80], ["B", 735, 10], ["SCALE", 760, 40], ["1:50", 805, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
-  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
-    [0, 0, 472.5, 800],
-    [472.5, 0, 1_000, 800],
-  ], "two titles at different heights are a stagger, not a grid: each view still owns its full column");
-});
-
-test("view scale: a note pointing at a drawing is not a drawing", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["SEE", 100, 30], ["SECTION", 135, 70], ["A-A", 210, 30]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 800],
-    "SEE SECTION A-A is a cross-reference; treating it as a title splits the sheet into views that are not there");
-});
-
-test("view scale: a split ratio is read from what sits beside it, not from token order", () => {
+test("page scale: a split ratio is read from what sits beside it, not from token order", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     // Poppler emits words in content-stream order, and a split ratio rarely
     // shares one baseline to the point: another column's word sorts between.
@@ -2161,47 +2075,19 @@ test("view scale: a split ratio is read from what sits beside it, not from token
   assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
 });
 
-test("view scale: four views on one sheet are four regions, not four strips", () => {
-  const row = (top, entries) => line(top, entries);
+test("page scale: tight line spacing does not fold two rows into one", () => {
   const candidates = viewScaleCandidates(scaleSheet([
-    ...row(300, [["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40],
-      ["ELEVATION", 650, 80], ["B", 735, 10], ["SCALE", 760, 40], ["1:50", 805, 35]]),
-    ...row(600, [["ELEVATION", 200, 80], ["C", 285, 10], ["SCALE", 310, 40], ["1:20", 355, 35],
-      ["ELEVATION", 650, 80], ["D", 735, 10], ["SCALE", 760, 40], ["1:5", 805, 30]]),
+    // A title block sets its rows about one text height apart. Folding them
+    // together sorts a word from the row above between the ratio's tokens.
+    { text: "TITLE", x0: 260, top: 300, x1: 300, bottom: 315 },
+    { text: "1", x0: 255, top: 316, x1: 263, bottom: 331 },
+    { text: ":", x0: 266, top: 316, x1: 270, bottom: 331 },
+    { text: "100", x0: 274, top: 316, x1: 298, bottom: 331 },
   ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50, 20, 5]);
-  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
-    [0, 0, 472.5, 307.5],
-    [472.5, 0, 1_000, 307.5],
-    [0, 307.5, 472.5, 607.5],
-    [472.5, 307.5, 1_000, 607.5],
-  ], "a 2-by-2 sheet of elevations must not collapse to full-height strips that cannot tell the rows apart");
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
 });
 
-test("view scale: two views whose titles read alike stay two views", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["SECTION", 100, 70], ["A-A", 175, 30], ["SCALE", 215, 40], ["1:100", 260, 40]]),
-    ...line(600, [["SECTION", 100, 70], ["B-B", 175, 30], ["SCALE", 215, 40], ["1:50", 260, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
-  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
-    [0, 0, 1_000, 307.5],
-    [0, 307.5, 1_000, 607.5],
-  ], "SECTION A-A and SECTION B-B are two drawings; collapsing them binds both scales to the whole sheet");
-});
-
-test("view scale: titles printed under their views still bind, low on the sheet as they are", () => {
-  const candidates = viewScaleCandidates(scaleSheet(line(740, [
-    ["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40],
-    ["ELEVATION", 700, 80], ["B", 785, 10], ["SCALE", 810, 40], ["1:50", 855, 35],
-  ])));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
-  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 497.5, 800],
-    "a drawing title sits below its view, so the bottom of the sheet is where titles live");
-  assert.deepEqual(candidates[1].viewRegionPt, [497.5, 0, 1_000, 800]);
-});
-
-test("view scale: a fall or a grade is not a scale, and a trailing stop does not hide one", () => {
+test("page scale: a fall or a grade is not a scale, and a trailing stop does not hide one", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(100, [["FALL", 100, 40], ["1:100", 145, 40]]),
     ...line(200, [["1:20", 100, 32], ["GRADE", 137, 45]]),
@@ -2210,6 +2096,33 @@ test("view scale: a fall or a grade is not a scale, and a trailing stop does not
   assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [
     { ratio: 50, text: "SCALE 1:50." },
   ], "drainage falls and ramp grades print the same shape as a scale and must not become one");
+});
+
+test("page scale: rotated text beside a note does not detach the note from its ratio", () => {
+  // Geometry copied from the ground floor plan of a real set: a 36.9pt rotated
+  // label overlaps three 7.8pt rows, and a row-grouping that lets it bridge
+  // them interleaves GARAGE / INTERNAL / ACCESS between RAMP, AT and 1:10.
+  const rotated = { text: "2400mm(H)", x0: 340.3, top: 292.0, x1: 348.0, bottom: 328.9 };
+  const row = (top, entries) => entries.map(([text, x0, x1]) => ({ text, x0, x1, top, bottom: top + 7.8 }));
+  const candidates = viewScaleCandidates(scaleSheet([
+    rotated,
+    ...row(290.9, [["BUILT", 368.8, 388.4], ["RAMP", 390.4, 410.4], ["AT", 412.5, 421.3],
+      ["1:10", 423.3, 437.0], ["TO", 438.9, 448.5]]),
+    ...row(298.9, [["GARAGE", 368.8, 398.7], ["INTERNAL", 400.7, 435.0], ["ACCESS", 437.0, 465.8]]),
+    ...row(700, [["SCALE", 800, 840], ["1:100", 845, 885]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100],
+    "the sheet is drawn at 1:100 and the 1:10 is a garage ramp");
+});
+
+test("page scale: the nearer keyword decides, however many words away it is", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(100, [["FALL", 100, 35], ["TO", 140, 20], ["OUTLET", 165, 55], ["1:100", 225, 40]]),
+    ...line(200, [["RAMP", 100, 40], ["UP", 145, 20], ["AT", 170, 20], ["1:20", 195, 35]]),
+    ...line(300, [["SCALE", 100, 40], ["1:50", 145, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
+    "a drainage note names its subject once and then runs on; the phrase decides, not the touching token");
 });
 
 test("expectedWidthPt turns a scheduled width into the points that width occupies", () => {

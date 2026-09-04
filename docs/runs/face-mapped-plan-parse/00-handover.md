@@ -114,10 +114,20 @@ export interface DrawingScaleCandidate {
   ratio: number;
   text: string;
   evidenceBoxPt: CropBoxPt;
-  viewRegionPt: CropBoxPt | null;
   source: "printed" | "inferred";
 }
 ```
+
+**Scale is a property of the page, not of a view** (owner ruling, 2026-09-04,
+on the evidence of a real 15-page set). Every sheet this product cares about —
+floor plans and elevations — prints one scale, in its title block, and the
+views on it share it. Ratios belonging to driveways, ramps, stairs and other
+details are not drawing scales and are ignored; detail sheets are not pages of
+interest, so nothing asks them for a scale. This supersedes §7.4's per-view
+association: a page's scale is the ratio its surviving candidates agree on, and
+disagreement is a conflict recorded for ops, never a guess. Per-view binding
+and its title-region machinery are removed rather than carried unused; git
+holds them if a future set proves they are needed.
 
 ### Do not reuse or copy
 
@@ -247,9 +257,15 @@ For each face/storey:
 
 Score components are named diagnostics, not an opaque weighted model. Equal candidates are ambiguity, not permission to choose the first.
 
-### 7.4 View scale
+### 7.4 Page scale
 
-Recognize `SCALE 1:100`, `Scale 1 : 100`, `1:100`, and `1 / 100`. Associate a candidate with its nearest drawing title/region. A page-level scale is usable only when one exists or all relevant candidates agree.
+Recognize `SCALE 1:100`, `Scale 1 : 100`, `1:100`, and `1 / 100`. A page's scale
+is the ratio all its surviving candidates agree on; disagreement is a conflict,
+not a vote. Candidates a drawing prints for something other than its own scale
+— falls, grades, gradients, pitches, ramps, "no steeper than" — are refused
+before agreement is tested, because one such ratio would otherwise make every
+sheet that carries a note look like a conflict. Only floor plans and elevations
+are asked for a scale (owner ruling, 2026-09-04; §5).
 
 ```ts
 export function expectedWidthPt(widthMm: number, scaleRatio: number): number {
