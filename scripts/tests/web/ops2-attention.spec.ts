@@ -176,3 +176,38 @@ test("the skeleton shows before the summary response resolves", async ({ page })
   await expect(page.getByTestId("attention-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
 });
+
+test("leaving and returning re-fetches, and a slow reply to a superseded request never overwrites a newer one", async ({ page }) => {
+  // Call 1: initial mount, held open — it becomes the stale request. Call 2:
+  // one leave-and-return (the re-fetch this test also proves), resolves at
+  // once with a different count. If useSummary's `live` guard is broken,
+  // releasing call 1 below — after call 2 has already rendered — stomps
+  // call 2's count back to the stale value.
+  let release1 = () => {};
+  const held1 = new Promise<void>((r) => { release1 = r; });
+  let calls = 0;
+  await page.route(SUMMARY_URL, async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      await held1;
+      return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 999 } });
+    }
+    return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 7 } });
+  });
+
+  const loading = page.goto(ATTENTION);
+  await expect(page.getByTestId("attention-skeleton")).toBeVisible(); // call 1, held
+
+  const attentionLink = page.getByRole("link", { name: "Attention" });
+  const productsLink = page.getByRole("link", { name: "Products" });
+
+  await productsLink.click();
+  await expect(page).toHaveURL(`${OPS2}/products`);
+  await attentionLink.click();
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions"); // call 2
+
+  release1();
+  await loading;
+  await page.waitForTimeout(200); // give the stale call 1 reply a chance to land, if it's going to
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions");
+});
