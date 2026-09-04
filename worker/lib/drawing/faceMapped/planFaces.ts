@@ -183,7 +183,9 @@ export function placeOpeningsOnPlan(args: {
   const faceNames = args.faceNames ?? new Set<string>();
   const candidates = new Map<string, Candidate[]>();
   for (const { page, geometry } of args.pages) {
-    const facts = planPageFacts(page, geometry, [...vocabulary], faceNames.size ? faceNames : undefined);
+    const facts = // Always the document's own names, empty set included: falling back to
+    // A-D would place openings against faces this document never printed.
+    planPageFacts(page, geometry, [...vocabulary], faceNames);
     const { walls: wallNames, tied: markersTied } = nameWalls(facts.markerCandidates);
     const title = args.sheetTitles?.get(geometry.pageNo);
     const storey = (title ? printedStorey(title) : null) ?? facts.storeyLabel;

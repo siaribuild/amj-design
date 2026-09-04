@@ -206,7 +206,12 @@ async function enrichFile(
         planPages: pagesOf("floorplan"),
         elevationPages: pagesOf("elevation"),
         pageScales: pageScales(inspected),
-        sheetTitles: new Map(inspected.pages.map((page) => [page.pageNo, page.text])),
+        // Only titles that are titles. A sheet's own title band is read where
+        // it has one, and handing the whole page's text over instead makes
+        // every plan sheet claim the same storey. A set whose title block is
+        // drawn as graphics needs Phase A's visual sheet recovery, which this
+        // branch does not yet call.
+        sheetTitles: new Map(),
         deps: {
           ...deps.runFaceMapped,
           render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),

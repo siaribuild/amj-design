@@ -1,13 +1,19 @@
 import type { Skill } from "../../estimator/skills/types";
 import type { CropBoxPt, DrawingFileReport, DrawingReading, RenderRequest, RenderResponse } from "../contract";
-import { documentFaceSheets } from "../sheetFaces";
-import { makeCompositionSkill, runCompositions, type CompositionOutcome, type CompositionTask } from "./compositions";
+import { documentFaceRegions, documentFaceSheets } from "../sheetFaces";
+import {
+  compositionBatches, makeCompositionSkill, runCompositions,
+  type CompositionOutcome, type CompositionTask,
+} from "./compositions";
 import { openingCropTasks } from "./crops";
 import {
   elevationFaceTasks, makeElevationInventorySkill, validateElevationFrames,
   type ElevationFaceTask,
 } from "./elevationFrames";
-import { faceMappedProgress, faceMappedReadings, type CropForReport, type PlacedForReport } from "./report";
+import {
+  faceMappedFileReport, faceMappedProgress, faceMappedReadings,
+  type CropForReport, type PlacedForReport,
+} from "./report";
 import {
   faceReconciliationTasks, makeFaceReconcileSkill, matchFacePlacements,
   type FaceReconcileTask, type MatchedOpeningFrame,
@@ -26,7 +32,12 @@ export interface FaceMappedDeps {
   storeCrop(id: string, pngB64: string): Promise<string | null>;
   readPlanPage(input: FaceMappedCall & { pageNo: number; prompt: string }): Promise<unknown>;
   inventoryElevation(input: FaceMappedCall & { task: ElevationFaceTask }): Promise<unknown>;
-  reconcileFace(input: FaceMappedCall & { faceKey: string; prompt: string; frameIds: string[] }): Promise<unknown>;
+  reconcileFace(input: FaceMappedCall & {
+    faceKey: string; prompt: string; frameIds: string[];
+    /** The plan region and the elevation overview together (§7.3 step 5): the
+     *  question is about the two of them, so both go. */
+    imageDataUrls: string[];
+  }): Promise<unknown>;
   readComposition(input: { batch: CompositionTask[]; attempt: number; skill: Skill<unknown, unknown> }): Promise<unknown>;
   onProgress?(event: { phase: string; message: string; done: number; total: number; ms: number }): Promise<void>;
 }
@@ -39,7 +50,11 @@ export interface FaceMappedCall {
 }
 
 const RENDER_DPI = 100;
+/** A face is a fraction of its sheet, so it is rendered closer than a page. */
+const FACE_DPI = 150;
 const CROP_DPI = 300;
+/** How many of a run's composition batches may be asked twice. */
+const COMPOSITION_RETRY_BUDGET = 4;
 
 export async function runFaceMappedParser(args: {
   fileId: string;
@@ -55,7 +70,11 @@ export async function runFaceMappedParser(args: {
   const started = Date.now();
   const progress = faceMappedProgress(async (event) => { await args.deps.onProgress?.(event); });
   const roster = args.scheduleRows.map((row) => row.tag);
-  const widthByTag = new Map(args.scheduleRows.map((row) => [row.tag, row.widthMm]));
+  // A row whose width the schedule did not state is not a row that says zero.
+  // Treating it as a measurement makes every frame drawn for it a conflict.
+  const widthByTag = new Map(args.scheduleRows
+    .filter((row) => row.widthMm > 0)
+    .map((row) => [row.tag, row.widthMm]));
   const faceSheets = documentFaceSheets(args.elevationPages);
   let modelCalls = 0;
   let containerCalls = 0;
@@ -101,15 +120,19 @@ export async function runFaceMappedParser(args: {
   await progress.step("plan_faces", "Mapping floor plans", placements.size, roster.length);
 
   // ── Phase D: the frames each face draws, and which opening each one is. ──
+  const faceRegions = documentFaceRegions(args.elevationPages);
   const built = elevationFaceTasks({
     placements: outcomes.flatMap((o) => o.state === "resolved" ? [o.placement] : []),
     faceSheets,
     widthByTag,
     sheets: new Map([...faceSheets.values()].flat().map((pageNo) => [pageNo, {
       overviewRenderId: `p${pageNo}`,
-      overviewBoxPt: [0, 0, 1_000, 800] as CropBoxPt,
+      overviewBoxPt: pageBox(args.elevationPages, pageNo),
       scaleCandidates: [],
     }])),
+    // A sheet drawing four elevations shows a reader all four; the face's own
+    // part of it shows the one the question is about.
+    regionByFace: faceRegions,
   });
   for (const skipped of built.skipped) {
     for (const tag of skipped.tags) unplaced.set(tag, skipped.reason);
@@ -121,12 +144,14 @@ export async function runFaceMappedParser(args: {
   for (const task of built.tasks) {
     await progress.step("elevation_frames", `Locating elevation frames · ${task.elevation}, ${task.storey}`, done, built.tasks.length);
     done += 1;
-    const image = await pageImage(task.pageNo);
+    // The face's own region, at a resolution that holds up when it is a
+    // quarter of a sheet.
+    const image = await pageImage(task.pageNo, task.overviewBoxPt, FACE_DPI);
     if (!image) continue;
     modelCalls += 1;
-    const inventory = validateElevationFrames(
-      await args.deps.inventoryElevation({ task, imageDataUrl: image.url, skill: makeElevationInventorySkill(task) }).catch(() => null),
-      task);
+    const inventorySkill = makeElevationInventorySkill(task);
+    const inventory = inventorySkill.validate(
+      await args.deps.inventoryElevation({ task, imageDataUrl: image.url, skill: inventorySkill }).catch(() => null));
     if (inventory.state === "unresolved") {
       for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, inventory.reason);
       continue;
@@ -161,12 +186,14 @@ export async function runFaceMappedParser(args: {
   for (const face of faceReconciliationTasks(unsettled)) {
     const skill = makeFaceReconcileSkill(face);
     const image = await pageImage(face.frames[0].pageNo);
+    const planImage = await pageImage(face.placements[0].planPageNo);
     if (!image) continue;
     modelCalls += 1;
     const settled = skill.validate(await args.deps.reconcileFace({
       faceKey: face.faceKey,
       prompt: skill.buildPrompt({ imageDataUrl: image.url }),
       imageDataUrl: image.url,
+      imageDataUrls: [planImage?.url, image.url].flatMap((url) => url ? [url] : []),
       frameIds: face.frames.map((frame) => frame.frameId),
       skill,
     }).catch(() => null));
@@ -184,7 +211,9 @@ export async function runFaceMappedParser(args: {
     matches: matched.map((match) => ({
       tag: match.tag, frame: match.frame, expectedWidthPt: match.expectedWidthPt,
     })),
-    pageSizePt: [1_000, 800],
+    pageSizePt: matched.length
+      ? [pageBox(args.elevationPages, matched[0].frame.pageNo)[2], pageBox(args.elevationPages, matched[0].frame.pageNo)[3]]
+      : [0, 0],
     sourceFileId: args.sourceFileId,
   });
   for (const [at, task] of cropTasks.entries()) {
@@ -193,6 +222,13 @@ export async function runFaceMappedParser(args: {
     if (!image) continue;
     const cropRenderId = `${task.tag}_${task.frameId}`;
     const cropKey = await args.deps.storeCrop(cropRenderId, image.pngB64);
+    // A crop that is nowhere is not evidence. Reading it anyway produces an
+    // answer whose lineage cannot be followed back to anything, which is the
+    // one thing a reading has to be able to do.
+    if (!cropKey) {
+      unplaced.set(task.tag, "the crop for this opening could not be stored");
+      continue;
+    }
     crops.set(task.tag, { cropRenderId, cropKey, pageNo: task.pageNo, bboxPt: task.bboxPt });
     compositionTasks.push({ tag: task.tag, frameId: task.frameId, cropRenderId, imageDataUrl: image.url });
   }
@@ -203,6 +239,9 @@ export async function runFaceMappedParser(args: {
     await progress.step("composition_reads", "Reading opening compositions", 0, compositionTasks.length);
     compositions = await runCompositions({
       tasks: compositionTasks,
+      // Retries included: a document cannot spend the run's whole budget on one
+      // batch that will not answer.
+      callCeiling: compositionBatches(compositionTasks).length + COMPOSITION_RETRY_BUDGET,
       ask: async (batch, attempt) => {
         modelCalls += 1;
         return args.deps.readComposition({ batch, attempt, skill: makeCompositionSkill(batch) });
@@ -221,50 +260,31 @@ export async function runFaceMappedParser(args: {
     crops,
     compositions,
     scheduleTypeByTag: new Map(args.scheduleRows.map((row) => [row.tag, row.typeText ?? null])),
+    // What matching found wrong with a pairing does not stop being wrong
+    // because a later phase read the crop confidently.
+    matchWarnings: new Map(matched
+      .filter((match) => match.confidence === "ambiguous")
+      .map((match) => [match.tag, match.warnings])),
   });
   const unread = readings.filter((reading) => reading.splitState !== "value").length;
   await progress.step("drawing_complete", `Drawing review complete · ${roster.length} processed, ${unread} unresolved`, roster.length, roster.length);
 
   return {
     readings,
-    report: {
+    report: faceMappedFileReport({
       fileId: args.fileId,
-      sourceFileIds: [args.sourceFileId],
-      steps: {
-        inventory: { pages: args.planPages.length + args.elevationPages.length, fonts: 0, images: 0, attachments: 0 },
-        strategy: "text_vector",
-        text: { pagesRead: args.planPages.length + args.elevationPages.length },
-        selectPages: { selected: [], of: args.planPages.length + args.elevationPages.length },
-        elevationRegions: [],
-        renderCrop: { pagesRendered: containerCalls, cropsMade: crops.size },
-        read: {
-          attempted: compositionTasks.length,
-          returned: compositions.filter((outcome) => outcome.state === "value").length,
-          declined: compositions.filter((outcome) => outcome.state === "not_stated").length,
-          retriedWithThreshold: 0,
-          targetedReviews: 0,
-        },
-        placements: {
-          // Placed by the drawing rather than by a look at it. Confidence is a
-          // different axis: an unvouched tag is still a text placement.
-          fromText: placements.size - faceByCandidate.size,
-          fromModelFallback: faceByCandidate.size,
-          unplaced: readings.filter((reading) => reading.gapCode === "unplaced").length,
-        },
-        northAssumed: false,
-      },
-      perOpening: readings.map((reading) => ({
-        tag: reading.externalRef,
-        outcome: reading.splitState === "value" ? "read" as const : "not_read" as const,
-        cropKey: reading.cropKey,
-        pageNo: reading.pageNo,
-        confidence: reading.confidence,
-        flags: reading.flags,
-      })),
-      wallMs: Date.now() - started,
+      sourceFileId: args.sourceFileId,
+      readings,
+      pagesRead: args.planPages.length + args.elevationPages.length,
+      crops: crops.size,
+      attempted: compositionTasks.length,
+      compositions,
+      placed: placements.size,
+      recovered: faceByCandidate.size,
       modelCalls,
       containerCalls,
-    },
+      startedAt: started,
+    }),
   };
 }
 
@@ -290,4 +310,12 @@ function elevationTagWords(pages: PlanPage[], pageNo: number, roster: string[]) 
     tag: tagOf.get(tag) ?? tag,
     boxPt: [word.x0, word.top, word.x1, word.bottom] as CropBoxPt,
   }));
+}
+
+/** A page's own size in points. Every box the engine hands out is in these,
+ * and assuming a size instead puts every crop in the top-left corner of a
+ * sheet that is nothing like that size. */
+function pageBox(pages: PlanPage[], pageNo: number): CropBoxPt {
+  const geometry = pages.find((page) => page.geometry.pageNo === pageNo)?.geometry;
+  return [0, 0, geometry?.widthPt ?? 0, geometry?.heightPt ?? 0];
 }

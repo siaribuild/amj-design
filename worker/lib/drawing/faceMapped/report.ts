@@ -1,4 +1,4 @@
-import type { CropBoxPt, DrawingReading, GapCode } from "../contract";
+import type { CropBoxPt, DrawingFileReport, DrawingReading, GapCode } from "../contract";
 import type { CompositionOutcome } from "./compositions";
 
 /**
@@ -38,6 +38,9 @@ export function faceMappedReadings(args: {
   /** What the schedule calls each opening, compared only after it was read
    * (§7.6). A reader told the answer confirms the answer. */
   scheduleTypeByTag?: Map<string, string | null>;
+  /** What matching could not settle about a pairing. A crop read confidently
+   * is still a crop of a frame the measurements disagreed about. */
+  matchWarnings?: Map<string, string[]>;
 }): DrawingReading[] {
   const readByTag = new Map<string, CompositionOutcome>();
   for (const outcome of args.compositions) {
@@ -56,9 +59,11 @@ export function faceMappedReadings(args: {
       : read?.state === "value" ? null
       : "division_unreadable";
     const gapNote = !placed ? args.unplaced.get(tag) ?? "not placed on any plan page"
-      : !crop ? "no crop was made for this opening"
+      // A placed opening with no crop stopped somewhere, and the phase that
+      // stopped said why. "No crop was made" is the symptom, not the reason.
+      : !crop ? args.unplaced.get(tag) ?? "no crop was made for this opening"
       : read && read.state !== "value" ? read.reason
-      : null;
+      : args.matchWarnings?.get(tag)?.join("; ") ?? null;
 
     return {
       sourceFileId: args.sourceFileId,
@@ -89,7 +94,9 @@ export function faceMappedReadings(args: {
       pageNo: crop?.pageNo ?? placed?.planPageNo ?? null,
       sheetRef: null,
       regionJson: crop ? [crop.bboxPt[0], crop.bboxPt[1], crop.bboxPt[2], crop.bboxPt[3]] : null,
-      confidence: read?.state === "value" ? read.value.confidence : null,
+      confidence: read?.state === "value"
+        ? (args.matchWarnings?.has(tag) ? "low" : read.value.confidence)
+        : null,
       flags: [
         ...(placed?.confidence === "ambiguous" ? ["agentEvidenceWeak" as const] : []),
         // Both are reported and neither is corrected: which of the two is right
@@ -97,6 +104,7 @@ export function faceMappedReadings(args: {
         ...(read?.state === "value" && disagreesWithSchedule(read.value.operations, args.scheduleTypeByTag?.get(tag))
           ? ["scheduleDrawingMismatch" as const]
           : []),
+        ...(args.matchWarnings?.has(tag) ? ["drawingInconsistency" as const] : []),
       ],
     };
   });
@@ -146,5 +154,62 @@ export function faceMappedProgress(
       last = at;
       await emit({ phase, message, done, total, ms });
     },
+  };
+}
+
+/** What the run did, counted from what it produced. Assembled here rather than
+ * in the orchestrator because every number in it is a fact about the readings,
+ * and one place per fact applies to counts as much as to anything else. */
+export function faceMappedFileReport(args: {
+  fileId: string;
+  sourceFileId: string;
+  readings: DrawingReading[];
+  pagesRead: number;
+  crops: number;
+  attempted: number;
+  compositions: CompositionOutcome[];
+  placed: number;
+  recovered: number;
+  modelCalls: number;
+  containerCalls: number;
+  startedAt: number;
+}): DrawingFileReport {
+  return {
+    fileId: args.fileId,
+    sourceFileIds: [args.sourceFileId],
+    steps: {
+      inventory: { pages: args.pagesRead, fonts: 0, images: 0, attachments: 0 },
+      strategy: "text_vector",
+      text: { pagesRead: args.pagesRead },
+      selectPages: { selected: [], of: args.pagesRead },
+      elevationRegions: [],
+      renderCrop: { pagesRendered: args.containerCalls, cropsMade: args.crops },
+      read: {
+        attempted: args.attempted,
+        returned: args.compositions.filter((outcome) => outcome.state === "value").length,
+        declined: args.compositions.filter((outcome) => outcome.state === "not_stated").length,
+        retriedWithThreshold: 0,
+        targetedReviews: 0,
+      },
+      placements: {
+        // Placed by the drawing rather than by a look at it. Confidence is a
+        // different axis: an unvouched tag is still a text placement.
+        fromText: args.placed - args.recovered,
+        fromModelFallback: args.recovered,
+        unplaced: args.readings.filter((reading) => reading.gapCode === "unplaced").length,
+      },
+      northAssumed: false,
+    },
+    perOpening: args.readings.map((reading) => ({
+      tag: reading.externalRef,
+      outcome: reading.splitState === "value" ? "read" as const : "not_read" as const,
+      cropKey: reading.cropKey,
+      pageNo: reading.pageNo,
+      confidence: reading.confidence,
+      flags: reading.flags,
+    })),
+    wallMs: Date.now() - args.startedAt,
+    modelCalls: args.modelCalls,
+    containerCalls: args.containerCalls,
   };
 }

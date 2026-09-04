@@ -71,11 +71,11 @@ function readingOf(row: Record<string, unknown>, task: CompositionTask): Composi
     : [];
   const divisionAxis = AXES.includes(row.divisionAxis as SplitAxis) ? row.divisionAxis as SplitAxis : null;
   if (!operations.length || !unitRatios.length || !divisionAxis) return null;
-  // One operation per part, or one for the whole frame. Anything between is a
-  // list that does not line up with the parts it describes, and the parts have
-  // to make a whole: parts adding to one and a half frames describe something
-  // other than this opening whichever half of it is wrong.
-  if (operations.length !== 1 && operations.length !== unitRatios.length) return null;
+  // One operation per part. Copying one across two parts invents a composition
+  // the drawing never showed, and the parts have to make a whole: parts adding
+  // to one and a half frames describe something other than this opening
+  // whichever half of it is wrong.
+  if (operations.length !== unitRatios.length) return null;
   if (Math.abs(unitRatios.reduce((sum, ratio) => sum + ratio, 0) - 1) > RATIO_TOLERANCE) return null;
   return {
     state: "value",
@@ -196,13 +196,18 @@ export async function runCompositions(args: {
   const answered = await mapPool(batches, MAX_CONCURRENT_BATCHES, async (batch) => {
     const skill = makeCompositionSkill(batch);
     try {
+      let best: CompositionOutcome[] | null = null;
       for (const attempt of [1, 2]) {
         if (!spend()) break;
         const read = await skill.validate(await args.ask(batch, attempt).catch(() => null));
-        // A batch that came back schema-shaped and useless is asked once more:
-        // nothing about it was read, so there is nothing yet to keep.
-        if (read?.some((outcome) => outcome.state !== "not_read")) return read;
+        // Keep whichever answer said more about each opening, and ask again
+        // while any of them is still unread: one usable record out of four is
+        // not an answered batch.
+        best = read ? (best ?? read).map((was, at) =>
+          was.state === "not_read" ? read[at] : was) : best;
+        if (best?.every((outcome) => outcome.state !== "not_read")) return best;
       }
+      if (best) return best;
     } catch {
       // Falls through to the unread outcomes below: a thrown provider is the
       // same to this batch's openings as one that answered with nothing.

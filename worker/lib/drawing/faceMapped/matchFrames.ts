@@ -182,6 +182,9 @@ export function matchFacePlacements(args: FaceMatchInput): FaceMatch {
       reason: null,
       matches: [{
         ...only,
+        // Nothing corroborated this pairing. It is the only one available,
+        // which is a reason to keep it and not a reason to call it verified.
+        confidence: "ambiguous",
         warnings: [...only.warnings, "one opening on this face, so which end the elevation counts from was never tested"],
       }],
     };

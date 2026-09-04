@@ -63,6 +63,8 @@ export function elevationFaceTasks(args: {
   widthByTag: Map<string, number>;
   /** What is known about each elevation sheet, once it has been rendered. */
   sheets: Map<number, { overviewRenderId: string; overviewBoxPt: CropBoxPt; scaleCandidates: DrawingScaleCandidate[] }>;
+  /** Where each face is drawn on its sheet, where a sheet draws more than one. */
+  regionByFace?: Map<string, { pageNo: number; regionPt: CropBoxPt }>;
 }): { tasks: ElevationFaceTask[]; skipped: SkippedFace[] } {
   const groups = new Map<string, PlanOpeningPlacement[]>();
   for (const placement of args.placements) {
@@ -104,7 +106,7 @@ export function elevationFaceTasks(args: {
       // them position by position rather than as a bag of numbers.
       scheduledWidthsMm: ordered.flatMap((p) => args.widthByTag.get(p.tag) ?? []),
       overviewRenderId: sheet.overviewRenderId,
-      overviewBoxPt: sheet.overviewBoxPt,
+      overviewBoxPt: args.regionByFace?.get(elevation)?.regionPt ?? sheet.overviewBoxPt,
       scaleCandidates: sheet.scaleCandidates,
     });
   }
