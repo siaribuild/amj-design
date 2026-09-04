@@ -25,6 +25,12 @@ const RECOVERY_DPI = 100;
 const MIN_RATIO = 1;
 const MAX_RATIO = 20_000;
 
+/** A document whose text states no scale anywhere costs one render and one call
+ * per page, and the inspection cap is sixty pages. Twenty is past any real set
+ * — 623, the worst to hand, needs eleven — so a document that wants more is
+ * telling us it needs attention rather than more spending. */
+const MAX_RECOVERY_PAGES = 20;
+
 /** What a model may return about a sheet's scale, and nothing else. It must say
  * which sheet it read, and that sheet must be the one this run asked about: a
  * response describing another sheet, or naming none, is not evidence about the
@@ -58,8 +64,11 @@ export async function recoverPageScales(args: {
 }): Promise<Map<number, number>> {
   const recovered = new Map<number, number>();
   const known = new Set(args.inspected.inventory.pages.map((page) => page.pageNo));
-  for (const pageNo of args.pageNos) {
-    if (!known.has(pageNo)) continue;
+  // Deduplicated and capped before any work starts: a page asked for twice is
+  // one render, and a document with no readable scale anywhere does not get to
+  // spend a call on every page it has.
+  const wanted = [...new Set(args.pageNos)].filter((pageNo) => known.has(pageNo)).slice(0, MAX_RECOVERY_PAGES);
+  for (const pageNo of wanted) {
     const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
     const image = render.images[0];
     if (!image?.pngB64) continue;

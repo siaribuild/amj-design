@@ -137,6 +137,29 @@ because a convention that fails is exactly why it is being called.
 because text already answered. 623 returns a scale for every sheet that states
 one, confirmed against the drawings by the owner.
 
+**AC24 — a document cannot ask for unbounded work.** Given a set whose text
+states no scale anywhere, then recovery renders and calls at most once per page,
+never twice for the same page, and never for more than a capped number of pages.
+A document that wants more is telling us it needs attention, not more spending.
+
+## The risk this phase accepts, named
+
+A page is customer-supplied, and recovery shows the whole page to a model. A
+crafted sheet — a false scale marking, or text aimed at the reader of the image
+— can make the model report a scale that is not the drawing's. Validation bounds
+the damage to one integer for one page, so the blast radius is that page's crop
+width and nothing else; there is no path to another page, another document, or
+any sink.
+
+It is not eliminated here, because it cannot be: reading what a sheet states
+means believing what the sheet shows. The designed answer lives downstream in
+§7.4 — frames measured against the scheduled widths give an independent check,
+and a scale that disagrees with the frames consistently is a conflict rather
+than a fact. **Task 10 must therefore carry the provenance of a recovered scale
+through to the matcher**, so a recovered value can be doubted where a printed
+one is trusted. A merged map that forgets which is which throws away the only
+defence this phase leaves standing.
+
 ## Known ceilings, and judgement calls a reviewer should see
 
 - **The footer is a band, not the title block itself.** `FOOTER_FRACTION` is

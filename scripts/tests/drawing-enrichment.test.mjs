@@ -2125,6 +2125,33 @@ test("scale recovery: what a model returns is bounded like any other input (AC21
   assert.equal(validateStatedScale("SCALE 1:100", 4), null, "prose is not a result");
 });
 
+test("scale recovery: a document cannot ask for unbounded work (AC24)", async () => {
+  const asked = [];
+  const pageCount = 60;
+  const inspected = {
+    inventory: { pageCount, producer: "test", fonts: [], hasAttachments: false,
+      pages: Array.from({ length: pageCount }, (_, at) => ({
+        pageNo: at + 1, widthPt: 842, heightPt: 595, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0,
+      })) },
+    pages: Array.from({ length: pageCount }, (_, at) => ({ pageNo: at + 1, text: "", words: [] })),
+  };
+  const recovered = await recoverPageScales({
+    inspected,
+    // Every page, and the same page asked for twice.
+    pageNos: [...Array.from({ length: pageCount }, (_, at) => at + 1), 1, 1],
+    deps: {
+      render: async (request) => {
+        asked.push(request.pageNo);
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: request.dpi };
+      },
+      readStatedScale: async ({ pageNo }) => ({ pageNo, ratio: 100 }),
+    },
+  });
+  assert.equal(new Set(asked).size, asked.length, "a page is never rendered twice for the same run");
+  assert.equal(asked.length <= 20, true, `a scanned set must not turn into one call per page: asked ${asked.length}`);
+  assert.equal(recovered.size, asked.length);
+});
+
 test("scale recovery: a sheet that states its scale only in graphics still gets one (AC19)", async () => {
   const asked = [];
   const recovered = await recoverPageScales({
