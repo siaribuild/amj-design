@@ -406,7 +406,14 @@ const withDir = (r) => { r.dir = 'docs/runs/' + r.slug; return r }
 function loadRun(slug) {
   const p = join(RUNS, slug, 'run.json')
   if (!existsSync(p)) die('no run at ' + p + '\n  start one with:  conduct start <slug> "<ask>"')
-  return withDir(JSON.parse(readFileSync(p, 'utf8')))
+  const r = JSON.parse(readFileSync(p, 'utf8'))
+  // The slug read back OUT of run.json is a path segment like every other one,
+  // and it is joined into every path the rest of this run touches. Every other
+  // route to a slug is validated; leaving this one unchecked left the chain with
+  // a gap in it. Named by /security-review as hardening, below its own bar only
+  // because reaching it needs repo write access.
+  checkSlug(r.slug)
+  return withDir(r)
 }
 
 /**

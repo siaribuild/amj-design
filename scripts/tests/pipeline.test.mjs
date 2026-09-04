@@ -2803,3 +2803,20 @@ test('checkPlan reads the same criterion shapes checkSpec accepts', () => {
   assert.equal(partial.warn.filter((w) => /AC-1/.test(w)).length, 0,
     'a covered criterion must not be reported: ' + partial.warn)
 })
+
+test('the slug INSIDE run.json is validated too - it is a path segment like any other', () => {
+  // Hardening the security review named without raising it as a finding: every
+  // other route to a slug goes through checkSlug, but the one read back out of
+  // run.json did not, and it is joined into every later path the run touches.
+  // Not reachable without repo write access, which is why it was below the bar -
+  // and one line, which is why leaving the chain with a gap in it is worse.
+  const { root } = seedRun('slug-in-runjson', {})
+  const rj = join(root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  run.slug = '../../../etc'
+  writeFileSync(rj, JSON.stringify(run))
+
+  assert.throws(() => execFileSync(process.execPath, [CONDUCT, 'plan'],
+    { cwd: root, encoding: 'utf8', stdio: 'pipe' }),
+  /slug/i, 'a traversing slug read back from run.json must be refused, not joined into a path')
+})
