@@ -220,10 +220,10 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
   const anyUnpriced = segments.some((s) => s.line_total == null);
   const total = anyUnpriced ? null : segments.reduce((sum, s) => sum + (s.line_total ?? 0), 0);
   // A human price on the parent (0046: NULL means none) takes ownership of the
+  // total - decided in the UPDATE below rather than here, so a price that
+  // commits mid-recompute is not overwritten by a stale read.
   // total — the manufacturer quoted the assembly as one unit, and Σ(segments)
   // stops being the truth. Everything else stays derived: qty, coverage, status.
-  const owned = parent.price_calculated == null;
-  const effectiveTotal = owned ? total : (parent.line_total ?? null);
   const worst = segments.some((s) => s.status === "incomplete")
     ? "incomplete"
     : segments.some((s) => s.status === "technical_review") ? "technical_review" : "ready";
@@ -247,15 +247,29 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
   // that key, only when the units produce a total; an unpriced composite keeps
   // its blocker, and every unrelated review reason survives the JSON merge.
   //
+  // OWNERSHIP IS DECIDED BY THE WRITE, NOT BY THE READ ABOVE (Codex P2).
+  // `owned` was read at the top of this function and used to pick the value
+  // for an unconditional UPDATE. If a price request committed in between, the
+  // stale decision overwrote the newly saved `line_total` while leaving
+  // `price_calculated` non-NULL - an override marker paired with the wrong
+  // amount, which is the one thing the ownership rule exists to prevent.
+  //
+  // So the CASE re-reads `price_calculated` inside the statement: the row
+  // decides, atomically, and the window closes rather than narrows. Status
+  // follows the SAME expression, or a concurrent price would be marked
+  // `incomplete` because the sum this call computed happened to be NULL.
+  const resolved = "CASE WHEN price_calculated IS NULL THEN ?1 ELSE line_total END";
   stmts.push(env.DB.prepare(
-    `UPDATE quote_line SET line_total=?, status=?, line_kind='composite_parent',
-       coverage_delta_mm=?,
-       review_json=CASE WHEN ? IS NOT NULL
+    `UPDATE quote_line SET line_total=${resolved},
+       status=CASE WHEN (${resolved}) IS NULL THEN 'incomplete' ELSE ?2 END,
+       line_kind='composite_parent',
+       coverage_delta_mm=?3,
+       review_json=CASE WHEN (${resolved}) IS NOT NULL
          THEN NULLIF(json_patch(COALESCE(review_json,'{}'), '{"product":null}'), '{}')
          ELSE review_json
        END,
-       updated_at=datetime('now') WHERE id=?`,
-  ).bind(effectiveTotal, effectiveTotal == null ? "incomplete" : worst, coverage, effectiveTotal, parentId));
+       updated_at=datetime('now') WHERE id=?4`,
+  ).bind(total, worst, coverage, parentId));
 
   await env.DB.batch(stmts);
 }

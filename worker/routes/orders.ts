@@ -85,7 +85,17 @@ orders.get("/:id", async (c) => {
   if (!order) return c.json({ error: "not_found" }, 404);
   // The same nested shape the quote serves, so the account renders both through
   // one list component (worker/lib/orders.ts's orderLines).
-  return c.json({ order: { ...(await orderCtxDto(c, order)), lines: await orderLines(c.env, order.id) } });
+  // THE MARGIN STOPS AT THE CUSTOMER BOUNDARY (Codex P1). `orderLines` keeps
+  // each unit's price because the ops contract view is entitled to it; this
+  // read is not. Once a composite parent carries a manufacturer price, the
+  // gap between it and the units' computed prices is a margin, and this
+  // payload is readable by the customer and by an OTP guest.
+  const lines = (await orderLines(c.env, order.id)).map((line) => (
+    line.segments
+      ? { ...line, segments: line.segments.map(({ lineTotal, ...unit }) => (
+          { ...unit, priced: lineTotal != null })) }
+      : line));
+  return c.json({ order: { ...(await orderCtxDto(c, order)), lines } });
 });
 
 // POST /api/orders/:id/confirm-drawings — CUSTOMER gate (step 7).
