@@ -77,3 +77,36 @@ IonRouterOutlet keeps the page mounted.
 npm run test:ops2: 103/103 pass. typecheck:gate: green (0 fatal).
 
 Next task: no follow-up known from this task.
+
+## T5 - Attention browser suite: seed mailbox + the navigation cases
+
+Files: scripts/db/seed.sql, scripts/tests/web/ops2-attention.spec.ts.
+
+seed.sql: u_staff7 (estimator, liis@openframe.com.au) + register comment
+line, following u_staff3-6's pattern exactly.
+
+New spec (sign-in block copied verbatim from ops2-projects.spec.ts, keyed
+to u_staff7). Stubs /api/ops/summary via page.route with all 8 real
+response keys (numbers, no degraded). 4 tests, design §10 navigation only:
+- groups render endpoint numbers; each row is exactly one button (no
+  mutating control) — cases 1, 6.
+- submissions row -> /projects, Needs-us chip aria-pressed=true, All
+  clears it — cases 9, 10.
+- enquiries row -> /enquiries placeholder root ("Nothing is built here
+  yet.") — case 13.
+- trade applications row -> /customers — case 14.
+
+No app-code changes needed (AttentionPage/attention.ts/RowList already
+built by T2/T3) — all 4 tests green on first run.
+
+npx playwright test ops2-attention: 4/4 pass. typecheck:gate: green.
+
+Next task (T7): failure/skeleton/staleness/unauthorised cases, same file.
+
+## T6 - Abuse assertions pin bodies carry no counts, not just 403
+
+Files: scripts/tests/api.test.mjs, scripts/tests/api-edge.test.mjs.
+4 existing /api/ops/summary 403 denial assertions (anonymous, customer,
+manufacturer loop, Access-mode assertion-less session) now also assert
+body.submissions === undefined. No worker change — route already returns
+{error:"forbidden"}. npm run test:api and npm run test:trade both green.
