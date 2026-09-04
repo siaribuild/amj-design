@@ -73,19 +73,42 @@ export async function readMonitoringSnapshot(env: Env): Promise<ReturnType<typeo
   return parseMonitoringSnapshot(JSON.parse(raw));
 }
 
-export type NotificationSource = (env: Env) => Promise<number>;
+// ctx carries the ONE snapshot read the route makes, so a second source never
+// re-reads KV for its own answer (F11: was two reads, one per call site).
+export type NotificationContext = { env: Env; snapshot: ReturnType<typeof parseMonitoringSnapshot> | null };
+export type NotificationSource = (ctx: NotificationContext) => Promise<number>;
 
-async function aiBudgetRed(env: Env): Promise<number> {
-  const snapshot = await readMonitoringSnapshot(env);
-  if (!snapshot) return 0;
-  const floor = Number(env.AI_CREDIT_FLOOR_USD ?? 5);
-  const ceiling = Number(env.AI_CAP_CEILING_PCT ?? 80);
-  return evaluateRed(snapshot as any, floor, ceiling) ? 1 : 0;
+function aiBudgetRed(ctx: NotificationContext): Promise<number> {
+  if (!ctx.snapshot) return Promise.resolve(0);
+  const floor = Number(ctx.env.AI_CREDIT_FLOOR_USD ?? 5);
+  const ceiling = Number(ctx.env.AI_CAP_CEILING_PCT ?? 80);
+  return Promise.resolve(evaluateRed(ctx.snapshot as any, floor, ceiling) ? 1 : 0);
 }
 
 export const NOTIFICATION_SOURCES: readonly NotificationSource[] = [aiBudgetRed];
 
-export async function notificationCount(env: Env): Promise<number> {
-  const counts = await Promise.all(NOTIFICATION_SOURCES.map((source) => source(env)));
+// snapshot is optional so existing single-argument callers (and tests) keep
+// their own KV read; monitoringPayload passes the one it already made.
+export async function notificationCount(
+  env: Env,
+  snapshot?: ReturnType<typeof parseMonitoringSnapshot> | null,
+): Promise<number> {
+  const resolved = snapshot !== undefined ? snapshot : await readMonitoringSnapshot(env);
+  const counts = await Promise.all(NOTIFICATION_SOURCES.map((source) => source({ env, snapshot: resolved })));
   return counts.reduce((total, n) => total + n, 0);
+}
+
+// The one read the route needs: snapshot (enriched with the server-evaluated
+// red flag + configured floor/ceiling, UX §6.2) and notificationCount, both
+// derived from a SINGLE KV get (F3 + F11, docs/runs/ai-parse-monitoring/06-verify.md).
+export async function monitoringPayload(env: Env): Promise<{ snapshot: unknown; notificationCount: number }> {
+  const snapshot = await readMonitoringSnapshot(env);
+  if (!snapshot) return { snapshot: null, notificationCount: await notificationCount(env, null) };
+  const floor = Number(env.AI_CREDIT_FLOOR_USD ?? 5);
+  const ceiling = Number(env.AI_CAP_CEILING_PCT ?? 80);
+  const red = evaluateRed(snapshot as any, floor, ceiling);
+  return {
+    snapshot: { ...(snapshot as Record<string, unknown>), red, floorUsd: floor, ceilingPct: ceiling },
+    notificationCount: await notificationCount(env, snapshot),
+  };
 }

@@ -55,3 +55,63 @@ node:test source-regex suite: 10/10 pass. Playwright: 5 new specs (ready,
 unavailable money, all-zero chart, no-snapshot, 500-retry), full spec file
 16/16 pass. typecheck:gate clean (59 pre-existing non-fatal, unchanged).
 Committed 98d2bc98.
+
+## T6 - Notification bubble: shared count hook, desk bell badge, phone tab badge
+Files: src/ops2/chrome/useNotificationCount.ts (new), OpsPage.tsx, Ops2App.tsx,
+styles/nav.css, scripts/tests/ops2-frame.test.mjs. useNotificationCount:
+module-level {value,fetchedAt} cache (60s TTL) + shared inflight promise, so
+bell + tab coalesce to one /api/ops/monitoring fetch; fetch error/non-ok falls
+back to last cache or 0. Desk bell (OpsPage.tsx) and phone attention
+IonTabButton (Ops2App.tsx, d.id==="attention") each render a badge span only
+when notificationCount > 0; both already land on HOME_PATH ("/attention").
+nav.css: .ops2-bell position:relative + .ops2-bell__badge / .ops2-tab-badge
+dots, --ds-color-error, mirroring the existing .tab-selected::before pattern.
+Tests: source-regex assertions on both call sites (import/call/conditional/
+class) plus an executed esbuild-bundled check on __testing.fetchNotificationCount
+(inflight coalescing == 1 fetch, TTL cache hit, error fallback to 0) — this
+one was run red first against a deliberately-broken implementation, then
+implementation restored, per Probity's retrofit block. test:ops2 106/106,
+typecheck:gate clean. Committed a38e94d.
+
+## F3/F11 fix - one snapshot read, server-evaluated red flag
+
+Finding (06-verify.md F3): the red card was unreachable — nothing in the
+payload carried a server-evaluated red decision, so the client had no source
+to render red from without re-deriving it from raw numbers (banned, UX §4/
+§6.2). F11 named the same route's second half: the bell and the page each
+triggered their own KV read.
+
+Red tests first: `ai-monitoring.test.mjs` — `monitoringPayload` ships
+`snapshot.red`/`floorUsd`/`ceilingPct` off ONE KV `get` (asserted via a call
+counter), and returns `{snapshot:null, notificationCount:0}` on no snapshot.
+`ops2-attention.test.mjs` — source-regex on `AttentionPage.tsx`: every
+`data-state={...}` driving a red card must contain `snapshot.red` and no
+`<`/`>` (proves no raw-number comparison), plus `snapshot.floorUsd`/
+`ceilingPct` and the "Below the"/"cap used" copy must be present. Both
+watched fail for the right reason (no `monitoringPayload` export; no
+`snapshot.red` in the source) before any implementation.
+
+Fix: `worker/lib/monitoring.ts` gained `monitoringPayload(env)` — the ONE
+`readMonitoringSnapshot` call the route now makes, enriching the stored
+shape with `red`/`floorUsd`/`ceilingPct` computed fresh (never persisted to
+KV) and passing that same snapshot into `notificationCount(env, snapshot)`
+(now takes an optional pre-read snapshot instead of always reading KV
+itself). `aiBudgetRed` takes a `NotificationContext {env, snapshot}` instead
+of doing its own read. `worker/routes/ops.ts` thinned to
+`c.json(await monitoringPayload(c.env))`. `useMonitoring.ts`'s
+`MonitoringSnapshot` type and ready-state validation extended to require and
+carry `red`/`floorUsd`/`ceilingPct`. `AttentionPage.tsx`'s two AI-budget
+cards key `data-state` off `snapshot.red` and their red copy off
+`snapshot.floorUsd`/`ceilingPct`; `attention.css` adds the
+`.att-card[data-state="red"]` rule.
+
+This lands alongside the 05-polish.md rework of the same files (freshness
+line, skeleton/empty/chart redesign, `att-group` sections) that was sitting
+uncommitted from the pipeline's own polish stage — fused at the line level
+in `AttentionPage.tsx`/`attention.css`, not separable by hunk. The bell/tab
+badge switch from a dot to a visible count (`OpsPage.tsx`, `Ops2App.tsx`,
+`nav.css`) is the same "reads the one snapshot-derived count" story as F11
+and is included with it.
+
+`npm run test:ops2` 107/107, `npm run test:api` 77/77, `npm run
+typecheck:gate` clean, full `npm test` 321/321.

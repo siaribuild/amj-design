@@ -43,6 +43,7 @@ await build({
         fetchMoneyNumbers,
         NOTIFICATION_SOURCES,
         notificationCount,
+        monitoringPayload,
       } from ${p("worker/lib/monitoring.ts")};
     `,
     resolveDir: projectRoot,
@@ -56,8 +57,14 @@ await build({
   logLevel: "silent",
 });
 const Lib = await import(`${pathToFileURL(libOutfile).href}?run=${Date.now()}`);
-const { writeMonitoringSnapshot, readMonitoringSnapshot, fetchMoneyNumbers, NOTIFICATION_SOURCES, notificationCount } =
-  Lib;
+const {
+  writeMonitoringSnapshot,
+  readMonitoringSnapshot,
+  fetchMoneyNumbers,
+  NOTIFICATION_SOURCES,
+  notificationCount,
+  monitoringPayload,
+} = Lib;
 
 test.after(async () => {
   await removeRunDir(runDir);
@@ -399,4 +406,39 @@ test("notificationCount: one source, sums to 1 when the stored snapshot is red",
   const count = await notificationCount(env);
   assert.ok(getCalls > 0, "the notification source must actually read the snapshot");
   assert.equal(count, 1);
+});
+
+test("monitoringPayload: ships the server-evaluated red flag and floor/ceiling, from ONE KV read (F3/F11)", async () => {
+  let getCalls = 0;
+  const redSnapshot = {
+    takenAt: new Date().toISOString(),
+    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 19, capUsd: 20, capSource: "gateway" },
+    days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
+    success7d: 0,
+    error7d: 0,
+  };
+  const env = {
+    AI_CREDIT_FLOOR_USD: "5",
+    AI_CAP_CEILING_PCT: "80",
+    KV: {
+      get: async () => {
+        getCalls++;
+        return JSON.stringify(redSnapshot);
+      },
+    },
+  };
+  const payload = await monitoringPayload(env);
+  assert.equal(getCalls, 1, "one KV read must serve both the snapshot and the notification count");
+  assert.equal(payload.snapshot.red, true);
+  assert.equal(payload.snapshot.floorUsd, 5);
+  assert.equal(payload.snapshot.ceilingPct, 80);
+  assert.equal(payload.notificationCount, 1);
+});
+
+test("monitoringPayload: no snapshot yet — null snapshot, zero notifications, no KV read wasted", async () => {
+  const env = {
+    KV: { get: async () => null },
+  };
+  const payload = await monitoringPayload(env);
+  assert.deepEqual(payload, { snapshot: null, notificationCount: 0 });
 });

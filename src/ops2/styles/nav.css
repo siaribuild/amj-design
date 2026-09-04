@@ -313,16 +313,28 @@ ion-toolbar.ops2-topbar:not(.ops2-topbar--controls) { --border-width: 0; }
   .ops2-bell:hover { color: var(--ds-text-primary); }
 }
 
-/* Unread dot — drawn only when notificationCount > 0 (OpsPage.tsx); no badge
-   markup at all at zero, never a badge reading "0". */
+/* Unread COUNT — drawn only when notificationCount > 0 (OpsPage.tsx); no badge
+   markup at all at zero, never a badge reading "0". A pill rather than a dot
+   because the number is the point: one budget fault reads "1", and the ring
+   keeps it legible where it overlaps the bell's own strokes. */
 .ops2-bell__badge {
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
   background: var(--ds-color-error);
+  color: var(--ds-text-inverse);
+  font-family: var(--theme-font-sans);
+  font-size: 10px;
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--ds-surface-card);
 }
 
 /* ── The tab bar ──────────────────────────────────────────────────────────── */
@@ -353,16 +365,25 @@ ion-tab-bar.ops2-tabbar ion-tab-button.tab-selected {
   font-weight: var(--theme-font-weight-medium);
 }
 
-/* Attention tab's unread dot — same notificationCount as the desk bell, same
-   zero-draws-nothing rule (Ops2App.tsx). */
+/* Attention tab's unread count — same notificationCount as the desk bell, same
+   zero-draws-nothing rule (Ops2App.tsx), same pill. */
 .ops2-tab-badge {
   position: absolute;
-  inset-block-start: 6px;
+  inset-block-start: 4px;
   inset-inline-start: 55%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
   background: var(--ds-color-error);
+  color: var(--ds-text-inverse);
+  font-family: var(--theme-font-sans);
+  font-size: 10px;
+  font-weight: var(--theme-font-weight-semibold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── The destination roots ────────────────────────────────────────────────── */

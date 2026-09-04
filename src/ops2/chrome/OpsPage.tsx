@@ -172,11 +172,17 @@ export function OpsPage({
               <button
                 type="button"
                 className="ops2-bell"
-                aria-label="Attention"
+                aria-label={notificationCount > 0
+                  ? `Attention — ${notificationCount} item${notificationCount === 1 ? "" : "s"}`
+                  : "Attention"}
                 onClick={() => history.push(HOME_PATH)}
               >
                 <IonIcon icon={notificationsOutline} aria-hidden="true" />
-                {notificationCount > 0 && <span className="ops2-bell__badge" aria-hidden="true" />}
+                {/* THE COUNT, not a dot: "1" says how much is waiting, and the
+                    button's own label says it in words for a screen reader. */}
+                {notificationCount > 0 && (
+                  <span className="ops2-bell__badge" aria-hidden="true">{notificationCount}</span>
+                )}
               </button>
               <AccountButton account={account} variant="topbar" id="ops2-account-topbar" />
             </IonButtons>

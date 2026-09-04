@@ -279,7 +279,7 @@ export function Ops2App() {
                     <IonTabButton key={d.id} tab={d.id} href={d.path}>
                       <IonIcon icon={DESTINATION_ICON[d.id]} aria-hidden="true" />
                       {d.id === "attention" && notificationCount > 0 && (
-                        <span className="ops2-tab-badge" aria-hidden="true" />
+                        <span className="ops2-tab-badge" aria-hidden="true">{notificationCount}</span>
                       )}
                       <IonLabel>{d.label}</IonLabel>
                     </IonTabButton>

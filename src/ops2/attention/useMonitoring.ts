@@ -12,6 +12,9 @@ export type MonitoringSnapshot = {
   success7d: number;
   error7d: number;
   days: { day: string; success: number; error: number }[];
+  red: boolean;
+  floorUsd: number;
+  ceilingPct: number;
 };
 
 export type MonitoringLoad =
@@ -44,15 +47,15 @@ export function useMonitoring(): { load: MonitoringLoad; reload: () => void } {
         if (!res.ok) {
           setLoad({
             status: "error",
-            headline: "Monitoring did not load.",
-            detail: `The server answered ${res.status}. Try again in a moment.`,
+            headline: "Couldn't load the monitoring figures",
+            detail: "The console reached the server but it did not answer. Nothing is wrong with parsing itself.",
           });
           return;
         }
         const body = await res.json();
         if (!live) return;
         if (typeof body !== "object" || body === null) {
-          setLoad({ status: "error", headline: "Monitoring did not load.", detail: "The response could not be read. Try again in a moment." });
+          setLoad({ status: "error", headline: "Couldn't load the monitoring figures", detail: "The console reached the server but the answer could not be read. Nothing is wrong with parsing itself." });
           return;
         }
         const record = body as Record<string, unknown>;
@@ -61,15 +64,22 @@ export function useMonitoring(): { load: MonitoringLoad; reload: () => void } {
           return;
         }
         const parsed = parseMonitoringSnapshot(record.snapshot);
-        if (parsed === null || typeof (parsed as Record<string, unknown>).takenAt !== "string") {
-          setLoad({ status: "error", headline: "Monitoring did not load.", detail: "The snapshot could not be trusted, so none is shown. Try again in a moment." });
+        const enriched = record.snapshot as Record<string, unknown>;
+        if (
+          parsed === null ||
+          typeof (parsed as Record<string, unknown>).takenAt !== "string" ||
+          typeof enriched.red !== "boolean" ||
+          typeof enriched.floorUsd !== "number" ||
+          typeof enriched.ceilingPct !== "number"
+        ) {
+          setLoad({ status: "error", headline: "Couldn't load the monitoring figures", detail: "The snapshot could not be trusted, so none is shown. Nothing is wrong with parsing itself." });
           return;
         }
-        setLoad({ status: "ready", snapshot: parsed as MonitoringSnapshot });
+        setLoad({ status: "ready", snapshot: { ...parsed, red: enriched.red, floorUsd: enriched.floorUsd, ceilingPct: enriched.ceilingPct } as MonitoringSnapshot });
       })
       .catch(() => {
         if (!live) return;
-        setLoad({ status: "error", headline: "Monitoring did not load.", detail: "The console could not reach the server. Check the connection." });
+        setLoad({ status: "error", headline: "Couldn't load the monitoring figures", detail: "The console could not reach the server. Nothing is wrong with parsing itself." });
       });
 
     return () => {
@@ -98,4 +108,34 @@ const MELBOURNE_TIME = new Intl.DateTimeFormat("en-AU", {
 
 export function formatAsAt(takenAt: string): string {
   return MELBOURNE_TIME.format(new Date(takenAt));
+}
+
+/**
+ * How old the snapshot is, in the mock's own words (UX §6.1).
+ *
+ * Stale is >30 minutes — one missed tick of the ten-minute cron plus slack. The
+ * figures are still shown when stale; an old number LABELLED old beats an
+ * empty page, which is why this returns a sentence rather than a flag that
+ * hides anything.
+ */
+export function snapshotAge(takenAt: string, now: Date = new Date()): { stale: boolean; ago: string } {
+  const minutes = Math.max(0, Math.floor((now.getTime() - new Date(takenAt).getTime()) / 60000));
+  const ago =
+    minutes < 90 ? `${minutes}m ago`
+    : minutes < 1440 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`
+    : `${Math.floor(minutes / 1440)}d ago`;
+  return { stale: minutes > 30, ago };
+}
+
+const MELBOURNE_WEEKDAY = new Intl.DateTimeFormat("en-AU", { timeZone: "UTC", weekday: "short" });
+
+/**
+ * "2026-09-05" → { weekday: "Thu", date: "5" }. The key is already a Melbourne
+ * calendar day (the snapshot bucketed it), so it is read as a plain date at
+ * UTC midnight — the page does no timezone maths of its own (UX §5).
+ */
+export function formatDayLabel(dayKey: string): { weekday: string; date: string } {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const at = new Date(Date.UTC(year, month - 1, day));
+  return { weekday: MELBOURNE_WEEKDAY.format(at), date: String(day) };
 }

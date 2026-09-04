@@ -289,7 +289,7 @@ test("monitoring: money unavailable shows an unavailable state, not zero, while 
   await page.goto(ATTENTION);
 
   const credit = page.getByTestId("monitoring-credit-balance");
-  await expect(credit).toContainText("unavailable");
+  await expect(credit).toContainText("Unavailable. No Cloudflare token configured");
   await expect(credit).not.toContainText("$0.00");
   await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
 });
@@ -302,8 +302,12 @@ test("monitoring: an all-zero window renders an explicit empty chart state", asy
   }));
   await page.goto(ATTENTION);
 
-  await expect(page.getByTestId("monitoring-chart")).toContainText("No parse activity this week.");
-  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(0);
+  // The approved mock (docs/mocks/ai-parse-monitoring.html §3, UX §5) keeps the
+  // seven day labels under the sentence — the window being described stays on
+  // screen — and draws no bars at all. A zero week is an answer, not a gap.
+  await expect(page.getByTestId("monitoring-chart")).toContainText("Nothing parsed in the last 7 days");
+  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(7);
+  await expect(page.getByTestId("monitoring-chart").locator(".att-bar")).toHaveCount(0);
 });
 
 test("monitoring: no snapshot yet renders the empty state", async ({ page }) => {

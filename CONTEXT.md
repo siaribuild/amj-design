@@ -226,7 +226,7 @@ _Avoid_: icon, thumbnail, pictogram
 The ops2 surface a record's line opens onto: the elevation as hero, the specification (or a composite's units — never both), the price with its state, and the customer's note read-only. Read-only today; **Edit** attaches here when built. **"Why this product?"** is live: every rationale kind carries a door to the detail at `…/why`, which states what was recorded and names what was not — the record's desk canvas carries the same panel. Its line is always resolved from its project's own record — never fetched by bare line id.
 
 **Attention (destination)**:
-The console's gate and landing surface (`HOME_PATH`, `src/ops2/attention/`): one group per destination that has work waiting, counts inside, every count a link to the area that owns it. It carries no action that changes data; zero is drawn as absence, and a degraded count is drawn as failure — never as zero. Distinct from the record's Attention filter below, which scopes one record's line list.
+The console's gate and landing surface (`HOME_PATH`, `src/ops2/attention/`): one group per destination that has work waiting, counts inside, every count a link to the area that owns it. It carries no action that changes data; zero is drawn as absence, and a degraded count is drawn as failure — never as zero. Distinct from the record's Attention filter below, which scopes one record's line list. The AI-parse monitoring section sits below the groups — the page is the gate first, monitoring second.
 _Avoid_: dashboard, home screen, metrics page
 
 **Attention filter**:
@@ -240,6 +240,18 @@ _Avoid_: card list, IonItem
 **Openable panel**:
 An ops2 card that goes somewhere (`src/ops2/chrome/OpenablePanel.tsx` — `lp-panel--door`). Openability is a property the caller opts into by passing a destination closure and a name for it; it is never a default and never a decoration — a chevron on a panel that opens nothing is a defect. The component owns the four things a door must agree on: the stretched invisible button as a sibling of the content, the chevron centred on the card's right-hand side, the focus ring drawn around the card, and an accessible name that states where the door leads, sourced from the surface's copy module. The heading is the caller's choice, not part of the definition: a panel may render its `<h2>` title (Why, Price, Delivery address) or carry none at all (the record's totals card, whose rows are self-labelling); with no title the section carries no `aria-label` — the door button's name is the card's whole voice. The page owns the address; the panel is handed a closure. Today the Why and Price panels, the record's totals card and the Delivery address card are the doors; the Specification panel becomes openable when its screen exists. A door's closure need not navigate — the Price, Delivery price and Delivery address doors open a SidePanel in place.
 _Avoid_: clickable card, link panel, chevron (as a thing on its own)
+
+**Monitoring snapshot**:
+The KV-stored record (`monitoring:snapshot`) the `*/10` cron writes and every ops2 reader reads: the three Cloudflare money numbers (or an explicit "unavailable" with its reason), the 7-day parse counts and their day buckets, and the moment it was taken. Page loads never call Cloudflare — they read this. It has no TTL: a stale snapshot is shown with its age ("as at HH:MM"), because an old number labelled old beats an empty page, and expiry would turn "cron broken" into "no data". Money's only source is Cloudflare; D1 cost columns are never used for money.
+_Avoid_: live metrics, dashboard data
+
+**Errored parse**:
+A counted parse that went wrong: its `ai_job_claim` row is terminally `failed`, **or** sits in `processing` untouched for over 30 minutes (the heartbeat bumps `updated_at` every 15 s, so a stale `processing` row is genuinely stuck, never merely slow). One SQL predicate, one home (`worker/lib/monitoring.ts`); one document is one parse regardless of retries. Only upload-triggered claims count (`triggered_by = 'upload'`): a staff re-evaluation of an already-completed parse is a building-model run, not a parse — though staff repairing a *failed* upload stays that upload's parse.
+_Avoid_: failed job (a claim generation is not a parse), dead letter
+
+**Red (notification source)**:
+The single v1 notification source behind the ops2 bubble: credit balance below the configured floor OR cap headroom used beyond the configured ceiling (both wrangler `vars`). One source, one count — two tripped thresholds are still `1`. Unavailable money is never red: no false alarms from an outage. The bubble is assembled from a source list so a later source (orders needing attention, messages) appends without touching the aggregation.
+_Avoid_: alert, alarm, warning state (there is no amber tier)
 
 ### Referrals
 

@@ -9,7 +9,7 @@ import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
   isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
-import { notificationCount, readMonitoringSnapshot } from "../lib/monitoring";
+import { monitoringPayload } from "../lib/monitoring";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
@@ -357,7 +357,7 @@ ops.get("/monitoring", async (c) => {
   const staff = user.type === "internal" ? { role: user.role } : null;
   if (!isStaffUser(staff)) return c.json({ error: "forbidden" }, 403);
 
-  return c.json({ snapshot: await readMonitoringSnapshot(c.env), notificationCount: await notificationCount(c.env) });
+  return c.json(await monitoringPayload(c.env));
 });
 
 // GET /api/ops/queues/submissions — projects awaiting triage / review.
