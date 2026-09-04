@@ -35,8 +35,13 @@ export type CompositionOutcome =
   | { state: "not_read"; tag: string; cropRenderId: string | null; reason: string };
 
 const BATCH_SIZE = 4;
+/** §7.6 fixes this: four batches in flight, not a caller's preference. */
+const MAX_CONCURRENT_BATCHES = 4;
 const OPERATIONS: OpeningOperation[] = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"];
 const AXES: SplitAxis[] = ["vertical", "horizontal"];
+/** Parts read off a drawing are eyeballed fractions, so they need not add to
+ * exactly one - but they do have to add to about one frame. */
+const RATIO_TOLERANCE = 0.1;
 
 /** Fours, in the order the openings arrived. */
 export function compositionBatches(tasks: CompositionTask[]): CompositionTask[][] {
@@ -66,6 +71,12 @@ function readingOf(row: Record<string, unknown>, task: CompositionTask): Composi
     : [];
   const divisionAxis = AXES.includes(row.divisionAxis as SplitAxis) ? row.divisionAxis as SplitAxis : null;
   if (!operations.length || !unitRatios.length || !divisionAxis) return null;
+  // One operation per part, or one for the whole frame. Anything between is a
+  // list that does not line up with the parts it describes, and the parts have
+  // to make a whole: parts adding to one and a half frames describe something
+  // other than this opening whichever half of it is wrong.
+  if (operations.length !== 1 && operations.length !== unitRatios.length) return null;
+  if (Math.abs(unitRatios.reduce((sum, ratio) => sum + ratio, 0) - 1) > RATIO_TOLERANCE) return null;
   return {
     state: "value",
     value: {
@@ -145,11 +156,16 @@ export function makeCompositionSkill(
       const rows = (payload as { readings?: unknown } | null)?.readings;
       if (!Array.isArray(rows)) return null;
       return batch.map((task) => {
-        for (const row of rows) {
-          if (!row || typeof row !== "object") continue;
+        const answers = rows.flatMap((row) => {
+          if (!row || typeof row !== "object") return [];
           const outcome = readingOf(row as Record<string, unknown>, task);
-          if (outcome) return outcome;
-        }
+          return outcome ? [outcome] : [];
+        });
+        // Two answers about one opening that disagree are not evidence of
+        // either, and taking whichever came first is picking at random.
+        const agreed = answers.length === 1
+          || (answers.length > 1 && answers.every((answer) => JSON.stringify(answer) === JSON.stringify(answers[0])));
+        if (agreed) return answers[0];
         return {
           state: "not_read" as const,
           tag: task.tag,
@@ -170,16 +186,22 @@ export function makeCompositionSkill(
  */
 export async function runCompositions(args: {
   tasks: CompositionTask[];
-  concurrency?: number;
+  /** Provider calls this run may make in total, retries included. */
+  callCeiling?: number;
   ask(batch: CompositionTask[], attempt: number): Promise<unknown>;
 }): Promise<CompositionOutcome[]> {
   const batches = compositionBatches(args.tasks);
-  const answered = await mapPool(batches, Math.min(args.concurrency ?? 4, 4), async (batch) => {
+  let calls = 0;
+  const spend = () => (args.callCeiling == null || calls < args.callCeiling) && ++calls > 0;
+  const answered = await mapPool(batches, MAX_CONCURRENT_BATCHES, async (batch) => {
     const skill = makeCompositionSkill(batch);
     try {
       for (const attempt of [1, 2]) {
+        if (!spend()) break;
         const read = await skill.validate(await args.ask(batch, attempt).catch(() => null));
-        if (read) return read;
+        // A batch that came back schema-shaped and useless is asked once more:
+        // nothing about it was read, so there is nothing yet to keep.
+        if (read?.some((outcome) => outcome.state !== "not_read")) return read;
       }
     } catch {
       // Falls through to the unread outcomes below: a thrown provider is the

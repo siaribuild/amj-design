@@ -18,7 +18,10 @@ export interface SheetPage {
   geometry: Pick<PageInventory, "pageNo" | "widthPt" | "heightPt">;
 }
 
-const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?)$/;
+// A section cuts through the building; an elevation looks at one of its walls.
+// Only the second names a face, and reading one off the first lets a
+// cut-through be inventoried as though it were the wall.
+const VIEW_TITLE = /^ELEVATIONS?$/;
 const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
 
 /** Face name to the sheets that draw it, in page order. */
@@ -47,9 +50,4 @@ export function documentFaceSheets(pages: SheetPage[]): Map<string, number[]> {
     }
   }
   return sheets;
-}
-
-/** The same fact, when only the names are wanted. */
-export function documentFaceNames(pages: SheetPage[]): Set<string> {
-  return new Set(documentFaceSheets(pages).keys());
 }

@@ -42,17 +42,25 @@ function alongFraction(candidate: { recoveredFraction: number | null; alongPt: n
 export function rosterVocabulary(roster: string[]): { vocabulary: Set<string>; tagOf: Map<string, string> } {
   const vocabulary = new Set<string>();
   const tagOf = new Map<string, string>();
-  for (const entry of roster) {
-    const tag = normalizeOpeningRef(entry) ?? entry;
+  const tags = roster.map((entry) => normalizeOpeningRef(entry) ?? entry);
+  // A schedule holding both W1 and W01 is naming two openings. Reading either
+  // spelling as the other would hand one row the other's drawn tag and lose a
+  // real row without saying so, so neither is widened.
+  const behind = new Map<string, number>();
+  for (const tag of tags) {
+    const key = tag.replace(/(?<=^[A-Z]*)0+(?=\d)/, "");
+    behind.set(key, (behind.get(key) ?? 0) + 1);
+  }
+  for (const tag of tags) {
     const split = /^([A-Z]*)0*(\d+)([A-Z]*)$/.exec(tag);
-    const spellings = split
+    const key = tag.replace(/(?<=^[A-Z]*)0+(?=\d)/, "");
+    const spellings = split && behind.get(key) === 1
       ? [1, 2, 3].map((width) => `${split[1]}${split[2].padStart(width, "0")}${split[3]}`)
       : [tag];
     for (const spelling of new Set([tag, ...spellings])) {
       vocabulary.add(spelling);
-      // First roster entry wins: a roster naming one opening twice is refused
-      // downstream, and quietly reassigning the spelling would hide it.
-      if (!tagOf.has(spelling)) tagOf.set(spelling, tag);
+      // The spelling a row prints itself always wins the spelling it shares.
+      if (!tagOf.has(spelling) || spelling === tag) tagOf.set(spelling, tag);
     }
   }
   return { vocabulary, tagOf };

@@ -30,9 +30,6 @@ export interface OpeningCropTask {
 const MARGIN_FRACTION = 0.15;
 const MARGIN_MIN_PT = 8;
 const MARGIN_MAX_FRACTION = 0.25;
-/** With no scale there is no measured width, so the drawn frame is all there
- * is and it is given room rather than trusted to the point. */
-const UNSCALED_WIDENING = 1.6;
 const STOREY_MARGIN = 0.05;
 
 export function openingCropTasks(args: {
@@ -53,7 +50,7 @@ export function openingCropTasks(args: {
     let width: number;
     let basis: OpeningCropTask["basis"];
     if (match.expectedWidthPt == null) {
-      width = drawn * UNSCALED_WIDENING;
+      width = drawn;
       basis = "wide_unscaled";
       warnings.push("the page states no scale, so this crop is sized from the drawn frame");
     } else if (drawn > match.expectedWidthPt) {
@@ -73,15 +70,17 @@ export function openingCropTasks(args: {
     const bandMargin = (band[3] - band[1]) * STOREY_MARGIN;
     const bbox: CropBoxPt = [
       centre - width / 2 - margin,
-      band[1] - bandMargin,
+      // The storey band is the whole opening's height and is kept whole, but a
+      // band that runs off the sheet is trimmed to it rather than abandoned.
+      Math.max(0, band[1] - bandMargin),
       centre + width / 2 + margin,
-      band[3] + bandMargin,
+      Math.min(pageHeight, band[3] + bandMargin),
     ];
 
     // A crop off the page cannot be rendered, and one holding a neighbour's
     // centre gets that neighbour read and filed under this tag — worse than
     // reading nothing.
-    if (bbox[0] < 0 || bbox[1] < 0 || bbox[2] > pageWidth || bbox[3] > pageHeight) return [];
+    if (bbox[0] < 0 || bbox[2] > pageWidth) return [];
     if (centres.some((other, index) => index !== at && other > bbox[0] && other < bbox[2])) return [];
 
     return [{

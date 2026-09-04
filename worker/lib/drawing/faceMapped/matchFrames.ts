@@ -1,5 +1,6 @@
 import type { Skill } from "../../estimator/skills/types";
 import { parseModelJson } from "../../estimator/skills/json";
+import type { CropBoxPt } from "../contract";
 import type { ElevationFrame } from "./elevationFrames";
 import { expectedWidthPt, type PlanOpeningPlacement } from "./contract";
 
@@ -57,11 +58,39 @@ function judgeWidth(frame: ElevationFrame, widthMm: number | undefined, scaleRat
     };
 }
 
-/** Total distance between where the plan puts the openings along the wall and
- * where the elevation puts the frames it pairs them with, both as fractions of
- * their own extent. Lower is a better fit. */
-function disagreement(fractions: number[], framePositions: number[]): number {
-  return fractions.reduce((total, fraction, at) => total + Math.abs(fraction - framePositions[at]), 0);
+/** Positions restated as where each one sits between the first and the last,
+ * so a plan's fraction of a wall and an elevation's points across a sheet can
+ * be compared without either being converted into the other. */
+function spread(values: number[]): number[] | null {
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  return high > low ? values.map((value) => (value - low) / (high - low)) : null;
+}
+
+/**
+ * How badly a mapping fits, in two named parts (§7.3: score components are
+ * diagnostics, not an opaque weighted model).
+ *
+ * `position` is how far the plan's places are from the elevation's, both as
+ * fractions of their own extent. `width` is how far each frame is drawn from
+ * the width its opening is scheduled at, at this page's scale.
+ *
+ * Position alone cannot settle a face of two openings: two frames sit at the
+ * two ends of their own extent whichever way round the elevation runs. Their
+ * widths can, and a wall of two openings is the commonest wall there is.
+ */
+function disagreement(
+  fractions: number[],
+  framePositions: number[],
+  drawnWidths: number[],
+  expectedWidths: (number | null)[],
+): { position: number; width: number; total: number } {
+  const position = fractions.reduce((sum, fraction, at) => sum + Math.abs(fraction - framePositions[at]), 0);
+  const width = expectedWidths.reduce((sum: number, expected, at) => {
+    if (expected == null || expected <= 0) return sum;
+    return sum + Math.abs(drawnWidths[at] - expected) / expected;
+  }, 0);
+  return { position, width, total: position + width };
 }
 
 /**
@@ -87,6 +116,9 @@ export interface FaceMatchInput {
   widthByTag?: Map<string, number>;
   /** The elevation page's printed scale, or null where it states none. */
   pageScaleRatio?: number | null;
+  /** Opening tags printed on the elevation itself, where a set labels them. A
+   * tag inside a frame says which opening that frame is outright. */
+  tagWordsPt?: { tag: string; boxPt: CropBoxPt }[];
 }
 
 /** One opening against one frame, with everything the pair can be checked
@@ -140,36 +172,75 @@ export function matchFacePlacements(args: FaceMatchInput): FaceMatch {
     };
   }
 
-  // Frame centres as fractions of the drawn face, so the two views are compared
-  // in the same terms rather than in each other's coordinates.
-  const left = Math.min(...frames.map((item) => item.outerFrameBoxPt[0]));
-  const right = Math.max(...frames.map((item) => item.outerFrameBoxPt[2]));
-  const span = right - left;
-  if (span <= 0) {
-    return { direction: "unresolved", matches: [], reason: "the frames have no extent to read positions from" };
+  // One opening pairs with one frame the same way round either way. Which
+  // direction the wall reads in is not settled by that and is not claimed: a
+  // single opening carries no evidence of it, and nothing downstream needs it.
+  if (placements.length === 1) {
+    const only = pair(placements[0], frames[0], "with_plan");
+    return {
+      direction: "with_plan",
+      reason: null,
+      matches: [{
+        ...only,
+        warnings: [...only.warnings, "one opening on this face, so which end the elevation counts from was never tested"],
+      }],
+    };
   }
-  const centres = frames.map((item) =>
-    ((item.outerFrameBoxPt[0] + item.outerFrameBoxPt[2]) / 2 - left) / span);
-  const fractions = placements.map((placement) => placement.alongWallFraction!);
+
+  // Both views are reduced to the same thing before they are compared: where
+  // each opening sits between the first and the last one, on its own side.
+  //
+  // Comparing a fraction of a wall against a fraction of the frames' own extent
+  // compares two different measurements — four openings between a fifth and
+  // half way along a wall look, on the elevation, like four frames spread from
+  // end to end — and a face measured that way comes out reversed with every
+  // opening on it matched to the wrong frame.
+  const centres = spread(frames.map((item) => (item.outerFrameBoxPt[0] + item.outerFrameBoxPt[2]) / 2));
+  const fractions = spread(placements.map((placement) => placement.alongWallFraction!));
+  if (!centres || !fractions) {
+    return { direction: "unresolved", matches: [], reason: "the openings on this face are all at one point" };
+  }
 
   // Read against the plan, the wall is seen from its other end: the opening the
   // plan puts at fraction f is drawn at 1 - f, and pairs with the frame counted
   // from the far side.
   const reversed = [...frames].reverse();
-  // One opening pairs with one frame the same way round either way, and the
-  // scores are equal only because there is nothing for them to disagree about.
-  if (placements.length === 1) {
+  const widths = frames.map((frame) => frame.outerFrameBoxPt[2] - frame.outerFrameBoxPt[0]);
+  const scheduled = placements.map((placement) => args.widthByTag?.get(placement.tag) ?? null);
+  // With a scale, a scheduled width is a number of points and the comparison is
+  // a measurement. Without one, 1800 beside 900 is still twice as wide, and so
+  // is the frame drawn for it: the shapes can be compared even when the sizes
+  // cannot, by scaling the schedule's widths onto the frames' own.
+  const largestDrawn = Math.max(...widths);
+  const largestScheduled = Math.max(...scheduled.map((width) => width ?? 0));
+  const expected = placements.map((placement, at) => {
+    const widthMm = scheduled[at];
+    if (widthMm == null) return null;
+    if (args.pageScaleRatio != null) return expectedWidthPt(widthMm, args.pageScaleRatio);
+    return largestScheduled > 0 ? widthMm / largestScheduled * largestDrawn : null;
+  });
+  const withPlan = disagreement(fractions, centres, widths, expected).total;
+  const againstPlan = disagreement(
+    fractions,
+    [...centres].reverse().map((centre) => 1 - centre),
+    [...widths].reverse(),
+    expected,
+  ).total;
+
+  // A tag printed inside a frame says which opening that frame is outright, and
+  // outranks any argument from where things sit. A label that agrees with
+  // neither reading is a contradiction rather than a casting vote.
+  const labelled = labelledDirection(placements, frames, args.tagWordsPt ?? []);
+  if (labelled === "contradiction") {
     return {
-      direction: "with_plan",
-      reason: null,
-      matches: [pair(placements[0], frames[0], "with_plan")],
+      direction: "unresolved",
+      matches: [],
+      reason: "a tag printed on the elevation names a frame the plan puts a different opening in",
     };
   }
-  const withPlan = disagreement(fractions, centres);
-  const againstPlan = disagreement(fractions, [...centres].reverse().map((centre) => 1 - centre));
 
   const [better, worse] = withPlan < againstPlan ? [withPlan, againstPlan] : [againstPlan, withPlan];
-  if (worse - better < DIRECTION_FLOOR || worse < better * DIRECTION_RATIO) {
+  if (!labelled && (worse - better < DIRECTION_FLOOR || worse < better * DIRECTION_RATIO)) {
     return {
       direction: "unresolved",
       matches: [],
@@ -177,7 +248,7 @@ export function matchFacePlacements(args: FaceMatchInput): FaceMatch {
     };
   }
 
-  const direction = withPlan < againstPlan ? "with_plan" : "against_plan";
+  const direction = labelled ?? (withPlan < againstPlan ? "with_plan" as const : "against_plan" as const);
   const ordered = direction === "with_plan" ? frames : reversed;
   return {
     direction,
@@ -302,4 +373,32 @@ export function makeFaceReconcileSkill(
       };
     },
   };
+}
+
+/** Which reading of the wall the elevation's own labels name, if any: null when
+ * nothing is labelled, "contradiction" when a label fits neither reading. */
+function labelledDirection(
+  placements: PlanOpeningPlacement[],
+  frames: ElevationFrame[],
+  tagWords: { tag: string; boxPt: CropBoxPt }[],
+): "with_plan" | "against_plan" | "contradiction" | null {
+  const named = new Map<string, number>();
+  for (const word of tagWords) {
+    const centre = (word.boxPt[0] + word.boxPt[2]) / 2;
+    const at = frames.findIndex((frame) =>
+      centre >= frame.outerFrameBoxPt[0] && centre <= frame.outerFrameBoxPt[2]);
+    if (at < 0) continue;
+    // Two labels inside one frame, or one opening labelled in two frames, is
+    // the sheet contradicting itself before the matcher gets a say.
+    if (named.has(word.tag) && named.get(word.tag) !== at) return "contradiction";
+    named.set(word.tag, at);
+  }
+  if (!named.size) return null;
+
+  const forward = [...named].every(([tag, at]) => placements[at]?.tag === tag);
+  const backward = [...named].every(([tag, at]) => placements[frames.length - 1 - at]?.tag === tag);
+  if (forward && !backward) return "with_plan";
+  if (backward && !forward) return "against_plan";
+  // Neither: the sheet's own label disagrees with the plan either way round.
+  return forward ? null : "contradiction";
 }
