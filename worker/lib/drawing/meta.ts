@@ -5,7 +5,7 @@
 // IT READS STORED FACTS AND NOTHING ELSE — no catalogue call, no re-parse.
 // A figure the parser never captured says so; nothing here fills a gap.
 import type {
-  LineMetaDto, MetaFact, MetaFactState, MetaReading, MetaRunSteps, MetaSplitUnit,
+  LineMetaDto, MetaCorrection, MetaFact, MetaFactState, MetaReading, MetaRunSteps, MetaSplitUnit,
 } from "../../../src/data/lineMeta";
 import type { Env } from "../../types";
 
@@ -32,15 +32,16 @@ interface ReadingRow {
   source_file_id: string | null; filename: string | null;
 }
 
-interface DrawingRunStepCounts extends MetaRunSteps { failedPhase?: string }
-interface DrawingFileReport {
-  fileId: string;
-  steps: DrawingRunStepCounts;
-  perOpening: { tag: string; outcome: "read" | "not_read" }[];
-  wallMs: number;
-  modelCalls: number;
-}
-interface DrawingReport { files: DrawingFileReport[] }
+// THE WRITER OWNS THIS SHAPE. These were redeclared locally, with
+// `DrawingRunStepCounts extends MetaRunSteps` — deriving the STORED shape
+// from the DTO shape, which is backwards: the DTO is an allow-listed subset
+// of what the parser writes, not its definition. The copy then went stale the
+// moment 19-of-19 added fields, and every read of them raised TS2339 —
+// invisible because `typecheck:gate` filters to fatal codes, so ten type
+// errors sat in this module while the gate reported clean.
+//
+// Imported as types only, so nothing is pulled in at runtime.
+import type { DrawingFileReport, DrawingReport } from "./contract";
 
 const FACT_STATES: readonly MetaFactState[] = ["value", "not_stated", "not_read"];
 const asFactState = (state: string): MetaFactState =>
@@ -89,17 +90,74 @@ function readingOf(row: ReadingRow): MetaReading {
  *  When several files claim the same tag, `sourceFileId` (the reading's own
  *  file) breaks the tie; without a reading, the first match stands. */
 function documentOf(report: DrawingReport | null, externalRef: string, sourceFileId?: string | null) {
-  if (!report) return { outcome: null as "read" | "not_read" | null, document: null };
+  const none = {
+    outcome: null as "read" | "not_read" | null,
+    attempts: null as number | null, acceptedTurn: null as number | null,
+    corrections: [] as MetaCorrection[], document: null,
+  };
+  if (!report) return none;
   const candidates = report.files.filter((file) => file.perOpening.some((o) => o.tag === externalRef));
   const file = (sourceFileId && candidates.find((f) => f.fileId === sourceFileId)) || candidates[0];
-  if (!file) return { outcome: null as "read" | "not_read" | null, document: null };
+  if (!file) return none;
   const hit = file.perOpening.find((o) => o.tag === externalRef)!;
-  const { failedPhase, ...steps } = file.steps;
+  const st = file.steps;
+  // FIELD BY FIELD, NEVER A SPREAD. `{ failedPhase, ...steps } as MetaRunSteps`
+  // read as an allow-list and was not one: every property the parser adds later
+  // rode straight into the response, with a cast hiding the mismatch. The
+  // parser HAS since added several (targetedReviews, and the file-level
+  // telemetry below), which is the whole argument. A field reaches the client
+  // because it is named here, or it does not reach the client.
+  const steps: MetaRunSteps = {
+    inventory: {
+      pages: st.inventory.pages, fonts: st.inventory.fonts,
+      images: st.inventory.images, attachments: st.inventory.attachments,
+    },
+    strategy: st.strategy,
+    text: { pagesRead: st.text.pagesRead },
+    selectPages: {
+      of: st.selectPages.of,
+      selected: st.selectPages.selected.map((p) => ({ pageNo: p.pageNo, tier: p.tier, reason: p.reason })),
+    },
+    elevationRegions: st.elevationRegions.map((r) => ({ pageNo: r.pageNo, labels: [...r.labels] })),
+    renderCrop: { pagesRendered: st.renderCrop.pagesRendered, cropsMade: st.renderCrop.cropsMade },
+    read: {
+      attempted: st.read.attempted, returned: st.read.returned,
+      declined: st.read.declined, retriedWithThreshold: st.read.retriedWithThreshold,
+      // Absent on a report written before 19-of-19. Null, not 0: it was not
+      // measured, and 0 is a measurement.
+      targetedReviews: st.read.targetedReviews ?? null,
+    },
+    placements: {
+      fromText: st.placements.fromText, fromModelFallback: st.placements.fromModelFallback,
+      unplaced: st.placements.unplaced,
+    },
+    northAssumed: st.northAssumed,
+  };
   return {
     outcome: hit.outcome,
+    // Same rule as `attempts`: absent is unknown. A pre-19-of-19 report carries
+    // none of this, and the tab must say so rather than print zeros.
+    attempts: hit.attempts ?? null,
+    acceptedTurn: hit.acceptedTurn ?? null,
+    corrections: (hit.corrections ?? []).map((c) => ({
+      turn: c.turn,
+      reasons: [...c.reasons],
+      stage: c.stage ?? null,
+      outcome: c.outcome ?? null,
+    })),
     document: {
-      fileId: file.fileId, steps: steps as MetaRunSteps,
-      failedPhase: failedPhase ?? null, wallMs: file.wallMs, modelCalls: file.modelCalls,
+      fileId: file.fileId, steps,
+      failedPhase: st.failedPhase ?? null, wallMs: file.wallMs, modelCalls: file.modelCalls,
+      telemetry: {
+        cachedTurns: file.cachedTurns ?? null, repairedTurns: file.repairedTurns ?? null,
+        inputTokens: file.inputTokens ?? null, outputTokens: file.outputTokens ?? null,
+      },
+      providerFailure: file.providerFailure
+        ? {
+            failureKind: file.providerFailure.failureKind ?? null,
+            warnings: [...(file.providerFailure.warnings ?? [])],
+          }
+        : null,
     },
   };
 }
@@ -188,12 +246,20 @@ export async function lineMeta(
   // without guarding - `dto.reasoningParts.length` is read directly - so an
   // early return that omits a field does not degrade, it throws. Both fields
   // were added at the bottom of this function and missed here.
-  if (!run) return { hasCrop: false, gapCode: null, reasoningParts: [], reading: null, run: null };
+  // EVERY FIELD ON EVERY RETURN. The client dereferences `dto.corrections`
+  // and `dto.reading` directly, so a return that omits one does not degrade -
+  // it throws. This return has been the one to forget twice now.
+  if (!run) return {
+    hasCrop: false, gapCode: null, reasoningParts: [],
+    attempts: null, acceptedTurn: null, corrections: [],
+    reading: null, run: null,
+  };
 
   const reading = await canonicalReading(env, ref.projectId, run.id, line.external_ref);
 
   const report = parse<DrawingReport>(run.drawing_report_json);
-  const { outcome, document } = documentOf(report, line.external_ref, reading?.source_file_id);
+  const { outcome, attempts, acceptedTurn, corrections, document } =
+    documentOf(report, line.external_ref, reading?.source_file_id);
 
   // A DECLINED ROW IS NOT A READING. When the parser declines an opening it
   // still persists a row - all four facts `not_read`, a `gap_code` naming why -
@@ -229,8 +295,9 @@ export async function lineMeta(
     hasCrop: !!reading?.crop_key,
     gapCode: reading?.gap_code ?? null,
     reasoningParts: reading?.gap_note ? reading.gap_note.split("|").map((s) => s.trim()) : [],
+    attempts, acceptedTurn, corrections,
     reading: reading && !declined ? readingOf(reading) : null,
-    run: { startedAt: run.started_at, outcome, document },
+    run: { startedAt: run.started_at, outcome, document, reported: report !== null },
   };
 }
 

@@ -78,12 +78,25 @@ const isSteps = (v: unknown): boolean =>
   && obj(v.selectPages) && objArray((v.selectPages as { selected?: unknown }).selected)
   && objArray(v.elevationRegions);
 
+/** One row of the correction trail. `CorrectionTrail` maps the rows and then
+ *  maps each row's `reasons`, so BOTH levels are checked - an array of objects
+ *  whose `reasons` is itself an array. `stage` and `outcome` are read but only
+ *  compared and rendered, never dereferenced, so their absence is survivable
+ *  and their type is not checked here. */
+const isCorrection = (v: unknown): boolean => obj(v) && Array.isArray(v.reasons);
+
 /** What the Run panels walk. `document` may be null - that is a named state -
- *  but a document present must carry the `steps` tree the detail indexes into. */
+ *  but a document present must carry the `steps` tree the detail indexes into,
+ *  the `telemetry` the Cost and health group reads four fields off, and - when
+ *  a provider failure is recorded at all - the `warnings` it joins. */
+const isDocument = (v: unknown): boolean =>
+  obj(v) && isSteps(v.steps) && obj(v.telemetry)
+  && (v.providerFailure == null
+    || (obj(v.providerFailure) && Array.isArray((v.providerFailure as { warnings?: unknown }).warnings)));
+
 const isRun = (v: unknown): boolean =>
   obj(v) && typeof v.startedAt === "string"
-  && (v.document === null
-    || (obj(v.document) && isSteps((v.document as { steps?: unknown }).steps)));
+  && (v.document === null || isDocument(v.document));
 
 /**
  * THE DECODING SEAM. It checks every shape the tab dereferences, to the depth
@@ -109,6 +122,10 @@ export const isLineMetaDto = (dto: unknown): dto is LineMetaDto => {
   return typeof dto.hasCrop === "boolean"
     && (dto.gapCode === null || typeof dto.gapCode === "string")
     && Array.isArray(dto.reasoningParts)
+    // Mapped by CorrectionTrail, so an array with dereferenceable elements -
+    // never merely present. `attempts`/`acceptedTurn` are rendered but not
+    // dereferenced, so null is survivable and no check earns its place.
+    && Array.isArray(dto.corrections) && dto.corrections.every(isCorrection)
     && (dto.reading === null || isReading(dto.reading))
     && (dto.run === null || isRun(dto.run));
 };

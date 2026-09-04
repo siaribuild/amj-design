@@ -1,0 +1,59 @@
+{
+  "slug": "ops2-parse-metadata-v2",
+  "tier": "full",
+  "base": "4374270e",
+  "branch": "feat/ops2-parse-metadata-v2",
+  "ui": false,
+  "stages": {
+    "review-security": {
+      "code": 0,
+      "contextTokens": 494085,
+      "outputTokens": 4328,
+      "turns": 5,
+      "source": "transcript",
+      "session": "31a53a9f-91bb-4e5e-8a45-394349d6f733",
+      "seconds": 108
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 308782,
+      "outputTokens": 5152,
+      "turns": 6,
+      "source": "transcript",
+      "session": "16d7df5c-a4a4-4e52-8ff3-08120e2f4e59",
+      "seconds": 138
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 1285197,
+      "outputTokens": 7617,
+      "turns": 13,
+      "source": "transcript",
+      "session": "62aa9eb0-986e-4fbd-8c6e-9df1ee1e902e",
+      "seconds": 281
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-09-04T07:30:34.997Z"
+}

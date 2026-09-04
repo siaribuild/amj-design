@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { OpenablePanel } from "../chrome/OpenablePanel";
 import { SidePanel } from "../chrome/SidePanel";
-import type { LineMetaDto, MetaFact, MetaReading } from "../../data/lineMeta";
+import type { LineMetaDto, MetaCorrection, MetaFact, MetaReading } from "../../data/lineMeta";
 
 // The Metadata tab — ops2's parse audit surface (design
 // docs/runs/ops2-parse-metadata/02-design.md §3.6). See `MetaTab` below for
@@ -14,6 +14,7 @@ const CROP_UNAVAILABLE_NO_REASON = "the crop is unavailable, no reason recorded"
 export const NO_READING = "No reading exists for this opening.";
 export const NO_RUN = "No drawing run has been reported for this project.";
 export const RUN_OPENING_NOT_COVERED = "This opening was not covered by the run report.";
+export const RUN_NO_REPORT = "This run produced no report.";
 
 type ImagePanelView = { img: true } | { img: false; reason: string };
 
@@ -81,8 +82,15 @@ function ReadingSummary({ reading }: { reading: MetaReading | null }) {
       <div className="lp-panel__line"><dt>Confidence</dt><dd>{reading.confidence ?? "not recorded"}</dd></div>
       <div className="lp-panel__line">
         <dt>Flags</dt>
-        <dd data-testid="meta-reading-flag-count">
-          {reading.flags.length > 0 ? `flags: ${reading.flags.length} present` : "flags: none"}
+        {/* LISTED, NEVER COUNTED (owner, 2026-09-04). Seven flag values exist
+            and the list is bounded at source, so a count only hides which one
+            fired — on the one surface that exists to show it. */}
+        <dd data-testid="meta-reading-flags">
+          {reading.flags.length === 0 ? "none" : (
+            <ul className="chips">
+              {reading.flags.map((f) => <li key={f} className="chip">{f}</li>)}
+            </ul>
+          )}
         </dd>
       </div>
     </dl>
@@ -155,7 +163,10 @@ export function MetaTab({ dto, view, cropSrc, onOpenReading, onOpenRun, onClose 
         phoneForm="screen"
         dismiss={{ back: "Metadata" }}
       >
-        <MetaReadingDetail reading={dto.reading} reasoningParts={dto.reasoningParts} />
+        <MetaReadingDetail
+          reading={dto.reading} reasoningParts={dto.reasoningParts}
+          attempts={dto.attempts} acceptedTurn={dto.acceptedTurn} corrections={dto.corrections}
+        />
       </SidePanel>
 
       <SidePanel
@@ -177,8 +188,49 @@ export function MetaTab({ dto, view, cropSrc, onOpenReading, onOpenRun, onClose 
  *  Stencil web component: `renderToStaticMarkup` on the wrapper prints only
  *  the `<ion-modal>` host tag, never the light-DOM children, so this
  *  content has to be reachable on its own for a node suite to see it. */
+/** The agent's own rails catching it, one row per correction.
+ *
+ *  TWO SHAPES, AND THE DIFFERENCE IS VISIBLE. A main-path rejection is
+ *  `{ turn, reasons }` — no outcome, because the parser writes none, so none is
+ *  invented here. An escalation always carries `turn: 1`, being a separate pass
+ *  rather than a continuation of the main counter, so it is LABELLED
+ *  "Escalation" instead of numbered: printing "Turn 1" under a "Turn 2" would
+ *  read as the run going backwards.
+ *
+ *  Reasons stay raw codes, the same rule the state words follow. */
+function CorrectionTrail(
+  { attempts, acceptedTurn, corrections }:
+  { attempts: number | null; acceptedTurn: number | null; corrections: MetaCorrection[] },
+) {
+  // ABSENCE IS THE SIGNAL. An opening read first time gets no section at all —
+  // not an empty one announcing that nothing went wrong.
+  if (corrections.length === 0) return null;
+  const heading = acceptedTurn != null && attempts != null
+    ? `Corrections · accepted on attempt ${acceptedTurn} of ${attempts}`
+    : "Corrections";
+  return (
+    <section className="wd__blk" data-testid="meta-reading-trail">
+      <h3>{heading}</h3>
+      {corrections.map((c, i) => (
+        <div className="wd__turn" key={i} data-testid="meta-correction">
+          <span className="wd__turn-n">
+            {c.stage === "escalation" ? "Escalation" : `Turn ${c.turn}`}
+          </span>
+          <span className="wd__turn-why">
+            {c.reasons.map((r) => <code key={r} data-testid="meta-correction-reason">{r}</code>)}
+            {c.outcome && <em data-testid="meta-correction-outcome">{c.outcome}</em>}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function MetaReadingDetail(
-  { reading, reasoningParts }: { reading: MetaReading | null; reasoningParts: string[] },
+  { reading, reasoningParts, attempts = null, acceptedTurn = null, corrections = [] }: {
+    reading: MetaReading | null; reasoningParts: string[];
+    attempts?: number | null; acceptedTurn?: number | null; corrections?: MetaCorrection[];
+  },
 ) {
   // NO READING, BUT STILL A REASON. A declined opening has no facts to show,
   // and dropping its reasoning here was how the fix for AC-7 deleted the
@@ -196,6 +248,9 @@ export function MetaReadingDetail(
             ))}
           </section>
         )}
+        {/* A DECLINED OPENING'S TRAIL IS THE MOST INTERESTING ONE. It has no
+            facts to show, so how the agent got there is all there is. */}
+        <CorrectionTrail attempts={attempts} acceptedTurn={acceptedTurn} corrections={corrections} />
       </div>
     );
   }
@@ -250,91 +305,164 @@ export function MetaReadingDetail(
       </section>
 
       <section className="wd__blk" data-testid="meta-reading-source">
-        <h3>Source</h3>
+        <h3>Evidence</h3>
         <p>{reading.source.filename ?? reading.source.fileId ?? "unknown file"}</p>
         <p>Page {reading.source.pageNo ?? "not recorded"}</p>
         <p>Sheet {reading.source.sheetRef ?? "not recorded"}</p>
         <p>Region {reading.source.region ?? "not recorded"}</p>
       </section>
+
+      {/* LAST, per the approved mock: the trail is how the reading above was
+          arrived at, so it reads after the reading rather than interrupting it. */}
+      <CorrectionTrail attempts={attempts} acceptedTurn={acceptedTurn} corrections={corrections} />
     </div>
   );
 }
+
+/** One named group of the Run door.
+ *
+ *  THE GROUPS ARE THE FEATURE. Twenty-two figures in one list is the wall the
+ *  owner rejected — "information behind doors must be readable, not just a text
+ *  area field". They are ordered the way the run happened, so the door reads as
+ *  a sequence rather than an inventory: what the document was, what it looked
+ *  at, what it read, where it placed the results, then what it cost. */
+function RunGroup({ title, testId, children }: {
+  title: string; testId?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className="wd__blk" data-testid={testId}>
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+const Row = ({ k, v, testId }: { k: string; v: React.ReactNode; testId?: string }) => (
+  <div className="wd__kv-row"><dt>{k}</dt><dd data-testid={testId}>{v}</dd></div>
+);
+
+/** A figure the run never measured is NOT zero. A report written before the
+ *  agentic parser carries no token counts and no targeted-review count, and
+ *  printing 0 for those would be a measurement this run never made. */
+const figure = (n: number | null | undefined) => (n == null ? "not recorded" : String(n));
 
 export function MetaRunDetail({ run }: { run: LineMetaDto["run"] }) {
   if (!run) {
     return <p className="ops2-absent" data-testid="meta-run-detail-empty">{NO_RUN}</p>;
   }
   if (!run.document) {
-    return <p className="ops2-absent" data-testid="meta-run-detail-empty">{RUN_OPENING_NOT_COVERED}</p>;
+    // TWO DIFFERENT ABSENCES. A run that produced no report at all (it failed,
+    // or is still going) is not a report that left this opening out, and saying
+    // the second when the first is true sends a staffer looking for a document
+    // that does not exist.
+    return (
+      <p className="ops2-absent" data-testid="meta-run-detail-empty">
+        {run.reported ? RUN_OPENING_NOT_COVERED : RUN_NO_REPORT}
+      </p>
+    );
   }
-  const { steps } = run.document;
+  const doc = run.document;
+  const { steps } = doc;
+  const t = doc.telemetry;
   return (
     <div className="wd" data-testid="meta-run-detail">
-      <p>Started {run.startedAt}</p>
-      <p data-testid="meta-run-detail-outcome">This opening: {run.outcome ?? "not recorded for this opening"}</p>
-      <p>Document {run.document.fileId}</p>
+      <RunGroup title="This run">
+        <dl className="wd__kv">
+          <Row k="Started" v={run.startedAt} />
+          <Row k="This opening" testId="meta-run-detail-outcome"
+               v={run.outcome ?? "not recorded for this opening"} />
+          <Row k="Document" v={doc.fileId} />
+        </dl>
+      </RunGroup>
 
-      <dl data-testid="meta-run-inventory">
-        <div><dt>Pages</dt><dd>{steps.inventory.pages}</dd></div>
-        <div><dt>Fonts</dt><dd>{steps.inventory.fonts}</dd></div>
-        <div><dt>Images</dt><dd>{steps.inventory.images}</dd></div>
-        <div><dt>Attachments</dt><dd>{steps.inventory.attachments}</dd></div>
-        <div><dt>Strategy</dt><dd>{steps.strategy}</dd></div>
-        <div><dt>Pages read</dt><dd>{steps.text.pagesRead}</dd></div>
-        {/* `of` is the DOCUMENT's page count, not the number selected — codex
-            P2. Labelling it "Pages selected" printed 20 where 4 pages were
-            chosen, and contradicted the list of selected pages directly below
-            it. Both halves, so the ratio is readable and neither can be
-            mistaken for the other. */}
-        <div>
-          <dt>Pages selected</dt>
-          <dd data-testid="meta-run-pages-selected">
-            {steps.selectPages.selected.length} of {steps.selectPages.of}
-          </dd>
+      <RunGroup title="The document" testId="meta-run-inventory">
+        <dl className="wd__kv">
+          <Row k="Pages" v={steps.inventory.pages} />
+          <Row k="Fonts" v={steps.inventory.fonts} />
+          <Row k="Images" v={steps.inventory.images} />
+          <Row k="Attachments" v={steps.inventory.attachments} />
+          <Row k="Strategy" v={steps.strategy} />
+        </dl>
+      </RunGroup>
+
+      <RunGroup title="What it looked at">
+        <dl className="wd__kv">
+          <Row k="Pages read" v={steps.text.pagesRead} />
+          {/* `of` is the DOCUMENT's page count, not the number selected — codex
+              P2. Labelled "Pages selected" it printed 20 where 4 were chosen,
+              contradicting the list below it. Both halves, so neither can be
+              mistaken for the other. */}
+          <Row k="Pages selected" testId="meta-run-pages-selected"
+               v={`${steps.selectPages.selected.length} of ${steps.selectPages.of}`} />
+          <Row k="Crops rendered"
+               v={`${steps.renderCrop.pagesRendered} pages, ${steps.renderCrop.cropsMade} crops`} />
+        </dl>
+        {/* AC-16: every entry in full — no cap, no "+N more". */}
+        <div data-testid="meta-run-select-pages">
+          {steps.selectPages.selected.length === 0 ? (
+            <p className="ops2-absent">No pages selected.</p>
+          ) : (
+            <ul>
+              {steps.selectPages.selected.map((sp) => (
+                <li key={sp.pageNo} data-testid="meta-run-select-page">
+                  Page {sp.pageNo} · {sp.tier} · {sp.reason}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      </dl>
+        <div data-testid="meta-run-elevation-regions">
+          {steps.elevationRegions.length === 0 ? (
+            <p className="ops2-absent">No elevation regions.</p>
+          ) : (
+            <ul>
+              {steps.elevationRegions.map((r) => (
+                <li key={r.pageNo} data-testid="meta-run-elevation-region">
+                  Page {r.pageNo} · {r.labels.join(", ")}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </RunGroup>
 
-      {/* AC-16: every entry in full — no cap, no "+N more". */}
-      <section data-testid="meta-run-select-pages">
-        <h3>Selected pages</h3>
-        {steps.selectPages.selected.length === 0 ? (
-          <p className="ops2-absent">None.</p>
-        ) : (
-          <ul>
-            {steps.selectPages.selected.map((s) => (
-              <li key={s.pageNo} data-testid="meta-run-select-page">Page {s.pageNo} · {s.tier} · {s.reason}</li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <RunGroup title="What it read" testId="meta-run-steps">
+        <dl className="wd__kv">
+          <Row k="Attempted" v={steps.read.attempted} />
+          <Row k="Returned" v={steps.read.returned} />
+          <Row k="Declined" v={steps.read.declined} />
+          <Row k="Retried with threshold" v={steps.read.retriedWithThreshold} />
+          <Row k="Targeted reviews" v={figure(steps.read.targetedReviews)} />
+        </dl>
+      </RunGroup>
 
-      <section data-testid="meta-run-elevation-regions">
-        <h3>Elevation regions</h3>
-        {steps.elevationRegions.length === 0 ? (
-          <p className="ops2-absent">None.</p>
-        ) : (
-          <ul>
-            {steps.elevationRegions.map((r) => (
-              <li key={r.pageNo} data-testid="meta-run-elevation-region">Page {r.pageNo} · {r.labels.join(", ")}</li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <RunGroup title="Where it placed them">
+        <dl className="wd__kv">
+          <Row k="From text" v={steps.placements.fromText} />
+          <Row k="From model fallback" v={steps.placements.fromModelFallback} />
+          <Row k="Unplaced" v={steps.placements.unplaced} />
+          <Row k="North assumed" v={steps.northAssumed ? "yes" : "no"} />
+        </dl>
+      </RunGroup>
 
-      <dl data-testid="meta-run-steps">
-        <div><dt>Crops rendered</dt><dd>{steps.renderCrop.pagesRendered} pages, {steps.renderCrop.cropsMade} crops</dd></div>
-        <div><dt>Read attempted</dt><dd>{steps.read.attempted}</dd></div>
-        <div><dt>Read returned</dt><dd>{steps.read.returned}</dd></div>
-        <div><dt>Read declined</dt><dd>{steps.read.declined}</dd></div>
-        <div><dt>Retried with threshold</dt><dd>{steps.read.retriedWithThreshold}</dd></div>
-        <div><dt>Placements from text</dt><dd>{steps.placements.fromText}</dd></div>
-        <div><dt>Placements from model fallback</dt><dd>{steps.placements.fromModelFallback}</dd></div>
-        <div><dt>Unplaced</dt><dd>{steps.placements.unplaced}</dd></div>
-        <div><dt>North assumed</dt><dd>{steps.northAssumed ? "yes" : "no"}</dd></div>
-        <div><dt>Failed phase</dt><dd data-testid="meta-run-failed-phase">{run.document.failedPhase ?? "none"}</dd></div>
-        <div><dt>Wall time</dt><dd>{run.document.wallMs != null ? `${run.document.wallMs}ms` : "not recorded"}</dd></div>
-        <div><dt>Model calls</dt><dd>{run.document.modelCalls ?? "not recorded"}</dd></div>
-      </dl>
+      <RunGroup title="Cost and health">
+        <dl className="wd__kv">
+          <Row k="Wall time" v={doc.wallMs != null ? `${doc.wallMs}ms` : "not recorded"} />
+          <Row k="Model calls" v={figure(doc.modelCalls)} />
+          <Row k="Tokens in / out" v={`${figure(t.inputTokens)} / ${figure(t.outputTokens)}`} />
+          <Row k="Turns cached" v={figure(t.cachedTurns)} />
+          <Row k="Turns repaired" v={figure(t.repairedTurns)} />
+          <Row k="Failed phase" testId="meta-run-failed-phase" v={doc.failedPhase ?? "none"} />
+          {/* A PROVIDER FAILURE IS NOT AN UNREADABLE DRAWING. One needs whoever
+              owns the integration, the other whoever drew the plans, and a tab
+              that renders them alike sends the wrong person looking. */}
+          <Row k="Provider" testId="meta-run-provider"
+               v={doc.providerFailure
+                 ? [doc.providerFailure.failureKind ?? "failed", ...doc.providerFailure.warnings].join(" · ")
+                 : "no failure"} />
+        </dl>
+      </RunGroup>
     </div>
   );
 }
+
