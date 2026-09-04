@@ -176,7 +176,11 @@ export function pageScales(inspected: InspectResponse): Map<number, number> {
 function subject(words: PageWord[], from: number, step: -1 | 1): "scale" | "not_a_scale" | null {
   for (let at = from + step; at >= 0 && at < words.length; at += step) {
     if (!adjacent(words[at], words[at - step])) return null;
-    const text = words[at].text.trim().replace(/[^A-Za-z]/g, "");
+    const printed = words[at].text.trim();
+    // Another ratio ends this one's phrase: a SCALE label printed for the
+    // ratio beside it cannot reach across that ratio to vouch for a second.
+    if (SCALE_RATIO.test(printed.replace(/[.,;]+$/, ""))) return null;
+    const text = printed.replace(/[^A-Za-z]/g, "");
     if (SCALE_LABEL.test(text)) return "scale";
     if (NOT_A_SCALE.test(text)) return "not_a_scale";
   }
