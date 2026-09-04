@@ -1,0 +1,10 @@
+/* Attention page — group heading only. Everything else reuses projects.css
+ * classes (.pq-skeleton, .pq-empty, .pq-error, ds-surface-card, ds-type-caption)
+ * and rows.css (.ops2-rows, .ops2-row). Design: docs/runs/ops2-attention/02-design.md §2. */
+.att-group + .att-group {
+  margin-top: var(--ops2-space-lg, 24px);
+}
+
+.att-group h2 {
+  margin: 0 0 var(--ops2-space-sm, 8px);
+}

@@ -12,9 +12,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+
+const read = (rel) => readFileSync(join(projectRoot, rel), "utf8");
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("ops2-attention");
@@ -146,6 +149,44 @@ test("attentionGroups: the wait mapping — submissions/inReview/readyToIssue ->
   assert.equal(new URL(byKey.inReview, "http://ops2.local").search, "?wait=us");
   assert.equal(new URL(byKey.readyToIssue, "http://ops2.local").search, "?wait=us");
   assert.equal(new URL(byKey.awaitingPayment, "http://ops2.local").search, "?wait=customer");
+});
+
+// AttentionPage.tsx — source-regex assertions, same convention as
+// ops2-navigation.test.mjs (no suite renders/mounts React; the .tsx files are
+// read as text). Design §5: OpsPage frame, per-group section.att-group > h2 +
+// RowList/Row with edge={null}, a row's onActivate pushes history, .pq-error
+// with testid attention-error and no counts rendered there, activeOrders and
+// customers never read from the response.
+test("AttentionPage: per-group section.att-group, RowList/Row wired to history, and the three non-ready states (criteria 3, 5, 6, 18-20, G3)", () => {
+  const page = read("src/ops2/attention/AttentionPage.tsx");
+  const bare = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(bare, /import\s*\{\s*RowList,\s*Row\s*\}\s*from\s*"\.\.\/chrome\/RowList"/,
+    "must import RowList and Row from ../chrome/RowList");
+  assert.match(bare, /<section className="att-group"/,
+    "each group must render inside a section.att-group");
+  assert.match(bare, /edge=\{null\}/,
+    "a row leads, never acts — edge must be explicitly null (G1c)");
+  assert.match(bare, /onActivate=\{?\(\)\s*=>\s*history\.push\(row\.href\)\}?/,
+    "a row's onActivate must push row.href onto history");
+  assert.match(bare, /pressTestId/, "rows must carry pressTestId so existing suites can press them by name");
+
+  assert.match(bare, /className="pq-skeleton"/, "loading state must use the shared .pq-skeleton class");
+  assert.match(bare, /className="pq-empty"/, "an empty attentionGroups() result must use the shared .pq-empty class");
+  assert.match(bare, /className="pq-error ds-surface-card"/, "the error panel must use the shared .pq-error ds-surface-card treatment");
+  assert.match(bare, /data-testid="attention-error"/, "the error panel's testid must be attention-error");
+  assert.match(bare, /onClick=\{reload\}/, "the error panel's Try again must be wired to reload");
+
+  // No counts in the error branch: nothing between the error panel's opening
+  // tag and its closing tag may read `.counts` off the load result.
+  const errorBlockMatch = bare.match(/status === "error"[\s\S]*?<\/div>\s*\)\s*\}/);
+  assert.ok(errorBlockMatch, "could not isolate the error-state JSX block");
+  assert.ok(!/load\.counts/.test(errorBlockMatch[0]), "the error state must render no counts");
+
+  // activeOrders/customers are raw-response-only fields parseSummary already
+  // excludes; the page must never name them even so (criterion 8, design §5).
+  assert.ok(!/activeOrders/.test(bare), "AttentionPage must never read activeOrders");
+  assert.ok(!/\bcustomers\b/.test(bare), "AttentionPage must never read the raw customers field");
 });
 
 test("attentionGroups: every row label is number-leading (starts with its count)", () => {
