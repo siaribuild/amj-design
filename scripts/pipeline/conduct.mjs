@@ -406,7 +406,14 @@ const withDir = (r) => { r.dir = 'docs/runs/' + r.slug; return r }
 function loadRun(slug) {
   const p = join(RUNS, slug, 'run.json')
   if (!existsSync(p)) die('no run at ' + p + '\n  start one with:  conduct start <slug> "<ask>"')
-  return withDir(JSON.parse(readFileSync(p, 'utf8')))
+  const r = JSON.parse(readFileSync(p, 'utf8'))
+  // The slug read back OUT of run.json is a path segment like every other one,
+  // and it is joined into every path the rest of this run touches. Every other
+  // route to a slug is validated; leaving this one unchecked left the chain with
+  // a gap in it. Named by /security-review as hardening, below its own bar only
+  // because reaching it needs repo write access.
+  checkSlug(r.slug)
+  return withDir(r)
 }
 
 /**
@@ -1078,13 +1085,22 @@ export function checkPlan(tasks, design, spec) {
       warn.push('the design names ' + f + ' but no task lists it in `files` - it will not be written')
 
   const claimedCriteria = new Set(tasks.flatMap((t) => (t.criteria || []).map(String)))
-  const specCriteria = [...(spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => m[1])
+  // The SAME shapes checkSpec accepts. Widening one and not the other left
+  // AC-<n> / L-S<n> specs with no criteria found here at all, so the coverage
+  // block was skipped entirely and a plan tracing nothing read as clean - the
+  // quiet half of a disagreement inside one patch. Codex P2, 2026-09-04.
+  const specCriteria = [
+    ...[...(spec || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => m[1]),
+    ...[...(spec || '').matchAll(/^\s*\*\*([A-Za-z][\w-]*?\d+)\b/gm)].map((m) => m[1]),
+  ]
   if (specCriteria.length && !claimedCriteria.size)
     warn.push('no task declares which criteria it satisfies, so none of the spec' + "'" + 's ' +
       specCriteria.length + ' can be traced to the work that covers it')
   else
+    // A task names a criterion either in full ("AC-1") or by its number ("1"),
+    // and those are the same criterion.
     for (const c of specCriteria)
-      if (!claimedCriteria.has(c))
+      if (!claimedCriteria.has(c) && !claimedCriteria.has(c.replace(/^\D+/, '')))
         warn.push('spec criterion ' + c + ' is claimed by no task')
 
   return { fatal, warn }

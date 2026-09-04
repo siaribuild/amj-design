@@ -144,14 +144,28 @@ export function finalReply(sessionId) {
   // gets written as the report and the gate passes without the reviewer's
   // actual findings, which is the failure this capture path exists to prevent.
   // Codex P1, 2026-09-02.
+  // THE FINAL TURN, OR NOTHING. Keeping the last text seen ANYWHERE meant a
+  // reviewer whose closing turn was a tool call - or that died mid-way - handed
+  // back its progress narration ("let me look at the diff first"), which
+  // finalizePane wrote as the report and the gate accepted as a verdict. The
+  // same false pass this capture path exists to prevent, reached by chatter
+  // instead of by silence. Codex P1, 2026-09-04.
+  //
+  // Records repeat once per content block sharing a requestId, so a turn is
+  // every record carrying one id: its blocks are joined, and a NEW id starts
+  // the answer over rather than appending to the last one.
+  let lastId = null
   for (const file of parentFiles(sessionId)) {
     for (const line of readFileSync(file, 'utf8').split(NL)) {
       if (!line.trim()) continue
       let d
       try { d = JSON.parse(line) } catch { continue }
       if (d.type !== 'assistant') continue
+      const id = d.requestId || d.message?.id || null
+      if (id !== lastId) { lastId = id; last = '' }
       for (const c of d.message?.content || [])
-        if (c.type === 'text' && c.text && c.text.trim()) last = c.text
+        if (c.type === 'text' && c.text && c.text.trim())
+          last = last ? last + '\n' + c.text : c.text
     }
   }
   return last
