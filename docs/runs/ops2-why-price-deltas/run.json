@@ -25,12 +25,12 @@
     },
     "ux": {
       "code": 0,
-      "contextTokens": 1681018,
-      "outputTokens": 61022,
-      "turns": 19,
+      "contextTokens": 5934618,
+      "outputTokens": 28896,
+      "turns": 50,
       "source": "transcript",
-      "session": "5bd5f6c5-a30a-4904-9536-4047b1463780",
-      "seconds": 774
+      "session": "9175d720-93a5-46b2-9f3e-e678d74b0c33",
+      "seconds": 591
     }
   },
   "tasksDone": [],

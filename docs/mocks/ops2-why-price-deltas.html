@@ -75,7 +75,7 @@ body{
 .rules+.rules{margin-top:12px}
 .rules strong{display:block;margin-bottom:4px;color:var(--ds-text-primary)}
 .rules li{margin-left:18px;margin-top:3px}
-.rules--fb{border-left:3px solid var(--ds-color-brand)}
+.rules--fb{background:var(--ds-color-brand-wash)}
 .sect{margin-top:48px}
 .sect>h2{font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;line-height:var(--theme-line-height-snug);padding-bottom:8px;border-bottom:1px solid var(--theme-neutral-400)}
 .sect>p.note{max-width:86ch;margin-top:10px;color:var(--theme-neutral-700);font-size:var(--theme-font-size-sm)}
@@ -135,6 +135,7 @@ body{
 .lp-why__fig{font-family:var(--theme-font-display);font-weight:var(--theme-font-weight-medium);font-variant-numeric:tabular-nums}
 .lp-why__origin{display:block;margin-top:var(--theme-spacing-2xs);font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
 .ops2-rows{margin:0;padding:0;list-style:none;overflow:hidden}
+.ops2-row+.ops2-row{border-top:1px solid var(--ds-border-subtle)}
 .ops2-absent{font-style:italic;color:var(--ds-text-muted)}
 
 /* ── The slide-out (SidePanel) — projects.css, verbatim ──────────────────── */
@@ -209,9 +210,12 @@ body{
   padding:var(--theme-spacing-sm) var(--theme-spacing-md);
   font-size:var(--theme-font-size-sm);
 }
-/* The hairline belongs to the PAIR, not to either row — rows.css’s own rule,
-   applied to a row that is deliberately NOT pressable. */
-.wd__row+.wd__row{border-top:1px solid var(--ds-border-subtle)}
+/* NO HAIRLINE RULE HERE. The row carries `ops2-row` as well as `wd__row`, so
+   `.ops2-row + .ops2-row` (rows.css, line 43) draws it — the rule that already
+   says a hairline belongs to the PAIR and not to either row. Every other
+   `.ops2-row` rule targets `> .ops2-row__open`, the pressable child this row
+   deliberately does NOT have, so the class costs nothing and states nothing
+   about pressability. */
 .wd__row--chosen{background:var(--ds-color-brand-wash)}
 .wd__row-name{grid-column:1;color:var(--ds-text-primary);overflow-wrap:anywhere}
 .wd__row--chosen .wd__row-name{font-weight:var(--theme-font-weight-medium)}
@@ -283,8 +287,9 @@ it stands.</p>
     ladder is <b>one card containing a list of rows</b>, not five loose blocks and not five cards. See <b>A</b>.</li>
     <li><b>Nothing is re-implemented.</b> Three <code>wd__</code> rules are <b>deleted</b> because the console already
     had them: <code>.wd__blk-h</code> was a byte-identical copy of <code>.lp-panel__title</code>, <code>.wd__kv</code>
-    of <code>.lp-panel__lines</code>, and the block wrapper of <code>.lp-panel</code> itself. Net CSS after this
-    feature is <b>smaller</b> than before it.</li>
+    of <code>.lp-panel__lines</code>, and the block wrapper of <code>.lp-panel</code> itself. The ladder rows carry
+    <code>ops2-row</code>, so the hairline between them is <code>rows.css</code>’s existing rule rather than a fourth
+    copy of it. Net CSS after this feature is <b>smaller</b> than before it.</li>
     <li><b>&ldquo;on ipad there&rsquo;s a modal centered popup - that is NOT how our default sideout panel
     works (REUSE COMPONENTS!!!)&rdquo;</b> Correct, and it is a defect in <code>SidePanel</code> that predates this feature. Fixed in the
     shared component, so every caller of the full-screen form is fixed at once. See <b>D</b>.</li>
@@ -342,7 +347,7 @@ it stands.</p>
           <p class="wd__reason">Nothing on this screen changes the quote &mdash; it is read and closed.</p>
         </div>
       </div>
-      <p class="ann">Four facts, one surface, no boundaries. And there is nowhere for a price to go: the first line
+      <p class="ann">Four facts share one surface with nothing dividing them, and there is nowhere for a price to go: the first line
       of each row is already full, so an amount would push the product name into truncation at the exact width most
       of this console is read at.</p>
     </div>
@@ -361,21 +366,21 @@ it stands.</p>
           <section class="lp-panel lp-panel--rows">
             <h3 class="lp-panel__title">What else was considered</h3>
             <ul class="ops2-rows">
-              <li class="wd__row wd__row--chosen">
+              <li class="ops2-row wd__row wd__row--chosen">
                 <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
                 <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
               </li>
-              <li class="wd__row">
+              <li class="ops2-row wd__row">
                 <span class="wd__row-name">AMJ67T Awning</span>
                 <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
                 <span class="wd__row-delta">+$65</span>
               </li>
-              <li class="wd__row">
+              <li class="ops2-row wd__row">
                 <span class="wd__row-name">AMJ45 Sliding Window</span>
                 <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span>
                 <span class="wd__row-delta">+$50</span>
               </li>
-              <li class="wd__row">
+              <li class="ops2-row wd__row">
                 <span class="wd__row-name">AMJ50 Awning</span>
                 <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
                 <span class="wd__row-delta">&minus;$30</span>
@@ -391,7 +396,7 @@ it stands.</p>
       the line page and the drawing viewer already use, so a card looks like a card.</p>
       <p class="ann"><b>The rows reach the card’s edge</b> and the hairline runs the full width &mdash; the rule the
       line page unit list already carries, reused rather than re-typed. <span class="ruling">REUSE</span></p>
-      <p class="ann"><b>The chosen row is tinted, not badged.</b> The brand wash is the console’s existing
+      <p class="ann"><b>The chosen row is tinted.</b> The brand wash is the console’s existing
       &ldquo;this is the one&rdquo; treatment on a row (<code>rows.css</code>); it costs no new colour and no new
       state, and the words <em>&middot; chosen</em> still carry it for a reader who cannot see the tint.</p>
     </div>
@@ -432,26 +437,26 @@ it stands.</p>
               <section class="lp-panel lp-panel--rows">
                 <h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen">
+                  <li class="ops2-row wd__row wd__row--chosen">
                     <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ67T Awning</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta">+$65</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ45 Sliding Window</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta">+$50</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ50 Awning</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
                     <span class="wd__row-delta">&minus;$30</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ40 Fixed</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span>
                     <span class="wd__row-delta">&minus;$50</span>
@@ -468,7 +473,7 @@ it stands.</p>
       caps; <em>&minus;$30</em> and <em>&minus;$50</em> against products that did not. The platform paid $50 for the
       cheapest option that actually met the requirement &mdash; the sentence the estimator came here to be able to
       write.</p>
-      <p class="ann"><b>Right-aligned, tabular, one column.</b> Amounts that shift left and right with the length of
+      <p class="ann"><b>The amounts sit in a column of their own, right-aligned and tabular.</b> Amounts that shift left and right with the length of
       the product name beside them get read five times instead of once. <span class="ruling">D5 &middot; AC19</span></p>
     </div>
 
@@ -512,16 +517,16 @@ it stands.</p>
               <section class="lp-panel lp-panel--rows">
                 <h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen">
+                  <li class="ops2-row wd__row wd__row--chosen">
                     <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; the platform’s pick</span></span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ45 Sliding Window</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.38</span><span class="wd__row-verdict">missed the Uw cap</span></span>
                     <span class="wd__row-delta">&minus;$120</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ70 Awning</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.55 &middot; SHGC 0.44</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta">+$210</span>
@@ -574,26 +579,26 @@ it stands.</p>
               <section class="lp-panel lp-panel--rows">
                 <h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen">
+                  <li class="ops2-row wd__row wd__row--chosen">
                     <span class="wd__row-name">AMJ90 Sliding Door<span class="wd__row-mark"> &middot; chosen</span></span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ90 Sliding Door Thermally Broken</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.60 &middot; SHGC 0.52</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta">+$1,840</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ88 Stacker</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta">$0</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">Split: sliding + fixed</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">2 units</span><span class="wd__row-verdict">within the 5% band</span></span>
                     <span class="wd__row-delta">+$95</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ92 Sliding Door</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.80 &middot; SHGC 0.58</span><span class="wd__row-verdict">missed the Uw cap</span></span>
                     <span class="wd__row-delta wd__row-delta--absent">$---</span>
@@ -636,16 +641,16 @@ it stands.</p>
               <section class="lp-panel lp-panel--rows">
                 <h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen">
+                  <li class="ops2-row wd__row wd__row--chosen">
                     <span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ67T Awning</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span>
                     <span class="wd__row-delta wd__row-delta--absent">$---</span>
                   </li>
-                  <li class="wd__row">
+                  <li class="ops2-row wd__row">
                     <span class="wd__row-name">AMJ50 Awning</span>
                     <span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span>
                     <span class="wd__row-delta wd__row-delta--absent">$---</span>
@@ -658,7 +663,7 @@ it stands.</p>
           </div>
         </div>
       </div>
-      <p class="ann"><b>No banner, no apology, no empty panel.</b> An old record simply has no amounts to show, and
+      <p class="ann"><b>Nothing is added for an older record.</b> It simply has no amounts to show, and
       <code>$---</code> already says so per row. A &ldquo;price unavailable for older runs&rdquo; notice would be a
       second sentence about the same absence &mdash; and would put a date-shaped hedge on a screen banned from
       carrying one (<span class="ruling">AC8</span>).</p>
@@ -692,8 +697,8 @@ it stands.</p>
                 <dl class="lp-panel__lines"><div><dt>Uw</dt><dd><span class="wd__fig">&le; 3.90</span></dd></div><div><dt>SHGC</dt><dd><span class="wd__fig">&le; 0.44</span></dd></div></dl></section>
               <section class="lp-panel lp-panel--rows"><h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
-                  <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                  <li class="ops2-row wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                  <li class="ops2-row wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
                 </ul>
               </section>
             </div>
@@ -724,11 +729,11 @@ it stands.</p>
               <section class="lp-panel lp-panel--rows">
                 <h3 class="lp-panel__title">What else was considered</h3>
                 <ul class="ops2-rows">
-                  <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
-                  <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
-                  <li class="wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
-                  <li class="wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
-                  <li class="wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
+                  <li class="ops2-row wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                  <li class="ops2-row wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                  <li class="ops2-row wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
+                  <li class="ops2-row wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
+                  <li class="ops2-row wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
                 </ul>
                 <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
               </section>
@@ -737,8 +742,7 @@ it stands.</p>
           </div>
         </div>
       </div>
-      <p class="ann"><b>A screen, not an overlay.</b> Edge to edge, no scrim behind it, no rounded corner floating on
-      the page, and it arrives from the right exactly as it does at every other width. The measure stays at the
+      <p class="ann"><b>The screen form finally behaves like a screen.</b> It runs edge to edge with no scrim and no floating corner, and arrives from the right exactly as it does at every other width. The measure stays at the
       console’s own <code>72ch</code>, so the cards do not stretch into an 800px-wide line of text.</p>
       <p class="ann"><b>Above 1024px nothing changes</b> &mdash; the desk keeps its 520px right-hand slide-out (frames
       B). This fix only replaces the stock modal that was appearing below the change point.</p>
@@ -768,11 +772,11 @@ it stands.</p>
             <section class="lp-panel lp-panel--rows">
               <h3 class="lp-panel__title">What else was considered</h3>
               <ul class="ops2-rows">
-                <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
+                <li class="ops2-row wd__row wd__row--chosen"><span class="wd__row-name">AMJ67 Awning<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.72 &middot; SHGC 0.41</span><span class="wd__row-verdict">met the caps</span></span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ67T Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.41 &middot; SHGC 0.39</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$65</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ45 Sliding Window</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.88 &middot; SHGC 0.43</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$50</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ50 Awning</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.10 &middot; SHGC 0.52</span><span class="wd__row-verdict">missed both caps</span></span><span class="wd__row-delta">&minus;$30</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ40 Fixed</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.35 &middot; SHGC 0.47</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta">&minus;$50</span></li>
               </ul>
               <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
             </section>
@@ -792,11 +796,11 @@ it stands.</p>
             <section class="lp-panel lp-panel--rows">
               <h3 class="lp-panel__title">What else was considered</h3>
               <ul class="ops2-rows">
-                <li class="wd__row wd__row--chosen"><span class="wd__row-name">AMJ90 Sliding Door<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ90 Sliding Door Thermally Broken</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.60 &middot; SHGC 0.52</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$1,840</span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ88 Stacker</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">$0</span></li>
-                <li class="wd__row"><span class="wd__row-name">Split: sliding + fixed</span><span class="wd__row-meta"><span class="wd__row-figs">2 units</span><span class="wd__row-verdict">within the 5% band</span></span><span class="wd__row-delta">+$95</span></li>
-                <li class="wd__row"><span class="wd__row-name">AMJ92 Sliding Door</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.80 &middot; SHGC 0.58</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta wd__row-delta--absent">$---</span></li>
+                <li class="ops2-row wd__row wd__row--chosen"><span class="wd__row-name">AMJ90 Sliding Door<span class="wd__row-mark"> &middot; chosen</span></span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ90 Sliding Door Thermally Broken</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 3.60 &middot; SHGC 0.52</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">+$1,840</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ88 Stacker</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.12 &middot; SHGC 0.55</span><span class="wd__row-verdict">met the caps</span></span><span class="wd__row-delta">$0</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">Split: sliding + fixed</span><span class="wd__row-meta"><span class="wd__row-figs">2 units</span><span class="wd__row-verdict">within the 5% band</span></span><span class="wd__row-delta">+$95</span></li>
+                <li class="ops2-row wd__row"><span class="wd__row-name">AMJ92 Sliding Door</span><span class="wd__row-meta"><span class="wd__row-figs">Uw 4.80 &middot; SHGC 0.58</span><span class="wd__row-verdict">missed the Uw cap</span></span><span class="wd__row-delta wd__row-delta--absent">$---</span></li>
               </ul>
               <p class="lp-panel__more">The chosen product and the next four by rank. Each amount is that product’s difference from the chosen one, and nothing here changes the line.</p>
             </section>
@@ -876,7 +880,7 @@ it stands.</p>
           </dl>
         </section>
       </div>
-      <p class="ann"><b>No amount on the card.</b> Its whole budget is three lines and each answers <em>what</em>; the
+      <p class="ann"><b>The summary card is left alone.</b> Its whole budget is three lines and each answers <em>what</em>; the
       amounts answer <em>why the others lost</em>, which is a five-row comparison and belongs with the five rows. A
       single amount here would have nothing visible to be a difference from. Say the word at approval and it becomes a
       fourth line &mdash; that is the one open question on this mock.</p>
