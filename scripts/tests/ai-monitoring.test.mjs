@@ -31,6 +31,34 @@ await build({
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding } = M;
 
+// worker/lib/monitoring.ts — IO shell (D1 counts, CF money fetch, KV
+// snapshot, notification sources). Design §3.2, §5, §6.
+const libOutfile = join(runDir, "ai-monitoring-lib-bundle.mjs");
+await build({
+  stdin: {
+    contents: `
+      export {
+        writeMonitoringSnapshot,
+        readMonitoringSnapshot,
+        fetchMoneyNumbers,
+        NOTIFICATION_SOURCES,
+        notificationCount,
+      } from ${p("worker/lib/monitoring.ts")};
+    `,
+    resolveDir: projectRoot,
+    sourcefile: "ai-monitoring-lib-entry.ts",
+    loader: "ts",
+  },
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  outfile: libOutfile,
+  logLevel: "silent",
+});
+const Lib = await import(`${pathToFileURL(libOutfile).href}?run=${Date.now()}`);
+const { writeMonitoringSnapshot, readMonitoringSnapshot, fetchMoneyNumbers, NOTIFICATION_SOURCES, notificationCount } =
+  Lib;
+
 test.after(async () => {
   await removeRunDir(runDir);
 });
@@ -211,4 +239,164 @@ test("evaluateRed: false when neither the floor nor the ceiling trips", () => {
 test("capOutstanding: cap minus billedSpend", () => {
   const money = { available: true, creditBalanceUsd: 12.34, billedSpendUsd: 8, capUsd: 20, capSource: "gateway" };
   assert.equal(capOutstanding(money), 12);
+});
+
+test("writeMonitoringSnapshot: D1 count query matches design §3.2 verbatim", async () => {
+  const calls = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            calls.push({ sql, args });
+            return { all: async () => ({ results: [] }) };
+          },
+        };
+      },
+    },
+    KV: { put: async () => {} },
+  };
+  await writeMonitoringSnapshot(env);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /triggered_by = 'upload'/);
+  assert.match(
+    calls[0].sql,
+    /status = 'processing' AND updated_at < datetime\(\?, '-30 minutes'\)/,
+  );
+  assert.match(calls[0].sql, /updated_at >= datetime\(\?, '-7 days'\)/);
+  assert.match(calls[0].sql, /status = 'completed'\s+OR status = 'failed'/);
+  assert.equal(calls[0].args.length, 2);
+  assert.equal(calls[0].args[0], calls[0].args[1]);
+});
+
+test("fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zero fetch calls", async () => {
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    throw new Error("should not be called");
+  };
+  const result = await fetchMoneyNumbers({ CF_ACCOUNT_ID: "acct1" }, fetchImpl);
+  assert.deepEqual(result, { available: false, reason: "token_missing" });
+  assert.equal(fetchCalls, 0);
+});
+
+test("writeMonitoringSnapshot: CF failure still writes fresh D1 counts with money unavailable, and logs no secret", async () => {
+  const calls = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            calls.push({ sql, args });
+            return {
+              all: async () => ({
+                results: [{ updated_at: new Date().toISOString(), outcome: "success" }],
+              }),
+            };
+          },
+        };
+      },
+    },
+    KV: {
+      put: async (key, value) => {
+        calls.push({ key, value });
+      },
+    },
+    CF_MONITORING_TOKEN: "super-secret-token",
+    CF_ACCOUNT_ID: "acct1",
+  };
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    throw new Error("network down");
+  };
+  const lines = [];
+  const realLog = console.log;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    await writeMonitoringSnapshot(env, fetchImpl);
+  } finally {
+    console.log = realLog;
+  }
+  assert.ok(fetchCalls > 0, "fetchImpl must actually be called");
+  const put = calls.find((c) => c.key === "monitoring:snapshot");
+  const snapshot = JSON.parse(put.value);
+  assert.equal(snapshot.money.available, false);
+  assert.equal(snapshot.success7d, 1);
+  assert.ok(lines.length > 0, "a failure log line must be written");
+  const logged = lines.join("\n");
+  assert.doesNotMatch(logged, /super-secret-token/);
+  assert.doesNotMatch(logged, /Bearer/);
+});
+
+test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with capSource 'account'", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) {
+      return { ok: true, json: async () => ({ result: { balance: 12.34 } }) };
+    }
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { totalUsd: 8 } }) };
+    }
+    if (url.includes(`/ai-gateway/gateways/`)) {
+      return { ok: false, status: 404 };
+    }
+    if (url.includes("/billing/spending-limit")) {
+      return { ok: true, json: async () => ({ result: { limit: 20 } }) };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.deepEqual(result, {
+    available: true,
+    creditBalanceUsd: 12.34,
+    billedSpendUsd: 8,
+    capUsd: 20,
+    capSource: "account",
+  });
+});
+
+test("readMonitoringSnapshot: round-trips a snapshot written via writeMonitoringSnapshot", async () => {
+  let stored;
+  const env = {
+    DB: {
+      prepare: () => ({
+        bind: () => ({ all: async () => ({ results: [] }) }),
+      }),
+    },
+    KV: {
+      put: async (key, value) => {
+        stored = value;
+      },
+      get: async () => stored,
+    },
+  };
+  await writeMonitoringSnapshot(env);
+  const result = await readMonitoringSnapshot(env);
+  assert.deepEqual(result, JSON.parse(stored));
+});
+
+test("notificationCount: one source, sums to 1 when the stored snapshot is red", async () => {
+  let getCalls = 0;
+  const redSnapshot = {
+    takenAt: new Date().toISOString(),
+    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 2, capUsd: 100, capSource: "account" },
+    days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
+    success7d: 0,
+    error7d: 0,
+  };
+  const env = {
+    KV: {
+      get: async () => {
+        getCalls++;
+        return JSON.stringify(redSnapshot);
+      },
+    },
+  };
+  assert.equal(NOTIFICATION_SOURCES.length, 1);
+  const count = await notificationCount(env);
+  assert.ok(getCalls > 0, "the notification source must actually read the snapshot");
+  assert.equal(count, 1);
 });

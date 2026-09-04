@@ -52,6 +52,20 @@ export interface Env {
   /** AI Gateway slug. When set, Workers AI calls are routed through it for
    *  caching, rate limiting and spend visibility. Optional. */
   AI_GATEWAY_ID?: string;
+  /** Cloudflare API token for AI Gateway billing lookups (ai-parse monitoring
+   *  §5) — a SECRET (`wrangler secret put CF_MONITORING_TOKEN`), never a
+   *  VITE_* var, so the client bundle cannot contain it. Unset ⇒ the money
+   *  panel reports {available:false, reason:'token_missing'} rather than
+   *  fetching (design §8). */
+  CF_MONITORING_TOKEN?: string;
+  /** Cloudflare account id for the AI Gateway billing endpoints. Not a secret. */
+  CF_ACCOUNT_ID?: string;
+  /** Dollar floor below which the credit balance evaluates red (design §3.3).
+   *  Defaults in code to 5. */
+  AI_CREDIT_FLOOR_USD?: string;
+  /** Percent-of-cap ceiling above which billed spend evaluates red (design
+   *  §3.3). Defaults in code to 80. */
+  AI_CAP_CEILING_PCT?: string;
   /** Primary multimodal model for the LLM building-modelling tier (LLM strategy
    *  §13.1). Defaults in code to google/gemini-3.6-flash; override without a code
    *  change once the model is enabled in the gateway. */
