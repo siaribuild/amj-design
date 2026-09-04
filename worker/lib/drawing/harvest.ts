@@ -2,7 +2,7 @@ import { normalizeOpeningRef } from "../ai/energyMap";
 import type { CropBoxPt, InspectResponse, Orientation, PageWord } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
-import { elevationRegions, horizontalGap, sameLine } from "./elevationRegions";
+import { drawingViewRegions, horizontalGap, sameLine } from "./elevationRegions";
 import { locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 
 export const MAX_TAG_CANDIDATES_PER_TAG = 4;
@@ -85,7 +85,7 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
   return inspected.pages.flatMap((page) => {
     const geometry = geometryByPage.get(page.pageNo);
     if (!geometry) return [];
-    const regions = elevationRegions(page.words, geometry.widthPt, geometry.heightPt);
+    const regions = drawingViewRegions(page.words, geometry.widthPt, geometry.heightPt);
     const words = [...page.words].sort((a, b) => a.top - b.top || a.x0 - b.x0);
     const found: DrawingScaleCandidate[] = [];
     let at = 0;

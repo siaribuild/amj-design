@@ -2017,6 +2017,17 @@ test("view scale: every printed form is read and bound to the elevation it title
   assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
 });
 
+test("view scale: a view named by the document binds as readily as a lettered one", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["NORTH", 100, 60], ["ELEVATION", 165, 80], ["SCALE", 260, 40], ["1:100", 305, 40]]),
+    ...line(600, [["SOUTH", 100, 60], ["ELEVATION", 165, 80], ["SCALE", 260, 40], ["1:50", 305, 40]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
+    "NORTH ELEVATION is a drawing title, so its scale binds to its half of the sheet");
+  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
+});
+
 test("view scale: a bare ratio is read, an unusable one is refused, and an untitled sheet binds to no view", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(100, [["1:200", 100, 40]]),

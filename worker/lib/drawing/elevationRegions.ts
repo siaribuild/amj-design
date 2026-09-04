@@ -50,6 +50,50 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
     if (labels.some((item) => item.label === label)) continue;
     labels.push({ label, x: (identifier.x0 + identifier.x1) / 2, y: (identifier.top + identifier.bottom) / 2 });
   }
+  return tileRegions(labels, widthPt, heightPt);
+}
+
+const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?)$/;
+const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
+const TITLE_IDENTIFIER = /^[A-Z]$/;
+const MAX_TITLE_QUALIFIERS = 2;
+
+/** Drawing titles as the document writes them — `ELEVATION A`, `NORTH
+ * ELEVATION`, `GROUND FLOOR PLAN`. Unlike elevationRegions, the label is not
+ * held to a vocabulary the placement path can consume: these regions exist to
+ * bind evidence printed beside a view (a scale) to that view, and a sheet that
+ * names its faces must not lose that binding. */
+export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt: number): ElevationRegion[] {
+  const ordered = [...words].sort((a, b) => a.top - b.top || a.x0 - b.x0);
+  const clean = (word: PageWord): string => word.text.trim().replace(/[:\-]$/, "").toUpperCase();
+  const labels: LabelPoint[] = [];
+  for (const word of ordered) {
+    if (!VIEW_TITLE.test(clean(word))) continue;
+    const onLine = ordered.filter((candidate) => sameLine(word, candidate)).sort((a, b) => a.x0 - b.x0);
+    const index = onLine.indexOf(word);
+    const near = (a: PageWord, b: PageWord): boolean =>
+      horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 2;
+    const parts = [word];
+    for (let at = index - 1; at >= 0 && parts.length <= MAX_TITLE_QUALIFIERS; at--) {
+      if (!TITLE_QUALIFIER.test(clean(onLine[at])) || !near(onLine[at], parts[0])) break;
+      parts.unshift(onLine[at]);
+    }
+    // Only a single-letter identifier may follow the title. Anything wider
+    // swallows the neighbouring SCALE or sheet number into the view's name.
+    if (index + 1 < onLine.length && TITLE_IDENTIFIER.test(clean(onLine[index + 1]))
+      && near(parts[parts.length - 1], onLine[index + 1])) parts.push(onLine[index + 1]);
+    const label = parts.map(clean).join(" ");
+    if (labels.some((item) => item.label === label)) continue;
+    labels.push({
+      label,
+      x: (Math.min(...parts.map((part) => part.x0)) + Math.max(...parts.map((part) => part.x1))) / 2,
+      y: (Math.min(...parts.map((part) => part.top)) + Math.max(...parts.map((part) => part.bottom))) / 2,
+    });
+  }
+  return tileRegions(labels, widthPt, heightPt);
+}
+
+function tileRegions(labels: LabelPoint[], widthPt: number, heightPt: number): ElevationRegion[] {
   if (!labels.length) return [];
   if (labels.length === 1) return [{ label: labels[0].label, region: [0, 0, widthPt, heightPt] }];
 
