@@ -17,3 +17,15 @@ Tests (2 new + 1 extended assert, all in `ai-jobs.test.mjs`): INSERT carries `tr
 `npm run test:ai-jobs` (14/14), `npm run typecheck:gate`, `npm run db:migrate:local` all green. `worker/routes/parse.ts` untouched.
 
 Next task: wire `worker/routes/ops.ts` (staff retry → pass `"ops"`) and confirm `worker/routes/parse.ts` keeps the `'upload'` default — both out of scope here, not in T2's allowed files.
+
+## T3 - IO shell: money fetch, count query, snapshot write/read, notification sources
+
+Files: `worker/lib/monitoring.ts` (new), `worker/types.ts`, `wrangler.jsonc`, `scripts/tests/ai-monitoring.test.mjs`.
+
+`writeMonitoringSnapshot` runs the §3.2 count SQL verbatim (`triggered_by='upload'`, 30-min processing clause), calls `fetchMoneyNumbers`, writes to KV (no TTL). `fetchMoneyNumbers`: token missing → `{available:false,reason:'token_missing'}`, zero fetches; on any failure still resolves with `available:false` and logs only the path suffix + status (no token/Authorization, asserted). Gateway-cap fetch failing falls back to `/ai-gateway/billing/spending-limit`, `capSource:'account'`. `readMonitoringSnapshot` round-trips via `parseMonitoringSnapshot`. `NOTIFICATION_SOURCES` = one entry (`aiBudgetRed`); `notificationCount` sums via `Promise.all` + reduce, no branching.
+
+`worker/types.ts`: `CF_MONITORING_TOKEN?/CF_ACCOUNT_ID?/AI_CREDIT_FLOOR_USD?/AI_CAP_CEILING_PCT?` after `AI_GATEWAY_ID`. `wrangler.jsonc` vars: `CF_ACCOUNT_ID`, `AI_CREDIT_FLOOR_USD:"5"`, `AI_CAP_CEILING_PCT:"80"` — token is secret-only, absent here.
+
+`npm run test:ai-monitoring` 16/16, `npm run typecheck:gate` green.
+
+Next task: wire a route/cron to call `writeMonitoringSnapshot` on the `*/10 * * * *` trigger and expose `readMonitoringSnapshot`/`notificationCount` to ops — not in T3's allowed files.
