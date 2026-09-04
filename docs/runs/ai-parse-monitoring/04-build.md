@@ -29,3 +29,15 @@ Files: `worker/lib/monitoring.ts` (new), `worker/types.ts`, `wrangler.jsonc`, `s
 `npm run test:ai-monitoring` 16/16, `npm run typecheck:gate` green.
 
 Next task: wire a route/cron to call `writeMonitoringSnapshot` on the `*/10 * * * *` trigger and expose `readMonitoringSnapshot`/`notificationCount` to ops — not in T3's allowed files.
+
+## T4 - Route GET /api/ops/monitoring, ops trigger tag, cron append
+Files: worker/routes/ops.ts, worker/index.ts, scripts/tests/api-edge.test.mjs.
+Route gates on resolveUser (401 no session) then isStaffUser (403 wrong role),
+matching the manufacturer/customer split every other ops route needs.
+retryCurrentAiExtraction ops call now tags triggeredBy "ops" so T3's
+triggered_by='upload' SQL doesn't count ops retries. scheduled() appends
+writeMonitoringSnapshot(env).catch(...), independently caught like siblings.
+crons list unchanged. api-edge subtest covers anon 401, customer 403,
+manufacturer 403, staff 200, all with leakage checks; pre-cron snapshot is
+null, notificationCount 0. Full test:api: 77 pass, 0 fail. typecheck:gate
+clean (59 pre-existing non-fatal, unchanged).
