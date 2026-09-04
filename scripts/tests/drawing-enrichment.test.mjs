@@ -6248,6 +6248,152 @@ test("full-document agent preserves discovery turns for 29- and 60-opening sets"
   }
 });
 
+test("switch wiring: the face-mapped engine is a mode, and only when it is asked for (Task 11)", async () => {
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "face_mapped" }), "face_mapped");
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "agentic_full" }), "full_document");
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "auto_drawings" }), "legacy");
+  assert.equal(drawingParserMode({ AI_EXTRACTION_MODE: "off" }), "disabled");
+  assert.equal(drawingParserMode({}), "disabled",
+    "an unset mode runs nothing, so a deployment cannot acquire a parser by forgetting");
+
+  // A mode that is off makes no database call at all.
+  let touched = false;
+  const env = {
+    AI_EXTRACTION_MODE: "off",
+    DB: { prepare() { touched = true; throw new Error("no query should be made"); } },
+  };
+  assert.deepEqual(
+    await runDrawingEnrichmentStage(env, { projectId: "p", aiRunId: "r", planPdfDocs: [{ fileId: "f" }], scheduleRows: [{ tag: "W1", widthMm: 1, heightMm: 1, typeText: null }] }),
+    { readings: [], report: null });
+  assert.equal(touched, false);
+});
+
+test("switch wiring: each phase of the face-mapped engine calls under its own skill id (Task 11)", () => {
+  const ids = [
+    makePlanFaceSkill({ pageNo: 4, candidates: [{ planCandidateId: "W1_p4_1", tag: "W1", boxNorm: [0, 0, 1, 1] }] }, new Set(["A"])),
+    makeElevationInventorySkill(faceTask(1, [900])),
+    makeFaceReconcileSkill({
+      faceKey: "k", reason: "r",
+      placements: [placedAt("W1", 1, 0.2, 2), placedAt("W2", 2, 0.8, 2)],
+      frames: [frameAt(1, 100, 200), frameAt(2, 400, 500)],
+    }),
+    makeCompositionSkill([{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: "data:," }]),
+  ].map((skill) => `${skill.id}@${skill.promptVersion}`);
+  assert.equal(new Set(ids).size, 4, "a shared id would let one phase serve another phase's cached answer");
+  assert.equal(ids.every((id) => /^[a-z_]+@v\d+$/.test(id)), true, ids.join(" "));
+});
+
+test("switch wiring: face-mapped mode reads the file, and the other engines stay out of it (Task 11)", async () => {
+  const used = [];
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "poppler", fonts: ["x"], hasAttachments: false,
+      pages: [3, 5].map((pageNo) => ({ pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 200, imageCount: 0, imageAreaFraction: 0 })),
+    },
+    pages: [
+      { pageNo: 3, text: "GROUND FLOOR PLAN", words: [
+        { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+        { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+        { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+        { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+        { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+        { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+      ] },
+      { pageNo: 5, text: "NORTH ELEVATION SCALE 1 : 100", words: [
+        { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+        { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+        { text: "SCALE", x0: 700, top: 760, x1: 740, bottom: 774 },
+        { text: "1", x0: 745, top: 760, x1: 752, bottom: 774 },
+        { text: ":", x0: 754, top: 760, x1: 758, bottom: 774 },
+        { text: "100", x0: 760, top: 760, x1: 785, bottom: 774 },
+      ] },
+    ],
+  };
+  const env = {
+    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
+    PLAN_PARSE: {},
+  };
+
+  const result = await enrichOpenings(env, {
+    projectId: "p", aiRunId: "r",
+    files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+  }, {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+    runElevation: async () => { used.push("legacy elevation"); return null; },
+    runFloorplan: async () => { used.push("legacy floorplan"); return null; },
+    runOpening: async () => { used.push("legacy opening"); return null; },
+    runFaceMapped: {
+      readPlanPage: async () => { used.push("face plan"); return null; },
+      inventoryElevation: async () => {
+        used.push("face inventory");
+        return { storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] };
+      },
+      reconcileFace: async () => { used.push("face reconcile"); return null; },
+      readComposition: async (input) => {
+        used.push("face composition");
+        return { readings: input.batch.map((task) => ({
+          tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+          operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+        })) };
+      },
+    },
+  });
+
+  assert.deepEqual(result.readings.map((r) => [r.externalRef, r.splitState, r.elevation]),
+    [["W1", "value", "NORTH"]]);
+  assert.equal(used.includes("face composition"), true);
+  assert.equal(used.some((step) => step.startsWith("legacy")), false,
+    "one engine reads a file, and the others are not consulted behind it");
+  assert.equal(result.readings[0].cropKey?.startsWith("projects/p/crops/r/"), true,
+    "and its crop is stored where every other engine's crops are");
+});
+
+test("release gate: each thing the engine claims is scored on its own (Task 12)", () => {
+  const readings = [
+    {
+      external_ref: "W1", split_state: "value", elevation_state: "value", elevation: "NORTH",
+      split_json: JSON.stringify({ axis: "vertical", units: [{ operation: "awning", ratio: 0.5 }, { operation: "fixed", ratio: 0.5 }] }),
+      page_no: 5, wall_order: 1, frame_box: [100, 300, 151, 420], gap_code: null,
+    },
+    {
+      external_ref: "W2", split_state: "not_read", elevation_state: "value", elevation: "NORTH",
+      split_json: null, page_no: 5, wall_order: 2, frame_box: null, gap_code: "frame_ambiguous",
+    },
+  ];
+  const gate = runGate(readings, {
+    W1: {
+      elevation: "NORTH", order: 1, frame: [100, 300, 151, 420], ratio: [0.5, 0.5],
+      composition: [{ operation: "awning" }, { operation: "fixed" }],
+    },
+    W2: { elevation: "NORTH", order: 2, composition: [{ operation: "fixed" }] },
+  });
+
+  const byRef = Object.fromEntries(gate.perOpening.map((o) => [o.externalRef, o]));
+  assert.deepEqual(byRef.W1.fields,
+    { composition: "match", elevation: "match", order: "match", frame: "match", ratio: "match" });
+  assert.equal(byRef.W1.verdict, "match");
+  assert.equal(byRef.W2.fields.composition, "mismatch");
+  assert.equal(byRef.W2.fields.elevation, "match",
+    "an opening whose frame nobody found still placed on a wall, and the gate says so");
+
+  // Each dimension is counted on its own: one number for the whole run hides
+  // which half of the engine is failing.
+  assert.deepEqual(gate.summary.byField.elevation, { scored: 2, matched: 2 });
+  assert.deepEqual(gate.summary.byField.composition, { scored: 2, matched: 1 });
+  assert.deepEqual(gate.summary.byField.frame, { scored: 1, matched: 1 });
+  assert.equal(gate.summary.unresolved, 1, "and an opening that came back unread is counted as unread");
+});
+
+test("release gate: a label that asserts nothing is refused (Task 12)", () => {
+  for (const label of [{}, { drawn: true }, { nonsense: 1 }, { order: 1, nonsense: 1 }, null]) {
+    const gate = runGate([{ external_ref: "W1", split_state: "value", split_json: null }], { W1: label });
+    assert.equal(gate.perOpening[0].verdict, "mismatch", JSON.stringify(label));
+    assert.match(gate.perOpening[0].note, /invalid label/);
+  }
+});
+
 test("deployment config keeps the full-document drawing parser as the production default", async () => {
   const config = await readFile(join(projectRoot, "wrangler.jsonc"), "utf8");
   assert.match(config, /"AI_EXTRACTION_MODE"\s*:\s*"agentic_full"/);

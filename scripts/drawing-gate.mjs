@@ -33,14 +33,27 @@ function deepEqual(a, b) {
 }
 
 const FIELDS = ["split", "orientation", "elevation", "room"];
-const LABEL_FIELDS = new Set([...FIELDS, "composition", "drawn", "pageNo"]);
+// The face-mapped engine claims several things about one opening, and one
+// number for the whole run hides which of them is failing: which wall it is on
+// (elevation), which number along it (order), which frame on the elevation is
+// it (frame), what the frame is divided into (composition), and in what
+// proportions (ratio).
+const FACE_FIELDS = {
+  order: (reading) => reading.wall_order ?? null,
+  frame: (reading) => reading.frame_box ?? null,
+  ratio: (reading) => {
+    const split = valueOf(reading, "split");
+    return split && split !== "__NOT_READ__" ? split.units?.map((unit) => unit.ratio) ?? null : null;
+  },
+};
+const LABEL_FIELDS = new Set([...FIELDS, ...Object.keys(FACE_FIELDS), "composition", "drawn", "pageNo"]);
 
 function invalidLabel(label) {
   if (!label || typeof label !== "object" || Array.isArray(label)) return "missing label";
   const keys = Object.keys(label);
   const unknown = keys.filter((key) => !LABEL_FIELDS.has(key));
   if (unknown.length) return `unknown field(s): ${unknown.join(", ")}`;
-  if (!keys.some((key) => FIELDS.includes(key) || key === "composition" || key === "pageNo") && label.drawn !== false) {
+  if (!keys.some((key) => FIELDS.includes(key) || key in FACE_FIELDS || key === "composition" || key === "pageNo") && label.drawn !== false) {
     return "no scored fields";
   }
   return null;
@@ -84,6 +97,12 @@ export function compareOpening(reading, label) {
     fields[field] = match ? "match" : "mismatch";
     if (!match) allMatch = false;
   }
+  for (const [field, read] of Object.entries(FACE_FIELDS)) {
+    if (!label || !Object.hasOwn(label, field)) continue;
+    const match = deepEqual(read(reading), label[field]);
+    fields[field] = match ? "match" : "mismatch";
+    if (!match) allMatch = false;
+  }
   if (label && Object.hasOwn(label, "pageNo")) {
     const pageMatch = reading.page_no === label.pageNo;
     fields.pageNo = pageMatch ? "match" : "mismatch";
@@ -104,7 +123,22 @@ export function runGate(readings, labels) {
     ...compareOpening(byRef.get(externalRef), labels[externalRef]),
   }));
   const matched = perOpening.filter((o) => o.verdict === "match").length;
-  return { perOpening, summary: { total: perOpening.length, of: perOpening.length, matched } };
+  const byField = {};
+  for (const opening of perOpening) {
+    for (const [field, verdict] of Object.entries(opening.fields ?? {})) {
+      if (verdict === "not_drawn") continue;
+      const tally = byField[field] ?? { scored: 0, matched: 0 };
+      tally.scored += 1;
+      if (verdict === "match") tally.matched += 1;
+      byField[field] = tally;
+    }
+  }
+  // An opening that came back unread is not a wrong answer, and counting it as
+  // one hides the difference between an engine that is mistaken and one that
+  // stopped — which are fixed in different places.
+  const unresolved = perOpening.filter((opening) =>
+    opening.verdict === "not_read" || readings.find((row) => row.external_ref === opening.externalRef)?.gap_code).length;
+  return { perOpening, summary: { total: perOpening.length, of: perOpening.length, matched, byField, unresolved } };
 }
 
 // CLI entry — only when run directly, not when imported by the test suite.

@@ -12,6 +12,8 @@ import type { Env } from "../../types";
 import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
+import { runFaceMappedParser, type FaceMappedDeps } from "./faceMapped/run";
+import { pageScales } from "./harvest";
 import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
@@ -56,6 +58,10 @@ export interface EnrichDeps {
   runOpening(imageDataUrl: string, row: EnrichScheduleRow, context: { unitCount: number }): Promise<OpeningReadResult | null>;
   runAgentTurn?(input: DrawingAgentInput): Promise<DrawingAgentTurn | null>;
   runFullAgentTurn?(input: FullDocumentAgentInput): Promise<FullDocumentTurn | FullAgentTurnResult | null>;
+  /** The face-mapped engine's four looks at a document. Present only in
+   *  face_mapped mode: one engine reads a file, and the others are not
+   *  consulted behind it. */
+  runFaceMapped?: Omit<FaceMappedDeps, "render" | "storeCrop" | "onProgress">;
 }
 
 function emptyFileReport(fileId: string): DrawingFileReport {
@@ -170,12 +176,57 @@ async function enrichFile(
 
     const strategy = chooseStrategy(inspected.inventory);
     report.steps.strategy = strategy;
-    if (strategy === "scanned" && !deps.runAgentTurn && !deps.runFullAgentTurn) {
+    if (strategy === "scanned" && !deps.runAgentTurn && !deps.runFullAgentTurn && !deps.runFaceMapped) {
       // Stops here, named — every opening this file might have covered is
       // simply absent from `readings`; resolveMakeUp falls through to the
       // comment/energy/default rungs for them, exactly as if the file were
       // never uploaded (AC-13).
       return { readings: [], report };
+    }
+
+    if (deps.runFaceMapped) {
+      currentPhase = "face_mapped";
+      // Which sheets are plans and which are elevations is Phase A's answer,
+      // and a sheet carrying a schedule beside its floor plan is both.
+      const tiers = new Map<number, Set<string>>();
+      for (const item of selectPages(inspected.inventory, inspected.pages).selected) {
+        tiers.set(item.pageNo, new Set([...(tiers.get(item.pageNo) ?? []), item.tier]));
+      }
+      const pagesOf = (tier: string) => inspected.pages
+        .filter((page) => tiers.get(page.pageNo)?.has(tier))
+        .flatMap((page) => {
+          const geometry = inspected.inventory.pages.find((item) => item.pageNo === page.pageNo);
+          return geometry ? [{ page, geometry }] : [];
+        });
+
+      const run = await runFaceMappedParser({
+        fileId: args.file.fileId,
+        sourceFileId: args.file.fileId,
+        scheduleRows: args.scheduleRows,
+        planPages: pagesOf("floorplan"),
+        elevationPages: pagesOf("elevation"),
+        pageScales: pageScales(inspected),
+        sheetTitles: new Map(inspected.pages.map((page) => [page.pageNo, page.text])),
+        deps: {
+          ...deps.runFaceMapped,
+          render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
+          async storeCrop(renderId, pngB64) {
+            const key = cropKey(args.projectId, args.aiRunId, renderId);
+            try {
+              const bytes = Uint8Array.from(atob(pngB64), (char) => char.charCodeAt(0));
+              await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
+              return key;
+            } catch {
+              return null;
+            }
+          },
+          onProgress: async (event) => {
+            await args.onProgress?.(event.done, event.total, event.phase as DrawingProgressPhase);
+          },
+        },
+      });
+      run.report.steps.strategy = strategy;
+      return run;
     }
 
     if (deps.runFullAgentTurn) {
@@ -583,11 +634,16 @@ async function enrichFile(
   }
 }
 
-export type DrawingParserMode = "disabled" | "legacy" | "full_document";
+export type DrawingParserMode = "disabled" | "legacy" | "full_document" | "face_mapped";
 
 export function drawingParserMode(env: Pick<Env, "AI_EXTRACTION_MODE">): DrawingParserMode {
   const mode = (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase();
-  return mode === "agentic_full" ? "full_document" : mode === "auto_drawings" ? "legacy" : "disabled";
+  // An unset mode runs nothing: a deployment cannot acquire a parser by
+  // forgetting to name one.
+  return mode === "face_mapped" ? "face_mapped"
+    : mode === "agentic_full" ? "full_document"
+    : mode === "auto_drawings" ? "legacy"
+    : "disabled";
 }
 
 /** pipeline.ts's whole enrichment stage, as one testable unit: the mode
@@ -649,10 +705,44 @@ export async function runDrawingEnrichmentStage(
       return res.data;
     },
   };
+  /** The stage layer validates with the skill it is given, and this engine
+   *  validates the answer itself — so the call goes out under the real skill's
+   *  id, version and schema, and its output comes back untouched for the phase
+   *  that asked for it to judge. */
+  const passThrough = <T>(skill: { id: string; promptVersion: string; responseSchema: Record<string, unknown>; buildPrompt(input: T): string; buildContent?(input: T): unknown }) => ({
+    ...skill,
+    validate: (raw: unknown) => raw ?? null,
+  });
+  const faceMappedCall = async (
+    input: { imageDataUrl: string; skill: Parameters<typeof passThrough>[0] },
+  ) => {
+    const res = await runStage(env, {
+      aiRunId: args.aiRunId,
+      projectId: args.projectId,
+      skill: passThrough(input.skill) as never,
+      input: { imageDataUrl: input.imageDataUrl },
+    });
+    if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
+    return res.data;
+  };
+
   const deps: EnrichDeps = depsOverride
     ? parserMode === "full_document"
       ? { ...depsOverride, runAgentTurn: undefined }
       : { ...depsOverride, runFullAgentTurn: undefined }
+    : parserMode === "face_mapped"
+    ? {
+        ...baseDeps,
+        runFaceMapped: {
+          readPlanPage: faceMappedCall,
+          inventoryElevation: faceMappedCall,
+          reconcileFace: faceMappedCall,
+          readComposition: (input) => faceMappedCall({
+            imageDataUrl: input.batch.map((task) => task.imageDataUrl).find(Boolean) ?? "",
+            skill: input.skill as never,
+          }),
+        },
+      }
     : parserMode === "full_document"
     ? {
         ...baseDeps,

@@ -1,8 +1,12 @@
+import type { Skill } from "../../estimator/skills/types";
 import type { CropBoxPt, DrawingFileReport, DrawingReading, RenderRequest, RenderResponse } from "../contract";
 import { documentFaceSheets } from "../sheetFaces";
-import { runCompositions, type CompositionOutcome, type CompositionTask } from "./compositions";
+import { makeCompositionSkill, runCompositions, type CompositionOutcome, type CompositionTask } from "./compositions";
 import { openingCropTasks } from "./crops";
-import { elevationFaceTasks, validateElevationFrames, type ElevationFaceTask, type ElevationFrame } from "./elevationFrames";
+import {
+  elevationFaceTasks, makeElevationInventorySkill, validateElevationFrames,
+  type ElevationFaceTask,
+} from "./elevationFrames";
 import { faceMappedProgress, faceMappedReadings, type CropForReport, type PlacedForReport } from "./report";
 import {
   faceReconciliationTasks, makeFaceReconcileSkill, matchFacePlacements,
@@ -20,11 +24,18 @@ import { openingTagWords } from "../locate";
 export interface FaceMappedDeps {
   render(request: RenderRequest): Promise<RenderResponse>;
   storeCrop(id: string, pngB64: string): Promise<string | null>;
-  readPlanPage(input: { pageNo: number; prompt: string; imageDataUrl: string }): Promise<unknown>;
-  inventoryElevation(input: { task: ElevationFaceTask; imageDataUrl: string }): Promise<unknown>;
-  reconcileFace(input: { faceKey: string; prompt: string; imageDataUrl: string; frameIds: string[] }): Promise<unknown>;
-  readComposition(input: { batch: CompositionTask[]; attempt: number }): Promise<unknown>;
+  readPlanPage(input: FaceMappedCall & { pageNo: number; prompt: string }): Promise<unknown>;
+  inventoryElevation(input: FaceMappedCall & { task: ElevationFaceTask }): Promise<unknown>;
+  reconcileFace(input: FaceMappedCall & { faceKey: string; prompt: string; frameIds: string[] }): Promise<unknown>;
+  readComposition(input: { batch: CompositionTask[]; attempt: number; skill: Skill<unknown, unknown> }): Promise<unknown>;
   onProgress?(event: { phase: string; message: string; done: number; total: number; ms: number }): Promise<void>;
+}
+
+/** What every look at a page is given: the image, and the skill whose identity
+ * the call is made under. The caller runs it; this engine validates it. */
+export interface FaceMappedCall {
+  imageDataUrl: string;
+  skill: Skill<{ imageDataUrl: string }, unknown>;
 }
 
 const RENDER_DPI = 100;
@@ -71,7 +82,7 @@ export async function runFaceMappedParser(args: {
     if (!image) continue;
     modelCalls += 1;
     const answer = skill.validate(
-      await args.deps.readPlanPage({ pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrl: image.url }), imageDataUrl: image.url })
+      await args.deps.readPlanPage({ pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrl: image.url }), imageDataUrl: image.url, skill })
         .catch(() => null));
     for (const [id, face] of answer ?? []) faceByCandidate.set(id, face);
   }
@@ -114,7 +125,7 @@ export async function runFaceMappedParser(args: {
     if (!image) continue;
     modelCalls += 1;
     const inventory = validateElevationFrames(
-      await args.deps.inventoryElevation({ task, imageDataUrl: image.url }).catch(() => null),
+      await args.deps.inventoryElevation({ task, imageDataUrl: image.url, skill: makeElevationInventorySkill(task) }).catch(() => null),
       task);
     if (inventory.state === "unresolved") {
       for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, inventory.reason);
@@ -157,6 +168,7 @@ export async function runFaceMappedParser(args: {
       prompt: skill.buildPrompt({ imageDataUrl: image.url }),
       imageDataUrl: image.url,
       frameIds: face.frames.map((frame) => frame.frameId),
+      skill,
     }).catch(() => null));
     if (settled) matched.push(...settled.matches);
     else for (const placement of face.placements) unplaced.set(placement.tag, face.reason);
@@ -193,7 +205,7 @@ export async function runFaceMappedParser(args: {
       tasks: compositionTasks,
       ask: async (batch, attempt) => {
         modelCalls += 1;
-        return args.deps.readComposition({ batch, attempt });
+        return args.deps.readComposition({ batch, attempt, skill: makeCompositionSkill(batch) });
       },
     });
     await progress.step("composition_reads", "Reading opening compositions", compositionTasks.length, compositionTasks.length);
