@@ -1,0 +1,41 @@
+{
+  "slug": "ai-parse-monitoring",
+  "tier": "full",
+  "base": "284f89ff",
+  "branch": "feat/ai-parse-monitoring",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 117995,
+      "outputTokens": 5482,
+      "turns": 3,
+      "source": "transcript",
+      "session": "95b1a148-e338-4579-a4d7-3934cdb6954f",
+      "seconds": 83
+    },
+    "design": {
+      "contextTokens": 1730314,
+      "outputTokens": 48238,
+      "turns": 29,
+      "source": "transcript",
+      "session": "72a44481-b531-4a62-9d2b-053531fa78d7",
+      "seconds": 1049,
+      "status": "done",
+      "mode": "headless",
+      "code": 0
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 4615195,
+      "outputTokens": 55196,
+      "turns": 42,
+      "source": "transcript",
+      "session": "04c30828-e55f-4ba2-913c-4569d728c12a",
+      "seconds": 1019
+    }
+  },
+  "tasksDone": [],
+  "startedAt": "2026-09-03T12:19:00.485Z",
+  "gateStage": null
+}

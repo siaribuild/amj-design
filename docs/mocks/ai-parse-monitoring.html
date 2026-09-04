@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ops2 Attention — AI parse monitoring (UX mock)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='%235A7A6A' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   ops2 TOKENS — copied verbatim from src/ops2/theme/*.css and
+   src/ops2/styles/tokens.css. No invented values, no hex outside this block.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* theme/colors.css — the steps this page uses */
+  --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+  --theme-neutral-150:#edecea; --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb;
+  --theme-neutral-400:#b5b2ab; --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+  --theme-neutral-700:#5c5a56;
+  --theme-ink-700:#2c2a27; --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+  --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-200:#cddfd4;
+  --theme-sage-300:#a8c9b4; --theme-sage-400:#7dab8e; --theme-sage-500:#5a7a6a;
+  --theme-sage-600:#4a6858; --theme-sage-700:#3f5a4c;
+  --theme-positive-500:#2c7a54; --theme-positive-700:#1d4f37;
+  --theme-warning-50:#fdf9f0; --theme-warning-200:#f0dba5; --theme-warning-500:#8a6a2a;
+  --theme-warning-700:#624410;
+  --theme-attention-50:#fdf4f3; --theme-attention-100:#fbe5e3; --theme-attention-200:#f5c7c2;
+  --theme-attention-500:#c0392b; --theme-attention-700:#82261d;
+
+  /* styles/tokens.css */
+  --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+  --ds-surface-sunken:var(--theme-neutral-100); --ds-surface-darker:var(--theme-ink-900);
+  --ds-surface-brand:var(--theme-sage-500);
+  --ds-border-subtle:var(--theme-neutral-200); --ds-border-default:var(--theme-neutral-300);
+  --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+  --ds-text-muted:var(--theme-neutral-500); --ds-text-inverse:var(--theme-neutral-0);
+  --ds-color-brand:var(--theme-sage-500); --ds-color-brand-wash:var(--theme-sage-50);
+  --ds-color-success:var(--theme-positive-500); --ds-color-success-text:var(--theme-positive-700);
+  --ds-color-warning:var(--theme-warning-500); --ds-color-warning-subtle:var(--theme-warning-50);
+  --ds-color-warning-text:var(--theme-warning-700);
+  --ds-color-error:var(--theme-attention-500); --ds-color-error-subtle:var(--theme-attention-50);
+  --ds-color-error-text:var(--theme-attention-700);
+  --ds-radius-control:3px;  /* --theme-radius-xs */
+  --ds-radius-surface:5px;  /* --theme-radius-sm — the owner's cap, never above */
+
+  /* theme/spacing.css */
+  --sp-2xs:.125rem; --sp-xs:.25rem; --sp-sm:.5rem; --sp-md:.75rem; --sp-lg:1rem;
+  --sp-xl:1.5rem; --sp-2xl:2rem; --sp-3xl:3rem;
+  /* theme/typography.css */
+  --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.9375rem; --fs-md:1rem; --fs-lg:1.125rem;
+  --fs-xl:1.3125rem; --fs-2xl:1.625rem; --fs-3xl:2rem;
+  /* theme/shadows.css */
+  --shadow-xs:0 1px 2px rgba(42,40,38,.04);
+  --shadow-sm:0 1px 3px rgba(42,40,38,.06),0 1px 2px rgba(42,40,38,.04);
+  --shadow-lg:0 10px 24px rgba(42,40,38,.08),0 4px 8px rgba(42,40,38,.04);
+  /* Space Grotesk / Inter load from Google Fonts in the real console
+     (src/ops2/theme/fonts.css). A mock makes no external request, so the stack
+     falls through to the system UI face: sizes, weights, tracking and rhythm
+     are the shipping values — only the letterforms differ. */
+  --font-display:"Space Grotesk",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-sans:"Inter",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--theme-neutral-150);color:var(--ds-text-primary);
+  font:400 var(--fs-base)/1.5 var(--font-sans)}
+::selection{background:var(--theme-sage-100);color:var(--ds-text-primary)}
+
+/* ── MOCK FURNITURE (not product) ──────────────────────────────────────── */
+.doc{max-width:1520px;margin:0 auto;padding:var(--sp-2xl) var(--sp-xl) var(--sp-3xl)}
+.doc > h1{font:600 var(--fs-2xl)/1.25 var(--font-display);letter-spacing:-.02em;margin:0 0 var(--sp-sm)}
+.doc .lede{max-width:78ch;margin:0 0 var(--sp-md);color:var(--ds-text-secondary);font-size:var(--fs-sm)}
+.doc .lede b{color:var(--ds-text-primary);font-weight:600}
+.doc > h2{font:600 var(--fs-xs)/1.4 var(--font-sans);letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ds-text-muted);margin:var(--sp-3xl) 0 var(--sp-md);padding-bottom:var(--sp-xs);
+  border-bottom:1px solid var(--theme-neutral-300)}
+.note{max-width:72ch;margin:0 0 var(--sp-md);color:var(--ds-text-secondary);font-size:var(--fs-sm)}
+.note b{color:var(--ds-text-primary);font-weight:600}
+.note code{font-family:ui-monospace,"Cascadia Mono",monospace;font-size:var(--fs-xs);
+  background:var(--theme-neutral-100);padding:1px 4px;border-radius:var(--ds-radius-control)}
+.caption{margin:0 0 var(--sp-sm);font-size:var(--fs-xs);letter-spacing:.05em;text-transform:uppercase;
+  font-weight:600;color:var(--ds-text-muted)}
+.scroller{overflow-x:auto;padding-bottom:var(--sp-sm)}
+.frames{display:flex;flex-wrap:wrap;gap:var(--sp-xl);align-items:flex-start}
+.stack{display:flex;flex-direction:column;gap:var(--sp-xl)}
+
+/* The device frames — chrome that belongs to the mock, not the console. */
+.desk{width:1136px;flex:none;border:1px solid var(--theme-neutral-300);border-radius:var(--ds-radius-surface);
+  overflow:hidden;background:var(--ds-surface-page);box-shadow:var(--shadow-lg)}
+.desk--shell{width:1360px;display:flex}
+.desk--narrow{width:768px}
+.phone{width:375px;flex:none;height:748px;border:1px solid var(--theme-neutral-300);
+  border-radius:var(--ds-radius-surface);overflow:hidden;background:var(--ds-surface-page);
+  display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRODUCT — existing chrome, reproduced from src/ops2/styles/nav.css
+   ══════════════════════════════════════════════════════════════════════════ */
+.ops2-nav{width:224px;flex:none;background:var(--ds-surface-darker);color:var(--ds-text-inverse);
+  padding:var(--sp-lg) var(--sp-sm) var(--sp-md);display:flex;flex-direction:column;gap:var(--sp-xl);
+  border-right:1px solid var(--ds-surface-darker)}
+.ops2-wordmark{display:flex;align-items:center;gap:var(--sp-xs);padding:0 var(--sp-sm)}
+.ops2-wordmark__logo{width:20px;height:20px;border-radius:var(--ds-radius-control);
+  background:var(--ds-surface-brand)}
+.ops2-wordmark__name{font:600 var(--fs-lg)/1 var(--font-display);letter-spacing:-.02em}
+.ops2-wordmark__suffix{color:color-mix(in srgb,var(--ds-text-inverse) 52%,var(--ds-surface-darker))}
+.ops2-nav__section-label{font:500 var(--fs-xs)/1 var(--font-sans);letter-spacing:.05em;
+  text-transform:uppercase;padding:0 var(--sp-sm);margin:0 0 var(--sp-xs);
+  color:color-mix(in srgb,var(--ds-text-inverse) 46%,var(--ds-surface-darker))}
+.ops2-nav__list{list-style:none;margin:0 0 var(--sp-lg);padding:0;display:flex;flex-direction:column;gap:1px}
+.ops2-nav__item{display:flex;align-items:center;gap:var(--sp-md);min-height:44px;padding:0 var(--sp-sm);
+  border-radius:var(--ds-radius-control);font-size:var(--fs-base);
+  color:color-mix(in srgb,var(--ds-text-inverse) 82%,var(--ds-surface-darker))}
+.ops2-nav__item[aria-current="page"]{background:var(--ds-surface-brand);color:var(--ds-text-inverse);
+  font-weight:500}
+.ops2-nav__item svg{width:18px;height:18px;flex:none}
+.ops2-nav__foot{margin-top:auto;padding-top:var(--sp-md);
+  border-top:1px solid color-mix(in srgb,var(--ds-text-inverse) 12%,var(--ds-surface-darker))}
+.ops2-account{display:flex;align-items:center;gap:var(--sp-sm);width:100%;min-height:44px;
+  padding:var(--sp-xs) var(--sp-sm);border-radius:var(--ds-radius-control)}
+.ops2-account__avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;
+  border-radius:var(--ds-radius-surface);background:var(--ds-surface-brand);color:var(--ds-text-inverse);
+  font:600 var(--fs-xs)/1 var(--font-sans);letter-spacing:.025em}
+.ops2-account__who{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ops2-account__name{font-size:var(--fs-sm);font-weight:500}
+.ops2-account__role{font-size:var(--fs-xs)}
+.ops2-account--rail .ops2-account__role{color:color-mix(in srgb,var(--ds-text-inverse) 58%,var(--ds-surface-darker))}
+.ops2-account--topbar{width:auto;color:var(--ds-text-primary)}
+.ops2-account--topbar .ops2-account__role{color:var(--ds-text-muted)}
+
+.ops2-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;background:var(--ds-surface-page)}
+/* The desk's header: two toolbars in one band — title row, then the identity
+   row OpsPage already supports (`identity` prop, record.css). */
+.ops2-topbar{display:flex;align-items:center;gap:var(--sp-md);min-height:56px;
+  padding:0 var(--sp-md) 0 var(--sp-lg);background:var(--ds-surface-card)}
+.ops2-topbar__title{margin:0;font:600 var(--fs-xl)/1.25 var(--font-display);color:var(--ds-text-primary)}
+.ops2-topbar__end{margin-left:auto;display:flex;align-items:center;gap:var(--sp-xs)}
+.ops2-topbar--identity{min-height:0;padding-bottom:var(--sp-xs);border-bottom:1px solid var(--ds-border-subtle)}
+.ops2-bell{position:relative;display:grid;place-items:center;width:44px;height:44px;border:0;
+  border-radius:var(--ds-radius-control);background:transparent;color:var(--ds-text-secondary)}
+.ops2-bell svg{width:20px;height:20px}
+/* NEW — the badge inside the existing bell button. Nothing is drawn at 0. */
+.ops2-bell__badge{position:absolute;top:6px;right:6px;min-width:16px;height:16px;padding:0 4px;
+  display:grid;place-items:center;border-radius:9999px;background:var(--ds-color-error);
+  color:var(--ds-text-inverse);font:600 10px/1 var(--font-sans);font-variant-numeric:tabular-nums;
+  box-shadow:0 0 0 2px var(--ds-surface-card)}
+
+/* The phone's white band (projects.css) and its tab bar. */
+.ops2-band{background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);
+  padding:var(--sp-lg) var(--sp-lg) var(--sp-sm)}
+.ops2-band h1{margin:0;font:600 var(--fs-2xl)/1.25 var(--font-display);letter-spacing:-.02em}
+.ops2-tabbar{margin-top:auto;display:flex;background:var(--ds-surface-card);
+  border-top:1px solid var(--ds-border-subtle);padding-bottom:var(--sp-xs)}
+.ops2-tab{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:2px;min-height:52px;color:var(--ds-text-muted);font-size:var(--fs-xs)}
+.ops2-tab svg{width:22px;height:22px}
+.ops2-tab[data-selected]{color:var(--ds-text-primary);font-weight:500}
+.ops2-tab[data-selected]::before{content:"";position:absolute;top:0;left:20%;right:20%;height:2px;
+  background:var(--ds-surface-brand)}
+/* NEW — IonBadge on the Attention tab, same rule as the bell's: nothing at 0. */
+.ops2-tab__badge{position:absolute;top:4px;left:calc(50% + 4px);min-width:16px;height:16px;padding:0 4px;
+  display:grid;place-items:center;border-radius:9999px;background:var(--ds-color-error);
+  color:var(--ds-text-inverse);font:600 10px/1 var(--font-sans);font-variant-numeric:tabular-nums}
+
+.ops2-page__body{padding:var(--sp-lg);flex:1 1 auto;overflow:auto}
+.ops2-page__body--full{max-width:none}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   NEW — src/ops2/styles/attention.css (the only new stylesheet)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The freshness line. It sits in OpsPage's existing `identity` slot, so it is
+   ONE statement governing every figure below rather than five repetitions —
+   and it is in the band at both widths, where the record already puts its
+   money. Stale flips it to warning ink AND stamps each card (see .att-card__stamp). */
+.att-asat{display:flex;align-items:center;gap:var(--sp-xs);margin:0;
+  font-size:var(--fs-xs);color:var(--ds-text-muted);font-variant-numeric:tabular-nums}
+.att-asat svg{width:14px;height:14px;flex:none}
+.att-asat[data-stale="true"]{color:var(--ds-color-warning-text);font-weight:500}
+
+/* Four tiles, in TWO NAMED PAIRS — the two questions this page exists to
+   answer, side by side rather than four anonymous boxes in a row. */
+.att-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-lg)}
+.att-group{display:flex;flex-direction:column;gap:var(--sp-sm)}
+.att-group__label{margin:0;font:500 var(--fs-xs)/1 var(--font-sans);letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ds-text-muted)}
+.att-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-lg)}
+
+.att-card{display:flex;flex-direction:column;gap:var(--sp-2xs);padding:var(--sp-md) var(--sp-lg);
+  background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);box-shadow:var(--shadow-sm)}
+.att-card__label{display:flex;align-items:center;gap:var(--sp-xs);margin:0;
+  font:500 var(--fs-xs)/1.2 var(--font-sans);letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ds-text-muted)}
+.att-card__figure{margin:var(--sp-2xs) 0 0;font:600 var(--fs-3xl)/1.1 var(--font-display);
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--ds-text-primary)}
+.att-card__note{margin:0;font-size:var(--fs-xs);color:var(--ds-text-secondary)}
+.att-card__stamp{margin:var(--sp-2xs) 0 0;font-size:var(--fs-xs);color:var(--ds-color-warning-text);
+  font-variant-numeric:tabular-nums}
+
+/* RED — the one v1 notification condition, wearing .rec-refusal's shape
+   (record.css): error ink on the wash, a 1px full border, no coloured slab and
+   no thick edge. The figure is the loud thing, because the figure IS the fault. */
+.att-card[data-state="red"]{background:var(--ds-color-error-subtle);border-color:var(--ds-color-error)}
+.att-card[data-state="red"] .att-card__figure{color:var(--ds-color-error-text)}
+.att-card[data-state="red"] .att-card__note{display:flex;align-items:center;gap:var(--sp-2xs);
+  color:var(--ds-color-error-text);font-weight:500}
+.att-card[data-state="red"] .att-card__note svg{width:14px;height:14px;flex:none}
+
+/* UNAVAILABLE — an em dash, never a zero and never red. A missing number is a
+   missing number; a red one would be a false alarm and a 0 would be a lie. */
+.att-card[data-state="unavailable"] .att-card__figure{color:var(--ds-text-muted)}
+
+/* The series key — the same two hues the chart uses, so a card and its bars
+   are visibly the same fact rather than two numbers that happen to agree. */
+.att-key{width:8px;height:8px;flex:none;border-radius:2px}
+.att-key[data-series="success"]{background:var(--ds-color-brand)}
+.att-key[data-series="error"]{background:var(--ds-color-error)}
+
+/* The chart: plain divs and CSS heights. Fourteen numbers do not earn a
+   dependency. */
+.att-chart{margin-top:var(--sp-lg);gap:var(--sp-md)}
+.att-chart__head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-md)}
+.att-chart__legend{display:flex;gap:var(--sp-md);font-size:var(--fs-xs);color:var(--ds-text-secondary)}
+.att-chart__legend span{display:flex;align-items:center;gap:var(--sp-xs)}
+.att-plot{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--sp-sm);
+  padding-top:var(--sp-lg);border-bottom:1px solid var(--ds-border-default)}
+.att-col{display:flex;flex-direction:column;align-items:center;gap:var(--sp-xs)}
+.att-col__bars{display:flex;align-items:flex-end;justify-content:center;gap:6px;
+  width:100%;height:120px}
+.att-bar{position:relative;width:20px;border-radius:2px 2px 0 0;background:var(--ds-color-brand)}
+.att-bar[data-series="error"]{background:var(--ds-color-error)}
+.att-bar[data-zero="true"]{height:2px;background:var(--ds-border-default)}
+.att-bar b{position:absolute;top:-17px;left:50%;transform:translateX(-50%);
+  font:500 var(--fs-xs)/1 var(--font-sans);font-variant-numeric:tabular-nums;color:var(--ds-text-secondary)}
+.att-bar[data-series="error"] b{color:var(--ds-color-error-text)}
+.att-col__day{font-size:var(--fs-xs);color:var(--ds-text-secondary);white-space:nowrap;
+  padding-top:var(--sp-xs)}
+.att-col__day[data-today="true"]{color:var(--ds-text-primary);font-weight:500}
+.att-chart__empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:var(--sp-2xs);height:120px;text-align:center}
+.att-chart__empty strong{font-size:var(--fs-base);font-weight:500;color:var(--ds-text-primary)}
+.att-chart__empty span{font-size:var(--fs-xs);color:var(--ds-text-muted)}
+
+/* Page-level states, reusing the queue's own two shapes (projects.css). */
+.pq-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-xs);
+  padding:var(--sp-2xl) var(--sp-lg);background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface)}
+.pq-empty strong{font-weight:500}
+.pq-empty span{font-size:var(--fs-xs);color:var(--ds-text-muted)}
+.pq-error{display:flex;flex-direction:row;align-items:center;gap:var(--sp-md);padding:var(--sp-lg);
+  background:var(--ds-color-error-subtle);border:1px solid var(--theme-attention-200);
+  border-radius:var(--ds-radius-surface)}
+.pq-error svg{flex:none;width:24px;height:24px;color:var(--ds-color-error)}
+.pq-error div{display:flex;flex-direction:column;gap:var(--sp-2xs)}
+.pq-error strong{font-weight:500}
+.pq-error span{font-size:var(--fs-xs);color:var(--ds-text-secondary)}
+.pq-error button{margin-left:auto;flex:none;padding:var(--sp-xs) var(--sp-md);
+  border:1px solid var(--ds-border-default);border-radius:var(--ds-radius-control);
+  background:var(--ds-surface-card);font:500 var(--fs-sm)/1.4 var(--font-sans);
+  color:var(--ds-text-primary)}
+.att-skeleton{background:var(--ds-surface-sunken);border-radius:var(--ds-radius-control)}
+.att-card--loading{gap:var(--sp-sm)}
+
+/* PHONE — the pairs stack, the tiles stay paired, the chart drops its
+   per-bar numerals (two digits over a 12px bar is a smudge, and the totals
+   are already stated in the cards a thumb-length above). */
+.phone .att-grid{grid-template-columns:minmax(0,1fr);gap:var(--sp-lg)}
+.phone .att-card{padding:var(--sp-sm) var(--sp-md)}
+.phone .att-card__figure{font-size:var(--fs-2xl)}
+.phone .att-bar{width:12px}
+.phone .att-bar b{display:none}
+.phone .att-col__bars{height:96px}
+.phone .att-col__day{font-size:10px}
+.phone .att-plot{gap:var(--sp-xs)}
+</style>
+</head>
+<body>
+
+<!-- Icons: authored SVG, one stroke weight, the ionicons this console already
+     uses (alertCircleOutline, layersOutline, cubeOutline, notificationsOutline). -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.6v5"/><path d="M12 15.9h.01"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M12 3.8 20 8.4 12 13 4 8.4z"/><path d="M4.6 12.4 12 16.6l7.4-4.2"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M12 3.6 19.4 7.8v8.4L12 20.4 4.6 16.2V7.8z"/><path d="M12 12.1 19.4 7.8M12 12.1v8.3M12 12.1 4.6 7.8"/></symbol>
+  <symbol id="i-tags" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M4.6 11.3V5.4h5.9l8 8-5.9 5.9z"/><circle cx="8.3" cy="9" r="1.1"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round"><circle cx="9.6" cy="9" r="3.2"/><path d="M3.8 19c.7-3 3-4.6 5.8-4.6S14.7 16 15.4 19"/><path d="M16 6.4a3 3 0 0 1 0 5.6M17.2 14.8c2 .6 3.2 2.1 3.6 4.2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M3.6 18.4V6.2h5l1.8 2.2h6.8v2"/><path d="M3.6 18.4 6 10.8h15L18.6 18.4z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M6.4 3.8h7l4.2 4.2v12.2H6.4z"/><path d="M13.4 3.8V8h4.2M9 12h6M9 15.4h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    ><circle cx="12" cy="12" r="2.8"/><path d="M12 3.6v2.2M12 18.2v2.2M20.4 12h-2.2M5.8 12H3.6M17.9 6.1l-1.6 1.6M7.7 16.3l-1.6 1.6M17.9 17.9l-1.6-1.6M7.7 7.7 6.1 6.1"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"><path d="M12 3.8a5.2 5.2 0 0 0-5.2 5.2v3.4L5.2 15.4h13.6L17.2 12.4V9A5.2 5.2 0 0 0 12 3.8z"/><path d="M10 18.2a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round" stroke-linecap="round"><path d="M12 4.4 21 19.6H3z"/><path d="M12 10v4"/><path d="M12 16.9h.01"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round" stroke-linejoin="round"><path d="M8 10l4 4 4-4"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></symbol>
+</svg>
+
+<div class="doc">
+<h1>ops2 Attention — AI parse monitoring</h1>
+<p class="lede">The <b>/attention</b> route stops being a placeholder and becomes the page that answers two
+questions in one glance: <b>is the AI budget about to run out</b>, and <b>is parsing healthy</b>. Every figure
+comes from one KV snapshot written by the existing <code>*/10</code> cron. The page makes no Cloudflare call
+and holds no threshold of its own. Mock for approval; not production code.</p>
+<p class="note">Four tiles in two named pairs, then the seven-day chart. The pairs are the two questions;
+the chart is the same numbers spread over days, drawn in the same two hues as the count tiles so the card and
+its bars read as one fact. <b>Red is the only alarm in v1</b>: a low balance, or a cap near its ceiling. It
+is stated once, on the card that carries the fault, with a <b>1</b> on the bell (desk) or the Attention tab
+(phone). Errored parses are <b>not</b> an alarm and never paint the page red.</p>
+
+<h2>1 · Desk 1440 — healthy (the whole console, once)</h2>
+<p class="note">Rail, top bar, freshness line and body as they ship. Later desk frames show the content
+column only.</p>
+<div class="scroller">
+<div class="desk desk--shell">
+  <nav class="ops2-nav">
+    <div class="ops2-wordmark"><span class="ops2-wordmark__logo"></span>
+      <span class="ops2-wordmark__name">Apertly<span class="ops2-wordmark__suffix"> ops</span></span></div>
+    <div>
+      <p class="ops2-nav__section-label">Workspace</p>
+      <ul class="ops2-nav__list">
+        <li><a class="ops2-nav__item" aria-current="page"><svg><use href="#i-alert"/></svg>Attention</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-layers"/></svg>Projects</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-cube"/></svg>Products</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-tags"/></svg>Pricing</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-people"/></svg>Customers</a></li>
+      </ul>
+      <p class="ops2-nav__section-label">System</p>
+      <ul class="ops2-nav__list">
+        <li><a class="ops2-nav__item"><svg><use href="#i-folder"/></svg>Files</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-doc"/></svg>Audit</a></li>
+        <li><a class="ops2-nav__item"><svg><use href="#i-settings"/></svg>Settings</a></li>
+      </ul>
+    </div>
+    <div class="ops2-nav__foot">
+      <div class="ops2-account ops2-account--rail"><span class="ops2-account__avatar">GB</span>
+        <span class="ops2-account__who"><span class="ops2-account__name">Gediminas B.</span>
+        <span class="ops2-account__role">Staff</span></span></div>
+    </div>
+  </nav>
+  <div class="ops2-main">
+    <div class="ops2-topbar">
+      <h1 class="ops2-topbar__title">Attention</h1>
+      <div class="ops2-topbar__end">
+        <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button>
+        <div class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">GB</span>
+          <span class="ops2-account__who"><span class="ops2-account__name">Gediminas B.</span>
+          <span class="ops2-account__role">Staff</span></span><svg width="14" height="14"><use href="#i-chev"/></svg></div>
+      </div>
+    </div>
+    <div class="ops2-topbar ops2-topbar--identity">
+      <p class="att-asat">As at 14:20 · refreshes every 10 minutes</p>
+    </div>
+    <div class="ops2-page__body ops2-page__body--full">
+      <div class="att-grid">
+        <section class="att-group">
+          <h2 class="att-group__label">AI budget</h2>
+          <div class="att-pair">
+            <article class="att-card">
+              <h3 class="att-card__label">Credit balance</h3>
+              <p class="att-card__figure">$42.18</p>
+              <p class="att-card__note">Floor $5.00 · USD, as Cloudflare reports it</p>
+            </article>
+            <article class="att-card">
+              <h3 class="att-card__label">Cap remaining</h3>
+              <p class="att-card__figure">$11.60</p>
+              <p class="att-card__note">$8.40 of the $20.00 gateway cap used (42%)</p>
+            </article>
+          </div>
+        </section>
+        <section class="att-group">
+          <h2 class="att-group__label">Parsing · last 7 days</h2>
+          <div class="att-pair">
+            <article class="att-card">
+              <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Parses succeeded</h3>
+              <p class="att-card__figure">38</p>
+              <p class="att-card__note">One parse = one job claim</p>
+            </article>
+            <article class="att-card">
+              <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Parses errored</h3>
+              <p class="att-card__figure">3</p>
+              <p class="att-card__note">Failed, or stuck over 30 minutes</p>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <section class="att-card att-chart">
+        <div class="att-chart__head">
+          <h3 class="att-card__label">Successes and errors by day</h3>
+          <p class="att-chart__legend">
+            <span><span class="att-key" data-series="success"></span>Succeeded</span>
+            <span><span class="att-key" data-series="error"></span>Errored</span>
+          </p>
+        </div>
+        <div class="att-plot">
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:33%"><b>4</b></span>
+            <span class="att-bar" data-series="error" data-zero="true"></span></div>
+            <span class="att-col__day">Thu 28</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:58%"><b>7</b></span>
+            <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+            <span class="att-col__day">Fri 29</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" data-zero="true"></span>
+            <span class="att-bar" data-series="error" data-zero="true"></span></div>
+            <span class="att-col__day">Sat 30</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:8%"><b>1</b></span>
+            <span class="att-bar" data-series="error" data-zero="true"></span></div>
+            <span class="att-col__day">Sun 31</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:75%"><b>9</b></span>
+            <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+            <span class="att-col__day">Mon 1</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:100%"><b>12</b></span>
+            <span class="att-bar" data-series="error" data-zero="true"></span></div>
+            <span class="att-col__day">Tue 2</span></div>
+          <div class="att-col"><div class="att-col__bars">
+            <span class="att-bar" data-series="success" style="height:42%"><b>5</b></span>
+            <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+            <span class="att-col__day" data-today="true">Today</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2>2 · Desk — red: the budget is about to run out</h2>
+<p class="note">Both conditions are true here (balance under the $5.00 floor <i>and</i> 86% of the cap spent) and
+the bell still says <b>1</b>: one source, one notification. The fault is stated on the cards that carry it:
+no second banner repeating it, no red anywhere near the parse counts.</p>
+<div class="scroller">
+<div class="desk">
+  <div class="ops2-topbar">
+    <h1 class="ops2-topbar__title">Attention</h1>
+    <div class="ops2-topbar__end">
+      <button class="ops2-bell" aria-label="Attention — 1 item"><svg><use href="#i-bell"/></svg>
+        <span class="ops2-bell__badge">1</span></button>
+      <div class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">GB</span>
+        <span class="ops2-account__who"><span class="ops2-account__name">Gediminas B.</span>
+        <span class="ops2-account__role">Staff</span></span><svg width="14" height="14"><use href="#i-chev"/></svg></div>
+    </div>
+  </div>
+  <div class="ops2-topbar ops2-topbar--identity">
+    <p class="att-asat">As at 14:20 · refreshes every 10 minutes</p>
+  </div>
+  <div class="ops2-page__body ops2-page__body--full">
+    <div class="att-grid">
+      <section class="att-group">
+        <h2 class="att-group__label">AI budget</h2>
+        <div class="att-pair">
+          <article class="att-card" data-state="red">
+            <h3 class="att-card__label">Credit balance</h3>
+            <p class="att-card__figure">$3.90</p>
+            <p class="att-card__note"><svg><use href="#i-warn"/></svg>Below the $5.00 floor</p>
+          </article>
+          <article class="att-card" data-state="red">
+            <h3 class="att-card__label">Cap remaining</h3>
+            <p class="att-card__figure">$2.80</p>
+            <p class="att-card__note"><svg><use href="#i-warn"/></svg>86% of the $20.00 gateway cap used</p>
+          </article>
+        </div>
+      </section>
+      <section class="att-group">
+        <h2 class="att-group__label">Parsing · last 7 days</h2>
+        <div class="att-pair">
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Parses succeeded</h3>
+            <p class="att-card__figure">38</p>
+            <p class="att-card__note">One parse = one job claim</p>
+          </article>
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Parses errored</h3>
+            <p class="att-card__figure">3</p>
+            <p class="att-card__note">Failed, or stuck over 30 minutes</p>
+          </article>
+        </div>
+      </section>
+    </div>
+    <section class="att-card att-chart">
+      <div class="att-chart__head">
+        <h3 class="att-card__label">Successes and errors by day</h3>
+        <p class="att-chart__legend">
+          <span><span class="att-key" data-series="success"></span>Succeeded</span>
+          <span><span class="att-key" data-series="error"></span>Errored</span>
+        </p>
+      </div>
+      <div class="att-plot">
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:33%"><b>4</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Thu 28</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:58%"><b>7</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day">Fri 29</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" data-zero="true"></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Sat 30</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:8%"><b>1</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Sun 31</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:75%"><b>9</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day">Mon 1</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:100%"><b>12</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Tue 2</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:42%"><b>5</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day" data-today="true">Today</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+
+<h2>3 · Desk — money unavailable, and a week with no parses</h2>
+<p class="note">Two independent states drawn together because they share a page. Cloudflare could not be
+reached (or no token is configured yet), so the money tiles show <b>an em dash and the reason</b>. Never a
+zero, never red, and the bell stays empty: an unknown number cannot raise an alarm. The count tiles still
+render their D1 numbers, and a week with nothing parsed is a real answer, so the chart keeps its seven day
+labels and says so.</p>
+<div class="scroller">
+<div class="desk">
+  <div class="ops2-topbar">
+    <h1 class="ops2-topbar__title">Attention</h1>
+    <div class="ops2-topbar__end">
+      <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button>
+      <div class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">GB</span>
+        <span class="ops2-account__who"><span class="ops2-account__name">Gediminas B.</span>
+        <span class="ops2-account__role">Staff</span></span><svg width="14" height="14"><use href="#i-chev"/></svg></div>
+    </div>
+  </div>
+  <div class="ops2-topbar ops2-topbar--identity">
+    <p class="att-asat">As at 14:20 · refreshes every 10 minutes</p>
+  </div>
+  <div class="ops2-page__body ops2-page__body--full">
+    <div class="att-grid">
+      <section class="att-group">
+        <h2 class="att-group__label">AI budget</h2>
+        <div class="att-pair">
+          <article class="att-card" data-state="unavailable">
+            <h3 class="att-card__label">Credit balance</h3>
+            <p class="att-card__figure">—</p>
+            <p class="att-card__note">Unavailable. Cloudflare did not answer at 14:20</p>
+          </article>
+          <article class="att-card" data-state="unavailable">
+            <h3 class="att-card__label">Cap remaining</h3>
+            <p class="att-card__figure">—</p>
+            <p class="att-card__note">Unavailable. Cloudflare did not answer at 14:20</p>
+          </article>
+        </div>
+      </section>
+      <section class="att-group">
+        <h2 class="att-group__label">Parsing · last 7 days</h2>
+        <div class="att-pair">
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Parses succeeded</h3>
+            <p class="att-card__figure">0</p>
+            <p class="att-card__note">One parse = one job claim</p>
+          </article>
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Parses errored</h3>
+            <p class="att-card__figure">0</p>
+            <p class="att-card__note">Failed, or stuck over 30 minutes</p>
+          </article>
+        </div>
+      </section>
+    </div>
+    <section class="att-card att-chart">
+      <div class="att-chart__head">
+        <h3 class="att-card__label">Successes and errors by day</h3>
+        <p class="att-chart__legend">
+          <span><span class="att-key" data-series="success"></span>Succeeded</span>
+          <span><span class="att-key" data-series="error"></span>Errored</span>
+        </p>
+      </div>
+      <div class="att-chart__empty">
+        <strong>Nothing parsed in the last 7 days</strong>
+        <span>Parsing runs when a customer uploads. No uploads, no parses.</span>
+      </div>
+      <div class="att-plot" style="padding-top:0">
+        <div class="att-col"><span class="att-col__day">Thu 28</span></div>
+        <div class="att-col"><span class="att-col__day">Fri 29</span></div>
+        <div class="att-col"><span class="att-col__day">Sat 30</span></div>
+        <div class="att-col"><span class="att-col__day">Sun 31</span></div>
+        <div class="att-col"><span class="att-col__day">Mon 1</span></div>
+        <div class="att-col"><span class="att-col__day">Tue 2</span></div>
+        <div class="att-col"><span class="att-col__day" data-today="true">Today</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+
+<h2>4 · Desk — stale: the figures stopped refreshing</h2>
+<p class="note">The snapshot is older than 30 minutes, so the cron has probably stopped. The figures are still
+shown, because an old number labelled old beats an empty page, and every card is stamped with the time it was taken,
+so no figure here can be mistaken for a live one. The freshness line carries the warning weight; nothing else
+changes colour.</p>
+<div class="scroller">
+<div class="desk">
+  <div class="ops2-topbar">
+    <h1 class="ops2-topbar__title">Attention</h1>
+    <div class="ops2-topbar__end">
+      <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button>
+      <div class="ops2-account ops2-account--topbar"><span class="ops2-account__avatar">GB</span>
+        <span class="ops2-account__who"><span class="ops2-account__name">Gediminas B.</span>
+        <span class="ops2-account__role">Staff</span></span><svg width="14" height="14"><use href="#i-chev"/></svg></div>
+    </div>
+  </div>
+  <div class="ops2-topbar ops2-topbar--identity">
+    <p class="att-asat" data-stale="true"><svg><use href="#i-warn"/></svg>
+      Not refreshed since 12:10 — 2 h 10 m ago. The 10-minute job may have stopped.</p>
+  </div>
+  <div class="ops2-page__body ops2-page__body--full">
+    <div class="att-grid">
+      <section class="att-group">
+        <h2 class="att-group__label">AI budget</h2>
+        <div class="att-pair">
+          <article class="att-card">
+            <h3 class="att-card__label">Credit balance</h3>
+            <p class="att-card__figure">$42.18</p>
+            <p class="att-card__note">Floor $5.00 · USD, as Cloudflare reports it</p>
+            <p class="att-card__stamp">as at 12:10</p>
+          </article>
+          <article class="att-card">
+            <h3 class="att-card__label">Cap remaining</h3>
+            <p class="att-card__figure">$11.60</p>
+            <p class="att-card__note">$8.40 of the $20.00 gateway cap used (42%)</p>
+            <p class="att-card__stamp">as at 12:10</p>
+          </article>
+        </div>
+      </section>
+      <section class="att-group">
+        <h2 class="att-group__label">Parsing · last 7 days</h2>
+        <div class="att-pair">
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Parses succeeded</h3>
+            <p class="att-card__figure">36</p>
+            <p class="att-card__note">One parse = one job claim</p>
+            <p class="att-card__stamp">as at 12:10</p>
+          </article>
+          <article class="att-card">
+            <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Parses errored</h3>
+            <p class="att-card__figure">3</p>
+            <p class="att-card__note">Failed, or stuck over 30 minutes</p>
+            <p class="att-card__stamp">as at 12:10</p>
+          </article>
+        </div>
+      </section>
+    </div>
+    <section class="att-card att-chart">
+      <div class="att-chart__head">
+        <h3 class="att-card__label">Successes and errors by day</h3>
+        <p class="att-chart__legend">
+          <span><span class="att-key" data-series="success"></span>Succeeded</span>
+          <span><span class="att-key" data-series="error"></span>Errored</span>
+        </p>
+      </div>
+      <div class="att-plot">
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:33%"><b>4</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Thu 28</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:58%"><b>7</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day">Fri 29</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" data-zero="true"></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Sat 30</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:8%"><b>1</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Sun 31</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:75%"><b>9</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day">Mon 1</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:100%"><b>12</b></span>
+          <span class="att-bar" data-series="error" data-zero="true"></span></div>
+          <span class="att-col__day">Tue 2</span></div>
+        <div class="att-col"><div class="att-col__bars">
+          <span class="att-bar" data-series="success" style="height:25%"><b>3</b></span>
+          <span class="att-bar" data-series="error" style="height:8%"><b>1</b></span></div>
+          <span class="att-col__day" data-today="true">Today</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+
+<h2>5 · Desk — first run, loading, and a failed load</h2>
+<p class="note">Three page-level states, drawn at 768px so they sit side by side. <b>No snapshot yet</b> is the
+state before the cron's first tick after deploy, not an error. <b>Loading</b> is the skeleton of the layout
+that is about to arrive, in the same boxes, so nothing settles. <b>Failed load</b> is the endpoint not
+answering, and it is the only one with a control on it.</p>
+<div class="stack">
+  <p class="caption">a · no snapshot yet</p>
+  <div class="desk desk--narrow">
+    <div class="ops2-topbar"><h1 class="ops2-topbar__title">Attention</h1>
+      <div class="ops2-topbar__end">
+        <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button></div></div>
+    <div class="ops2-page__body ops2-page__body--full">
+      <div class="pq-empty">
+        <strong>No figures yet</strong>
+        <span>The monitoring job writes them every 10 minutes. If nothing appears by the next tick,
+          the cron is not running.</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">b · loading</p>
+  <div class="desk desk--narrow">
+    <div class="ops2-topbar"><h1 class="ops2-topbar__title">Attention</h1>
+      <div class="ops2-topbar__end">
+        <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button></div></div>
+    <div class="ops2-page__body ops2-page__body--full" aria-busy="true">
+      <div class="att-grid">
+        <section class="att-group">
+          <h2 class="att-group__label">AI budget</h2>
+          <div class="att-pair">
+            <article class="att-card att-card--loading">
+              <span class="att-skeleton" style="width:88px;height:10px"></span>
+              <span class="att-skeleton" style="width:112px;height:28px"></span>
+              <span class="att-skeleton" style="width:140px;height:10px"></span></article>
+            <article class="att-card att-card--loading">
+              <span class="att-skeleton" style="width:88px;height:10px"></span>
+              <span class="att-skeleton" style="width:112px;height:28px"></span>
+              <span class="att-skeleton" style="width:140px;height:10px"></span></article>
+          </div>
+        </section>
+        <section class="att-group">
+          <h2 class="att-group__label">Parsing · last 7 days</h2>
+          <div class="att-pair">
+            <article class="att-card att-card--loading">
+              <span class="att-skeleton" style="width:104px;height:10px"></span>
+              <span class="att-skeleton" style="width:56px;height:28px"></span>
+              <span class="att-skeleton" style="width:132px;height:10px"></span></article>
+            <article class="att-card att-card--loading">
+              <span class="att-skeleton" style="width:104px;height:10px"></span>
+              <span class="att-skeleton" style="width:56px;height:28px"></span>
+              <span class="att-skeleton" style="width:132px;height:10px"></span></article>
+          </div>
+        </section>
+      </div>
+      <section class="att-card att-chart">
+        <div class="att-chart__head"><span class="att-skeleton" style="width:180px;height:10px"></span></div>
+        <div class="att-plot" style="border-bottom-color:var(--ds-border-subtle)">
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:40px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:68px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:24px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:52px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:80px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:60px"></span></div>
+          <div class="att-col"><span class="att-skeleton" style="width:38px;height:44px"></span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <p class="caption">c · the figures could not be loaded</p>
+  <div class="desk desk--narrow">
+    <div class="ops2-topbar"><h1 class="ops2-topbar__title">Attention</h1>
+      <div class="ops2-topbar__end">
+        <button class="ops2-bell" aria-label="Attention"><svg><use href="#i-bell"/></svg></button></div></div>
+    <div class="ops2-page__body ops2-page__body--full">
+      <div class="pq-error" role="alert">
+        <svg><use href="#i-alert"/></svg>
+        <div><strong>Couldn't load the monitoring figures</strong>
+          <span>The console reached the server but it did not answer. Nothing is wrong with parsing itself.</span></div>
+        <button type="button">Try again</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>6 · Phone 375 — healthy, red, and unavailable</h2>
+<p class="note">The pairs stack; the tiles inside a pair stay side by side, because the two halves of each
+question are read together. The chart keeps all seven days and drops its per-bar numerals: two digits over a
+12px bar is a smudge, and the totals are already stated a thumb-length above. Red puts the same
+<b>1</b> on the Attention tab that the desk puts on the bell.</p>
+<div class="frames">
+
+  <div>
+    <p class="caption">healthy</p>
+    <div class="phone">
+      <div class="ops2-band">
+        <h1>Attention</h1>
+        <p class="att-asat" style="margin-top:.25rem">As at 14:20 · refreshes every 10 minutes</p>
+      </div>
+      <div class="ops2-page__body">
+        <div class="att-grid">
+          <section class="att-group">
+            <h2 class="att-group__label">AI budget</h2>
+            <div class="att-pair">
+              <article class="att-card">
+                <h3 class="att-card__label">Credit</h3>
+                <p class="att-card__figure">$42.18</p>
+                <p class="att-card__note">Floor $5.00</p>
+              </article>
+              <article class="att-card">
+                <h3 class="att-card__label">Cap left</h3>
+                <p class="att-card__figure">$11.60</p>
+                <p class="att-card__note">42% of $20.00 used</p>
+              </article>
+            </div>
+          </section>
+          <section class="att-group">
+            <h2 class="att-group__label">Parsing · last 7 days</h2>
+            <div class="att-pair">
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Succeeded</h3>
+                <p class="att-card__figure">38</p>
+                <p class="att-card__note">One parse = one claim</p>
+              </article>
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Errored</h3>
+                <p class="att-card__figure">3</p>
+                <p class="att-card__note">Failed or stuck 30 min+</p>
+              </article>
+            </div>
+          </section>
+        </div>
+        <section class="att-card att-chart">
+          <div class="att-chart__head">
+            <h3 class="att-card__label">By day</h3>
+            <p class="att-chart__legend">
+              <span><span class="att-key" data-series="success"></span>OK</span>
+              <span><span class="att-key" data-series="error"></span>Errors</span>
+            </p>
+          </div>
+          <div class="att-plot">
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:33%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Thu</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:58%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day">Fri</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" data-zero="true"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sat</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:8%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sun</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:75%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day">Mon</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:100%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Tue</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:42%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day" data-today="true">Today</span></div>
+          </div>
+        </section>
+      </div>
+      <nav class="ops2-tabbar">
+        <a class="ops2-tab" data-selected><svg><use href="#i-alert"/></svg>Attention</a>
+        <a class="ops2-tab"><svg><use href="#i-layers"/></svg>Projects</a>
+        <a class="ops2-tab"><svg><use href="#i-cube"/></svg>Products</a>
+        <a class="ops2-tab"><svg><use href="#i-dots"/></svg>More</a>
+      </nav>
+    </div>
+  </div>
+
+  <div>
+    <p class="caption">red: budget about to run out</p>
+    <div class="phone">
+      <div class="ops2-band">
+        <h1>Attention</h1>
+        <p class="att-asat" style="margin-top:.25rem">As at 14:20 · refreshes every 10 minutes</p>
+      </div>
+      <div class="ops2-page__body">
+        <div class="att-grid">
+          <section class="att-group">
+            <h2 class="att-group__label">AI budget</h2>
+            <div class="att-pair">
+              <article class="att-card" data-state="red">
+                <h3 class="att-card__label">Credit</h3>
+                <p class="att-card__figure">$3.90</p>
+                <p class="att-card__note"><svg><use href="#i-warn"/></svg>Under $5.00 floor</p>
+              </article>
+              <article class="att-card" data-state="red">
+                <h3 class="att-card__label">Cap left</h3>
+                <p class="att-card__figure">$2.80</p>
+                <p class="att-card__note"><svg><use href="#i-warn"/></svg>86% of $20.00 used</p>
+              </article>
+            </div>
+          </section>
+          <section class="att-group">
+            <h2 class="att-group__label">Parsing · last 7 days</h2>
+            <div class="att-pair">
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Succeeded</h3>
+                <p class="att-card__figure">38</p>
+                <p class="att-card__note">One parse = one claim</p>
+              </article>
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Errored</h3>
+                <p class="att-card__figure">3</p>
+                <p class="att-card__note">Failed or stuck 30 min+</p>
+              </article>
+            </div>
+          </section>
+        </div>
+        <section class="att-card att-chart">
+          <div class="att-chart__head">
+            <h3 class="att-card__label">By day</h3>
+            <p class="att-chart__legend">
+              <span><span class="att-key" data-series="success"></span>OK</span>
+              <span><span class="att-key" data-series="error"></span>Errors</span>
+            </p>
+          </div>
+          <div class="att-plot">
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:33%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Thu</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:58%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day">Fri</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" data-zero="true"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sat</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:8%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sun</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:75%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day">Mon</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:100%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Tue</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:42%"></span>
+              <span class="att-bar" data-series="error" style="height:8%"></span></div>
+              <span class="att-col__day" data-today="true">Today</span></div>
+          </div>
+        </section>
+      </div>
+      <nav class="ops2-tabbar">
+        <a class="ops2-tab" data-selected><svg><use href="#i-alert"/></svg>Attention
+          <span class="ops2-tab__badge">1</span></a>
+        <a class="ops2-tab"><svg><use href="#i-layers"/></svg>Projects</a>
+        <a class="ops2-tab"><svg><use href="#i-cube"/></svg>Products</a>
+        <a class="ops2-tab"><svg><use href="#i-dots"/></svg>More</a>
+      </nav>
+    </div>
+  </div>
+
+  <div>
+    <p class="caption">money unavailable · stale · long figures</p>
+    <div class="phone">
+      <div class="ops2-band">
+        <h1>Attention</h1>
+        <p class="att-asat" data-stale="true" style="margin-top:.25rem"><svg><use href="#i-warn"/></svg>
+          Not refreshed since 12:10 — 2 h 10 m ago</p>
+      </div>
+      <div class="ops2-page__body">
+        <div class="att-grid">
+          <section class="att-group">
+            <h2 class="att-group__label">AI budget</h2>
+            <div class="att-pair">
+              <article class="att-card" data-state="unavailable">
+                <h3 class="att-card__label">Credit</h3>
+                <p class="att-card__figure">—</p>
+                <p class="att-card__note">Unavailable. No Cloudflare token configured</p>
+                <p class="att-card__stamp">as at 12:10</p>
+              </article>
+              <article class="att-card" data-state="unavailable">
+                <h3 class="att-card__label">Cap left</h3>
+                <p class="att-card__figure">—</p>
+                <p class="att-card__note">Unavailable. No Cloudflare token configured</p>
+                <p class="att-card__stamp">as at 12:10</p>
+              </article>
+            </div>
+          </section>
+          <section class="att-group">
+            <h2 class="att-group__label">Parsing · last 7 days</h2>
+            <div class="att-pair">
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="success"></span>Succeeded</h3>
+                <p class="att-card__figure">1,284</p>
+                <p class="att-card__note">One parse = one claim</p>
+                <p class="att-card__stamp">as at 12:10</p>
+              </article>
+              <article class="att-card">
+                <h3 class="att-card__label"><span class="att-key" data-series="error"></span>Errored</h3>
+                <p class="att-card__figure">117</p>
+                <p class="att-card__note">Failed or stuck 30 min+</p>
+                <p class="att-card__stamp">as at 12:10</p>
+              </article>
+            </div>
+          </section>
+        </div>
+        <section class="att-card att-chart">
+          <div class="att-chart__head">
+            <h3 class="att-card__label">By day</h3>
+            <p class="att-chart__legend">
+              <span><span class="att-key" data-series="success"></span>OK</span>
+              <span><span class="att-key" data-series="error"></span>Errors</span>
+            </p>
+          </div>
+          <div class="att-plot">
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:62%"></span>
+              <span class="att-bar" data-series="error" style="height:14%"></span></div>
+              <span class="att-col__day">Thu</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:78%"></span>
+              <span class="att-bar" data-series="error" style="height:9%"></span></div>
+              <span class="att-col__day">Fri</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:21%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sat</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:17%"></span>
+              <span class="att-bar" data-series="error" data-zero="true"></span></div>
+              <span class="att-col__day">Sun</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:94%"></span>
+              <span class="att-bar" data-series="error" style="height:26%"></span></div>
+              <span class="att-col__day">Mon</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:100%"></span>
+              <span class="att-bar" data-series="error" style="height:18%"></span></div>
+              <span class="att-col__day">Tue</span></div>
+            <div class="att-col"><div class="att-col__bars">
+              <span class="att-bar" data-series="success" style="height:47%"></span>
+              <span class="att-bar" data-series="error" style="height:11%"></span></div>
+              <span class="att-col__day" data-today="true">Today</span></div>
+          </div>
+        </section>
+      </div>
+      <nav class="ops2-tabbar">
+        <a class="ops2-tab" data-selected><svg><use href="#i-alert"/></svg>Attention</a>
+        <a class="ops2-tab"><svg><use href="#i-layers"/></svg>Projects</a>
+        <a class="ops2-tab"><svg><use href="#i-cube"/></svg>Products</a>
+        <a class="ops2-tab"><svg><use href="#i-dots"/></svg>More</a>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<h2>Decisions this mock is asking you to approve</h2>
+<p class="note">
+1 · <b>Two named pairs, not five loose cards.</b> "AI budget" and "Parsing · last 7 days" are the two
+questions; the tiles sit under the question they answer.<br>
+2 · <b>The freshness line lives in the band, once</b> (OpsPage's existing identity slot), and only a
+<i>stale</i> snapshot stamps every card individually.<br>
+3 · <b>Cap outstanding is labelled "Cap remaining"</b> and shows the percentage used beside the money, because
+the ceiling is a percentage.<br>
+4 · <b>Errored parses are never painted as an alarm.</b> Only the budget goes red, because only the budget
+raises the bubble.<br>
+5 · <b>Chart numerals show at the desk, not on the phone.</b><br>
+6 · No dark mode — ops2 has no dark theme today, and this page does not invent one.
+</p>
+</div>
+</body>
+</html>
