@@ -25,6 +25,7 @@ await build({
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
+      export { placeOpeningsOnPlan } from ${p("worker/lib/drawing/faceMapped/planFaces.ts")};
       export { recoverPageScales, validateStatedScale } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
@@ -45,7 +46,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, placeOpeningsOnPlan, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2123,6 +2124,49 @@ test("scale recovery: what a model returns is bounded like any other input (AC21
   assert.equal(validateStatedScale({ pageNo: 4, ratio: 99_999 }, 4), null);
   assert.equal(validateStatedScale({ pageNo: 4, ratio: null }, 4), null, "no stated scale is an answer, and it is not a scale");
   assert.equal(validateStatedScale("SCALE 1:100", 4), null, "prose is not a result");
+});
+
+// ── Phase C — plan placement (02-acceptance-criteria.md) ───────────────────
+const planSheet = (words, text = "GROUND FLOOR PLAN") => ({
+  page: { pageNo: 4, text, words },
+  geometry: { pageNo: 4, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 200, imageCount: 0, imageAreaFraction: 0 },
+});
+const tagWord = (text, x, y) => ({ text, x0: x, top: y, x1: x + 26, bottom: y + 14 });
+
+test("plan placement: openings on one wall get plan-side ordinals and a position along it (P2-AC2, AC3, AC4)", () => {
+  const sheet = planSheet([
+    // Four openings along the top wall, deliberately out of reading order.
+    tagWord("W3", 517, 250), tagWord("W1", 297, 250), tagWord("W4", 627, 250), tagWord("W2", 407, 250),
+    // Openings on the other three walls.
+    tagWord("W5", 457, 540), tagWord("W6", 217, 400), tagWord("W7", 727, 400),
+    // Room labels: what gives a plan its footprint.
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    // The document's own names for its walls.
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "A", x0: 230, top: 395, x1: 240, bottom: 409 },
+    { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
+  ]);
+  const outcomes = placeOpeningsOnPlan({
+    pages: [sheet],
+    roster: ["W1", "W2", "W3", "W4", "W5", "W6", "W7"],
+    north: null,
+  });
+  assert.equal(outcomes.length, 7, "every scheduled opening gets exactly one outcome");
+  const onD = outcomes.filter((o) => o.state === "resolved" && o.placement.face === "D")
+    .map((o) => o.placement).sort((a, b) => a.wallOrder - b.wallOrder);
+  assert.deepEqual(onD.map((p) => p.tag), ["W1", "W2", "W3", "W4"],
+    "ordinals run along the wall in plan order, whatever order the tags were printed in");
+  assert.deepEqual(onD.map((p) => p.wallOrder), [1, 2, 3, 4]);
+  assert.deepEqual(onD.map((p) => p.faceOpeningCount), [4, 4, 4, 4]);
+  assert.equal(onD.every((p) => p.storey === "ground"), true);
+  const fractions = onD.map((p) => p.alongWallFraction);
+  assert.equal(fractions.every((f) => f !== null && f >= 0 && f <= 1), true, `fractions within the wall: ${fractions}`);
+  assert.deepEqual([...fractions].sort((a, b) => a - b), fractions, "position along the wall rises with the ordinal");
 });
 
 test("scale recovery: a document cannot ask for unbounded work (AC24)", async () => {

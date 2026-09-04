@@ -1,6 +1,6 @@
 # Phase 2 — acceptance criteria (handover Tasks 3–4, Phase C plan placement)
 
-**Status: awaiting owner approval. No code until then.**
+**Approved by the owner, 2026-09-04.**
 
 Phase C answers one question for every opening in the roster: *which face, which
 storey, which position along that wall.* It never looks at an elevation and
@@ -113,10 +113,17 @@ anything §5 says to reuse.
 5. Real infrastructure wherever the container is involved; nothing deployed to
    production, and any billable resource agreed first.
 
-## Open question for the owner
+## Owner rulings, 2026-09-04
 
-§7.1 takes a face's opening count from the plan. Where a plan draws an opening
-the schedule does not list — or the schedule lists one the plan does not draw —
-that is a genuine disagreement rather than a placement failure. I propose
-recording it as a conflict on that face and placing what can be placed. Confirm,
-or say what you would rather see.
+**An opening the plan draws but the schedule does not list is irrelevant.** The
+schedule is the roster; the engine is finding what was ordered, not auditing the
+drawing. No conflict is recorded and nothing is placed for it.
+
+**An opening the schedule lists but the engine cannot locate falls back to its
+schedule parameters** — size and type — as §10 already prescribes. Unresolved is
+a real outcome with a real product behind it, not a failure to report.
+
+**On these criteria generally**, the owner's steer: they matter insofar as they
+support §7.0's concept, become testable quickly, and end with every scheduled
+opening identified and specced. Ceremony that does not serve those three is not
+worth the tokens.

@@ -90,7 +90,7 @@ override disables Probity or the mandatory `review` stage.
      hand only as a fallback — outside the conductor, always cap the window:
 
      ```bash
-     claude -p "/security-review" --permission-mode plan --autocompact 100000 --strict-mcp-config
+     claude -p "/security-review" --permission-mode plan --autocompact 600000 --strict-mcp-config
      ```
 
      `security-review` is a **built-in command compiled into the CLI**, not a skill — so the `Skill` tool cannot reach it and there is no file for it on disk (verified 2026-08-24, do not go looking). Headless `-p` keeps it non-interactive; `--permission-mode plan` keeps it read-only. It reviews the current branch's diff and reports findings above an ~80% confidence bar, saying so explicitly when nothing clears. Findings route to the developer like any review. It runs on Anthropic quota, so it stays available when the Codex layer is quota-blocked — the two are independent on purpose. **Owner ruling 2026-08-24: a gate only he can fire is not a pipeline stage. Never downgrade this to "ask the user to run it".**

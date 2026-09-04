@@ -199,28 +199,92 @@ function orderValue(edge: Edge, word: PageWord, box: Footprint): number {
   return elevationOrderKey(face, along, length);
 }
 
+/** The plan facts a placement needs: where the building sits on the sheet, what
+ * names its walls, and which storey the sheet is. Extracted so the face-mapped
+ * engine reads the same footprint the legacy placement path does rather than
+ * measuring its own. */
+export interface PlanPageFacts {
+  footprint: { x0: number; top: number; x1: number; bottom: number } | null;
+  markerEdges: Record<string, Edge>;
+  ambiguousEdges: Edge[];
+  storey: Storey | null;
+}
+
+export function planPageFacts(
+  page: PageText,
+  geo: Pick<PageInventory, "widthPt" | "heightPt">,
+  vocabulary: string[],
+): PlanPageFacts {
+  const normalizedVocabulary = new Set(vocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
+  const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
+  const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
+  const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
+  if (!box) return { footprint: null, markerEdges: {}, ambiguousEdges: [], storey };
+  const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
+  const markerByEdge = new Map<Edge, string>();
+  const ambiguous = new Set<Edge>();
+  for (const word of page.words) {
+    const label = word.text.trim().toUpperCase();
+    if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
+    if (distanceToFootprint(word, box) > footprintDiagonal * 0.25) continue;
+    const edge = nearestEdge(word, box);
+    if (markerByEdge.has(edge) && markerByEdge.get(edge) !== label) ambiguous.add(edge);
+    markerByEdge.set(edge, label);
+  }
+  return {
+    footprint: box,
+    markerEdges: Object.fromEntries([...markerByEdge]
+      .filter(([edge]) => !ambiguous.has(edge))
+      .map(([edge, label]) => [label, edge])) as Record<string, Edge>,
+    ambiguousEdges: [...ambiguous],
+    storey,
+  };
+}
+
+/** Which wall a word sits against, and how far along it, in plan order from
+ * that wall's own start. No mirroring: which end an elevation calls first is
+ * settled when an elevation is read, not here.
+ *
+ * The wall is the side the word lies *outside of*, not the edge line it
+ * happens to be nearest. A tag printed above the top wall but close to the
+ * left end is nearer the left edge line than the top one, and calling that a
+ * west opening is how an opening ends up on the wrong elevation. A word
+ * outside two sides at once is a corner: it is reported as such rather than
+ * guessed, and a word inside the footprint falls back to its nearest edge. */
+export function alongWall(word: PageWord, box: { x0: number; top: number; x1: number; bottom: number }): {
+  edge: Edge; alongPt: number; wallLengthPt: number; corner: boolean;
+} {
+  const [x, y] = centre(word);
+  const overshoot: [Edge, number][] = [
+    ["left", box.x0 - x], ["right", x - box.x1],
+    ["top", box.top - y], ["bottom", y - box.bottom],
+  ];
+  const outside = overshoot.filter(([, distance]) => distance > 0).sort((a, b) => b[1] - a[1]);
+  const edge = outside.length ? outside[0][0] : nearestEdge(word, box);
+  const horizontal = edge === "top" || edge === "bottom";
+  return {
+    edge,
+    alongPt: horizontal ? x - box.x0 : y - box.top,
+    wallLengthPt: horizontal ? box.x1 - box.x0 : box.bottom - box.top,
+    // Two sides at once, and neither clearly further out, is a corner.
+    corner: outside.length > 1 && outside[1][1] > outside[0][1] * 0.5,
+  };
+}
+
 export function locateFloorplanPage(
   page: PageText,
   geo: Pick<PageInventory, "widthPt" | "heightPt">,
   vocabulary: string[],
 ): { placements: Record<string, TextPlacement>; markerEdges: Record<string, Edge>; unplaced: string[] } {
   const normalizedVocabulary = new Set(vocabulary.map((tag) => normalizeOpeningRef(tag)).filter((tag): tag is string => !!tag));
-  const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
+  const facts = planPageFacts(page, geo, vocabulary);
+  const box = facts.footprint;
   if (!box) return { placements: {}, markerEdges: {}, unplaced: [...normalizedVocabulary] };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
-  const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
-  const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
-
-  const markerByEdge = new Map<Edge, string>();
-  const ambiguousEdges = new Set<Edge>();
-  for (const word of page.words) {
-    const label = word.text.trim().toUpperCase();
-    if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
-    if (distanceToFootprint(word, box) > footprintDiagonal * 0.25) continue;
-    const edge = nearestEdge(word, box);
-    if (markerByEdge.has(edge) && markerByEdge.get(edge) !== label) ambiguousEdges.add(edge);
-    markerByEdge.set(edge, label);
-  }
+  const storey = facts.storey;
+  const markerByEdge = new Map<Edge, string>(
+    Object.entries(facts.markerEdges).map(([label, edge]) => [edge, label]));
+  const ambiguousEdges = new Set<Edge>(facts.ambiguousEdges);
 
   const wordsByTag = new Map<string, PageWord[]>();
   for (const { tag, word } of openingTagWords(page.words, normalizedVocabulary, geo)) {
