@@ -36,6 +36,66 @@ export interface PlanPage {
 
 const boxOf = (word: PageWord): CropBoxPt => [word.x0, word.top, word.x1, word.bottom];
 
+type Edge = "top" | "right" | "bottom" | "left";
+const EDGES: Edge[] = ["top", "right", "bottom", "left"];
+
+/**
+ * Which label names which wall, decided across the whole sheet at once.
+ *
+ * A name belongs to one wall and a wall answers to one name, so the question
+ * is not "which label is nearest this edge" but "which pairing of labels to
+ * walls is nearest overall". That distinction is what a plan printing section
+ * marks beside its elevation markers turns on: no edge is decidable alone —
+ * the same letter can be nearest two of them — while the sheet as a whole
+ * still has exactly one best answer.
+ *
+ * Naming more walls beats naming them closer, because an unnamed wall loses
+ * every opening on it. Two assignments equally good is an ambiguity, and
+ * ambiguity is not resolved by taking the first.
+ */
+export function nameWalls(
+  candidates: { label: string; edge: Edge; distancePt: number }[],
+): Record<string, string> {
+  const nearest = new Map<string, number>();
+  for (const { label, edge, distancePt } of candidates) {
+    const key = `${edge}|${label}`;
+    if (!nearest.has(key) || distancePt < nearest.get(key)!) nearest.set(key, distancePt);
+  }
+  const labels = [...new Set(candidates.map((candidate) => candidate.label))];
+  let best: { named: number; distance: number; pairs: [Edge, string][] } | null = null;
+  let tied = false;
+
+  const walk = (at: number, used: Set<string>, pairs: [Edge, string][], distance: number): void => {
+    if (at === EDGES.length) {
+      const scored = { named: pairs.length, distance, pairs: [...pairs] };
+      if (!best || scored.named > best.named || (scored.named === best.named && scored.distance < best.distance - 0.001)) {
+        best = scored;
+        tied = false;
+      } else if (best && scored.named === best.named && Math.abs(scored.distance - best.distance) <= 0.001
+        && JSON.stringify(scored.pairs) !== JSON.stringify(best.pairs)) {
+        tied = true;
+      }
+      return;
+    }
+    const edge = EDGES[at];
+    walk(at + 1, used, pairs, distance);
+    for (const label of labels) {
+      if (used.has(label)) continue;
+      const reach = nearest.get(`${edge}|${label}`);
+      if (reach === undefined) continue;
+      used.add(label);
+      pairs.push([edge, label]);
+      walk(at + 1, used, pairs, distance + reach);
+      pairs.pop();
+      used.delete(label);
+    }
+  };
+  walk(0, new Set(), [], 0);
+
+  if (!best || tied) return {};
+  return Object.fromEntries((best as { pairs: [Edge, string][] }).pairs.map(([edge, label]) => [edge, label]));
+}
+
 interface Located {
   tag: string;
   word: PageWord;
@@ -77,6 +137,7 @@ export function placeOpeningsOnPlan(args: {
     // without knowing that vocabulary in advance.
     const edgeFacing = args.north === null ? {} : orientationsFromNorth(
       { top: "top", right: "right", bottom: "bottom", left: "left" }, args.north);
+    const wallNames = nameWalls(facts.markerCandidates);
 
     for (const { tag, word } of openingTagWords(page.words, vocabulary, geometry)) {
       if (located.has(tag)) {
@@ -90,7 +151,7 @@ export function placeOpeningsOnPlan(args: {
         refused.set(tag, "the tag sits at a corner, against two walls at once");
         continue;
       }
-      const marker = Object.entries(facts.markerEdges).find(([, at]) => at === edge)?.[0];
+      const marker = wallNames[edge];
       const direction = edgeFacing[edge]?.facing;
       const face = marker ?? direction;
       if (!face) {

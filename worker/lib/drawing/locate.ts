@@ -207,6 +207,11 @@ export interface PlanPageFacts {
   footprint: { x0: number; top: number; x1: number; bottom: number } | null;
   markerEdges: Record<string, Edge>;
   ambiguousEdges: Edge[];
+  /** Every label near a wall, with how near, before anything is accepted or
+   * refused. A plan that prints section marks beside its elevation markers
+   * leaves no edge decidable on its own, and a caller that can weigh the whole
+   * sheet at once resolves what per-edge judgement has to give up on. */
+  markerCandidates: { label: string; edge: Edge; distancePt: number }[];
   storey: Storey | null;
 }
 
@@ -219,20 +224,24 @@ export function planPageFacts(
   const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
   const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
   const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
-  if (!box) return { footprint: null, markerEdges: {}, ambiguousEdges: [], storey };
+  if (!box) return { footprint: null, markerEdges: {}, ambiguousEdges: [], markerCandidates: [], storey };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
   const markerByEdge = new Map<Edge, string>();
   const ambiguous = new Set<Edge>();
+  const markerCandidates: { label: string; edge: Edge; distancePt: number }[] = [];
   for (const word of page.words) {
     const label = word.text.trim().toUpperCase();
     if (!/^[A-D]$/.test(label) || inside(word, box)) continue;
-    if (distanceToFootprint(word, box) > footprintDiagonal * 0.25) continue;
+    const distancePt = distanceToFootprint(word, box);
+    if (distancePt > footprintDiagonal * 0.25) continue;
     const edge = nearestEdge(word, box);
+    markerCandidates.push({ label, edge, distancePt });
     if (markerByEdge.has(edge) && markerByEdge.get(edge) !== label) ambiguous.add(edge);
     markerByEdge.set(edge, label);
   }
   return {
     footprint: box,
+    markerCandidates,
     markerEdges: Object.fromEntries([...markerByEdge]
       .filter(([edge]) => !ambiguous.has(edge))
       .map(([edge, label]) => [label, edge])) as Record<string, Edge>,

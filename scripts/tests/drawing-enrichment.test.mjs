@@ -2169,6 +2169,41 @@ test("plan placement: openings on one wall get plan-side ordinals and a position
   assert.deepEqual([...fractions].sort((a, b) => a - b), fractions, "position along the wall rises with the ordinal");
 });
 
+test("plan placement: a wall keeps its name when a section mark is printed nearby (P2-AC5, AC6)", () => {
+  // Measured on a real ground floor plan: section marks share the sheet with
+  // the elevation markers, so two different letters sit near the same edge and
+  // no edge is decidable alone. Each letter still names exactly one wall, so
+  // the assignment as a whole is decidable — and refusing it loses two thirds
+  // of the openings on that sheet.
+  const sheet = planSheet([
+    tagWord("W3", 517, 250), tagWord("W1", 297, 250), tagWord("W4", 627, 250), tagWord("W2", 407, 250),
+    tagWord("W5", 457, 540), tagWord("W6", 217, 400), tagWord("W7", 727, 400),
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "A", x0: 230, top: 395, x1: 240, bottom: 409 },
+    { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
+    // A section mark: the same letter as the right wall, printed near the top.
+    { text: "C", x0: 330, top: 268, x1: 340, bottom: 282 },
+    // And another letter crowding the left wall.
+    { text: "B", x0: 250, top: 330, x1: 260, bottom: 344 },
+  ]);
+  const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "W3", "W4", "W5", "W6", "W7"], north: null });
+  assert.equal(outcomes.filter((o) => o.state === "resolved").length, 7,
+    "every opening still lands: " + JSON.stringify(outcomes.filter((o) => o.state !== "resolved")));
+  const faces = Object.fromEntries(outcomes
+    .filter((o) => o.state === "resolved")
+    .map((o) => [o.placement.tag, o.placement.face]));
+  assert.equal(faces.W1, "D", "the top wall is still D, though a C is printed against it");
+  assert.equal(faces.W5, "B");
+  assert.equal(faces.W6, "A", "the left wall is still A, though a B is printed against it");
+  assert.equal(faces.W7, "C");
+});
+
 test("scale recovery: a document cannot ask for unbounded work (AC24)", async () => {
   const asked = [];
   const pageCount = 60;
