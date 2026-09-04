@@ -232,18 +232,20 @@ export interface PlanPageFacts {
  * word PLAN in its title. Keyed on the word the sheet must print rather than
  * on a list of storeys we happen to know.
  *
- * The determiners exist because a sheet whose title block is drawn as graphics
- * leaves only its copyright line in the text layer — "THIS PLAN, DESIGN OR
- * IDEAS MAY NOT BE COPIED" — and reading a storey out of that files every
- * opening under a storey called THIS. */
-const NOT_A_STOREY = /^(?:THIS|THESE|THAT|THE|A|AN|ANY|ALL|NO|EACH|EVERY|SUCH|SITE|ROOF|LANDSCAPE)$/;
+ * A determiner is the one thing that word can never be. A sheet whose title
+ * block is drawn as graphics leaves only its copyright line in the text layer —
+ * "THIS PLAN, DESIGN OR IDEAS MAY NOT BE COPIED" — and reading a storey out of
+ * that files every opening under a storey called THIS. English grammar, not a
+ * drawing convention: no set is excluded by it, and which subjects a document
+ * draws plans of is the page role's question, not this one. */
+const DETERMINER = /^(?:THIS|THESE|THAT|THE|A|AN|ANY|ALL|NO|EACH|EVERY|SUCH)$/;
 
 export function printedStorey(titleText: string): string | null {
   const match = /\b([A-Z][A-Z0-9]*(?:\s+[A-Z0-9]+){0,2})\s+PLAN\b/.exec(titleText.toUpperCase());
   if (!match) return null;
   const label = match[1].replace(/\s+/g, " ").trim();
   if (!label || label === "PLAN") return null;
-  return NOT_A_STOREY.test(label.split(" ")[0]) ? null : label;
+  return DETERMINER.test(label.split(" ")[0]) ? null : label;
 }
 
 export function planPageFacts(

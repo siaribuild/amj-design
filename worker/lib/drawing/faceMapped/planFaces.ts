@@ -16,44 +16,49 @@ export interface PlanPage {
   geometry: Pick<PageInventory, "pageNo" | "widthPt" | "heightPt">;
 }
 
-const EDGES: Edge[] = ["top", "right", "bottom", "left"];
+/** Two openings closer than this along a wall are one position, not two: a
+ * fifth of a percent of a wall is under a millimetre at any scale a house is
+ * drawn at. */
+const TIED_ALONG_WALL = 0.002;
 
-const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?)$/;
-const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
+/** Where an opening sits along its wall, from 0 at one end to 1 at the other.
+ * The recovered fraction when a look at the plan supplied one, and the tag's
+ * own measured position otherwise. */
+function alongFraction(candidate: { recoveredFraction: number | null; alongPt: number; wallLengthPt: number }): number {
+  return candidate.recoveredFraction
+    ?? (candidate.wallLengthPt > 0 ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt)) : 0);
+}
 
 /**
- * What this document calls its faces, read from the sheets that draw them.
+ * The roster's spellings, and every spelling a drawing might print them as.
  *
- * A set writes `ELEVATION A` or `WEST ELEVATION` or `FRONT ELEVATION`, and
- * whichever it writes is the vocabulary its plan will mark its walls with.
- * Reading it here is what lets placement work on a document nobody anticipated,
- * instead of on the documents whose conventions happen to be in a regex.
+ * Measured on a real set: its window schedule prints W1, W2, W3 and its floor
+ * plans print W01, W02, W03. They are the same openings, and matching them as
+ * different strings places none of them — every one reads as "not tagged on any
+ * plan page" while its tag is printed on the drawing. Which side pads is a
+ * draughtsman's habit, so neither side is treated as the correct one, and what
+ * comes back out is always the name the schedule gave.
  */
-export function documentFaceNames(pages: PlanPage[]): Set<string> {
-  const names = new Set<string>();
-  for (const { page } of pages) {
-    const rows = new Map<number, PageWord[]>();
-    for (const word of page.words) {
-      const line = Math.round((word.top + word.bottom) / 2 / 6);
-      rows.set(line, [...(rows.get(line) ?? []), word]);
-    }
-    for (const row of rows.values()) {
-      const ordered = [...row].sort((a, b) => a.x0 - b.x0);
-      ordered.forEach((word, at) => {
-        if (!VIEW_TITLE.test(word.text.trim().toUpperCase())) return;
-        for (const neighbour of [ordered[at - 1], ordered[at + 1]]) {
-          if (!neighbour) continue;
-          const label = neighbour.text.trim().toUpperCase().replace(/[.,:]$/, "");
-          if (!FACE_NAME.test(label) || VIEW_TITLE.test(label)) continue;
-          const gap = neighbour.x0 > word.x1 ? neighbour.x0 - word.x1 : word.x0 - neighbour.x1;
-          if (gap > Math.max(word.bottom - word.top, 1) * 2) continue;
-          names.add(label);
-        }
-      });
+export function rosterVocabulary(roster: string[]): { vocabulary: Set<string>; tagOf: Map<string, string> } {
+  const vocabulary = new Set<string>();
+  const tagOf = new Map<string, string>();
+  for (const entry of roster) {
+    const tag = normalizeOpeningRef(entry) ?? entry;
+    const split = /^([A-Z]*)0*(\d+)([A-Z]*)$/.exec(tag);
+    const spellings = split
+      ? [1, 2, 3].map((width) => `${split[1]}${split[2].padStart(width, "0")}${split[3]}`)
+      : [tag];
+    for (const spelling of new Set([tag, ...spellings])) {
+      vocabulary.add(spelling);
+      // First roster entry wins: a roster naming one opening twice is refused
+      // downstream, and quietly reassigning the spelling would hide it.
+      if (!tagOf.has(spelling)) tagOf.set(spelling, tag);
     }
   }
-  return names;
+  return { vocabulary, tagOf };
 }
+
+const EDGES: Edge[] = ["top", "right", "bottom", "left"];
 
 /**
  * Which label names which wall, decided across the whole sheet at once.
@@ -147,7 +152,8 @@ export function placeOpeningsOnPlan(args: {
   pages: PlanPage[];
   /** The document's elevation sheets, which is where it prints the names of
    * its own faces. */
-  elevationPages?: PlanPage[];
+  /** What this document calls its faces, read once as a Phase A fact. */
+  faceNames?: Set<string>;
   /** Which wall a look at the plan put a candidate against, by candidate id.
    * A wall named this way is placed but never called verified: the drawing did
    * not say it, something reading the drawing did. */
@@ -161,12 +167,12 @@ export function placeOpeningsOnPlan(args: {
   const rows = args.roster.map((tag) => normalizeOpeningRef(tag) ?? tag);
   const named = new Map<string, number>();
   for (const tag of rows) named.set(tag, (named.get(tag) ?? 0) + 1);
-  const vocabulary = new Set(rows);
+  const { vocabulary, tagOf } = rosterVocabulary(args.roster);
 
   // Every printed occurrence is collected first and judged after. Resolving
   // them as they arrive lets a third occurrence overwrite the refusal the
   // second one earned.
-  const faceNames = documentFaceNames(args.elevationPages ?? []);
+  const faceNames = args.faceNames ?? new Set<string>();
   const candidates = new Map<string, Candidate[]>();
   for (const { page, geometry } of args.pages) {
     const facts = planPageFacts(page, geometry, [...vocabulary], faceNames.size ? faceNames : undefined);
@@ -175,7 +181,8 @@ export function placeOpeningsOnPlan(args: {
     const storey = (title ? printedStorey(title) : null) ?? facts.storeyLabel;
     const seen = new Map<string, number>();
 
-    for (const { tag, word, ambiguous, identityEvidence } of openingTagWords(page.words, vocabulary, geometry)) {
+    for (const { tag: printed, word, ambiguous, identityEvidence } of openingTagWords(page.words, vocabulary, geometry)) {
+      const tag = tagOf.get(printed) ?? printed;
       const occurrence = (seen.get(tag) ?? 0) + 1;
       seen.set(tag, occurrence);
       const planCandidateId = `${tag}_p${geometry.pageNo}_${occurrence}`;
@@ -264,11 +271,16 @@ export function placeOpeningsOnPlan(args: {
       }
       continue;
     }
-    const ordered = [...wall].sort((a, b) => a.alongPt - b.alongPt);
+    // Ordered by fraction of the wall, which is the one quantity every opening
+    // on it expresses in the same terms. A recovered opening's position is a
+    // fraction of the wall it was seen on, while its tag may be printed nearest
+    // a different and shorter edge — turning that fraction back into points
+    // against the wrong wall's length numbers a wall against its own positions.
+    const ordered = [...wall].sort((a, b) => alongFraction(a) - alongFraction(b));
     // Two openings at the same point along a wall cannot be numbered: whichever
     // went first would be a guess, and Phase D would match on it.
     const tiedAlong = ordered.some((candidate, at) =>
-      at > 0 && Math.abs(candidate.alongPt - ordered[at - 1].alongPt) < 0.5);
+      at > 0 && Math.abs(alongFraction(candidate) - alongFraction(ordered[at - 1])) < TIED_ALONG_WALL);
     if (tiedAlong) {
       for (const candidate of wall) {
         refused.set(candidate.tag, "two openings sit at the same point along this wall");
@@ -285,11 +297,13 @@ export function placeOpeningsOnPlan(args: {
         planEvidenceBoxPt: [candidate.word.x0, candidate.word.top, candidate.word.x1, candidate.word.bottom],
         wallOrder: index + 1,
         faceOpeningCount: ordered.length,
-        alongWallFraction: candidate.recoveredFraction
-          ?? (candidate.wallLengthPt > 0
-            ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt))
-            : null),
-        distanceFromStartPt: candidate.wallLengthPt > 0 ? candidate.alongPt : null,
+        alongWallFraction: candidate.wallLengthPt > 0 || candidate.recoveredFraction != null
+          ? alongFraction(candidate) : null,
+        // Points along the wall, but only where the tag's own edge is the wall
+        // being measured. A recovered opening's fraction belongs to a wall this
+        // never measured, and multiplying it back out invents a length.
+        distanceFromStartPt: candidate.recoveredFraction == null && candidate.wallLengthPt > 0
+          ? candidate.alongPt : null,
         // Placed either way — refusing an unvouched tag would lose openings on
         // every set that does not print sheet references — but a placement the
         // drawing never confirmed does not claim the confidence of one it did.

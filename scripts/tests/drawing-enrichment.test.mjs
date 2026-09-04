@@ -25,8 +25,11 @@ await build({
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
+      export { documentFaceNames, documentFaceSheets } from ${p("worker/lib/drawing/sheetFaces.ts")};
       export { placeOpeningsOnPlan } from ${p("worker/lib/drawing/faceMapped/planFaces.ts")};
-      export { planFaceRecoveryRequest, validatePlanFaceAnswer } from ${p("worker/lib/drawing/faceMapped/planFacesSkill.ts")};
+      export { elevationFaceTasks, validateElevationFrames } from ${p("worker/lib/drawing/faceMapped/elevationFrames.ts")};
+      export { matchFacePlacements } from ${p("worker/lib/drawing/faceMapped/matchFrames.ts")};
+      export { planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS } from ${p("worker/lib/drawing/faceMapped/planFacesSkill.ts")};
       export { recoverPageScales, validateStatedScale, recoverSheetFacts } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
@@ -47,7 +50,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, documentFaceNames, documentFaceSheets, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, elevationFaceTasks, validateElevationFrames, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2212,6 +2215,187 @@ const planRooms = [
   { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
 ];
 
+// ── Phase D — matching plan order to elevation frames (§7.3) ───────────────
+const frameAt = (orderLeftToRight, x0, x1) => ({
+  frameId: `f${orderLeftToRight}`,
+  orderLeftToRight,
+  outerFrameBoxPt: [x0, 200, x1, 400],
+  storeyBandPt: [0, 150, 1_000, 450],
+});
+const placedAt = (tag, wallOrder, alongWallFraction, count) => ({
+  tag, planPageNo: 4, planCandidateId: `${tag}_p4_1`, storey: "GROUND FLOOR", elevation: "A",
+  planEvidenceBoxPt: [0, 0, 1, 1], wallOrder, faceOpeningCount: count, alongWallFraction,
+  distanceFromStartPt: alongWallFraction * 100, confidence: "verified", basis: [],
+});
+
+test("elevation inventory: one task per face and storey, saying what the schedule expects there (§7.2)", () => {
+  // The plan has already said which wall each opening is in and in what order.
+  // A face task is that answer turned into a question for the elevation: this
+  // many openings, these widths, on this sheet.
+  const built = elevationFaceTasks({
+    placements: [
+      { ...placedAt("W1", 1, 0.1, 2), elevation: "A", storey: "GROUND FLOOR" },
+      { ...placedAt("W2", 2, 0.8, 2), elevation: "A", storey: "GROUND FLOOR" },
+      { ...placedAt("W5", 1, 0.5, 1), elevation: "A", storey: "FIRST FLOOR" },
+      { ...placedAt("W3", 1, 0.4, 1), elevation: "B", storey: "GROUND FLOOR" },
+      { ...placedAt("W4", 1, 0.4, 1), elevation: "C", storey: "GROUND FLOOR" },
+    ],
+    faceSheets: new Map([["A", [7]], ["B", [7]]]),
+    widthByTag: new Map([["W1", 1800], ["W2", 900], ["W3", 600], ["W4", 600], ["W5", 1200]]),
+    sheets: new Map([[7, { overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }]]),
+  });
+
+  assert.deepEqual(built.tasks.map((t) => [t.elevation, t.storey, t.expectedOpeningCount]),
+    [["A", "GROUND FLOOR", 2], ["A", "FIRST FLOOR", 1], ["B", "GROUND FLOOR", 1]]);
+  assert.deepEqual(built.tasks[0].scheduledWidthsMm, [1800, 900],
+    "widths run in the plan's own wall order, so the elevation can be compared against them");
+  assert.equal(built.tasks[0].pageNo, 7);
+  assert.equal(built.tasks[0].overviewRenderId, "r7");
+  assert.equal(new Set(built.tasks.map((t) => t.faceKey)).size, 3, "face and storey together key a task");
+
+  // A wall the plan named but no elevation sheet draws is a lost opening, not a
+  // quiet omission: nothing downstream can crop what was never asked for.
+  assert.deepEqual(built.skipped.map((s) => s.elevation), ["C"]);
+  assert.match(built.skipped[0].reason, /no elevation sheet|C/i);
+});
+
+const faceTask = (expectedOpeningCount, scheduledWidthsMm = []) => ({
+  faceKey: JSON.stringify([7, "A", "GROUND FLOOR"]),
+  pageNo: 7, elevation: "A", storey: "GROUND FLOOR",
+  expectedOpeningCount, scheduledWidthsMm,
+  overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [],
+});
+
+test("elevation inventory: a frame list is checked against the face it was asked about (§7.2)", () => {
+  const storeyBand = [0.05, 0.2, 0.95, 0.7];
+  const clean = validateElevationFrames(
+    {
+      storeyBand,
+      frames: [{ box: [0.6, 0.3, 0.7, 0.6] }, { box: [0.1, 0.3, 0.2, 0.6] }, { box: [0.35, 0.3, 0.45, 0.6] }],
+    },
+    faceTask(3),
+  );
+  assert.equal(clean.state, "resolved");
+  assert.deepEqual(clean.frames.map((f) => f.orderLeftToRight), [1, 2, 3]);
+  assert.deepEqual(clean.frames.map((f) => Math.round(f.outerFrameBoxPt[0])), [100, 350, 600],
+    "frames are ordered by where they are drawn, not by the order they were listed in");
+  assert.equal(clean.frames.every((f) => f.faceKey === faceTask(3).faceKey && f.pageNo === 7), true);
+  assert.deepEqual(clean.frames[0].storeyBandPt.map((n) => Math.round(n)), [50, 140, 950, 490]);
+  assert.equal(clean.frames.every((f) => f.confidence === "verified"), true);
+
+  // A box with no width, a box drawn below the storey the question was about,
+  // and the same frame read twice are all dropped - and dropping them leaves a
+  // count the plan disagrees with, which is a conflict rather than an answer.
+  const dirty = validateElevationFrames(
+    {
+      storeyBand,
+      frames: [
+        { box: [0.1, 0.3, 0.2, 0.6] },
+        { box: [0.35, 0.3, 0.35, 0.6] },
+        { box: [0.6, 0.75, 0.7, 0.9] },
+        { box: [0.12, 0.3, 0.21, 0.6] },
+      ],
+    },
+    faceTask(3),
+  );
+  assert.equal(dirty.state, "unresolved");
+  assert.match(dirty.reason, /1 .*3|3 .*1/);
+  assert.equal(dirty.task.faceKey, faceTask(3).faceKey);
+});
+
+test("frame matching: an elevation read the other way round is matched the other way round (§7.3)", () => {
+  // The plan is drawn looking down, the elevation looking at the wall, so one
+  // face reads with the plan and the opposite against it. Getting this wrong is
+  // invisible: every opening still matches something.
+  //
+  // wallOrder always ascends with position along the wall, so the two lists are
+  // never in disagreeing order and the order alone settles nothing. The spacing
+  // does: openings crowded at one end of the plan wall are crowded at the far
+  // end of an elevation that looks at the wall from the other side.
+  const frames = [frameAt(1, 100, 200), frameAt(2, 700, 800), frameAt(3, 800, 900)];
+  const withPlan = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.06, 3), placedAt("W2", 2, 0.81, 3), placedAt("W3", 3, 0.94, 3)],
+    frames,
+  });
+  assert.equal(withPlan.direction, "with_plan");
+  assert.deepEqual(withPlan.matches.map((m) => [m.tag, m.frame.frameId]),
+    [["W1", "f1"], ["W2", "f2"], ["W3", "f3"]]);
+
+  const mirrored = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.06, 3), placedAt("W2", 2, 0.19, 3), placedAt("W3", 3, 0.94, 3)],
+    frames,
+  });
+  assert.equal(mirrored.direction, "against_plan");
+  assert.deepEqual(mirrored.matches.map((m) => [m.tag, m.frame.frameId]),
+    [["W1", "f3"], ["W2", "f2"], ["W3", "f1"]]);
+});
+
+test("frame matching: a face that reads the same both ways round is not matched (§7.3)", () => {
+  // Evenly spaced openings look identical from either side. Picking one way
+  // anyway pairs every opening with a frame and is wrong about half of them.
+  const result = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.0625, 3), placedAt("W2", 2, 0.5, 3), placedAt("W3", 3, 0.9375, 3)],
+    frames: [frameAt(1, 100, 200), frameAt(2, 400, 500), frameAt(3, 800, 900)],
+  });
+  assert.equal(result.direction, "unresolved");
+  assert.equal(result.matches.length, 0);
+  assert.match(result.reason, /both ways|either way|guess/i);
+});
+
+test("frame matching: one opening and one frame is the same pairing either way (§7.3)", () => {
+  // Direction is a fact about the wall, and one opening does not carry it: the
+  // scores are equal because there is nothing to be equal about. Refusing here
+  // would lose every face that has a single opening, which is most of them.
+  const result = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.3, 1)],
+    frames: [frameAt(1, 400, 500)],
+  });
+  assert.equal(result.matches.map((m) => [m.tag, m.frame.frameId]).length, 1);
+  assert.deepEqual(result.matches.map((m) => [m.tag, m.frame.frameId]), [["W1", "f1"]]);
+  assert.notEqual(result.direction, "unresolved");
+});
+
+test("frame matching: a count that does not agree is not matched (§7.3)", () => {
+  const result = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.1, 2), placedAt("W2", 2, 0.9, 2)],
+    frames: [frameAt(1, 100, 200), frameAt(2, 400, 500), frameAt(3, 800, 900)],
+  });
+  assert.equal(result.direction, "unresolved");
+  assert.equal(result.matches.length, 0);
+  assert.match(result.reason, /2 openings.*3 frames|count/i);
+});
+
+test("frame matching: a frame too narrow for its scheduled width is matched but not verified (§7.3)", () => {
+  // The scale says how wide 1800mm is on this page, so a frame drawn a third of
+  // that is either the wrong frame or a badly read box. Either way the crop it
+  // would produce is not one to trust silently.
+  const result = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.03, 3), placedAt("W2", 2, 0.83, 3), placedAt("W3", 3, 0.97, 3)],
+    frames: [frameAt(1, 100, 151), frameAt(2, 700, 751), frameAt(3, 800, 815)],
+    widthByTag: new Map([["W1", 1800], ["W2", 1800], ["W3", 1800]]),
+    pageScaleRatio: 100,
+  });
+  assert.equal(result.direction, "with_plan");
+  assert.deepEqual(result.matches.map((m) => [m.tag, m.widthAgreement]),
+    [["W1", "within_tolerance"], ["W2", "within_tolerance"], ["W3", "conflict"]]);
+  assert.deepEqual(result.matches.map((m) => m.confidence), ["verified", "verified", "ambiguous"]);
+  assert.match(result.matches[2].warnings.join(" "), /width/i);
+  assert.equal(result.matches[0].warnings.length, 0);
+  assert.equal(Math.round(result.matches[0].expectedWidthPt), 51);
+
+  // A page whose scale nothing states cannot contradict a width, and an
+  // unmeasured frame is not a suspicious one.
+  const unscaled = matchFacePlacements({
+    placements: [placedAt("W1", 1, 0.03, 3), placedAt("W2", 2, 0.83, 3), placedAt("W3", 3, 0.97, 3)],
+    frames: [frameAt(1, 100, 151), frameAt(2, 700, 751), frameAt(3, 800, 815)],
+    widthByTag: new Map([["W1", 1800], ["W2", 1800], ["W3", 1800]]),
+    pageScaleRatio: null,
+  });
+  assert.deepEqual(unscaled.matches.map((m) => m.widthAgreement), ["unknown", "unknown", "unknown"]);
+  assert.deepEqual(unscaled.matches.map((m) => m.expectedWidthPt), [null, null, null]);
+  assert.deepEqual(unscaled.matches.map((m) => m.confidence), ["verified", "verified", "verified"]);
+});
+
 test("plan recovery: only the unplaced are asked about, in the document's own words (P2-AC9, AC11, AC12)", () => {
   const plan = planSheet([
     tagWord("W1", 297, 250), tagWord("W2", 457, 540), tagWord("W3", 217, 400),
@@ -2222,6 +2406,8 @@ test("plan recovery: only the unplaced are asked about, in the document's own wo
   const first = placeOpeningsOnPlan({ pages: [plan], roster: ["W1", "W2", "W3"] });
   const asked = planFaceRecoveryRequest({ outcomes: first, pages: [plan], roster: ["W1", "W2", "W3"] });
   assert.deepEqual(asked.map((page) => page.pageNo), [4]);
+  assert.deepEqual(asked[0].pageCandidateIds.sort(), ["W1_p4_1", "W2_p4_1", "W3_p4_1"],
+    "every opening the page has, so an answer about one of them can be told from an invention");
   assert.deepEqual(asked[0].candidates.map((c) => c.tag).sort(), ["W2", "W3"],
     "an opening the plan already placed is not sent to a model");
   assert.equal(asked[0].candidates.every((c) => /^W[23]_p4_1$/.test(c.planCandidateId)), true);
@@ -2230,13 +2416,32 @@ test("plan recovery: only the unplaced are asked about, in the document's own wo
     [
       { planCandidateId: asked[0].candidates.find((c) => c.tag === "W2").planCandidateId, elevation: "B" },
       { planCandidateId: asked[0].candidates.find((c) => c.tag === "W3").planCandidateId, elevation: "A" },
-      { planCandidateId: "W9_p4_1", elevation: "A" },
-      { planCandidateId: asked[0].candidates[0].planCandidateId, elevation: "SOUTH" },
     ],
     new Set(asked[0].candidates.map((c) => c.planCandidateId)),
     new Set(["A", "B", "C", "D"]),
   );
-  assert.equal(answered.size, 2, "a candidate nobody asked about, and a face the document never names, are refused");
+  assert.equal(answered.size, 2);
+
+  // P2-AC13: a response that fails validation in part fails in whole. A reader
+  // that named a candidate nobody asked about, or a wall this document does not
+  // have, was not reading this page, and its other rows are not evidence of
+  // anything either - the openings it would have fixed stay unresolved.
+  for (const poison of [
+    { planCandidateId: "W9_p4_1", elevation: "A" },
+    { planCandidateId: asked[0].candidates[0].planCandidateId, elevation: "SOUTH" },
+    { planCandidateId: asked[0].candidates[0].planCandidateId, elevation: "B", alongWallFraction: 4 },
+    "not a row at all",
+  ]) {
+    const spoiled = validatePlanFaceAnswer(
+      [
+        { planCandidateId: asked[0].candidates.find((c) => c.tag === "W2").planCandidateId, elevation: "B" },
+        poison,
+      ],
+      new Set(asked[0].candidates.map((c) => c.planCandidateId)),
+      new Set(["A", "B", "C", "D"]),
+    );
+    assert.equal(spoiled.size, 0, `one bad row costs the page: ${JSON.stringify(poison)}`);
+  }
 
   // Where a tag is printed is not where its opening is: a set that carries its
   // tags on leader lines stacks them in a column, and ordering those by their
@@ -2269,6 +2474,122 @@ test("plan recovery: only the unplaced are asked about, in the document's own wo
   assert.equal(byTag.W3.placement.elevation, "A");
   assert.equal(byTag.W2.placement.confidence, "ambiguous", "a wall a model named is not a wall the drawing named");
   assert.equal(byTag.W1.placement.elevation, "D", "and what the text settled is untouched");
+});
+
+test("plan recovery: the call is closed and bounded (P2-AC11, AC13, AC14)", () => {
+  const skill = makePlanFaceSkill(
+    { pageNo: 4, candidates: [{ planCandidateId: "W2_p4_1", tag: "W2", boxNorm: [0.4, 0.6, 0.46, 0.64] }] },
+    new Set(["A", "B"]),
+  );
+  const row = skill.responseSchema.properties.placements.items;
+  assert.deepEqual(row.properties.elevation.enum, ["A", "B"],
+    "the model may name only walls this document names");
+  assert.deepEqual(row.properties.planCandidateId.enum, ["W2_p4_1"],
+    "and only openings this page was asked about");
+  assert.equal(row.additionalProperties, false);
+  assert.match(skill.buildPrompt(), /never instructions|not instructions/i,
+    "text on the page is data (P2-AC14)");
+  assert.match(skill.buildPrompt(), /W2_p4_1/);
+
+  assert.deepEqual(skill.validate({ placements: [{ planCandidateId: "W2_p4_1", elevation: "B" }] }),
+    new Map([["W2_p4_1", { elevation: "B", alongWallFraction: null }]]));
+  assert.equal(skill.validate({ placements: [{ planCandidateId: "W9_p4_1", elevation: "B" }] }), null,
+    "an answer that fails in part fails in whole, and an unusable answer is null, not an empty result");
+
+  // A reader looking at the whole plan sees openings we did not ask about,
+  // because the drawing already placed them. Volunteering one is not evidence
+  // that it misread the page - it is ignored, and the rest of the answer
+  // stands. Naming an opening the page does not have is the other thing
+  // entirely, and that still costs the page (P2-AC13).
+  const alsoOnPage = makePlanFaceSkill(
+    {
+      pageNo: 4,
+      candidates: [{ planCandidateId: "W2_p4_1", tag: "W2", boxNorm: [0.4, 0.6, 0.46, 0.64] }],
+      pageCandidateIds: ["W1_p4_1", "W2_p4_1", "W3_p4_1"],
+    },
+    new Set(["A", "B"]),
+  );
+  assert.deepEqual(
+    alsoOnPage.validate({ placements: [
+      { planCandidateId: "W1_p4_1", elevation: "A" },
+      { planCandidateId: "W2_p4_1", elevation: "B" },
+    ] }),
+    new Map([["W2_p4_1", { elevation: "B", alongWallFraction: null }]]),
+    "what the drawing already settled is not overwritten by an answer nobody asked for");
+  assert.equal(alsoOnPage.validate({ placements: [
+    { planCandidateId: "W2_p4_1", elevation: "B" },
+    { planCandidateId: "W9_p4_1", elevation: "A" },
+  ] }), null);
+
+  // One call per plan page, and a document cannot buy itself unlimited calls by
+  // having unlimited pages.
+  const many = Array.from({ length: PLAN_FACE_LIMITS.maxPages + 4 }, (_unused, at) => {
+    const sheet = planSheet([tagWord("W1", 297, 250), ...planRooms]);
+    return { page: { ...sheet.page, pageNo: at + 1 }, geometry: { ...sheet.geometry, pageNo: at + 1 } };
+  });
+  const asked = planFaceRecoveryRequest({
+    outcomes: [{ state: "unresolved", tag: "W1", reason: "the plan does not name this wall" }],
+    pages: many,
+    roster: ["W1"],
+  });
+  assert.equal(asked.length, PLAN_FACE_LIMITS.maxPages);
+  assert.equal(new Set(asked.map((page) => page.pageNo)).size, PLAN_FACE_LIMITS.maxPages);
+});
+
+test("plan placement: ordinals follow the position along the wall, not the tag's own edge (P2-AC3)", () => {
+  // Where a tag is printed and where its opening is are two different places.
+  // A recovered opening's position is a fraction of the wall it was seen on,
+  // but the tag may sit nearest a different edge - a shorter one - and turning
+  // that fraction back into points against the wrong wall's length puts the
+  // openings on a wall in an order that contradicts their own positions.
+  const plan = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 217, 400), tagWord("W3", 727, 400),
+    ...planRooms,
+  ]);
+  const faceByCandidate = new Map([
+    ["W1_p4_1", { elevation: "B", alongWallFraction: 0.5 }],
+    ["W2_p4_1", { elevation: "B", alongWallFraction: 0.9 }],
+    ["W3_p4_1", { elevation: "B", alongWallFraction: 0.1 }],
+  ]);
+  const placed = placeOpeningsOnPlan({
+    pages: [plan], roster: ["W1", "W2", "W3"], faceNames: new Set(["A", "B"]), faceByCandidate,
+  }).filter((o) => o.state === "resolved").map((o) => o.placement)
+    .sort((a, b) => a.wallOrder - b.wallOrder);
+
+  assert.deepEqual(placed.map((p) => p.tag), ["W3", "W1", "W2"]);
+  assert.deepEqual(placed.map((p) => p.alongWallFraction), [0.1, 0.5, 0.9],
+    "the ordinals a face hands to an elevation must agree with the positions it hands over with them");
+});
+
+test("plan placement: a schedule that writes W1 and a plan that writes W01 are one opening (P2-AC1)", () => {
+  // Measured on a real set: its window schedule prints W1, W2, W3 and its floor
+  // plans print W01, W02, W03. Matching those as different strings places
+  // nothing at all - every opening reads as "not tagged on any plan page" while
+  // its tag is printed right there on the drawing.
+  const plan = planSheet([
+    tagWord("W01", 297, 250), tagWord("W02", 457, 540),
+    ...planRooms,
+    { text: "A", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  const placed = placeOpeningsOnPlan({ pages: [plan], roster: ["W1", "W2"], faceNames: new Set(["A", "B"]) });
+  assert.deepEqual(placed.map((o) => o.state), ["resolved", "resolved"]);
+  assert.deepEqual(placed.map((o) => o.placement.tag), ["W1", "W2"],
+    "an opening answers to the name its schedule gave it, whatever the plan prints");
+  assert.deepEqual(placed.map((o) => o.placement.elevation), ["A", "B"]);
+
+  // And the other way round, because which of the two is padded is the
+  // draughtsman's habit, not a rule.
+  const padded = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540),
+    ...planRooms,
+    { text: "A", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  assert.deepEqual(
+    placeOpeningsOnPlan({ pages: [padded], roster: ["W01", "W02"], faceNames: new Set(["A", "B"]) })
+      .map((o) => o.placement?.tag),
+    ["W01", "W02"]);
 });
 
 test("plan placement: the copyright strip is not a storey (P2-AC5)", () => {
@@ -2324,7 +2645,14 @@ test("plan placement: the document's own face names are the vocabulary (P2-AC5, 
     },
     geometry: { pageNo: 9, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 },
   };
-  const outcomes = placeOpeningsOnPlan({ pages: [plan], elevationPages: [elevations], roster: ["W1", "W2"] });
+  // The names, and which sheet draws each, are read once as a document fact and
+  // handed to placement. Phase C never looks at an elevation sheet itself
+  // (P2-AC15): its whole job is the plan.
+  const sheets = documentFaceSheets([elevations]);
+  assert.deepEqual([...sheets.entries()], [["FRONT", [9]], ["REAR", [9]]]);
+  assert.deepEqual([...documentFaceNames([elevations])], ["FRONT", "REAR"]);
+
+  const outcomes = placeOpeningsOnPlan({ pages: [plan], faceNames: new Set(sheets.keys()), roster: ["W1", "W2"] });
   const byTag = Object.fromEntries(outcomes.map((o) => [o.placement?.tag ?? o.tag, o]));
   assert.equal(byTag.W1.state, "resolved", JSON.stringify(byTag.W1));
   assert.equal(byTag.W1.placement.elevation, "FRONT");
