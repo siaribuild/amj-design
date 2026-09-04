@@ -155,6 +155,19 @@ const CHIP_BY_KEY = new Map(WAIT_CHIPS.map((c) => [c.key, c]));
 export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: "" };
 
 /**
+ * `?wait=` from a notification link, read once and only once.
+ *
+ * Validates against `WAIT_CHIPS`' own keys rather than trusting the param —
+ * a stale or hand-typed link naming a chip that no longer exists must not
+ * silently apply itself as a query. `null` means "no instruction", not "the
+ * default chip"; the caller decides what null does.
+ */
+export function chipFromSearch(search: string): ChipKey | null {
+  const key = new URLSearchParams(search).get("wait");
+  return WAIT_CHIPS.some((c) => c.key === key) ? (key as ChipKey) : null;
+}
+
+/**
  * Fixed order, not user-sortable: ours first, then longest neglected.
  *
  * The server already sorts this way (`worker/routes/ops.ts`) and states why —
