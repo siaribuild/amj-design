@@ -62,8 +62,10 @@ const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
 const TITLE_IDENTIFIER = /^[A-Z0-9](?:-[A-Z0-9])?$/;
 const MAX_TITLE_QUALIFIERS = 2;
 /** `SEE SECTION A-A` points at a drawing; it is not one. A cross-reference
- * accepted as a title invents a view and mis-tiles the sheet around it. */
-const CROSS_REFERENCE = /^(?:SEE|REFER|REFERENCE|PER|NOTE|NOTES|TYPICAL|TYP|SIMILAR|SIM)$/;
+ * accepted as a title invents a view and mis-tiles the sheet around it.
+ * Only words that point away from the drawing belong here: `TYPICAL SECTION`
+ * and `TYP ELEVATION` are titles, and rejecting them loses a real view. */
+const CROSS_REFERENCE = /^(?:SEE|REFER|REFERENCE|PER)$/;
 const REFERENCE_REACH = 6;
 
 /** Drawing titles as the document writes them — `ELEVATION A`, `NORTH

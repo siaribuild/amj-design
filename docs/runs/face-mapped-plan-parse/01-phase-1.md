@@ -58,7 +58,7 @@ recorded in a `ponytail:` comment rather than fixed — `1:100 @ A3` keeps the
 ratio and drops the paper size, `1:1,000` is not read — both failing towards
 fewer candidates, which the scale-conflict rule handles.
 
-**Codex — seven P2s across four rounds, six fixed:**
+**Codex — ten P2s across five rounds, nine fixed:**
 
 1. Named views (`NORTH ELEVATION`) produced no regions at all, so every scale
    came back unbound.
@@ -74,8 +74,17 @@ fewer candidates, which the scale-conflict rule handles.
 6. Two side-by-side views with staggered title baselines were read as a grid,
    handing the lower view a thin band that excludes its own drawing. A grid
    now needs titles sharing both a column and a row.
-7. *Overruled by the owner:* "add scale candidates to the shared harvest",
-   citing the handover text that the 2026-09-04 ruling amended.
+7. Line reconstruction used `sameLine`'s 1.5-height tolerance, which merges two
+   rows at ordinary title-block spacing — and a merged row sorts a word from
+   above between `1` and `100`. Rows are grouped by glyph-box overlap now.
+8. `TYPICAL SECTION` and `TYP ELEVATION` are titles, and finding 4's fix was
+   discarding them. Only words that point away from a drawing — see, refer,
+   reference, per — reject an anchor.
+9. `FALL: 1:100`, `FALL TO 1:100` and `RAMP @ 1:20` slipped past a check that
+   read one adjacent token and matched it exactly. The phrase around the ratio
+   is read now, punctuation stripped.
+10. *Overruled by the owner:* "add scale candidates to the shared harvest",
+    citing the handover text that the 2026-09-04 ruling amended.
 
 ## Known ceilings
 

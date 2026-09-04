@@ -72,15 +72,27 @@ export interface DrawingScaleCandidate {
 const SCALE_RATIO = /^1\s*[:/]\s*(\d{1,5})$/;
 const SCALE_LABEL = /^SCALE:?$/i;
 /** A drainage fall, a ramp grade and a roof pitch all print `1:100`. Only the
- * word beside it says which one the drawing means. */
-const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP)$/i;
+ * words beside it say which one the drawing means, and they are printed with
+ * whatever punctuation and connectors the drafter liked: `FALL: 1:100`,
+ * `FALL TO 1:100`, `RAMP @ 1:20`. Read the phrase around the ratio, not the
+ * one token touching it. */
+const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP|CROSSFALL)$/i;
+const PHRASE_REACH = 2;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
 const MAX_OPEN_LINES = 3;
 
+/** Two words are on one printed row when their glyph boxes actually overlap
+ * vertically. `sameLine`'s 1.5-height tolerance is right for finding a title's
+ * neighbours, but at ordinary title-block line spacing it merges two rows —
+ * and a merged row sorts a word from above between `1` and `100`. */
+const sharesRow = (a: PageWord, b: PageWord): boolean =>
+  Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    > Math.max(Math.min(a.bottom - a.top, b.bottom - b.top), 1) * 0.5;
+
 const adjacent = (a: PageWord, b: PageWord): boolean =>
-  sameLine(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
+  sharesRow(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
 
 /** A scale belongs to the title it is printed under, which is not always the
  * band it lands in: stacked views end at their own title line, so a ratio one
@@ -133,9 +145,11 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
           consumed = size;
           const ratio = Number(match[1]);
           const prior = at > 0 ? words[at - 1] : null;
-          const next = at + size < words.length ? words[at + size] : null;
-          const qualifier = [prior, next].find((word) =>
-            word && NOT_A_SCALE.test(word.text.trim()) && adjacent(word, word === prior ? window[0] : window[size - 1]));
+          const phrase = [
+            ...words.slice(Math.max(0, at - PHRASE_REACH), at),
+            ...words.slice(at + size, at + size + PHRASE_REACH),
+          ];
+          const qualifier = phrase.some((word) => NOT_A_SCALE.test(word.text.trim().replace(/[^A-Za-z]/g, "")));
           // 1:0 parses but cannot scale anything, and no drawing is printed
           // smaller than 1:20000 — both are text that merely looks like a scale.
           if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
@@ -171,7 +185,7 @@ function textLines(words: PageWord[]): PageWord[][] {
   for (const word of [...words].sort((a, b) => a.top - b.top || a.x0 - b.x0)) {
     let placed = false;
     for (let line = lines.length - 1; line >= 0 && line >= lines.length - MAX_OPEN_LINES; line--) {
-      if (!sameLine(lines[line][lines[line].length - 1], word)) continue;
+      if (!sharesRow(lines[line][lines[line].length - 1], word)) continue;
       lines[line].push(word);
       placed = true;
       break;

@@ -2072,6 +2072,40 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
   assert.equal(candidates[0].pageNo, 1);
 });
 
+test("view scale: a fall stays a fall through a colon, a connector or an at sign", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(100, [["FALL:", 100, 40], ["1:100", 145, 40]]),
+    ...line(200, [["FALL", 100, 35], ["TO", 140, 20], ["1:100", 165, 40]]),
+    ...line(300, [["RAMP", 100, 40], ["@", 145, 12], ["1:20", 162, 35]]),
+    ...line(400, [["SCALE", 100, 40], ["1:50", 145, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
+    "a drainage note keeps its meaning across the punctuation and connectors drawings print it with");
+});
+
+test("view scale: TYPICAL SECTION is a drawing, not a reference to one", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["TYPICAL", 100, 60], ["SECTION", 165, 70], ["SCALE", 245, 40], ["1:20", 290, 35]]),
+    ...line(600, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [20, 100]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
+    "a qualifier in front of a title names the drawing; only a reference verb points away from it");
+  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
+});
+
+test("view scale: tight line spacing does not fold two rows into one", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    // A title block sets its rows about one text height apart. Folding them
+    // together sorts a word from the row above between the ratio's tokens.
+    { text: "TITLE", x0: 260, top: 300, x1: 300, bottom: 315 },
+    { text: "1", x0: 255, top: 316, x1: 263, bottom: 331 },
+    { text: ":", x0: 266, top: 316, x1: 270, bottom: 331 },
+    { text: "100", x0: 274, top: 316, x1: 298, bottom: 331 },
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
+});
+
 test("view scale: two views side by side stay side by side, however their titles sit", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(300, [["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40]]),
