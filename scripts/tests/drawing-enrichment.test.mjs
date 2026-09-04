@@ -2002,10 +2002,16 @@ test("page scale: only the footer says what the sheet is drawn at (AC8)", () => 
   assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
 });
 
-test("page scale: a title column on the right is the footer too (AC8)", () => {
-  const sheet = scaleSheet(line(300, [["SCALE", 880, 40], ["1:100", 925, 40]]));
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]],
-    "a landscape sheet states its scale in the right-hand title column, not along the bottom");
+test("page scale: high on the sheet is not the footer, however far right (AC8)", () => {
+  // Measured on a real set: the sheet scale sits at 91% down, and a driveway
+  // gradient at 95% across but 73% down. Admitting the right-hand edge as
+  // footer reads that gradient as the drawing's scale.
+  const sheet = scaleSheet([
+    ...line(611, [["GRADIENT", 1_000, 60], ["IS", 1_065, 15], ["1:47", 1_085, 35]]),
+    ...line(768, [["1:200", 1_020, 40]]),
+  ]);
+  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [200]);
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 200]]);
 });
 
 test("page scale: the document map says what each page is drawn at, and stays silent where it cannot (AC9)", () => {

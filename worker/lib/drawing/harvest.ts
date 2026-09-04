@@ -72,10 +72,11 @@ export interface DrawingScaleCandidate {
  * the PDF drew `SCALE 1:100` as one run or three is not the drawing's meaning. */
 const SCALE_RATIO = /^(?:SCALE\s*)?1\s*[:/]\s*(\d{1,5})$/i;
 const SCALE_LABEL = /^SCALE$/i;
-/** The sheet footer: the bottom band, or the right-hand column that carries the
- * title block on a landscape sheet. A drawing states its scale there once, so
- * a ratio printed anywhere else on the sheet is measuring something the drawing
- * contains rather than saying how the drawing was made. */
+/** The sheet footer: the bottom band of the page. A drawing states its scale
+ * there once, so a ratio printed anywhere else is measuring something the
+ * drawing contains rather than saying how the drawing was made. Measured on
+ * two real sets, the stated scale sits at 91% down; a driveway gradient at 73%
+ * down and 95% across is not the footer, however close to the edge it is. */
 const FOOTER_FRACTION = 0.15;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
@@ -118,7 +119,7 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
           Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
           Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
         ];
-        if (!inFooter(box, geometry.widthPt, geometry.heightPt)) continue;
+        if (!inFooter(box, geometry.heightPt)) continue;
         found.push({
           pageNo: page.pageNo,
           ratio,
@@ -132,12 +133,10 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
   });
 }
 
-/** A sheet states its scale in the footer: the bottom band, or the right-hand
- * title column. Judged on the evidence's centre, so a ratio straddling the
- * boundary belongs wherever it is mostly printed. */
-function inFooter(box: CropBoxPt, widthPt: number, heightPt: number): boolean {
-  return (box[1] + box[3]) / 2 >= heightPt * (1 - FOOTER_FRACTION)
-    || (box[0] + box[2]) / 2 >= widthPt * (1 - FOOTER_FRACTION);
+/** Judged on the evidence's centre, so a ratio straddling the boundary belongs
+ * wherever it is mostly printed. */
+function inFooter(box: CropBoxPt, heightPt: number): boolean {
+  return (box[1] + box[3]) / 2 >= heightPt * (1 - FOOTER_FRACTION);
 }
 
 /** Where the ratios are on one printed row, each as the words that spell it. */
