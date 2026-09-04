@@ -19,13 +19,12 @@ const STEPS = {
   selectPages: { selected: [{ pageNo: 2, tier: "primary", reason: "elevation" }], of: 3 },
   elevationRegions: [{ pageNo: 2, labels: ["North"] }],
   renderCrop: { pagesRendered: 1, cropsMade: 2 },
-  read: { attempted: 2, returned: 2, declined: 0, retriedWithThreshold: 0 },
+  read: { attempted: 2, returned: 2, declined: 0, retriedWithThreshold: 0, targetedReviews: 3 },
   placements: { fromText: 2, fromModelFallback: 0, unplaced: 0 },
   northAssumed: false,
 };
 const reportJson = (files) => JSON.stringify({ files });
 
-const port_ = () => {};
 
 test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async (t) => {
   const runDir = await makeRunDir("meta-api");
@@ -78,9 +77,22 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
     await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version, status, started_at, drawing_report_json)
                VALUES ('air_new','p_meta','v1','completed', datetime('now','-1 hours'), '${reportJson([
                  { fileId: "fa_other", steps: STEPS, perOpening: [{ tag: "W99", outcome: "read" }], wallMs: 111, modelCalls: 1 },
-                 { fileId: "fa_1", steps: { ...STEPS, failedPhase: "render" }, perOpening: [
-                   { tag: "W05", outcome: "read" }, { tag: "W06", outcome: "not_read" },
-                 ], wallMs: 4200, modelCalls: 3 },
+                 { fileId: "fa_1", steps: { ...STEPS, failedPhase: "render", spuriousField: "must not reach the DTO" }, perOpening: [
+                   // EXACTLY the two shapes fullDocumentAgent emits. The main
+                   // rejection path (:1288) pushes { turn, reasons } and NOTHING
+                   // else - no stage, no outcome - and never an empty reasons
+                   // array. The escalation pass (:1514) always pushes turn 1,
+                   // because it is a separate pass rather than a continuation of
+                   // the main turn counter, with exactly one reason.
+                   { tag: "W05", outcome: "read", attempts: 4, acceptedTurn: 3, corrections: [
+                     { turn: 1, reasons: ["identity_tag_not_on_plan_page"] },
+                     { turn: 2, reasons: ["evidence_render_or_frame_invalid", "basis_required"] },
+                     { turn: 1, stage: "escalation", outcome: "replaced", reasons: ["close_up_verified"] },
+                   ] },
+                   { tag: "W06", outcome: "not_read" },
+                 ], wallMs: 4200, modelCalls: 3,
+                    cachedTurns: 6, repairedTurns: 2, inputTokens: 486000, outputTokens: 31000,
+                    providerFailure: { failureKind: "rate_limited", warnings: ["retried once"] } },
                ])}')`);
 
     // The reading row for W05, on the LATEST run, with everything set — the
@@ -171,9 +183,33 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
 
       assert.equal(body.run.startedAt.length > 0, true);
       assert.equal(body.run.outcome, "read", "W05's own outcome in fa_1's perOpening — not fa_other's W99");
-      assert.deepEqual(body.run.document, {
-        fileId: "fa_1", steps: STEPS, failedPhase: "render", wallMs: 4200, modelCalls: 3,
-      }, "the CONTAINING file (fa_1), never fa_other — and never an aggregate of both");
+      assert.deepEqual(body.run.document.steps, STEPS,
+        "every allow-listed step count, including targetedReviews");
+      assert.equal(body.run.document.fileId, "fa_1",
+        "the CONTAINING file (fa_1), never fa_other — and never an aggregate of both");
+      assert.equal(body.run.document.failedPhase, "render");
+      assert.equal(Object.hasOwn(body.run.document.steps, "spuriousField"), false,
+        "THE ALLOW-LIST IS THE POINT: a field the parser adds later must not become public by a spread");
+
+      // The run's own telemetry (19-of-19), behind the Run door with the counts.
+      assert.deepEqual(body.run.document.telemetry, {
+        cachedTurns: 6, repairedTurns: 2, inputTokens: 486000, outputTokens: 31000,
+      });
+      assert.deepEqual(body.run.document.providerFailure,
+        { failureKind: "rate_limited", warnings: ["retried once"] },
+        "a provider failure and an unreadable drawing need different people; they must not look alike");
+
+      // THE CORRECTION TRAIL — the agent proposing, being caught by its own
+      // rails, and correcting itself. Reasons stay raw codes.
+      assert.equal(body.attempts, 4);
+      assert.equal(body.acceptedTurn, 3);
+      // `stage` and `outcome` are NULL on a main-path rejection because the
+      // parser does not write them there - not because they were dropped.
+      assert.deepEqual(body.corrections, [
+        { turn: 1, reasons: ["identity_tag_not_on_plan_page"], stage: null, outcome: null },
+        { turn: 2, reasons: ["evidence_render_or_frame_invalid", "basis_required"], stage: null, outcome: null },
+        { turn: 1, stage: "escalation", outcome: "replaced", reasons: ["close_up_verified"] },
+      ]);
     });
 
     await t.test("AC-7 a parsed opening the drawing run reported on, but never wrote a reading row for", async () => {
@@ -182,6 +218,13 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
       assert.equal(body.reading, null, "no reading row for W06 — the tab still exists, the expansion says so");
       assert.equal(body.run.outcome, "not_read", "fa_1's perOpening still names W06");
       assert.equal(body.run.document.fileId, "fa_1");
+    });
+
+    await t.test("an opening read first time carries no trail — absence is the signal", async () => {
+      const { body } = await meta("p_meta", "ql_w06");
+      assert.deepEqual(body.corrections, [], "no corrections, not a missing field the client must guard");
+      assert.equal(body.attempts, null);
+      assert.equal(body.acceptedTurn, null);
     });
 
     await t.test("AC-29 the allow-list has no crop key, no R2 path, no forbidden field", async () => {
@@ -193,7 +236,7 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
       // still name the recorded reason (AC-10). It is a short enum value
       // (`model_declined`, `render_failed`, ...), never drawing text.
       assert.deepEqual(Object.keys(JSON.parse(raw)).sort(),
-        ["gapCode", "hasCrop", "reading", "reasoningParts", "run"]);
+        ["acceptedTurn", "attempts", "corrections", "gapCode", "hasCrop", "reading", "reasoningParts", "run"]);
     });
 
     await t.test("AC-30 no gap_note text or crop key in the worker's own log", async () => {

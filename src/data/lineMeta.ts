@@ -41,9 +41,36 @@ export interface MetaRunSteps {
   selectPages: { selected: { pageNo: number; tier: string; reason: string }[]; of: number };
   elevationRegions: { pageNo: number; labels: string[] }[];
   renderCrop: { pagesRendered: number; cropsMade: number };
-  read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number };
+  read: { attempted: number; returned: number; declined: number; retriedWithThreshold: number; targetedReviews: number | null };
   placements: { fromText: number; fromModelFallback: number; unplaced: number };
   northAssumed: boolean;
+}
+
+/** One correction the agent's own rails forced on it. TWO SHAPES AT SOURCE,
+ *  normalised here to four keys so the client never branches on a missing one:
+ *
+ *    main rejection   `{ turn, reasons }`                    - no stage, no outcome
+ *    escalation       `{ turn: 1, stage, outcome, reasons }`  - turn is ALWAYS 1
+ *
+ *  `stage`/`outcome` are null on a main rejection because the parser writes
+ *  none there, not because they were dropped. Reasons are raw codes
+ *  (`identity_tag_not_on_plan_page`), never prose — the same rule the state
+ *  words follow. */
+export interface MetaCorrection {
+  turn: number;
+  reasons: string[];
+  stage: string | null;
+  outcome: string | null;
+}
+
+/** What the run cost and whether the machine itself broke — Run door, bottom.
+ *  `providerFailure` is separate from a gap code on purpose: a model call that
+ *  failed and a drawing nothing could be read from need different people. */
+export interface MetaRunTelemetry {
+  cachedTurns: number | null;
+  repairedTurns: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export interface MetaRunDocument {
@@ -52,6 +79,8 @@ export interface MetaRunDocument {
   failedPhase: string | null;
   wallMs: number | null;
   modelCalls: number | null;
+  telemetry: MetaRunTelemetry;
+  providerFailure: { failureKind: string | null; warnings: string[] } | null;
 }
 
 export interface LineMetaDto {
@@ -67,6 +96,14 @@ export interface LineMetaDto {
   // has no reading to carry it, and a decline is exactly when the reason is
   // worth reading. The code says WHAT stopped it; this says why.
   reasoningParts: string[];
+  // THE AGENT CORRECTING ITSELF. Top-level, not inside `reading`, because a
+  // declined opening has no reading and its trail is the most interesting one
+  // on the tab. `attempts`/`acceptedTurn` are null when the report predates
+  // 19-of-19 and carries neither — ABSENT is unknown, never 0, because the
+  // parser writes a real 0 for an opening it touched.
+  attempts: number | null;
+  acceptedTurn: number | null;
+  corrections: MetaCorrection[];   // [] = read first time; absence IS the signal
   reading: MetaReading | null;   // null = no reading, INCLUDING a declined row
   run: {
     startedAt: string;                    // ai_runs.started_at
