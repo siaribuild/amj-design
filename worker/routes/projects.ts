@@ -121,9 +121,16 @@ export async function loadLines(env: Env, projectId: string) {
       height: String(dims.height ?? ""),
       qtyPerParent: s.qty_per_parent,
       qty: s.qty,
-      // Segment prices are DISPLAY-ONLY and the client must never sum them: the
-      // parent's line_total is the authoritative figure.
-      lineTotal: s.line_total,
+      // THE FIGURE NEVER LEAVES THE BUILDING. Until composite parents could
+      // carry a manufacturer price, a parent's total WAS the sum of its
+      // segments, so shipping each segment's price disclosed nothing. Now the
+      // parent's total is what AMJ quoted and the segments hold the platform's
+      // own computed prices, so the difference between them is the MARGIN - and
+      // this payload is customer-readable (verify F3).
+      //
+      // The client never printed the figure anyway: UnitRow.tsx reads it only
+      // to decide `incomplete`. So it gets that fact and nothing else.
+      priced: s.line_total != null,
       options: safeParse(s.options_json) as Record<string, string>,
       status: s.status === "ready" ? "Ready" : "Needs review",
       note: s.room_label ?? "",

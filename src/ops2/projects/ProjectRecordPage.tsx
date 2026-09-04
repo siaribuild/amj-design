@@ -493,7 +493,13 @@ export function ProjectRecordPage() {
                         onOpenDrawing={(unitIndex) => openDrawing(selected.id, unitIndex)}
                         price={(
                           <PricePanel line={selected} reload={reload}
-                            editable={record.orderNo == null && selected.lineKind !== "composite_parent"} />
+                            /* ONE RULE, ONE PLACE. This canvas renders the same LineReview
+                               and the same PricePanel as the line page, so it must ask the
+                               same question. It was asking two stale ones: `lineKind` (the
+                               refusal this feature removes) and `orderNo` rather than the
+                               server's `linesEditable` - which put a door on an issued,
+                               not-yet-ordered project onto a 404. Verify F2. */
+                            editable={record.orderNo == null && record.linesEditable} />
                         )}
                         why={(
                           <WhyPanel

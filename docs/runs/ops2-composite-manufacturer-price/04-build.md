@@ -58,6 +58,28 @@ composite parent" comment (t2 now accepts it) — no assertion changed.
 10/10. `ProjectRecordPage.tsx` still gates its own PricePanel on `lineKind` (not in this
 task's file list) — untouched, flag if the next task expects it aligned too.
 
+## t4 - Playwright: composite price-door journey and frozen-window refusal
+
+WRITTEN BY THE BUILD, NEVER COMMITTED. t4 reported code 0 and appended no
+section; a concurrent session then switched the shared working tree to its own
+branch and stashed the uncommitted edits. Verify F1 caught it: run.json listed
+t4 done while the branch carried no client-side coverage at all. Recovered from
+the stash by SHA and committed in 0d98d1d1; this entry is the record that was
+missing.
+
+Files: scripts/tests/web/ops2-record.spec.ts, scripts/tests/web/ops2-line-why.spec.ts
+
+What the tests assert:
+- a composite parent's Price panel is a DOOR and opens the calculator, which
+  cannot pass unless the fixture carries the server's `linesEditable`
+- `line-units` shows no `$` once the parent carries a price (grill decision 4)
+- a frozen record (`linesEditable: false`) opens no door on EITHER line kind -
+  composite or simple - so the freeze is not a composite-only rule
+
+For the next session: the fixtures now carry `linesEditable`, because
+`parseProjectRecord` fails closed without it and every line-page door test goes
+red - which is exactly how the missing coverage was detected.
+
 ## t5 - Sharpen CONTEXT.md, record ADR 0017, fix the stale ops v1 comment
 
 Files: `CONTEXT.md` (Manufacturer price entry), `docs/adr/0017-composite-parent-manufacturer-price.md`

@@ -47,7 +47,7 @@ export function UnitRow({
   // lineTotal separates them without a server change: no price ⇒ incomplete ⇒
   // actionable. A priced-but-flagged unit shows nothing, and the parent's price
   // still carries the caveat where it belongs.
-  const incomplete = !(typeof segment.lineTotal === "number" && Number.isFinite(segment.lineTotal));
+  const incomplete = !segment.priced;
 
   // A size fault this unit can be BLAMED for (owner) — the ACROSS-axis one. The
   // rule and its reasoning now live in ONE place, unitAcrossMismatch, shared

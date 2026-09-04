@@ -581,6 +581,25 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(w12.lineTotal, segs.reduce((n, x) => n + x.line_total, 0), "the opening total IS the sum of its units");
       assert.notEqual(w12.lineTotal, openingTotal);
 
+      // F3 - THE WIRE MUST NOT CARRY THE MARGIN. Until this feature a composite
+      // parent's total WAS the sum of its segments, so shipping each segment's
+      // figure to the customer disclosed nothing. Once AMJ's price governs the
+      // parent, the gap between it and the platform's own computed segment
+      // prices IS the margin - on a payload the customer can read.
+      //
+      // The customer client never prints a segment price: UnitRow.tsx uses it
+      // only as a presence check. So the wire carries that fact and not the money.
+      const custView = await requestJson(cust, '/api/projects/current');
+      const custW12 = (custView.body.items ?? []).find((i) => i.code === 'W12');
+      assert.ok(custW12, 'the customer can see their own opening');
+      assert.equal(custW12.segments.length, 2, 'and its two units');
+      for (const seg of custW12.segments) {
+        assert.equal(Object.hasOwn(seg, 'lineTotal'), false,
+          'a segment price must not reach the customer wire at all');
+        assert.equal(typeof seg.priced, 'boolean',
+          'the client needs whether a unit is priced, never how much');
+      }
+
       // Every unit INHERITS the opening's spec. Creating them with no options was
       // discarding the customer's colour and hardware — and, because most option
       // rows carry a surcharge, re-pricing the units as bare product.
