@@ -50,10 +50,6 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
     if (labels.some((item) => item.label === label)) continue;
     labels.push({ label, x: (identifier.x0 + identifier.x1) / 2, y: (identifier.top + identifier.bottom) / 2 });
   }
-  return tileRegions(labels, widthPt, heightPt);
-}
-
-function tileRegions(labels: LabelPoint[], widthPt: number, heightPt: number): ElevationRegion[] {
   if (!labels.length) return [];
   if (labels.length === 1) return [{ label: labels[0].label, region: [0, 0, widthPt, heightPt] }];
 

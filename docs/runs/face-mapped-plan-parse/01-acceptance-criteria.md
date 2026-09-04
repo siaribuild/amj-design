@@ -64,8 +64,10 @@ it, then 3000 mm at 1:100 is 85.04 pt and 900 mm at 1:100 is 25.51 pt.
 **AC11.** Given the reference set `lot312-536a.pdf`, when the map is built, then
 pages 2, 3 and 14 read 1:200, pages 4–11 read 1:100, page 12 reads 1:20, and
 pages 1 and 13 carry none.
-→ *the reference set's footer scales are the map* (checked against the real PDF,
-which is not committed)
+→ No committed test can assert this: §3 invariant 12 forbids the customer PDF
+in Git, and §14 assigns the ignored replay corpus to Task 12. Until then this
+criterion is met by a recorded manual run, and the phase record names the
+commit it was last run at. **Task 12 must convert it into a replay assertion.**
 
 ## Out of scope — must NOT exist
 
@@ -76,9 +78,10 @@ a test.
 **AC12.** No code attributes a scale to a view, region, title or elevation.
 Scale is per page.
 
-**AC13.** No list of note subjects — no fall, grade, gradient, pitch, ramp,
-driveway, stair or their kin anywhere in the source. The footer decides, so no
-vocabulary is needed and none may be reintroduced.
+**AC13.** No code branches on a list of note subjects — fall, grade, gradient,
+pitch, ramp, driveway, stair or their kin. The footer decides, so no vocabulary
+is needed and none may be reintroduced. Test fixtures may print such notes:
+that is how they prove the footer rule ignores them.
 
 **AC14.** No drawing-title detection, region tiling, or title-anchor geometry
 in the scale path.
@@ -91,6 +94,29 @@ Phases C and D.
 
 **AC17.** Nothing in `faceMapped/` beyond what Tasks 1–2 name: `contract.ts`
 holding `expectedWidthPt` only.
+
+## Known ceilings, and judgement calls a reviewer should see
+
+- **The footer is a band, not the title block itself.** `FOOTER_FRACTION` is
+  15% of the page, bottom or right. A ratio a drawing prints inside that band
+  is accepted, so a note low on a sheet could still be read as its scale. No
+  set to hand does this; locating the real title-block rectangle would be more
+  geometry than the evidence justifies.
+- **The map reports every page, not only pages of interest.** The ruling says
+  detail sheets are not asked for a scale; the engine asks about the pages it
+  is working on, and `pageScales` answering for page 12 as well costs nothing.
+  Filtering by page role inside the map would put Phase C's tiers into Task 2.
+- **`MAX_OPEN_LINES`** bounds row reconstruction to the last three open rows —
+  an invented ceiling that keeps the grouping linear on pages with thousands of
+  words.
+- `1:100 @ A3` keeps the ratio and drops the paper size; `1:1,000` is not read.
+
+## Deferred, with the phase that owns each
+
+- A face-mapped caller for `viewScaleCandidates` / `pageScales` — Task 10.
+- Frame-width calibration, median effective scale, and the null
+  `expectedWidthPt` path for conflicting scales — §7.4's later half, Task 6.
+- The reference-set map as a replay assertion — Task 12 (see AC11).
 
 ## Gates
 

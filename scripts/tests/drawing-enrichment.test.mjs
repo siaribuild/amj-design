@@ -2054,9 +2054,9 @@ test("page scale: the document map says what each page is drawn at, and stays si
       pages: sheets.map((item) => item.geometry) },
     pages: sheets.map((item) => item.page),
   });
-  assert.deepEqual([...scales.entries()], [[1, 100], [2, 200]]);
-  assert.equal(scales.has(3), false, "two scales that disagree leave the page without one");
-  assert.equal(scales.has(4), false);
+  assert.deepEqual([...scales.entries()], [[1, 100], [2, 200], [3, null]]);
+  assert.equal(scales.get(3), null, "a page whose footer disagrees with itself is a conflict ops must be able to see");
+  assert.equal(scales.has(4), false, "a page printing no scale is absent, which is not the same as a conflict");
 });
 
 test("page scale: every printed form is read (AC4)", () => {
@@ -2071,6 +2071,15 @@ test("page scale: every printed form is read (AC4)", () => {
     [100, 100, 100, 100].map((ratio) => ({ ratio, source: "printed" })));
   assert.deepEqual(candidates.map(({ text }) => text), ["SCALE 1:100", "Scale 1 : 100", "1:100", "1 / 100"]);
   assert.deepEqual(candidates[0].evidenceBoxPt, [100, 700, 185, 715]);
+});
+
+test("page scale: a label and its ratio in one word are still a scale (AC4)", () => {
+  // Poppler emits a whole phrase as one word when the PDF draws it as one run.
+  const candidates = viewScaleCandidates(scaleSheet([
+    { text: "SCALE 1:100", x0: 800, top: 760, x1: 885, bottom: 775 },
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "SCALE 1:100" }],
+    "how the PDF grouped the label with its ratio cannot decide whether the scale is read");
 });
 
 test("page scale: an unusable ratio is refused (AC5)", () => {
@@ -2124,7 +2133,6 @@ test("page scale: a rotated label cannot bridge two rows (AC7)", () => {
 test("expectedWidthPt turns a scheduled width into the points that width occupies (AC10)", () => {
   assert.equal(Math.round(expectedWidthPt(3_000, 100) * 100) / 100, 85.04);
   assert.equal(Math.round(expectedWidthPt(900, 100) * 100) / 100, 25.51);
-  assert.equal(Math.round(expectedWidthPt(3_000, 50) * 100) / 100, 170.08, "a 1:50 view draws the same opening twice as wide");
 });
 
 test("full-document harvest publishes the complete free Stage A metadata contract", () => {

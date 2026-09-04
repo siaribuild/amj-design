@@ -88,7 +88,9 @@ Add `face_mapped` to the extended AI-job deadline condition. The 600-second leas
 - `worker/lib/drawing/containerClient.ts`: inspection and rendering.
 - `worker/lib/drawing/selectPages.ts`: deterministic page tiers and existing role-recovery inputs.
 - `worker/lib/drawing/locate.ts`: tag candidates, plan footprint, elevation markers, and order candidates.
-- `worker/lib/drawing/north.ts`: orientation calculations.
+- `worker/lib/drawing/locate.ts`: orientation calculations (`resolveNorth`,
+  `orientationsFromNorth`). Erratum, 2026-09-04: this handover named a
+  `north.ts` that has never existed in the repository.
 - `worker/lib/drawing/pool.ts`: bounded parallel map with stable ordering.
 - `worker/lib/drawing/contract.ts`: readings, reports, and page/render contracts.
 - `worker/lib/ai/stage.ts`: provider calls, replay hash, validation, metrics, and diagnostics.
@@ -467,7 +469,11 @@ Do not persist page text, prompts, full responses, or base64 in `drawing_report_
 
 **Files:** modify `harvest.ts`; create `faceMapped/contract.ts`; modify drawing tests.
 
-- [ ] Add red cases for the four supported printed forms, invalid ratios, two scales on one page, ambiguous association, and the 3000/900 mm conversions.
+- [ ] Add red cases for the four supported printed forms, invalid ratios, two
+      ratios on one page that disagree, and the 3000/900 mm conversions. The
+      "ambiguous association" case this checklist first named is superseded:
+      the 2026-09-04 ruling reads the scale from the footer, so a ratio is
+      never associated with a view and there is no ambiguity to resolve.
 - [ ] Implement scale candidates and pure `expectedWidthPt`.
 - [ ] Verify `FullDocumentHarvest` JSON is byte-for-byte unchanged (golden
       fixture captured from the pre-move implementation), and that

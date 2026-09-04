@@ -68,14 +68,15 @@ export interface DrawingScaleCandidate {
   source: "printed" | "inferred";
 }
 
-const SCALE_RATIO = /^1\s*[:/]\s*(\d{1,5})$/;
-const SCALE_LABEL = /^SCALE:?$/i;
+/** The label is optional and may share a word with the ratio, because whether
+ * the PDF drew `SCALE 1:100` as one run or three is not the drawing's meaning. */
+const SCALE_RATIO = /^(?:SCALE\s*)?1\s*[:/]\s*(\d{1,5})$/i;
+const SCALE_LABEL = /^SCALE$/i;
 /** The sheet footer: the bottom band, or the right-hand column that carries the
- * title block on a landscape sheet. A drawing states its scale there once, and
- * a ratio printed anywhere else measures something the drawing contains — a
- * ramp, a fall, a stair, a detail's own label. */
+ * title block on a landscape sheet. A drawing states its scale there once, so
+ * a ratio printed anywhere else on the sheet is measuring something the drawing
+ * contains rather than saying how the drawing was made. */
 const FOOTER_FRACTION = 0.15;
-const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
 const MAX_OPEN_LINES = 3;
@@ -107,9 +108,8 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     // `1` and `100`, and the split forms vanish.
     for (const words of textLines(page.words)) {
       for (const { at, size, ratio } of ratioWindows(words)) {
-        // 1:0 parses but cannot scale anything, and no drawing is printed
-        // smaller than 1:20000 — both are text that merely looks like a scale.
-        if (ratio < 1 || ratio > MAX_SCALE_RATIO) continue;
+        // 1:0 parses but cannot scale anything.
+        if (ratio < 1) continue;
         const window = words.slice(at, at + size);
         const prior = at > 0 ? words[at - 1] : null;
         const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
@@ -149,9 +149,7 @@ function ratioWindows(words: PageWord[]): { at: number; size: number; ratio: num
     for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
       const window = words.slice(at, at + size);
       if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
-      // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
-      // part of the sentence, not of the ratio.
-      const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
+      const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join(""));
       if (!match) continue;
       consumed = size;
       found.push({ at, size, ratio: Number(match[1]) });
@@ -163,17 +161,19 @@ function ratioWindows(words: PageWord[]): { at: number; size: number; ratio: num
 }
 
 /** What each page is drawn at — the scale half of Phase A's document map.
- * A page's scale is the ratio everything printed on it agrees about. Two
- * ratios that disagree leave the page absent from the map: a conflict is for
- * ops to see, never a vote to settle, and a wrong scale sizes a wrong crop. */
-export function pageScales(inspected: InspectResponse): Map<number, number> {
-  const scales = new Map<number, number>();
+ *
+ * A page's scale is the ratio its footer agrees about. A footer that disagrees
+ * with itself maps to `null`, which is not the same as a page that prints no
+ * scale and is absent: the first is a conflict ops must be shown, the second is
+ * simply a page that never said. Neither is settled by a vote — a wrong scale
+ * sizes a wrong crop. */
+export function pageScales(inspected: InspectResponse): Map<number, number | null> {
+  const scales = new Map<number, number | null>();
   for (const candidate of viewScaleCandidates(inspected)) {
     const seen = scales.get(candidate.pageNo);
     if (seen === undefined) scales.set(candidate.pageNo, candidate.ratio);
-    else if (seen !== candidate.ratio) scales.set(candidate.pageNo, Number.NaN);
+    else if (seen !== candidate.ratio) scales.set(candidate.pageNo, null);
   }
-  for (const [pageNo, ratio] of [...scales]) if (Number.isNaN(ratio)) scales.delete(pageNo);
   return scales;
 }
 
