@@ -110,3 +110,22 @@ Files: scripts/tests/api.test.mjs, scripts/tests/api-edge.test.mjs.
 manufacturer loop, Access-mode assertion-less session) now also assert
 body.submissions === undefined. No worker change — route already returns
 {error:"forbidden"}. npm run test:api and npm run test:trade both green.
+
+## T7 - Attention browser suite: failure, skeleton, staleness, unauthorised
+
+Files: scripts/tests/web/ops2-attention.spec.ts (append only).
+
+6 new tests: degraded summary (18), 500 (19), retry-after-unroute recovery
+(20), skeleton visible pre-resolve (21), leave/return re-fetch + stale-reply
+guard (22), signed-in customer (non-staff) gets unauthorised copy not zero
+counts (26).
+
+Case 26 needed its own fixture, not staffCookies: customer login via
+page.evaluate/fetch inside a fresh context navigated to OPS2 first — the
+session cookie is host-only (no Domain attr, worker/lib/auth.ts), so a
+page.request-based login (resolves against baseURL 127.0.0.1) never reaches
+ops.localhost and silently tests anonymous access instead. Test pins the raw
+response status (403, not 401) to keep this from regressing unnoticed, since
+useSummary.ts's UI copy is identical for both.
+
+10/10 pass. typecheck:gate green. No other files touched.
