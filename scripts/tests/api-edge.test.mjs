@@ -1503,7 +1503,8 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
       // Everything else is refused. Quotes, orders, money, pricing, staff, audit.
       for (const path of ["/api/ops/projects", "/api/ops/customers", "/api/ops/files",
         "/api/ops/audit", "/api/ops/staff", "/api/ops/pricing/rate-cards", "/api/ops/summary"]) {
-        await requestJson(mfr, path, {}, 403);
+        const denied = await requestJson(mfr, path, {}, 403);
+        assert.equal(denied.body.submissions, undefined, "denial body carries no counts");
       }
       await requestJson(mfr, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
       await requestJson(mfr, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} }, 403);
@@ -1880,7 +1881,8 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
         // Reads still fail closed without an assertion — the fallback is off, not
         // merely unused, which is the property the OTP guard has to preserve.
         await requestJson(s, "/api/ops/me", {}, 401);
-        await requestJson(s, "/api/ops/summary", {}, 403);
+        const summary = await requestJson(s, "/api/ops/summary", {}, 403);
+        assert.equal(summary.body.submissions, undefined, "denial body carries no counts");
       } finally {
         await stop(accessServer);
       }

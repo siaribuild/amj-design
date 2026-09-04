@@ -71,7 +71,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(health.body.ok, true);
       assert.deepEqual(health.body.bindings, { db: true, files: true, kv: true });
       await requestJson(anonymous, "/api/not-a-route", {}, 404);
-      await requestJson(anonymous, "/api/ops/summary", {}, 403);
+      const anonSummary = await requestJson(anonymous, "/api/ops/summary", {}, 403);
+      assert.equal(anonSummary.body.submissions, undefined, "denial body carries no counts");
       await requestJson(anonymous, "/api/orders/o_1", {}, 404);
       await requestJson(anonymous, "/api/auth/verify", { method: "POST", json: { email: "bad", code: "1" } }, 400);
       const neutral = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-00000" } });
@@ -1715,7 +1716,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // same, because losing candidates are a consultation surface, not an
       // account's data (D15). Their prices expose the rate card's shape.
       await requestJson(customer, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);
-      await requestJson(customer, "/api/ops/summary", {}, 403);
+      const custSummary = await requestJson(customer, "/api/ops/summary", {}, 403);
+      assert.equal(custSummary.body.submissions, undefined, "denial body carries no counts");
       await requestJson(anonymous, "/api/ops/lines/ql_e/configurations", {}, 403);
       await requestJson(customer, "/api/ops/lines/ql_e/configurations", {}, 403);
 
