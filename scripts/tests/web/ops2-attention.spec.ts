@@ -143,3 +143,18 @@ test("a 500 renders the same error panel, and zero rows", async ({ page }) => {
   await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
 });
+
+test("retry after unrouting a failed summary recovers to ready", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(ATTENTION);
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+
+  // Unroute BEFORE retrying so the click's fetch hits the real, working stub.
+  await page.unroute(SUMMARY_URL);
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await error.getByRole("button", { name: "Try again" }).click();
+
+  await expect(page.getByTestId("attention-error")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+});
