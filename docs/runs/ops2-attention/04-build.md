@@ -222,3 +222,40 @@ Green: `node --test scripts/tests/pipeline.test.mjs` -> 98/98 (96 owed +
 2 new: the autocompactArgs direct-branch test and the tree wrapped-shape
 test). `node scripts/pipeline/conduct.mjs tree` runs clean against the
 real ops2-attention run, no throw. `npm run typecheck:gate`: green.
+
+## Review-finding fixes (07-review-codex, 07-review-ponytail)
+
+**(1) CODEX P2 — skeleton flash on re-entry.** `useSummary`'s effect set
+`{status:"loading"}` unconditionally on every `attempt` change, including the
+`ionViewWillEnter` refetch on an already-loaded page — violating design
+§4.2 ("re-entering the screen does not flash the skeleton"). Red first:
+added `"re-entering an already-loaded page never shows the skeleton (design
+§4.2)"` to `scripts/tests/web/ops2-attention.spec.ts` — holds the second
+`/api/ops/summary` call open after a leave-and-return, asserts the skeleton
+has count 0 and the prior row text is still showing while it's in flight,
+then releases and checks the new count lands. Ran red first (row vanished,
+never came back — confirmed the flash). Fix: `setLoad({status:"loading"})`
+-> `setLoad((prev) => prev.status === "ready" ? prev : {status:"loading"})`
+— only "ready" counts as a prior answer worth keeping; a retry from
+"error"/"unauthorised" still shows the skeleton, since there was nothing to
+show. The existing stale-response-guard test
+("leaving and returning re-fetches...never overwrites a newer one") stays
+green — untouched invariant. `npx playwright test ops2-attention`: 12/12.
+
+**(2) PONYTAIL — dead `AttentionRow.label`.** Never read: `AttentionPage`
+renders `row.count` and `row.noun` in their own slots, nothing imports
+`.label`. Its doc comment's accessible-name claim was false — no accessible
+name is built from it. Deleted the field, its doc comment, and the
+`label: \`${count} ${noun}\`` assignment in `attention.ts`; deleted the test
+that only exercised it (`"attentionGroups: every row label is
+number-leading"`, `scripts/tests/ops2-attention.test.mjs`). `npm run
+test:ops2`: 102/102.
+
+**(3) PONYTAIL — `.claude/launch.json` reformatting churn.** Reverted the
+one-line -> four-line `runtimeArgs` reformat on the four pre-existing
+entries (vite-dev, vite-ops2, worker-dev, sanity-studio), unrelated to this
+feature. Kept the new `ops2-worker` entry as-is.
+
+Verify: `npm run typecheck:gate` green (58 pre-existing non-fatal, none
+new). `npm run test:ops2` 102/102. `npx playwright test ops2-attention`
+12/12.

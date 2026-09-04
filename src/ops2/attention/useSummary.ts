@@ -20,7 +20,12 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
 
   useEffect(() => {
     let live = true;
-    setLoad({ status: "loading" });
+    // Re-entering with an answer already in hand keeps that answer on screen
+    // while the re-fetch runs (design §4.2) — loading is only for when there
+    // is nothing to show yet. "ready" is the only status that counts as an
+    // answer; "error"/"unauthorised" are not, so a retry from those still
+    // shows the skeleton.
+    setLoad((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
 
     fetch("/api/ops/summary", { credentials: "same-origin" })
       .then(async (res) => {

@@ -221,6 +221,39 @@ test("leaving and returning re-fetches, and a slow reply to a superseded request
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions");
 });
 
+test("re-entering an already-loaded page never shows the skeleton (design §4.2)", async ({ page }) => {
+  // Call 1 resolves immediately (first load). Call 2 (the re-fetch on
+  // return) is held open, so the assertion below happens while it is still
+  // in flight — the previous answer must stay on screen, not the skeleton.
+  let release2 = () => {};
+  const held2 = new Promise<void>((r) => { release2 = r; });
+  let calls = 0;
+  await page.route(SUMMARY_URL, async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      return route.fulfill({ json: SUMMARY_STUB });
+    }
+    await held2;
+    return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 9 } });
+  });
+
+  await page.goto(ATTENTION);
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+
+  const attentionLink = page.getByRole("link", { name: "Attention" });
+  const productsLink = page.getByRole("link", { name: "Products" });
+
+  await productsLink.click();
+  await expect(page).toHaveURL(`${OPS2}/products`);
+  await attentionLink.click();
+
+  await expect(page.getByTestId("attention-skeleton")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+
+  release2();
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("9 new submissions");
+});
+
 test("a signed-in customer (non-staff) loading /attention gets the unauthorised treatment, not zero counts", async ({ browser }) => {
   // Real /api/ops/summary, no stub — proves the actual server-side role check
   // (401/403), not a fabricated one. Own context, goto(OPS2) BEFORE logging

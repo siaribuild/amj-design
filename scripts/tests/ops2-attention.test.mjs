@@ -188,15 +188,3 @@ test("AttentionPage: per-group section.att-group, RowList/Row wired to history, 
   assert.ok(!/activeOrders/.test(bare), "AttentionPage must never read activeOrders");
   assert.ok(!/\bcustomers\b/.test(bare), "AttentionPage must never read the raw customers field");
 });
-
-test("attentionGroups: every row label is number-leading (starts with its count)", () => {
-  const groups = attentionGroups(FULL_COUNTS);
-  for (const group of groups) {
-    for (const row of group.rows) {
-      assert.ok(
-        row.label.startsWith(String(row.count)),
-        `label "${row.label}" for ${row.key} does not start with its count ${row.count}`,
-      );
-    }
-  }
-});
