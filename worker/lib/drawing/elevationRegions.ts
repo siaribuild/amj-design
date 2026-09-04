@@ -57,7 +57,10 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
  * be bound to the title it sits under rather than to the band it lands in. */
 export type DrawingViewRegion = ElevationRegion & { titlePt: [number, number] };
 
-const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?)$/;
+// A detail is a view like any other, and it is the one most likely to carry a
+// different scale from the drawing beside it — which is exactly the case the
+// binding has to keep apart.
+const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?|DETAILS?)$/;
 const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
 const TITLE_IDENTIFIER = /^[A-Z0-9](?:-[A-Z0-9])?$/;
 const MAX_TITLE_QUALIFIERS = 2;

@@ -58,7 +58,7 @@ recorded in a `ponytail:` comment rather than fixed — `1:100 @ A3` keeps the
 ratio and drops the paper size, `1:1,000` is not read — both failing towards
 fewer candidates, which the scale-conflict rule handles.
 
-**Codex — ten P2s across five rounds, nine fixed:**
+**Codex — twelve P2s across six rounds, eleven fixed:**
 
 1. Named views (`NORTH ELEVATION`) produced no regions at all, so every scale
    came back unbound.
@@ -83,7 +83,15 @@ fewer candidates, which the scale-conflict rule handles.
 9. `FALL: 1:100`, `FALL TO 1:100` and `RAMP @ 1:20` slipped past a check that
    read one adjacent token and matched it exactly. The phrase around the ratio
    is read now, punctuation stripped.
-10. *Overruled by the owner:* "add scale candidates to the shared harvest",
+10. A `DETAIL` was not a view, so `DETAIL A SCALE 1:10` beside `ELEVATION A
+    SCALE 1:100` put both ratios on the elevation and invented a conflict.
+    A detail is the view most likely to carry its own scale.
+11. `FALL TO OUTLET 1:100` and `RAMP UP AT 1:20` name their subject three
+    tokens back, outside the two-word window. A ratio's subject is now read by
+    walking its printed phrase until a keyword decides it — `SCALE` accepts,
+    `FALL` or `RAMP` refuses — and the walk stops at a gap too wide to be one
+    phrase, so nothing is inherited from the next column.
+12. *Overruled by the owner:* "add scale candidates to the shared harvest",
     citing the handover text that the 2026-09-04 ruling amended.
 
 ## Known ceilings

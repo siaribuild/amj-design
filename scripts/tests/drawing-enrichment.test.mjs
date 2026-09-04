@@ -2072,6 +2072,27 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
   assert.equal(candidates[0].pageNo, 1);
 });
 
+test("view scale: the nearer keyword decides, however many words away it is", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(100, [["FALL", 100, 35], ["TO", 140, 20], ["OUTLET", 165, 55], ["1:100", 225, 40]]),
+    ...line(200, [["RAMP", 100, 40], ["UP", 145, 20], ["AT", 170, 20], ["1:20", 195, 35]]),
+    ...line(300, [["SCALE", 100, 40], ["1:50", 145, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
+    "a drainage note names its subject once and then runs on; the phrase decides, not the touching token");
+});
+
+test("view scale: a detail printed beside an elevation keeps its own scale", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
+    ...line(600, [["DETAIL", 100, 55], ["A", 160, 10], ["SCALE", 185, 40], ["1:10", 230, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 10]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5],
+    "a detail at 1:10 beside an elevation at 1:100 is two views, not one view in conflict with itself");
+  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
+});
+
 test("view scale: a fall stays a fall through a colon, a connector or an at sign", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(100, [["FALL:", 100, 40], ["1:100", 145, 40]]),

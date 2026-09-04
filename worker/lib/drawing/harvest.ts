@@ -77,7 +77,7 @@ const SCALE_LABEL = /^SCALE:?$/i;
  * `FALL TO 1:100`, `RAMP @ 1:20`. Read the phrase around the ratio, not the
  * one token touching it. */
 const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP|CROSSFALL)$/i;
-const PHRASE_REACH = 2;
+const PHRASE_REACH = 4;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
@@ -145,11 +145,8 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
           consumed = size;
           const ratio = Number(match[1]);
           const prior = at > 0 ? words[at - 1] : null;
-          const phrase = [
-            ...words.slice(Math.max(0, at - PHRASE_REACH), at),
-            ...words.slice(at + size, at + size + PHRASE_REACH),
-          ];
-          const qualifier = phrase.some((word) => NOT_A_SCALE.test(word.text.trim().replace(/[^A-Za-z]/g, "")));
+          const qualifier = subject(words, at, -1) === "not_a_scale"
+            || (subject(words, at, -1) === null && subject(words, at + size - 1, 1) === "not_a_scale");
           // 1:0 parses but cannot scale anything, and no drawing is printed
           // smaller than 1:20000 — both are text that merely looks like a scale.
           if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
@@ -175,6 +172,21 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     }
     return found;
   });
+}
+
+/** What the ratio at `from` is a ratio *of*, read by walking one direction
+ * through the phrase it is printed in and stopping at the first word that
+ * says: `SCALE` makes it a drawing scale, `FALL` or `RAMP` makes it neither.
+ * The walk ends at a gap too wide to be one phrase, so a ratio cannot inherit
+ * a subject from the next column of the title block. */
+function subject(words: PageWord[], from: number, step: -1 | 1): "scale" | "not_a_scale" | null {
+  for (let at = from + step, walked = 0; at >= 0 && at < words.length && walked < PHRASE_REACH; at += step, walked++) {
+    if (!adjacent(words[at], words[at - step])) return null;
+    const text = words[at].text.trim().replace(/[^A-Za-z]/g, "");
+    if (SCALE_LABEL.test(text)) return "scale";
+    if (NOT_A_SCALE.test(text)) return "not_a_scale";
+  }
+  return null;
 }
 
 /** Page words grouped into printed lines, each ordered left to right. Words
