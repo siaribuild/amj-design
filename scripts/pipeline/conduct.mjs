@@ -128,7 +128,18 @@ export function parseSeverity(args) {
 }
 
 // --- stage table -----------------------------------------------------------
-// compact: context window cap, in tokens.
+// compact: context window cap, in tokens. 600k everywhere, owner 2026-09-04.
+//
+// It was 100k-200k per stage and four stages died of it in a single run — ux,
+// polish, review-security and review-ponytail, every one of them ending in
+// `terminal_reason: rapid_refill_breaker`: the context refilled to the cap
+// within three turns of a compact, three times running, and the model gave up.
+// A stage that reads a mock, a spec, a design and a diff cannot do it inside
+// 100k, so it compacts, re-reads to answer the next question, and compacts
+// again. Raising the cap is not indulgence; below it these stages cannot
+// finish at all, and a stage that cannot finish is the most expensive kind.
+//
+// This is a CAP, not an allocation: a stage that needs 80k still uses 80k.
 // tiers:   which tier sizes run this stage.
 //
 // There is deliberately NO runaway guard here - no dollar ceiling, no token
@@ -138,9 +149,23 @@ export function parseSeverity(args) {
 // Dollars are not the measure either: the owner is on a subscription, so this
 // conductor prints tokens and time and never a currency figure.
 
+// The architect writes 02-tasks.json as a bare array — the shape the stage
+// prompt shows and the shape both readers below iterate. It has now written
+// `{ run, design, tasks: [...] }` instead THREE times, a reasonable-looking
+// file that threw "tasks is not iterable" from `conduct plan` and
+// "tasks.map is not a function" from `checkPlan`, killing the build at the
+// gate. Read it in one place, accept either, and the two readers stop caring
+// which shape the model felt like producing.
+function readTasks(file) {
+  const raw = JSON.parse(readFileSync(file, 'utf8'))
+  const tasks = Array.isArray(raw) ? raw : raw?.tasks
+  if (!Array.isArray(tasks)) throw new Error(file + ': no task array (expected [...] or { tasks: [...] })')
+  return tasks
+}
+
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
+    id: 'spec', agent: 'product-manager', compact: 600000, tiers: ['full'],
     needs: ['00-ask.md'], produces: ['01-spec.md'], check: checkSpec,
     prompt: (r) => `Write the spec for this feature.
 
@@ -167,7 +192,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', compact: 120000, tiers: ['full'],
+    id: 'design', agent: 'architect', compact: 600000, tiers: ['full'],
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -227,7 +252,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 200000, mcp: true, tiers: ['full'],
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 600000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -246,26 +271,25 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    // THE ONLY STAGE WHOSE CAP IS NOT 120k, and the reason is measured rather
-    // than preferred. A build task's working set is not what it writes - it is
-    // the PATTERN it copies: the route it sits beside plus the test file it is
-    // modelled on. Measured on ops2-parse-metadata T1, that pair was a
-    // 2,506-line route and a 49k-char test, and at 120k the pair does not fit
-    // beside the turn. Every compact dropped them, the next turn re-read them,
-    // and the run died on the rapid-refill breaker twice - 9.5M context tokens
-    // spent to write one file of five. A cap below the working set does not
-    // save the difference; it pays it repeatedly and then fails.
+    // A build task's working set is not what it WRITES — it is the PATTERN it
+    // copies: the route it sits beside plus the test file it is modelled on.
+    // Measured on ops2-parse-metadata T1, that pair was a 2,506-line route and
+    // a 49k-char test; at 120k the pair does not fit beside the turn, so every
+    // compact dropped them, the next turn re-read them, and the run died on the
+    // rapid-refill breaker twice — 9.5M context tokens to write one file of
+    // five. A cap below the working set does not save the difference; it pays
+    // it repeatedly and then fails.
     //
-    // 250k is sized off that measurement, not chosen round: pattern pair ~90k,
-    // leaving room for several turns of work before the first compact. Lower it
-    // again the moment tasks stop needing a big pattern beside them.
-    id: 'build', agent: 'developer', sliced: true, compact: 250000, tiers: ['full', 'fix'],
+    // That measurement sized this at 250k. The owner then set 600k across every
+    // stage (2026-09-04), which supersedes it — same reasoning, more headroom.
+    // It is a CAP, not an allocation: a task needing 90k still uses 90k.
+    id: 'build', agent: 'developer', sliced: true, compact: 600000, tiers: ['full', 'fix'],
     // Not 02-tasks.json: the fix tier has no architect to write one, and for
     // the full tier runBuild gives a better message about its absence.
     needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true, tiers: ['full'],
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 600000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -276,7 +300,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', compact: 120000, tiers: ['full', 'fix'],
+    id: 'verify', agent: 'tester', compact: 600000, tiers: ['full', 'fix'],
     cycle: true,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
@@ -288,7 +312,7 @@ WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
     id: 'review', parallel: true, tiers: ['full'], needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000, tiers: ['full'],
+    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 600000, tiers: ['full'],
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -347,7 +371,7 @@ Findings go back to a developer, not to you - do not fix code.`
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', compact: 100000,
+    id: 'conformance', agent: 'architect', compact: 600000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the paths that
@@ -370,17 +394,18 @@ write a file: you are read-only by design and the write will be refused.`,
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    // 250k, not 100k, and only these two. Both read the WHOLE diff; conformance
-    // reads a path list and survives 100k on the same feature. Measured on
-    // ops2-parse-metadata (1,609 insertions over 12 files): security and
-    // ponytail both died on the rapid-refill breaker at 100k, having produced
-    // nothing, while conformance finished inside 241k total. Cap the stage that
-    // fits; pay for the stage that does not, because a cap below the working set
-    // is spent repeatedly and then fails anyway.
-    id: 'security', slash: '/security-review', compact: 250000, headless: true,
+    // BOTH READ THE WHOLE DIFF, which is why they were the two that kept dying.
+    // Measured on ops2-parse-metadata (1,609 insertions over 12 files): security
+    // and ponytail both hit the rapid-refill breaker at 100k having produced
+    // NOTHING, while conformance — which reads a path list — finished inside
+    // 241k. Observed independently on ops2-why-price-deltas, where the same two
+    // failed the same way and the run reached an acceptance gate with half its
+    // review missing. A cap below the working set is spent repeatedly and then
+    // fails anyway, and here it fails by silently removing a review layer.
+    id: 'security', slash: '/security-review', compact: 600000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 250000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 600000,
   },
   { id: 'codex', codex: true },
 ]
@@ -1031,7 +1056,10 @@ export function checkSpec(text) {
   if (assumed)
     out.push(assumed + ' ASSUMED tag(s) - each is a decision taken on the owner`s behalf until he vetoes it')
 
-  if (!/^#+\s*out of scope/im.test(text || ''))
+  // The heading may be numbered — the stage prompt asks for an ordered spec and
+  // the model obliges with `## 3. Out of scope`. Matching only bare text made
+  // checkSpec warn that a section was missing while it sat two lines below.
+  if (!/^#+\s*(?:\d+[.)]?\s*)?out of scope/im.test(text || ''))
     out.push('no `Out of scope` section - what this feature is NOT is how it stops growing')
 
   return out
@@ -1111,7 +1139,7 @@ async function runBuild(run, spec, panes) {
   // The fix tier collapses spec and design to nothing, so nobody sliced this
   // build: the ask IS the task, and it is ONE developer session. Still
   // test-first - Probity does not care which tier a change was sized at.
-  const tasks = existsSync(tp) ? JSON.parse(readFileSync(tp, 'utf8'))
+  const tasks = existsSync(tp) ? readTasks(tp)
     : run.tier === 'fix'
       ? [{
           id: 't1',
@@ -1498,8 +1526,7 @@ export function stageSpec(label, run) {
   // it - and a resumed fix has to come back at the model it was escalated to,
   // not the pinned one it already failed at.
   if (label.startsWith('fix-')) return fixSpec(Number(label.slice('fix-'.length)) || 0)
-
-  return { agent: 'developer', compact: 120000 }
+  return { agent: 'developer', compact: 600000 }
 }
 
 // --- gates -----------------------------------------------------------------
@@ -1558,7 +1585,7 @@ const CAPS = {
  * One cheap attempt, then a stronger one, and only then his time.
  */
 export function fixSpec(roundsSpent) {
-  const spec = { agent: 'developer', compact: 120000 }
+  const spec = { agent: 'developer', compact: 600000 }
   return roundsSpent > 0 ? { ...spec, model: 'opus' } : spec
 }
 
@@ -2017,7 +2044,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tp = join(RUNS, run.slug, '02-tasks.json')
     if (existsSync(tp)) {
-      const tasks = JSON.parse(readFileSync(tp, 'utf8'))
+      const tasks = readTasks(tp)
       const done = new Set(run.tasksDone || [])
       console.log('\n  BUILD TASKS')
       for (const t of tasks) {
@@ -2071,7 +2098,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tasks = (() => {
       const tp = join(RUNS, run.slug, '02-tasks.json')
-      if (existsSync(tp)) return JSON.parse(readFileSync(tp, 'utf8'))
+      if (existsSync(tp)) return readTasks(tp)
       // Mirrors runBuild's own synthetic task exactly - the fix tier has no
       // architect to slice one, so there is nothing else to render here.
       if (run.tier === 'fix') return [{

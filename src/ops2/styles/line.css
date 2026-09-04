@@ -590,28 +590,26 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 
 /* ── The detail screen ──────────────────────────────────────────────────────
  * Inside SidePanel, so the container's finish is already the console's. What is
- * here is the reading order made visible: blocks, then the ladder last. */
-.wd { display: grid; gap: var(--theme-spacing-lg); padding: var(--theme-spacing-md); }
-.wd__blk { display: grid; gap: var(--theme-spacing-xs); }
-.wd__blk-h {
-  margin: 0;
-  font-family: var(--theme-font-sans);
-  font-size: var(--theme-font-size-xs);
-  font-weight: var(--theme-font-weight-medium);
-  letter-spacing: var(--theme-letter-spacing-wider);
-  text-transform: uppercase;
-  color: var(--ds-text-muted);
+ * here is the reading order made visible: cards, then the ladder last.
+ *
+ * THE LINE PAGE'S OWN SHAPE (owner, 2026-09-04): the page ground carrying
+ * `lp-panel` cards, not one white field with headings on it. A heading is not a
+ * boundary — at a glance four headed blocks read as one undifferentiated
+ * column, where a card can be skipped whole.
+ *
+ * Nothing below re-implements a card, a title, a key/value grid or a list
+ * container. `.wd__blk` was `.lp-panel`, `.wd__blk-h` a copy of
+ * `.lp-panel__title`, `.wd__kv` of `.lp-panel__lines` and `.wd__ladder` of
+ * `.ops2-rows`: all four are DELETED and the console's own rules are used by
+ * name, which is why this stylesheet is SMALLER after the feature than before
+ * it. */
+.wd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-md);
+  padding: var(--theme-spacing-md);
+  background: var(--ds-surface-page);
 }
-.wd__kv {
-  display: grid;
-  grid-template-columns: minmax(4rem, auto) 1fr;
-  gap: var(--theme-spacing-2xs) var(--theme-spacing-md);
-  margin: 0;
-  font-size: var(--theme-font-size-sm);
-}
-.wd__kv-row { display: contents; }
-.wd__kv dt { color: var(--ds-text-muted); }
-.wd__kv dd { margin: 0; color: var(--ds-text-primary); }
 .wd__fig { color: var(--ds-text-primary); }
 .wd__origin {
   display: block;
@@ -625,12 +623,14 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 @media (min-width: 480px) {
   .wd__cmp { grid-template-columns: 1fr 1fr; }
 }
+/* NO BORDER. These sit inside an `lp-panel` now, and a card inside a card is a
+   card too many (the architect's ruling on the unit list, `rows.css`). The wash
+   still says which side is the line's, and `.wd__who` still says it in words. */
 .wd__card {
   display: grid;
   gap: var(--theme-spacing-2xs);
   padding: var(--theme-spacing-sm);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
+  border-radius: var(--ds-radius-control);
   font-size: var(--theme-font-size-sm);
 }
 .wd__card--current { background: var(--ds-color-brand-wash); }
@@ -644,38 +644,80 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
 .wd__verd { font-size: var(--theme-font-size-xs); color: var(--ds-text-secondary); }
 .wd__verd--warn { color: var(--ds-color-warning-text); }
 
-/* THE LADDER. Rows are li and not buttons: nothing here prices, switches or
-   selects, so nothing looks tappable — no chevron, no hover, no trailing
-   control (R1/R28). */
-.wd__ladder { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--theme-spacing-xs); }
+/* THE LADDER — a list of rows inside ONE card. Rows are li and not buttons:
+   nothing here prices, switches or selects, so nothing looks tappable — no
+   chevron, no hover, no trailing control (R1/R28).
+
+   NO HAIRLINE RULE HERE, and no list container either. The row carries
+   `ops2-row` inside a `RowList`, so `.ops2-row + .ops2-row` (rows.css) draws
+   the line — the rule that already says a hairline belongs to the PAIR and not
+   to either row. Every other `.ops2-row` rule targets `> .ops2-row__open`, the
+   pressable child this row deliberately does not have. */
 .wd__row {
   display: grid;
-  gap: 2px;
-  padding-block: var(--theme-spacing-2xs);
-  border-top: 1px solid var(--ds-border-subtle);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--theme-spacing-md);
+  row-gap: 2px;
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
   font-size: var(--theme-font-size-sm);
 }
-.wd__row:first-child { border-top: 0; }
-.wd__row-top {
-  display: flex;
-  gap: var(--theme-spacing-sm);
-  justify-content: space-between;
-  align-items: baseline;
-}
-.wd__row-name { color: var(--ds-text-primary); overflow-wrap: anywhere; }
+/* The console's existing "this is the one" treatment on a row — no new colour,
+   no new state, and the words `· chosen` carry it for a reader who cannot see
+   the tint. */
+.wd__row--chosen { background: var(--ds-color-brand-wash); }
+/* THE NAME LEADS, ALONE, AND IS FREE TO WRAP. It is the row's identity and the
+   one string of unbounded length; a 36-character product name is real, and at
+   375px the name is what used to give way when a third fact joined line one. */
+.wd__row-name { grid-column: 1; color: var(--ds-text-primary); overflow-wrap: anywhere; }
 .wd__row--chosen .wd__row-name { font-weight: var(--theme-font-weight-medium); }
 .wd__row-mark { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
-.wd__row-figs { flex: none; color: var(--ds-text-secondary); }
-.wd__row-verdict { font-size: var(--theme-font-size-xs); color: var(--ds-text-muted); }
+/* Figures and verdict are ONE clause about one candidate — "Uw 3.41 · SHGC 0.39
+   · met the caps" — which is what frees line one for the amount without adding
+   a third line. */
+.wd__row-meta {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--theme-spacing-sm);
+  font-size: var(--theme-font-size-xs);
+}
+.wd__row-figs { color: var(--ds-text-secondary); }
+.wd__row-verdict { color: var(--ds-text-muted); }
+.wd__row-verdict::before { content: "· "; color: var(--ds-text-muted); }
+/* THE ONE MONEY FIGURE, IN A COLUMN OF ITS OWN. Amounts that shift with the
+   length of the name beside them get read five times instead of once; a fixed
+   right edge is what lets one downward scan answer "was it worth it?".
 
-/* Each lite's own band. Two bands side by side must read as two. */
-.wd__lites { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--theme-spacing-sm); }
+   Body face, semibold, tabular — the console's money treatment (`.rl-money`),
+   and deliberately NOT `.wd__fig`'s display face, which on this screen means "a
+   thermal figure". NEVER COLOURED: a green -$50 beside a product that failed
+   its caps turns an explanation into a recommendation (R28). The sign carries
+   the direction. */
+.wd__row-delta {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: baseline;
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-primary);
+  white-space: nowrap;
+}
+/* `$---` is a fact about the record, not an amount: muted and regular so it
+   cannot be mistaken for a figure, and NOT italic like `.ops2-absent` — italic
+   dashes read as damage rather than as absence. */
+.wd__row-delta--absent {
+  font-weight: var(--theme-font-weight-regular);
+  color: var(--ds-text-muted);
+}
+
+/* Each lite's own band. Two bands side by side must read as two — and inside a
+   card that separation is the shared row hairline (`.ops2-row + .ops2-row`),
+   not a second border drawn inside the card that already has one. */
 .wd__lite {
   display: grid;
   gap: var(--theme-spacing-2xs);
-  padding: var(--theme-spacing-sm);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-surface);
+  padding: var(--theme-spacing-sm) var(--theme-spacing-md);
   font-size: var(--theme-font-size-sm);
 }
 .wd__lite-h { display: flex; gap: var(--theme-spacing-sm); align-items: baseline; }
@@ -691,7 +733,7 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   font-size: var(--theme-font-size-xs);
   color: var(--ds-text-muted);
 }
-.wd__closing { padding-top: var(--theme-spacing-sm); }
+.wd__closing { padding: 0 var(--theme-spacing-xs) var(--theme-spacing-sm); }
 
 /* The panel's back control: LEADING, and it names where it returns to. */
 .pq-sheet__back { text-transform: none; }

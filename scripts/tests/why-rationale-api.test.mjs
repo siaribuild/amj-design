@@ -51,13 +51,17 @@ const outcomeJson = (o) => JSON.stringify({
     fits: o.fits ?? true, widthMm: 1200, heightMm: 900, limit: null,
     breached: o.breached ?? [],
   },
-  // MONEY IS IN THE STORED ROW. D18 is "no money anywhere" on the surface, and
-  // a criterion asserting its absence proves nothing unless the source has it.
-  price: {
-    total: o.price ?? 500, currency: "AUD", ok: true,
-    deltaToSelected: o.delta ?? 0,
-  },
-  learned: null,
+  // MONEY IS IN THE STORED ROW. D18 is "no money anywhere but the delta" on
+  // the surface, and a criterion asserting the rest absent proves nothing
+  // unless the source has it. `noPrice` fixtures the recordable state with no
+  // price block at all — this endpoint still owes it `deltaToSelected: null`.
+  ...(o.noPrice ? {} : {
+    price: {
+      total: o.price ?? 500, currency: "AUD", ok: true,
+      deltaToSelected: o.delta ?? 0,
+    },
+  }),
+  learned: o.learned ?? null,
 });
 
 /** The run's own `SelectionOutcome`. It carries `withheldIncomplete`, which the
@@ -89,11 +93,13 @@ const OPTIONS = (glazing) => JSON.stringify({
   flyscreen: "None", installation: "Sub Sill & Head", glazing,
 });
 
-/** A body carrying anything this surface must never send. Exercised against a
- *  body that DOES leak before it is trusted to report a clean one. */
-const mentionsMoney = (body) => {
+/** A body carrying anything this surface must never send. `deltaToSelected`
+ *  is deliberately NOT in this pattern: this task makes it the one
+ *  price-shaped fact the surface may show. Exercised against a body that
+ *  DOES leak before it is trusted to report a clean one. */
+const mentionsForbiddenMoney = (body) => {
   const raw = typeof body === "string" ? body : JSON.stringify(body);
-  return /\$|"price"|"total"|"currency"|"AUD"|deltaToSelected|GST/i.test(raw);
+  return /"price"|"total"|"currency"|"AUD"|GST|\$/i.test(raw);
 };
 const mentionsWithheld = (body) => {
   const raw = typeof body === "string" ? body : JSON.stringify(body);
@@ -105,11 +111,11 @@ const mentionsExclusion = (body) => {
 };
 
 test("the leak predicates can see a leak", () => {
-  assert.equal(mentionsMoney({ rows: [{ price: { total: 500 } }] }), true);
+  assert.equal(mentionsForbiddenMoney({ rows: [{ price: { total: 500 } }] }), true);
   assert.equal(mentionsWithheld({ withheldIncomplete: [] }), true);
   assert.equal(mentionsExclusion({ exclusions: [{ constraint: "dimensions" }] }), true);
   const clean = { kind: "recommendation", recommended: { productSlug: "amj80-series-awning-window", tier: "meets" } };
-  assert.equal(mentionsMoney(clean), false);
+  assert.equal(mentionsForbiddenMoney(clean), false);
   assert.equal(mentionsWithheld(clean), false);
   assert.equal(mentionsExclusion(clean), false);
 });
@@ -153,9 +159,16 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       slug: "amj80-series-awning-window", variantId: "v-dg-lowe", glazing: "double-lowe",
       tier: "meets", rank: 1, selected: true, uValue: 3.72, shgc: 0.41, price: 640, delta: 0,
     });
+    // criterion 11: exclusions and learned recorded alongside a normal delta —
+    // neither may reach the body, the delta still must.
     await candidate("cr_2", {
       slug: "amj100l-series-awning-window", variantId: "v-b", glazing: "double-clear",
       tier: "meets", rank: 2, uValue: 3.8, shgc: 0.4, price: 705, delta: 65,
+      exclusions: [{ constraint: "dimensions", detail: { maxWidthMm: 1000 } }],
+      learned: {
+        retrievalKey: "rk_1", retrievalKeyVersion: "v1", observations: 3, support: 2,
+        wouldPrefer: true, applied: false, provenance: { inPlatform: 2, backfilled: 1 },
+      },
     });
     await candidate("cr_3", {
       slug: "amj100t-awning-window", variantId: "v-c", glazing: "double-clear",
@@ -281,7 +294,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
     // The single unit the make-up beat (WHY-AC-33) — recorded, and ranked below it.
     await candidate("cr_single", {
       runId: "sr_comp", slug: "amj150-series-sliding-door", variantId: "v-s", glazing: "double-clear",
-      tier: "within_tolerance", rank: 2, uValue: 4.4, shgc: 0.5,
+      tier: "within_tolerance", rank: 2, uValue: 4.4, shgc: 0.5, noPrice: true,
     });
 
     // P2-1's shape: a symmetric split is stored as ONE row with
@@ -386,13 +399,19 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.equal("variantId" in body.current, false, "no variantId on `current`, anywhere in the contract");
     });
 
-    await t.test("WHY-AC-14/15/16 + X-AC-5 nothing excluded, nothing withheld, no money", async () => {
-      const { response } = await rationale("p_rat", "ql_rat");
+    await t.test("WHY-AC-14/15/16 + X-AC-5 nothing excluded, nothing withheld, no money but the delta", async () => {
+      const { response, body } = await rationale("p_rat", "ql_rat");
       const raw = await (await ops.request("/api/ops/projects/p_rat/lines/ql_rat/rationale")).text();
       assert.equal(response.status, 200);
       assert.equal(mentionsExclusion(raw), false, "R9: no excluded candidate, no count of them, no reason text");
       assert.equal(mentionsWithheld(raw), false, "D18: the run's withheldIncomplete list is never forwarded");
-      assert.equal(mentionsMoney(raw), false, "D18: no price, no delta, no currency symbol");
+      assert.equal(mentionsForbiddenMoney(raw), false, "D18: no price, no currency symbol — the delta is the one exception");
+      assert.equal(/"learned"|retrievalKey/i.test(raw), false, "D11: the learned layer stays dark");
+
+      // This task: deltaToSelected is now a permitted fact, verbatim per fixture.
+      assert.equal(body.recommended.deltaToSelected, 0, "the pick's delta to itself is 0");
+      assert.deepEqual(body.alternatives.map((a) => a.deltaToSelected), [65, 50, -30, -50],
+        "rank order cr_2..cr_5, verbatim");
     });
 
     await t.test("D19 an opening estimated twice answers from the MOST RECENT run only", async () => {
@@ -519,6 +538,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       assert.equal(body.recommended.form, "split");
       assert.equal(body.composite.beatenSingle.productSlug, "amj150-series-sliding-door");
       assert.equal(body.composite.beatenSingle.rank, 2);
+      assert.equal(body.composite.beatenSingle.deltaToSelected, null, "criterion 6: no price key, no delta");
       assert.deepEqual(body.recommended.units, [
         { productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", operationType: "awning" },
         { productSlug: "amj100l-series-awning-window", productName: "AMJ100L Series Awning Window", operationType: "awning" },
@@ -607,6 +627,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
         assert.equal(response.status, 403, `${who} is refused`);
         assert.equal(/amj|tier|uValue|shgc|rank|meets/i.test(text), false,
           `${who}'s refusal carries no product slug, tier, thermal figure or candidate`);
+        assert.equal(/deltaToSelected|\$/i.test(text), false, `${who}'s refusal carries no delta and no $`);
         refusals.push(`${response.status} ${text}`);
       }
       assert.equal(refusals[0], refusals[1],
@@ -626,6 +647,7 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       const text = await response.text();
       assert.equal(response.status, 403);
       assert.equal(/amj|tier|uValue|rank/i.test(text), false, "and learns nothing about the comparison");
+      assert.equal(/deltaToSelected|\$/i.test(text), false, "and no delta, no $");
 
       // THE BODY STRING IS THE POINT, and it was never read. `resolveStaff`
       // refuses a manufacturer before the role check, so this answer is
@@ -646,8 +668,10 @@ test("the rationale read, over a real Worker and D1", { timeout: 300_000 }, asyn
       const other = await ops.request("/api/ops/projects/p_draft/lines/ql_rat/rationale");
       const missing = await ops.request("/api/ops/projects/p_draft/lines/ql_nothing_at_all/rationale");
       assert.equal(other.status, 404);
-      assert.equal(await other.clone().text(), await missing.text(),
+      const otherText = await other.clone().text();
+      assert.equal(otherText, await missing.text(),
         "byte-identical: a probe cannot learn from the difference whether a line exists");
+      assert.equal(/deltaToSelected|\$/i.test(otherText), false, "the 404 body carries no delta and no $");
 
       // And a SEGMENT is not a parent line — the endpoint serves openings.
       const seg = await ops.request("/api/ops/projects/p_rat/lines/qs_a/rationale");
