@@ -71,10 +71,13 @@ placement path needs. Git holds it all if a future set proves otherwise.
 
 ## Verification
 
-- `test:drawing-enrichment` 187 pass, 0 fail
-- `test:pure` 1136 pass, 0 fail
+- `test:drawing-enrichment` 191 pass, 0 fail
+- `test:pure` 1141 pass, 0 fail
 - `typecheck:gate` clean, 59 non-fatal unchanged
-- Reviews: Codex (nine rounds), `/security-review`, architect conformance
+- Reviews: Codex (thirteen rounds, the last clean), `/security-review`,
+  architect conformance
+- The reference set re-parsed after every fix; the map above is the result of
+  the final one
 
 **Security — clean.** No new trust boundary and no new sink; all input is
 already-parsed word geometry. Prototype pollution through label-keyed objects
@@ -87,12 +90,26 @@ intact. Five advisories, four fixed; the fifth (`1:100 @ A3` keeps the ratio
 and drops the paper size, `1:1,000` is not read) stands as a recorded ceiling —
 both fail towards fewer candidates, which the agreement rule handles.
 
-**Codex — thirteen P2s across nine rounds.** Nine were fixed while per-view
-binding still existed and died with it. Three survive as behaviour the code
-still has: split ratios read from printed rows rather than content-stream
-order; rows grouped by overlap against the taller word, so rotated labels
-cannot bridge them; a ratio's subject read from its printed phrase. One was
-overruled by the owner (add scale candidates to the shared harvest).
+**Codex — eighteen P2s across thirteen rounds, the thirteenth clean.** Nine
+were fixed while per-view binding still existed and died with it. One was
+overruled by the owner (add scale candidates to the shared harvest). Eight
+survive as behaviour the code still has:
+
+- split ratios read from printed rows, not content-stream order;
+- rows grouped by overlap against the taller word, so a rotated label cannot
+  bridge two of them and detach a note from its ratio;
+- a ratio's subject read from its printed phrase, which ends where the printing
+  ends rather than after a fixed number of words;
+- each row's ratios found before any is judged, so a ratio bounds its
+  neighbour's phrase whether the PDF spelled it in one word or three;
+- falls, grades, gradients, pitches, ramps, limits, driveways and stairs
+  refused as subjects.
+
+The last two kinds are a blacklist, and rounds 8, 10 and 12 each added to it.
+The standing recommendation is to invert it — accept a ratio only when its
+phrase names a drawing, or it sits in the sheet's title strip — which ends the
+enumeration and reads the reference set identically. Not done: it contradicts
+§7.4's line that a bare `1:100` is recognised, so it needs an owner ruling.
 
 ## Known ceilings
 
