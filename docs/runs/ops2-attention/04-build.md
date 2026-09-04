@@ -19,3 +19,20 @@ npm run test:ops2: 92/92 pass. npm run typecheck:gate: green
 
 Next task: Enquiries is registered as a destination but has no route/
 placeholder page wired yet (Ops2App.tsx untouched by this task).
+
+## T2 - Attention model (pure) + new node suite + script wiring
+
+Files: src/ops2/attention/attention.ts (new), scripts/tests/ops2-attention.test.mjs
+(new, esbuild-bundles attention.ts + projects/queue.ts + nav/destinations.ts),
+package.json (test:ops2 gains the new file).
+
+Exports parseSummary (strict-degrades on degraded:true/missing key/non-number)
+and attentionGroups (3 fixed groups, zero-row and all-zero-group suppression,
+[] on all-six-zero). Hrefs built from destination(id).path; Projects rows
+carry ?wait=us|customer per design §3 table. 8 tests cover design §10 criteria
+1,3,4,5,18(model),7,11,12 + number-leading labels.
+
+npm run test:ops2: 100/100 pass. npm run typecheck:gate: green.
+
+Next task: attentionGroups/parseSummary have no caller yet — no route, no
+component, no fetch of the summary body wired in.
