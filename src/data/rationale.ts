@@ -6,12 +6,15 @@
 // first by inheriting different prose.
 //
 // ── WHAT IS DELIBERATELY ABSENT, AND WHY IT IS ABSENT HERE ──────────────────
-// The surface must never show money (D18), an excluded candidate (R9) or a
-// withheld product (D18), and must never caption a figure with a variant id
-// (WHY-AC-4, load-bearing for D16). Each of those is enforced by the SHAPE of
-// this contract rather than by a rule someone has to keep obeying: there is no
-// price field, no exclusion field, no withheld field, and `current` carries no
-// `variantId`. A skin cannot render a fact it was never given.
+// The surface must never show a total or currency (D18), an excluded
+// candidate (R9), the learned layer (D11) or a withheld product (D18), and
+// must never caption a figure with a variant id (WHY-AC-4, load-bearing for
+// D16). Each of those is enforced by the SHAPE of this contract rather than
+// by a rule someone has to keep obeying: there is no total or currency field,
+// no exclusion field, no learned field, no withheld field, and `current`
+// carries no `variantId`. A skin cannot render a fact it was never given.
+// `deltaToSelected` is the one deliberate exception: a candidate's price
+// relative to the pick, with no total or currency behind it.
 import type { RequirementBasis, Tier } from "./recommendation";
 
 /** A pair of thermal figures as recorded. Three states matter and the contract
@@ -32,6 +35,10 @@ export interface RationaleCandidate {
   form: "single" | "split";
   tier: Tier;
   rank: number | null;
+  /** SIGN CONVENTION (spec A17): candidate total MINUS selected total.
+   *  Negative ⇒ cheaper than the pick. 0 on the pick. null when either
+   *  side is unpriced. No total, no currency — the delta alone. */
+  deltaToSelected: number | null;
   /** The RECORDED thermal facts, out of `outcome_json`. Never a live lookup. */
   figures: RationaleFigures;
   fits: boolean;

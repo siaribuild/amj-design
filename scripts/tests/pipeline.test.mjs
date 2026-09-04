@@ -1783,7 +1783,12 @@ test('a stage whose agent is gone is relaunched with --resume, on the SAME sessi
   assert.equal(native[1], 'sess-gone')
   assert.ok(!native.includes('--session-id'),
     'a resume must not also claim a fresh session id - one of them would be a lie')
-  assert.equal(native[native.indexOf('--autocompact') + 1], '120000',
+  // READ THE CAP, NEVER SPELL IT. This asserted a literal '120000' and broke the
+  // moment the caps moved to 600k — a red suite that says nothing about the
+  // behaviour under test, which is that a RESTORED boot still passes the lever
+  // at all. STAGES is already imported at the top of this file.
+  const specCap = String(STAGES.find((st) => st.id === 'spec').compact)
+  assert.equal(native[native.indexOf('--autocompact') + 1], specCap,
     'the restored boot dropped lever 1')
 
   assert.equal(runJson(s).stages.spec.session, 'sess-gone', 'the session id changed across a restore')

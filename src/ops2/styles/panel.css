@@ -17,6 +17,19 @@
   box-shadow: var(--ds-layer-raised);
 }
 
+/* ── A CARD FULL OF ROWS ────────────────────────────────────────────────────
+ * The side padding goes, so the rows and the hairline between them reach the
+ * card's edge — five products at four prices are ONE idea, and a row that stops
+ * short of the edge reads as an item floating in a box. It is the rule the line
+ * page's unit list already carries (`line.css`, `:has(> .lp-units__list)`),
+ * named here so a card can ask for it. The title and the footnote keep their
+ * own inset, because they are the card's and not the list's. */
+.lp-panel--rows { padding-inline: 0; }
+.lp-panel--rows > .lp-panel__title,
+.lp-panel--rows > .lp-panel__more {
+  padding-inline: var(--theme-spacing-md);
+}
+
 /* ── The door ───────────────────────────────────────────────────────────────
  * A STRETCHED BUTTON, not a wrapping one: a button around a dl is invalid and
  * flattens every term/value pair into one accessible name. The focus ring is
