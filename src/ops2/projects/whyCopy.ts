@@ -584,7 +584,11 @@ export function deltaText(delta: number | null, chosen: boolean): string | null 
  *  test that scans this module for banned vocabulary sees it too. */
 export function deltaLabel(delta: number | null, chosen: boolean): string | null {
   if (chosen) return null;
-  if (delta == null) return "no price difference was recorded";
+  // MISSING IS NOT EQUAL. "No price difference was recorded" and "the same
+  // price" both mean "no difference" to someone hearing them, so the two
+  // states a sighted reader tells apart at a glance — $--- against a genuine
+  // tie — collapsed into one for everybody else. Name the absence as absence.
+  if (delta == null) return "no price was recorded for this product";
   const r = Math.round(delta);
   const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
   if (r === 0) return "the same price as the chosen product";

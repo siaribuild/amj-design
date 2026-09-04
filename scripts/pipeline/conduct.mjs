@@ -348,7 +348,7 @@ Findings go back to a developer, not to you - do not fix code.`
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', compact: 100000,
+    id: 'conformance', agent: 'architect', compact: 200000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the paths that
@@ -369,10 +369,10 @@ WRITE ${r.dir}/07-review-conformance.md.`,
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 100000, headless: true,
+    id: 'security', slash: '/security-review', compact: 200000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 200000,
   },
   { id: 'codex', codex: true },
 ]
@@ -982,7 +982,10 @@ export function checkSpec(text) {
   if (assumed)
     out.push(assumed + ' ASSUMED tag(s) - each is a decision taken on the owner`s behalf until he vetoes it')
 
-  if (!/^#+\s*out of scope/im.test(text || ''))
+  // The heading may be numbered — the stage prompt asks for an ordered spec and
+  // the model obliges with `## 3. Out of scope`. Matching only bare text made
+  // checkSpec warn that a section was missing while it sat two lines below.
+  if (!/^#+\s*(?:\d+[.)]?\s*)?out of scope/im.test(text || ''))
     out.push('no `Out of scope` section - what this feature is NOT is how it stops growing')
 
   return out

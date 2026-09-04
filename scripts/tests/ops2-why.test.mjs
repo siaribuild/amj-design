@@ -646,3 +646,23 @@ test("WHY-AC-5/6 the 'Chosen' sentence names the winning rule, and reads the ban
     assert.equal(chosen({ competingTier: tier }).tone, "warn", `${tier} is unresolved, so it is toned`);
   }
 });
+
+test("deltaLabel — an unrecorded price and a genuine tie are different sentences", () => {
+  // Codex, review pass: the spoken label for an unpriced runner-up read "no
+  // price difference was recorded", which a listener hears as "no difference"
+  // — the same meaning as the tie label. So the two states a sighted reader
+  // tells apart at a glance, `$---` against `$0`, collapsed into one for
+  // everybody using assistive technology. The visible strings already differ;
+  // the spoken ones have to as well.
+  const missing = M.deltaLabel(null, false);
+  const tie = M.deltaLabel(0, false);
+  assert.notEqual(missing, tie, "an absent price is not a price that matched");
+  assert.match(missing, /recorded/, "it names the absence as an absence");
+  assert.equal(/difference/.test(missing), false, "and never as a difference of nothing");
+  assert.match(tie, /same price/);
+
+  // The direction still survives being read aloud — a bare "+" does not.
+  assert.match(M.deltaLabel(65, false), /dearer/);
+  assert.match(M.deltaLabel(-200, false), /cheaper/);
+  assert.equal(M.deltaLabel(0, true), null, "the chosen row is the baseline and says nothing");
+});
