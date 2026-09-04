@@ -84,20 +84,58 @@ const record = {
 // test (added later) can tell "the image panel failed" from "everything failed".
 const META_DTO = {
   hasCrop: true,
+  // TOP LEVEL, not inside `reading`: a declined opening has no reading to carry
+  // them and that is when they matter most.
+  gapCode: null,
+  reasoningParts: ["plan tag and wall order bind identity"],
+  // The trail, in the two shapes the parser emits: a main-path rejection with
+  // no stage and no outcome, then an escalation whose turn is always 1.
+  attempts: 3,
+  acceptedTurn: 2,
+  corrections: [
+    { turn: 1, reasons: ["identity_tag_not_on_plan_page"], stage: null, outcome: null },
+    { turn: 1, reasons: ["close_up_verified"], stage: "escalation", outcome: "replaced" },
+  ],
   reading: {
     heading: { state: "value", value: "North" },
     elevation: { state: "value", value: "East" },
     room: { state: "value", value: "Bed 2" },
     split: { state: "not_stated", axis: null, units: [] },
     confidence: "high",
-    flags: [],
-    gapCode: null,
-    reasoningParts: [],
+    // Two of them, because the owner's ruling is that flags are LISTED and a
+    // count would hide which fired. An empty array proves nothing about that.
+    flags: ["notVisibleOnElevations", "agentEvidenceWeak"],
     source: { fileId: "f1", filename: "plan.pdf", pageNo: 2, sheetRef: "A1", region: "10,10,50,50" },
   },
-  run: { startedAt: "2026-08-01T00:00:00Z", outcome: "read", document: null },
+  run: {
+    startedAt: "2026-08-01T00:00:00Z",
+    outcome: "read",
+    document: {
+      fileId: "f1",
+      steps: {
+        inventory: { pages: 20, fonts: 7, images: 12, attachments: 0 },
+        strategy: "text_vector",
+        text: { pagesRead: 20 },
+        selectPages: { selected: [{ pageNo: 6, tier: "primary", reason: "elevation" }], of: 20 },
+        elevationRegions: [{ pageNo: 6, labels: ["A"] }],
+        renderCrop: { pagesRendered: 4, cropsMade: 19 },
+        read: { attempted: 19, returned: 17, declined: 2, retriedWithThreshold: 1, targetedReviews: 3 },
+        placements: { fromText: 15, fromModelFallback: 2, unplaced: 2 },
+        northAssumed: false,
+      },
+      failedPhase: null,
+      wallMs: 221000,
+      modelCalls: 28,
+      telemetry: { cachedTurns: 6, repairedTurns: 2, inputTokens: 486000, outputTokens: 31000 },
+      providerFailure: null,
+    },
+  },
 };
 
+// The restructure's own facts, in a real browser: the node suite renders the
+// components in isolation, so it cannot show that a staffer pressing Metadata
+// actually SEES listed flags, a trail, and a grouped run report.
+//
 // A 1x1 GIF — enough for the `<img>` to actually load in the happy-path tests.
 const TINY_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
 
@@ -195,4 +233,46 @@ test("MetaAC-11 a crop that fails to load names the failure without breaking the
     .toHaveText("The image for this line could not be loaded.");
   await expect(page.getByTestId("meta-reading-summary")).toBeVisible();
   await expect(page.getByTestId("meta-run-summary")).toBeVisible();
+});
+
+
+test("MetaAC flags are listed on the surface, never counted", async ({ page }) => {
+  await serve(page);
+  await page.goto(LINE("l1") + "/meta");
+  const summary = page.getByTestId("meta-reading-flags");
+  await expect(summary).toContainText("notVisibleOnElevations");
+  await expect(summary).toContainText("agentEvidenceWeak");
+  // The count is what this replaced — owner, 2026-09-04.
+  await expect(page.getByTestId("meta-tab")).not.toContainText(/flags: \d+ present/);
+});
+
+test("MetaAC the correction trail is behind the Reading door, escalation labelled not numbered", async ({ page }) => {
+  await serve(page);
+  await page.goto(LINE("l1") + "/meta");
+  // NOT on the surface: attempts belong in the trail's heading (owner Q14).
+  await expect(page.getByTestId("meta-tab")).not.toContainText("accepted on attempt");
+
+  await page.getByTestId("meta-reading-open").click();
+  const trail = page.getByTestId("meta-reading-trail");
+  await expect(trail).toBeVisible();
+  await expect(trail).toContainText("accepted on attempt 2 of 3");
+  // Raw codes, exactly as stored.
+  await expect(trail).toContainText("identity_tag_not_on_plan_page");
+  // Its turn is always 1, so it is named rather than numbered — a "Turn 1"
+  // under a "Turn 1" would read as the run going backwards.
+  await expect(trail).toContainText("Escalation");
+  await expect(trail).toContainText("replaced");
+});
+
+test("MetaAC the Run door reads as groups, not a wall of 22 figures", async ({ page }) => {
+  await serve(page);
+  await page.goto(LINE("l1") + "/meta");
+  await page.getByTestId("meta-run-open").click();
+  const detail = page.getByTestId("meta-run-detail");
+  await expect(detail).toBeVisible();
+  for (const heading of ["This run", "The document", "What it looked at", "What it read", "Where it placed them", "Cost and health"]) {
+    await expect(detail).toContainText(heading);
+  }
+  // Both halves of the ratio, so neither can be mistaken for the other.
+  await expect(page.getByTestId("meta-run-pages-selected")).toHaveText("1 of 20");
 });

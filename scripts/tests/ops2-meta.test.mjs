@@ -168,6 +168,24 @@ test("useLineMeta's pure rules: classify the fetch outcome, validate the DTO sha
     M.isLineMetaDto({ ...dtoFull,
       reading: { ...readingValue, split: { ...readingValue.split, units: ["not an object"] } } }),
     false, "split units are dereferenced for role and ratio");
+  // THE FIELDS THE RESTRUCTURE ADDED, checked to the depth the renderer reads
+  // them. `CorrectionTrail` maps corrections and then maps each row's reasons;
+  // `MetaRunDetail` reads document.telemetry.inputTokens and joins
+  // providerFailure.warnings. Each of these threw before it was checked, which
+  // turns a retryable error into a crash - the same defect, three layers on.
+  assert.equal(M.isLineMetaDto({ ...dtoFull, corrections: undefined }), false,
+    "corrections is mapped, so it must be an array, not merely absent");
+  assert.equal(M.isLineMetaDto({ ...dtoFull, corrections: [null] }), false,
+    "a mapped array's elements are dereferenced too");
+  assert.equal(M.isLineMetaDto({ ...dtoFull, corrections: [{ turn: 1 }] }), false,
+    "each row's reasons are mapped, so reasons must be an array");
+  assert.equal(M.isLineMetaDto({ ...dtoFull, run: { ...runValue,
+    document: { ...runValue.document, telemetry: undefined } } }), false,
+    "a document present must carry the telemetry the Cost and health group reads");
+  assert.equal(M.isLineMetaDto({ ...dtoFull, run: { ...runValue,
+    document: { ...runValue.document, providerFailure: { failureKind: "x", warnings: "not an array" } } } }), false,
+    "providerFailure warnings are joined, so they must be an array when it is present");
+
   assert.equal(M.isLineMetaDto({}), false);
   assert.equal(M.isLineMetaDto(null), false);
   assert.equal(M.isLineMetaDto(undefined), false);
