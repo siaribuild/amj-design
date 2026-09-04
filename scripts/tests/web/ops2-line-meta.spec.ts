@@ -110,6 +110,7 @@ const META_DTO = {
   run: {
     startedAt: "2026-08-01T00:00:00Z",
     outcome: "read",
+    reported: true,
     document: {
       fileId: "f1",
       steps: {

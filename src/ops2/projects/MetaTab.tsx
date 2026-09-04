@@ -14,6 +14,7 @@ const CROP_UNAVAILABLE_NO_REASON = "the crop is unavailable, no reason recorded"
 export const NO_READING = "No reading exists for this opening.";
 export const NO_RUN = "No drawing run has been reported for this project.";
 export const RUN_OPENING_NOT_COVERED = "This opening was not covered by the run report.";
+export const RUN_NO_REPORT = "This run produced no report.";
 
 type ImagePanelView = { img: true } | { img: false; reason: string };
 
@@ -350,7 +351,15 @@ export function MetaRunDetail({ run }: { run: LineMetaDto["run"] }) {
     return <p className="ops2-absent" data-testid="meta-run-detail-empty">{NO_RUN}</p>;
   }
   if (!run.document) {
-    return <p className="ops2-absent" data-testid="meta-run-detail-empty">{RUN_OPENING_NOT_COVERED}</p>;
+    // TWO DIFFERENT ABSENCES. A run that produced no report at all (it failed,
+    // or is still going) is not a report that left this opening out, and saying
+    // the second when the first is true sends a staffer looking for a document
+    // that does not exist.
+    return (
+      <p className="ops2-absent" data-testid="meta-run-detail-empty">
+        {run.reported ? RUN_OPENING_NOT_COVERED : RUN_NO_REPORT}
+      </p>
+    );
   }
   const doc = run.document;
   const { steps } = doc;

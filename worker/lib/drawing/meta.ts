@@ -297,7 +297,7 @@ export async function lineMeta(
     reasoningParts: reading?.gap_note ? reading.gap_note.split("|").map((s) => s.trim()) : [],
     attempts, acceptedTurn, corrections,
     reading: reading && !declined ? readingOf(reading) : null,
-    run: { startedAt: run.started_at, outcome, document },
+    run: { startedAt: run.started_at, outcome, document, reported: report !== null },
   };
 }
 

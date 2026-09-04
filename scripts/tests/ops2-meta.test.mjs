@@ -291,6 +291,24 @@ test("MetaReadingDetail: the correction trail — one row per turn, raw codes, e
   assert.doesNotMatch(clean, /data-testid="meta-reading-trail"/);
 });
 
+test("MetaRunDetail: a run that produced no report says so, and does not claim the opening was left out of one", () => {
+  // THE LAST RUN IS THE LAST RUN (owner, 2026-09-04). A failed or still-running
+  // parse is still the latest, and the tab shows it rather than reaching past it
+  // for older evidence. What was wrong was the SENTENCE: with no report at all,
+  // "not covered by the run report" implies a report exists that left this
+  // opening out. Two different absences, two different sentences.
+  const noReport = renderToStaticMarkup(h(M.MetaRunDetail, {
+    run: { startedAt: runValue.startedAt, outcome: null, document: null, reported: false },
+  }));
+  assert.match(noReport, /produced no report/i);
+  assert.doesNotMatch(noReport, /not covered/i);
+
+  const notCovered = renderToStaticMarkup(h(M.MetaRunDetail, {
+    run: { startedAt: runValue.startedAt, outcome: null, document: null, reported: true },
+  }));
+  assert.match(notCovered, /not covered by the run report/i);
+});
+
 test("MetaRunDetail: the 22 fields in named groups, with telemetry and provider health last (owner: behind a door must be readable, not a text area)", () => {
   const html = runDetail();
   for (const heading of ["This run", "The document", "What it looked at", "What it read", "Where it placed them", "Cost and health"]) {
@@ -360,7 +378,10 @@ test("MetaRunDetail: the single containing document's step counts, failedPhase, 
   assert.equal(noRun.includes(M.NO_RUN), true);
 
   const notCovered = renderToStaticMarkup(h(M.MetaRunDetail, {
-    run: { startedAt: "2026-08-30T12:00:00.000Z", outcome: null, document: null },
+    // `reported: true` - a report EXISTS and does not name this opening, which
+    // is the case this assertion is about. The other absence (no report at all)
+    // is its own test above, with its own sentence.
+    run: { startedAt: "2026-08-30T12:00:00.000Z", outcome: null, document: null, reported: true },
   }));
   assert.match(notCovered, /data-testid="meta-run-detail-empty"/);
   assert.equal(notCovered.includes(M.RUN_OPENING_NOT_COVERED), true);

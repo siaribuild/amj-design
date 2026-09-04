@@ -108,6 +108,11 @@ export interface LineMetaDto {
   run: {
     startedAt: string;                    // ai_runs.started_at
     outcome: "read" | "not_read" | null;  // this opening in perOpening (AC-17)
+    // Whether the run produced a report AT ALL. The last run is the last run,
+    // failed ones included, so a run with no report is shown rather than
+    // reached past - but "no report" and "a report that does not name this
+    // opening" are different facts and must not share a sentence.
+    reported: boolean;
     document: MetaRunDocument | null;     // the ONE source document (AC-18)
   } | null;                  // null = no drawing run ever reported
 }
