@@ -2,7 +2,7 @@ import { normalizeOpeningRef } from "../ai/energyMap";
 import type { CropBoxPt, InspectResponse, Orientation, PageWord } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
-import { drawingViewRegions, horizontalGap, sameLine } from "./elevationRegions";
+import { drawingViewRegions, horizontalGap, sameLine, type DrawingViewRegion } from "./elevationRegions";
 import { locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 
 export const MAX_TAG_CANDIDATES_PER_TAG = 4;
@@ -71,15 +71,44 @@ export interface DrawingScaleCandidate {
 
 const SCALE_RATIO = /^1\s*[:/]\s*(\d{1,5})$/;
 const SCALE_LABEL = /^SCALE:?$/i;
+/** A drainage fall, a ramp grade and a roof pitch all print `1:100`. Only the
+ * word beside it says which one the drawing means. */
+const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP)$/i;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 
 const adjacent = (a: PageWord, b: PageWord): boolean =>
   sameLine(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
 
+/** A scale belongs to the title it is printed under, which is not always the
+ * band it lands in: stacked views end at their own title line, so a ratio one
+ * line below its title falls inside the next view. Bind to the nearest title
+ * and only when it is clearly nearest — a ratio between two views names
+ * neither, and one in the sheet's title block is the page's, not a view's. */
+const VIEW_BIND_MARGIN = 0.5;
+const TITLE_BLOCK_FRACTION = 0.85;
+
+function boundView(
+  regions: DrawingViewRegion[],
+  centreX: number,
+  centreY: number,
+  heightPt: number,
+): CropBoxPt | null {
+  if (!regions.length || centreY >= heightPt * TITLE_BLOCK_FRACTION) return null;
+  const away = (region: DrawingViewRegion): number =>
+    Math.hypot(region.titlePt[0] - centreX, region.titlePt[1] - centreY);
+  const ranked = [...regions].sort((a, b) => away(a) - away(b));
+  if (ranked.length === 1) return [...ranked[0].region];
+  return away(ranked[0]) <= away(ranked[1]) * VIEW_BIND_MARGIN ? [...ranked[0].region] : null;
+}
+
 /** Printed view scales, one candidate per printed ratio. A sheet often carries
  * several views at different scales, so nothing here collapses to a single page
- * answer — the caller decides whether the candidates covering a view agree. */
+ * answer — the caller decides whether the candidates covering a view agree.
+ *
+ * ponytail: `1:100 @ A3` keeps the ratio and drops the paper size, and
+ * `1:1,000` is not read at all. Both fail towards fewer candidates, which the
+ * scale-conflict rule already handles; widen only if a real set needs it. */
 export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCandidate[] {
   const geometryByPage = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
   return inspected.pages.flatMap((page) => {
@@ -94,14 +123,19 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
       for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
         const window = words.slice(at, at + size);
         if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
-        const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join(""));
+        // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
+        // part of the sentence, not of the ratio.
+        const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
         if (!match) continue;
         consumed = size;
         const ratio = Number(match[1]);
+        const prior = at > 0 ? words[at - 1] : null;
+        const next = at + size < words.length ? words[at + size] : null;
+        const qualifier = [prior, next].find((word) =>
+          word && NOT_A_SCALE.test(word.text.trim()) && adjacent(word, word === prior ? window[0] : window[size - 1]));
         // 1:0 parses but cannot scale anything, and no drawing is printed
         // smaller than 1:20000 — both are text that merely looks like a scale.
-        if (ratio >= 1 && ratio <= MAX_SCALE_RATIO) {
-          const prior = at > 0 ? words[at - 1] : null;
+        if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
           const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
             ? [prior, ...window] : window;
           const box: CropBoxPt = [
@@ -110,14 +144,12 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
           ];
           const centreX = (box[0] + box[2]) / 2;
           const centreY = (box[1] + box[3]) / 2;
-          const view = regions.find(({ region: [x0, y0, x1, y1] }) =>
-            centreX >= x0 && centreX <= x1 && centreY >= y0 && centreY <= y1);
           found.push({
             pageNo: page.pageNo,
             ratio,
             text: evidence.map((word) => word.text.trim()).join(" "),
             evidenceBoxPt: box,
-            viewRegionPt: view ? [...view.region] : null,
+            viewRegionPt: boundView(regions, centreX, centreY, geometry.heightPt),
             source: "printed",
           });
         }

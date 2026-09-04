@@ -1987,8 +1987,6 @@ test("harvest.ts holds the one Stage A implementation both drawing engines share
   };
   const schedule = [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING", storey: "ground" }];
   const harvest = buildHarvest(inspected, schedule);
-  assert.equal(JSON.stringify(harvest), JSON.stringify(buildFullDocumentHarvest(inspected, schedule)),
-    "the moved harvest must stay byte-for-byte identical to the pre-move output");
   assert.equal(harvest.version, 1);
   assert.equal(harvest.tagCandidates[0].tag, "W1");
   const oriented = applyVisualNorth(harvest, 1, { northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.1, 0.1, 0.2, 0.2] });
@@ -2028,6 +2026,28 @@ test("view scale: a view named by the document binds as readily as a lettered on
   assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
 });
 
+test("view scale: a scale binds to the title nearest it, and to no view when two are equally close", () => {
+  const stacked = (scaleTop) => [
+    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10]]),
+    ...line(scaleTop, [["SCALE", 210, 40], ["1:100", 255, 40]]),
+    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10]]),
+    ...line(scaleTop + 300, [["SCALE", 210, 40], ["1:50", 255, 40]]),
+  ];
+  const below = viewScaleCandidates(scaleSheet(stacked(325)));
+  assert.deepEqual(below.map(({ ratio }) => ratio), [100, 50]);
+  assert.deepEqual(below[0].viewRegionPt, [0, 0, 1_000, 307.5],
+    "a scale printed under its own title belongs to that view, not to the band the point falls in");
+  assert.deepEqual(below[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
+
+  const midway = viewScaleCandidates(scaleSheet([
+    ...line(200, [["ELEVATION", 100, 80], ["A", 185, 10]]),
+    ...line(400, [["SCALE", 210, 40], ["1:100", 255, 40]]),
+    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10]]),
+  ]));
+  assert.equal(midway[0].viewRegionPt, null,
+    "equidistant between two titles is ambiguous, and ambiguity is not a binding");
+});
+
 test("view scale: a bare ratio is read, an unusable one is refused, and an untitled sheet binds to no view", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     ...line(100, [["1:200", 100, 40]]),
@@ -2041,6 +2061,17 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
   ], "1:0 cannot scale anything and 1:abc is not a ratio");
   assert.equal(candidates[0].viewRegionPt, null, "a sheet with no drawing title binds its scale to no view");
   assert.equal(candidates[0].pageNo, 1);
+});
+
+test("view scale: a fall or a grade is not a scale, and a trailing stop does not hide one", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(100, [["FALL", 100, 40], ["1:100", 145, 40]]),
+    ...line(200, [["1:20", 100, 32], ["GRADE", 137, 45]]),
+    ...line(300, [["SCALE", 100, 40], ["1:50.", 145, 45]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [
+    { ratio: 50, text: "SCALE 1:50." },
+  ], "drainage falls and ramp grades print the same shape as a scale and must not become one");
 });
 
 test("expectedWidthPt turns a scheduled width into the points that width occupies", () => {

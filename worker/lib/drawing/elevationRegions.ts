@@ -53,6 +53,10 @@ export function elevationRegions(words: PageWord[], widthPt: number, heightPt: n
   return tileRegions(labels, widthPt, heightPt);
 }
 
+/** A view region plus the centre of the title that names it, so evidence can
+ * be bound to the title it sits under rather than to the band it lands in. */
+export type DrawingViewRegion = ElevationRegion & { titlePt: [number, number] };
+
 const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?)$/;
 const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
 const TITLE_IDENTIFIER = /^[A-Z]$/;
@@ -63,7 +67,7 @@ const MAX_TITLE_QUALIFIERS = 2;
  * held to a vocabulary the placement path can consume: these regions exist to
  * bind evidence printed beside a view (a scale) to that view, and a sheet that
  * names its faces must not lose that binding. */
-export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt: number): ElevationRegion[] {
+export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt: number): DrawingViewRegion[] {
   const ordered = [...words].sort((a, b) => a.top - b.top || a.x0 - b.x0);
   const clean = (word: PageWord): string => word.text.trim().replace(/[:\-]$/, "").toUpperCase();
   const labels: LabelPoint[] = [];
@@ -90,7 +94,11 @@ export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt:
       y: (Math.min(...parts.map((part) => part.top)) + Math.max(...parts.map((part) => part.bottom))) / 2,
     });
   }
-  return tileRegions(labels, widthPt, heightPt);
+  const titles = new Map(labels.map((label) => [label.label, [label.x, label.y] as [number, number]]));
+  return tileRegions(labels, widthPt, heightPt)
+    .map((region) => ({ ...region, titlePt: titles.get(region.label) ?? [
+      (region.region[0] + region.region[2]) / 2, (region.region[1] + region.region[3]) / 2,
+    ] as [number, number] }));
 }
 
 function tileRegions(labels: LabelPoint[], widthPt: number, heightPt: number): ElevationRegion[] {

@@ -1,4 +1,4 @@
-﻿import type { Skill } from "../estimator/skills/types";
+import type { Skill } from "../estimator/skills/types";
 import { parseModelJson } from "../estimator/skills/json";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import type {
