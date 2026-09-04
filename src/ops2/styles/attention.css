@@ -1,10 +1,67 @@
-/* Attention page — group heading only. Everything else reuses projects.css
- * classes (.pq-skeleton, .pq-empty, .pq-error, ds-surface-card, ds-type-caption)
- * and rows.css (.ops2-rows, .ops2-row). Design: docs/runs/ops2-attention/02-design.md §2. */
-.att-group + .att-group {
-  margin-top: var(--ops2-space-lg, 24px);
+/* Attention page — the group heading, the row's two slots, and nothing else.
+ * Every other treatment is borrowed: projects.css (.pq-skeleton, .pq-empty,
+ * .pq-error), rows.css (.ops2-rows, .ops2-row, .ops2-row__chev) and the
+ * surface recipe (ds-surface-card). Mock: docs/mocks/ops2-attention.html §1.
+ * Design: docs/runs/ops2-attention/02-design.md §2, UX §6.1. */
+
+/* The rhythm between groups belongs to the container, not to the sections —
+   a `+` margin makes the first group's spacing a different fact from the
+   rest's, and the tokens it used (`--ops2-space-*`) do not exist in this
+   console's theme, so it was resolving to hard-coded fallbacks. */
+.att-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-xl);
 }
 
-.att-group h2 {
-  margin: 0 0 var(--ops2-space-sm, 8px);
+.att-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-sm);
+  margin: 0 0 var(--theme-spacing-sm);
+}
+/* The destination's own mark, at the muted weight the rail gives it — the
+   heading and the door wear the same face. */
+.att-group__head ion-icon {
+  flex: none;
+  font-size: 1.125rem;
+  color: var(--ds-text-muted);
+}
+.att-group__head h2 {
+  margin: 0;
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-md);
+  font-weight: var(--theme-font-weight-semibold);
+  color: var(--ds-text-primary);
+}
+
+/* THE NUMBER LEADS, IN ITS OWN SLOT. `baseline` rather than `center` so the
+   count stays aligned with the FIRST line of a noun that wrapped; `min-width`
+   and tabular figures so 1 and 148 start at the same place and the nouns line
+   up down the card. */
+.att-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--theme-spacing-sm);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.att-row__count {
+  flex: none;
+  min-width: 1.5ch;
+  font-size: var(--theme-font-size-md);
+  font-weight: var(--theme-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.att-row__noun {
+  min-width: 0;
+  font-size: var(--theme-font-size-base);
+  line-height: var(--theme-line-height-normal);
+}
+
+/* The one row override, and it moves spacing only: Attention's rows carry one
+   line where the queue's carry three, so the shared 44px minimum left them
+   cramped against the hairline. Never lowers the touch target. */
+.att-rows .ops2-row__open {
+  padding-block: var(--theme-spacing-md);
 }

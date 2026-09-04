@@ -10,7 +10,8 @@ import { parseSummary, type SummaryCounts } from "./attention";
 export type SummaryLoad =
   | { status: "loading" }
   | { status: "ready"; counts: SummaryCounts }
-  | { status: "error"; headline: string; detail: string };
+  | { status: "error"; headline: string; detail: string }
+  | { status: "unauthorised"; headline: string; detail: string };
 
 export function useSummary(): { load: SummaryLoad; reload: () => void } {
   const [load, setLoad] = useState<SummaryLoad>({ status: "loading" });
@@ -26,8 +27,8 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (!live) return;
         if (res.status === 403 || res.status === 401) {
           setLoad({
-            status: "error",
-            headline: "This account cannot see what is waiting.",
+            status: "unauthorised",
+            headline: "This account can't see what's waiting.",
             detail: "Projects are staff-only. Ask an administrator to add the role.",
           });
           return;

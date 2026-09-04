@@ -47,6 +47,11 @@ export function parseSummary(body: unknown): SummaryCounts | "degraded" {
 export type AttentionRow = {
   key: keyof SummaryCounts;
   count: number;
+  /** The work, without its number ("new submissions"). The page renders it in
+   *  its own slot beside the count so the number can be tabular and leading
+   *  (mock §2); `label` stays the two read together, so the accessible name and
+   *  the visible text cannot drift apart. */
+  noun: string;
   label: string; // sentence-style, number leading ("4 new submissions")
   href: string; // path from nav/destinations + optional ?wait=
 };
@@ -65,7 +70,7 @@ function projectsHref(wait: ChipKey): string {
 
 type RowSpec = {
   key: keyof SummaryCounts;
-  label: (count: number) => string;
+  noun: (count: number) => string;
   href: string;
 };
 
@@ -73,16 +78,16 @@ const GROUP_SPECS: readonly { id: DestinationId; rows: readonly RowSpec[] }[] = 
   {
     id: "projects",
     rows: [
-      { key: "submissions", label: (n) => `${n} new submission${n === 1 ? "" : "s"}`, href: projectsHref("us") },
-      { key: "inReview", label: (n) => `${n} being priced`, href: projectsHref("us") },
-      { key: "readyToIssue", label: (n) => `${n} ready to issue`, href: projectsHref("us") },
-      { key: "awaitingPayment", label: (n) => `${n} awaiting payment`, href: projectsHref("customer") },
+      { key: "submissions", noun: (n) => `new submission${n === 1 ? "" : "s"}`, href: projectsHref("us") },
+      { key: "inReview", noun: () => "being priced", href: projectsHref("us") },
+      { key: "readyToIssue", noun: () => "ready to issue", href: projectsHref("us") },
+      { key: "awaitingPayment", noun: () => "awaiting payment", href: projectsHref("customer") },
     ],
   },
   {
     id: "enquiries",
     rows: [
-      { key: "newEnquiries", label: (n) => `${n} nobody has replied to`, href: destination("enquiries").path },
+      { key: "newEnquiries", noun: () => "nobody has replied to", href: destination("enquiries").path },
     ],
   },
   {
@@ -90,7 +95,7 @@ const GROUP_SPECS: readonly { id: DestinationId; rows: readonly RowSpec[] }[] = 
     rows: [
       {
         key: "tradeApplications",
-        label: (n) => `${n} trade application${n === 1 ? "" : "s"} waiting on a decision`,
+        noun: (n) => `trade application${n === 1 ? "" : "s"} waiting on a decision`,
         href: destination("customers").path,
       },
     ],
@@ -110,7 +115,8 @@ export function attentionGroups(counts: SummaryCounts): AttentionGroup[] {
     for (const rowSpec of spec.rows) {
       const count = counts[rowSpec.key];
       if (count === 0) continue;
-      rows.push({ key: rowSpec.key, count, label: rowSpec.label(count), href: rowSpec.href });
+      const noun = rowSpec.noun(count);
+      rows.push({ key: rowSpec.key, count, noun, label: `${count} ${noun}`, href: rowSpec.href });
     }
     if (rows.length === 0) continue;
     groups.push({ id: spec.id, label: destination(spec.id).label, rows });
