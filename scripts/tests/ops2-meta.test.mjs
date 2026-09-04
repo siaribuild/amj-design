@@ -75,19 +75,36 @@ const runValue = {
       selectPages: { selected: [{ pageNo: 3, tier: "primary", reason: "elevation match" }], of: 12 },
       elevationRegions: [{ pageNo: 3, labels: ["north", "east"] }],
       renderCrop: { pagesRendered: 1, cropsMade: 3 },
-      read: { attempted: 5, returned: 4, declined: 1, retriedWithThreshold: 1 },
+      read: { attempted: 5, returned: 4, declined: 1, retriedWithThreshold: 1, targetedReviews: 2 },
       placements: { fromText: 3, fromModelFallback: 1, unplaced: 0 },
       northAssumed: false,
     },
     failedPhase: null,
     wallMs: 4200,
     modelCalls: 6,
+    telemetry: { cachedTurns: 6, repairedTurns: 2, inputTokens: 486000, outputTokens: 31000 },
+    providerFailure: null,
   },
 };
 
 const REASONING = ["room label unclear from the drawing", "confirmed from the schedule instead"];
-const dtoFull = { hasCrop: true, gapCode: null, reasoningParts: REASONING, reading: readingValue, run: runValue };
-const dtoEmpty = { hasCrop: false, gapCode: null, reasoningParts: [], reading: null, run: null };
+// Two shapes at source: a main rejection carries no stage and no outcome; an
+// escalation is always turn 1. Normalised to four keys by the DTO builder.
+const CORRECTIONS = [
+  { turn: 1, reasons: ["identity_tag_not_on_plan_page"], stage: null, outcome: null },
+  { turn: 2, reasons: ["evidence_render_or_frame_invalid", "basis_required"], stage: null, outcome: null },
+  { turn: 1, reasons: ["close_up_verified"], stage: "escalation", outcome: "replaced" },
+];
+const dtoFull = {
+  hasCrop: true, gapCode: null, reasoningParts: REASONING,
+  attempts: 4, acceptedTurn: 3, corrections: CORRECTIONS,
+  reading: readingValue, run: runValue,
+};
+const dtoEmpty = {
+  hasCrop: false, gapCode: null, reasoningParts: [],
+  attempts: null, acceptedTurn: null, corrections: [],
+  reading: null, run: null,
+};
 
 const renderTab = (dto, view = "meta") => renderToStaticMarkup(h(M.MetaTab, {
   dto, view, cropSrc: "/api/ops/projects/p1/lines/l1/meta/crop",
@@ -95,8 +112,12 @@ const renderTab = (dto, view = "meta") => renderToStaticMarkup(h(M.MetaTab, {
 }));
 // gapCode and reasoningParts are the DTO's, not the reading's: a declined
 // opening has no reading to carry them and that is when they matter most.
-const readingDetail = (reading = readingValue, reasoningParts = REASONING) =>
-  renderToStaticMarkup(h(M.MetaReadingDetail, { reading, reasoningParts }));
+const readingDetail = (reading = readingValue, reasoningParts = REASONING, trail = {}) =>
+  renderToStaticMarkup(h(M.MetaReadingDetail, {
+    reading, reasoningParts,
+    attempts: trail.attempts ?? 4, acceptedTurn: trail.acceptedTurn ?? 3,
+    corrections: trail.corrections ?? CORRECTIONS,
+  }));
 const runDetail = () => renderToStaticMarkup(h(M.MetaRunDetail, { run: runValue }));
 
 // ── useLineMeta's state-transition rules ─────────────────────────────────────
@@ -204,7 +225,11 @@ test("MetaTab: Image panel first (AC-9), Reading summary shows facts/confidence/
   assert.match(html, />not_stated</);
   assert.match(html, />not_read</);
   assert.match(html, />high</);
-  assert.match(html, /flags: 2 present/);
+  // FLAGS ARE LISTED, NEVER COUNTED (owner, 2026-09-04). Seven values exist;
+  // a count only hides which one fired, on the one surface built to show it.
+  assert.match(html, /ambiguous_room/);
+  assert.match(html, /low_confidence_split/);
+  assert.doesNotMatch(html, /flags: \d+ present/, "a count is what this replaced");
   assert.match(html, /2026-08-30T12:00:00\.000Z/);
   assert.match(html, />read</);
 
@@ -218,6 +243,45 @@ test("MetaTab: Image panel first (AC-9), Reading summary shows facts/confidence/
   assert.match(metaTabSource, /decision 12/, "the AC-20 override is cited in a comment, not just done silently");
 
   assert.doesNotMatch(metaTabSource, /react-router-dom/);
+});
+
+test("MetaReadingDetail: the correction trail — one row per turn, raw codes, escalation named not numbered, and absent entirely when the opening read first time", () => {
+  const html = readingDetail();
+  // The heading carries the attempt count; the surface does not (owner Q14).
+  assert.match(html, /accepted on attempt 3 of 4/i);
+  // Raw codes, exactly as stored — the same rule the state words follow.
+  assert.match(html, /identity_tag_not_on_plan_page/);
+  assert.match(html, /evidence_render_or_frame_invalid/);
+  assert.match(html, /basis_required/);
+  // A main rejection has no outcome to show, because the parser writes none.
+  const main = html.slice(html.indexOf("identity_tag_not_on_plan_page"), html.indexOf("close_up_verified"));
+  assert.doesNotMatch(main, /rejected|replaced|kept/, "no outcome is invented for a main-path row");
+  // The escalation row is LABELLED, not numbered: its turn is always 1, so
+  // printing "Turn 1" beside a "Turn 2" above it reads as going backwards.
+  assert.match(html, /Escalation/);
+  // LAST, per the approved mock: the trail explains how the reading above was
+  // arrived at, so it must not interrupt the reading to say so.
+  assert.ok(html.indexOf('data-testid="meta-reading-source"') <
+            html.indexOf('data-testid="meta-reading-trail"'),
+            "the trail follows the evidence, it does not sit between the facts and their source");
+  assert.match(html, /replaced/);
+
+  // ABSENCE IS THE SIGNAL. An opening read first time shows no trail at all,
+  // not an empty section announcing that nothing went wrong.
+  const clean = readingDetail(readingValue, REASONING, { attempts: 1, acceptedTurn: 1, corrections: [] });
+  assert.doesNotMatch(clean, /accepted on attempt/i);
+  assert.doesNotMatch(clean, /data-testid="meta-reading-trail"/);
+});
+
+test("MetaRunDetail: the 22 fields in named groups, with telemetry and provider health last (owner: behind a door must be readable, not a text area)", () => {
+  const html = runDetail();
+  for (const heading of ["This run", "The document", "What it looked at", "What it read", "Where it placed them", "Cost and health"]) {
+    assert.ok(html.includes(heading), `the Run door names its "${heading}" group`);
+  }
+  // Ordered as the run happened, so the groups read as a sequence.
+  const order = ["The document", "What it looked at", "What it read", "Where it placed them", "Cost and health"]
+    .map((hd) => html.indexOf(hd));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "groups follow the order of the run");
 });
 
 // ── AC-14/15/16/7/20: the Reading expansion's full contents ─────────────────
