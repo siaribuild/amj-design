@@ -24,7 +24,8 @@ await build({
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
-      export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth } from ${p("worker/lib/drawing/harvest.ts")};
+      export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates } from ${p("worker/lib/drawing/harvest.ts")};
+      export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
@@ -43,7 +44,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -1993,6 +1994,48 @@ test("harvest.ts holds the one Stage A implementation both drawing engines share
   const oriented = applyVisualNorth(harvest, 1, { northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.1, 0.1, 0.2, 0.2] });
   assert.equal(oriented.northEvidence.requiresVisualRead, false);
   assert.equal(oriented.northEvidence.visualEvidence.pageNo, 1);
+});
+
+const scaleSheet = (words) => ({
+  inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+    pages: [{ pageNo: 1, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 }] },
+  pages: [{ pageNo: 1, text: words.map((word) => word.text).join(" "), words }],
+});
+const line = (top, entries) => entries.map(([text, x0, width]) => ({ text, x0, top, x1: x0 + width, bottom: top + 15 }));
+
+test("view scale: every printed form is read and bound to the elevation it titles", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
+    ...line(600, [["ELEVATION", 100, 80], ["B", 185, 10], ["Scale", 210, 40], ["1", 255, 8], [":", 266, 4], ["50", 274, 16]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text, source }) => ({ ratio, text, source })), [
+    { ratio: 100, text: "SCALE 1:100", source: "printed" },
+    { ratio: 50, text: "Scale 1 : 50", source: "printed" },
+  ], "two views on one sheet keep two scales; neither becomes the page's answer");
+  assert.deepEqual(candidates[0].evidenceBoxPt, [210, 300, 295, 315]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 307.5]);
+  assert.deepEqual(candidates[1].viewRegionPt, [0, 307.5, 1_000, 607.5]);
+});
+
+test("view scale: a bare ratio is read, an unusable one is refused, and an untitled sheet binds to no view", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(100, [["1:200", 100, 40]]),
+    ...line(200, [["1", 100, 8], ["/", 111, 6], ["100", 120, 24]]),
+    ...line(300, [["SCALE", 100, 40], ["1:0", 145, 24]]),
+    ...line(400, [["SCALE", 100, 40], ["1:abc", 145, 40]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [
+    { ratio: 200, text: "1:200" },
+    { ratio: 100, text: "1 / 100" },
+  ], "1:0 cannot scale anything and 1:abc is not a ratio");
+  assert.equal(candidates[0].viewRegionPt, null, "a sheet with no drawing title binds its scale to no view");
+  assert.equal(candidates[0].pageNo, 1);
+});
+
+test("expectedWidthPt turns a scheduled width into the points that width occupies", () => {
+  assert.equal(Math.round(expectedWidthPt(3_000, 100) * 100) / 100, 85.04);
+  assert.equal(Math.round(expectedWidthPt(900, 100) * 100) / 100, 25.51);
+  assert.equal(Math.round(expectedWidthPt(3_000, 50) * 100) / 100, 170.08, "a 1:50 view draws the same opening twice as wide");
 });
 
 test("full-document harvest publishes the complete free Stage A metadata contract", () => {

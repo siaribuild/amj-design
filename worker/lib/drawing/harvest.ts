@@ -1,7 +1,8 @@
 import { normalizeOpeningRef } from "../ai/energyMap";
-import type { CropBoxPt, InspectResponse, Orientation } from "./contract";
+import type { CropBoxPt, InspectResponse, Orientation, PageWord } from "./contract";
 import type { EnrichScheduleRow } from "./enrich";
 import { selectPages } from "./selectPages";
+import { elevationRegions, horizontalGap, sameLine } from "./elevationRegions";
 import { locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 
 export const MAX_TAG_CANDIDATES_PER_TAG = 4;
@@ -57,6 +58,75 @@ export interface FullDocumentHarvest {
     storey: "ground" | "first" | null;
     orientation: Orientation | null;
   }[];
+}
+
+export interface DrawingScaleCandidate {
+  pageNo: number;
+  ratio: number;
+  text: string;
+  evidenceBoxPt: CropBoxPt;
+  viewRegionPt: CropBoxPt | null;
+  source: "printed" | "inferred";
+}
+
+const SCALE_RATIO = /^1\s*[:/]\s*(\d{1,5})$/;
+const SCALE_LABEL = /^SCALE:?$/i;
+const MAX_SCALE_RATIO = 20_000;
+const MAX_SCALE_WORDS = 3;
+
+const adjacent = (a: PageWord, b: PageWord): boolean =>
+  sameLine(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
+
+/** Printed view scales, one candidate per printed ratio. A sheet often carries
+ * several views at different scales, so nothing here collapses to a single page
+ * answer — the caller decides whether the candidates covering a view agree. */
+export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCandidate[] {
+  const geometryByPage = new Map(inspected.inventory.pages.map((page) => [page.pageNo, page]));
+  return inspected.pages.flatMap((page) => {
+    const geometry = geometryByPage.get(page.pageNo);
+    if (!geometry) return [];
+    const regions = elevationRegions(page.words, geometry.widthPt, geometry.heightPt);
+    const words = [...page.words].sort((a, b) => a.top - b.top || a.x0 - b.x0);
+    const found: DrawingScaleCandidate[] = [];
+    let at = 0;
+    while (at < words.length) {
+      let consumed = 0;
+      for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
+        const window = words.slice(at, at + size);
+        if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
+        const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join(""));
+        if (!match) continue;
+        consumed = size;
+        const ratio = Number(match[1]);
+        // 1:0 parses but cannot scale anything, and no drawing is printed
+        // smaller than 1:20000 — both are text that merely looks like a scale.
+        if (ratio >= 1 && ratio <= MAX_SCALE_RATIO) {
+          const prior = at > 0 ? words[at - 1] : null;
+          const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
+            ? [prior, ...window] : window;
+          const box: CropBoxPt = [
+            Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
+            Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
+          ];
+          const centreX = (box[0] + box[2]) / 2;
+          const centreY = (box[1] + box[3]) / 2;
+          const view = regions.find(({ region: [x0, y0, x1, y1] }) =>
+            centreX >= x0 && centreX <= x1 && centreY >= y0 && centreY <= y1);
+          found.push({
+            pageNo: page.pageNo,
+            ratio,
+            text: evidence.map((word) => word.text.trim()).join(" "),
+            evidenceBoxPt: box,
+            viewRegionPt: view ? [...view.region] : null,
+            source: "printed",
+          });
+        }
+        break;
+      }
+      at += Math.max(consumed, 1);
+    }
+    return found;
+  });
 }
 
 const compactText = (value: string, limit: number): string =>

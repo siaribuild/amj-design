@@ -13,13 +13,13 @@ type LabelPoint = { label: string; x: number; y: number };
 // Named facades must not create region keys that no placement can consume.
 const IDENTIFIER = /^[A-D]$/i;
 
-function sameLine(a: PageWord, b: PageWord): boolean {
+export function sameLine(a: PageWord, b: PageWord): boolean {
   const ah = Math.max(a.bottom - a.top, 1);
   const bh = Math.max(b.bottom - b.top, 1);
   return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) <= Math.max(ah, bh) * 1.5;
 }
 
-function horizontalGap(a: PageWord, b: PageWord): number {
+export function horizontalGap(a: PageWord, b: PageWord): number {
   if (a.x1 < b.x0) return b.x0 - a.x1;
   if (b.x1 < a.x0) return a.x0 - b.x1;
   return 0;
