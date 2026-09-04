@@ -97,6 +97,16 @@ function* records(sinceMs, cwdFilter) {
  * the machine, a scan-and-filter over every transcript costs a full-machine read
  * per stage and can only ever guess at ownership.
  */
+/** Just the session's own transcript - no subagent files. See finalReply. */
+function parentFiles(sessionId) {
+  const out = []
+  for (const dir of DIRS()) {
+    const main = join(dir, sessionId + '.jsonl')
+    if (existsSync(main)) out.push(main)
+  }
+  return out
+}
+
 function sessionFiles(sessionId) {
   const out = []
   for (const dir of DIRS()) {
@@ -110,6 +120,42 @@ function sessionFiles(sessionId) {
   return out
 }
 
+/**
+ * The last thing a session actually SAID - its final assistant text, with the
+ * tool calls and thinking stripped out.
+ *
+ * Exists because a pane stage has no `result` object to read: `runClaude`
+ * streams one and can capture the reply from it, but a stage running in a
+ * herdr pane is finalized from its transcript alone. Without this, a
+ * pane-mode reviewer produced no report at all while being marked done - the
+ * mandatory gate passing on silence, which is the failure this pipeline has
+ * now recorded three separate ways.
+ *
+ * Returns '' when the transcript has not landed or holds no text, and the
+ * caller must treat that as NO REPORT rather than as an empty one.
+ */
+export function finalReply(sessionId) {
+  if (!sessionId) return ''
+  let last = ''
+  // THE PARENT TRANSCRIPT ONLY. `sessionFiles` also returns every subagent
+  // transcript, and returns them AFTER the parent - so scanning the lot and
+  // keeping the last text found overwrites the reviewer's verdict with whatever
+  // its last child happened to say, regardless of chronology. That text then
+  // gets written as the report and the gate passes without the reviewer's
+  // actual findings, which is the failure this capture path exists to prevent.
+  // Codex P1, 2026-09-02.
+  for (const file of parentFiles(sessionId)) {
+    for (const line of readFileSync(file, 'utf8').split(NL)) {
+      if (!line.trim()) continue
+      let d
+      try { d = JSON.parse(line) } catch { continue }
+      if (d.type !== 'assistant') continue
+      for (const c of d.message?.content || [])
+        if (c.type === 'text' && c.text && c.text.trim()) last = c.text
+    }
+  }
+  return last
+}
 /** Sum one session's API responses, each counted once. Used by `conduct report`. */
 export function sessionTotals(sessionId) {
   const b = zero()

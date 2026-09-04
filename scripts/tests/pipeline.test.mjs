@@ -2706,3 +2706,46 @@ test('a lone numbered criterion still reports the ones missing before it', () =>
   assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
     'a spec with exactly one criterion, correctly numbered, is not a gap')
 })
+
+test('a reviewer that exits 0 without a report is a gate that never ran', () => {
+  // The defect this whole branch exists to close, and the one nothing was
+  // asserting: reviewers boot read-only (--permission-mode plan) and are told
+  // to WRITE their report, which plan mode forbids. Each exited 0 having
+  // produced nothing, `review` was stamped code: 0 on that silence, and
+  // `accept` read the absent 07-review-*.md as "no findings". Every feature
+  // before this was gated by Codex alone without anyone being told.
+  //
+  // The gate's own comment says it was patched four times, each patch fixing
+  // one route to a false pass and opening another. That is the shape of a bug
+  // no test was watching.
+  const s = reviewRepo('review-no-report', { HERDR_STUB_STATES: 'idle;idle' })
+
+  const out = paned(s, 'run', 'review')
+
+  const st = runJson(s).stages
+  const dir = join(s.root, 'docs', 'runs', 'demo')
+
+  // THE PRECONDITION, asserted rather than assumed. Without this the test
+  // passes for a reviewer that failed for any other reason - a non-zero exit, a
+  // hold - and proves nothing about the exit-0-with-no-report case it is named
+  // for. finalizePane stamps status:'done' only on a clean settle, and the
+  // gate's rewrite spreads the object it found, so 'done' survives as evidence
+  // that this reviewer really did finish cleanly.
+  const conf = st['review-conformance']
+  assert.equal(conf.status, 'done',
+    'precondition: this reviewer must have SETTLED CLEANLY, or the test is ' +
+    'measuring an ordinary failure instead: ' + JSON.stringify(conf))
+  assert.equal(existsSync(join(dir, '07-review-conformance.md')), false,
+    'precondition: it must have written no report')
+
+  // ...and having settled clean with nothing to show, it is rejected.
+  assert.equal(conf.missingReport, true,
+    'a cleanly settled reviewer with no report must be marked missingReport: ' + JSON.stringify(conf))
+  assert.notEqual(conf.code, 0,
+    'a reviewer that produced nothing must not be left reading as a clean pass')
+  assert.equal('review' in st, false,
+    'the review rollup must be ABSENT when a reviewer produced no report - ' +
+    'a present code:0 here is the gate passing on silence: ' + JSON.stringify(st.review))
+  assert.match(out, /review-conformance produced NO REPORT/,
+    'the reviewer that wrote nothing must be named, not summarised: ' + out)
+})

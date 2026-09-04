@@ -23,10 +23,10 @@
 
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt, finalReply } from './measure.mjs'
 import {
   available as herdrAvailable, ensureCockpit, launchStage, writePrompt, watch, notify,
   agentPrompt, splitPane, paneReady, agentInfo,
@@ -246,7 +246,20 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
+    // THE ONLY STAGE WHOSE CAP IS NOT 120k, and the reason is measured rather
+    // than preferred. A build task's working set is not what it writes - it is
+    // the PATTERN it copies: the route it sits beside plus the test file it is
+    // modelled on. Measured on ops2-parse-metadata T1, that pair was a
+    // 2,506-line route and a 49k-char test, and at 120k the pair does not fit
+    // beside the turn. Every compact dropped them, the next turn re-read them,
+    // and the run died on the rapid-refill breaker twice - 9.5M context tokens
+    // spent to write one file of five. A cap below the working set does not
+    // save the difference; it pays it repeatedly and then fails.
+    //
+    // 250k is sized off that measurement, not chosen round: pattern pair ~90k,
+    // leaving room for several turns of work before the first compact. Lower it
+    // again the moment tasks stop needing a big pattern beside them.
+    id: 'build', agent: 'developer', sliced: true, compact: 250000, tiers: ['full', 'fix'],
     // Not 02-tasks.json: the fix tier has no architect to write one, and for
     // the full tier runBuild gives a better message about its absence.
     needs: ['00-ask.md'], produces: ['04-build.md'],
@@ -348,20 +361,43 @@ diff-reading review always misses), was anything built the design never named.
 Open a specific file's content ONLY if the path list alone can't answer a
 structural question - never the whole diff up front.
 
-WRITE ${r.dir}/07-review-conformance.md.`,
+Report your findings in your reply, most serious first. Your final message IS
+the report - it is captured to ${r.dir}/07-review-conformance.md. Do not try to
+write a file: you are read-only by design and the write will be refused.`,
   },
   {
     // Headless in EVERY mode, and not by preference: /security-review is
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 100000, headless: true,
+    // 250k, not 100k, and only these two. Both read the WHOLE diff; conformance
+    // reads a path list and survives 100k on the same feature. Measured on
+    // ops2-parse-metadata (1,609 insertions over 12 files): security and
+    // ponytail both died on the rapid-refill breaker at 100k, having produced
+    // nothing, while conformance finished inside 241k total. Cap the stage that
+    // fits; pay for the stage that does not, because a cap below the working set
+    // is spent repeatedly and then fails anyway.
+    id: 'security', slash: '/security-review', compact: 250000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 250000,
   },
   { id: 'codex', codex: true },
 ]
+
+// ON. Turned off by the owner on 2026-09-02 ("do not use Codex for reviews
+// until further notice") to protect tokens for parallel Codex work, and turned
+// back on by him the same day once that work freed up. Left as one constant
+// because it has now been flipped twice: this is a spending dial, not a
+// judgement about Codex, and it will be flipped again.
+//
+// Whichever way it points, a disabled reviewer is NOT a silently skipped one.
+// runReviews prints when codex is off, because the failure this pipeline has
+// already recorded is a review stage that reports success while producing
+// nothing - a run must never read as having had four reviewers when it had
+// three. The plugin stays installed either way: this governs the automated
+// stage, not `/codex:review` by hand.
+const CODEX_REVIEWS = true
 
 // --- run state -------------------------------------------------------------
 
@@ -695,6 +731,16 @@ function runClaude(spec, promptText, run, label) {
         ...(previousSessions && { previousSessions }),
       }
       run.stages[label] = s
+      // THE REPORT IS THE REPLY, for a stage that cannot write one. A reviewer
+      // boots in `plan` mode by design (see BLOCK_HOLDS above) and every
+      // reviewer prompt told it to WRITE its 07-review-*.md - which plan mode
+      // forbids. The result was a gate that exited 0 having produced nothing:
+      // no run in docs/runs/ has ever contained a Claude reviewer's report,
+      // while `review` recorded code 0 and `accept` read the missing files as
+      // "no findings". Capturing the final message is what runCodexJob already
+      // does, and it keeps the reviewer read-only instead of buying the report
+      // with write access to the tree.
+      if (spec.capture && result?.result) writeFileSync(spec.capture, result.result)
       saveRun(run)
       // The headless half of settleStage. A stage that stopped to ask the owner
       // something is held whichever mode it ran in - without this the record
@@ -768,7 +814,7 @@ async function holdWarm(run, label, reason, started) {
  * The stage is done. Meter it from its own transcript by the id we recorded,
  * free the claude, and leave the pane and its scrollback exactly where they are.
  */
-async function finalizePane(run, label, started) {
+async function finalizePane(run, label, started, spec) {
   const s = run.stages[label]
   // Pane transcripts are written live, so there is no flush race to sleep
   // through here; anything still missing heals on the next report (refreshRun).
@@ -780,6 +826,16 @@ async function finalizePane(run, label, started) {
     seconds: Math.round((Date.now() - started) / 1000),
   })
   delete s.holdReason
+  // THE PANE'S REPORT. `runClaude` captures from the `result` object it
+  // streamed; a pane stage has no such object, so its reply comes from the
+  // transcript. Without this a pane reviewer was marked done having written
+  // nothing, and the gate passed on silence - Codex P1, 2026-09-02. An empty
+  // reply is deliberately NOT written: the gate must see no report, not an
+  // empty one it might mistake for a clean review.
+  if (spec?.capture) {
+    const reply = finalReply(s.session)
+    if (reply.trim()) writeFileSync(spec.capture, reply)
+  }
   saveRun(run)
   // Free the process, keep the evidence.
   await agentPrompt(label, '/exit').catch((e) => console.log('  .. ' + label + ' would not /exit (' + e.message + ')'))
@@ -807,7 +863,7 @@ const CONFIRM_MS = 2000
 const CONFIRM_RETRIES = 5
 
 /** Wait for the agent to settle, then hold it warm or finish it off. */
-async function settleStage(run, label, started) {
+async function settleStage(run, label, started, spec) {
   for (let attempt = 0; ; attempt++) {
     const r = await watch(label)
     if (r.state === 'lost') {
@@ -833,7 +889,7 @@ async function settleStage(run, label, started) {
       return run.stages[label]
     }
     if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
-    return finalizePane(run, label, started)
+    return finalizePane(run, label, started, spec)
   }
 }
 
@@ -901,7 +957,7 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
     run.stages[label].pendingLine = boot.pendingLine
     return holdWarm(run, label, 'blocked-launch', started)
   }
-  return settleStage(run, label, started)
+  return settleStage(run, label, started, spec)
 }
 
 // --- sliced build: one short session per task -------------------------------
@@ -1069,6 +1125,14 @@ async function runBuild(run, spec, panes) {
 do NOT search the repo for them and do NOT widen the scope:
 ${(t.files || []).map((f) => '  ' + f).join('\n')}
 
+A FILE ON THAT LIST CAN STILL BE TOO BIG TO READ WHOLE. Read the SPAN you need -
+Read with offset/limit, or grep the anchor first and read around it. DONE_WHEN
+names line numbers for exactly this reason. Measured: one task re-read a
+2,506-line route file 14 times across autocompacts, died on the rapid-refill
+breaker after 47 minutes, and had written one of its five files. A single
+whole-file read worth a third of the window cannot survive a compact, so the
+next turn re-reads it, and that is the whole failure.
+
 TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
       : `SCOPE - read the ask and fix exactly that:
   ${run.dir}/00-ask.md
@@ -1234,22 +1298,145 @@ Report findings in your reply, most serious first.`],
 // completion is awaited - a fan-out that starts the second only once the first
 // has finished is a sequential loop wearing a costume - and one reviewer
 // holding on a question does not stall the rest.
+/**
+ * Every report this run is REQUIRED to produce, as {id, file} - the one list
+ * the cleanup and the gate both derive from.
+ *
+ * It is a function and not a constant because membership depends on the run:
+ * codex is a toggle (CODEX_REVIEWS), and the architecture review exists only
+ * on the full tier, since a fix-tier run has no design stage and so no
+ * architecture to review.
+ *
+ * The architecture reviewer is the reason this exists. It writes
+ * 07-review-architecture.md but is NOT in REVIEWERS - it is called directly by
+ * runReviews - so every loop written over REVIEWERS silently omitted it: it was
+ * never cleared between rounds and never gated at all. Deriving both from here
+ * is what stops the next loop making the same omission.
+ */
+function expectedReports(run) {
+  const out = REVIEWERS
+    .filter((rv) => !(rv.codex && !CODEX_REVIEWS))
+    .map((rv) => ({ id: rv.id, file: '07-review-' + rv.id + '.md' }))
+  if (CODEX_REVIEWS && (run.tier || 'full') === 'full')
+    out.push({ id: 'codex-architecture', file: '07-review-architecture.md' })
+  return out
+}
+
+/**
+ * Every report a review round COULD produce, enabled or not - which is a
+ * different list from `expectedReports`, and the difference matters.
+ *
+ * The gate asks which reports must exist; cleanup must clear every report that
+ * could exist. Clearing only the enabled set leaves a DISABLED reviewer's file
+ * from an earlier round sitting on disk, and `accept` reads every
+ * 07-review-*.md as coverage - so turning a reviewer off makes its last report
+ * immortal and it goes on vouching for code it never saw. Codex has already
+ * been toggled twice on this run.
+ */
+function allReportFiles() {
+  return [
+    ...REVIEWERS.map((rv) => '07-review-' + rv.id + '.md'),
+    '07-review-architecture.md',
+  ]
+}
+
 async function runReviews(run, panes) {
+  // CLEAR LAST ROUND'S REPORTS FIRST. The gate accepts a non-empty
+  // 07-review-<id>.md as proof a reviewer ran - but on a RE-review those files
+  // are already on disk from the previous round, describing a tree that has
+  // since moved. A reviewer that then fails to produce anything is covered by
+  // its own stale report and the gate passes on evidence about different code.
+  // Observed on this very run: two reports sat describing the branch as it was
+  // 15 commits earlier, complete with findings already fixed.
+  //
+  // Deleting them makes "the file exists" mean "produced THIS round" by
+  // construction, rather than by comparing timestamps and hoping. The cost is
+  // that a failed re-review leaves no report at all - which is the honest
+  // outcome, and louder than a stale one.
+  for (const file of allReportFiles())
+    rmSync(join(RUNS, run.slug, file), { force: true })
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
-    const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
+    const capture = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    const spec = { agent: rv.agent, compact: rv.compact, readonly: true, capture }
     const text = rv.slash
       ? rv.slash + '\n\nReview the branch diff against ' + run.base +
-        '. Write your findings to ' + run.dir + '/07-review-' + rv.id +
-        '.md and reply with only that path.'
+        '. Report your findings in your reply, most serious first. Your final' +
+        ' message IS the report - it is captured to ' + run.dir + '/07-review-' +
+        rv.id + '.md, so do not try to write a file and do not reply with a path.'
       : rv.prompt(run)
     const label = 'review-' + rv.id
     if (!panes || rv.headless) return runClaude(spec, text, run, label)
     return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
-  await Promise.all([...jobs, runCodex(run), runCodexArchitecture(run)])
-  // Same bookkeeping runBuild does for 'build': mark the parent stage done so
-  // `next` advances past it instead of re-running all four reviewers on a
-  // second call - review has no single session of its own to report.
+  if (!CODEX_REVIEWS)
+    process.stdout.write('\n  -- codex reviews OFF by owner instruction' +
+      ' (CODEX_REVIEWS in conduct.mjs). This work is UNREVIEWED by Codex;\n' +
+      '     do not present it as reviewed by four reviewers.\n')
+  await Promise.all([...jobs,
+    ...(CODEX_REVIEWS ? [runCodex(run), runCodexArchitecture(run)] : [])])
+  // THE GATE ASSERTS ITS OWN EVIDENCE. A reviewer is not "done" because its
+  // process exited - it is done when its report exists and has something in it.
+  // Two ways this pipeline has already failed that test: plan mode forbade the
+  // write, so conformance exited 0 having produced nothing; and `spec.capture`
+  // is consumed by runClaude only, so a pane-mode reviewer (herdr available)
+  // still writes nothing while finalizePane marks it done. Both end the same
+  // way - `accept` reads an absent 07-review-*.md as "no findings" and the
+  // mandatory gate passes on silence.
+  //
+  // Checked here rather than in each launch path because the requirement
+  // belongs to the GATE, not to how a particular reviewer happened to boot.
+  // THE GATE, STATED ONCE. A reviewer is in exactly one of three states, and
+  // only the first satisfies the gate:
+  //
+  //   REPORTED  - exited 0 AND left a non-empty 07-review-<id>.md
+  //   FAILED    - exited non-zero, or exited 0 with no report (which is not a
+  //               review; plan mode forbade the write, or nothing captured it)
+  //   WAITING   - held warm for the owner, so it has no report YET
+  //
+  // This was patched four times, each patch fixing one route to a false pass
+  // and opening another, because it kept describing the states instead of
+  // deciding on them. So: classify every enabled reviewer, then write the
+  // rollup only if every one of them REPORTED.
+  const held = [], failed = []
+  for (const r of expectedReports(run)) {
+    const label = 'review-' + r.id
+    const st = run.stages[label]
+    if (st?.status === 'held') { held.push(r.id); continue }
+    const path = join(RUNS, run.slug, r.file)
+    const reported = existsSync(path) && !!readFileSync(path, 'utf8').trim()
+    if (reported && (st?.code ?? 0) === 0) continue
+    failed.push(r.id)
+    if (!reported) {
+      run.stages[label] = { ...(st || {}), code: 1, missingReport: true }
+      process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + path + ').\n' +
+        '     Its process may have exited 0; that is not a review.\n')
+    } else {
+      process.stdout.write('\n  !! ' + label + ' exited ' + st.code + '.\n')
+    }
+  }
+
+  // NOT DONE IS AN ABSENT KEY, in either failing case. `review` is a rollup
+  // with no session, so it cannot carry a `held` or `error` status that
+  // `finished`, `resume` or `plan` know how to act on - inventing one
+  // deadlocked the flow. And it must be DELETED rather than merely left
+  // unwritten, because a re-review runs against a run whose previous round
+  // already wrote `code: 0` here, and `next` reads only this key.
+  if (held.length || failed.length) {
+    delete run.stages['review']
+    saveRun(run)
+    if (failed.length)
+      process.stdout.write('\n  == REVIEW INCOMPLETE - ' + failed.join(', ') + ' did not\n' +
+        '     produce a clean report. This work is UNREVIEWED by those reviewers;\n' +
+        '     do not present it as reviewed. Re-run:  conduct run review\n')
+    if (held.length)
+      process.stdout.write('\n  == REVIEW HELD - ' + held.join(', ') + ' stopped for you.\n' +
+        '     Answer it and let it finish, then:  conduct run review\n')
+    return
+  }
+
+  // Same bookkeeping runBuild does for 'build': mark the parent done so `next`
+  // advances instead of re-running every reviewer on a second call - review
+  // has no single session of its own to report.
   run.stages['review'] = { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, rollup: true }
   saveRun(run)
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
@@ -1276,16 +1463,26 @@ async function runReviews(run, panes) {
  * `build-<task>` or a `review-<reviewer>`; `fix-<n>` is the developer shape
  * cmds.fix uses. Needed on a relaunch, which has to rebuild the same argv.
  */
-export function stageSpec(label) {
+export function stageSpec(label, run) {
   const stage = STAGES.find((s) => s.id === label)
   if (stage) return stage
   if (label.startsWith('build-')) return STAGES.find((s) => s.id === 'build')
   const rv = REVIEWERS.find((r) => 'review-' + r.id === label)
-  if (rv) return { agent: rv.agent, compact: rv.compact, readonly: true }
+
+  // `capture` IS part of the launch spec, so rebuilding one without it does not
+  // reproduce the launch - it produces a reviewer that runs, settles, and
+  // writes no report. That is the gate passing on silence again, reached this
+  // time by `resume` and `answer` rather than by a first run. Codex, 2026-09-02.
+  if (rv) return {
+    agent: rv.agent, compact: rv.compact, readonly: true,
+    ...(run && { capture: join(RUNS, run.slug, '07-review-' + rv.id + '.md') }),
+  }
+
   // fix-<n> is the nth fix session, so n IS the number of rounds spent before
   // it - and a resumed fix has to come back at the model it was escalated to,
   // not the pinned one it already failed at.
   if (label.startsWith('fix-')) return fixSpec(Number(label.slice('fix-'.length)) || 0)
+
   return { agent: 'developer', compact: 120000 }
 }
 
@@ -1626,14 +1823,14 @@ const cmds = {
     const run = loadRun(activeSlug())
     const st = run.stages[label]
     if (!st) die('no stage "' + label + '" in this run')
-    const spec = stageSpec(label)
+    const spec = stageSpec(label, run)
     const started = Date.parse(st.startedAt) || Date.now()
     const panes = await paneMode(flags)
 
     if (panes && st.mode === 'pane' && await agentInfo(label)) {
       console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
         st.session + '. Nothing re-booted.')
-      return finished(run, label, spec, await settleStage(run, label, started))
+      return finished(run, label, spec, await settleStage(run, label, started, spec))
     }
     if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
       '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
@@ -1671,7 +1868,7 @@ const cmds = {
     // A gate is held by an AGENT, and its label may be `build-<task>` or
     // `review-<id>` as readily as a stage id. STAGES.find resolves only the
     // last kind; stageSpec resolves all three, which is what it exists for.
-    const spec = stageSpec(id)
+    const spec = stageSpec(id, run)
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
@@ -1693,7 +1890,7 @@ const cmds = {
       delete st.holdReason
       run.gateStage = null
       saveRun(run)
-      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now()))
+      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now(), spec))
       return
     }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
@@ -1718,6 +1915,17 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
       seconds: (st.seconds || 0) + Math.round((Date.now() - started) / 1000),
     })
     delete st.holdReason
+    // AND THE REPORT, on this path too. The headless answer spawns with
+    // stdio inherit, so there is no result object for `runClaude` to capture
+    // from and no `finalizePane` to read the transcript - a reviewer answered
+    // this way ran, settled and wrote nothing. That is the FOURTH way this
+    // gate has been reached without evidence (first run, pane completion,
+    // resume, and here); enumerating the paths is what finally closed it,
+    // rather than fixing whichever one was reported last.
+    if (spec?.capture) {
+      const reply = finalReply(sid)
+      if (reply.trim()) writeFileSync(spec.capture, reply)
+    }
     run.stages[id] = st
     run.gateStage = null
     saveRun(run)
