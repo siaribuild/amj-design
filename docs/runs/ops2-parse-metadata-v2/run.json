@@ -1,0 +1,10 @@
+{
+  "slug": "ops2-parse-metadata-v2",
+  "tier": "full",
+  "base": "4374270e",
+  "branch": "feat/ops2-parse-metadata-v2",
+  "ui": false,
+  "stages": {},
+  "tasksDone": [],
+  "startedAt": "2026-09-04T07:30:34.997Z"
+}
