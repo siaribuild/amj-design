@@ -22,7 +22,7 @@
 
 export type DestinationId =
   | "attention" | "projects" | "products" | "pricing" | "customers"
-  | "files" | "audit" | "settings";
+  | "enquiries" | "files" | "audit" | "settings";
 
 export type SectionId = "workspace" | "system";
 
@@ -75,6 +75,10 @@ export const DESTINATIONS: readonly Destination[] = [
   {
     id: "customers", label: "Customers", path: "/customers", section: "workspace",
     blurb: "Accounts, trade verification and who is behind a project.",
+  },
+  {
+    id: "enquiries", label: "Enquiries", path: "/enquiries", section: "workspace",
+    blurb: "Incoming enquiries that are not yet projects.",
   },
   {
     id: "files", label: "Files", path: "/files", section: "system",
