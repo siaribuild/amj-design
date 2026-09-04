@@ -1,83 +1,158 @@
-{
-  "feature": "ops2-attention",
-  "design": "docs/runs/ops2-attention/02-design.md",
-  "tasks": [
-    {
-      "id": "T1",
-      "title": "Enquiries destination: union, registry entry, icon, navigation test",
-      "files": [
-        "src/ops2/nav/destinations.ts",
-        "src/ops2/nav/icons.ts",
-        "scripts/tests/ops2-navigation.test.mjs"
-      ],
-      "tests": ["scripts/tests/ops2-navigation.test.mjs"],
-      "done_when": "Red first: ops2-navigation.test.mjs's destination-list deepEqual expects [\"workspace\",\"Enquiries\",\"/enquiries\"] immediately after Customers and the tab-id assertion stays [\"attention\",\"projects\",\"products\"]. Then: add \"enquiries\" to the DestinationId union (destinations.ts line 23), a Destination entry in the workspace section after customers (path /enquiries, blurb per design §2), and enquiries: chatbubblesOutline in DESTINATION_ICON (icons.ts). TAB_DESTINATION_IDS, HOME_PATH, NESTS_BELOW untouched. npm run test:ops2 and npm run typecheck:gate green — the Record<DestinationId,string> icon type is the criterion-15 proof.",
-      "after": [],
-      "criteria": ["15", "16", "17"]
-    },
-    {
-      "id": "T2",
-      "title": "Attention model (pure) + new node suite + script wiring",
-      "files": [
-        "src/ops2/attention/attention.ts",
-        "scripts/tests/ops2-attention.test.mjs",
-        "package.json"
-      ],
-      "tests": ["scripts/tests/ops2-attention.test.mjs"],
-      "done_when": "Red first: new suite ops2-attention.test.mjs, esbuild-stdin-bundling attention.ts with src/ops2/projects/queue.ts and src/ops2/nav/destinations.ts (copy the bundling pattern from ops2-navigation.test.mjs), asserting design §10's model cases: group order/counts (1), zero row suppression (3), all-zero group suppression with stable order (4), all-six-zero -> [] (5), parseSummary strict-degraded for degraded:true / missing key / non-number (18 model-side), every href pathname registered in DESTINATIONS (7), every query string exactly wait=<ChipKey in WAIT_CHIPS> with no REFINEMENTS param (11), the wait mapping table from design §3 (submissions/inReview/readyToIssue -> ?wait=us, awaitingPayment -> ?wait=customer) (12), labels number-leading. Then implement attention.ts per design §3 (parseSummary, attentionGroups, hrefs via destination(id).path). Wire the suite into package.json test:ops2 (line 55). Suite green under npm run test:ops2.",
-      "after": [],
-      "criteria": ["1", "3", "4", "5", "7", "11", "12"]
-    },
-    {
-      "id": "T3",
-      "title": "useSummary hook, AttentionPage, route branch, group CSS",
-      "files": [
-        "src/ops2/attention/useSummary.ts",
-        "src/ops2/attention/AttentionPage.tsx",
-        "src/ops2/styles/attention.css",
-        "src/ops2/Ops2App.tsx"
-      ],
-      "tests": ["scripts/tests/ops2-attention.test.mjs", "scripts/tests/ops2-navigation.test.mjs"],
-      "done_when": "useSummary.ts copies useProjectQueue's mechanics (GET /api/ops/summary credentials same-origin; live guard checked before AND after await res.json(); ionViewWillEnter refresh with entered-ref first-fire skip; 401/403 -> staff-role error copy) and maps parseSummary(...)===\"degraded\" into the same error state as non-2xx/network (design §4 — copy, not extract; one-line pointer comment to useProjectQueue's rationale). AttentionPage.tsx per design §5: OpsPage frame with h1, per-group section.att-group > h2 + RowList/Row (edge null, onActivate history.push(row.href), pressTestId), .pq-skeleton loading, .pq-empty when attentionGroups is empty, .pq-error panel testid attention-error with Try again wired to reload and NO counts rendered in that state; activeOrders/customers never read. attention.css holds only the group-heading styles. Ops2App.tsx line 201 ternary gains the attention branch; existing route-source regex assertions in ops2-navigation.test.mjs stay green. npm run test:ops2 and typecheck:gate green.",
-      "after": ["T1", "T2"],
-      "criteria": ["2", "5", "6", "8", "18", "19", "20", "21", "22", "26"]
-    },
-    {
-      "id": "T4",
-      "title": "Project queue consumes ?wait= as a one-shot instruction",
-      "files": [
-        "src/ops2/projects/queue.ts",
-        "src/ops2/projects/ProjectsPage.tsx",
-        "scripts/tests/ops2-projects.test.mjs"
-      ],
-      "tests": ["scripts/tests/ops2-projects.test.mjs"],
-      "done_when": "Red first: ops2-projects.test.mjs gains chipFromSearch cases — \"?wait=us\"->\"us\", \"?wait=customer\"->\"customer\", \"?wait=all\"->\"all\", \"?wait=bogus\"->null, \"\"->null. Then: export chipFromSearch(search: string): ChipKey|null from queue.ts (beside EMPTY_QUERY, line 155), validating against WAIT_CHIPS keys. In ProjectsPage.tsx: initial query state (line 63) stays EMPTY_QUERY; a new effect keyed on location.search applies a non-null chip via setQuery({...EMPTY_QUERY, chip}) then history.replace(destination(\"projects\").path) to strip the param (design §6 — effect not initial-state because IonRouterOutlet keeps the page mounted). No change to EMPTY_QUERY, WAIT_CHIPS, REFINEMENTS, chip controls. npm run test:ops2 green.",
-      "after": [],
-      "criteria": ["9", "10"]
-    },
-    {
-      "id": "T5",
-      "title": "Playwright suite for the Attention surface + seed staff mailbox",
-      "files": [
-        "scripts/tests/web/ops2-attention.spec.ts",
-        "scripts/db/seed.sql"
-      ],
-      "tests": ["scripts/tests/web/ops2-attention.spec.ts"],
-      "done_when": "seed.sql gains u_staff7 (role estimator, unique @openframe.com.au mailbox) and the ownership comment line \"u_staff7 -> scripts/tests/web/ops2-attention.spec.ts\" (one staff identity per browser suite — lines 17-51 explain why). The spec signs in as u_staff7 and walks design §10's browser cases: rows render with the endpoint's numbers and expose no mutating control (1, 6); submissions row -> /projects with Needs-us chip lit and All clearing it (9, 10); enquiries row -> /enquiries placeholder root (13); trade row -> /customers (14); page.route intercepts of /api/ops/summary for degraded:true and for a 500 both render .pq-error [data-testid=attention-error] with retry and zero counts, and retry after un-intercepting recovers (18, 19, 20); skeleton shows before the response (21); away-and-back re-fetches and a delayed stale response never overwrites the newer one (22); a customer session loading /attention by URL gets the unauthorised treatment, not zeros (26). npm run test:web green for this file against a clean base (the 390px flake at ops2-projects.spec.ts:337 is pre-existing — confirm against base, do not chase here).",
-      "after": ["T3", "T4"],
-      "criteria": ["1", "6", "9", "10", "13", "14", "18", "19", "20", "21", "22", "26"]
-    },
-    {
-      "id": "T6",
-      "title": "Abuse assertions pin bodies carry no counts, not just 403",
-      "files": [
-        "scripts/tests/api.test.mjs",
-        "scripts/tests/api-edge.test.mjs"
-      ],
-      "tests": ["scripts/tests/api.test.mjs", "scripts/tests/api-edge.test.mjs"],
-      "done_when": "The existing /api/ops/summary denial assertions — api.test.mjs line 70 (anonymous), line 1439 (customer), api-edge.test.mjs line 1505 loop (manufacturer) and line 1883 (assertion-less session) — additionally assert the response body has no submissions key (body.submissions === undefined). No worker change is needed or allowed: the route already returns {error:\"forbidden\"}. npm run test:api and npm run test:trade green.",
-      "after": [],
-      "criteria": ["23", "24", "25"]
-    }
-  ]
-}
+[
+  {
+    "id": "T1",
+    "title": "Enquiries destination: union, registry entry, icon, navigation test",
+    "files": [
+      "src/ops2/nav/destinations.ts",
+      "src/ops2/nav/icons.ts",
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "done_when": "Red first: ops2-navigation.test.mjs's destination-list deepEqual expects [\"workspace\",\"Enquiries\",\"/enquiries\"] immediately after Customers and the tab-id assertion stays [\"attention\",\"projects\",\"products\"]. Then: add \"enquiries\" to the DestinationId union (destinations.ts line 23), a Destination entry in the workspace section after customers (path /enquiries, blurb per design §2), and enquiries: chatbubblesOutline in DESTINATION_ICON (icons.ts). TAB_DESTINATION_IDS, HOME_PATH, NESTS_BELOW untouched. npm run test:ops2 and npm run typecheck:gate green — the Record<DestinationId,string> icon type is the criterion-15 proof.",
+    "after": [],
+    "criteria": [
+      "15",
+      "16",
+      "17"
+    ]
+  },
+  {
+    "id": "T2",
+    "title": "Attention model (pure) + new node suite + script wiring",
+    "files": [
+      "src/ops2/attention/attention.ts",
+      "scripts/tests/ops2-attention.test.mjs",
+      "package.json"
+    ],
+    "tests": [
+      "scripts/tests/ops2-attention.test.mjs"
+    ],
+    "done_when": "Red first: new suite ops2-attention.test.mjs, esbuild-stdin-bundling attention.ts with src/ops2/projects/queue.ts and src/ops2/nav/destinations.ts (copy the bundling pattern from ops2-navigation.test.mjs), asserting design §10's model cases: group order/counts (1), zero row suppression (3), all-zero group suppression with stable order (4), all-six-zero -> [] (5), parseSummary strict-degraded for degraded:true / missing key / non-number (18 model-side), every href pathname registered in DESTINATIONS (7), every query string exactly wait=<ChipKey in WAIT_CHIPS> with no REFINEMENTS param (11), the wait mapping table from design §3 (submissions/inReview/readyToIssue -> ?wait=us, awaitingPayment -> ?wait=customer) (12), labels number-leading. Then implement attention.ts per design §3 (parseSummary, attentionGroups, hrefs via destination(id).path). Wire the suite into package.json test:ops2 (line 55). Suite green under npm run test:ops2.",
+    "after": [],
+    "criteria": [
+      "1",
+      "3",
+      "4",
+      "5",
+      "7",
+      "11",
+      "12"
+    ]
+  },
+  {
+    "id": "T3",
+    "title": "useSummary hook, AttentionPage, route branch, group CSS",
+    "files": [
+      "src/ops2/attention/useSummary.ts",
+      "src/ops2/attention/AttentionPage.tsx",
+      "src/ops2/styles/attention.css",
+      "src/ops2/Ops2App.tsx"
+    ],
+    "tests": [
+      "scripts/tests/ops2-attention.test.mjs",
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "done_when": "useSummary.ts copies useProjectQueue's mechanics (GET /api/ops/summary credentials same-origin; live guard checked before AND after await res.json(); ionViewWillEnter refresh with entered-ref first-fire skip; 401/403 -> staff-role error copy) and maps parseSummary(...)===\"degraded\" into the same error state as non-2xx/network (design §4 — copy, not extract; one-line pointer comment to useProjectQueue's rationale). AttentionPage.tsx per design §5: OpsPage frame with h1, per-group section.att-group > h2 + RowList/Row (edge null, onActivate history.push(row.href), pressTestId), .pq-skeleton loading, .pq-empty when attentionGroups is empty, .pq-error panel testid attention-error with Try again wired to reload and NO counts rendered in that state; activeOrders/customers never read. attention.css holds only the group-heading styles. Ops2App.tsx line 201 ternary gains the attention branch; existing route-source regex assertions in ops2-navigation.test.mjs stay green. npm run test:ops2 and typecheck:gate green.",
+    "after": [
+      "T1",
+      "T2"
+    ],
+    "criteria": [
+      "2",
+      "5",
+      "6",
+      "8",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "26"
+    ]
+  },
+  {
+    "id": "T4",
+    "title": "Project queue consumes ?wait= as a one-shot instruction",
+    "files": [
+      "src/ops2/projects/queue.ts",
+      "src/ops2/projects/ProjectsPage.tsx",
+      "scripts/tests/ops2-projects.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/ops2-projects.test.mjs"
+    ],
+    "done_when": "Red first: ops2-projects.test.mjs gains chipFromSearch cases — \"?wait=us\"->\"us\", \"?wait=customer\"->\"customer\", \"?wait=all\"->\"all\", \"?wait=bogus\"->null, \"\"->null. Then: export chipFromSearch(search: string): ChipKey|null from queue.ts (beside EMPTY_QUERY, line 155), validating against WAIT_CHIPS keys. In ProjectsPage.tsx: initial query state (line 63) stays EMPTY_QUERY; a new effect keyed on location.search applies a non-null chip via setQuery({...EMPTY_QUERY, chip}) then history.replace(destination(\"projects\").path) to strip the param (design §6 — effect not initial-state because IonRouterOutlet keeps the page mounted). No change to EMPTY_QUERY, WAIT_CHIPS, REFINEMENTS, chip controls. npm run test:ops2 green.",
+    "after": [],
+    "criteria": [
+      "9",
+      "10"
+    ]
+  },
+  {
+    "id": "T5",
+    "title": "Attention browser suite: seed mailbox + the navigation cases",
+    "files": [
+      "scripts/tests/web/ops2-attention.spec.ts",
+      "scripts/db/seed.sql"
+    ],
+    "tests": [
+      "scripts/tests/web/ops2-attention.spec.ts"
+    ],
+    "done_when": "seed.sql gains u_staff7 (role estimator, unique @openframe.com.au mailbox) and the ownership comment line \"u_staff7 -> scripts/tests/web/ops2-attention.spec.ts\" in the register at the top of the INSERT (one staff identity per browser suite - the comment block there explains why). Copy the sign-in block VERBATIM from scripts/tests/web/ops2-projects.spec.ts (the STAFF_EMAIL reader, the beforeAll challenge/verify, and the beforeEach addCookies) changing only the staff row it reads. Do not invent one and do not go looking: that file is the pattern. The spec then covers design section 10's NAVIGATION cases only: groups render with the endpoint's numbers and expose no mutating control (1, 6); submissions row -> /projects with the Needs-us chip lit and All clearing it (9, 10); enquiries row -> /enquiries placeholder root (13); trade row -> /customers (14). Stub /api/ops/summary with page.route so the counts are fixed - the seed cannot produce the shape these cases need. Failure, skeleton, staleness and unauthorised cases are T7's; do not write them here. Run ONLY this file: npx playwright test ops2-attention.",
+    "after": [
+      "T3",
+      "T4"
+    ],
+    "criteria": [
+      "1",
+      "6",
+      "9",
+      "10",
+      "13",
+      "14"
+    ]
+  },
+  {
+    "id": "T6",
+    "title": "Abuse assertions pin bodies carry no counts, not just 403",
+    "files": [
+      "scripts/tests/api.test.mjs",
+      "scripts/tests/api-edge.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/api.test.mjs",
+      "scripts/tests/api-edge.test.mjs"
+    ],
+    "done_when": "The existing /api/ops/summary denial assertions — api.test.mjs line 70 (anonymous), line 1439 (customer), api-edge.test.mjs line 1505 loop (manufacturer) and line 1883 (assertion-less session) — additionally assert the response body has no submissions key (body.submissions === undefined). No worker change is needed or allowed: the route already returns {error:\"forbidden\"}. npm run test:api and npm run test:trade green.",
+    "after": [],
+    "criteria": [
+      "23",
+      "24",
+      "25"
+    ]
+  },
+  {
+    "id": "T7",
+    "title": "Attention browser suite: failure, skeleton, staleness, unauthorised",
+    "files": [
+      "scripts/tests/web/ops2-attention.spec.ts"
+    ],
+    "tests": [
+      "scripts/tests/web/ops2-attention.spec.ts"
+    ],
+    "done_when": "APPEND to the suite T5 created - the sign-in fixtures are already there, reuse them, add no second beforeAll. Cases: page.route intercepts of /api/ops/summary for degraded:true and for a 500 both render .pq-error [data-testid=attention-error] with a retry and ZERO counts, and retry after un-intercepting recovers (18, 19, 20); the skeleton shows before the response resolves (21); away-and-back re-fetches, and a delayed stale response never overwrites the newer one (22); a customer session loading /attention by URL gets the unauthorised treatment, not zeros (26). Run ONLY this file: npx playwright test ops2-attention. The 390px flake at ops2-projects.spec.ts:337 is PRE-EXISTING - confirm against the base commit if it appears, do not chase it here.",
+    "after": [
+      "T5"
+    ],
+    "criteria": [
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "26"
+    ]
+  }
+]

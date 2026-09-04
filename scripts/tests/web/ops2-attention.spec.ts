@@ -243,8 +243,35 @@ test("a signed-in customer (non-staff) loading /attention gets the unauthorised 
 
   const error = page.getByTestId("attention-error");
   await expect(error).toBeVisible();
-  await expect(error).toHaveText(/This account cannot see what is waiting\./);
+  await expect(error).toHaveText(/This account can't see what's waiting\./);
   await expect(error).toHaveText(/staff-only/);
   await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
+  await context.close();
+});
+
+test("the unauthorised panel has no retry — pressing it would fail the same way (mock §3.5)", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(OPS2);
+  const email = `attn-customer-noretry-${Date.now().toString(36)}@example.com`;
+  const ok = await page.evaluate(async (email) => {
+    const challenge = await fetch("/api/auth/challenge", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const { devCode } = await challenge.json();
+    if (!devCode) return "no dev code — is the Worker in dev mode?";
+    const verified = await fetch("/api/auth/verify", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, code: devCode }),
+    });
+    return verified.ok ? null : `verify answered ${verified.status}`;
+  }, email);
+  expect(ok, "customer sign-in").toBeNull();
+
+  await page.goto(ATTENTION);
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+  await expect(error.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await context.close();
 });
