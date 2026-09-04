@@ -7,8 +7,9 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
-  isDevEnv, isEmail, normEmail, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
+  isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { notificationCount, readMonitoringSnapshot } from "../lib/monitoring";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
@@ -344,6 +345,19 @@ ops.get("/summary", async (c) => {
   } catch {
     return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, readyToIssue: 0, newEnquiries: 0, tradeApplications: 0, degraded: true });
   }
+});
+
+// GET /api/ops/monitoring — ai-parse monitoring snapshot + notification count
+// (staff-gated). Distinguishes 401 (no session) from 403 (wrong role) — every
+// other staff route above collapses both to 403 via resolveStaff, but this
+// panel's own denial screens need to tell "sign in" from "not for you".
+ops.get("/monitoring", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  const staff = user.type === "internal" ? { role: user.role } : null;
+  if (!isStaffUser(staff)) return c.json({ error: "forbidden" }, 403);
+
+  return c.json({ snapshot: await readMonitoringSnapshot(c.env), notificationCount: await notificationCount(c.env) });
 });
 
 // GET /api/ops/queues/submissions — projects awaiting triage / review.
@@ -2071,7 +2085,7 @@ ops.post("/projects/:id/ai-runs", async (c) => {
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
   try {
-    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, projectId);
+    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, projectId, "ops");
     await logEvent(c.env, {
       actor: staff.id,
       entityType: "project",

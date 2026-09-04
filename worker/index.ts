@@ -31,6 +31,7 @@ import { isUnderOps2 } from "../src/data/ops2Routing";
 import { drainLearningOutbox } from "./lib/issue";
 import { reconcilePricing } from "./lib/pricing-admin";
 import { referralSweep } from "./lib/referrals";
+import { writeMonitoringSnapshot } from "./lib/monitoring";
 import { applySecurity, securityOptions } from "./lib/headers";
 
 const api = new Hono<{ Bindings: Env }>();
@@ -351,5 +352,8 @@ export default {
     await reapAbandonedAiJobs(env)
       .then((n) => { if (n.claims || n.runs) console.log(`[ai] reaped ${n.claims} claim(s), ${n.runs} run(s)`); })
       .catch((e) => console.log(`[ai] reaper failed: ${String(e)}`));
+    // ai-parse monitoring snapshot (design §5). Caught separately like its
+    // peers above — a KV/D1 blip here must not sink the other sweeps.
+    await writeMonitoringSnapshot(env).catch((e) => console.log(`[monitoring] scheduled snapshot failed: ${String(e)}`));
   },
 };
