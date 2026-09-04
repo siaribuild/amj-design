@@ -211,3 +211,40 @@ test("leaving and returning re-fetches, and a slow reply to a superseded request
   await page.waitForTimeout(200); // give the stale call 1 reply a chance to land, if it's going to
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions");
 });
+
+test("a signed-in customer (non-staff) loading /attention gets the unauthorised treatment, not zero counts", async ({ browser }) => {
+  // Real /api/ops/summary, no stub — proves the actual server-side role check
+  // (401/403), not a fabricated one. Own context, goto(OPS2) BEFORE logging
+  // in: the session cookie is host-only (no Domain attribute — worker/lib/
+  // auth.ts's sessionCookie), so the login fetch must be same-origin with
+  // ops.localhost or the cookie never reaches the later goto(ATTENTION).
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(OPS2);
+  const email = `attn-customer-${Date.now().toString(36)}@example.com`;
+  const ok = await page.evaluate(async (email) => {
+    const challenge = await fetch("/api/auth/challenge", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const { devCode } = await challenge.json();
+    if (!devCode) return "no dev code — is the Worker in dev mode?";
+    const verified = await fetch("/api/auth/verify", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, code: devCode }),
+    });
+    return verified.ok ? null : `verify answered ${verified.status}`;
+  }, email);
+  expect(ok, "customer sign-in").toBeNull();
+
+  const summaryResponse = page.waitForResponse((res) => res.url().includes("/api/ops/summary"));
+  await page.goto(ATTENTION);
+  expect((await summaryResponse).status(), "summary response status — 403 forbidden, not 401 anonymous").toBe(403);
+
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+  await expect(error).toHaveText(/This account cannot see what is waiting\./);
+  await expect(error).toHaveText(/staff-only/);
+  await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
+  await context.close();
+});
