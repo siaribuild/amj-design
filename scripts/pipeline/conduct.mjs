@@ -1078,13 +1078,22 @@ export function checkPlan(tasks, design, spec) {
       warn.push('the design names ' + f + ' but no task lists it in `files` - it will not be written')
 
   const claimedCriteria = new Set(tasks.flatMap((t) => (t.criteria || []).map(String)))
-  const specCriteria = [...(spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => m[1])
+  // The SAME shapes checkSpec accepts. Widening one and not the other left
+  // AC-<n> / L-S<n> specs with no criteria found here at all, so the coverage
+  // block was skipped entirely and a plan tracing nothing read as clean - the
+  // quiet half of a disagreement inside one patch. Codex P2, 2026-09-04.
+  const specCriteria = [
+    ...[...(spec || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => m[1]),
+    ...[...(spec || '').matchAll(/^\s*\*\*([A-Za-z][\w-]*?\d+)\b/gm)].map((m) => m[1]),
+  ]
   if (specCriteria.length && !claimedCriteria.size)
     warn.push('no task declares which criteria it satisfies, so none of the spec' + "'" + 's ' +
       specCriteria.length + ' can be traced to the work that covers it')
   else
+    // A task names a criterion either in full ("AC-1") or by its number ("1"),
+    // and those are the same criterion.
     for (const c of specCriteria)
-      if (!claimedCriteria.has(c))
+      if (!claimedCriteria.has(c) && !claimedCriteria.has(c.replace(/^\D+/, '')))
         warn.push('spec criterion ' + c + ' is claimed by no task')
 
   return { fatal, warn }
