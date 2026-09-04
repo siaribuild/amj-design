@@ -2098,6 +2098,16 @@ test("page scale: a fall or a grade is not a scale, and a trailing stop does not
   ], "drainage falls and ramp grades print the same shape as a scale and must not become one");
 });
 
+test("page scale: a limit on a gradient is not a scale either", () => {
+  const sheet = scaleSheet([
+    ...line(200, [["NO", 100, 20], ["STEEPER", 125, 55], ["THAN", 185, 35], ["1:20", 225, 35]]),
+    ...line(700, [["SCALE", 800, 40], ["1:100", 845, 40]]),
+  ]);
+  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
+    "a stair or ramp limit shares the shape of a scale and would otherwise read as a conflict");
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
+});
+
 test("page scale: rotated text beside a note does not detach the note from its ratio", () => {
   // Geometry copied from the ground floor plan of a real set: a 36.9pt rotated
   // label overlaps three 7.8pt rows, and a row-grouping that lets it bridge
