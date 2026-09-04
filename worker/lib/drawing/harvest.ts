@@ -82,19 +82,17 @@ const adjacent = (a: PageWord, b: PageWord): boolean =>
 
 /** A scale belongs to the title it is printed under, which is not always the
  * band it lands in: stacked views end at their own title line, so a ratio one
- * line below its title falls inside the next view. Bind to the nearest title
- * and only when it is clearly nearest — a ratio between two views names
- * neither, and one in the sheet's title block is the page's, not a view's. */
+ * line below its title falls inside the next view. Bind to the nearest title,
+ * and only when it is clearly nearest — a ratio equidistant from two views
+ * names neither, and that is the ambiguity the caller must see.
+ *
+ * Distance to the title is the whole rule. Excluding the bottom of the sheet
+ * as "title block" would throw away the commonest layout there is: a title
+ * printed under its own view, near the foot of the page. */
 const VIEW_BIND_MARGIN = 0.5;
-const TITLE_BLOCK_FRACTION = 0.85;
 
-function boundView(
-  regions: DrawingViewRegion[],
-  centreX: number,
-  centreY: number,
-  heightPt: number,
-): CropBoxPt | null {
-  if (!regions.length || centreY >= heightPt * TITLE_BLOCK_FRACTION) return null;
+function boundView(regions: DrawingViewRegion[], centreX: number, centreY: number): CropBoxPt | null {
+  if (!regions.length) return null;
   const away = (region: DrawingViewRegion): number =>
     Math.hypot(region.titlePt[0] - centreX, region.titlePt[1] - centreY);
   const ranked = [...regions].sort((a, b) => away(a) - away(b));
@@ -149,7 +147,7 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
             ratio,
             text: evidence.map((word) => word.text.trim()).join(" "),
             evidenceBoxPt: box,
-            viewRegionPt: boundView(regions, centreX, centreY, geometry.heightPt),
+            viewRegionPt: boundView(regions, centreX, centreY),
             source: "printed",
           });
         }

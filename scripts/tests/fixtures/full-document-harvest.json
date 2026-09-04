@@ -1,0 +1,579 @@
+{
+  "note": "Golden captured from buildFullDocumentHarvest at 91ba1701, before it moved to harvest.ts. Synthetic geometry only.",
+  "input": {
+    "inspected": {
+      "inventory": {
+        "pageCount": 3,
+        "producer": "test",
+        "fonts": [
+          "Helvetica"
+        ],
+        "hasAttachments": false,
+        "pages": [
+          {
+            "pageNo": 2,
+            "widthPt": 1000,
+            "heightPt": 800,
+            "rotation": 0,
+            "textChars": 40,
+            "imageCount": 0,
+            "imageAreaFraction": 0
+          },
+          {
+            "pageNo": 4,
+            "widthPt": 1000,
+            "heightPt": 800,
+            "rotation": 0,
+            "textChars": 80,
+            "imageCount": 0,
+            "imageAreaFraction": 0
+          },
+          {
+            "pageNo": 6,
+            "widthPt": 1000,
+            "heightPt": 800,
+            "rotation": 0,
+            "textChars": 40,
+            "imageCount": 0,
+            "imageAreaFraction": 0
+          }
+        ]
+      },
+      "pages": [
+        {
+          "pageNo": 2,
+          "text": "SITE PLAN NORTH COMPASS 268°22'10\"",
+          "words": [
+            {
+              "text": "NORTH",
+              "x0": 45,
+              "top": 10,
+              "x1": 55,
+              "bottom": 20
+            },
+            {
+              "text": "COMPASS",
+              "x0": 40,
+              "top": 50,
+              "x1": 60,
+              "bottom": 60
+            },
+            {
+              "text": "268°22'10\"",
+              "x0": 300,
+              "top": 300,
+              "x1": 370,
+              "bottom": 315
+            },
+            {
+              "text": "SITE",
+              "x0": 500,
+              "top": 740,
+              "x1": 535,
+              "bottom": 755
+            },
+            {
+              "text": "PLAN",
+              "x0": 540,
+              "top": 740,
+              "x1": 575,
+              "bottom": 755
+            },
+            {
+              "text": "A1",
+              "x0": 900,
+              "top": 760,
+              "x1": 920,
+              "bottom": 775
+            }
+          ]
+        },
+        {
+          "pageNo": 4,
+          "text": "GROUND FLOOR PLAN",
+          "words": [
+            {
+              "text": "W1",
+              "x0": 250,
+              "top": 350,
+              "x1": 274,
+              "bottom": 365
+            },
+            {
+              "text": "S08",
+              "x0": 250,
+              "top": 366,
+              "x1": 276,
+              "bottom": 381
+            },
+            {
+              "text": "W2",
+              "x0": 500,
+              "top": 600,
+              "x1": 524,
+              "bottom": 615
+            },
+            {
+              "text": "S08",
+              "x0": 500,
+              "top": 616,
+              "x1": 526,
+              "bottom": 631
+            },
+            {
+              "text": "W3",
+              "x0": 750,
+              "top": 350,
+              "x1": 774,
+              "bottom": 365
+            },
+            {
+              "text": "S08",
+              "x0": 750,
+              "top": 366,
+              "x1": 776,
+              "bottom": 381
+            },
+            {
+              "text": "D1",
+              "x0": 500,
+              "top": 200,
+              "x1": 524,
+              "bottom": 215
+            },
+            {
+              "text": "S08",
+              "x0": 500,
+              "top": 216,
+              "x1": 526,
+              "bottom": 231
+            },
+            {
+              "text": "A",
+              "x0": 205,
+              "top": 350,
+              "x1": 215,
+              "bottom": 365
+            },
+            {
+              "text": "B",
+              "x0": 500,
+              "top": 635,
+              "x1": 510,
+              "bottom": 650
+            },
+            {
+              "text": "C",
+              "x0": 790,
+              "top": 350,
+              "x1": 800,
+              "bottom": 365
+            },
+            {
+              "text": "D",
+              "x0": 500,
+              "top": 160,
+              "x1": 510,
+              "bottom": 175
+            },
+            {
+              "text": "STUDY",
+              "x0": 300,
+              "top": 340,
+              "x1": 350,
+              "bottom": 355
+            },
+            {
+              "text": "GROUND",
+              "x0": 500,
+              "top": 740,
+              "x1": 560,
+              "bottom": 755
+            },
+            {
+              "text": "FLOOR",
+              "x0": 565,
+              "top": 740,
+              "x1": 610,
+              "bottom": 755
+            },
+            {
+              "text": "PLAN",
+              "x0": 615,
+              "top": 740,
+              "x1": 650,
+              "bottom": 755
+            },
+            {
+              "text": "A3",
+              "x0": 900,
+              "top": 760,
+              "x1": 920,
+              "bottom": 775
+            }
+          ]
+        },
+        {
+          "pageNo": 6,
+          "text": "ELEVATIONS FIRST FLOOR RL 5.650",
+          "words": [
+            {
+              "text": "RL",
+              "x0": 300,
+              "top": 200,
+              "x1": 320,
+              "bottom": 215
+            },
+            {
+              "text": "5.650",
+              "x0": 325,
+              "top": 200,
+              "x1": 365,
+              "bottom": 215
+            },
+            {
+              "text": "ELEVATIONS",
+              "x0": 500,
+              "top": 740,
+              "x1": 590,
+              "bottom": 755
+            },
+            {
+              "text": "A5",
+              "x0": 900,
+              "top": 760,
+              "x1": 920,
+              "bottom": 775
+            }
+          ]
+        }
+      ]
+    },
+    "schedule": [
+      {
+        "tag": "W1",
+        "widthMm": 1000,
+        "heightMm": 1200,
+        "typeText": "FIXED",
+        "roomLabel": "STUDY",
+        "storey": "ground"
+      },
+      {
+        "tag": "W2",
+        "widthMm": 2050,
+        "heightMm": 1200,
+        "typeText": "OFFSET AWNING",
+        "commentText": "2 PANEL SLIDER"
+      },
+      {
+        "tag": "W3",
+        "widthMm": 900,
+        "heightMm": 1200,
+        "typeText": "AWNING"
+      },
+      {
+        "tag": "D1",
+        "widthMm": 3000,
+        "heightMm": 2100,
+        "typeText": "SLIDING DOOR",
+        "storey": "first"
+      }
+    ]
+  },
+  "expected": {
+    "version": 1,
+    "schedule": [
+      {
+        "tag": "W1",
+        "widthMm": 1000,
+        "heightMm": 1200,
+        "typeText": "FIXED",
+        "commentText": null,
+        "priorRoomCandidate": "STUDY",
+        "priorStoreyCandidate": "ground"
+      },
+      {
+        "tag": "W2",
+        "widthMm": 2050,
+        "heightMm": 1200,
+        "typeText": "OFFSET AWNING",
+        "commentText": "2 PANEL SLIDER",
+        "priorRoomCandidate": null,
+        "priorStoreyCandidate": null
+      },
+      {
+        "tag": "W3",
+        "widthMm": 900,
+        "heightMm": 1200,
+        "typeText": "AWNING",
+        "commentText": null,
+        "priorRoomCandidate": null,
+        "priorStoreyCandidate": null
+      },
+      {
+        "tag": "D1",
+        "widthMm": 3000,
+        "heightMm": 2100,
+        "typeText": "SLIDING DOOR",
+        "commentText": null,
+        "priorRoomCandidate": null,
+        "priorStoreyCandidate": "first"
+      }
+    ],
+    "pages": [
+      {
+        "pageNo": 2,
+        "widthPt": 1000,
+        "heightPt": 800,
+        "sheetId": "A1",
+        "tiers": [
+          "siteplan"
+        ],
+        "textExcerpt": "SITE PLAN NORTH COMPASS 268°22'10\""
+      },
+      {
+        "pageNo": 4,
+        "widthPt": 1000,
+        "heightPt": 800,
+        "sheetId": "A3",
+        "tiers": [
+          "floorplan"
+        ],
+        "textExcerpt": "GROUND FLOOR PLAN"
+      },
+      {
+        "pageNo": 6,
+        "widthPt": 1000,
+        "heightPt": 800,
+        "sheetId": "A5",
+        "tiers": [
+          "elevation"
+        ],
+        "textExcerpt": "ELEVATIONS FIRST FLOOR RL 5.650"
+      }
+    ],
+    "tagCandidates": [
+      {
+        "id": "W1_p4_1",
+        "tag": "W1",
+        "pageNo": 4,
+        "boxPt": [
+          250,
+          350,
+          274,
+          365
+        ],
+        "nearbyText": "STUDY A W1 S08",
+        "ambiguous": false,
+        "identityEvidence": "sheet_reference"
+      },
+      {
+        "id": "W2_p4_1",
+        "tag": "W2",
+        "pageNo": 4,
+        "boxPt": [
+          500,
+          600,
+          524,
+          615
+        ],
+        "nearbyText": "W2 S08 B",
+        "ambiguous": false,
+        "identityEvidence": "sheet_reference"
+      },
+      {
+        "id": "W3_p4_1",
+        "tag": "W3",
+        "pageNo": 4,
+        "boxPt": [
+          750,
+          350,
+          774,
+          365
+        ],
+        "nearbyText": "W3 C S08",
+        "ambiguous": false,
+        "identityEvidence": "sheet_reference"
+      },
+      {
+        "id": "D1_p4_1",
+        "tag": "D1",
+        "pageNo": 4,
+        "boxPt": [
+          500,
+          200,
+          524,
+          215
+        ],
+        "nearbyText": "D D1 S08",
+        "ambiguous": false,
+        "identityEvidence": "sheet_reference"
+      }
+    ],
+    "elevationMarkers": [
+      {
+        "pageNo": 4,
+        "label": "A",
+        "boxPt": [
+          205,
+          350,
+          215,
+          365
+        ],
+        "edge": "left"
+      },
+      {
+        "pageNo": 4,
+        "label": "B",
+        "boxPt": [
+          500,
+          635,
+          510,
+          650
+        ],
+        "edge": "bottom"
+      },
+      {
+        "pageNo": 4,
+        "label": "C",
+        "boxPt": [
+          790,
+          350,
+          800,
+          365
+        ],
+        "edge": "right"
+      },
+      {
+        "pageNo": 4,
+        "label": "D",
+        "boxPt": [
+          500,
+          160,
+          510,
+          175
+        ],
+        "edge": "top"
+      }
+    ],
+    "roomLabelCandidates": [
+      {
+        "pageNo": 4,
+        "text": "STUDY",
+        "boxPt": [
+          300,
+          340,
+          350,
+          355
+        ]
+      },
+      {
+        "pageNo": 4,
+        "text": "GROUND",
+        "boxPt": [
+          500,
+          740,
+          560,
+          755
+        ]
+      },
+      {
+        "pageNo": 4,
+        "text": "FLOOR",
+        "boxPt": [
+          565,
+          740,
+          610,
+          755
+        ]
+      },
+      {
+        "pageNo": 4,
+        "text": "PLAN",
+        "boxPt": [
+          615,
+          740,
+          650,
+          755
+        ]
+      }
+    ],
+    "rlDatums": [
+      {
+        "pageNo": 6,
+        "text": "RL 5.650",
+        "yPt": 207.5
+      }
+    ],
+    "northEvidence": {
+      "labels": [
+        {
+          "pageNo": 2,
+          "text": "NORTH",
+          "boxPt": [
+            45,
+            10,
+            55,
+            20
+          ]
+        }
+      ],
+      "bearings": [
+        {
+          "pageNo": 2,
+          "text": "268°22'10\"",
+          "boxPt": [
+            300,
+            300,
+            370,
+            315
+          ]
+        }
+      ],
+      "resolution": {
+        "northArrowDegrees": 0,
+        "source": "page 2 compass label"
+      },
+      "requiresVisualRead": false,
+      "visualEvidence": null
+    },
+    "placements": [
+      {
+        "tag": "D1",
+        "pageNo": 4,
+        "elevation": "D",
+        "orderOnWall": 1,
+        "roomLabelCandidate": null,
+        "storey": "ground",
+        "orientation": "N"
+      },
+      {
+        "tag": "W1",
+        "pageNo": 4,
+        "elevation": "A",
+        "orderOnWall": 1,
+        "roomLabelCandidate": "STUDY",
+        "storey": "ground",
+        "orientation": "W"
+      },
+      {
+        "tag": "W2",
+        "pageNo": 4,
+        "elevation": "B",
+        "orderOnWall": 1,
+        "roomLabelCandidate": null,
+        "storey": "ground",
+        "orientation": "S"
+      },
+      {
+        "tag": "W3",
+        "pageNo": 4,
+        "elevation": "C",
+        "orderOnWall": 1,
+        "roomLabelCandidate": null,
+        "storey": "ground",
+        "orientation": "E"
+      }
+    ]
+  }
+}

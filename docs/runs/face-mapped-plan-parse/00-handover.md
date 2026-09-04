@@ -98,7 +98,15 @@ Add `face_mapped` to the extended AI-job deadline condition. The 600-second leas
 
 Move `FullDocumentHarvest`, `buildFullDocumentHarvest`, and visual-north application from `fullDocumentAgent.ts` into `worker/lib/drawing/harvest.ts`. Preserve exports and byte-compatible output so `agentic_full` only changes its import.
 
-The shared harvest gains additive view-scale candidates:
+The shared harvest module exposes view-scale extraction. The model-facing
+`FullDocumentHarvest` contract remains byte-compatible; `face_mapped` obtains
+scale candidates separately, by calling `viewScaleCandidates(inspected)` from
+`harvest.ts`. Adding a field to `FullDocumentHarvest` itself would change
+agentic_full's prompt payload and its stage input hash, so any future addition
+to that contract requires an explicit prompt and pipeline version change.
+(Owner ruling, 2026-09-04: a conformant clarification, not a divergence.)
+
+The extraction returns:
 
 ```ts
 export interface DrawingScaleCandidate {
@@ -439,7 +447,9 @@ Do not persist page text, prompts, full responses, or base64 in `drawing_report_
 
 - [ ] Add red cases for the four supported printed forms, invalid ratios, two scales on one page, ambiguous association, and the 3000/900 mm conversions.
 - [ ] Implement scale candidates and pure `expectedWidthPt`.
-- [ ] Verify existing engines ignore the additive field.
+- [ ] Verify `FullDocumentHarvest` JSON is byte-for-byte unchanged (golden
+      fixture captured from the pre-move implementation), and that
+      `viewScaleCandidates()` is tested independently of it.
 - [ ] Commit.
 
 ### Task 3 — Phase C placements

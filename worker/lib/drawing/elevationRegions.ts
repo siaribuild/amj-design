@@ -59,7 +59,7 @@ export type DrawingViewRegion = ElevationRegion & { titlePt: [number, number] };
 
 const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?)$/;
 const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
-const TITLE_IDENTIFIER = /^[A-Z]$/;
+const TITLE_IDENTIFIER = /^[A-Z0-9](?:-[A-Z0-9])?$/;
 const MAX_TITLE_QUALIFIERS = 2;
 
 /** Drawing titles as the document writes them — `ELEVATION A`, `NORTH
@@ -82,23 +82,63 @@ export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt:
       if (!TITLE_QUALIFIER.test(clean(onLine[at])) || !near(onLine[at], parts[0])) break;
       parts.unshift(onLine[at]);
     }
-    // Only a single-letter identifier may follow the title. Anything wider
-    // swallows the neighbouring SCALE or sheet number into the view's name.
+    // Only a short identifier may follow the title — `A`, `2`, `A-A`. Anything
+    // wider swallows the neighbouring SCALE or sheet number into the view's name.
     if (index + 1 < onLine.length && TITLE_IDENTIFIER.test(clean(onLine[index + 1]))
       && near(parts[parts.length - 1], onLine[index + 1])) parts.push(onLine[index + 1]);
-    const label = parts.map(clean).join(" ");
-    if (labels.some((item) => item.label === label)) continue;
+    const printed = parts.map(clean).join(" ");
+    // Two views can carry the same printed title. They are still two drawings,
+    // so keep both anchors and make the key unique rather than dropping one.
+    const seen = labels.filter((item) => item.label === printed || item.label.startsWith(printed + " #")).length;
     labels.push({
-      label,
+      label: seen ? `${printed} #${seen + 1}` : printed,
       x: (Math.min(...parts.map((part) => part.x0)) + Math.max(...parts.map((part) => part.x1))) / 2,
       y: (Math.min(...parts.map((part) => part.top)) + Math.max(...parts.map((part) => part.bottom))) / 2,
     });
   }
+  const withTitle = (region: ElevationRegion, point: [number, number]): DrawingViewRegion =>
+    ({ ...region, titlePt: point });
+  const columns = cluster(labels.map((label) => label.x), widthPt * CLUSTER_FRACTION);
+  const rows = cluster(labels.map((label) => label.y), heightPt * CLUSTER_FRACTION);
+  if (columns.length > 1 && rows.length > 1) {
+    return labels.map((label) => {
+      const [x0, x1] = span(columns, label.x, widthPt, true);
+      const [y0, y1] = span(rows, label.y, heightPt, false);
+      return withTitle({ label: label.label, region: [x0, y0, x1, y1] }, [label.x, label.y]);
+    });
+  }
   const titles = new Map(labels.map((label) => [label.label, [label.x, label.y] as [number, number]]));
   return tileRegions(labels, widthPt, heightPt)
-    .map((region) => ({ ...region, titlePt: titles.get(region.label) ?? [
+    .map((region) => withTitle(region, titles.get(region.label) ?? [
       (region.region[0] + region.region[2]) / 2, (region.region[1] + region.region[3]) / 2,
-    ] as [number, number] }));
+    ]));
+}
+
+const CLUSTER_FRACTION = 0.05;
+
+/** Anchor coordinates that sit within `tolerance` of each other are one row or
+ * one column of the sheet; the cluster's mean stands for it. */
+function cluster(values: number[], tolerance: number): number[] {
+  const groups: number[][] = [];
+  for (const value of [...values].sort((a, b) => a - b)) {
+    const last = groups[groups.length - 1];
+    if (last && value - last[last.length - 1] <= tolerance) last.push(value);
+    else groups.push([value]);
+  }
+  return groups.map((group) => group.reduce((sum, value) => sum + value, 0) / group.length);
+}
+
+/** One cell's extent along an axis. Columns meet halfway between titles, as
+ * side-by-side drawings do; rows end at their own title line, because a title
+ * is printed under its drawing — the same two conventions tileRegions uses. */
+function span(centres: number[], value: number, limit: number, halfway: boolean): [number, number] {
+  const at = centres.reduce((best, centre, index) =>
+    Math.abs(centre - value) < Math.abs(centres[best] - value) ? index : best, 0);
+  return [
+    at === 0 ? 0 : halfway ? (centres[at - 1] + centres[at]) / 2 : centres[at - 1],
+    at === centres.length - 1 && halfway ? limit
+      : halfway ? (centres[at] + centres[at + 1]) / 2 : centres[at],
+  ];
 }
 
 function tileRegions(labels: LabelPoint[], widthPt: number, heightPt: number): ElevationRegion[] {

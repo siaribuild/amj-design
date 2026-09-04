@@ -1965,6 +1965,15 @@ test("full-document harvest exposes free coordinate evidence without deciding th
   assert.equal("roomLabel" in harvest.tagCandidates[0], false, "the free harvest must not choose a room");
 });
 
+test("the model-facing harvest contract is byte-compatible with the agent it moved out of", async () => {
+  const golden = JSON.parse(await readFile(join(projectRoot, "scripts/tests/fixtures/full-document-harvest.json"), "utf8"));
+  assert.equal(
+    JSON.stringify(buildHarvest(golden.input.inspected, golden.input.schedule)),
+    JSON.stringify(golden.expected),
+    "FullDocumentHarvest is agentic_full's prompt payload and its replay key. This golden was captured "
+    + "before the move to harvest.ts; changing it needs an explicit prompt and pipeline version bump.");
+});
+
 test("harvest.ts holds the one Stage A implementation both drawing engines share", () => {
   assert.equal(buildHarvest, buildFullDocumentHarvest, "fullDocumentAgent must re-export the shared harvest, never copy it");
   assert.equal(applyVisualNorth, applyVisualNorthToHarvest, "visual north application must have one implementation");
@@ -2061,6 +2070,46 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
   ], "1:0 cannot scale anything and 1:abc is not a ratio");
   assert.equal(candidates[0].viewRegionPt, null, "a sheet with no drawing title binds its scale to no view");
   assert.equal(candidates[0].pageNo, 1);
+});
+
+test("view scale: four views on one sheet are four regions, not four strips", () => {
+  const row = (top, entries) => line(top, entries);
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...row(300, [["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40],
+      ["ELEVATION", 650, 80], ["B", 735, 10], ["SCALE", 760, 40], ["1:50", 805, 35]]),
+    ...row(600, [["ELEVATION", 200, 80], ["C", 285, 10], ["SCALE", 310, 40], ["1:20", 355, 35],
+      ["ELEVATION", 650, 80], ["D", 735, 10], ["SCALE", 760, 40], ["1:5", 805, 30]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50, 20, 5]);
+  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
+    [0, 0, 472.5, 307.5],
+    [472.5, 0, 1_000, 307.5],
+    [0, 307.5, 472.5, 607.5],
+    [472.5, 307.5, 1_000, 607.5],
+  ], "a 2-by-2 sheet of elevations must not collapse to full-height strips that cannot tell the rows apart");
+});
+
+test("view scale: two views whose titles read alike stay two views", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["SECTION", 100, 70], ["A-A", 175, 30], ["SCALE", 215, 40], ["1:100", 260, 40]]),
+    ...line(600, [["SECTION", 100, 70], ["B-B", 175, 30], ["SCALE", 215, 40], ["1:50", 260, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
+  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
+    [0, 0, 1_000, 307.5],
+    [0, 307.5, 1_000, 607.5],
+  ], "SECTION A-A and SECTION B-B are two drawings; collapsing them binds both scales to the whole sheet");
+});
+
+test("view scale: titles printed under their views still bind, low on the sheet as they are", () => {
+  const candidates = viewScaleCandidates(scaleSheet(line(740, [
+    ["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40],
+    ["ELEVATION", 700, 80], ["B", 785, 10], ["SCALE", 810, 40], ["1:50", 855, 35],
+  ])));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 497.5, 800],
+    "a drawing title sits below its view, so the bottom of the sheet is where titles live");
+  assert.deepEqual(candidates[1].viewRegionPt, [497.5, 0, 1_000, 800]);
 });
 
 test("view scale: a fall or a grade is not a scale, and a trailing stop does not hide one", () => {
