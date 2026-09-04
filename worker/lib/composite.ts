@@ -170,6 +170,7 @@ export function proposeEvenSplit(openingWidthMm: number, count: number, joinerMm
 interface ParentRow {
   id: string; project_id: string; qty: number; dims_json: string;
   line_kind: string; composite_axis: string | null;
+  price_calculated?: number | null; line_total?: number | null;
 }
 
 /** The opening's size, from the parent's dims. Returns zeros when unparseable —
@@ -187,7 +188,7 @@ function openingOf(parent: { dims_json: string }): { widthMm: number; heightMm: 
  *  writer of segment.qty, and of parent.line_total / status / coverage_delta_mm. */
 export async function recomputeComposite(env: Env, parentId: string): Promise<void> {
   const parent = await env.DB
-    .prepare("SELECT id, project_id, qty, dims_json, line_kind, composite_axis FROM quote_line WHERE id=?")
+    .prepare("SELECT id, project_id, qty, dims_json, line_kind, composite_axis, price_calculated, line_total FROM quote_line WHERE id=?")
     .bind(parentId).first<ParentRow>();
   if (!parent) return;
 
@@ -218,6 +219,11 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
 
   const anyUnpriced = segments.some((s) => s.line_total == null);
   const total = anyUnpriced ? null : segments.reduce((sum, s) => sum + (s.line_total ?? 0), 0);
+  // A human price on the parent (0046: NULL means none) takes ownership of the
+  // total — the manufacturer quoted the assembly as one unit, and Σ(segments)
+  // stops being the truth. Everything else stays derived: qty, coverage, status.
+  const owned = parent.price_calculated == null;
+  const effectiveTotal = owned ? total : (parent.line_total ?? null);
   const worst = segments.some((s) => s.status === "incomplete")
     ? "incomplete"
     : segments.some((s) => s.status === "technical_review") ? "technical_review" : "ready";
@@ -249,7 +255,7 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
          ELSE review_json
        END,
        updated_at=datetime('now') WHERE id=?`,
-  ).bind(total, total == null ? "incomplete" : worst, coverage, total, parentId));
+  ).bind(effectiveTotal, effectiveTotal == null ? "incomplete" : worst, coverage, effectiveTotal, parentId));
 
   await env.DB.batch(stmts);
 }
