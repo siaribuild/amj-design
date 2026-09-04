@@ -17,6 +17,7 @@ await build({
         classifyJobException,
         customerSafeJobDiagnostic,
         dispatchAiExtractionJob,
+        enqueueAiExtraction,
         retryCurrentAiExtraction,
         aiJobDeadlineMs,
         setDrawingProgress,
@@ -39,6 +40,7 @@ const {
   classifyJobException,
   customerSafeJobDiagnostic,
   dispatchAiExtractionJob,
+  enqueueAiExtraction,
   retryCurrentAiExtraction,
   aiJobDeadlineMs,
   setDrawingProgress,
@@ -199,8 +201,55 @@ test("staff retry resets and dispatches the same failed generation durably", asy
   assert.match(writes[0].sql, /status='scheduled'/);
   assert.match(writes[0].sql, /attempts=0/);
   assert.match(writes[0].sql, /drawings_done=NULL,\s+drawings_total=NULL, drawings_phase=NULL/);
+  assert.doesNotMatch(writes[0].sql, /triggered_by/, "the in-place reset never touches triggered_by");
   assert.equal(sends.length, 1, "the reset claim is sent through the durable queue");
   assert.equal(puts.length, 1, "debounce state follows the replacement token");
+});
+
+function enqueueEnv(current) {
+  const batches = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return { sql, args, first: async () => current };
+          },
+        };
+      },
+      async batch(statements) {
+        batches.push(statements);
+        return statements.map(() => ({ meta: { changes: 1 } }));
+      },
+    },
+    KV: { put: async () => {} },
+    AI_JOBS: { send: async () => {} },
+  };
+  return { env, batches };
+}
+
+test("enqueueAiExtraction's INSERT carries triggered_by, defaulting to upload", async () => {
+  const { env, batches } = enqueueEnv({ ai_generation: 5 });
+  await enqueueAiExtraction(env, { waitUntil() {} }, "project-1");
+  const insertStatement = batches[0][1];
+  assert.match(insertStatement.sql, /triggered_by/);
+  assert.ok(insertStatement.args.includes("upload"));
+});
+
+test("retryCurrentAiExtraction threads triggeredBy='ops' only into its fall-through enqueue", async () => {
+  const { env, batches } = enqueueEnv({
+    ai_generation: 20,
+    status_customer: "draft",
+    status: "completed",
+    debounce_token: null,
+    lease_dead: null,
+    scheduled_dead: null,
+  });
+  const result = await retryCurrentAiExtraction(env, { waitUntil() {} }, "project-1", "ops");
+  assert.equal(result.alreadyQueued, false);
+  const insertStatement = batches[0][1];
+  assert.match(insertStatement.sql, /triggered_by/);
+  assert.ok(insertStatement.args.includes("ops"));
 });
 
 test("staff retry is idempotent while the current generation is already queued", async () => {
