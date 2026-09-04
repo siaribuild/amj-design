@@ -52,9 +52,14 @@ ratio is not a candidate.
 → *only the footer says what the sheet is drawn at*
 
 **AC9.** Given a page whose footer ratios agree, when the map is built, then the
-page carries that ratio; given ratios that disagree, then the page is absent
-from the map and its conflict is left for ops; given no footer ratio, then the
-page is absent.
+page carries that ratio; given ratios that disagree, then the page maps to
+`null`, so ops can tell a conflict from a page that printed nothing; given no
+footer ratio, then the page is absent from the map.
+
+*(Corrected 2026-09-04. As first written this criterion said a conflicting page
+was absent, which made a conflict indistinguishable from silence and
+contradicted §7.4's requirement that the conflict be recorded for ops. The
+implementation follows the handover; the criterion was wrong.)*
 → *the document map says what each page is drawn at, and stays silent where it cannot*
 
 **AC10.** Given a scheduled width and a scale, when `expectedWidthPt` converts

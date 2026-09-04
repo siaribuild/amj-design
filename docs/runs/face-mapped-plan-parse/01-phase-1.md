@@ -40,6 +40,10 @@ carried unused — see below.
 ## The reference set, through this code
 
 `lot312-536a.pdf`, 14 pages, the set behind the successful 19/19 production run.
+**Last run at `fa7daa04`** — the scale path changed after every earlier run, so
+any later change to it must re-run this and update the commit named here. The
+PDF stays out of Git (§3 invariant 12); Task 12 turns this into a replay
+assertion (AC11).
 
 | Page | Map | Printed |
 |---|---|---|

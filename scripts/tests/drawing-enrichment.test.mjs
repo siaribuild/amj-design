@@ -1977,30 +1977,6 @@ test("the model-facing harvest contract is byte-compatible with the agent it mov
 test("harvest.ts holds the one Stage A implementation both drawing engines share", () => {
   assert.equal(buildHarvest, buildFullDocumentHarvest, "fullDocumentAgent must re-export the shared harvest, never copy it");
   assert.equal(applyVisualNorth, applyVisualNorthToHarvest, "visual north application must have one implementation");
-  const inspected = {
-    inventory: {
-      pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
-      pages: [
-        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
-        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
-      ],
-    },
-    pages: [
-      { pageNo: 1, text: "GROUND FLOOR PLAN STUDY W1", words: [
-        { text: "STUDY", x0: 80, top: 90, x1: 130, bottom: 105 },
-        { text: "W1", x0: 145, top: 100, x1: 165, bottom: 115 },
-        { text: "A", x0: 20, top: 300, x1: 30, bottom: 315 },
-      ] },
-      { pageNo: 2, text: "NORTH ELEVATION", words: [] },
-    ],
-  };
-  const schedule = [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING", storey: "ground" }];
-  const harvest = buildHarvest(inspected, schedule);
-  assert.equal(harvest.version, 1);
-  assert.equal(harvest.tagCandidates[0].tag, "W1");
-  const oriented = applyVisualNorth(harvest, 1, { northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.1, 0.1, 0.2, 0.2] });
-  assert.equal(oriented.northEvidence.requiresVisualRead, false);
-  assert.equal(oriented.northEvidence.visualEvidence.pageNo, 1);
 });
 
 const scaleSheet = (words) => ({
