@@ -40,7 +40,7 @@ const FIELDS = ["split", "orientation", "elevation", "room"];
 // proportions (ratio).
 const FACE_FIELDS = {
   order: (reading) => reading.wall_order ?? null,
-  frame: (reading) => reading.frame_box ?? null,
+  frame: (reading) => reading.frame_box_json ? JSON.parse(reading.frame_box_json) : null,
   ratio: (reading) => {
     const split = valueOf(reading, "split");
     return split && split !== "__NOT_READ__" ? split.units?.map((unit) => unit.ratio) ?? null : null;

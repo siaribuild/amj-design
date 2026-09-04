@@ -21,6 +21,7 @@ import {
 import { makePlanFaceSkill, planFaceRecoveryRequest, type RecoveredFace } from "./planFacesSkill";
 import { placeOpeningsOnPlan, rosterVocabulary, type PlanPage } from "./planFaces";
 import { openingTagWords } from "../locate";
+import { normalizeOpeningRef } from "../../ai/energyMap";
 
 /**
  * §8. The phases in order, the concurrency they are allowed, the points a run
@@ -72,9 +73,12 @@ export async function runFaceMappedParser(args: {
   const roster = args.scheduleRows.map((row) => row.tag);
   // A row whose width the schedule did not state is not a row that says zero.
   // Treating it as a measurement makes every frame drawn for it a conflict.
+  // Keyed by the tag as the engine spells it, not as the schedule did: a row
+  // written W-1 is the opening the plan prints as W01, and every phase between
+  // here and the report calls it W1.
   const widthByTag = new Map(args.scheduleRows
     .filter((row) => row.widthMm > 0)
-    .map((row) => [row.tag, row.widthMm]));
+    .map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row.widthMm]));
   const faceSheets = documentFaceSheets(args.elevationPages);
   let modelCalls = 0;
   let containerCalls = 0;
@@ -229,7 +233,7 @@ export async function runFaceMappedParser(args: {
       unplaced.set(task.tag, "the crop for this opening could not be stored");
       continue;
     }
-    crops.set(task.tag, { cropRenderId, cropKey, pageNo: task.pageNo, bboxPt: task.bboxPt });
+    crops.set(task.tag, { cropRenderId, cropKey, pageNo: task.pageNo, bboxPt: task.bboxPt, frameBoxPt: task.frameBoxPt });
     compositionTasks.push({ tag: task.tag, frameId: task.frameId, cropRenderId, imageDataUrl: image.url });
   }
 
@@ -259,7 +263,7 @@ export async function runFaceMappedParser(args: {
     unplaced,
     crops,
     compositions,
-    scheduleTypeByTag: new Map(args.scheduleRows.map((row) => [row.tag, row.typeText ?? null])),
+    scheduleTypeByTag: new Map(args.scheduleRows.map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row.typeText ?? null])),
     // What matching found wrong with a pairing does not stop being wrong
     // because a later phase read the crop confidently.
     matchWarnings: new Map(matched

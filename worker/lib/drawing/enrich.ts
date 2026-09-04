@@ -12,8 +12,9 @@ import type { Env } from "../../types";
 import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
-import { runFaceMappedParser, type FaceMappedDeps } from "./faceMapped/run";
+import { runFaceMappedParser, type FaceMappedCall, type FaceMappedDeps } from "./faceMapped/run";
 import { pageScales } from "./harvest";
+import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
 import { chooseStrategy, selectPages } from "./selectPages";
 import { assignOpenings, type ElevationPageGeometry, type Placement } from "./assign";
 import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openingReadSkill, type ElevationInventoryOutput, type FloorplanReadOutput, type NorthArrowOutput, type OpeningReadResult } from "./skills";
@@ -61,7 +62,10 @@ export interface EnrichDeps {
   /** The face-mapped engine's four looks at a document. Present only in
    *  face_mapped mode: one engine reads a file, and the others are not
    *  consulted behind it. */
-  runFaceMapped?: Omit<FaceMappedDeps, "render" | "storeCrop" | "onProgress">;
+  runFaceMapped?: Omit<FaceMappedDeps, "render" | "storeCrop" | "onProgress"> & {
+    /** Phase A's look at a sheet whose text layer says nothing. */
+    readSheet(input: FaceMappedCall & { pageNo: number }): Promise<unknown>;
+  };
 }
 
 function emptyFileReport(fileId: string): DrawingFileReport {
@@ -192,12 +196,41 @@ async function enrichFile(
       for (const item of selectPages(inspected.inventory, inspected.pages).selected) {
         tiers.set(item.pageNo, new Set([...(tiers.get(item.pageNo) ?? []), item.tier]));
       }
+      // A sheet whose title block is drawn as graphics tells the text layer
+      // nothing - not what it is, not what it is drawn at. Those sheets get the
+      // one look Phase A knows how to take, and what the look settles is used
+      // exactly as the text would have been: never over a scale the text stated.
+      const stated = pageScales(inspected);
+      const silent = inspected.pages
+        .map((page) => page.pageNo)
+        .filter((pageNo) => !tiers.has(pageNo) || !stated.has(pageNo));
+      const readSheet = deps.runFaceMapped.readSheet;
+      const recovered = silent.length
+        ? await recoverSheetFacts({
+          inspected,
+          pageNos: silent,
+          stated,
+          deps: {
+            render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
+            readSheet: async ({ pageNo, imageDataUrl }) => {
+              const skill = makeSheetFactsSkill(pageNo);
+              return skill.validate(await readSheet({ pageNo, imageDataUrl, skill }));
+            },
+          },
+        })
+        : new Map<number, SheetFacts>();
+      const rolesOf = (pageNo: number) => new Set([
+        ...(recovered.get(pageNo)?.role ? [recovered.get(pageNo)!.role!] : []),
+        ...(tiers.get(pageNo) ?? []),
+      ]);
       const pagesOf = (tier: string) => inspected.pages
-        .filter((page) => tiers.get(page.pageNo)?.has(tier))
+        .filter((page) => rolesOf(page.pageNo).has(tier))
         .flatMap((page) => {
           const geometry = inspected.inventory.pages.find((item) => item.pageNo === page.pageNo);
           return geometry ? [{ page, geometry }] : [];
         });
+      const scales = new Map(stated);
+      for (const [pageNo, facts] of recovered) if (facts.ratio != null && !scales.has(pageNo)) scales.set(pageNo, facts.ratio);
 
       const run = await runFaceMappedParser({
         fileId: args.file.fileId,
@@ -205,13 +238,12 @@ async function enrichFile(
         scheduleRows: args.scheduleRows,
         planPages: pagesOf("floorplan"),
         elevationPages: pagesOf("elevation"),
-        pageScales: pageScales(inspected),
-        // Only titles that are titles. A sheet's own title band is read where
-        // it has one, and handing the whole page's text over instead makes
-        // every plan sheet claim the same storey. A set whose title block is
-        // drawn as graphics needs Phase A's visual sheet recovery, which this
-        // branch does not yet call.
-        sheetTitles: new Map(),
+        pageScales: scales,
+        // Only titles that are titles: the ones a look at the sheet recovered.
+        // A sheet's own title band is read where it has one, and handing the
+        // whole page's text over instead makes every plan sheet claim the same
+        // storey.
+        sheetTitles: new Map([...recovered].flatMap(([pageNo, facts]) => facts.title ? [[pageNo, facts.title] as const] : [])),
         deps: {
           ...deps.runFaceMapped,
           render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
@@ -739,6 +771,7 @@ export async function runDrawingEnrichmentStage(
     ? {
         ...baseDeps,
         runFaceMapped: {
+          readSheet: faceMappedCall,
           readPlanPage: faceMappedCall,
           inventoryElevation: faceMappedCall,
           reconcileFace: faceMappedCall,

@@ -1327,11 +1327,31 @@ test("persistReadings: one INSERT per reading, batched, including migration 0061
   ]);
   assert.equal(batched.length, 1);
   assert.match(batched[0].sql, /INSERT INTO drawing_reading/);
-  assert.match(batched[0].sql, /confidence, flags_json/);
+  assert.match(batched[0].sql, /confidence, flags_json, wall_order, frame_box_json/);
   assert.equal(batched[0].args[1], "proj_1");
   assert.equal(batched[0].args[2], "run_1");
-  assert.equal(batched[0].args.at(-2), "low");
-  assert.equal(batched[0].args.at(-1), '["notVisibleOnElevations"]');
+  assert.equal(batched[0].args.at(-4), "low");
+  assert.equal(batched[0].args.at(-3), '["notVisibleOnElevations"]');
+  assert.equal(batched[0].args.at(-2), null, "an engine that has no wall order writes none");
+  assert.equal(batched[0].args.at(-1), null);
+
+  batched.length = 0;
+  await persistReadings({ DB: fakeDb }, "proj_1", "run_1", [
+    { externalRef: "W2", splitState: "value", split: { axis: "vertical", units: [{ role: "operable", ratio: 1 }] },
+      orientationState: "not_read", orientation: null,
+      elevationState: "value", elevation: "NORTH", roomState: "not_read", roomLabel: null,
+      gapCode: null, gapNote: null, cropKey: "k", pageNo: 5, sheetRef: null, regionJson: [1, 2, 3, 4], sourceFileId: "f1",
+      confidence: "high", flags: [], wallOrder: 2, frameBoxPt: [100, 300, 151, 420] },
+  ]);
+  assert.equal(batched[0].args.at(-2), 2, "migration 0064: which number along its wall");
+  assert.equal(batched[0].args.at(-1), "[100,300,151,420]", "and which frame on the elevation");
+});
+
+test("migration 0064 adds the face-mapped columns without touching a row (d1-migration-safety)", async () => {
+  const sql = await readFile(join(projectRoot, "migrations/0064_drawing_reading_face_mapped.sql"), "utf8");
+  assert.match(sql, /ALTER TABLE drawing_reading ADD COLUMN wall_order INTEGER/);
+  assert.match(sql, /ALTER TABLE drawing_reading ADD COLUMN frame_box_json TEXT/);
+  assert.doesNotMatch(sql, /DROP|CREATE TABLE|RENAME/i, "additive only: a rebuild once cascaded production rows away");
 });
 
 test("AB-9: no image/pdf bytes under scripts/tests/fixtures/drawing or containers/", async () => {
@@ -2898,8 +2918,8 @@ test("report: every scheduled opening gets exactly one row, read or not (Task 10
     ]),
     unplaced: new Map([["W4", "not tagged on any plan page"]]),
     crops: new Map([
-      ["W1", { cropRenderId: "crop_1", cropKey: "k1", pageNo: 7, bboxPt: [10, 20, 60, 200] }],
-      ["W2", { cropRenderId: "crop_2", cropKey: "k2", pageNo: 7, bboxPt: [70, 20, 120, 200] }],
+      ["W1", { cropRenderId: "crop_1", cropKey: "k1", pageNo: 7, bboxPt: [10, 20, 60, 200], frameBoxPt: [12, 30, 58, 190] }],
+      ["W2", { cropRenderId: "crop_2", cropKey: "k2", pageNo: 7, bboxPt: [70, 20, 120, 200], frameBoxPt: [72, 30, 118, 190] }],
     ]),
     compositions: [
       { state: "value", value: { tag: "W1", frameId: "f1", cropRenderId: "crop_1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high", flags: [], basis: ["crop crop_1"] } },
@@ -2916,6 +2936,9 @@ test("report: every scheduled opening gets exactly one row, read or not (Task 10
   assert.equal(byTag.W1.elevation, "NORTH");
   assert.equal(byTag.W1.cropKey, "k1", "the crop a reading was made from travels with it");
   assert.deepEqual(byTag.W1.regionJson, [10, 20, 60, 200]);
+  assert.equal(byTag.W1.wallOrder, 1, "which number along its wall, for the gate to score");
+  assert.deepEqual(byTag.W1.frameBoxPt, [12, 30, 58, 190], "and which frame on the elevation it was read from");
+  assert.equal(byTag.W4.wallOrder, null);
   assert.equal(byTag.W1.pageNo, 7);
   assert.equal(byTag.W1.confidence, "high");
   assert.equal(byTag.W1.gapCode, null);
@@ -3199,6 +3222,53 @@ test("run: a crop nobody could store is not evidence, and a width conflict survi
   assert.equal(stored.readings[0].flags.includes("drawingInconsistency"), true);
 });
 
+test("run: the schedule's own spelling of a tag comes back on its row, however it spelled it (P2-AC1)", async () => {
+  // The ruling cuts both ways. A schedule that writes W-1 and w 2 is naming the
+  // openings the plan prints as W01 and W02, and the row that comes back has to
+  // carry the schedule's spelling - that is the key the quote is priced under -
+  // while everything behind it is looked up by what the tag means.
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W01", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "W02", x0: 457, top: 250, x1: 483, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [
+      { tag: "W-1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" },
+      { tag: "w 2", widthMm: 900, heightMm: 1200, typeText: "SLIDING" },
+    ],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      inventoryElevation: async () => ({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [
+        { box: [0.1, 0.3, 0.151, 0.6] }, { box: [0.5, 0.3, 0.5255, 0.6] },
+      ] }),
+      reconcileFace: async () => null,
+      readComposition: async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) }),
+    },
+  });
+  assert.deepEqual(run.readings.map((r) => [r.externalRef, r.splitState, r.elevation]),
+    [["W-1", "value", "NORTH"], ["w 2", "value", "NORTH"]]);
+  assert.equal(run.readings[1].flags.includes("scheduleDrawingMismatch"), true,
+    "and the schedule's SLIDING is still compared against the drawing's awning under that spelling");
+});
+
 test("run: a tag printed on the elevation reaches the matcher (§7.3)", async () => {
   const plan = facePage(3, "GROUND FLOOR PLAN", [
     { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
@@ -3446,20 +3516,30 @@ test("plan placement: a schedule that writes W1 and a plan that writes W01 are o
     ["W01", "W02"]);
 });
 
-test("plan placement: a schedule holding both W1 and W01 keeps them apart (P2-AC1)", () => {
-  // Reading a padded spelling as its unpadded twin is only safe while the
-  // schedule has one of them. A schedule with both is naming two openings, and
-  // handing one of them the other's drawn tag loses a real row without saying
-  // so.
+test("plan placement: a tag is a type letter and a serial number, however it is spelled (P2-AC1)", () => {
+  // Owner ruling, 2026-09-05: W001, W01, W1, W-1 and "W 1" are one opening. The
+  // letter says what kind and the number says which; the rest is a draughtsman's
+  // habit. So a schedule that carries two spellings of one number has named the
+  // same opening twice, and that is the roster duplicate it always was.
   const plan = planSheet([
-    tagWord("W01", 297, 250),
+    tagWord("W001", 297, 250), tagWord("D-2", 457, 540), tagWord("W03", 217, 400),
     ...planRooms,
     { text: "A", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "C", x0: 230, top: 395, x1: 240, bottom: 409 },
   ]);
-  const placed = placeOpeningsOnPlan({ pages: [plan], faceNames: new Set(["A", "B", "C", "D"]), roster: ["W1", "W01"], faceNames: new Set(["A"]) });
-  const byTag = Object.fromEntries(placed.map((o) => [o.placement?.tag ?? o.tag, o]));
-  assert.equal(byTag.W01.state, "resolved", "the spelling the plan prints goes to the row that spells it that way");
-  assert.equal(byTag.W1.state, "unresolved");
+  const placed = placeOpeningsOnPlan({
+    pages: [plan], roster: ["W1", "D2", "W3"], faceNames: new Set(["A", "B", "C"]),
+  });
+  assert.deepEqual(placed.map((o) => [o.placement?.tag ?? o.tag, o.state, o.placement?.elevation]),
+    [["W1", "resolved", "A"], ["D2", "resolved", "B"], ["W3", "resolved", "C"]],
+    "each answers to the name its schedule gave it, whatever the plan printed");
+
+  const twice = placeOpeningsOnPlan({
+    pages: [plan], roster: ["W1", "W01"], faceNames: new Set(["A", "B", "C"]),
+  });
+  assert.deepEqual(twice.map((o) => o.state), ["unresolved", "unresolved"]);
+  assert.match(twice[0].reason, /more than once/);
 });
 
 test("plan placement: the copyright strip is not a storey (P2-AC5)", () => {
@@ -6400,6 +6480,68 @@ test("switch wiring: each phase of the face-mapped engine calls under its own sk
   assert.equal(ids.every((id) => /^[a-z_]+@v\d+$/.test(id)), true, ids.join(" "));
 });
 
+test("switch wiring: a sheet whose title block is drawn gets looked at before the plan is read (Task 11, AC25)", async () => {
+  // Lot 623 in miniature: the plan page's text layer holds only its tags and
+  // rooms, no title and no scale. Nothing text-side can call it a floor plan,
+  // so the branch has to look - the same look Phase A already knows how to take.
+  const used = [];
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "poppler", fonts: ["x"], hasAttachments: false,
+      pages: [3, 5].map((pageNo) => ({ pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 1, imageAreaFraction: 0.9 })),
+    },
+    pages: [
+      { pageNo: 3, text: "W1 LIVING KITCHEN BED ENTRY NORTH", words: [
+        { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+        { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+        { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+        { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+        { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+        { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+      ] },
+      { pageNo: 5, text: "NORTH ELEVATION", words: [
+        { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+        { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+      ] },
+    ],
+  };
+  const env = {
+    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
+    PLAN_PARSE: {},
+  };
+  const result = await enrichOpenings(env, {
+    projectId: "p", aiRunId: "r",
+    files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+  }, {
+    inspect: async () => inspected,
+    render: async () => ({ images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+    runElevation: async () => null,
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+    runFaceMapped: {
+      readSheet: async ({ pageNo }) => {
+        used.push(`sheet ${pageNo}`);
+        return pageNo === 3
+          ? { pageNo, ratio: 100, drawingTitle: "GROUND FLOOR PLAN" }
+          : { pageNo, ratio: 100, drawingTitle: "ELEVATIONS" };
+      },
+      readPlanPage: async () => null,
+      inventoryElevation: async () => ({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] }),
+      reconcileFace: async () => null,
+      readComposition: async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) }),
+    },
+  });
+  assert.deepEqual(used.filter((u) => u.startsWith("sheet")).sort(), ["sheet 3", "sheet 5"],
+    "the pages the text could not classify are looked at, once each");
+  assert.deepEqual(result.readings.map((r) => [r.externalRef, r.splitState, r.elevation]), [["W1", "value", "NORTH"]],
+    "and the plan the look found is the plan the openings are placed on");
+  assert.equal(result.report.files[0].steps.placements.fromText, 1);
+});
+
 test("switch wiring: face-mapped mode reads the file, and the other engines stay out of it (Task 11)", async () => {
   const used = [];
   const inspected = {
@@ -6472,11 +6614,11 @@ test("release gate: each thing the engine claims is scored on its own (Task 12)"
     {
       external_ref: "W1", split_state: "value", elevation_state: "value", elevation: "NORTH",
       split_json: JSON.stringify({ axis: "vertical", units: [{ operation: "awning", ratio: 0.5 }, { operation: "fixed", ratio: 0.5 }] }),
-      page_no: 5, wall_order: 1, frame_box: [100, 300, 151, 420], gap_code: null,
+      page_no: 5, wall_order: 1, frame_box_json: "[100,300,151,420]", gap_code: null,
     },
     {
       external_ref: "W2", split_state: "not_read", elevation_state: "value", elevation: "NORTH",
-      split_json: null, page_no: 5, wall_order: 2, frame_box: null, gap_code: "frame_ambiguous",
+      split_json: null, page_no: 5, wall_order: 2, frame_box_json: null, gap_code: "frame_ambiguous",
     },
   ];
   const gate = runGate(readings, {

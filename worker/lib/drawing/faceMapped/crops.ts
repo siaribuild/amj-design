@@ -18,6 +18,9 @@ export interface OpeningCropTask {
   threshold: null;
   faceKey: string;
   sourceFileId: string;
+  /** The frame this crop was cut around, carried through so the report can say
+   * which frame on the elevation a reading came from. */
+  frameBoxPt: CropBoxPt;
   /** How the width was arrived at, so a crop sized by fallback is never taken
    * for one sized by measurement. */
   basis: "scaled" | "wider_frame" | "wide_unscaled";
@@ -94,6 +97,7 @@ export function openingCropTasks(args: {
       threshold: null,
       faceKey: match.frame.faceKey,
       sourceFileId: args.sourceFileId,
+      frameBoxPt: match.frame.outerFrameBoxPt,
       basis,
       warnings,
     }];

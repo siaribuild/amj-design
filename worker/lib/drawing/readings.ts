@@ -82,14 +82,15 @@ export async function persistReadings(
        split_state, split_json, orientation_state, orientation,
        elevation_state, elevation, room_state, room_label,
        gap_code, gap_note, crop_key, page_no, sheet_ref, region_json,
-       confidence, flags_json
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       confidence, flags_json, wall_order, frame_box_json
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).bind(
     uuid(), projectId, aiRunId, r.sourceFileId, r.externalRef,
     r.splitState, r.split ? JSON.stringify(r.split) : null, r.orientationState, r.orientation,
     r.elevationState, r.elevation, r.roomState, r.roomLabel,
     r.gapCode, r.gapNote, r.cropKey, r.pageNo, r.sheetRef, r.regionJson ? JSON.stringify(r.regionJson) : null,
     r.confidence, JSON.stringify(r.flags),
+    r.wallOrder ?? null, r.frameBoxPt ? JSON.stringify(r.frameBoxPt) : null,
   ));
   await env.DB.batch(stmts);
 }

@@ -155,6 +155,10 @@ export interface DrawingReading {
   regionJson: [number, number, number, number] | null;
   confidence: DrawingConfidence | null;
   flags: DrawingFlag[];
+  /** Migration 0064, face-mapped engine only: which number along its wall this
+   *  opening is, and which frame on the elevation it was read from. */
+  wallOrder?: number | null;
+  frameBoxPt?: CropBoxPt | null;
 }
 
 export interface DrawingRunStepCounts {

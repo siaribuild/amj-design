@@ -1,5 +1,6 @@
 import type { CropBoxPt, DrawingFileReport, DrawingReading, GapCode } from "../contract";
 import type { CompositionOutcome } from "./compositions";
+import { normalizeOpeningRef } from "../../ai/energyMap";
 
 /**
  * §7.7 and Task 10. One row per scheduled opening, whatever happened to it.
@@ -25,6 +26,7 @@ export interface CropForReport {
   cropKey: string | null;
   pageNo: number;
   bboxPt: CropBoxPt;
+  frameBoxPt: CropBoxPt;
 }
 
 export function faceMappedReadings(args: {
@@ -48,9 +50,13 @@ export function faceMappedReadings(args: {
   }
 
   return args.roster.map((tag): DrawingReading => {
-    const placed = args.placements.get(tag);
-    const crop = args.crops.get(tag);
-    const read = readByTag.get(tag);
+    // The row carries the schedule's own spelling; what stands behind it was
+    // keyed by what the tag means, so a schedule that wrote W-1 finds the
+    // opening the engine has been calling W1 all along.
+    const key = normalizeOpeningRef(tag) ?? tag;
+    const placed = args.placements.get(key);
+    const crop = args.crops.get(key);
+    const read = readByTag.get(key);
     // The first phase that could not finish owns the gap. A row that was never
     // placed did not fail to be read; it failed to be found.
     const gapCode: GapCode | null = !placed ? "unplaced"
@@ -58,12 +64,12 @@ export function faceMappedReadings(args: {
       : read?.state === "not_stated" ? "division_unreadable"
       : read?.state === "value" ? null
       : "division_unreadable";
-    const gapNote = !placed ? args.unplaced.get(tag) ?? "not placed on any plan page"
+    const gapNote = !placed ? args.unplaced.get(key) ?? "not placed on any plan page"
       // A placed opening with no crop stopped somewhere, and the phase that
       // stopped said why. "No crop was made" is the symptom, not the reason.
-      : !crop ? args.unplaced.get(tag) ?? "no crop was made for this opening"
+      : !crop ? args.unplaced.get(key) ?? "no crop was made for this opening"
       : read && read.state !== "value" ? read.reason
-      : args.matchWarnings?.get(tag)?.join("; ") ?? null;
+      : args.matchWarnings?.get(key)?.join("; ") ?? null;
 
     return {
       sourceFileId: args.sourceFileId,
@@ -95,16 +101,18 @@ export function faceMappedReadings(args: {
       sheetRef: null,
       regionJson: crop ? [crop.bboxPt[0], crop.bboxPt[1], crop.bboxPt[2], crop.bboxPt[3]] : null,
       confidence: read?.state === "value"
-        ? (args.matchWarnings?.has(tag) ? "low" : read.value.confidence)
+        ? (args.matchWarnings?.has(key) ? "low" : read.value.confidence)
         : null,
+      wallOrder: placed?.wallOrder ?? null,
+      frameBoxPt: crop?.frameBoxPt ?? null,
       flags: [
         ...(placed?.confidence === "ambiguous" ? ["agentEvidenceWeak" as const] : []),
         // Both are reported and neither is corrected: which of the two is right
         // is the estimator's call, and hiding the disagreement makes it nobody's.
-        ...(read?.state === "value" && disagreesWithSchedule(read.value.operations, args.scheduleTypeByTag?.get(tag))
+        ...(read?.state === "value" && disagreesWithSchedule(read.value.operations, args.scheduleTypeByTag?.get(key))
           ? ["scheduleDrawingMismatch" as const]
           : []),
-        ...(args.matchWarnings?.has(tag) ? ["drawingInconsistency" as const] : []),
+        ...(args.matchWarnings?.has(key) ? ["drawingInconsistency" as const] : []),
       ],
     };
   });

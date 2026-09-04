@@ -53,22 +53,35 @@ every phase reports what it refused and why.
   matching reaches the report; a schedule that says one thing and a drawing
   another has both reported and neither corrected.
 
-## Known deviations, for the owner
+## Owner rulings, 2026-09-05, and what changed
 
-1. **Zero-padding tag alias** (`planFaces.ts`). Lot 623's schedule prints W1, W2,
-   W3 and its plans print W01, W02, W03. Matched as strings that places nothing:
-   19 of 29 becomes 0. Neither spelling is treated as the correct one, and a
-   schedule holding *both* spellings widens neither. Codex classes this as a
-   tag-spelling branch that P2-AC17 forbids. It is load-bearing on a real set.
-2. **Determiner guard** (`locate.ts`). A storey is what a sheet puts before the
-   word PLAN in its title, and a determiner is the one thing that word can never
-   be. Without it, 623's copyright line files every opening under a storey called
-   THIS. Grammar rather than a drawing convention, but it is still a word list.
-3. **`run.ts` is 317 lines against a 200-line review target.** It holds phase
-   calls, early exits and nothing else; splitting it further would be splitting
-   for a line count.
-4. **Phase A sheet recovery is not wired into the production `face_mapped`
-   branch.** A set whose title block is graphics needs it, and the branch does
-   not call it yet — 623 works in the harness because the harness calls it.
-5. **The gate scores `wall_order` and `frame_box`, which no `drawing_reading`
-   row carries.** Emitting them needs a migration.
+1. **A tag is a type letter and a serial number.** W001, W01, W1, W-1 and
+   "W 1" are one opening. `canonicalTag` in `planFaces.ts` compares tags that
+   way everywhere the engine compares them; a schedule that spells one number
+   twice has named the same opening twice and is refused as the duplicate it is.
+   Placement unchanged: 312 19/19, 939 18/18, 623 18-19/29.
+2. **Determiner guard** - kept. What it does: a plan sheet's storey is read as
+   the words before PLAN in its title band; on 623 the only text in that band is
+   the copyright line, and without the guard every opening files under a storey
+   called THIS. The guard is the list of English determiners. No action needed.
+3. **`run.ts` at 317 lines** - accepted as is.
+4. **Phase A sheet recovery is wired into the production `face_mapped` branch.**
+   Pages the text layer cannot classify or scale get the one look Phase A
+   already knew how to take (`makeSheetFactsSkill`, closed schema, through the
+   stage layer). A scale the text stated is never overridden. Proven by the
+   "title block is drawn" wiring test.
+5. **`wall_order` and `frame_box_json` are on `drawing_reading`** (migration
+   0064, `ADD COLUMN` only - no rebuild, no cascade). The engine writes them,
+   the gate scores them.
+
+One note from the security review, not security and not this branch's: the R2
+crop key sanitiser collapses `W1/A` and `W1_A` to one key, so two such schedule
+tags would overwrite each other's crop within a run.
+
+## Readiness
+
+The security review of the whole branch found nothing. The engine is a mode the
+default configuration does not select, so deploying it changes nothing until
+`AI_EXTRACTION_MODE` is set to `face_mapped` - which is how real tests would be
+run. Expect placement to work and most compositions to come back unread, per the
+numbers above.
