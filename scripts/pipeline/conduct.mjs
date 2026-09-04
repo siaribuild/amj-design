@@ -128,7 +128,18 @@ export function parseSeverity(args) {
 }
 
 // --- stage table -----------------------------------------------------------
-// compact: context window cap, in tokens.
+// compact: context window cap, in tokens. 600k everywhere, owner 2026-09-04.
+//
+// It was 100k-200k per stage and four stages died of it in a single run — ux,
+// polish, review-security and review-ponytail, every one of them ending in
+// `terminal_reason: rapid_refill_breaker`: the context refilled to the cap
+// within three turns of a compact, three times running, and the model gave up.
+// A stage that reads a mock, a spec, a design and a diff cannot do it inside
+// 100k, so it compacts, re-reads to answer the next question, and compacts
+// again. Raising the cap is not indulgence; below it these stages cannot
+// finish at all, and a stage that cannot finish is the most expensive kind.
+//
+// This is a CAP, not an allocation: a stage that needs 80k still uses 80k.
 // tiers:   which tier sizes run this stage.
 //
 // There is deliberately NO runaway guard here - no dollar ceiling, no token
@@ -154,7 +165,7 @@ function readTasks(file) {
 
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
+    id: 'spec', agent: 'product-manager', compact: 600000, tiers: ['full'],
     needs: ['00-ask.md'], produces: ['01-spec.md'], check: checkSpec,
     prompt: (r) => `Write the spec for this feature.
 
@@ -181,7 +192,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', compact: 120000, tiers: ['full'],
+    id: 'design', agent: 'architect', compact: 600000, tiers: ['full'],
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -241,7 +252,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 200000, mcp: true, tiers: ['full'],
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 600000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -260,13 +271,13 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
+    id: 'build', agent: 'developer', sliced: true, compact: 600000, tiers: ['full', 'fix'],
     // Not 02-tasks.json: the fix tier has no architect to write one, and for
     // the full tier runBuild gives a better message about its absence.
     needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 200000, mcp: true, tiers: ['full'],
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 600000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -277,7 +288,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', compact: 120000, tiers: ['full', 'fix'],
+    id: 'verify', agent: 'tester', compact: 600000, tiers: ['full', 'fix'],
     cycle: true,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
@@ -289,7 +300,7 @@ WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
     id: 'review', parallel: true, tiers: ['full'], needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000, tiers: ['full'],
+    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 600000, tiers: ['full'],
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -348,7 +359,7 @@ Findings go back to a developer, not to you - do not fix code.`
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', compact: 200000,
+    id: 'conformance', agent: 'architect', compact: 600000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the paths that
@@ -369,10 +380,10 @@ WRITE ${r.dir}/07-review-conformance.md.`,
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 200000, headless: true,
+    id: 'security', slash: '/security-review', compact: 600000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 200000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 600000,
   },
   { id: 'codex', codex: true },
 ]
@@ -1303,7 +1314,7 @@ export function stageSpec(label) {
   // it - and a resumed fix has to come back at the model it was escalated to,
   // not the pinned one it already failed at.
   if (label.startsWith('fix-')) return fixSpec(Number(label.slice('fix-'.length)) || 0)
-  return { agent: 'developer', compact: 120000 }
+  return { agent: 'developer', compact: 600000 }
 }
 
 // --- gates -----------------------------------------------------------------
@@ -1362,7 +1373,7 @@ const CAPS = {
  * One cheap attempt, then a stronger one, and only then his time.
  */
 export function fixSpec(roundsSpent) {
-  const spec = { agent: 'developer', compact: 120000 }
+  const spec = { agent: 'developer', compact: 600000 }
   return roundsSpent > 0 ? { ...spec, model: 'opus' } : spec
 }
 
