@@ -46,7 +46,7 @@ import type { Env } from "../../types";
 // the opening count while preserving discovery turns for larger schedules.
 // 2026-09-04.2: close-up verification has an independently hash-bound model /
 // reasoning profile and runs in four failure-isolated concurrent batches.
-export const PIPELINE_VERSION = "2026-09-04.2";
+export const PIPELINE_VERSION = "2026-09-04.3";
 // 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
 // additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";

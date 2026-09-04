@@ -24,7 +24,6 @@ import { sizesFromRatios } from "../estimator/split";
 import { hasPlanFootprint, locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 import { elevationRegions } from "./elevationRegions";
 import { StageCallError } from "../ai/stage";
-import { mapPool } from "./pool";
 
 const MAX_TURNS = 16;
 const MAX_PROVIDER_CALLS = 16;
@@ -1388,43 +1387,10 @@ export async function runFullDocumentAgent(args: {
   let reviewIndex = 0;
   let closeUpRetriesUsed = 0;
   let progressUpdates = Promise.resolve();
-  while (reviewIndex < reviewCandidates.length && report.modelCalls < providerCallLimit) {
-    const reviewBatches: { candidate: typeof reviewCandidates[number]; render: StoredRender }[][] = [];
-    while (reviewIndex < reviewCandidates.length
-      && reviewBatches.length < Math.min(MAX_CONCURRENT_CLOSE_UP_BATCHES, providerCallLimit - report.modelCalls)) {
-      const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
-      let reviewChars = 0;
-      while (reviewIndex < reviewCandidates.length && reviews.length < MAX_CLOSE_UP_BATCH) {
-        const candidate = reviewCandidates[reviewIndex];
-        let render: StoredRender | null = null;
-        try {
-          render = await addRender(`fd_review_${candidate.tag}`, {
-            pageNo: candidate.page.pageNo,
-            dpi: 300,
-            bboxPt: closeUpCropBox(pageBox(candidate.proposal, renders.get(candidate.proposal.evidenceRenderId)!), candidate.page),
-            threshold: 250,
-          }, true);
-        } catch {
-          verificationFailures.set(candidate.tag, "The mandatory close-up could not be rendered.");
-        }
-        if (!render?.cropKey) {
-          verificationFailures.set(candidate.tag, verificationFailures.get(candidate.tag) ?? "The mandatory close-up could not be stored.");
-          reviewIndex++;
-          continue;
-        }
-        if (reviews.length && reviewChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) break;
-        reviews.push({ candidate, render });
-        reviewChars += render.pngB64.length;
-        reviewIndex++;
-      }
-      if (!reviews.length) continue;
-      report.steps.read.targetedReviews += reviews.length;
-      reviewBatches.push(reviews);
-    }
-    if (!reviewBatches.length) break;
-    await mapPool(reviewBatches, MAX_CONCURRENT_CLOSE_UP_BATCHES, async (reviews) => {
+  const verifyBatch = async (reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[]) => {
     const outcomes = new Map(reviews.map(({ candidate }) => [candidate.tag, "failed" as "replaced" | "kept" | "failed"]));
     let batchFailureReason: string | null = null;
+    let providerRetryUsed = false;
     try {
       const reviewTags = new Set(reviews.map(({ candidate }) => candidate.tag));
       const reviewInput: FullDocumentAgentInput = {
@@ -1451,6 +1417,36 @@ export async function runFullDocumentAgent(args: {
         turnsRemaining: 1,
         escalationRecords: reviews.map(({ candidate }) => candidate.proposal),
       };
+      const runReviewTurn = async (input: FullDocumentAgentInput): Promise<FullDocumentTurn | null> => {
+        for (;;) {
+          try {
+            const result = await deps.runTurn(input);
+            if (result && "data" in result) {
+              report.modelCalls += result.modelCalls;
+              report.cachedTurns = (report.cachedTurns ?? 0) + Number(result.cached);
+              report.repairedTurns = (report.repairedTurns ?? 0) + Number(result.repaired);
+              report.inputTokens = (report.inputTokens ?? 0) + result.inputTokens;
+              report.outputTokens = (report.outputTokens ?? 0) + result.outputTokens;
+              return result.data;
+            }
+            report.modelCalls++;
+            return result;
+          } catch (error) {
+            report.modelCalls++;
+            if (error instanceof StageCallError) {
+              report.providerFailure ??= { failureKind: error.failureKind, warnings: error.warnings };
+            }
+            const retryDelayMs = error instanceof StageCallError
+              ? error.failureKind === "transient_rate_limit" ? 30_000
+                : error.failureKind === "transient_provider" ? 5_000
+                  : null
+              : null;
+            if (retryDelayMs == null || providerRetryUsed || report.modelCalls >= providerCallLimit) throw error;
+            providerRetryUsed = true;
+            await (deps.waitBeforeRetry?.(retryDelayMs) ?? new Promise((resolve) => setTimeout(resolve, retryDelayMs)));
+          }
+        }
+      };
       let action: FullDocumentTurn | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt === 1) {
@@ -1465,17 +1461,7 @@ export async function runFullDocumentAgent(args: {
             tool: "emit", error: "close_up_requires_emit", receivedAction: action?.action ?? "null",
           }],
         };
-        const result = await deps.runTurn(input);
-        action = result && "data" in result ? result.data : result;
-        if (result && "data" in result) {
-          report.modelCalls += result.modelCalls;
-          report.cachedTurns = (report.cachedTurns ?? 0) + Number(result.cached);
-          report.repairedTurns = (report.repairedTurns ?? 0) + Number(result.repaired);
-          report.inputTokens = (report.inputTokens ?? 0) + result.inputTokens;
-          report.outputTokens = (report.outputTokens ?? 0) + result.outputTokens;
-        } else {
-          report.modelCalls++;
-        }
+        action = await runReviewTurn(input);
         if (action?.action === "emit") break;
         if (attempt === 0) continue;
         break;
@@ -1506,10 +1492,10 @@ export async function runFullDocumentAgent(args: {
         outcomes.set(candidate.tag, "replaced");
       }
     } catch (error) {
-      report.modelCalls++;
       if (error instanceof StageCallError) {
         report.providerFailure ??= { failureKind: error.failureKind, warnings: error.warnings };
       }
+      batchFailureReason = "close_up_provider_failure";
       for (const { candidate } of reviews) outcomes.set(candidate.tag, "failed");
       for (const { candidate } of reviews) verificationFailures.set(candidate.tag, "The mandatory close-up model call failed.");
     }
@@ -1521,7 +1507,9 @@ export async function runFullDocumentAgent(args: {
         turn: 1,
         stage: "escalation",
         outcome: reviewOutcome,
-        reasons: [reviewOutcome === "replaced" ? "close_up_verified" : batchFailureReason ?? "close_up_verification_failed"],
+        reasons: [reviewOutcome === "replaced"
+          ? providerRetryUsed ? "close_up_verified_after_provider_retry" : "close_up_verified"
+          : batchFailureReason ?? "close_up_verification_failed"],
       });
       corrections.set(candidate.tag, history);
       verificationProcessed.add(candidate.tag);
@@ -1530,8 +1518,42 @@ export async function runFullDocumentAgent(args: {
     const done = verificationProcessed.size;
     progressUpdates = progressUpdates.then(() => deps.onProgress?.(done, scheduleRows.length, "opening_read"));
     await progressUpdates;
-    });
+  };
+  const activeBatches = new Set<Promise<void>>();
+  while (reviewIndex < reviewCandidates.length && report.modelCalls < providerCallLimit) {
+    if (activeBatches.size >= MAX_CONCURRENT_CLOSE_UP_BATCHES) await Promise.race(activeBatches);
+    const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
+    let reviewChars = 0;
+    while (reviewIndex < reviewCandidates.length && reviews.length < MAX_CLOSE_UP_BATCH) {
+      const candidate = reviewCandidates[reviewIndex];
+      let render: StoredRender | null = null;
+      try {
+        render = await addRender(`fd_review_${candidate.tag}`, {
+          pageNo: candidate.page.pageNo,
+          dpi: 300,
+          bboxPt: closeUpCropBox(pageBox(candidate.proposal, renders.get(candidate.proposal.evidenceRenderId)!), candidate.page),
+          threshold: 250,
+        }, true);
+      } catch {
+        verificationFailures.set(candidate.tag, "The mandatory close-up could not be rendered.");
+      }
+      if (!render?.cropKey) {
+        verificationFailures.set(candidate.tag, verificationFailures.get(candidate.tag) ?? "The mandatory close-up could not be stored.");
+        reviewIndex++;
+        continue;
+      }
+      if (reviews.length && reviewChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) break;
+      reviews.push({ candidate, render });
+      reviewChars += render.pngB64.length;
+      reviewIndex++;
+    }
+    if (!reviews.length) continue;
+    report.steps.read.targetedReviews += reviews.length;
+    let task: Promise<void>;
+    task = verifyBatch(reviews).finally(() => { activeBatches.delete(task); });
+    activeBatches.add(task);
   }
+  await Promise.all(activeBatches);
 
   for (const [tag, proposal] of [...proposals]) {
     if (verifiedTags.has(tag)) continue;

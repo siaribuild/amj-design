@@ -3369,17 +3369,21 @@ test("full-document agent batches mandatory close-up verification beyond the act
     opening.corrections.some((item) => item.stage === "escalation" && item.outcome === "replaced")));
 });
 
-test("full-document agent runs at most four close-up batches concurrently", async () => {
+test("full-document agent starts the next close-up batch as soon as a concurrency slot frees", async () => {
   const scheduleRows = Array.from({ length: 19 }, (_, index) => ({
     tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
   }));
   let active = 0;
   let maximumActive = 0;
   let started = 0;
-  let release;
-  const gate = new Promise((resolve) => { release = resolve; });
+  let releaseFirst;
+  let releaseRest;
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const restGate = new Promise((resolve) => { releaseRest = resolve; });
   let fourStarted;
   const ready = new Promise((resolve) => { fourStarted = resolve; });
+  let fiveStarted;
+  const nextReady = new Promise((resolve) => { fiveStarted = resolve; });
   const run = runFullDocumentAgent({
     fileId: "f1", scheduleRows,
     inspected: {
@@ -3393,9 +3397,11 @@ test("full-document agent runs at most four close-up batches concurrently", asyn
         if (input.escalationRecords) {
           active++;
           started++;
+          const ordinal = started;
           maximumActive = Math.max(maximumActive, active);
           if (started === 4) fourStarted();
-          await gate;
+          if (started === 5) fiveStarted();
+          await (ordinal === 1 ? firstGate : restGate);
           active--;
           return verifyCloseUpParents(input);
         }
@@ -3417,23 +3423,26 @@ test("full-document agent runs at most four close-up batches concurrently", asyn
         dpi: request.dpi,
       }),
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+      waitBeforeRetry: async () => {},
     },
   });
-  try {
-    await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 50))]);
-    assert.equal(started, 4, "four independent verification batches should be in flight");
-  } finally {
-    release();
-  }
+  await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 50))]);
+  assert.equal(started, 4, "four independent verification batches should be in flight");
+  releaseFirst();
+  await Promise.race([nextReady, new Promise((resolve) => setTimeout(resolve, 50))]);
+  const startedBeforeRest = started;
+  releaseRest();
   const result = await run;
+  assert.equal(startedBeforeRest, 5, "the fifth batch should not wait for the other three calls");
   assert.equal(maximumActive, 4);
   assert.ok(result.report.perOpening.every((opening) => opening.outcome === "read"));
 });
 
-test("full-document agent isolates one close-up batch provider failure", async () => {
+test("full-document agent retries only the close-up batch with a transient provider failure", async () => {
   const scheduleRows = Array.from({ length: 8 }, (_, index) => ({
     tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "FIXED",
   }));
+  const callsByBatch = new Map();
   const result = await runFullDocumentAgent({
     fileId: "f1", scheduleRows,
     inspected: {
@@ -3445,7 +3454,10 @@ test("full-document agent isolates one close-up batch provider failure", async (
     deps: {
       runTurn: async (input) => {
         if (input.escalationRecords) {
-          if (input.escalationRecords[0].tag === "W1") throw new StageCallError("transient_provider", ["test_failure"]);
+          const batch = input.escalationRecords[0].tag;
+          const calls = (callsByBatch.get(batch) ?? 0) + 1;
+          callsByBatch.set(batch, calls);
+          if (batch === "W1" && calls === 1) throw new StageCallError("transient_provider", ["test_failure"]);
           return verifyCloseUpParents(input);
         }
         return {
@@ -3463,10 +3475,12 @@ test("full-document agent isolates one close-up batch provider failure", async (
         dpi: request.dpi,
       }),
       store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+      waitBeforeRetry: async () => {},
     },
   });
-  assert.ok(result.report.perOpening.slice(0, 4).every((opening) => opening.outcome === "not_read"));
-  assert.ok(result.report.perOpening.slice(4).every((opening) => opening.outcome === "read"));
+  assert.equal(callsByBatch.get("W1"), 2);
+  assert.equal(callsByBatch.get("W5"), 1);
+  assert.ok(result.report.perOpening.every((opening) => opening.outcome === "read"));
 });
 
 test("full-document close-up review retries one non-emit action and then accepts emit", async () => {
