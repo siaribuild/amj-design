@@ -40,3 +40,36 @@ in the wrangler --var). `npm run typecheck:gate` clean, api.test.mjs 79/79.
 
 Next task (t3, ops2 model + door): payload field is `linesEditable` — build `LinePage`'s
 `editable={!isOrder && record.linesEditable}` against that exact name.
+
+## t3 - ops2 Price door follows the server's linesEditable; unit rows pinned price-free
+
+Files: `src/ops2/projects/record.ts`, `src/ops2/projects/LinePage.tsx`,
+`scripts/tests/ops2-record.test.mjs`, `scripts/tests/manufacturer-price.test.mjs`.
+
+`ProjectRecord.linesEditable = p.linesEditable === true` (fail-closed: absent/string/false
+all → false). `LinePage`'s Price door: `editable={!isOrder && record.linesEditable}`,
+`lineKind !== "composite_parent"` clause deleted. `LineReview`/`Units` were already
+price-free per unit (no code change needed there) — added to ops2-record.test.mjs's
+bundle export and asserted no `$` in `line-units` for a composite parent both priced
+and unpriced. Corrected manufacturer-price.test.mjs's stale "endpoint refuses a
+composite parent" comment (t2 now accepts it) — no assertion changed.
+
+`npm run typecheck:gate` clean; ops2-record.test.mjs 43/43, manufacturer-price.test.mjs
+10/10. `ProjectRecordPage.tsx` still gates its own PricePanel on `lineKind` (not in this
+task's file list) — untouched, flag if the next task expects it aligned too.
+
+## t5 - Sharpen CONTEXT.md, record ADR 0017, fix the stale ops v1 comment
+
+Files: `CONTEXT.md` (Manufacturer price entry), `docs/adr/0017-composite-parent-manufacturer-price.md`
+(new), `src/ops/api.ts` (opsSetLinePrice doc comment, lines 196-198).
+
+Docs-only, no gated dirs touched, no test added. CONTEXT.md: "for a whole line" now
+names the composite-parent case explicitly; the "one-way: no clear action" sentence is
+gone, replaced with clearing-restores-CURRENT-Σ(segments) + endpoint-only-per-owner-D1
+wording. ADR 0017 records the ownership transfer (`price_calculated` non-NULL owns
+`line_total`), the parent-PATCH re-arm kept as-is, and the fallback-to-sent-total on an
+unpriced sum. `opsSetLinePrice`'s comment no longer claims a 409 refusal on composite
+parents.
+
+`npm run typecheck:gate` clean. Nothing left for this pipeline to touch — t5 was the
+last task.
