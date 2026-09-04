@@ -2,11 +2,9 @@
 // the untrusted output before returning it. Inert unless env.AI is bound and the
 // skill is explicitly invoked (the deterministic path never calls this).
 //
-// MODEL POLICY (LLM strategy §13, owner decision 2026-07-25): every skill runs on
-// the ONE env-resolved primary model (google/gemini-3.6-flash by default) — no
-// per-skill model shopping, no silent escalation to a dearer model. The stage
-// layer may pass an explicit model override only when real escalation has been
-// turned on (AI_ESCALATION_MODE='on'); otherwise escalation is shadow-logged.
+// MODEL POLICY: skills use the env-resolved primary model by default. The stage
+// layer may explicitly select the close-up verifier or enabled escalation model;
+// there is no other per-skill model shopping or silent upgrade.
 //
 // DETERMINISM (§13.4): near-zero temperature, strict JSON schema, bounded output,
 // and retries only as the single §22.3 repair pass — never an unbounded loop.
@@ -219,6 +217,7 @@ async function callModel(
   messages: { role: string; content: unknown }[],
   telemetry: SkillTelemetry | undefined,
   attempt: "primary" | "repair",
+  reasoningEffort?: string,
 ) {
   // NOTE: Google's structured-output fields (responseMimeType / responseSchema)
   // are NOT in Cloudflare's documented parameter set for this model, so they are
@@ -227,11 +226,12 @@ async function callModel(
   // untrusted output, plus the single §22.3 repair pass. toVendorSchema() is
   // kept for the day a provider does accept a schema.
   const body = isGoogleModel(model)
-    ? googleBody(messages, thinkingLevel(env))
+    ? googleBody(messages, reasoningEffort ?? thinkingLevel(env))
     : {
         messages,
         temperature: EXTRACTION_TEMPERATURE,
-        max_tokens: EXTRACTION_MAX_TOKENS,
+        max_completion_tokens: EXTRACTION_MAX_TOKENS,
+        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         response_format: { type: "json_schema", json_schema: toVendorSchema(skill.responseSchema) },
       };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -276,7 +276,7 @@ export async function runSkill<I, O>(
   env: Env,
   skill: Skill<I, O>,
   input: I,
-  opts?: { model?: string; telemetry?: SkillTelemetry },
+  opts?: { model?: string; reasoningEffort?: string; telemetry?: SkillTelemetry },
 ): Promise<SkillRun<O>> {
   const model = opts?.model ?? primaryModel(env);
   if (!env.AI) {
@@ -306,6 +306,7 @@ export async function runSkill<I, O>(
       [{ role: "user", content: prompt }],
       opts?.telemetry,
       "primary",
+      opts?.reasoningEffort,
     );
     const usage = readModelUsage(out);
     inputTokens += usage.input; outputTokens += usage.output;
@@ -364,6 +365,7 @@ export async function runSkill<I, O>(
         [{ role: "user", content: repairPrompt }],
         opts?.telemetry,
         "repair",
+        opts?.reasoningEffort,
       );
       const usage = readModelUsage(out);
       inputTokens += usage.input; outputTokens += usage.output;

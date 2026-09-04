@@ -18,6 +18,7 @@ import { elevationInventorySkill, makeFloorplanReadSkill, northArrowSkill, openi
 import { makeDrawingAgentSkill, runDrawingAgent, type DrawingAgentInput, type DrawingAgentTurn } from "./agent";
 import { applyVisualNorthToHarvest, buildFullDocumentHarvest, makeFullDocumentAgentSkill, runFullDocumentAgent, type FullAgentTurnResult, type FullDocumentAgentInput, type FullDocumentHarvest, type FullDocumentTurn } from "./fullDocumentAgent";
 import { runStage, StageCallError } from "../ai/stage";
+import { verificationModel, verificationReasoningEffort } from "../ai/versions";
 import { sha256hex, sha256hexText } from "../ai/hash";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
@@ -655,11 +656,16 @@ export async function runDrawingEnrichmentStage(
     ? {
         ...baseDeps,
         runFullAgentTurn: async (input: FullDocumentAgentInput) => {
+          const verification = !!input.escalationRecords;
           const res = await runStage(env, {
             aiRunId: args.aiRunId,
             projectId: args.projectId,
             skill: makeFullDocumentAgentSkill(args.scheduleRows.map((row) => row.tag), input.harvest.pages.map((page) => page.pageNo)),
             input,
+            ...(verification ? {
+              model: verificationModel(env),
+              reasoningEffort: verificationReasoningEffort(env),
+            } : {}),
           });
           if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
           return {

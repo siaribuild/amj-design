@@ -56,8 +56,13 @@ export interface Env {
    *  §13.1). Defaults in code to google/gemini-3.6-flash; override without a code
    *  change once the model is enabled in the gateway. */
   AI_PRIMARY_MODEL?: string;
+  /** Optional model used only for mandatory drawing close-up verification.
+   * Defaults to AI_PRIMARY_MODEL. */
+  AI_VERIFY_MODEL?: string;
+  /** Optional reasoning effort used only for close-up verification. */
+  AI_VERIFY_REASONING_EFFORT?: string;
   /** Thinking level for extraction skills ('minimal' | 'low' | 'medium' | 'high').
-   *  Defaults in code to 'low'; raise for accuracy, lower for speed. See the
+   *  Defaults in code to 'medium'; raise for accuracy, lower for speed. See the
    *  runner's googleBody note for the latency evidence behind the default. */
   AI_THINKING_LEVEL?: string;
   /** Escalation model (LLM strategy §13.2). Currently SHADOW-ONLY: escalation

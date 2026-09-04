@@ -24,6 +24,7 @@ import { sizesFromRatios } from "../estimator/split";
 import { hasPlanFootprint, locateFloorplanPage, openingTagWords, orientationsFromNorth, resolveNorth, type Edge } from "./locate";
 import { elevationRegions } from "./elevationRegions";
 import { StageCallError } from "../ai/stage";
+import { mapPool } from "./pool";
 
 const MAX_TURNS = 16;
 const MAX_PROVIDER_CALLS = 16;
@@ -36,6 +37,7 @@ const MAX_TEXT_PAGES = 4;
 const MAX_TOTAL_RENDERS = 60;
 const MAX_ACTIVE_IMAGES = 8;
 const MAX_CLOSE_UP_BATCH = 4;
+const MAX_CONCURRENT_CLOSE_UP_BATCHES = 4;
 const MIN_MAIN_PROVIDER_CALLS = 6;
 const MAX_SHARED_CLOSE_UP_RETRIES = 2;
 const MAX_ACTIVE_IMAGE_B64_CHARS = 12 * 1024 * 1024;
@@ -1385,36 +1387,43 @@ export async function runFullDocumentAgent(args: {
   await deps.onProgress?.(verificationProcessed.size, scheduleRows.length, "opening_read");
   let reviewIndex = 0;
   let closeUpRetriesUsed = 0;
+  let progressUpdates = Promise.resolve();
   while (reviewIndex < reviewCandidates.length && report.modelCalls < providerCallLimit) {
-    const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
-    let reviewChars = 0;
-    while (reviewIndex < reviewCandidates.length && reviews.length < MAX_CLOSE_UP_BATCH) {
-      const candidate = reviewCandidates[reviewIndex];
-      let render: StoredRender | null = null;
-      try {
-        render = await addRender(`fd_review_${candidate.tag}`, {
-          pageNo: candidate.page.pageNo,
-          dpi: 300,
-          bboxPt: closeUpCropBox(pageBox(candidate.proposal, renders.get(candidate.proposal.evidenceRenderId)!), candidate.page),
-          threshold: 250,
-        }, true);
-      } catch {
-        verificationFailures.set(candidate.tag, "The mandatory close-up could not be rendered.");
-      }
-      if (!render?.cropKey) {
-        verificationFailures.set(candidate.tag, verificationFailures.get(candidate.tag) ?? "The mandatory close-up could not be stored.");
+    const reviewBatches: { candidate: typeof reviewCandidates[number]; render: StoredRender }[][] = [];
+    while (reviewIndex < reviewCandidates.length
+      && reviewBatches.length < Math.min(MAX_CONCURRENT_CLOSE_UP_BATCHES, providerCallLimit - report.modelCalls)) {
+      const reviews: { candidate: typeof reviewCandidates[number]; render: StoredRender }[] = [];
+      let reviewChars = 0;
+      while (reviewIndex < reviewCandidates.length && reviews.length < MAX_CLOSE_UP_BATCH) {
+        const candidate = reviewCandidates[reviewIndex];
+        let render: StoredRender | null = null;
+        try {
+          render = await addRender(`fd_review_${candidate.tag}`, {
+            pageNo: candidate.page.pageNo,
+            dpi: 300,
+            bboxPt: closeUpCropBox(pageBox(candidate.proposal, renders.get(candidate.proposal.evidenceRenderId)!), candidate.page),
+            threshold: 250,
+          }, true);
+        } catch {
+          verificationFailures.set(candidate.tag, "The mandatory close-up could not be rendered.");
+        }
+        if (!render?.cropKey) {
+          verificationFailures.set(candidate.tag, verificationFailures.get(candidate.tag) ?? "The mandatory close-up could not be stored.");
+          reviewIndex++;
+          continue;
+        }
+        if (reviews.length && reviewChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) break;
+        reviews.push({ candidate, render });
+        reviewChars += render.pngB64.length;
         reviewIndex++;
-        continue;
       }
-      if (reviews.length && reviewChars + render.pngB64.length > MAX_ACTIVE_IMAGE_B64_CHARS) break;
-      reviews.push({ candidate, render });
-      reviewChars += render.pngB64.length;
-      reviewIndex++;
+      if (!reviews.length) continue;
+      report.steps.read.targetedReviews += reviews.length;
+      reviewBatches.push(reviews);
     }
-    if (!reviews.length) continue;
-    report.steps.read.targetedReviews += reviews.length;
+    if (!reviewBatches.length) break;
+    await mapPool(reviewBatches, MAX_CONCURRENT_CLOSE_UP_BATCHES, async (reviews) => {
     const outcomes = new Map(reviews.map(({ candidate }) => [candidate.tag, "failed" as "replaced" | "kept" | "failed"]));
-    let providerFailed = false;
     let batchFailureReason: string | null = null;
     try {
       const reviewTags = new Set(reviews.map(({ candidate }) => candidate.tag));
@@ -1443,11 +1452,9 @@ export async function runFullDocumentAgent(args: {
         escalationRecords: reviews.map(({ candidate }) => candidate.proposal),
       };
       let action: FullDocumentTurn | null = null;
-      for (let attempt = 0; attempt < 2 && report.modelCalls < providerCallLimit; attempt++) {
-        const remainingBatches = Math.ceil((reviewCandidates.length - reviewIndex) / MAX_CLOSE_UP_BATCH);
+      for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt === 1) {
-          if (closeUpRetriesUsed >= MAX_SHARED_CLOSE_UP_RETRIES
-            || report.modelCalls + remainingBatches >= providerCallLimit) break;
+          if (closeUpRetriesUsed >= MAX_SHARED_CLOSE_UP_RETRIES) break;
           closeUpRetriesUsed++;
         }
         const input: FullDocumentAgentInput = attempt === 0 ? reviewInput : {
@@ -1500,9 +1507,8 @@ export async function runFullDocumentAgent(args: {
       }
     } catch (error) {
       report.modelCalls++;
-      providerFailed = true;
       if (error instanceof StageCallError) {
-        report.providerFailure = { failureKind: error.failureKind, warnings: error.warnings };
+        report.providerFailure ??= { failureKind: error.failureKind, warnings: error.warnings };
       }
       for (const { candidate } of reviews) outcomes.set(candidate.tag, "failed");
       for (const { candidate } of reviews) verificationFailures.set(candidate.tag, "The mandatory close-up model call failed.");
@@ -1521,8 +1527,10 @@ export async function runFullDocumentAgent(args: {
       verificationProcessed.add(candidate.tag);
       render.pngB64 = "";
     }
-    await deps.onProgress?.(verificationProcessed.size, scheduleRows.length, "opening_read");
-    if (providerFailed) break;
+    const done = verificationProcessed.size;
+    progressUpdates = progressUpdates.then(() => deps.onProgress?.(done, scheduleRows.length, "opening_read"));
+    await progressUpdates;
+    });
   }
 
   for (const [tag, proposal] of [...proposals]) {

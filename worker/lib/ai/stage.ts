@@ -50,11 +50,11 @@ export async function stageHashPayload(value: unknown): Promise<unknown> {
 /** The §6.1-corrected idempotency key. Pure + exported so tests can prove that a
  *  prompt, model or pipeline change produces a DIFFERENT hash (i.e. a re-run). */
 export async function stageInputHash(parts: {
-  pipelineVersion: string; stage: string; promptVersion: string; model: string; payload: unknown;
+  pipelineVersion: string; stage: string; promptVersion: string; model: string; reasoningEffort?: string; payload: unknown;
 }): Promise<string> {
   const payloadHash = await sha256hex(enc.encode(JSON.stringify(await stageHashPayload(parts.payload)) ?? "null"));
   return sha256hex(enc.encode(
-    `${parts.pipelineVersion}|${parts.stage}|${parts.promptVersion}|${parts.model}|${payloadHash}`,
+    `${parts.pipelineVersion}|${parts.stage}|${parts.promptVersion}|${parts.model}|${parts.reasoningEffort ?? ""}|${payloadHash}`,
   ));
 }
 
@@ -63,6 +63,8 @@ export interface StageArgs<I, O> {
   projectId: string;
   skill: Skill<I, O>;
   input: I;
+  model?: string;
+  reasoningEffort?: string;
   /** Derive §13.2 escalation signals from the validated output (optional —
    *  schema failure is always signalled automatically). */
   signals?: (data: O | null, run: SkillRun<O>) => StageSignals;
@@ -97,9 +99,10 @@ interface CachedRow { id: string; result_r2_key: string | null }
 
 export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<StageResult<O>> {
   const { aiRunId, projectId, skill, input } = args;
-  const model = primaryModel(env);
+  const model = args.model ?? primaryModel(env);
   const inputHash = await stageInputHash({
-    pipelineVersion: PIPELINE_VERSION, stage: skill.id, promptVersion: skill.promptVersion, model, payload: input,
+    pipelineVersion: PIPELINE_VERSION, stage: skill.id, promptVersion: skill.promptVersion,
+    model, reasoningEffort: args.reasoningEffort, payload: input,
   });
 
   // ── Idempotent replay: any completed run of this project with the same hash ──
@@ -160,6 +163,8 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
 
   // ── Fresh primary-model run (with the runner's single §22.3 repair pass) ─────
   let run = await runSkill(env, skill, input, {
+    model,
+    reasoningEffort: args.reasoningEffort,
     telemetry: { aiRunId, projectId },
   });
   let modelCalls = run.modelCalls;
@@ -175,6 +180,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   if (decision.triggered && escalationEnabled(env)) {
     const escalated = await runSkill(env, skill, input, {
       model: escalationModel(env),
+      reasoningEffort: args.reasoningEffort,
       telemetry: { aiRunId, projectId },
     });
     modelCalls += escalated.modelCalls;

@@ -157,11 +157,11 @@ test("escalation: critical-confidence threshold is a strict boundary", () => {
 });
 
 // ── §6.1-corrected idempotency hash ──────────────────────────────────────────
-test("stageInputHash: stable for identical parts; changes with prompt, model, pipeline or payload", async () => {
-  const base = { pipelineVersion: "p1", stage: "s", promptVersion: "v1", model: "m1", payload: { a: 1 } };
+test("stageInputHash: stable for identical parts; changes with prompt, model, reasoning, pipeline or payload", async () => {
+  const base = { pipelineVersion: "p1", stage: "s", promptVersion: "v1", model: "m1", reasoningEffort: "medium", payload: { a: 1 } };
   const h = await stageInputHash(base);
   assert.equal(await stageInputHash({ ...base }), h, "deterministic");
-  for (const [k, v] of [["promptVersion", "v2"], ["model", "m2"], ["pipelineVersion", "p2"], ["payload", { a: 2 }], ["stage", "s2"]]) {
+  for (const [k, v] of [["promptVersion", "v2"], ["model", "m2"], ["reasoningEffort", "low"], ["pipelineVersion", "p2"], ["payload", { a: 2 }], ["stage", "s2"]]) {
     assert.notEqual(await stageInputHash({ ...base, [k]: v }), h, `${k} change must re-run the stage`);
   }
 });
@@ -217,6 +217,21 @@ test("runner: AI_PRIMARY_MODEL overrides the default without a code change", asy
   const { env, aiCalls } = fakeEnv({ responses: [good(1)], vars: { AI_PRIMARY_MODEL: "google/gemini-9.9-test" } });
   await runSkill(env, testSkill, {});
   assert.equal(aiCalls[0].model, "google/gemini-9.9-test");
+});
+
+test("runner: a verification call can select GLM with low reasoning", async () => {
+  const { env, aiCalls } = fakeEnv({ responses: [{
+    choices: [{ message: { content: JSON.stringify({ value: 1 }) } }],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  }] });
+  const run = await runSkill(env, testSkill, {}, {
+    model: "@cf/zai-org/glm-5.3-flash",
+    reasoningEffort: "low",
+  });
+  assert.ok(run.ok);
+  assert.equal(aiCalls[0].model, "@cf/zai-org/glm-5.3-flash");
+  assert.equal(aiCalls[0].params.reasoning_effort, "low");
+  assert.equal(aiCalls[0].params.max_completion_tokens, 32_768);
 });
 
 test("runner: schema failure triggers exactly ONE repair pass, which can rescue the run", async () => {

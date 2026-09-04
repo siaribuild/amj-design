@@ -3369,6 +3369,106 @@ test("full-document agent batches mandatory close-up verification beyond the act
     opening.corrections.some((item) => item.stage === "escalation" && item.outcome === "replaced")));
 });
 
+test("full-document agent runs at most four close-up batches concurrently", async () => {
+  const scheduleRows = Array.from({ length: 19 }, (_, index) => ({
+    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "AWNING",
+  }));
+  let active = 0;
+  let maximumActive = 0;
+  let started = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let fourStarted;
+  const ready = new Promise((resolve) => { fourStarted = resolve; });
+  const run = runFullDocumentAgent({
+    fileId: "f1", scheduleRows,
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 29, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN\nELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        if (input.escalationRecords) {
+          active++;
+          started++;
+          maximumActive = Math.max(maximumActive, active);
+          if (started === 4) fourStarted();
+          await gate;
+          active--;
+          return verifyCloseUpParents(input);
+        }
+        return {
+          action: "emit", memory: "All frames located.", declines: [],
+          records: scheduleRows.map((row, index) => {
+            const x0 = 10 + (index % 5) * 180;
+            const y0 = 10 + Math.floor(index / 5) * 200;
+            return hybridRecord({
+              tag: row.tag, operations: ["awning", "fixed"], unitRatios: [0.3, 0.7], facePageNo: 1,
+              faceOpeningCount: null, evidenceRenderId: input.imageDataUrls[0]?.renderId ?? "missing",
+              frameBoxNorm: [x0 / 1_000, y0 / 1_000, (x0 + 100) / 1_000, (y0 + 100) / 1_000],
+            });
+          }),
+        };
+      },
+      render: async (request) => ({
+        images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 })),
+        dpi: request.dpi,
+      }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  try {
+    await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 50))]);
+    assert.equal(started, 4, "four independent verification batches should be in flight");
+  } finally {
+    release();
+  }
+  const result = await run;
+  assert.equal(maximumActive, 4);
+  assert.ok(result.report.perOpening.every((opening) => opening.outcome === "read"));
+});
+
+test("full-document agent isolates one close-up batch provider failure", async () => {
+  const scheduleRows = Array.from({ length: 8 }, (_, index) => ({
+    tag: `W${index + 1}`, widthMm: 1_000, heightMm: 1_200, typeText: "FIXED",
+  }));
+  const result = await runFullDocumentAgent({
+    fileId: "f1", scheduleRows,
+    inspected: {
+      inventory: { pageCount: 1, producer: "test", fonts: ["Helvetica"], hasAttachments: false, pages: [
+        { pageNo: 1, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 29, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 1, text: "GROUND FLOOR PLAN\nELEVATION A", words: [] }],
+    },
+    deps: {
+      runTurn: async (input) => {
+        if (input.escalationRecords) {
+          if (input.escalationRecords[0].tag === "W1") throw new StageCallError("transient_provider", ["test_failure"]);
+          return verifyCloseUpParents(input);
+        }
+        return {
+          action: "emit", memory: "All frames located.", declines: [],
+          records: scheduleRows.map((row, index) => hybridRecord({
+            tag: row.tag, facePageNo: 1,
+            faceOpeningCount: scheduleRows.length,
+            evidenceRenderId: input.imageDataUrls[0]?.renderId ?? "missing",
+            frameBoxNorm: [0.02 + index * 0.11, 0.2, 0.08 + index * 0.11, 0.4],
+          })),
+        };
+      },
+      render: async (request) => ({
+        images: (request.crops ?? [null]).map(() => ({ pngB64: "aGVsbG8=", widthPx: 600, heightPx: 600 })),
+        dpi: request.dpi,
+      }),
+      store: async (renderId) => `projects/p/crops/r/${renderId}.png`,
+    },
+  });
+  assert.ok(result.report.perOpening.slice(0, 4).every((opening) => opening.outcome === "not_read"));
+  assert.ok(result.report.perOpening.slice(4).every((opening) => opening.outcome === "read"));
+});
+
 test("full-document close-up review retries one non-emit action and then accepts emit", async () => {
   let mainTurn = 0;
   const reviewInputs = [];
@@ -4314,4 +4414,6 @@ test("full-document agent preserves discovery turns for 29- and 60-opening sets"
 test("deployment config keeps the full-document drawing parser as the production default", async () => {
   const config = await readFile(join(projectRoot, "wrangler.jsonc"), "utf8");
   assert.match(config, /"AI_EXTRACTION_MODE"\s*:\s*"agentic_full"/);
+  assert.match(config, /"AI_PRIMARY_MODEL"\s*:\s*"google\/gemini-3\.6-flash"/);
+  assert.match(config, /"AI_VERIFY_MODEL"\s*:\s*"google\/gemini-3\.6-flash"/);
 });
