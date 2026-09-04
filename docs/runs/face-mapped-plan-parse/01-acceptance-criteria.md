@@ -98,7 +98,44 @@ stage id or version.
 Phases C and D.
 
 **AC17.** Nothing in `faceMapped/` beyond what Tasks 1–2 name: `contract.ts`
-holding `expectedWidthPt` only.
+holding `expectedWidthPt` only. Scale recovery is Phase A and shared, so it
+lives beside the harvest, not in the face-mapped bundle.
+
+## Scale recovery — added 2026-09-04, after the phase failed its first sign-off
+
+The owner refused Phase 1 because Lot 623 yields no scale. Its title block is
+drawn as graphics, so no text rule of any kind can reach it, and §7.5 now makes
+the scale the crop's width rather than a check on it. A document map that cannot
+state a sheet's scale is not finished.
+
+**AC18 — text first, always.** Given a page whose footer states a scale in text,
+then it is read deterministically and no model is called for that page. A set
+that states its scales in text costs nothing.
+
+**AC19 — a page that stated no scale in text can have one recovered visually.**
+Given a page with no text scale, when recovery runs with a render and a model
+dependency, then the page's stated scale is returned, or `null` where the sheet
+genuinely does not state one.
+
+**AC20 — recovery is separable and reportable.** Given a run, then the
+deterministic map and the recovered entries are distinguishable, so a reviewer
+can see which scales were read and which were recovered. Recovery never
+overwrites a scale that text already established.
+
+**AC21 — the recovered value is bounded like any other.** Given a model
+returning something that is not a usable ratio, or a ratio for a page it was not
+asked about, then it is refused and the page keeps no scale. Closed schema,
+roster of page numbers, no instruction taken from the sheet.
+
+**AC22 — no location convention is assumed.** Given a sheet whose title block is
+anywhere on the page, then recovery still works: it does not require the scale
+to sit in a band, a corner, or a column. The deterministic path may use the
+footer convention because it is cheap and checkable; the visual path may not,
+because a convention that fails is exactly why it is being called.
+
+**AC23 — verified on all three reference sets.** 312 and 939 recover nothing
+because text already answered. 623 returns a scale for every sheet that states
+one, confirmed against the drawings by the owner.
 
 ## Known ceilings, and judgement calls a reviewer should see
 

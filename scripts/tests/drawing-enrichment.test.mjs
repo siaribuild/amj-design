@@ -25,6 +25,7 @@ await build({
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
+      export { recoverPageScales, validateStatedScale } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
@@ -44,7 +45,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2110,6 +2111,43 @@ test("page scale: a rotated label cannot bridge two rows (AC7)", () => {
     ...row(708.9, [["GARAGE", 368.8, 398.7], ["INTERNAL", 400.7, 435.0]]),
   ]));
   assert.deepEqual(candidates.map(({ ratio }) => ratio), [100]);
+});
+
+test("scale recovery: what a model returns is bounded like any other input (AC21)", () => {
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: 100 }, 4), 100);
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: "1:100" }, 4), 100, "the printed form is accepted, not just the number");
+  assert.equal(validateStatedScale({ pageNo: 5, ratio: 100 }, 4), null, "a scale for a sheet nobody asked about is refused");
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: 0 }, 4), null);
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: 47.5 }, 4), null, "a drawing scale is a whole ratio");
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: 99_999 }, 4), null);
+  assert.equal(validateStatedScale({ pageNo: 4, ratio: null }, 4), null, "no stated scale is an answer, and it is not a scale");
+  assert.equal(validateStatedScale("SCALE 1:100", 4), null, "prose is not a result");
+});
+
+test("scale recovery: a sheet that states its scale only in graphics still gets one (AC19)", async () => {
+  const asked = [];
+  const recovered = await recoverPageScales({
+    pageNos: [4, 5],
+    inspected: {
+      inventory: { pageCount: 2, producer: "test", fonts: [], hasAttachments: false, pages: [
+        { pageNo: 4, widthPt: 1_684, heightPt: 1_191, rotation: 0, textChars: 900, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 5, widthPt: 1_684, heightPt: 1_191, rotation: 0, textChars: 900, imageCount: 0, imageAreaFraction: 0 },
+      ] },
+      pages: [{ pageNo: 4, text: "", words: [] }, { pageNo: 5, text: "", words: [] }],
+    },
+    deps: {
+      render: async (request) => {
+        asked.push(request);
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 800, heightPx: 560 }], dpi: request.dpi };
+      },
+      readStatedScale: async (input) => ({ pageNo: input.pageNo, ratio: input.pageNo === 4 ? 100 : null }),
+    },
+  });
+  assert.deepEqual([...recovered.entries()], [[4, 100]],
+    "page 5 states no scale, so it gets none — absence is an answer, not a guess");
+  assert.deepEqual(asked.map((r) => r.pageNo), [4, 5]);
+  assert.equal(asked.every((r) => !r.crops), true,
+    "the whole sheet is rendered: where a title block sits is a convention, and a convention that failed is why this ran");
 });
 
 test("expectedWidthPt turns a scheduled width into the points that width occupies (AC10)", () => {

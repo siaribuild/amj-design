@@ -38,6 +38,36 @@ it; ratios belonging to driveways, ramps and stairs are not scales; detail
 sheets are not pages of interest. Per-view binding was removed rather than
 carried unused — see below.
 
+## Scale recovery, added after the first sign-off was refused
+
+The owner refused this phase because Lot 623 produced no scale at all. Its title
+block is drawn as graphics, so no text rule reaches it, and §7.5 makes the scale
+the crop's width rather than a check on it — a sheet without one cannot be
+cropped by measurement.
+
+`worker/lib/drawing/pageScaleRecovery.ts` reads the scale from the drawing for
+pages text could not answer. Text always wins and is never revisited. The whole
+page is rendered rather than a title-block crop: where a title block sits is a
+convention, and this path exists because a convention failed.
+
+Run against all three sets, with the real code, poppler rendering and Workers AI
+(`google/gemini-3.6-flash`) behind the injected dependencies:
+
+| Set | Stated in text | Sent to the model | Recovered |
+|---|---|---|---|
+| Lot 312 | 12 of 14 | 2 | 0 — both sheets genuinely state none |
+| Lot 939 | 16 of 17 | 1 | 0 — the cover states none |
+| Lot 623 | 0 of 11 | 11 | 10; page 1 states none |
+
+Lot 623 costs eleven calls and about 89 seconds, serial. The two sheets that
+differ from the rest were checked against the drawings by hand: page 2's title
+block reads `SCALE: 1:150 (A2)` and page 11 reads `SCALE: 1:50 (A2)`, and the
+model returned both — the two places where echoing the majority 1:100 would have
+been the easy wrong answer.
+
+The same call also returns the sheet's drawing title, which is the page role
+Lot 623 hides in graphics too. It is deliberately unused until a phase needs it.
+
 ## The reference set, through this code
 
 `lot312-536a.pdf`, 14 pages, the set behind the successful 19/19 production run.
