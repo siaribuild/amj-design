@@ -2204,6 +2204,90 @@ test("plan placement: a wall keeps its name when a section mark is printed nearb
   assert.equal(faces.W7, "C");
 });
 
+const planRooms = [
+  { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+  { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+  { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+  { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+  { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+];
+
+test("plan placement: a plan that names no walls is placed by the way they face (P2-AC5)", () => {
+  // No A-D markers anywhere — the case a fixed vocabulary cannot survive, and
+  // the one a real set presents when its face names are drawn as graphics.
+  const sheet = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540), tagWord("W3", 217, 400), tagWord("W4", 727, 400),
+    ...planRooms,
+  ]);
+  const outcomes = placeOpeningsOnPlan({
+    pages: [sheet],
+    roster: ["W1", "W2", "W3", "W4"],
+    north: 0,
+  });
+  const faces = Object.fromEntries(outcomes
+    .filter((o) => o.state === "resolved")
+    .map((o) => [o.tag, o.placement.face]));
+  assert.deepEqual(faces, { W1: "N", W2: "S", W3: "W", W4: "E" },
+    "with north known, a wall is named by the direction it faces");
+  assert.equal(outcomes.every((o) => o.state !== "resolved" || o.placement.faceEvidence === "orientation"), true,
+    "and the placement says that is where the name came from");
+});
+
+test("plan placement: a legend entry is not a placement (P2-AC7)", () => {
+  const sheet = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540), tagWord("W3", 217, 400), tagWord("W4", 727, 400),
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "A", x0: 230, top: 395, x1: 240, bottom: 409 },
+    { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
+    // A window schedule printed clear of the building: the same tags, listed.
+    { text: "WINDOW", x0: 880, top: 200, x1: 940, bottom: 214 },
+    { text: "SCHEDULE", x0: 880, top: 220, x1: 950, bottom: 234 },
+    tagWord("W1", 880, 250), tagWord("W2", 880, 280), tagWord("W3", 880, 310),
+  ]);
+  const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "W3", "W4"], north: null });
+  assert.equal(outcomes.filter((o) => o.state === "resolved").length, 4,
+    "the listed copies are not rival occurrences: " + JSON.stringify(outcomes.filter((o) => o.state !== "resolved")));
+  const w1 = outcomes.find((o) => o.tag === "W1");
+  assert.equal(w1.placement.face, "D", "W1 is placed from the tag against the building, not the one in the list");
+  assert.equal(w1.placement.planEvidenceBoxPt[1], 250);
+});
+
+test("plan placement: two sheets drawing one wall of one storey publish no ordinals (P2-AC2, AC3)", () => {
+  const markers = [
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "A", x0: 230, top: 395, x1: 240, bottom: 409 },
+    { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
+  ];
+  const left = planSheet([tagWord("W1", 297, 250), tagWord("W2", 407, 250), ...planRooms, ...markers]);
+  const right = planSheet([tagWord("W3", 517, 250), tagWord("W4", 627, 250), ...planRooms, ...markers]);
+  right.page.pageNo = 5;
+  right.geometry.pageNo = 5;
+  const outcomes = placeOpeningsOnPlan({ pages: [left, right], roster: ["W1", "W2", "W3", "W4"], north: null });
+  assert.equal(outcomes.filter((o) => o.state === "resolved").length, 0,
+    "two halves of one wall would each call their first opening number one");
+  assert.equal(outcomes.every((o) => /same wall of the same storey/.test(o.reason ?? "")), true,
+    JSON.stringify(outcomes.map((o) => o.reason)));
+});
+
+test("plan placement: an opening nobody drew is still in the roster (P2-AC1, AC8)", () => {
+  const sheet = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540),
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "D9"], north: null });
+  assert.deepEqual(outcomes.map((o) => o.tag), ["W1", "W2", "D9"], "the roster keeps its shape");
+  const d9 = outcomes.find((o) => o.tag === "D9");
+  assert.equal(d9.state, "unresolved");
+  assert.match(d9.reason, /not tagged on any plan page/);
+  assert.equal(outcomes.filter((o) => o.state === "resolved").length, 2,
+    "and an opening nobody drew does not cost the ones that were");
+});
+
 test("plan placement: an opening tagged more than once is not placed by whichever came last (P2-AC6, AC7)", () => {
   const rooms = [
     { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
