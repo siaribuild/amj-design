@@ -52,6 +52,7 @@ test("the destination list is the owner's, in his order and his two sections", (
       ["workspace", "Products", "/products"],
       ["workspace", "Pricing", "/pricing"],
       ["workspace", "Customers", "/customers"],
+      ["workspace", "Enquiries", "/enquiries"],
       ["system", "Files", "/files"],
       ["system", "Audit", "/audit"],
       ["system", "Settings", "/settings"],
