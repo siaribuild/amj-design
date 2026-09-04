@@ -172,7 +172,18 @@ async function entryLine(
     `SELECT q.external_ref
        FROM quote_line q JOIN project p ON p.id = q.project_id
       WHERE q.id = ?1 AND q.project_id = ?2
-        AND q.origin = 'schedule'
+        -- NO ORIGIN GATE. The tab is visible on every line and its panels
+        -- say what is actually there (owner, 2026-09-04). Gating on origin
+        -- was a proxy for "came from a parse", and a bad one: it matched
+        -- 'schedule' while the pipeline had moved to 'ai', so the tab 404'd
+        -- for 420 of production's 424 parsed lines - shipped, deployed and
+        -- inert. Production also holds 'ops' and NULL origins nobody ruled
+        -- on, and every manual line carries a tag, so a manual line can have
+        -- a reading this was refusing to show.
+        --
+        -- What remains is scoping, not eligibility: the line must belong to
+        -- THIS project, which is what keeps "another project's line" and
+        -- "no such line" one code path and one sentence.
         AND q.parent_line_id IS NULL
         AND p.status_internal <> 'issued'`,
   ).bind(ref.lineId, ref.projectId).first<LineRow>();

@@ -59,6 +59,13 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
     // A parsed opening with a run, but no reading row for it (AC-7's other side).
     await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, dims_json, qty, line_total, status, position, origin)
                VALUES ('ql_w06','p_meta','W06','Bed 3','amj80-series-awning-window','{"width":"1200","height":"900"}',1,640,'ready',1,'schedule')`);
+    // THE ORIGIN THE PARSER ACTUALLY WRITES. Production holds 420 lines at
+    // origin 'ai' against 93 at 'schedule': the current pipeline writes 'ai',
+    // and `entryLine` matched only 'schedule', so /meta 404'd for every line
+    // the tab exists to audit. proposal.ts is the house convention - it tests
+    // `origin IN ('ai','schedule')` for "machine produced", twice.
+    await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, dims_json, qty, line_total, status, position, origin)
+               VALUES ('ql_ai','p_meta','W09','Bed 4','amj80-series-awning-window','{"width":"1200","height":"900"}',1,640,'ready',3,'ai')`);
     // A manual line — AC-5.
     await sql(`INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, dims_json, qty, line_total, status, position, origin)
                VALUES ('ql_manual','p_meta','W07','Study','amj80-series-awning-window','{"width":"1200","height":"900"}',1,640,'ready',2,'manual')`);
@@ -246,10 +253,30 @@ test("the metadata read, over a real Worker and D1", { timeout: 300_000 }, async
       assert.equal(log.includes("crop/old.png"), false, "no crop key logged");
     });
 
-    await t.test("AC-5 a manual line has no metadata address", async () => {
-      const response = await ops.request("/api/ops/projects/p_meta/lines/ql_manual/meta");
-      assert.equal(response.status, 404);
-      assert.deepEqual(JSON.parse(await response.text()), { error: "not_found" });
+    await t.test("a line the parser produced at origin 'ai' serves /meta - the shape production actually writes", async () => {
+      const { response, body } = await meta("p_meta", "ql_ai");
+      assert.equal(response.status, 200,
+        "origin 'ai' is a parsed line; matching only 'schedule' withheld the tab from every line in production");
+      assert.equal(body.reading, null, "no reading row for W09 - the tab still exists, and says so");
+    });
+
+    // THE TAB IS ALWAYS THERE, AND SAYS WHAT IS ACTUALLY AVAILABLE (owner,
+    // 2026-09-04): "tab should be visible, the contents of it should reflect
+    // honestly what metadata is available." This supersedes AC-5 and the grill's
+    // "no tab on manual lines".
+    //
+    // Gating on `origin` was a proxy for "came from a parse", and a bad one: the
+    // parser writes 'ai' now and wrote 'schedule' before, production also holds
+    // `ops` and NULL, and all seven manual lines carry tags - so a manual line
+    // can have a reading the tab was refusing to show. Withholding the surface
+    // to express "nothing here" is exactly the lie this tab exists to prevent;
+    // the panels already have honest empty states.
+    await t.test("a manual line serves /meta too, and the answer is honestly empty", async () => {
+      const { response, body } = await meta("p_meta", "ql_manual");
+      assert.equal(response.status, 200, "the tab is visible; its contents carry the news");
+      assert.equal(body.reading, null);
+      assert.equal(body.hasCrop, false);
+      assert.deepEqual(body.corrections, []);
     });
 
     await t.test("AC-6 the tab dies with the crops: an issued project 404s", async () => {
