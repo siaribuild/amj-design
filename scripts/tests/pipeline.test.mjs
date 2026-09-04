@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, finalReply } from '../pipeline/measure.mjs'
 import {
   STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
@@ -2710,4 +2710,118 @@ test('a lone numbered criterion still reports the ones missing before it', () =>
     '', '## Out of scope', 'Nothing.'].join(NL)
   assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
     'a spec with exactly one criterion, correctly numbered, is not a gap')
+})
+
+test('a reviewer that exits 0 without a report is a gate that never ran', () => {
+  // The defect this whole branch exists to close, and the one nothing was
+  // asserting: reviewers boot read-only (--permission-mode plan) and are told
+  // to WRITE their report, which plan mode forbids. Each exited 0 having
+  // produced nothing, `review` was stamped code: 0 on that silence, and
+  // `accept` read the absent 07-review-*.md as "no findings". Every feature
+  // before this was gated by Codex alone without anyone being told.
+  //
+  // The gate's own comment says it was patched four times, each patch fixing
+  // one route to a false pass and opening another. That is the shape of a bug
+  // no test was watching.
+  const s = reviewRepo('review-no-report', { HERDR_STUB_STATES: 'idle;idle' })
+
+  const out = paned(s, 'run', 'review')
+
+  const st = runJson(s).stages
+  const dir = join(s.root, 'docs', 'runs', 'demo')
+
+  // THE PRECONDITION, asserted rather than assumed. Without this the test
+  // passes for a reviewer that failed for any other reason - a non-zero exit, a
+  // hold - and proves nothing about the exit-0-with-no-report case it is named
+  // for. finalizePane stamps status:'done' only on a clean settle, and the
+  // gate's rewrite spreads the object it found, so 'done' survives as evidence
+  // that this reviewer really did finish cleanly.
+  const conf = st['review-conformance']
+  assert.equal(conf.status, 'done',
+    'precondition: this reviewer must have SETTLED CLEANLY, or the test is ' +
+    'measuring an ordinary failure instead: ' + JSON.stringify(conf))
+  assert.equal(existsSync(join(dir, '07-review-conformance.md')), false,
+    'precondition: it must have written no report')
+
+  // ...and having settled clean with nothing to show, it is rejected.
+  assert.equal(conf.missingReport, true,
+    'a cleanly settled reviewer with no report must be marked missingReport: ' + JSON.stringify(conf))
+  assert.notEqual(conf.code, 0,
+    'a reviewer that produced nothing must not be left reading as a clean pass')
+  assert.equal('review' in st, false,
+    'the review rollup must be ABSENT when a reviewer produced no report - ' +
+    'a present code:0 here is the gate passing on silence: ' + JSON.stringify(st.review))
+  assert.match(out, /review-conformance produced NO REPORT/,
+    'the reviewer that wrote nothing must be named, not summarised: ' + out)
+})
+
+test('a reviewer that ends without a verdict yields no report, not its narration', () => {
+  // Codex P1 over today's diff. finalReply kept the last text it saw ANYWHERE
+  // in the transcript, so a reviewer whose final turn is a tool call - or that
+  // died mid-way - handed back its progress chatter ("let me look at the
+  // diff"). finalizePane writes that as the report, runReviews accepts any
+  // non-empty report with code 0, and the mandatory gate passes on narration.
+  // The same false pass this capture path exists to prevent, by another route.
+  const projects = tmp('final-reply')
+  const dir = join(projects, 'proj-fr')
+  mkdirSync(dir, { recursive: true })
+  const rec = (id, content) => JSON.stringify({ type: 'assistant', requestId: id, message: { content } })
+  process.env.CLAUDE_PROJECTS_DIR = projects
+
+  writeFileSync(join(dir, 'sess-noverdict.jsonl'), [
+    rec('req-1', [{ type: 'text', text: 'Let me look at the diff first.' }]),
+    rec('req-2', [{ type: 'tool_use', name: 'Bash', input: {} }]),
+  ].join(NL) + NL)
+  assert.equal(finalReply('sess-noverdict'), '',
+    'narration from an earlier turn must never stand in for a verdict the reviewer never gave')
+
+  writeFileSync(join(dir, 'sess-verdict.jsonl'), [
+    rec('req-1', [{ type: 'text', text: 'Let me look at the diff first.' }]),
+    rec('req-2', [{ type: 'tool_use', name: 'Bash', input: {} }]),
+    rec('req-3', [{ type: 'text', text: '## Findings' }]),
+    rec('req-3', [{ type: 'text', text: 'None above the bar.' }]),
+  ].join(NL) + NL)
+  assert.match(finalReply('sess-verdict'), /None above the bar/,
+    'a real final turn must still be returned, including every block of it')
+})
+
+test('checkPlan reads the same criterion shapes checkSpec accepts', () => {
+  // Codex P2 over today's diff: checkSpec was widened to the AC-<n> / L-S<n>
+  // heading convention and checkPlan was not, so for exactly those specs it
+  // found no criteria, skipped the whole coverage block, and called a plan with
+  // no criteria links clean. One patch, two disagreeing readings of the same
+  // file - the more dangerous half being the one that stays quiet.
+  const acSpec = [
+    '**AC-1 - the target case.**',
+    'Given the reference set, When the read runs, Then it reads vertical',
+    '', '**AC-2 - declining is an answer.**',
+    'Given a crop it cannot read, When it declines, Then the unit is unread',
+  ].join(NL)
+
+  const none = checkPlan([{ id: 't1', files: ['src/a.ts'] }], '', acSpec)
+  assert.ok(none.warn.some((w) => /no task declares which criteria/i.test(w)),
+    'an AC-style spec whose plan traces nothing must be reported, not skipped: ' + none.warn)
+
+  const partial = checkPlan([{ id: 't1', files: ['src/a.ts'], criteria: ['AC-1'] }], '', acSpec)
+  assert.ok(partial.warn.some((w) => /AC-2/.test(w)),
+    'an uncovered AC criterion must be named: ' + partial.warn)
+  assert.equal(partial.warn.filter((w) => /AC-1/.test(w)).length, 0,
+    'a covered criterion must not be reported: ' + partial.warn)
+})
+
+test('the slug INSIDE run.json is validated too - it is a path segment like any other', () => {
+  // Hardening the security review named without raising it as a finding: every
+  // other route to a slug goes through checkSlug, but the one read back out of
+  // run.json did not, and it is joined into every later path the run touches.
+  // Not reachable without repo write access, which is why it was below the bar -
+  // and one line, which is why leaving the chain with a gap in it is worse.
+  const { root } = seedRun('slug-in-runjson', {})
+  const rj = join(root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  run.slug = '../../../etc'
+  writeFileSync(rj, JSON.stringify(run))
+
+  assert.throws(() => execFileSync(process.execPath, [CONDUCT, 'plan'],
+    { cwd: root, encoding: 'utf8', stdio: 'pipe' }),
+  /slug/i, 'a traversing slug read back from run.json must be refused, not joined into a path')
 })
