@@ -31,8 +31,29 @@
       "source": "transcript",
       "session": "9175d720-93a5-46b2-9f3e-e678d74b0c33",
       "seconds": 591
+    },
+    "build-t1": {
+      "code": 0,
+      "contextTokens": 4740386,
+      "outputTokens": 35521,
+      "turns": 62,
+      "source": "transcript",
+      "session": "1a3d083f-d5c0-4cfe-a691-3bfc30349e47",
+      "seconds": 2076
+    },
+    "build-t2": {
+      "code": 0,
+      "contextTokens": 1307110,
+      "outputTokens": 9761,
+      "turns": 18,
+      "source": "transcript",
+      "session": "fae9f626-0886-4a65-a63f-8635aa26e917",
+      "seconds": 319
     }
   },
-  "tasksDone": [],
+  "tasksDone": [
+    "t1",
+    "t2"
+  ],
   "startedAt": "2026-09-03T16:16:51.275Z"
 }

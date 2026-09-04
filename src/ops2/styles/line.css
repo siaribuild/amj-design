@@ -525,7 +525,8 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
    comparison, five rows deep, which is why the detail's spans are here too. */
 .lp-why__fig,
 .wd__fig,
-.wd__row-figs {
+.wd__row-figs,
+.wd__row-delta {
   font-family: var(--theme-font-display);
   font-weight: var(--theme-font-weight-medium);
   font-variant-numeric: tabular-nums;
@@ -656,17 +657,18 @@ ul.lp-panel__lines > li { color: var(--ds-text-primary); }
   font-size: var(--theme-font-size-sm);
 }
 .wd__row:first-child { border-top: 0; }
-.wd__row-top {
-  display: flex;
-  gap: var(--theme-spacing-sm);
-  justify-content: space-between;
-  align-items: baseline;
-}
 .wd__row-name { color: var(--ds-text-primary); overflow-wrap: anywhere; }
 .wd__row--chosen .wd__row-name { font-weight: var(--theme-font-weight-medium); }
 .wd__row-mark { color: var(--ds-text-muted); font-weight: var(--theme-font-weight-regular); }
+.wd__row-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--theme-spacing-sm);
+  align-items: baseline;
+}
 .wd__row-figs { flex: none; color: var(--ds-text-secondary); }
 .wd__row-verdict { font-size: var(--theme-font-size-xs); color: var(--ds-text-muted); }
+.wd__row-delta { flex: none; margin-left: auto; color: var(--ds-text-secondary); }
 
 /* Each lite's own band. Two bands side by side must read as two. */
 .wd__lites { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--theme-spacing-sm); }

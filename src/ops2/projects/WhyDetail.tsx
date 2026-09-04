@@ -3,8 +3,8 @@ import { SidePanel } from "../chrome/SidePanel";
 import type { LineRationaleDto, RationaleUnit } from "../../data/rationale";
 import {
   DETAIL, NO_SELECTION, basisLabel, candidateFigures, candidateName, chosenRowMark,
-  chosenLine, comparisonVerdict, figuresText, ladderNote, rankedText, unitBandText,
-  unitBasisLabel, verdictWord,
+  chosenLine, comparisonVerdict, deltaText, figuresText, ladderNote, rankedText,
+  unitBandText, unitBasisLabel, verdictWord,
 } from "./whyCopy";
 
 /**
@@ -79,24 +79,30 @@ function Body({ dto }: { dto: Recommendation }) {
 
       <Block heading={DETAIL.ladder} testId="why-ladder">
         <ul className="wd__ladder" aria-label={DETAIL.ladder}>
-          {ladder.map((c, i) => (
-            <li
-              key={`${c.productSlug}-${c.rank ?? i}`}
-              className={i === 0 ? "wd__row wd__row--chosen" : "wd__row"}
-              data-testid="why-ladder-row"
-            >
-              <span className="wd__row-top">
+          {ladder.map((c, i) => {
+            const delta = deltaText(c.deltaToSelected, i === 0);
+            return (
+              <li
+                key={`${c.productSlug}-${c.rank ?? i}`}
+                className={i === 0 ? "wd__row wd__row--chosen" : "wd__row"}
+                data-testid="why-ladder-row"
+              >
                 <span className="wd__row-name">
                   {candidateName(c)}
                   {i === 0 && (
                     <span className="wd__row-mark"> {chosenRowMark(dto.selectionChanged)}</span>
                   )}
                 </span>
-                <span className="wd__row-figs">{candidateFigures(c)}</span>
-              </span>
-              <span className="wd__row-verdict">{verdictWord(c, dto.requirement, dto.tolerance)}</span>
-            </li>
-          ))}
+                <span className="wd__row-bottom">
+                  <span className="wd__row-figs">{candidateFigures(c)}</span>
+                  <span className="wd__row-verdict">{verdictWord(c, dto.requirement, dto.tolerance)}</span>
+                  {delta != null && (
+                    <span className="wd__row-delta" data-testid="why-row-delta">{delta}</span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
         </ul>
         <p className="wd__reason">{ladderNote(ladder.length)}</p>
       </Block>
