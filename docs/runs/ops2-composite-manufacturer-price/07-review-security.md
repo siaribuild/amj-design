@@ -1,0 +1,18 @@
+# Security Review — `feat/composite-manufacturer-price` (diff vs `ffcbf87d`)
+
+Scope reviewed: the 8 feature commits' code changes (`worker/lib/composite.ts`, `worker/lib/lines.ts`, `worker/routes/ops.ts`, `worker/routes/projects.ts`, `src/ops2/*`, `src/data/*`, `src/components/quote-project/UnitRow.tsx`). Docs, mocks, pipeline files and test files excluded per the review rules.
+
+Authorization on the changed endpoint was checked directly: `PUT /api/ops/lines/:id/price` still requires `resolveStaff` → 403, `hasAssignedRole` → 403, and the five-status mutable-window `SELECT` (`worker/routes/ops.ts:1438-1452`). Removing the `composite_parent` 409 removed a *business* refusal, not an access-control one. All new SQL is parameterized; no interpolation, no new deserialization, no new client-side `dangerouslySetInnerHTML`.
+
+# Vuln 1: Margin disclosure on the customer order payload: `worker/lib/orders.ts:228`
+
+* Severity: Medium
+* Category: `sensitive_data_exposure` / api_data_leakage
+* Confidence: 0.85
+* Description: This PR's premise is that a composite parent's `line_total` may now be a manufacturer-quoted price that no longer equals Σ(segment prices) — the segments keep the platform's own computed figures. The team recognised the consequence and fixed the quote wire: `worker/routes/projects.ts:133` now ships `priced: s.line_total != null` instead of the money (verify F3), and `ApiSegment` was retyped to match. The **order** wire was not given the same treatment. `orderLines()` still emits `lineTotal: unit.line_total` for every unit (`worker/lib/orders.ts:228`) alongside the parent's `lineTotal` (`worker/lib/orders.ts:214`), and order lines are copied straight from the quote lines including the parent's override (`worker/lib/orders.ts:383`, segments at `:400`). That payload is customer-readable: `GET /api/orders/:id` (`worker/routes/orders.ts:73-88`) serves it to the signed-in owner **and to a guest holding an OTP grant**, and `src/pages/RecordDetailPage.tsx:310,406` renders it through the same `OpeningList`/`UnitRow` pair. So the exact figure F3 was written to keep off a customer-readable wire is still on one — one stage later.
+* Exploit Scenario: A trade customer whose composite opening was priced by AMJ as one assembly opens their order (or a guest opens it with the emailed code), reads `GET /api/orders/:id` in devtools, and computes `parent.lineTotal − Σ(segments[].lineTotal)` — AMJ's markup on that assembly, per job. Repeated across orders this maps the pricing policy the platform is built to keep internal, and is direct leverage in a price negotiation or a dispute.
+* Recommendation: Apply the same change `worker/routes/projects.ts:133` received: replace `lineTotal: unit.line_total` in `orderLines()` with `priced: unit.line_total != null` (order segments are always priced, so a literal `true` is also defensible), and drop the field from the order segment shape. Note this is not only a leak — the client type `QSegment` no longer has `lineTotal` and `UnitRow.tsx:50` now reads `!segment.priced`, so the un-migrated order wire also makes every unit on an order render as **incomplete**. One change fixes both.
+
+## No other findings
+
+No HIGH findings. The removed `composite_parent` 409, the new `linesEditable` flag (staff-only endpoint, derived server-side from `ISSUABLE_FROM`), the `recomputeComposite` ownership guard, and the post-recompute audit-log read introduce no authentication, injection, or privilege-boundary weakness that I can substantiate above the confidence bar.

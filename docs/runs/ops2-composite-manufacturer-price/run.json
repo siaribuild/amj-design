@@ -84,6 +84,54 @@
       "source": "transcript",
       "session": "465e744f-831f-4bc1-af4a-9b37248620bd",
       "seconds": 1440
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 263547,
+      "outputTokens": 4787,
+      "turns": 6,
+      "source": "transcript",
+      "session": "50f39a23-b2da-4080-9681-78f0a05b5aef",
+      "seconds": 102
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 1173605,
+      "outputTokens": 6175,
+      "turns": 12,
+      "source": "transcript",
+      "session": "f7b10643-fcbb-4021-be13-637b7636333a",
+      "seconds": 133
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 840240,
+      "outputTokens": 7647,
+      "turns": 10,
+      "source": "transcript",
+      "session": "64b7d6e5-ba61-4a0d-a01f-fc75d590ab90",
+      "seconds": 142
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
     }
   },
   "tasksDone": [
