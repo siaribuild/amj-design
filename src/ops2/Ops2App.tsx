@@ -19,6 +19,7 @@ import { DestinationRoot } from "./pages/DestinationRoot";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { ProjectRecordPage } from "./projects/ProjectRecordPage";
 import { LinePage } from "./projects/LinePage";
+import { AttentionPage } from "./attention/AttentionPage";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
 // on React Router 5 while the customer site stays on 7. Never import the bare
@@ -198,7 +199,9 @@ export function Ops2App() {
                     // three of the four things you would check, all correct.
                     exact={NESTS_BELOW.has(d.id)}
                     render={() => (
-                      d.id === "projects" ? <ProjectsPage /> : <DestinationRoot id={d.id} />
+                      d.id === "projects" ? <ProjectsPage /> :
+                      d.id === "attention" ? <AttentionPage /> :
+                      <DestinationRoot id={d.id} />
                     )}
                   />
                 ))}
