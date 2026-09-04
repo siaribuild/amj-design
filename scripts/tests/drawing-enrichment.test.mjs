@@ -23,7 +23,8 @@ await build({
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
       export { mapPool } from ${p("worker/lib/drawing/pool.ts")};
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
-      export { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
+      export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
+      export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth } from ${p("worker/lib/drawing/harvest.ts")};
       export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
@@ -42,7 +43,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -1961,6 +1962,37 @@ test("full-document harvest exposes free coordinate evidence without deciding th
   assert.match(harvest.tagCandidates[0].nearbyText, /STUDY/);
   assert.match(harvest.tagCandidates[0].nearbyText, /ENTRY/);
   assert.equal("roomLabel" in harvest.tagCandidates[0], false, "the free harvest must not choose a room");
+});
+
+test("harvest.ts holds the one Stage A implementation both drawing engines share", () => {
+  assert.equal(buildHarvest, buildFullDocumentHarvest, "fullDocumentAgent must re-export the shared harvest, never copy it");
+  assert.equal(applyVisualNorth, applyVisualNorthToHarvest, "visual north application must have one implementation");
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "test", fonts: ["Helvetica"], hasAttachments: false,
+      pages: [
+        { pageNo: 1, widthPt: 800, heightPt: 600, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+        { pageNo: 2, widthPt: 800, heightPt: 600, rotation: 0, textChars: 20, imageCount: 0, imageAreaFraction: 0 },
+      ],
+    },
+    pages: [
+      { pageNo: 1, text: "GROUND FLOOR PLAN STUDY W1", words: [
+        { text: "STUDY", x0: 80, top: 90, x1: 130, bottom: 105 },
+        { text: "W1", x0: 145, top: 100, x1: 165, bottom: 115 },
+        { text: "A", x0: 20, top: 300, x1: 30, bottom: 315 },
+      ] },
+      { pageNo: 2, text: "NORTH ELEVATION", words: [] },
+    ],
+  };
+  const schedule = [{ tag: "W1", widthMm: 2_050, heightMm: 2_100, typeText: "OFFSET AWNING", storey: "ground" }];
+  const harvest = buildHarvest(inspected, schedule);
+  assert.equal(JSON.stringify(harvest), JSON.stringify(buildFullDocumentHarvest(inspected, schedule)),
+    "the moved harvest must stay byte-for-byte identical to the pre-move output");
+  assert.equal(harvest.version, 1);
+  assert.equal(harvest.tagCandidates[0].tag, "W1");
+  const oriented = applyVisualNorth(harvest, 1, { northArrowDegrees: 90, source: "arrow", evidenceBoxNorm: [0.1, 0.1, 0.2, 0.2] });
+  assert.equal(oriented.northEvidence.requiresVisualRead, false);
+  assert.equal(oriented.northEvidence.visualEvidence.pageNo, 1);
 });
 
 test("full-document harvest publishes the complete free Stage A metadata contract", () => {
