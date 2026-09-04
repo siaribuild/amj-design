@@ -2098,6 +2098,16 @@ test("page scale: a fall or a grade is not a scale, and a trailing stop does not
   ], "drainage falls and ramp grades print the same shape as a scale and must not become one");
 });
 
+test("page scale: a long note still belongs to the word that names its subject", () => {
+  const sheet = scaleSheet([
+    ...line(200, [["PITCH", 100, 45], ["OF", 150, 20], ["ROOF", 175, 40], ["TO", 220, 20], ["BE", 245, 20], ["1:4", 270, 30]]),
+    ...line(700, [["SCALE", 800, 40], ["1:100", 845, 40]]),
+  ]);
+  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
+    "the phrase ends where the printing does, not after a fixed number of words");
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
+});
+
 test("page scale: a limit on a gradient is not a scale either", () => {
   const sheet = scaleSheet([
     ...line(200, [["NO", 100, 20], ["STEEPER", 125, 55], ["THAN", 185, 35], ["1:20", 225, 35]]),

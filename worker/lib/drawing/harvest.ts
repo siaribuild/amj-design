@@ -76,7 +76,6 @@ const SCALE_LABEL = /^SCALE:?$/i;
  * `FALL TO 1:100`, `RAMP @ 1:20`. Read the phrase around the ratio, not the
  * one token touching it. */
 const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP|CROSSFALL|STEEPER|FLATTER)$/i;
-const PHRASE_REACH = 4;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
@@ -171,10 +170,11 @@ export function pageScales(inspected: InspectResponse): Map<number, number> {
 /** What the ratio at `from` is a ratio *of*, read by walking one direction
  * through the phrase it is printed in and stopping at the first word that
  * says: `SCALE` makes it a drawing scale, `FALL` or `RAMP` makes it neither.
- * The walk ends at a gap too wide to be one phrase, so a ratio cannot inherit
- * a subject from the next column of the title block. */
+ * The phrase ends where the printing does — at a gap too wide to be one run of
+ * words — so a ratio cannot inherit a subject from the next column of a title
+ * block, and a note as long as `PITCH OF ROOF TO BE 1:4` still keeps its own. */
 function subject(words: PageWord[], from: number, step: -1 | 1): "scale" | "not_a_scale" | null {
-  for (let at = from + step, walked = 0; at >= 0 && at < words.length && walked < PHRASE_REACH; at += step, walked++) {
+  for (let at = from + step; at >= 0 && at < words.length; at += step) {
     if (!adjacent(words[at], words[at - step])) return null;
     const text = words[at].text.trim().replace(/[^A-Za-z]/g, "");
     if (SCALE_LABEL.test(text)) return "scale";
