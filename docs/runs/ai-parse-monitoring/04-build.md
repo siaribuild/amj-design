@@ -41,3 +41,17 @@ crons list unchanged. api-edge subtest covers anon 401, customer 403,
 manufacturer 403, staff 200, all with leakage checks; pre-cron snapshot is
 null, notificationCount 0. Full test:api: 77 pass, 0 fail. typecheck:gate
 clean (59 pre-existing non-fatal, unchanged).
+
+## T5 - Attention page monitoring cards + 7-day CSS-bar chart
+Files: src/ops2/attention/useMonitoring.ts (new), AttentionPage.tsx,
+styles/attention.css. useMonitoring fetches /api/ops/monitoring only
+(loading/empty/ready/error/unauthorised), formatAsAt via Melbourne
+Intl.DateTimeFormat. Page renders monitoring below attention groups: credit
+balance + cap-headroom cards (capOutstanding from src/data/monitoring.ts),
+success/error 7-day count cards, CSS-bar chart. money.available false ->
+"unavailable" state, not zero; counts/chart unaffected. All-zero week ->
+att-chart__empty text. null snapshot -> pq-empty monitoring-empty testid.
+node:test source-regex suite: 10/10 pass. Playwright: 5 new specs (ready,
+unavailable money, all-zero chart, no-snapshot, 500-retry), full spec file
+16/16 pass. typecheck:gate clean (59 pre-existing non-fatal, unchanged).
+Committed 98d2bc98.
