@@ -2204,6 +2204,92 @@ test("plan placement: a wall keeps its name when a section mark is printed nearb
   assert.equal(faces.W7, "C");
 });
 
+test("plan placement: an opening tagged more than once is not placed by whichever came last (P2-AC6, AC7)", () => {
+  const rooms = [
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+  ];
+  const sheet = planSheet([
+    // W1 is printed three times against the plan: once top, twice left.
+    tagWord("W1", 297, 250), tagWord("W1", 217, 380), tagWord("W1", 217, 430),
+    tagWord("W2", 457, 540),
+    ...rooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+    { text: "A", x0: 230, top: 395, x1: 240, bottom: 409 },
+    { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
+  ]);
+  const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2"], north: null });
+  const w1 = outcomes.find((o) => o.tag === "W1" || o.placement?.tag === "W1");
+  assert.equal(w1.state, "unresolved", "three occurrences is an ambiguity, not a race the last one wins");
+  assert.match(w1.reason, /more than one/);
+  assert.equal(outcomes.find((o) => o.placement?.tag === "W2").state, "resolved",
+    "and one opening's ambiguity does not cost its neighbours");
+});
+
+test("plan placement: the roster's rows are the outcomes, duplicates included (P2-AC1)", () => {
+  const outcomes = placeOpeningsOnPlan({
+    pages: [],
+    roster: ["W1", "W2", "W1"],
+    north: null,
+  });
+  assert.equal(outcomes.length, 3, "three rows in, three outcomes out");
+  assert.deepEqual(outcomes.map((o) => o.tag), ["W1", "W2", "W1"]);
+  assert.equal(outcomes.filter((o) => /names this opening more than once/.test(o.reason ?? "")).length, 2,
+    "a roster naming one opening twice is told so, rather than quietly counted once");
+});
+
+test("scale recovery: one sheet's failure costs that sheet, not the run (AC19)", async () => {
+  const inspected = {
+    inventory: { pageCount: 4, producer: "test", fonts: [], hasAttachments: false,
+      pages: [1, 2, 3, 4].map((pageNo) => ({ pageNo, widthPt: 842, heightPt: 595, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 })) },
+    pages: [1, 2, 3, 4].map((pageNo) => ({ pageNo, text: "", words: [] })),
+  };
+  const recovered = await recoverPageScales({
+    inspected,
+    pageNos: [1, 2, 3, 4],
+    deps: {
+      render: async ({ pageNo, dpi }) => {
+        if (pageNo === 2) throw new Error("container render failed");
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi };
+      },
+      readStatedScale: async ({ pageNo }) => {
+        if (pageNo === 3) throw new Error("provider rejected the call");
+        return { pageNo, ratio: 100 };
+      },
+    },
+  });
+  assert.deepEqual([...recovered.entries()], [[1, 100], [4, 100]],
+    "a render that throws and a provider that rejects cost their own sheets and nothing else");
+});
+
+test("scale recovery: text first is enforced here, not trusted to the caller (AC18)", async () => {
+  const asked = [];
+  const inspected = {
+    inventory: { pageCount: 3, producer: "test", fonts: [], hasAttachments: false,
+      pages: [1, 2, 3].map((pageNo) => ({ pageNo, widthPt: 842, heightPt: 595, rotation: 0, textChars: 10, imageCount: 0, imageAreaFraction: 0 })) },
+    pages: [1, 2, 3].map((pageNo) => ({ pageNo, text: "", words: [] })),
+  };
+  const recovered = await recoverPageScales({
+    inspected,
+    pageNos: [1, 2, 3],
+    // Page 1 was read from text; page 2's footer disagreed with itself.
+    stated: new Map([[1, 100], [2, null]]),
+    deps: {
+      render: async (request) => {
+        asked.push(request.pageNo);
+        return { images: [{ pngB64: "aGVsbG8=", widthPx: 10, heightPx: 10 }], dpi: request.dpi };
+      },
+      readStatedScale: async ({ pageNo }) => ({ pageNo, ratio: 50 }),
+    },
+  });
+  assert.deepEqual(asked, [3], "a page the text settled, or called a conflict, is never re-read");
+  assert.deepEqual([...recovered.entries()], [[3, 50]]);
+});
+
 test("scale recovery: a document cannot ask for unbounded work (AC24)", async () => {
   const asked = [];
   const pageCount = 60;

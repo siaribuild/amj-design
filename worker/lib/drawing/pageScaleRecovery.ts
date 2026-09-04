@@ -1,4 +1,5 @@
 import type { InspectResponse, RenderRequest, RenderResponse } from "./contract";
+import { mapPool } from "./pool";
 
 /** A sheet's stated scale, read from the drawing rather than from its text. */
 export interface StatedScaleInput {
@@ -31,6 +32,10 @@ const MAX_RATIO = 20_000;
  * telling us it needs attention rather than more spending. */
 const MAX_RECOVERY_PAGES = 20;
 
+/** Enough concurrency to matter on a set with nothing readable, few enough to
+ * leave the container and the provider room for the rest of the run. */
+const RECOVERY_CONCURRENCY = 4;
+
 /** What a model may return about a sheet's scale, and nothing else. It must say
  * which sheet it read, and that sheet must be the one this run asked about: a
  * response describing another sheet, or naming none, is not evidence about the
@@ -48,18 +53,25 @@ export function validateStatedScale(raw: unknown, askedPageNo: number): number |
 /**
  * Reads the scale from sheets whose text never stated one.
  *
- * Text first, always: this is only ever called for the pages `pageScales` could
- * not answer, and it never revisits a page text already settled. A sheet that
- * states no scale at all returns none — absence is an answer.
+ * Text first, and enforced here rather than trusted to the caller: a page the
+ * deterministic map already answered — or already called a conflict — is never
+ * sent, so no model answer can overwrite what the drawing said in words. A
+ * sheet that states no scale at all returns none — absence is an answer.
  *
  * The whole page is rendered rather than a title-block crop. Where a title
  * block sits is a convention, and this path exists precisely because a
  * convention failed; cropping to the place the scale usually is would carry the
  * same assumption into the fallback meant to survive it.
+ *
+ * One sheet's failure costs that sheet. A render that throws or a provider that
+ * rejects loses its own page's scale and nothing else: recovering ten sheets
+ * and losing the eleventh must not discard the ten.
  */
 export async function recoverPageScales(args: {
   inspected: InspectResponse;
   pageNos: number[];
+  /** What the text already settled, by page. Present pages are never re-read. */
+  stated?: Map<number, number | null>;
   deps: PageScaleRecoveryDeps;
 }): Promise<Map<number, number>> {
   const recovered = new Map<number, number>();
@@ -67,17 +79,26 @@ export async function recoverPageScales(args: {
   // Deduplicated and capped before any work starts: a page asked for twice is
   // one render, and a document with no readable scale anywhere does not get to
   // spend a call on every page it has.
-  const wanted = [...new Set(args.pageNos)].filter((pageNo) => known.has(pageNo)).slice(0, MAX_RECOVERY_PAGES);
-  for (const pageNo of wanted) {
-    const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
-    const image = render.images[0];
-    if (!image?.pngB64) continue;
-    const stated = await args.deps.readStatedScale({
-      pageNo,
-      imageDataUrl: `data:image/png;base64,${image.pngB64}`,
-    });
-    const ratio = validateStatedScale(stated, pageNo);
-    if (ratio !== null) recovered.set(pageNo, ratio);
-  }
+  const wanted = [...new Set(args.pageNos)]
+    .filter((pageNo) => known.has(pageNo) && !(args.stated?.has(pageNo) ?? false))
+    .slice(0, MAX_RECOVERY_PAGES);
+  const read = await mapPool(wanted, RECOVERY_CONCURRENCY, async (pageNo) => {
+    try {
+      const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
+      const image = render.images[0];
+      if (!image?.pngB64) return null;
+      const stated = await args.deps.readStatedScale({
+        pageNo,
+        imageDataUrl: `data:image/png;base64,${image.pngB64}`,
+      });
+      return validateStatedScale(stated, pageNo);
+    } catch {
+      return null;
+    }
+  });
+  wanted.forEach((pageNo, at) => {
+    const ratio = read[at];
+    if (ratio !== null && ratio !== undefined) recovered.set(pageNo, ratio);
+  });
   return recovered;
 }

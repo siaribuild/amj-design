@@ -205,6 +205,9 @@ function orderValue(edge: Edge, word: PageWord, box: Footprint): number {
  * measuring its own. */
 export interface PlanPageFacts {
   footprint: { x0: number; top: number; x1: number; bottom: number } | null;
+  /** Wall to label. The lossless direction: one label can sit beside two walls,
+   * and keying by label would drop one of them. */
+  labelByEdge: [Edge, string][];
   markerEdges: Record<string, Edge>;
   ambiguousEdges: Edge[];
   /** Every label near a wall, with how near, before anything is accepted or
@@ -224,7 +227,7 @@ export function planPageFacts(
   const box = tagFootprint(page.words, geo, normalizedVocabulary) ?? footprint(page.words, geo, normalizedVocabulary);
   const titleWords = page.words.filter((word) => word.top >= geo.heightPt * 0.85);
   const storey = storeyOf(titleWords.length ? titleWords.map((word) => word.text).join(" ") : page.text);
-  if (!box) return { footprint: null, markerEdges: {}, ambiguousEdges: [], markerCandidates: [], storey };
+  if (!box) return { footprint: null, labelByEdge: [], markerEdges: {}, ambiguousEdges: [], markerCandidates: [], storey };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
   const markerByEdge = new Map<Edge, string>();
   const ambiguous = new Set<Edge>();
@@ -241,6 +244,7 @@ export function planPageFacts(
   }
   return {
     footprint: box,
+    labelByEdge: [...markerByEdge],
     markerCandidates,
     markerEdges: Object.fromEntries([...markerByEdge]
       .filter(([edge]) => !ambiguous.has(edge))
@@ -291,8 +295,7 @@ export function locateFloorplanPage(
   if (!box) return { placements: {}, markerEdges: {}, unplaced: [...normalizedVocabulary] };
   const footprintDiagonal = Math.hypot(box.x1 - box.x0, box.bottom - box.top);
   const storey = facts.storey;
-  const markerByEdge = new Map<Edge, string>(
-    Object.entries(facts.markerEdges).map(([label, edge]) => [edge, label]));
+  const markerByEdge = new Map<Edge, string>(facts.labelByEdge);
   const ambiguousEdges = new Set<Edge>(facts.ambiguousEdges);
 
   const wordsByTag = new Map<string, PageWord[]>();

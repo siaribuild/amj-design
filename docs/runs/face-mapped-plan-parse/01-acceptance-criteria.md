@@ -162,11 +162,14 @@ defence this phase leaves standing.
 
 ## Known ceilings, and judgement calls a reviewer should see
 
-- **The footer is a band, not the title block itself.** `FOOTER_FRACTION` is
-  15% of the page, bottom or right. A ratio a drawing prints inside that band
-  is accepted, so a note low on a sheet could still be read as its scale. No
-  set to hand does this; locating the real title-block rectangle would be more
-  geometry than the evidence justifies.
+- **The footer is the bottom band, not the title block itself.**
+  `FOOTER_FRACTION` is the bottom 15% of the page. It was bottom *or right*
+  until a second set showed a driveway gradient printed 73% down and 95% across
+  being read as that sheet's scale; both sets state their scale at 91% down, so
+  the right-hand band was never needed. A ratio printed inside the bottom band
+  is still accepted, so a note low on a sheet could be read as its scale.
+  Locating the real title-block rectangle would be more geometry than the
+  evidence justifies.
 - **The map reports every page, not only pages of interest.** The ruling says
   detail sheets are not asked for a scale; the engine asks about the pages it
   is working on, and `pageScales` answering for page 12 as well costs nothing.
