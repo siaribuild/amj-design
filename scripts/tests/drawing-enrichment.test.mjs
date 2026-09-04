@@ -757,6 +757,30 @@ test("purgeProjectCrops: deletes every crop across every run for the project", a
   ]);
 });
 
+test("purgeProjectCrops: the harvest cache dies with the crops - same evidence, same window", async () => {
+  // The harvest is not metadata. It holds pages[].textExcerpt,
+  // tagCandidates[].nearbyText, roomLabelCandidates[].text and the schedule's
+  // commentText - verbatim text lifted from the customer's drawings, across the
+  // whole document. A crop is one opening; this is the drawing set. The owner's
+  // retention ruling (2026-08-29, CONTEXT.md "Crop evidence") ends the review
+  // window at draft-cleared, quote-issued or quote-voided, and this is the same
+  // class of evidence, so it ends there too.
+  //
+  // ONLY `runs/harvest/`, never all of `runs/`: the test above pins that
+  // `runs/<year>/stage.json` has a different lifecycle and survives.
+  const bucket = fakeBucket([
+    "projects/proj_1/crops/run_1/W1.png",
+    "projects/proj_1/runs/harvest/fa_1.harvest-v1.json",
+    "projects/proj_1/runs/2026/stage.json",              // different lifecycle - survives
+    "projects/proj_2/runs/harvest/fa_9.harvest-v1.json", // different project - survives
+  ]);
+  await purgeProjectCrops({ FILES: bucket }, "proj_1");
+  assert.deepEqual([...bucket.store.keys()].sort(), [
+    "projects/proj_1/runs/2026/stage.json",
+    "projects/proj_2/runs/harvest/fa_9.harvest-v1.json",
+  ]);
+});
+
 test("purgeProjectCrops: pages past the first 500 keys (list truncation)", async () => {
   const keys = Array.from({ length: 5 }, (_, i) => `projects/proj_1/crops/run_1/W${i}.png`);
   const bucket = fakeBucket(keys);
