@@ -1,5 +1,9 @@
 # Phase 1 — shared harvest and page scale (handover Tasks 1–2)
 
+**Signed off by the owner, 2026-09-04**, after a first refusal: the phase was
+rejected while Lot 623 produced no scale, and approved once recovery answered
+it on all three reference sets.
+
 Branch `codex/face-mapped-parser`, commits `e1595609..HEAD`, based on
 `apertly/main` at `df3e8f37` (merged as `91ba1701`; the handover's stated
 baseline `4374270e` was nine commits stale, and those nine touched
@@ -107,8 +111,8 @@ placement path needs. Git holds it all if a future set proves otherwise.
 
 ## Verification
 
-- `test:drawing-enrichment` 187 pass, 0 fail
-- `test:pure` 1137 pass, 0 fail
+- `test:drawing-enrichment` 189 pass, 0 fail
+- `test:pure` 1139 pass, 0 fail
 - `typecheck:gate` clean, 59 non-fatal unchanged
 - Reviews: Codex code review (thirteen rounds, the last clean), two Codex
   adherence audits against the criteria, `/security-review`, architect
