@@ -118,3 +118,17 @@ test("trade applications row goes to /customers", async ({ page }) => {
   await expect(page).toHaveURL(`${OPS2}/customers`);
   await expect(page.getByRole("heading", { name: "Customers", level: 1 })).toBeVisible();
 });
+
+test("a degraded summary renders the error panel with a retry, not zero rows disguised as ready", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: { degraded: true } }));
+  await page.goto(ATTENTION);
+
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+  await expect(error).toHaveAttribute("role", "alert");
+  await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
+  // ZERO counts: no row, no group, no empty-state — the error panel is the
+  // only thing on the page, so a degraded read can't be mistaken for a quiet day.
+  await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
+  await expect(page.getByTestId("attention-empty")).toHaveCount(0);
+});
