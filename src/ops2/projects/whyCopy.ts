@@ -12,7 +12,8 @@
  *  • R2 — nothing here calls a person's decision wrong. Stating that a figure
  *    misses a cap is a fact about two numbers; stating that somebody erred is
  *    not, and is banned from the whole table.
- *  • D18 — no money, ever. There is no price in the DTO to format.
+ *  • D18 — one raw dollar delta per runner-up is allowed (never a total); no
+ *    GST/tax/basis wording ever reaches this surface.
  *  • R5 — no certification vocabulary, in any phase.
  *  • WHY-AC-4 — a figure that is not a number is never rendered as a number, a
  *    zero or a dash, and WHICH absence it is comes from the DTO's KIND, never
@@ -538,8 +539,7 @@ const NUMBER_WORD = ["no", "One", "Two", "Three", "Four", "Five"];
  *  and NO COUNT OF ANYTHING BEYOND IT. The sentence counts what is on screen. */
 export function ladderNote(shown: number): string {
   if (shown >= 5) {
-    return "The chosen product and the next four by rank. No price, nothing to price, "
-      + "and nothing here changes the line.";
+    return "The chosen product and the next four by rank. Nothing here changes the line.";
   }
   // `shown` is 1-4 here: 5 and above took the branch above, and a ladder with
   // no rows renders no note at all.
@@ -562,6 +562,17 @@ export function candidateFigures(c: RationaleCandidate): string {
   return c.form === "split" && c.units
     ? `${c.units.length} units`
     : figuresText(c.figures);
+}
+
+/** D1 reversal — one raw dollar delta per runner-up row. `chosen` mutes it
+ *  (criterion 4). null: "$---" — a fact about the record, never $0 or a blank
+ *  (D4). Whole dollars, same shape as queue.ts/record.ts money on ops. */
+export function deltaText(delta: number | null, chosen: boolean): string | null {
+  if (chosen) return null;
+  if (delta == null) return "$---";
+  const r = Math.round(delta);
+  const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
+  return r === 0 ? figure : `${r < 0 ? "-" : "+"}${figure}`;
 }
 
 /** WHY-AC-34 — a lite's own band. `null` when none was recorded, and NOTHING is
