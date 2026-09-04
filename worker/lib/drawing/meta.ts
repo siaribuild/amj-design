@@ -32,15 +32,16 @@ interface ReadingRow {
   source_file_id: string | null; filename: string | null;
 }
 
-interface DrawingRunStepCounts extends MetaRunSteps { failedPhase?: string }
-interface DrawingFileReport {
-  fileId: string;
-  steps: DrawingRunStepCounts;
-  perOpening: { tag: string; outcome: "read" | "not_read" }[];
-  wallMs: number;
-  modelCalls: number;
-}
-interface DrawingReport { files: DrawingFileReport[] }
+// THE WRITER OWNS THIS SHAPE. These were redeclared locally, with
+// `DrawingRunStepCounts extends MetaRunSteps` — deriving the STORED shape
+// from the DTO shape, which is backwards: the DTO is an allow-listed subset
+// of what the parser writes, not its definition. The copy then went stale the
+// moment 19-of-19 added fields, and every read of them raised TS2339 —
+// invisible because `typecheck:gate` filters to fatal codes, so ten type
+// errors sat in this module while the gate reported clean.
+//
+// Imported as types only, so nothing is pulled in at runtime.
+import type { DrawingFileReport, DrawingReport } from "./contract";
 
 const FACT_STATES: readonly MetaFactState[] = ["value", "not_stated", "not_read"];
 const asFactState = (state: string): MetaFactState =>

@@ -39,7 +39,6 @@
     "test:ai-foundation": "node --test scripts/tests/ai-foundation.test.mjs",
     "test:ai-jobs": "node --test scripts/tests/ai-jobs.test.mjs",
     "test:ai-pipeline": "node --test scripts/tests/ai-pipeline.test.mjs",
-    "test:meta": "node --test --test-concurrency=1 scripts/tests/meta-api.test.mjs scripts/tests/ops2-meta.test.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:gate": "node scripts/typecheck.mjs --fatal-only",
     "test:composite": "node --test scripts/tests/composite.test.mjs scripts/tests/estimator-split.test.mjs",
