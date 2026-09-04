@@ -478,6 +478,11 @@ test("readModelText: reads Google candidates, falls back to the OpenAI shape", (
     "multi-part text is joined, not truncated to the first part",
   );
   assert.equal(readModelText({ response: "plain" }), "plain");
+  assert.equal(
+    readModelText({ choices: [{ message: { content: '{"a":2}' } }] }),
+    '{"a":2}',
+    "Cloudflare OpenAI-compatible responses expose generated text through choices",
+  );
   // No candidates falls through to the generic branch: a string, never a
   // throw. validate() then rejects it and the repair pass runs, which is the
   // designed path for an unusable response.

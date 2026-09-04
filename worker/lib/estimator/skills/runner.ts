@@ -147,6 +147,7 @@ export function readModelText(out: any): string {
     const joined = google.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("");
     if (joined) return joined;
   }
+  if (typeof out?.choices?.[0]?.message?.content === "string") return out.choices[0].message.content;
   return typeof out?.response === "string" ? out.response : JSON.stringify(out?.response ?? out ?? {});
 }
 
