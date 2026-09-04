@@ -72,7 +72,7 @@ test("groups render with the endpoint's numbers and expose no mutating control",
   await expect(projects.getByTestId("attention-row-inReview")).toHaveText("2 being priced");
   await expect(projects.getByTestId("attention-row-readyToIssue")).toHaveText("1 ready to issue");
   await expect(projects.getByTestId("attention-row-awaitingPayment")).toHaveText("3 awaiting payment");
-  await expect(enquiries.getByTestId("attention-row-newEnquiries")).toHaveText("2 nobody has replied to");
+  await expect(enquiries.getByTestId("attention-row-newEnquiries")).toHaveText("2 waiting for a reply");
   await expect(customers.getByTestId("attention-row-tradeApplications")).toHaveText(
     "1 trade application waiting on a decision",
   );
@@ -126,6 +126,10 @@ test("a degraded summary renders the error panel with a retry, not zero rows dis
   const error = page.getByTestId("attention-error");
   await expect(error).toBeVisible();
   await expect(error).toHaveAttribute("role", "alert");
+  await expect(error).toContainText("Can't tell you what's waiting.");
+  await expect(error).toContainText(
+    "The counts didn't load, so none are shown. This is not an empty console",
+  );
   await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
   // ZERO counts: no row, no group, no empty-state — the error panel is the
   // only thing on the page, so a degraded read can't be mistaken for a quiet day.
@@ -133,13 +137,18 @@ test("a degraded summary renders the error panel with a retry, not zero rows dis
   await expect(page.getByTestId("attention-empty")).toHaveCount(0);
 });
 
-test("a 500 renders the same error panel, and zero rows", async ({ page }) => {
+test("a 500 renders the same error panel and copy — no raw HTTP status leaked, and zero rows", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ status: 500, body: "" }));
   await page.goto(ATTENTION);
 
   const error = page.getByTestId("attention-error");
   await expect(error).toBeVisible();
   await expect(error).toHaveAttribute("role", "alert");
+  await expect(error).toContainText("Can't tell you what's waiting.");
+  await expect(error).toContainText(
+    "The counts didn't load, so none are shown. This is not an empty console",
+  );
+  await expect(error).not.toContainText("500");
   await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
 });

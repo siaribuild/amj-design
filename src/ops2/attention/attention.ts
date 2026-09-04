@@ -87,7 +87,7 @@ const GROUP_SPECS: readonly { id: DestinationId; rows: readonly RowSpec[] }[] = 
   {
     id: "enquiries",
     rows: [
-      { key: "newEnquiries", noun: () => "nobody has replied to", href: destination("enquiries").path },
+      { key: "newEnquiries", noun: () => "waiting for a reply", href: destination("enquiries").path },
     ],
   },
   {

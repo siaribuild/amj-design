@@ -129,3 +129,31 @@ response status (403, not 401) to keep this from regressing unnoticed, since
 useSummary.ts's UI copy is identical for both.
 
 10/10 pass. typecheck:gate green. No other files touched.
+
+## Fix - Review finding: two copy divergences from the mock (Attention)
+
+Files: src/ops2/attention/attention.ts, src/ops2/attention/useSummary.ts,
+scripts/tests/web/ops2-attention.spec.ts.
+
+Finding: enquiries row noun read "nobody has replied to" (mock/UX §3.2 say
+"waiting for a reply" — the only row whose number didn't lead a grammatical
+phrase); useSummary's error copy surfaced the raw HTTP status ("The server
+answered 500...") instead of the mock's §3.4 estimator-safe wording.
+
+Red first: updated line-75 assertion in ops2-attention.spec.ts to the mock's
+"2 waiting for a reply" (fails against old noun), and added toContainText
+assertions for "Can't tell you what's waiting." / "The counts didn't load,
+so none are shown..." to both the degraded-summary and 500 tests, plus a
+not.toContainText("500") assertion on the 500 case. Ran — 3 failures, all
+for the expected reason (old copy still in place).
+
+Green: attention.ts's newEnquiries noun -> "waiting for a reply". useSummary.ts's
+three error branches (non-ok, degraded, network catch) unified onto the
+mock's headline/detail — no more status-specific text, matching mock §3.4's
+"indistinguishable to the reader by design" (criteria 18, 19). Unauthorised
+branch untouched.
+
+npx playwright test scripts/tests/web/ops2-attention.spec.ts: 11/11 pass.
+typecheck:gate: green. npm test: 1066/1069 pass, 3 pre-existing failures in
+scripts/tests/pipeline.test.mjs (conductor session-resume arg-indexing),
+unrelated to this change and untouched by it.

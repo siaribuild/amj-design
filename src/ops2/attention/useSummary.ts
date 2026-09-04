@@ -36,8 +36,9 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (!res.ok) {
           setLoad({
             status: "error",
-            headline: "Attention did not load.",
-            detail: `The server answered ${res.status}. Try again in a moment.`,
+            headline: "Can't tell you what's waiting.",
+            detail:
+              "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
           });
           return;
         }
@@ -46,8 +47,9 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (counts === "degraded") {
           setLoad({
             status: "error",
-            headline: "Attention did not load.",
-            detail: "The counts could not be trusted, so none are shown. Try again in a moment.",
+            headline: "Can't tell you what's waiting.",
+            detail:
+              "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
           });
           return;
         }
@@ -57,8 +59,9 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (!live) return;
         setLoad({
           status: "error",
-          headline: "Attention did not load.",
-          detail: "The console could not reach the server. Check the connection.",
+          headline: "Can't tell you what's waiting.",
+          detail:
+            "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
         });
       });
 
