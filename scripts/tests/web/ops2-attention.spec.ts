@@ -132,3 +132,14 @@ test("a degraded summary renders the error panel with a retry, not zero rows dis
   await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
   await expect(page.getByTestId("attention-empty")).toHaveCount(0);
 });
+
+test("a 500 renders the same error panel, and zero rows", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(ATTENTION);
+
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+  await expect(error).toHaveAttribute("role", "alert");
+  await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
+});
