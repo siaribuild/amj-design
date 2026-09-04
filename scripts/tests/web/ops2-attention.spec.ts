@@ -249,6 +249,82 @@ test("a signed-in customer (non-staff) loading /attention gets the unauthorised 
   await context.close();
 });
 
+// Monitoring (T5) — second, independent request. SUMMARY_URL stubbed too so
+// the page's primary section resolves and stays out of the way.
+const MONITORING_URL = (url: URL) => url.pathname === "/api/ops/monitoring";
+const READY_SNAPSHOT = {
+  takenAt: "2026-09-05T04:30:00.000Z",
+  money: { available: true, creditBalanceUsd: 12.34, billedSpendUsd: 40, capUsd: 50, capSource: "gateway" },
+  success7d: 20,
+  error7d: 3,
+  days: [
+    { day: "2026-08-30", success: 2, error: 0 },
+    { day: "2026-08-31", success: 3, error: 1 },
+    { day: "2026-09-01", success: 0, error: 0 },
+    { day: "2026-09-02", success: 4, error: 0 },
+    { day: "2026-09-03", success: 3, error: 1 },
+    { day: "2026-09-04", success: 5, error: 0 },
+    { day: "2026-09-05", success: 3, error: 1 },
+  ],
+};
+
+test("monitoring: ready snapshot renders cards, as-at, and 7 chart columns", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: READY_SNAPSHOT, notificationCount: 0 } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("monitoring-credit-balance")).toContainText("$12.34");
+  await expect(page.getByTestId("monitoring-cap-outstanding")).toContainText("$10.00");
+  await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
+  await expect(page.getByTestId("monitoring-error-count")).toContainText("3");
+  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(7);
+  await expect(page.getByText(/As at \d{2}:\d{2}/)).toBeVisible();
+});
+
+test("monitoring: money unavailable shows an unavailable state, not zero, while counts/chart still show D1 numbers", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, money: { available: false, reason: "token_missing" } }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  const credit = page.getByTestId("monitoring-credit-balance");
+  await expect(credit).toContainText("unavailable");
+  await expect(credit).not.toContainText("$0.00");
+  await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
+});
+
+test("monitoring: an all-zero window renders an explicit empty chart state", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  const zeroDays = READY_SNAPSHOT.days.map((d) => ({ ...d, success: 0, error: 0 }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, success7d: 0, error7d: 0, days: zeroDays }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("monitoring-chart")).toContainText("No parse activity this week.");
+  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(0);
+});
+
+test("monitoring: no snapshot yet renders the empty state", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 0 } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("monitoring-empty")).toBeVisible();
+  await expect(page.getByTestId("monitoring-credit-balance")).toHaveCount(0);
+});
+
+test("monitoring: a 500 shows the error panel with a retry button", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(ATTENTION);
+
+  const errorPanel = page.getByTestId("monitoring-error");
+  await expect(errorPanel).toBeVisible();
+  await expect(errorPanel.getByRole("button", { name: "Try again" })).toBeVisible();
+});
+
 test("the unauthorised panel has no retry — pressing it would fail the same way (mock §3.5)", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

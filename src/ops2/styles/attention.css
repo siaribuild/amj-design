@@ -65,3 +65,138 @@
 .att-rows .ops2-row__open {
   padding-block: var(--theme-spacing-md);
 }
+
+/* Monitoring (T5) — mock: docs/mocks/ai-parse-monitoring.html. Below the
+   attention groups, its own request, its own states. */
+.att-monitoring {
+  margin-top: var(--theme-spacing-xl);
+}
+
+.att-asat {
+  display: flex;
+  gap: var(--theme-spacing-xs);
+  margin: 0 0 var(--theme-spacing-sm);
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.att-grid {
+  display: grid;
+  gap: var(--theme-spacing-lg);
+}
+
+.att-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--theme-spacing-lg);
+}
+
+.att-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--theme-spacing-xs);
+  padding: var(--theme-spacing-lg);
+  background: var(--ds-surface-card);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: var(--shadow-sm);
+}
+.att-card__label {
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--ds-text-secondary);
+}
+.att-card__figure {
+  font-family: var(--theme-font-display);
+  font-size: var(--theme-font-size-3xl);
+  font-weight: var(--theme-font-weight-bold);
+  color: var(--ds-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.att-card__note {
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-muted);
+}
+/* Unavailable: the figure goes muted, not zero, not red — money.available
+   false is a fact about the fetch, not about the account. */
+.att-card[data-state="unavailable"] .att-card__figure {
+  color: var(--ds-text-muted);
+}
+
+/* The chart — plain CSS bars, no library, per mock. */
+.att-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--ds-text-muted);
+  font-size: var(--theme-font-size-sm);
+  text-align: center;
+}
+.att-plot {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  align-items: end;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+.att-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--theme-spacing-xs);
+}
+.att-col__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+}
+.att-bar {
+  position: relative;
+  width: 20px;
+  background: var(--ds-color-brand);
+  border-radius: var(--ds-radius-control) var(--ds-radius-control) 0 0;
+}
+.att-bar[data-series="error"] {
+  background: var(--ds-color-error);
+}
+.att-bar[data-zero="true"] {
+  height: 2px !important;
+  background: var(--ds-border-subtle);
+}
+.att-bar b {
+  position: absolute;
+  top: -1.25em;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--theme-font-size-xs);
+  font-weight: var(--theme-font-weight-medium);
+  color: var(--ds-text-secondary);
+}
+.att-col__day {
+  font-size: var(--theme-font-size-xs);
+  color: var(--ds-text-secondary);
+}
+.att-col__day[data-today="true"] {
+  color: var(--ds-text-primary);
+  font-weight: var(--theme-font-weight-medium);
+}
+
+.att-card--loading {
+  height: 112px;
+}
+
+@media (max-width: 480px) {
+  .att-grid {
+    gap: var(--theme-spacing-md);
+  }
+  .att-card {
+    padding: var(--theme-spacing-md);
+  }
+  .att-bar {
+    width: 14px;
+  }
+}

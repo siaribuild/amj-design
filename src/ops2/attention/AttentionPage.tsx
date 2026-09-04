@@ -7,6 +7,8 @@ import { destination } from "../nav/destinations";
 import { DESTINATION_ICON } from "../nav/icons";
 import { attentionGroups } from "./attention";
 import { useSummary } from "./useSummary";
+import { useMonitoring, formatAsAt } from "./useMonitoring";
+import { capOutstanding } from "../../data/monitoring";
 
 /**
  * The console's front door (design.md §5). One request (useSummary), grouped
@@ -22,6 +24,7 @@ import { useSummary } from "./useSummary";
  */
 export function AttentionPage() {
   const { load, reload } = useSummary();
+  const { load: monitoringLoad, reload: monitoringReload } = useMonitoring();
   const history = useHistory();
 
   return (
@@ -99,6 +102,123 @@ export function AttentionPage() {
                 </RowList>
               </section>
             ))}
+          </div>
+        );
+      })()}
+
+      {/* Monitoring — a second, independent request (useMonitoring), always
+          below the attention groups regardless of the summary's own state
+          (design §7). Its own loading/error/empty/ready states never touch
+          load.counts, so the errorBlockMatch isolation above stays sound. */}
+      {monitoringLoad.status === "loading" && (
+        <div className="pq-skeleton att-card--loading" data-testid="monitoring-skeleton" aria-busy="true">
+          <IonSkeletonText animated style={{ height: "1rem", width: "7rem", marginBottom: "0.25rem" }} />
+          <IonSkeletonText animated style={{ height: "88px" }} />
+        </div>
+      )}
+
+      {(monitoringLoad.status === "error" || monitoringLoad.status === "unauthorised") && (
+        <div className="pq-error ds-surface-card" data-testid="monitoring-error" role="alert">
+          <IonIcon icon={warningOutline} aria-hidden="true" />
+          <div>
+            <strong>{monitoringLoad.headline}</strong>
+            <IonNote className="ds-type-caption">{monitoringLoad.detail}</IonNote>
+          </div>
+          {monitoringLoad.status === "error" && (
+            <IonButton size="small" fill="outline" onClick={monitoringReload}>Try again</IonButton>
+          )}
+        </div>
+      )}
+
+      {monitoringLoad.status === "empty" && (
+        <div className="pq-empty" data-testid="monitoring-empty">
+          <strong>No snapshot yet.</strong>
+          <IonNote className="ds-type-caption">
+            The monitoring snapshot is written every 10 minutes. Check back shortly.
+          </IonNote>
+        </div>
+      )}
+
+      {monitoringLoad.status === "ready" && (() => {
+        const { snapshot } = monitoringLoad;
+        const { money } = snapshot;
+        const maxDay = Math.max(1, ...snapshot.days.map((d) => Math.max(d.success, d.error)));
+        const allZero = snapshot.success7d === 0 && snapshot.error7d === 0;
+        return (
+          <div className="att-monitoring">
+            <p className="att-asat">As at {formatAsAt(snapshot.takenAt)}</p>
+            <div className="att-grid">
+              <div className="att-pair">
+                <div
+                  className="att-card"
+                  data-state={money.available ? undefined : "unavailable"}
+                  data-testid="monitoring-credit-balance"
+                >
+                  <span className="att-card__label">Credit balance</span>
+                  <strong className="att-card__figure">
+                    {money.available ? `$${money.creditBalanceUsd.toFixed(2)}` : "—"}
+                  </strong>
+                  {!money.available && <IonNote className="att-card__note">unavailable</IonNote>}
+                </div>
+                <div
+                  className="att-card"
+                  data-state={money.available ? undefined : "unavailable"}
+                  data-testid="monitoring-cap-outstanding"
+                >
+                  <span className="att-card__label">Cap headroom</span>
+                  <strong className="att-card__figure">
+                    {money.available ? `$${capOutstanding(money).toFixed(2)}` : "—"}
+                  </strong>
+                  <IonNote className="att-card__note">
+                    {money.available ? `of $${money.capUsd.toFixed(2)} cap (${money.capSource})` : "unavailable"}
+                  </IonNote>
+                </div>
+              </div>
+              <div className="att-pair">
+                <div className="att-card" data-testid="monitoring-success-count">
+                  <span className="att-card__label">Success · 7 days</span>
+                  <strong className="att-card__figure">{snapshot.success7d}</strong>
+                </div>
+                <div className="att-card" data-testid="monitoring-error-count">
+                  <span className="att-card__label">Errors · 7 days</span>
+                  <strong className="att-card__figure">{snapshot.error7d}</strong>
+                </div>
+              </div>
+              <div className="att-card att-chart" data-testid="monitoring-chart">
+                <span className="att-card__label">Parsing · last 7 days</span>
+                {allZero ? (
+                  <p className="att-chart__empty">No parse activity this week.</p>
+                ) : (
+                  <div className="att-plot">
+                    {snapshot.days.map((day, i) => (
+                      <div className="att-col" key={day.day}>
+                        <div className="att-col__bars">
+                          <div
+                            className="att-bar"
+                            data-series="success"
+                            data-zero={day.success === 0 || undefined}
+                            style={{ height: day.success === 0 ? "2px" : `${(day.success / maxDay) * 100}%` }}
+                          >
+                            {day.success > 0 && <b>{day.success}</b>}
+                          </div>
+                          <div
+                            className="att-bar"
+                            data-series="error"
+                            data-zero={day.error === 0 || undefined}
+                            style={{ height: day.error === 0 ? "2px" : `${(day.error / maxDay) * 100}%` }}
+                          >
+                            {day.error > 0 && <b>{day.error}</b>}
+                          </div>
+                        </div>
+                        <span className="att-col__day" data-today={i === snapshot.days.length - 1 || undefined}>
+                          {day.day.slice(5)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
       })()}

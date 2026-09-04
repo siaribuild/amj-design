@@ -200,3 +200,36 @@ test("attentionGroups: every row label is number-leading (starts with its count)
     }
   }
 });
+
+// AttentionPage.tsx — monitoring section (T5). Design: docs/runs/ai-parse-monitoring/02-design.md.
+// Same source-regex convention as the summary block above: read the .tsx as
+// text, strip comments, assert markers. The monitoring markup must sit AFTER
+// the summary's error block in source order so the existing non-global
+// errorBlockMatch regex above keeps isolating only the summary's error JSX.
+test("AttentionPage: monitoring section — useMonitoring wired, five load states, unavailable money, zero/empty chart (T5)", () => {
+  const page = read("src/ops2/attention/AttentionPage.tsx");
+  const bare = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(bare, /from\s*"\.\/useMonitoring"/, "must import useMonitoring");
+  assert.match(bare, /data-testid="monitoring-skeleton"/);
+  assert.match(bare, /data-testid="monitoring-error"/);
+  assert.match(bare, /data-testid="monitoring-empty"/);
+  assert.match(bare, /data-testid="monitoring-credit-balance"/);
+  assert.match(bare, /data-testid="monitoring-cap-outstanding"/);
+  assert.match(bare, /data-testid="monitoring-success-count"/);
+  assert.match(bare, /data-testid="monitoring-error-count"/);
+  assert.match(bare, /data-testid="monitoring-chart"/);
+  assert.match(bare, /"unavailable"/, "money cards must render an unavailable state, not zero");
+  assert.match(bare, /data-zero/, "zero-day bars must be marked so they render as flat columns");
+  assert.match(bare, /att-chart__empty/, "an all-zero window must render an explicit empty state");
+  assert.match(bare, /As at /, "every card states 'as at HH:MM'");
+  assert.match(bare, /snapshot\.days\.map/, "the chart must iterate the 7-day array");
+
+  const summaryErrorIndex = bare.indexOf('data-testid="attention-error"');
+  const monitoringErrorIndex = bare.indexOf('data-testid="monitoring-error"');
+  assert.ok(summaryErrorIndex !== -1 && monitoringErrorIndex !== -1 && summaryErrorIndex < monitoringErrorIndex,
+    "monitoring markup must come after the summary's error block so the errorBlockMatch regex above stays isolated");
+
+  assert.ok(!/activeOrders/.test(bare), "AttentionPage must never read activeOrders");
+  assert.ok(!/\bcustomers\b/.test(bare), "AttentionPage must never read the raw customers field");
+});
