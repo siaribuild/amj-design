@@ -192,10 +192,12 @@ Four consequences bind every phase:
    looks at its face, so one face reads with the plan and the opposite against
    it; distance along the wall is what catches a mirrored match that happens to
    have the right count.
-4. The crop is the opening: the storey band in height, the opening's centre
-   plus and minus half its width, with §7.5's margin so the frame edges are
-   visible. The margin exists for legibility — a fixed pane is told from its
-   surround by its edges — and never to compensate for imprecise location.
+4. The crop is the opening: the storey band in height, the opening's centre plus
+   and minus half its width, with §7.5's margin so the frame edges are visible.
+   **That half-width comes from the scheduled width through the page scale** —
+   knowing how wide to crop is what the scale is for. The margin exists for
+   legibility — a fixed pane is told from its surround by its edges — and never
+   to compensate for imprecise location.
 
 **No rule anywhere may key off one document's conventions.** The reference sets
 verify the engine; they do not shape it.
@@ -334,14 +336,37 @@ export interface OpeningCropTask {
 }
 ```
 
-Crop rules:
+Crop rules (owner ruling, 2026-09-04: **the width is the scheduled width through
+the page scale**, which is what the scale is for. The drawing supplies the
+centre; the schedule and the scale supply how wide):
 
-1. Start with the complete `outerFrameBoxPt` horizontally.
-2. If trustworthy scale width is wider by more than tolerance, expand symmetrically around the frame centre and warn; never shrink a complete frame.
-3. Add 15% horizontal margin, at least 8 PDF points and at most 25% of opening width.
-4. Use the full `storeyBandPt` vertically plus 5% margin, clamped to page bounds.
-5. Reject a crop excluding a frame edge, leaving the page, or containing a neighbouring frame centre.
-6. Render at 300 DPI without thresholding first. Thresholding is retry-only because faint operation marks can disappear.
+1. Take the centre from the matched opening on the elevation.
+2. Take the width from `expectedWidthPt(scheduledWidthMm, pageScaleRatio)`,
+   centred on it.
+3. Where the drawn frame is wider than that, take the wider and record the
+   disagreement: never crop inside a complete frame. Where the two agree within
+   tolerance, the scale width stands.
+4. Where the page has no usable scale, fall back to the drawn frame's extent and
+   mark the crop `wide_unscaled`, so a crop sized by fallback is never mistaken
+   for one sized by measurement.
+5. Add 15% horizontal margin, at least 8 PDF points and at most 25% of opening
+   width. The margin exists so the frame edges are visible against the wall —
+   a fixed pane is told from its surround by its edges — and never to make an
+   imprecise centre survivable.
+6. Use the full `storeyBandPt` vertically plus 5% margin, clamped to page bounds.
+7. Reject a crop leaving the page or containing a neighbouring opening's centre.
+8. Render at 300 DPI without thresholding first. Thresholding is retry-only because faint operation marks can disappear.
+
+**Consequence for Phase D.** Because the width comes from the schedule and the
+scale, the elevation inventory has to deliver identity, order and a trustworthy
+**centre** — not a pixel-accurate frame extent. That is a materially lower bar
+for a vision step working against brick hatch and batten cladding, and it is
+deliberate.
+
+**Consequence for Phase A.** A page whose scale cannot be read cannot be cropped
+by measurement. Scale is therefore load-bearing rather than advisory, and a
+document that states its scale only in graphics needs it recovered visually
+before Phase D can size anything.
 
 ### 7.6 Phase E — composition
 
