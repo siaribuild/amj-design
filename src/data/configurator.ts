@@ -54,7 +54,11 @@ export interface QSegment {
   height: string;
   qtyPerParent: number;
   qty: number;
-  lineTotal: number | null;
+  /** Whether this unit has a price - NOT the price. The parent's lineTotal is
+   *  the authoritative figure, and once it carries a manufacturer price the
+   *  gap between it and the units' computed prices is a margin the customer
+   *  must not be able to read off the wire (verify F3). */
+  priced: boolean;
   options: Record<string, string>;
   status: "Ready" | "Needs review";
   /** Free text on the unit — the same field, meaning and storage an opening

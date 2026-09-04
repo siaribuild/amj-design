@@ -52,6 +52,10 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // fallback), and Sanity off so pricing/catalogue are the deterministic
       // built-in data. Production values live in wrangler.jsonc (cf:deploy).
       "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+      // A real manufacturer partner (t2 abuse cases) is provisioned through the
+      // ops sign-in path, which is where the role is pinned (worker/lib/staff.ts) —
+      // a domain has to be configured for that path to ever produce one.
+      "--var", "MANUFACTURER_EMAIL_DOMAINS:partner.example",
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
     // Structural assertions the API deliberately does not expose (segments are
@@ -577,6 +581,25 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(w12.lineTotal, segs.reduce((n, x) => n + x.line_total, 0), "the opening total IS the sum of its units");
       assert.notEqual(w12.lineTotal, openingTotal);
 
+      // F3 - THE WIRE MUST NOT CARRY THE MARGIN. Until this feature a composite
+      // parent's total WAS the sum of its segments, so shipping each segment's
+      // figure to the customer disclosed nothing. Once AMJ's price governs the
+      // parent, the gap between it and the platform's own computed segment
+      // prices IS the margin - on a payload the customer can read.
+      //
+      // The customer client never prints a segment price: UnitRow.tsx uses it
+      // only as a presence check. So the wire carries that fact and not the money.
+      const custView = await requestJson(cust, '/api/projects/current');
+      const custW12 = (custView.body.items ?? []).find((i) => i.code === 'W12');
+      assert.ok(custW12, 'the customer can see their own opening');
+      assert.equal(custW12.segments.length, 2, 'and its two units');
+      for (const seg of custW12.segments) {
+        assert.equal(Object.hasOwn(seg, 'lineTotal'), false,
+          'a segment price must not reach the customer wire at all');
+        assert.equal(typeof seg.priced, 'boolean',
+          'the client needs whether a unit is priced, never how much');
+      }
+
       // Every unit INHERITS the opening's spec. Creating them with no options was
       // discarding the customer's colour and hardware — and, because most option
       // rows carry a surcharge, re-pricing the units as bare product.
@@ -586,11 +609,23 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         assert.equal(s.options_json, openingSpec, "a unit is built to the opening's spec, not to a blank one");
       }
 
-      // PRICE THE UNITS, NOT THE OPENING (0046). A parent's total is Σ(segments)
-      // — composite.ts's single-writer invariant — so an override written to the
-      // parent would be erased by the next recomputeComposite. Refused loudly
-      // rather than accepted and quietly undone later.
-      await requestJson(ops, `/api/ops/lines/${parentId}/price`, { method: "PUT", json: { total: 999 } }, 409);
+      // PRICE THE OPENING ITSELF, TOO (t2/0046 extension). A manufacturer can
+      // quote the assembly as one unit, which takes ownership of the total away
+      // from Σ(segments) — the composite parent used to refuse this outright;
+      // now it behaves exactly like a simple line. Cleared straight back so the
+      // Σ(segments) assertions below still read the engine's own figures.
+      const sumBeforeParentPrice = (await sql(`SELECT line_total FROM quote_line WHERE id='${parentId}'`))[0].line_total;
+      const parentPrice = await requestJson(ops, `/api/ops/lines/${parentId}/price`, { method: "PUT", json: { total: 999 } });
+      assert.equal(parentPrice.body.ok, true, "a composite PARENT now takes an override too");
+      const parentAfterOwnPrice = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentId}'`))[0];
+      assert.equal(parentAfterOwnPrice.line_total, 999, "the sent total is stored, unmultiplied by qty");
+      assert.notEqual(parentAfterOwnPrice.price_calculated, null, "the parent is now priced, taking ownership");
+      const clearedParentPrice = await requestJson(ops, `/api/ops/lines/${parentId}/price`, { method: "PUT", json: { total: null } });
+      assert.equal(clearedParentPrice.body.ok, true);
+      const parentAfterClear = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentId}'`))[0];
+      assert.equal(parentAfterClear.line_total, sumBeforeParentPrice, "clearing restores the CURRENT Σ(segments)");
+      assert.equal(parentAfterClear.price_calculated, null, "clearing hands ownership back to recompute");
+
       const priceUnits = await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
       const pricedUnit = await requestJson(ops, `/api/ops/lines/${priceUnits[0].id}/price`,
         { method: "PUT", json: { total: 500 } });
@@ -921,6 +956,250 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         "height", "id", "lineTotal", "note", "options", "productName",
         "productSlug", "qty", "qtyPerParent", "width",
       ], "the ops contract unit gained productSlug, and nothing else");
+    });
+
+    // GUARDRAIL: a composite parent that already carries a human price (0046 —
+    // price_calculated non-NULL) owns its own line_total, the same way a plain
+    // overridden line does. recomputeComposite must stop overwriting it on
+    // every segment change while still re-deriving what IS derived: qty,
+    // coverage, status. Seeded directly with sql() — no endpoint reaches this
+    // state yet (that is a later task's job).
+    await t.test("composite: a priced parent's total survives every segment operation", async () => {
+      const cust2 = new Session(baseUrl);
+      await login(cust2, "/api/auth", "composite-owned@example.com");
+      const made2 = await requestJson(cust2, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Owned composite project",
+          items: [{
+            code: "W20", location: "Living", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const projectId2 = made2.body.project.id;
+      const ownedParentId = made2.body.items[0].id;
+      await completeAccount(cust2, { name: "Owned Tester" });
+      await requestJson(cust2, `/api/projects/${projectId2}/submit`, {
+        method: "POST",
+        json: { delivery: { suburb: "Rowville", postcode: "3178" } },
+      });
+
+      await requestJson(ops, `/api/ops/lines/${ownedParentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          ],
+        },
+      });
+
+      // Seeded directly — no endpoint accepts an override on a composite parent
+      // yet, so the suite's sql() helper is the only way into this state.
+      await sql(`UPDATE quote_line SET line_total=1500, price_calculated=1400 WHERE id='${ownedParentId}'`);
+      const segs0 = await sql(`SELECT id FROM quote_line WHERE parent_line_id='${ownedParentId}' ORDER BY segment_seq`);
+      const [seg0, seg1] = segs0.map((s) => s.id);
+
+      // reprice a unit — the parent's own price does not move.
+      await requestJson(ops, `/api/ops/lines/${seg0}/price`, { method: "PUT", json: { total: 777 } });
+      let owned = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.line_total, 1500, "a priced parent's total is untouched by a unit reprice");
+      assert.equal(owned.price_calculated, 1400, "price_calculated is never rewritten by recompute");
+      assert.equal((await sql(`SELECT line_total FROM quote_line WHERE id='${seg0}'`))[0].line_total, 777,
+        "the unit's own price still writes");
+
+      // resize a unit — coverage still re-derives, the parent's total does not.
+      await requestJson(ops, `/api/ops/segments/${seg0}`, { method: "PATCH", json: { alongMm: 700 } });
+      owned = (await sql(`SELECT line_total, price_calculated, coverage_delta_mm FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.coverage_delta_mm, 100, "coverage is still re-derived from the segments");
+      assert.equal(owned.line_total, 1500, "a priced parent's total is untouched by a resize");
+      assert.equal(owned.price_calculated, 1400);
+
+      // qty still re-derives per unit — exercised through a unit's own
+      // qty_per_parent, not the parent's own spec (a parent-level PATCH clears
+      // an override under an existing, unrelated rule).
+      await requestJson(ops, `/api/ops/segments/${seg1}`, { method: "PATCH", json: { qtyPerParent: 2 } });
+      assert.equal((await sql(`SELECT qty FROM quote_line WHERE id='${seg1}'`))[0].qty, 2,
+        "qty is still re-derived from qty_per_parent");
+      owned = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.line_total, 1500, "a priced parent's total is untouched by a qty change");
+      assert.equal(owned.price_calculated, 1400);
+
+      // add a unit — the parent's total still does not move.
+      const added = await requestJson(ops, `/api/ops/lines/${ownedParentId}/segments`, { method: "POST" });
+      assert.equal(added.body.ok, true);
+      owned = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.line_total, 1500, "a priced parent's total is untouched by adding a unit");
+      assert.equal(owned.price_calculated, 1400);
+
+      // remove that unit — still untouched.
+      await requestJson(ops, `/api/ops/segments/${added.body.id}`, { method: "DELETE" });
+      owned = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.line_total, 1500, "a priced parent's total is untouched by removing a unit");
+      assert.equal(owned.price_calculated, 1400);
+
+      // merge back to one opening — the price stays with it, exactly as a plain
+      // priced line keeps its price (the empty-segments branch never touches
+      // these two columns).
+      await requestJson(ops, `/api/ops/lines/${ownedParentId}/merge`, { method: "POST" });
+      owned = (await sql(`SELECT line_total, price_calculated, line_kind, composite_axis FROM quote_line WHERE id='${ownedParentId}'`))[0];
+      assert.equal(owned.line_kind, "simple", "a merged single unit is a plain line again");
+      assert.equal(owned.composite_axis, null);
+      assert.equal(owned.line_total, 1500, "the merge keeps the priced parent's total");
+      assert.equal(owned.price_calculated, 1400);
+    });
+
+    // CONTROL: without a seeded price_calculated, the parent still just IS the
+    // sum of its units — the ownership guard must not change the default path.
+    await t.test("composite: an unseeded parent still follows the sum through a unit reprice", async () => {
+      const cust3 = new Session(baseUrl);
+      await login(cust3, "/api/auth", "composite-unowned@example.com");
+      const made3 = await requestJson(cust3, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Unowned composite project",
+          items: [{
+            code: "W21", location: "Living", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const projectId3 = made3.body.project.id;
+      const plainParentId = made3.body.items[0].id;
+      await completeAccount(cust3, { name: "Unowned Tester" });
+      await requestJson(cust3, `/api/projects/${projectId3}/submit`, {
+        method: "POST",
+        json: { delivery: { suburb: "Rowville", postcode: "3178" } },
+      });
+      await requestJson(ops, `/api/ops/lines/${plainParentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          ],
+        },
+      });
+      const plainSegs = await sql(`SELECT id FROM quote_line WHERE parent_line_id='${plainParentId}' ORDER BY segment_seq`);
+      await requestJson(ops, `/api/ops/lines/${plainSegs[0].id}/price`, { method: "PUT", json: { total: 321 } });
+      const plainAfter = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${plainParentId}'`))[0];
+      const plainSegTotals = await sql(`SELECT line_total FROM quote_line WHERE parent_line_id='${plainParentId}'`);
+      assert.equal(plainAfter.line_total, plainSegTotals.reduce((n, x) => n + x.line_total, 0),
+        "an unseeded parent's total is still the sum of its units");
+      assert.equal(plainAfter.price_calculated, null, "recompute never writes price_calculated");
+    });
+
+    // t2 — PUT /lines/:id/price now accepts a composite PARENT directly, not
+    // just its units: a manufacturer sometimes quotes the whole assembly as one
+    // job. Fresh fixture, seeded to an UNPRICED sum so the price_calculated
+    // fallback (design §2.2) is actually exercised, not merely inspected.
+    await t.test("composite: PUT /lines/:id/price accepts the parent, and its abuse cases", async () => {
+      const custT2 = new Session(baseUrl);
+      await login(custT2, "/api/auth", "composite-parent-price@example.com");
+      const madeT2 = await requestJson(custT2, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Parent-priced composite project",
+          items: [{
+            code: "W30", location: "Living", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 2,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const projectIdT2 = madeT2.body.project.id;
+      const parentIdT2 = madeT2.body.items[0].id;
+      await completeAccount(custT2, { name: "Parent Price Tester" });
+      await requestJson(custT2, `/api/projects/${projectIdT2}/submit`, {
+        method: "POST",
+        json: { delivery: { suburb: "Rowville", postcode: "3178" } },
+      });
+      await requestJson(ops, `/api/ops/lines/${parentIdT2}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          ],
+        },
+      });
+      const segsT2 = await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentIdT2}' ORDER BY segment_seq`);
+
+      // Force an UNPRICED sum: one unit carries no price at all.
+      await sql(`UPDATE quote_line SET line_total=NULL WHERE id='${segsT2[0].id}'`);
+      await sql(`UPDATE quote_line SET line_total=NULL, price_calculated=NULL WHERE id='${parentIdT2}'`);
+
+      // 200, stores the sent figure UNMULTIPLIED by the opening's qty=2, and
+      // takes ownership even though Σ(segments) is unpriced.
+      const firstPrice = await requestJson(ops, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: 850 } });
+      assert.equal(firstPrice.body.ok, true);
+      let rowT2 = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentIdT2}'`))[0];
+      assert.equal(rowT2.line_total, 850, "the sent total is stored as-is, not multiplied by qty=2");
+      assert.equal(rowT2.price_calculated, 850, "an unpriced sum falls back to the sent total (§2.2)");
+
+      const firstAudit = (await sql(
+        `SELECT after_json FROM audit_event WHERE entity_id='${parentIdT2}' AND action='line.price.override' ORDER BY occurred_at DESC LIMIT 1`,
+      ))[0];
+      const firstAfter = JSON.parse(firstAudit.after_json);
+      assert.deepEqual(Object.keys(firstAfter).sort(), ["calculated", "lineTotal"], "the audit row carries only the resulting total and the sum it replaced");
+      assert.equal(firstAfter.lineTotal, 850);
+      assert.equal(firstAfter.calculated, 850);
+
+      // A second PUT replaces the first, both directions: the sent figure moves,
+      // price_calculated stays what the FIRST override captured (0046's rule).
+      const secondPrice = await requestJson(ops, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: 900 } });
+      assert.equal(secondPrice.body.ok, true);
+      rowT2 = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentIdT2}'`))[0];
+      assert.equal(rowT2.line_total, 900);
+      assert.equal(rowT2.price_calculated, 850, "price_calculated is captured once, not on every override");
+
+      // total:null restores the CURRENT sum — NULL, because a segment is still
+      // unpriced — handing ownership back to recomputeComposite.
+      const clearedPrice = await requestJson(ops, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: null } });
+      assert.equal(clearedPrice.body.ok, true);
+      rowT2 = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentIdT2}'`))[0];
+      assert.equal(rowT2.line_total, null, "the current sum is null while a segment is unpriced");
+      assert.equal(rowT2.price_calculated, null, "clearing hands ownership back to recompute");
+
+      const clearAudit = (await sql(
+        `SELECT after_json FROM audit_event WHERE entity_id='${parentIdT2}' AND action='line.price.override.cleared' ORDER BY occurred_at DESC LIMIT 1`,
+      ))[0];
+      const clearAfter = JSON.parse(clearAudit.after_json);
+      assert.deepEqual(Object.keys(clearAfter).sort(), ["calculated", "lineTotal"]);
+      assert.equal(clearAfter.lineTotal, null, "the audited figure is the RECOMPUTED one, not the stale override");
+      assert.equal(clearAfter.calculated, 850, "the audited replaced figure is what price_calculated held before the clear");
+
+      // The project payload states the editable window itself (ISSUABLE_FROM) —
+      // ops2's door must not re-derive it client-side.
+      const recordT2 = await requestJson(ops, `/api/ops/projects/${projectIdT2}`);
+      assert.equal(recordT2.body.project.linesEditable, true, "a submitted project is in ISSUABLE_FROM");
+
+      // ── Abuse cases: unauthenticated, customer, manufacturer partner — 403,
+      // no write. ──────────────────────────────────────────────────────────────
+      const before = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentIdT2}'`))[0];
+      const anonymous = new Session(baseUrl);
+      await requestJson(anonymous, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: 111 } }, 403);
+
+      // The project's OWNER, still only a customer session — staff-only, not
+      // ownership-gated.
+      await requestJson(custT2, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: 222 } }, 403);
+
+      const partner = new Session(baseUrl);
+      await login(partner, "/api/ops/auth", "partner-t2@partner.example");
+      await requestJson(partner, `/api/ops/lines/${parentIdT2}/price`, { method: "PUT", json: { total: 333 } }, 403);
+      await requestJson(partner, `/api/ops/projects/${projectIdT2}`, {}, 403);
+
+      const after = (await sql(`SELECT line_total, price_calculated FROM quote_line WHERE id='${parentIdT2}'`))[0];
+      assert.deepEqual(after, before, "no refused request wrote anything");
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's

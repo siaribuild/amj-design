@@ -87,7 +87,7 @@ const record = {
   project: {
     id: "p_rec", title: "Wattle Grove - Lot 14", publicRef: "OF-Q-10482",
     statusInternalLabel: "Technical review", customerName: "Ana Bianchi",
-    org: "Marchetti Constructions", unresolvedLineCount: 0,
+    org: "Marchetti Constructions", unresolvedLineCount: 0, linesEditable: true,
   },
   lifecycle: { stateLabel: "Technical review", waitingOn: "Us", phase: "Pricing" },
   daysInStage: 3,

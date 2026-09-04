@@ -37,7 +37,7 @@ await build({
 });
 await build({
   stdin: {
-    contents: `export { Panel } from ${p("src/ops2/projects/LineReview.tsx")};`,
+    contents: `export { Panel, LineReview } from ${p("src/ops2/projects/LineReview.tsx")};`,
     resolveDir: projectRoot,
     sourcefile: "ops2-line-review-entry.tsx",
     loader: "tsx",
@@ -202,6 +202,53 @@ test("the parser carries what the drawing needs, and a line with no slug is stil
   assert.equal(order.lines[0].segments[0].productSlug, "amj100t-fixed-window");
   assert.equal(order.lines[0].origin, null, "an order line has no parse provenance");
   assert.equal(order.lines[0].priceCalculated, null);
+});
+
+test("linesEditable is parsed fail-closed: absent, wrong-typed or false all mean false", () => {
+  // The Price door follows THIS, not the line's own kind (t3) — the server's
+  // `ISSUABLE_FROM.has(status_internal)` gate, mirrored the same way
+  // `delivery.editable` already is: a project that cannot prove the door is
+  // open renders none, rather than one onto a 409.
+  assert.equal(M.parseProjectRecord(body({ lines: [line()] })).linesEditable, false,
+    "absent means false");
+  const b = body({ lines: [line()] });
+  b.project.linesEditable = "true";
+  assert.equal(M.parseProjectRecord(b).linesEditable, false, "a string is not the boolean itself");
+  b.project.linesEditable = false;
+  assert.equal(M.parseProjectRecord(b).linesEditable, false);
+  b.project.linesEditable = true;
+  assert.equal(M.parseProjectRecord(b).linesEditable, true);
+});
+
+test("a composite parent's unit rows render no money string, priced or not", async () => {
+  const { LineReview } = await import(pathToFileURL(panelOut).href);
+  const withTotals = (lineTotal, segTotal) => M.parseProjectRecord(body({
+    lines: [line({
+      code: "W07", lineKind: "composite_parent", compositeAxis: "vertical",
+      width: "2400", height: "1500", lineTotal,
+      segments: [
+        { id: "s1", productSlug: "amj67t-awning-window", productName: "AMJ67T Awning",
+          width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: segTotal, status: "ready" },
+        { id: "s2", productSlug: "amj67-fixed-window", productName: "AMJ67 Fixed",
+          width: "1200", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: segTotal, status: "ready" },
+      ],
+    })],
+  })).lines[0];
+
+  const render = (l) => renderToStaticMarkup(h(LineReview, {
+    line: l, onOpenDrawing: () => {}, why: null, price: null,
+  }));
+
+  // PRICED PARENT, AND UNPRICED PARENT: the units section carries no figure
+  // either way. The parent owns the total; a unit is reached through it, never
+  // priced on its own row.
+  const priced = render(withTotals(900, 500));
+  const unpriced = render(withTotals(null, null));
+  for (const html of [priced, unpriced]) {
+    const units = html.match(/data-testid="line-units"[\s\S]*?<\/section>/)?.[0];
+    assert.ok(units, "the units section rendered");
+    assert.equal(/\$/.test(units), false, "no money string among the unit rows");
+  }
 });
 
 test("a composite is drawn from its units, along its own axis", () => {

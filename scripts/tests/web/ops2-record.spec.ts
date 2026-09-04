@@ -67,7 +67,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   project: {
     id: "p_rec", title: "Wattle Grove - Lot 14", publicRef: "OF-Q-10482",
     statusInternalLabel: "Technical review", customerName: "Ana Bianchi",
-    org: "Marchetti Constructions", unresolvedLineCount: 0,
+    org: "Marchetti Constructions", unresolvedLineCount: 0, linesEditable: true,
   },
   lifecycle: { stateLabel: "Technical review", waitingOn: "Us", phase: "Pricing" },
   daysInStage: 3,
@@ -738,6 +738,52 @@ test("a panel that labels nothing is not a description list, in the rendered DOM
   expect(terms.length).toBe(await spec.locator("dd").count());
   expect(terms.length).toBeGreaterThan(0);
   expect(terms.every((t) => t.trim().length > 0)).toBe(true);
+});
+
+test("a composite parent's Price door opens the calculator on its current total, its units carry no price, and a frozen record opens no door at all", async ({ page }) => {
+  const composite = line({
+    id: "lc", code: "W20", productName: "Composite opening", lineTotal: 1200,
+    lineKind: "composite_parent",
+    segments: [
+      { id: "s1", productSlug: "amj80-series-fixed-window", productName: "AMJ80 Series Fixed Window",
+        width: "600", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {} },
+      { id: "s2", productSlug: "amj80-series-fixed-window", productName: "AMJ80 Series Fixed Window",
+        width: "600", height: "1500", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {} },
+    ],
+  });
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({ lines: [composite] }) }));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${RECORD}/line/lc`);
+
+  const priceDoor = page.getByTestId("line-price");
+  await expect(priceDoor.locator("svg.lp-panel__chev")).toHaveCount(1);
+  await expect(page.getByTestId("line-price-open")).toHaveAttribute("aria-label", "Set this line's price");
+
+  await page.getByTestId("line-price-open").click();
+  // Nothing has been typed yet, so the readback shows the line's CURRENT total.
+  await expect(page.getByTestId("line-price-readback")).toContainText("$1,200.00");
+
+  const units = page.getByTestId("line-units");
+  await expect(units).toBeVisible();
+  await expect(units).not.toContainText("$");
+
+  // A frozen record — past the editable window — opens no Price door on any
+  // line, composite or simple.
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    project: { ...record().project, linesEditable: false },
+    lines: [composite],
+  }) }));
+  await page.goto(`${RECORD}/line/lc`);
+  await expect(page.getByTestId("line-price").locator("svg.lp-panel__chev")).toHaveCount(0);
+  await expect(page.getByTestId("line-price-open")).toHaveCount(0);
+
+  await page.route(RECORD_URL, (route) => route.fulfill({ json: record({
+    project: { ...record().project, linesEditable: false },
+    lines: [line({ lineTotal: 1000 })],
+  }) }));
+  await page.goto(`${RECORD}/line/l1`);
+  await expect(page.getByTestId("line-price").locator("svg.lp-panel__chev")).toHaveCount(0);
+  await expect(page.getByTestId("line-price-open")).toHaveCount(0);
 });
 
 // ── Delivery: the price door and the address panel ──────────────────────────

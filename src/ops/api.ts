@@ -194,8 +194,9 @@ export interface OpsLine {
 }
 
 /** Set an explicit price on a line, or pass null to restore the calculated one.
- *  Refused on a composite parent (409 composite_parent) — a parent's total is
- *  the sum of its units, so the units are what you price. */
+ *  Works on a composite parent too: once set, its total stops following
+ *  Σ(segments) until cleared; clearing restores the CURRENT sum (NULL if a
+ *  segment is still unpriced), not the one frozen at pricing time. */
 export const opsSetLinePrice = (lineId: string, total: number | null) =>
   req<{ ok: boolean; line?: OpsLine }>(`/api/ops/lines/${lineId}/price`, {
     method: "PUT", body: JSON.stringify({ total }),
