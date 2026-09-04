@@ -297,6 +297,7 @@ ion-toolbar.ops2-topbar:not(.ops2-topbar--controls) { --border-width: 0; }
 }
 
 .ops2-bell {
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
@@ -310,6 +311,18 @@ ion-toolbar.ops2-topbar:not(.ops2-topbar--controls) { --border-width: 0; }
 }
 @media (hover: hover) {
   .ops2-bell:hover { color: var(--ds-text-primary); }
+}
+
+/* Unread dot — drawn only when notificationCount > 0 (OpsPage.tsx); no badge
+   markup at all at zero, never a badge reading "0". */
+.ops2-bell__badge {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-color-error);
 }
 
 /* ── The tab bar ──────────────────────────────────────────────────────────── */
@@ -338,6 +351,18 @@ ion-tab-bar.ops2-tabbar ion-tab-button.tab-selected::before {
 }
 ion-tab-bar.ops2-tabbar ion-tab-button.tab-selected {
   font-weight: var(--theme-font-weight-medium);
+}
+
+/* Attention tab's unread dot — same notificationCount as the desk bell, same
+   zero-draws-nothing rule (Ops2App.tsx). */
+.ops2-tab-badge {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-start: 55%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-color-error);
 }
 
 /* ── The destination roots ────────────────────────────────────────────────── */

@@ -10,10 +10,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { globSync, readFileSync } from "node:fs";
+import { build } from "esbuild";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { projectRoot } from "./helpers.mjs";
+import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const read = (file) => readFileSync(join(projectRoot, file), "utf8");
+
+// useNotificationCount's module cache/inflight logic is real branching code
+// (cache-hit, inflight-reuse, fetch-error fallback), not markup — it gets its
+// own executed check rather than only the source-regex assertions below.
+const notifRunDir = await makeRunDir("ops2-notification-count");
+const notifOutfile = join(notifRunDir, "notification-count-bundle.mjs");
+await build({
+  stdin: {
+    contents: `export { __testing } from ${JSON.stringify(join(projectRoot, "src/ops2/chrome/useNotificationCount.ts"))};`,
+    resolveDir: projectRoot,
+    sourcefile: "notification-count-entry.ts",
+    loader: "ts",
+  },
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  outfile: notifOutfile,
+  logLevel: "silent",
+});
+const { __testing: notifTesting } = await import(`${pathToFileURL(notifOutfile).href}?run=${Date.now()}`);
+
+test.after(async () => {
+  await removeRunDir(notifRunDir);
+});
 
 test("setupIonicReact carries R-164's focus priority, and nothing else", () => {
   // Both facts about ops2's Ionic setup live in ONE argument list, and that is
@@ -115,6 +141,59 @@ test("the tab bar belongs to the shell, and no region can render or delete one",
   // navigation band, arrived at by accident rather than by decision.
   const shellSource = read(shell);
   assert.equal((shellSource.match(/<IonTabBar[\s>]/g) ?? []).length, 1);
+});
+
+test("T6: desk bell and phone attention tab share useNotificationCount and badge only when count > 0", () => {
+  // Design (docs/runs/ai-parse-monitoring/02-design.md): one shared hook,
+  // no badge markup at all when the count is zero (never a badge showing "0").
+  const bell = read("src/ops2/chrome/OpsPage.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(bell, /from\s*"\.\.\/chrome\/useNotificationCount"|from\s*"\.\/useNotificationCount"/,
+    "OpsPage must import useNotificationCount");
+  assert.match(bell, /useNotificationCount\(\)/, "OpsPage must call the hook");
+  assert.match(bell, /notificationCount\s*>\s*0/,
+    "the bell's badge must be conditional on count > 0");
+  assert.match(bell, /ops2-bell__badge/, "the bell's badge must use the ops2-bell__badge class");
+
+  const shell = read("src/ops2/Ops2App.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(shell, /from\s*"\.\/chrome\/useNotificationCount"/, "Ops2App must import useNotificationCount");
+  assert.match(shell, /useNotificationCount\(\)/, "Ops2App must call the hook");
+  assert.match(shell, /d\.id\s*===\s*"attention"\s*&&\s*notificationCount\s*>\s*0/,
+    "the phone tab's badge must be conditional on the attention tab AND count > 0");
+  assert.match(shell, /ops2-tab-badge/, "the tab's badge must use the ops2-tab-badge class");
+});
+
+test("T6: useNotificationCount coalesces concurrent calls, caches within TTL, and falls back to 0 on fetch failure", async () => {
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: true, json: async () => ({ notificationCount: 3 }) };
+  };
+
+  notifTesting.resetCache();
+  const [a, b] = await Promise.all([
+    notifTesting.fetchNotificationCount(),
+    notifTesting.fetchNotificationCount(),
+  ]);
+  assert.equal(calls, 1, "two concurrent callers must share one in-flight request");
+  assert.equal(a, 3);
+  assert.equal(b, 3);
+
+  const cached = await notifTesting.fetchNotificationCount();
+  assert.equal(calls, 1, "a call within the TTL must not fetch again");
+  assert.equal(cached, 3);
+
+  notifTesting.resetCache();
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new Error("network down");
+  };
+  const onError = await notifTesting.fetchNotificationCount();
+  assert.equal(onError, 0, "a fetch failure with no prior cache must fall back to 0, never throw");
+
+  globalThis.fetch = realFetch;
 });
 
 test("every browser-facing URL in ops2 carries the basename, and the one exception is paired with its fix", () => {
