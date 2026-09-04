@@ -51,3 +51,21 @@ test("every sign-in address the operations guide names is in the seed", () => {
   const missing = listed.filter((email) => !seed.includes(email));
   assert.deepEqual(missing, [], "OPERATIONS.md names sign-in accounts the seed does not create");
 });
+
+test("every node suite in scripts/tests is reachable from `npm test`", () => {
+  // A suite that no npm script names is a suite nobody runs. It passes the
+  // moment its author runs it by hand, then silently stops being a gate:
+  // `npm test` is the only battery there is, and the deploy protocol reads it.
+  // Found 2026-09-05, when scripts/tests/ops2-attention.test.mjs was added to
+  // `test:ops2` alone and so ran in no full pass.
+  //
+  // Narrow on purpose, and unlike the checks this file's header warns against:
+  // it cannot be tripped by editing prose, only by adding a test file and not
+  // registering it — which is the defect itself.
+  const scripts = JSON.parse(read("package.json")).scripts;
+  const battery = `${scripts["test:pure"]} ${scripts["test:heavy"]}`;
+  const suites = readdirSync(join(projectRoot, "scripts", "tests"))
+    .filter((f) => f.endsWith(".test.mjs"));
+  const unreachable = suites.filter((f) => !battery.includes(f));
+  assert.deepEqual(unreachable, [], "test suites exist that `npm test` never runs");
+});
