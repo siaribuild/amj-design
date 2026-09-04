@@ -259,13 +259,19 @@ Score components are named diagnostics, not an opaque weighted model. Equal cand
 
 ### 7.4 Page scale
 
-Recognize `SCALE 1:100`, `Scale 1 : 100`, `1:100`, and `1 / 100`. A page's scale
-is the ratio all its surviving candidates agree on; disagreement is a conflict,
-not a vote. Candidates a drawing prints for something other than its own scale
-— falls, grades, gradients, pitches, ramps, "no steeper than" — are refused
-before agreement is tested, because one such ratio would otherwise make every
-sheet that carries a note look like a conflict. Only floor plans and elevations
-are asked for a scale (owner ruling, 2026-09-04; §5).
+**The page's scale is the ratio printed in the sheet footer** (owner ruling,
+2026-09-04: every set to hand states it there once, whether as a line or as a
+cell in a title column). Recognize `SCALE 1:100`, `Scale 1 : 100`, `1:100` and
+`1 / 100`, in one word or split across several. A ratio printed anywhere else
+on the sheet belongs to something the drawing measures — a ramp, a fall, a
+stair, a detail's own label — and is not read.
+
+That is the whole rule, and it is deliberately not a list of note subjects: a
+blacklist of words a drafter might use can never be finished, and three review
+rounds spent proving it. Where footer ratios agree the page carries that scale;
+where they disagree the page carries none and the conflict is recorded for ops;
+where the footer prints none the page carries none, and §14's frame-width
+calibration is the fallback.
 
 ```ts
 export function expectedWidthPt(widthMm: number, scaleRatio: number): number {

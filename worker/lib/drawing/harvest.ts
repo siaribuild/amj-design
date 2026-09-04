@@ -70,12 +70,11 @@ export interface DrawingScaleCandidate {
 
 const SCALE_RATIO = /^1\s*[:/]\s*(\d{1,5})$/;
 const SCALE_LABEL = /^SCALE:?$/i;
-/** A drainage fall, a ramp grade and a roof pitch all print `1:100`. Only the
- * words beside it say which one the drawing means, and they are printed with
- * whatever punctuation and connectors the drafter liked: `FALL: 1:100`,
- * `FALL TO 1:100`, `RAMP @ 1:20`. Read the phrase around the ratio, not the
- * one token touching it. */
-const NOT_A_SCALE = /^(?:FALL|FALLS|CROSSFALL|GRADE|GRADIENT|PITCH|SLOPE|STEEPER|FLATTER|RAMP|RAMPS|DRIVEWAY|DRIVEWAYS|STAIR|STAIRS|STAIRWAY|STEP|STEPS)$/i;
+/** The sheet footer: the bottom band, or the right-hand column that carries the
+ * title block on a landscape sheet. A drawing states its scale there once, and
+ * a ratio printed anywhere else measures something the drawing contains — a
+ * ramp, a fall, a stair, a detail's own label. */
+const FOOTER_FRACTION = 0.15;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
@@ -92,11 +91,7 @@ const sharesRow = (a: PageWord, b: PageWord): boolean =>
 const adjacent = (a: PageWord, b: PageWord): boolean =>
   sharesRow(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
 
-/** Every printed ratio on a page that is a drawing scale, one candidate each.
- * Scale is a property of the page: the sheets this product reads print one
- * scale in their title block and the views share it, so nothing here tries to
- * attach a ratio to a particular view — `pageScaleRatio` asks whether what is
- * printed agrees.
+/** The scale a page states in its footer, one candidate per printed ratio.
  *
  * ponytail: `1:100 @ A3` keeps the ratio and drops the paper size, and
  * `1:1,000` is not read at all. Both fail towards fewer candidates, which the
@@ -111,38 +106,38 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     // content-stream order instead lets another column's word fall between
     // `1` and `100`, and the split forms vanish.
     for (const words of textLines(page.words)) {
-      // Every ratio on the row is located first, because each one bounds the
-      // next one's phrase.
-      const ratios = ratioWindows(words);
-      const owner = new Map<number, number>();
-      ratios.forEach(({ at, size }, index) => {
-        for (let word = at; word < at + size; word++) owner.set(word, index);
-      });
-      for (const [index, { at, size, ratio }] of ratios.entries()) {
-        const window = words.slice(at, at + size);
-        const prior = at > 0 ? words[at - 1] : null;
-        const left = subject(words, at, -1, owner, index);
-        const qualifier = left === "not_a_scale"
-          || (left === null && subject(words, at + size - 1, 1, owner, index) === "not_a_scale");
+      for (const { at, size, ratio } of ratioWindows(words)) {
         // 1:0 parses but cannot scale anything, and no drawing is printed
         // smaller than 1:20000 — both are text that merely looks like a scale.
-        if (ratio < 1 || ratio > MAX_SCALE_RATIO || qualifier) continue;
+        if (ratio < 1 || ratio > MAX_SCALE_RATIO) continue;
+        const window = words.slice(at, at + size);
+        const prior = at > 0 ? words[at - 1] : null;
         const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
           ? [prior, ...window] : window;
+        const box: CropBoxPt = [
+          Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
+          Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
+        ];
+        if (!inFooter(box, geometry.widthPt, geometry.heightPt)) continue;
         found.push({
           pageNo: page.pageNo,
           ratio,
           text: evidence.map((word) => word.text.trim()).join(" "),
-          evidenceBoxPt: [
-            Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
-            Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
-          ],
+          evidenceBoxPt: box,
           source: "printed",
         });
       }
     }
     return found;
   });
+}
+
+/** A sheet states its scale in the footer: the bottom band, or the right-hand
+ * title column. Judged on the evidence's centre, so a ratio straddling the
+ * boundary belongs wherever it is mostly printed. */
+function inFooter(box: CropBoxPt, widthPt: number, heightPt: number): boolean {
+  return (box[1] + box[3]) / 2 >= heightPt * (1 - FOOTER_FRACTION)
+    || (box[0] + box[2]) / 2 >= widthPt * (1 - FOOTER_FRACTION);
 }
 
 /** Where the ratios are on one printed row, each as the words that spell it. */
@@ -180,34 +175,6 @@ export function pageScales(inspected: InspectResponse): Map<number, number> {
   }
   for (const [pageNo, ratio] of [...scales]) if (Number.isNaN(ratio)) scales.delete(pageNo);
   return scales;
-}
-
-/** What the ratio at `from` is a ratio *of*, read by walking one direction
- * through the phrase it is printed in and stopping at the first word that
- * says: `SCALE` makes it a drawing scale, `FALL` or `RAMP` makes it neither.
- * The phrase ends where the printing does — at a gap too wide to be one run of
- * words — so a ratio cannot inherit a subject from the next column of a title
- * block, and a note as long as `PITCH OF ROOF TO BE 1:4` still keeps its own. */
-function subject(
-  words: PageWord[],
-  from: number,
-  step: -1 | 1,
-  owner: Map<number, number>,
-  self: number,
-): "scale" | "not_a_scale" | null {
-  for (let at = from + step; at >= 0 && at < words.length; at += step) {
-    if (!adjacent(words[at], words[at - step])) return null;
-    // Another ratio ends this one's phrase: a SCALE label printed for the
-    // ratio beside it cannot reach across that ratio to vouch for a second.
-    // The boundary is the ratio the row's own scan found, so a ratio the PDF
-    // split across three words bounds the phrase exactly as one token does.
-    const at_owner = owner.get(at);
-    if (at_owner !== undefined && at_owner !== self) return null;
-    const text = words[at].text.trim().replace(/[^A-Za-z]/g, "");
-    if (SCALE_LABEL.test(text)) return "scale";
-    if (NOT_A_SCALE.test(text)) return "not_a_scale";
-  }
-  return null;
 }
 
 /** Page words grouped into printed lines, each ordered left to right. Words

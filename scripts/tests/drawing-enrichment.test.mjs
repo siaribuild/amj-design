@@ -2010,21 +2010,43 @@ const scaleSheet = (words) => ({
 });
 const line = (top, entries) => entries.map(([text, x0, width]) => ({ text, x0, top, x1: x0 + width, bottom: top + 15 }));
 
-test("page scale: the document map says what each page is drawn at, and stays silent where it cannot", () => {
+// Page scale — one test per acceptance criterion in 01-acceptance-criteria.md.
+// The sheets below are 1000x800pt, so the footer band starts at y=680.
+
+test("page scale: only the footer says what the sheet is drawn at (AC8)", () => {
+  const sheet = scaleSheet([
+    ...line(100, [["DRIVEWAY", 100, 65], ["1:10", 170, 35]]),
+    ...line(300, [["SITE", 100, 35], ["BUILT", 140, 40], ["RAMP", 185, 40], ["AT", 230, 20], ["1:8", 255, 30]]),
+    ...line(500, [["SCALE", 100, 40], ["1:20", 145, 35]]),
+    ...line(760, [["SCALE", 800, 40], ["1:100", 845, 40]]),
+  ]);
+  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio, text }) => ({ ratio, text })), [
+    { ratio: 100, text: "SCALE 1:100" },
+  ], "a driveway, a ramp and a detail's own label are all outside the footer, so none of them is the sheet's scale");
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
+});
+
+test("page scale: a title column on the right is the footer too (AC8)", () => {
+  const sheet = scaleSheet(line(300, [["SCALE", 880, 40], ["1:100", 925, 40]]));
+  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]],
+    "a landscape sheet states its scale in the right-hand title column, not along the bottom");
+});
+
+test("page scale: the document map says what each page is drawn at, and stays silent where it cannot (AC9)", () => {
   const sheet = (pageNo, words) => ({
     geometry: { pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 0, imageAreaFraction: 0 },
     page: { pageNo, text: "", words },
   });
   const sheets = [
-    // One sheet scale, printed once: the ordinary case.
-    sheet(1, line(700, [["SCALE", 800, 40], ["1:100", 845, 40]])),
-    // The same scale printed beside each view: still one answer.
-    sheet(2, [...line(300, [["SCALE", 100, 40], ["1:200", 145, 40]]),
-      ...line(600, [["SCALE", 100, 40], ["1:200", 145, 40]])]),
-    // Two ratios that disagree: a conflict for ops, not a vote to settle.
-    sheet(3, [...line(300, [["SCALE", 100, 40], ["1:100", 145, 40]]),
-      ...line(600, [["SCALE", 100, 40], ["1:50", 145, 35]])]),
-    // Nothing printed: the map says nothing rather than guessing.
+    // One footer scale: the ordinary case.
+    sheet(1, line(760, [["SCALE", 800, 40], ["1:100", 845, 40]])),
+    // Stated twice in the footer, agreeing: still one answer.
+    sheet(2, [...line(700, [["SCALE", 100, 40], ["1:200", 145, 40]]),
+      ...line(760, [["SCALE", 800, 40], ["1:200", 845, 40]])]),
+    // Two footer ratios that disagree: a conflict for ops, not a vote to settle.
+    sheet(3, [...line(700, [["SCALE", 100, 40], ["1:100", 145, 40]]),
+      ...line(760, [["SCALE", 800, 40], ["1:50", 845, 35]])]),
+    // Nothing printed in the footer: the map says nothing rather than guessing.
     sheet(4, line(300, [["GROUND", 100, 60], ["FLOOR", 165, 50], ["PLAN", 220, 40]])),
   ];
   const scales = pageScales({
@@ -2037,145 +2059,69 @@ test("page scale: the document map says what each page is drawn at, and stays si
   assert.equal(scales.has(4), false);
 });
 
-test("page scale: every printed form is read", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
-    ...line(600, [["Scale", 210, 40], ["1", 255, 8], [":", 266, 4], ["100", 274, 24]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text, source }) => ({ ratio, text, source })), [
-    { ratio: 100, text: "SCALE 1:100", source: "printed" },
-    { ratio: 100, text: "Scale 1 : 100", source: "printed" },
-  ]);
-  assert.deepEqual(candidates[0].evidenceBoxPt, [210, 300, 295, 315]);
+test("page scale: every printed form is read (AC4)", () => {
+  const forms = [
+    [["SCALE", 100, 40], ["1:100", 145, 40]],
+    [["Scale", 300, 40], ["1", 345, 8], [":", 356, 4], ["100", 363, 24]],
+    [["1:100", 500, 40]],
+    [["1", 600, 8], ["/", 611, 6], ["100", 620, 24]],
+  ];
+  const candidates = viewScaleCandidates(scaleSheet(forms.flatMap((entries, index) => line(700 + index * 20, entries))));
+  assert.deepEqual(candidates.map(({ ratio, source }) => ({ ratio, source })),
+    [100, 100, 100, 100].map((ratio) => ({ ratio, source: "printed" })));
+  assert.deepEqual(candidates.map(({ text }) => text), ["SCALE 1:100", "Scale 1 : 100", "1:100", "1 / 100"]);
+  assert.deepEqual(candidates[0].evidenceBoxPt, [100, 700, 185, 715]);
 });
 
-test("page scale: a bare ratio is read and an unusable one is refused", () => {
+test("page scale: an unusable ratio is refused (AC5)", () => {
   const candidates = viewScaleCandidates(scaleSheet([
-    ...line(100, [["1:200", 100, 40]]),
-    ...line(200, [["1", 100, 8], ["/", 111, 6], ["100", 120, 24]]),
-    ...line(300, [["SCALE", 100, 40], ["1:0", 145, 24]]),
-    ...line(400, [["SCALE", 100, 40], ["1:abc", 145, 40]]),
+    ...line(700, [["SCALE", 100, 40], ["1:0", 145, 24]]),
+    ...line(730, [["SCALE", 100, 40], ["1:abc", 145, 40]]),
+    ...line(760, [["SCALE", 100, 40], ["1:200", 145, 40]]),
   ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [
-    { ratio: 200, text: "1:200" },
-    { ratio: 100, text: "1 / 100" },
-  ], "1:0 cannot scale anything and 1:abc is not a ratio");
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [200],
+    "1:0 cannot scale anything and 1:abc is not a ratio");
   assert.equal(candidates[0].pageNo, 1);
 });
 
-test("page scale: a split ratio is read from what sits beside it, not from token order", () => {
+test("page scale: a split ratio is read from what sits beside it, not from token order (AC6)", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     // Poppler emits words in content-stream order, and a split ratio rarely
     // shares one baseline to the point: another column's word sorts between.
-    { text: "1", x0: 255, top: 300, x1: 263, bottom: 315 },
-    { text: "NOTE", x0: 600, top: 301, x1: 640, bottom: 316 },
-    { text: ":", x0: 266, top: 302, x1: 270, bottom: 317 },
-    { text: "100", x0: 274, top: 300, x1: 298, bottom: 315 },
+    { text: "1", x0: 255, top: 700, x1: 263, bottom: 715 },
+    { text: "NOTE", x0: 600, top: 701, x1: 640, bottom: 716 },
+    { text: ":", x0: 266, top: 702, x1: 270, bottom: 717 },
+    { text: "100", x0: 274, top: 700, x1: 298, bottom: 715 },
   ]));
   assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
 });
 
-test("page scale: tight line spacing does not fold two rows into one", () => {
+test("page scale: tight line spacing does not fold two rows into one (AC7)", () => {
   const candidates = viewScaleCandidates(scaleSheet([
     // A title block sets its rows about one text height apart. Folding them
     // together sorts a word from the row above between the ratio's tokens.
-    { text: "TITLE", x0: 260, top: 300, x1: 300, bottom: 315 },
-    { text: "1", x0: 255, top: 316, x1: 263, bottom: 331 },
-    { text: ":", x0: 266, top: 316, x1: 270, bottom: 331 },
-    { text: "100", x0: 274, top: 316, x1: 298, bottom: 331 },
+    { text: "TITLE", x0: 260, top: 700, x1: 300, bottom: 715 },
+    { text: "1", x0: 255, top: 716, x1: 263, bottom: 731 },
+    { text: ":", x0: 266, top: 716, x1: 270, bottom: 731 },
+    { text: "100", x0: 274, top: 716, x1: 298, bottom: 731 },
   ]));
   assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
 });
 
-test("page scale: a fall or a grade is not a scale, and a trailing stop does not hide one", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(100, [["FALL", 100, 40], ["1:100", 145, 40]]),
-    ...line(200, [["1:20", 100, 32], ["GRADE", 137, 45]]),
-    ...line(300, [["SCALE", 100, 40], ["1:50.", 145, 45]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [
-    { ratio: 50, text: "SCALE 1:50." },
-  ], "drainage falls and ramp grades print the same shape as a scale and must not become one");
-});
-
-test("page scale: one ratio's phrase stops at the next ratio", () => {
-  const sheet = scaleSheet(line(300, [
-    ["SCALE", 100, 40], ["1:100", 145, 40], [";", 190, 8], ["1:20", 202, 35], ["GRADE", 242, 45],
-  ]));
-  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
-    "the SCALE label belongs to the ratio beside it, and cannot reach across that ratio to vouch for another");
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
-});
-
-test("page scale: a ratio split across words is a boundary like any other", () => {
-  const sheet = scaleSheet(line(300, [
-    ["SCALE", 100, 40], ["1", 145, 8], [":", 156, 4], ["100", 163, 24],
-    [";", 192, 8], ["1", 204, 8], [":", 215, 4], ["20", 222, 16], ["GRADE", 245, 45],
-  ]));
-  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
-    "how the PDF happened to tokenise a ratio cannot change which words vouch for it");
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
-});
-
-test("page scale: the things a plan measures but is not drawn at", () => {
-  const sheet = scaleSheet([
-    ...line(100, [["DRIVEWAY", 100, 65], ["1:10", 170, 35]]),
-    ...line(200, [["STAIRS", 100, 50], ["AT", 155, 20], ["1:20", 180, 35]]),
-    ...line(700, [["SCALE", 800, 40], ["1:100", 845, 40]]),
-  ]);
-  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
-    "a driveway and a stair are measured on the sheet; neither is what the sheet is drawn at");
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
-});
-
-test("page scale: a long note still belongs to the word that names its subject", () => {
-  const sheet = scaleSheet([
-    ...line(200, [["PITCH", 100, 45], ["OF", 150, 20], ["ROOF", 175, 40], ["TO", 220, 20], ["BE", 245, 20], ["1:4", 270, 30]]),
-    ...line(700, [["SCALE", 800, 40], ["1:100", 845, 40]]),
-  ]);
-  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
-    "the phrase ends where the printing does, not after a fixed number of words");
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
-});
-
-test("page scale: a limit on a gradient is not a scale either", () => {
-  const sheet = scaleSheet([
-    ...line(200, [["NO", 100, 20], ["STEEPER", 125, 55], ["THAN", 185, 35], ["1:20", 225, 35]]),
-    ...line(700, [["SCALE", 800, 40], ["1:100", 845, 40]]),
-  ]);
-  assert.deepEqual(viewScaleCandidates(sheet).map(({ ratio }) => ratio), [100],
-    "a stair or ramp limit shares the shape of a scale and would otherwise read as a conflict");
-  assert.deepEqual([...pageScales(sheet).entries()], [[1, 100]]);
-});
-
-test("page scale: rotated text beside a note does not detach the note from its ratio", () => {
-  // Geometry copied from the ground floor plan of a real set: a 36.9pt rotated
-  // label overlaps three 7.8pt rows, and a row-grouping that lets it bridge
-  // them interleaves GARAGE / INTERNAL / ACCESS between RAMP, AT and 1:10.
-  const rotated = { text: "2400mm(H)", x0: 340.3, top: 292.0, x1: 348.0, bottom: 328.9 };
+test("page scale: a rotated label cannot bridge two rows (AC7)", () => {
+  // Geometry from the ground floor plan of a real set: a 36.9pt rotated label
+  // overlaps three 7.8pt rows. Grouping rows against the shorter word lets it
+  // merge them, and a word from the row below then sorts between the tokens.
   const row = (top, entries) => entries.map(([text, x0, x1]) => ({ text, x0, x1, top, bottom: top + 7.8 }));
   const candidates = viewScaleCandidates(scaleSheet([
-    rotated,
-    ...row(290.9, [["BUILT", 368.8, 388.4], ["RAMP", 390.4, 410.4], ["AT", 412.5, 421.3],
-      ["1:10", 423.3, 437.0], ["TO", 438.9, 448.5]]),
-    ...row(298.9, [["GARAGE", 368.8, 398.7], ["INTERNAL", 400.7, 435.0], ["ACCESS", 437.0, 465.8]]),
-    ...row(700, [["SCALE", 800, 840], ["1:100", 845, 885]]),
+    { text: "2400mm(H)", x0: 340.3, top: 702.0, x1: 348.0, bottom: 738.9 },
+    ...row(700.9, [["SCALE", 368.8, 388.4], ["1", 390.4, 396.4], [":", 398.5, 401.3], ["100", 403.3, 417.0]]),
+    ...row(708.9, [["GARAGE", 368.8, 398.7], ["INTERNAL", 400.7, 435.0]]),
   ]));
-  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100],
-    "the sheet is drawn at 1:100 and the 1:10 is a garage ramp");
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100]);
 });
 
-test("page scale: the nearer keyword decides, however many words away it is", () => {
-  const candidates = viewScaleCandidates(scaleSheet([
-    ...line(100, [["FALL", 100, 35], ["TO", 140, 20], ["OUTLET", 165, 55], ["1:100", 225, 40]]),
-    ...line(200, [["RAMP", 100, 40], ["UP", 145, 20], ["AT", 170, 20], ["1:20", 195, 35]]),
-    ...line(300, [["SCALE", 100, 40], ["1:50", 145, 35]]),
-  ]));
-  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 50, text: "SCALE 1:50" }],
-    "a drainage note names its subject once and then runs on; the phrase decides, not the touching token");
-});
-
-test("expectedWidthPt turns a scheduled width into the points that width occupies", () => {
+test("expectedWidthPt turns a scheduled width into the points that width occupies (AC10)", () => {
   assert.equal(Math.round(expectedWidthPt(3_000, 100) * 100) / 100, 85.04);
   assert.equal(Math.round(expectedWidthPt(900, 100) * 100) / 100, 25.51);
   assert.equal(Math.round(expectedWidthPt(3_000, 50) * 100) / 100, 170.08, "a 1:50 view draws the same opening twice as wide");
