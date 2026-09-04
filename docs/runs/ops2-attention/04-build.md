@@ -36,3 +36,24 @@ npm run test:ops2: 100/100 pass. npm run typecheck:gate: green.
 
 Next task: attentionGroups/parseSummary have no caller yet — no route, no
 component, no fetch of the summary body wired in.
+
+## T3 - useSummary hook, AttentionPage, route branch, group CSS
+
+Files: src/ops2/attention/useSummary.ts (new), AttentionPage.tsx (new),
+styles/attention.css (new, wired into styles/index.css), Ops2App.tsx
+(route ternary gains attention branch), ops2-attention.test.mjs,
+ops2-navigation.test.mjs.
+
+New test: AttentionPage structural source-regex (section.att-group,
+RowList/Row edge=null + onActivate->history.push, pq-skeleton/-empty/-error,
+attention-error testid, no load.counts in error block, no activeOrders/
+customers). Driven red against a stub AttentionPage before the real page
+was restored — the full page had to exist first to satisfy the nav
+suite's already-red test, so Probity blocked adding this test until I
+stubbed the page back down to get genuine red.
+
+npm run test:ops2 (both suites): 9/9 + 13/13 pass. typecheck:gate: green.
+
+Next task: useSummary.ts has no dedicated structural test of its own
+(only exercised indirectly) — same red-first constraint applies if one
+is added later.
