@@ -27,8 +27,10 @@ await build({
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
       export { documentFaceNames, documentFaceSheets } from ${p("worker/lib/drawing/sheetFaces.ts")};
       export { placeOpeningsOnPlan } from ${p("worker/lib/drawing/faceMapped/planFaces.ts")};
+      export { compositionBatches, makeCompositionSkill, runCompositions } from ${p("worker/lib/drawing/faceMapped/compositions.ts")};
+      export { openingCropTasks } from ${p("worker/lib/drawing/faceMapped/crops.ts")};
       export { elevationFaceTasks, validateElevationFrames } from ${p("worker/lib/drawing/faceMapped/elevationFrames.ts")};
-      export { matchFacePlacements } from ${p("worker/lib/drawing/faceMapped/matchFrames.ts")};
+      export { matchFacePlacements, faceReconciliationTasks, makeFaceReconcileSkill, FACE_RECONCILE_LIMITS } from ${p("worker/lib/drawing/faceMapped/matchFrames.ts")};
       export { planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS } from ${p("worker/lib/drawing/faceMapped/planFacesSkill.ts")};
       export { recoverPageScales, validateStatedScale, recoverSheetFacts } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
@@ -50,7 +52,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, documentFaceNames, documentFaceSheets, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, elevationFaceTasks, validateElevationFrames, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, documentFaceNames, documentFaceSheets, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, faceReconciliationTasks, makeFaceReconcileSkill, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2330,6 +2332,30 @@ test("frame matching: an elevation read the other way round is matched the other
     [["W1", "f3"], ["W2", "f2"], ["W3", "f1"]]);
 });
 
+test("frame matching: seven openings, boxes read a little off, one frame each (§7.3)", () => {
+  // A frame read off a drawing is a box a model drew round something, so its
+  // edges are approximate and the odd one lands late. What must survive that is
+  // the pairing: every opening gets one frame, every frame gets one opening,
+  // and no frame is used twice to make the numbers meet.
+  const frames = [
+    frameAt(1, 100, 160), frameAt(2, 210, 250), frameAt(3, 300, 420),
+    // Read late and narrow, overlapping where its neighbour was expected.
+    frameAt(4, 470, 500), frameAt(5, 505, 585), frameAt(6, 700, 760), frameAt(7, 820, 900),
+  ];
+  const placements = [
+    placedAt("W1", 1, 0.02, 7), placedAt("W2", 2, 0.15, 7), placedAt("W3", 3, 0.28, 7),
+    placedAt("W4", 4, 0.45, 7), placedAt("W5", 5, 0.62, 7), placedAt("W6", 6, 0.78, 7),
+    placedAt("W7", 7, 0.96, 7),
+  ];
+  const result = matchFacePlacements({ placements, frames });
+  assert.equal(result.direction, "with_plan");
+  assert.deepEqual(result.matches.map((m) => [m.tag, m.frame.frameId]),
+    [["W1", "f1"], ["W2", "f2"], ["W3", "f3"], ["W4", "f4"], ["W5", "f5"], ["W6", "f6"], ["W7", "f7"]]);
+  assert.equal(new Set(result.matches.map((m) => m.frame.frameId)).size, 7,
+    "no frame stands in for two openings");
+  assert.equal(new Set(result.matches.map((m) => m.tag)).size, 7);
+});
+
 test("frame matching: a face that reads the same both ways round is not matched (§7.3)", () => {
   // Evenly spaced openings look identical from either side. Picking one way
   // anyway pairs every opening with a frame and is wrong about half of them.
@@ -2394,6 +2420,207 @@ test("frame matching: a frame too narrow for its scheduled width is matched but 
   assert.deepEqual(unscaled.matches.map((m) => m.widthAgreement), ["unknown", "unknown", "unknown"]);
   assert.deepEqual(unscaled.matches.map((m) => m.expectedWidthPt), [null, null, null]);
   assert.deepEqual(unscaled.matches.map((m) => m.confidence), ["verified", "verified", "verified"]);
+});
+
+test("face reconciliation: one look at a face nothing settled, at only what it was given (§7.3)", () => {
+  // Evenly spaced openings read the same from either side, so the drawing
+  // cannot say which end the elevation counts from. That is the one question a
+  // look at the face is asked - not which frame is which opening, which the
+  // plan already decided.
+  const frames = [frameAt(1, 100, 200), frameAt(2, 400, 500), frameAt(3, 800, 900)];
+  const placements = [placedAt("W1", 1, 0.0625, 3), placedAt("W2", 2, 0.5, 3), placedAt("W3", 3, 0.9375, 3)];
+  const unsettled = matchFacePlacements({ placements, frames });
+  assert.equal(unsettled.direction, "unresolved");
+
+  const faces = Array.from({ length: FACE_RECONCILE_LIMITS.maxFaces + 3 }, (_unused, at) => ({
+    faceKey: JSON.stringify([7, "A", `STOREY ${at}`]),
+    placements, frames, reason: unsettled.reason,
+  }));
+  assert.equal(faceReconciliationTasks(faces).length, FACE_RECONCILE_LIMITS.maxFaces,
+    "a run cannot buy itself unlimited looks by having unlimited unsettled faces");
+
+  const skill = makeFaceReconcileSkill(faceReconciliationTasks(faces)[0]);
+  assert.deepEqual(skill.responseSchema.properties.pairs.items.properties.tag.enum, ["W1", "W2", "W3"]);
+  assert.deepEqual(skill.responseSchema.properties.pairs.items.properties.frameId.enum, ["f1", "f2", "f3"]);
+  assert.match(skill.buildPrompt(), /never instructions|not instructions/i);
+  assert.match(skill.buildPrompt(), /W1/, "the plan's evidence goes with the elevation's");
+  assert.match(skill.buildPrompt(), /f3/);
+
+  const settled = skill.validate({ pairs: [
+    { tag: "W1", frameId: "f3" }, { tag: "W2", frameId: "f2" }, { tag: "W3", frameId: "f1" },
+  ] });
+  assert.deepEqual(settled.matches.map((m) => [m.tag, m.frame.frameId]),
+    [["W1", "f3"], ["W2", "f2"], ["W3", "f1"]]);
+  assert.equal(settled.direction, "against_plan");
+  assert.equal(settled.matches.every((m) => m.confidence === "ambiguous"), true,
+    "a direction nothing on the page settled is not a verified one");
+  assert.equal(settled.matches[0].placement.tag, "W1",
+    "the plan evidence a pairing was made on travels with it");
+
+  // A frame the face does not have, a frame standing in for two openings, and
+  // an answer that leaves an opening out are all refusals - and so is a pairing
+  // that is neither reading of the wall, because a third one is an invention.
+  for (const pairs of [
+    [{ tag: "W1", frameId: "f9" }, { tag: "W2", frameId: "f2" }, { tag: "W3", frameId: "f1" }],
+    [{ tag: "W1", frameId: "f1" }, { tag: "W2", frameId: "f1" }, { tag: "W3", frameId: "f3" }],
+    [{ tag: "W1", frameId: "f1" }],
+    [{ tag: "W1", frameId: "f2" }, { tag: "W2", frameId: "f1" }, { tag: "W3", frameId: "f3" }],
+  ]) {
+    assert.equal(skill.validate({ pairs }), null, JSON.stringify(pairs));
+  }
+});
+
+// ── Phase D — crops (§7.5) ─────────────────────────────────────────────────
+const cropFrame = (frameId, order, x0, x1) => ({
+  frameId, faceKey: JSON.stringify([7, "A", "GROUND FLOOR"]), pageNo: 7,
+  elevation: "A", storey: "GROUND FLOOR", orderLeftToRight: order,
+  outerFrameBoxPt: [x0, 300, x1, 420], storeyBandPt: [40, 240, 960, 480],
+  confidence: "verified", basis: [],
+});
+
+test("opening crops: the drawing gives the centre, the schedule and the scale give the width (§7.5)", () => {
+  // 1800mm at 1:100 is 51pt. The frame drawn round it is narrower than that,
+  // and the scale wins: a crop is sized by measurement, not by how well a box
+  // was drawn.
+  const crops = openingCropTasks({
+    matches: [
+      { tag: "W1", frame: cropFrame("f1", 1, 180, 220), expectedWidthPt: expectedWidthPt(1800, 100) },
+      { tag: "W2", frame: cropFrame("f2", 2, 600, 660), expectedWidthPt: expectedWidthPt(1800, 100) },
+    ],
+    pageSizePt: [1000, 700],
+    sourceFileId: "file_1",
+  });
+  assert.equal(crops.length, 2);
+  const [first] = crops;
+  assert.equal(first.dpi, 300);
+  assert.equal(first.threshold, null);
+  assert.equal(first.tag, "W1");
+  assert.equal(first.basis, "scaled");
+
+  // Centre 200, width 51 -> 174.5 to 225.5, plus 15% margin (7.7pt, under the
+  // 8pt floor, so 8pt each side).
+  assert.deepEqual(first.bboxPt.map((n) => Math.round(n)), [166, 228, 234, 492]);
+
+  // The full storey band vertically, plus 5%, clamped to the page.
+  assert.equal(Math.round(first.bboxPt[1]), 228);
+  assert.equal(Math.round(first.bboxPt[3]), 492);
+});
+
+test("opening crops: a frame wider than the scale says is never cropped into (§7.5)", () => {
+  const [wide] = openingCropTasks({
+    matches: [{ tag: "W1", frame: cropFrame("f1", 1, 150, 400), expectedWidthPt: expectedWidthPt(1800, 100) }],
+    pageSizePt: [1000, 700],
+    sourceFileId: "file_1",
+  });
+  assert.equal(wide.basis, "wider_frame");
+  assert.equal(wide.bboxPt[0] < 150, true, "the drawn frame is inside the crop, margin and all");
+  assert.equal(wide.bboxPt[2] > 400, true);
+  assert.match(wide.warnings.join(" "), /wider/i);
+});
+
+test("opening crops: no scale means a wider crop that says so (§7.5)", () => {
+  const [unscaled] = openingCropTasks({
+    matches: [{ tag: "W1", frame: cropFrame("f1", 1, 180, 220), expectedWidthPt: null }],
+    pageSizePt: [1000, 700],
+    sourceFileId: "file_1",
+  });
+  assert.equal(unscaled.basis, "wide_unscaled",
+    "a crop sized by fallback is never mistaken for one sized by measurement");
+  assert.equal(unscaled.bboxPt[2] - unscaled.bboxPt[0] > 40 * 1.3, true, "and it is wider than the frame");
+});
+
+test("opening crops: a crop holding the neighbour's centre is refused (§7.5)", () => {
+  // A frame read too wide, or a centre read off the wrong opening, produces a
+  // crop with two openings in it. Phase E would then read the neighbour and
+  // file it under this tag, which is worse than reading nothing.
+  const crops = openingCropTasks({
+    matches: [
+      { tag: "W1", frame: cropFrame("f1", 1, 180, 500), expectedWidthPt: null },
+      { tag: "W2", frame: cropFrame("f2", 2, 380, 420), expectedWidthPt: expectedWidthPt(1800, 100) },
+    ],
+    pageSizePt: [1000, 700],
+    sourceFileId: "file_1",
+  });
+  assert.deepEqual(crops.map((c) => c.tag), ["W2"]);
+});
+
+test("opening crops: a crop leaving the page is refused (§7.5)", () => {
+  const crops = openingCropTasks({
+    matches: [{ tag: "W1", frame: cropFrame("f1", 1, 2, 30), expectedWidthPt: null }],
+    pageSizePt: [1000, 700],
+    sourceFileId: "file_1",
+  });
+  assert.deepEqual(crops, []);
+});
+
+// ── Phase E — compositions, in parallel (§7.6) ─────────────────────────────
+const compositionTask = (at) => ({
+  tag: `W${at + 1}`, frameId: `f${at + 1}`, cropRenderId: `crop_${at + 1}`,
+  imageDataUrl: `data:image/png;base64,AAAA${at}`,
+});
+
+test("compositions: openings go out in fours, and come back in the order they went (§7.6)", () => {
+  assert.deepEqual(
+    compositionBatches(Array.from({ length: 19 }, (_unused, at) => compositionTask(at))).map((b) => b.length),
+    [4, 4, 4, 4, 3]);
+  assert.deepEqual(
+    compositionBatches(Array.from({ length: 27 }, (_unused, at) => compositionTask(at))).map((b) => b.length),
+    [4, 4, 4, 4, 4, 4, 3]);
+  assert.deepEqual(compositionBatches([]).length, 0);
+});
+
+test("compositions: a record answers for the opening it was asked about, or for nothing (§7.6)", () => {
+  const batch = [compositionTask(0), compositionTask(1)];
+  const skill = makeCompositionSkill(batch);
+  assert.match(skill.buildPrompt(), /never instructions|not instructions/i);
+
+  const read = skill.validate({ readings: [
+    { tag: "W1", frameId: "f1", cropRenderId: "crop_1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high" },
+    // Right tag, wrong crop: it is not an answer about this opening at all.
+    { tag: "W2", frameId: "f2", cropRenderId: "crop_9", operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical", confidence: "high" },
+  ] });
+  assert.deepEqual(read.map((o) => [o.state, o.value?.tag ?? o.tag]),
+    [["value", "W1"], ["not_read", "W2"]],
+    "an opening nothing valid was said about is not filled in from its neighbour");
+  assert.deepEqual(read[0].value.operations, ["awning"]);
+  assert.equal(read[0].value.cropRenderId, "crop_1");
+
+  // What the drawing does not say is a state, not a guess.
+  const silent = skill.validate({ readings: [
+    { tag: "W1", frameId: "f1", cropRenderId: "crop_1", notStated: true, reason: "the crop shows no operation marks" },
+    { tag: "W2", frameId: "f2", cropRenderId: "crop_2", operations: ["sliding"], unitRatios: [0.5, 0.5], divisionAxis: "vertical", confidence: "low" },
+  ] });
+  assert.deepEqual(silent.map((o) => o.state), ["not_stated", "value"]);
+  assert.equal(skill.validate("not json at all"), null);
+});
+
+test("compositions: a batch that fails takes only itself down (§7.6)", async () => {
+  const tasks = Array.from({ length: 9 }, (_unused, at) => compositionTask(at));
+  const asked = [];
+  const answered = await runCompositions({
+    tasks,
+    concurrency: 4,
+    ask: async (batch, attempt) => {
+      asked.push({ tags: batch.map((t) => t.tag), attempt });
+      // The middle batch fails once and answers on the retry; the last one
+      // never answers at all.
+      if (batch[0].tag === "W5" && attempt === 1) throw new Error("provider said no");
+      if (batch[0].tag === "W9") return { readings: [] };
+      return { readings: batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["fixed"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) };
+    },
+  });
+
+  assert.deepEqual(answered.map((o) => o.state),
+    ["value", "value", "value", "value", "value", "value", "value", "value", "not_read"]);
+  assert.deepEqual(answered.map((o) => o.value?.tag ?? o.tag), tasks.map((t) => t.tag),
+    "the order openings came back in is the order they went out in");
+  assert.deepEqual(asked.filter((a) => a.tags[0] === "W5").map((a) => a.attempt), [1, 2],
+    "one corrective retry, and only for the batch that needed it");
+  assert.equal(tasks.every((task) => task.imageDataUrl === null), true,
+    "the images are let go once their batch has settled");
 });
 
 test("plan recovery: only the unplaced are asked about, in the document's own words (P2-AC9, AC11, AC12)", () => {
