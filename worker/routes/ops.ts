@@ -608,6 +608,10 @@ ops.get("/projects/:id", async (c) => {
           }
         : null,
       updatedAt: p.updated_at,
+      // The window a line PUT/PATCH actually enforces, stated by the server so
+      // ops2's door does not re-derive it client-side (precedent: delivery.editable
+      // above). Same five statuses as the mutable-window SELECT on every line route.
+      linesEditable: ISSUABLE_FROM.has(p.status_internal),
     },
     // Shown BEFORE the reviewer prices the job, which is the only moment it can
     // change an outcome. The flags refuse nothing — a shared phone is a father
@@ -1424,11 +1428,13 @@ ops.post("/lines/:id/price-preview", async (c) => {
 // why price_calculated is kept: reverting is a local restore, not a re-price
 // round trip that could land on a different number if a rate card moved since.
 //
-// SEGMENTS, NOT PARENTS, for a composite. A parent's total is Σ(segments)
-// (composite.ts's single-writer invariant, and recomputeComposite would
-// overwrite anything written here on the next edit anyway). Refused explicitly
-// rather than silently ignored — a save that appears to work and is erased
-// later is worse than one that says no.
+// A COMPOSITE PARENT TAKES AN OVERRIDE TOO (0046 extension): a manufacturer
+// sometimes quotes the whole assembly as one job, and price_calculated being
+// non-NULL takes ownership of the total away from Σ(segments) — see
+// recomputeComposite's ownership guard. Clearing hands ownership back by
+// re-running that recompute, so the restored figure is the CURRENT sum, not
+// the one frozen at pricing time (endpoint-only; no console control reaches
+// this on a composite parent, owner ruling D1 2026-09-04).
 ops.put("/lines/:id/price", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -1446,7 +1452,6 @@ ops.put("/lines/:id/price", async (c) => {
         )`,
   ).bind(c.req.param("id")).first<any>();
   if (!line) return c.json({ error: "not_found" }, 404);
-  if (line.line_kind === "composite_parent") return c.json({ error: "composite_parent" }, 409);
 
   const body = await c.req.json().catch(() => ({}));
   const clearing = body?.total === null;
@@ -1459,8 +1464,14 @@ ops.put("/lines/:id/price", async (c) => {
 
   // The engine's figure, captured the first time it is overridden and preserved
   // through later adjustments — so "calculated" keeps meaning what the rate card
-  // said, not what the previous override said.
-  const calculated = line.price_calculated ?? line.line_total;
+  // said, not what the previous override said. On a composite parent Σ(segments)
+  // can itself be unpriced (one unit not yet costed) — an unpriced sum never
+  // blocks a manufacturer price, so fall back to the sent total: the column's
+  // whole job on a parent is the "a human set this" test (0046) plus a
+  // historical note, and restore-on-clear comes from recomputeComposite below,
+  // never from this value.
+  let calculated = line.price_calculated ?? line.line_total;
+  if (line.line_kind === "composite_parent" && !clearing && calculated == null) calculated = total;
   if (clearing && line.price_calculated == null) return c.json({ ok: true, unchanged: true });
 
   await c.env.DB.prepare(
@@ -1473,15 +1484,23 @@ ops.put("/lines/:id/price", async (c) => {
 
   // A segment's price change moves its parent's total, which is Σ(segments).
   if (line.parent_line_id) await recomputeComposite(c.env, line.parent_line_id);
+  // Clearing a composite PARENT's own override hands ownership back to
+  // recompute, which then writes the CURRENT Σ(segments) — not the stale
+  // figure the clearing UPDATE above just wrote.
+  if (clearing && line.line_kind === "composite_parent") await recomputeComposite(c.env, line.id);
+
+  // Read AFTER any recompute, so the audit trail's "after" is the figure this
+  // save actually left behind — on a composite clear that is the recomputed
+  // sum, never the stale one the UPDATE wrote before ownership moved.
+  const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
 
   await logEvent(c.env, {
     actor: staff.id, entityType: "quote_line", entityId: line.id,
     action: clearing ? "line.price.override.cleared" : "line.price.override",
     before: { lineTotal: line.line_total },
-    after: { lineTotal: clearing ? calculated : total, calculated },
+    after: { lineTotal: fresh!.line_total, calculated },
   });
 
-  const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
   return c.json({ ok: true, line: opsLineDto(fresh!) });
 });
 
