@@ -179,3 +179,46 @@ changed.
 
 Green: same command, 9/9 pass (Note A's order-dependent back-button
 flake did not reproduce this run either). typecheck:gate: green.
+
+## Fix - Review finding: two pipeline-tooling defects from the context-cap removal
+
+Files: scripts/pipeline/conduct.mjs, scripts/tests/pipeline.test.mjs.
+
+Finding (Codex, via reviewer): (1) P1 - the three tests noted above as
+"pre-existing failures" were stale, not pre-existing-and-fine:
+CONTEXT_CAP was set null 2026-09-05 (lever 1 off), so sessionArgs
+omits --autocompact, but the pane-boot, answered-stage, and
+durable-restore tests still asserted the flag is always passed - 3
+fail, breaking `npm test` for every normal run. (2) P2 - cmds.tree
+still raw-`JSON.parse`d 02-tasks.json and iterated the result as an
+array, so it throws on the `{ feature, design, tasks: [...] }` wrapped
+shape `readTasks` was added to accept; `plan` and `build` already
+route through `readTasks`, `tree` didn't.
+
+Confirmed red first, one assertion at a time:
+- `node --test --test-name-pattern="tree reads the wrapped" scripts/tests/pipeline.test.mjs`
+  (new test, wrapped 02-tasks.json) -> `TypeError: tasks is not iterable` at
+  conduct.mjs's tree, before any production fix.
+- `--test-name-pattern="answered stage is resumed"` -> `'-p' !== '120000'`
+  (assertion expected --autocompact present; sessionArgs already omits it).
+- `--test-name-pattern="relaunched with --resume"` -> `'--resume' !== '120000'`
+  (same stale expectation on the resume path).
+(The pane-boot test's own red run was implicit in the reviewer's report,
+93 pass/3 fail confirmed before this session started.)
+
+Fix: (1) extracted the omit/pass switch into a pure, exported
+`autocompactArgs(cap, compact)` - `cap === null ? [] : ['--autocompact',
+String(compact || cap)]` - used by `sessionArgs` in place of the inline
+conditional, and exported `CONTEXT_CAP` alongside it so tests pin the
+live value directly rather than assuming it. Added one direct test of
+both branches (null -> omitted, set -> passed, per-stage compact wins
+over the general cap), then fixed the three boot-test assertions to
+expect the flag omitted, matching the owner's 2026-09-05 ruling instead
+of contradicting it. (2) changed cmds.tree's `JSON.parse(readFileSync(tp,
+'utf8'))` to `readTasks(tp)` - one seam, every reader, no behaviour
+change for the bare-array shape it already handled.
+
+Green: `node --test scripts/tests/pipeline.test.mjs` -> 98/98 (96 owed +
+2 new: the autocompactArgs direct-branch test and the tree wrapped-shape
+test). `node scripts/pipeline/conduct.mjs tree` runs clean against the
+real ops2-attention run, no throw. `npm run typecheck:gate`: green.
