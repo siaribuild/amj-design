@@ -25,13 +25,14 @@ const RECOVERY_DPI = 100;
 const MIN_RATIO = 1;
 const MAX_RATIO = 20_000;
 
-/** What a model may return about a sheet's scale, and nothing else. The page
- * number must be one this run asked about: a response describing some other
- * sheet is refused rather than trusted. */
+/** What a model may return about a sheet's scale, and nothing else. It must say
+ * which sheet it read, and that sheet must be the one this run asked about: a
+ * response describing another sheet, or naming none, is not evidence about the
+ * page in hand. */
 export function validateStatedScale(raw: unknown, askedPageNo: number): number | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
-  if (value.pageNo !== undefined && value.pageNo !== askedPageNo) return null;
+  if (value.pageNo !== askedPageNo) return null;
   const ratio = typeof value.ratio === "number" ? value.ratio
     : typeof value.ratio === "string" ? Number(value.ratio.replace(/^\s*1\s*[:/]\s*/, "")) : Number.NaN;
   if (!Number.isFinite(ratio) || !Number.isInteger(ratio)) return null;

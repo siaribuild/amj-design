@@ -2117,6 +2117,7 @@ test("scale recovery: what a model returns is bounded like any other input (AC21
   assert.equal(validateStatedScale({ pageNo: 4, ratio: 100 }, 4), 100);
   assert.equal(validateStatedScale({ pageNo: 4, ratio: "1:100" }, 4), 100, "the printed form is accepted, not just the number");
   assert.equal(validateStatedScale({ pageNo: 5, ratio: 100 }, 4), null, "a scale for a sheet nobody asked about is refused");
+  assert.equal(validateStatedScale({ ratio: 100 }, 4), null, "a response that never says which sheet it read is not evidence about any sheet");
   assert.equal(validateStatedScale({ pageNo: 4, ratio: 0 }, 4), null);
   assert.equal(validateStatedScale({ pageNo: 4, ratio: 47.5 }, 4), null, "a drawing scale is a whole ratio");
   assert.equal(validateStatedScale({ pageNo: 4, ratio: 99_999 }, 4), null);
