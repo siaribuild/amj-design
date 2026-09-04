@@ -2072,6 +2072,40 @@ test("view scale: a bare ratio is read, an unusable one is refused, and an untit
   assert.equal(candidates[0].pageNo, 1);
 });
 
+test("view scale: two views side by side stay side by side, however their titles sit", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["ELEVATION", 200, 80], ["A", 285, 10], ["SCALE", 310, 40], ["1:100", 355, 40]]),
+    ...line(420, [["ELEVATION", 650, 80], ["B", 735, 10], ["SCALE", 760, 40], ["1:50", 805, 35]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100, 50]);
+  assert.deepEqual(candidates.map(({ viewRegionPt }) => viewRegionPt), [
+    [0, 0, 472.5, 800],
+    [472.5, 0, 1_000, 800],
+  ], "two titles at different heights are a stagger, not a grid: each view still owns its full column");
+});
+
+test("view scale: a note pointing at a drawing is not a drawing", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    ...line(300, [["ELEVATION", 100, 80], ["A", 185, 10], ["SCALE", 210, 40], ["1:100", 255, 40]]),
+    ...line(600, [["SEE", 100, 30], ["SECTION", 135, 70], ["A-A", 210, 30]]),
+  ]));
+  assert.deepEqual(candidates.map(({ ratio }) => ratio), [100]);
+  assert.deepEqual(candidates[0].viewRegionPt, [0, 0, 1_000, 800],
+    "SEE SECTION A-A is a cross-reference; treating it as a title splits the sheet into views that are not there");
+});
+
+test("view scale: a split ratio is read from what sits beside it, not from token order", () => {
+  const candidates = viewScaleCandidates(scaleSheet([
+    // Poppler emits words in content-stream order, and a split ratio rarely
+    // shares one baseline to the point: another column's word sorts between.
+    { text: "1", x0: 255, top: 300, x1: 263, bottom: 315 },
+    { text: "NOTE", x0: 600, top: 301, x1: 640, bottom: 316 },
+    { text: ":", x0: 266, top: 302, x1: 270, bottom: 317 },
+    { text: "100", x0: 274, top: 300, x1: 298, bottom: 315 },
+  ]));
+  assert.deepEqual(candidates.map(({ ratio, text }) => ({ ratio, text })), [{ ratio: 100, text: "1 : 100" }]);
+});
+
 test("view scale: four views on one sheet are four regions, not four strips", () => {
   const row = (top, entries) => line(top, entries);
   const candidates = viewScaleCandidates(scaleSheet([

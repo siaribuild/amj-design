@@ -61,6 +61,10 @@ const VIEW_TITLE = /^(?:ELEVATIONS?|SECTIONS?|PLANS?)$/;
 const TITLE_QUALIFIER = /^[A-Z][A-Z'-]*$/;
 const TITLE_IDENTIFIER = /^[A-Z0-9](?:-[A-Z0-9])?$/;
 const MAX_TITLE_QUALIFIERS = 2;
+/** `SEE SECTION A-A` points at a drawing; it is not one. A cross-reference
+ * accepted as a title invents a view and mis-tiles the sheet around it. */
+const CROSS_REFERENCE = /^(?:SEE|REFER|REFERENCE|PER|NOTE|NOTES|TYPICAL|TYP|SIMILAR|SIM)$/;
+const REFERENCE_REACH = 6;
 
 /** Drawing titles as the document writes them — `ELEVATION A`, `NORTH
  * ELEVATION`, `GROUND FLOOR PLAN`. Unlike elevationRegions, the label is not
@@ -77,6 +81,10 @@ export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt:
     const index = onLine.indexOf(word);
     const near = (a: PageWord, b: PageWord): boolean =>
       horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 2;
+    const height = Math.max(word.bottom - word.top, 1);
+    if (onLine.some((candidate) => candidate.x1 <= word.x0
+      && word.x0 - candidate.x1 <= height * REFERENCE_REACH
+      && CROSS_REFERENCE.test(clean(candidate)))) continue;
     const parts = [word];
     for (let at = index - 1; at >= 0 && parts.length <= MAX_TITLE_QUALIFIERS; at--) {
       if (!TITLE_QUALIFIER.test(clean(onLine[at])) || !near(onLine[at], parts[0])) break;
@@ -98,9 +106,18 @@ export function drawingViewRegions(words: PageWord[], widthPt: number, heightPt:
   }
   const withTitle = (region: ElevationRegion, point: [number, number]): DrawingViewRegion =>
     ({ ...region, titlePt: point });
-  const columns = cluster(labels.map((label) => label.x), widthPt * CLUSTER_FRACTION);
-  const rows = cluster(labels.map((label) => label.y), heightPt * CLUSTER_FRACTION);
-  if (columns.length > 1 && rows.length > 1) {
+  const columnTolerance = widthPt * CLUSTER_FRACTION;
+  const rowTolerance = heightPt * CLUSTER_FRACTION;
+  const columns = cluster(labels.map((label) => label.x), columnTolerance);
+  const rows = cluster(labels.map((label) => label.y), rowTolerance);
+  // A grid is titles sharing columns AND sharing rows. Two titles at different
+  // heights are a stagger: treating that as a grid hands the lower view a thin
+  // band between the two baselines, cutting off the drawing above its title.
+  const shared = (values: number[], centres: number[], tolerance: number): boolean =>
+    centres.some((centre) => values.filter((value) => Math.abs(value - centre) <= tolerance).length > 1);
+  if (columns.length > 1 && rows.length > 1
+    && shared(labels.map((label) => label.x), columns, columnTolerance)
+    && shared(labels.map((label) => label.y), rows, rowTolerance)) {
     return labels.map((label) => {
       const [x0, x1] = span(columns, label.x, widthPt, true);
       const [y0, y1] = span(rows, label.y, heightPt, false);

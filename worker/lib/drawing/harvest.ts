@@ -76,6 +76,8 @@ const SCALE_LABEL = /^SCALE:?$/i;
 const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP)$/i;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
+/** Words sort by baseline, so only the last few lines can still take one. */
+const MAX_OPEN_LINES = 3;
 
 const adjacent = (a: PageWord, b: PageWord): boolean =>
   sameLine(a, b) && horizontalGap(a, b) <= Math.max(a.bottom - a.top, b.bottom - b.top, 1) * 1.5;
@@ -113,50 +115,70 @@ export function viewScaleCandidates(inspected: InspectResponse): DrawingScaleCan
     const geometry = geometryByPage.get(page.pageNo);
     if (!geometry) return [];
     const regions = drawingViewRegions(page.words, geometry.widthPt, geometry.heightPt);
-    const words = [...page.words].sort((a, b) => a.top - b.top || a.x0 - b.x0);
     const found: DrawingScaleCandidate[] = [];
-    let at = 0;
-    while (at < words.length) {
-      let consumed = 0;
-      for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
-        const window = words.slice(at, at + size);
-        if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
-        // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
-        // part of the sentence, not of the ratio.
-        const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
-        if (!match) continue;
-        consumed = size;
-        const ratio = Number(match[1]);
-        const prior = at > 0 ? words[at - 1] : null;
-        const next = at + size < words.length ? words[at + size] : null;
-        const qualifier = [prior, next].find((word) =>
-          word && NOT_A_SCALE.test(word.text.trim()) && adjacent(word, word === prior ? window[0] : window[size - 1]));
-        // 1:0 parses but cannot scale anything, and no drawing is printed
-        // smaller than 1:20000 — both are text that merely looks like a scale.
-        if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
-          const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
-            ? [prior, ...window] : window;
-          const box: CropBoxPt = [
-            Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
-            Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
-          ];
-          const centreX = (box[0] + box[2]) / 2;
-          const centreY = (box[1] + box[3]) / 2;
-          found.push({
-            pageNo: page.pageNo,
-            ratio,
-            text: evidence.map((word) => word.text.trim()).join(" "),
-            evidenceBoxPt: box,
-            viewRegionPt: boundView(regions, centreX, centreY),
-            source: "printed",
-          });
+    // A ratio is read from the words printed beside it. Scanning the page in
+    // content-stream order instead lets another column's word fall between
+    // `1` and `100`, and the split forms vanish.
+    for (const words of textLines(page.words)) {
+      let at = 0;
+      while (at < words.length) {
+        let consumed = 0;
+        for (let size = 1; size <= MAX_SCALE_WORDS && at + size <= words.length; size++) {
+          const window = words.slice(at, at + size);
+          if (size > 1 && !adjacent(window[size - 2], window[size - 1])) break;
+          // Title blocks print `SCALES 1:100, 1:50`, so a trailing separator is
+          // part of the sentence, not of the ratio.
+          const match = SCALE_RATIO.exec(window.map((word) => word.text.trim()).join("").replace(/[.,;]+$/, ""));
+          if (!match) continue;
+          consumed = size;
+          const ratio = Number(match[1]);
+          const prior = at > 0 ? words[at - 1] : null;
+          const next = at + size < words.length ? words[at + size] : null;
+          const qualifier = [prior, next].find((word) =>
+            word && NOT_A_SCALE.test(word.text.trim()) && adjacent(word, word === prior ? window[0] : window[size - 1]));
+          // 1:0 parses but cannot scale anything, and no drawing is printed
+          // smaller than 1:20000 — both are text that merely looks like a scale.
+          if (ratio >= 1 && ratio <= MAX_SCALE_RATIO && !qualifier) {
+            const evidence = prior && SCALE_LABEL.test(prior.text.trim()) && adjacent(prior, window[0])
+              ? [prior, ...window] : window;
+            const box: CropBoxPt = [
+              Math.min(...evidence.map((word) => word.x0)), Math.min(...evidence.map((word) => word.top)),
+              Math.max(...evidence.map((word) => word.x1)), Math.max(...evidence.map((word) => word.bottom)),
+            ];
+            found.push({
+              pageNo: page.pageNo,
+              ratio,
+              text: evidence.map((word) => word.text.trim()).join(" "),
+              evidenceBoxPt: box,
+              viewRegionPt: boundView(regions, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2),
+              source: "printed",
+            });
+          }
+          break;
         }
-        break;
+        at += Math.max(consumed, 1);
       }
-      at += Math.max(consumed, 1);
     }
     return found;
   });
+}
+
+/** Page words grouped into printed lines, each ordered left to right. Words
+ * arrive in content-stream order; a line is built from the ones that share a
+ * baseline with what is already on it. */
+function textLines(words: PageWord[]): PageWord[][] {
+  const lines: PageWord[][] = [];
+  for (const word of [...words].sort((a, b) => a.top - b.top || a.x0 - b.x0)) {
+    let placed = false;
+    for (let line = lines.length - 1; line >= 0 && line >= lines.length - MAX_OPEN_LINES; line--) {
+      if (!sameLine(lines[line][lines[line].length - 1], word)) continue;
+      lines[line].push(word);
+      placed = true;
+      break;
+    }
+    if (!placed) lines.push([word]);
+  }
+  return lines.map((line) => [...line].sort((a, b) => a.x0 - b.x0));
 }
 
 const compactText = (value: string, limit: number): string =>
