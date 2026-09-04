@@ -158,3 +158,21 @@ test("retry after unrouting a failed summary recovers to ready", async ({ page }
   await expect(page.getByTestId("attention-error")).toHaveCount(0);
   await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
 });
+
+test("the skeleton shows before the summary response resolves", async ({ page }) => {
+  let release = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await page.route(SUMMARY_URL, async (route) => {
+    await held;
+    await route.fulfill({ json: SUMMARY_STUB });
+  });
+
+  const loading = page.goto(ATTENTION);
+  await expect(page.getByTestId("attention-skeleton")).toBeVisible();
+  await expect(page.getByTestId("attention-row-submissions")).toHaveCount(0);
+
+  release();
+  await loading;
+  await expect(page.getByTestId("attention-skeleton")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+});
