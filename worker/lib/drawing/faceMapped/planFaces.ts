@@ -34,7 +34,7 @@ const EDGES: Edge[] = ["top", "right", "bottom", "left"];
  */
 export function nameWalls(
   candidates: { label: string; edge: Edge; distancePt: number }[],
-): Partial<Record<Edge, string>> {
+): { walls: Partial<Record<Edge, string>>; tied: boolean } {
   const nearest = new Map<string, number>();
   for (const { label, edge, distancePt } of candidates) {
     const key = `${edge}|${label}`;
@@ -73,8 +73,9 @@ export function nameWalls(
   };
   walk(0, new Set(), [], 0);
 
-  if (!best || tied) return {};
-  return Object.fromEntries((best as { pairs: [Edge, string][] }).pairs);
+  if (tied) return { walls: {}, tied: true };
+  if (!best) return { walls: {}, tied: false };
+  return { walls: Object.fromEntries((best as { pairs: [Edge, string][] }).pairs), tied: false };
 }
 
 interface Candidate {
@@ -83,8 +84,11 @@ interface Candidate {
   word: PageWord;
   pageNo: number;
   storey: string | null;
-  face: string | null;
-  faceEvidence: "marker" | "orientation";
+  elevation: string | null;
+  elevationEvidence: "marker" | "orientation";
+  /** What the locator made of this occurrence: whether a rival could not be
+   * told from it, and whether the drawing referenced it at all. */
+  vouched: boolean;
   alongPt: number;
   wallLengthPt: number;
   refusal: string | null;
@@ -118,18 +122,18 @@ export function placeOpeningsOnPlan(args: {
     const facts = planPageFacts(page, geometry, [...vocabulary]);
     const edgeFacing = args.north === null ? {} : orientationsFromNorth(
       { top: "top", right: "right", bottom: "bottom", left: "left" }, args.north);
-    const wallNames = nameWalls(facts.markerCandidates);
+    const { walls: wallNames, tied: markersTied } = nameWalls(facts.markerCandidates);
     const seen = new Map<string, number>();
 
-    for (const { tag, word } of openingTagWords(page.words, vocabulary, geometry)) {
+    for (const { tag, word, ambiguous, identityEvidence } of openingTagWords(page.words, vocabulary, geometry)) {
       const occurrence = (seen.get(tag) ?? 0) + 1;
       seen.set(tag, occurrence);
       const planCandidateId = `${tag}_p${geometry.pageNo}_${occurrence}`;
       const found = candidates.get(tag) ?? [];
       if (!facts.footprint) {
         found.push({
-          tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, face: null,
-          faceEvidence: "orientation", alongPt: 0, wallLengthPt: 0,
+          tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation: null,
+          elevationEvidence: "orientation", vouched: false, alongPt: 0, wallLengthPt: 0,
           refusal: "no building footprint on the plan page", basis: [],
         });
         candidates.set(tag, found);
@@ -138,14 +142,16 @@ export function placeOpeningsOnPlan(args: {
       const { edge, alongPt, wallLengthPt, corner } = alongWall(word, facts.footprint);
       const marker = wallNames[edge];
       const direction = edgeFacing[edge]?.facing;
-      const face = marker ?? direction ?? null;
+      const elevation = marker ?? direction ?? null;
       const refusal = corner ? "the tag sits at a corner, against two walls at once"
-        : !face ? "the plan names no wall here and no north to face it by"
+        : markersTied ? "the plan's wall markers can be read more than one way"
+        : !elevation ? "the plan names no wall here and no north to face it by"
         : !facts.storey ? "the plan sheet does not say which storey it is"
         : null;
       found.push({
-        tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, face,
-        faceEvidence: marker ? "marker" : "orientation",
+        tag, planCandidateId, word, pageNo: geometry.pageNo, storey: facts.storey, elevation,
+        elevationEvidence: marker ? "marker" : "orientation",
+        vouched: !ambiguous && identityEvidence === "sheet_reference",
         alongPt, wallLengthPt, refusal,
         basis: [
           `plan page ${geometry.pageNo}`,
@@ -176,36 +182,65 @@ export function placeOpeningsOnPlan(args: {
   // group is refused rather than numbered twice.
   const walls = new Map<string, Candidate[]>();
   for (const candidate of accepted.values()) {
-    const key = `${candidate.storey}|${candidate.face}`;
+    const key = `${candidate.storey}|${candidate.elevation}`;
     walls.set(key, [...(walls.get(key) ?? []), candidate]);
+  }
+  // A tag refused for ambiguity may still belong to one of these walls. Which
+  // one is exactly what nobody knows, so every wall it could join has an
+  // unknown count until recovery settles it.
+  const unsettled = new Set<string>();
+  for (const [tag, found] of candidates) {
+    if (!refused.has(tag)) continue;
+    for (const candidate of found) {
+      if (candidate.refusal && candidate.refusal !== null && !candidate.elevation) continue;
+      if (candidate.elevation) unsettled.add(`${candidate.storey}|${candidate.elevation}`);
+    }
   }
 
   const placements = new Map<string, PlanOpeningPlacement>();
-  for (const wall of walls.values()) {
+  for (const [key, wall] of walls) {
     if (new Set(wall.map((candidate) => candidate.pageNo)).size > 1) {
       for (const candidate of wall) {
         refused.set(candidate.tag, "two plan sheets draw the same wall of the same storey");
       }
       continue;
     }
-    const ordered = [...wall].sort((a, b) =>
-      a.alongPt - b.alongPt || a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+    if (unsettled.has(key)) {
+      for (const candidate of wall) {
+        refused.set(candidate.tag, "another opening on this wall is unplaced, so its count is unknown");
+      }
+      continue;
+    }
+    const ordered = [...wall].sort((a, b) => a.alongPt - b.alongPt);
+    // Two openings at the same point along a wall cannot be numbered: whichever
+    // went first would be a guess, and Phase D would match on it.
+    const tiedAlong = ordered.some((candidate, at) =>
+      at > 0 && Math.abs(candidate.alongPt - ordered[at - 1].alongPt) < 0.5);
+    if (tiedAlong) {
+      for (const candidate of wall) {
+        refused.set(candidate.tag, "two openings sit at the same point along this wall");
+      }
+      continue;
+    }
     ordered.forEach((candidate, index) => {
       placements.set(candidate.tag, {
         tag: candidate.tag,
         planPageNo: candidate.pageNo,
         planCandidateId: candidate.planCandidateId,
         storey: candidate.storey!,
-        face: candidate.face!,
-        faceEvidence: candidate.faceEvidence,
+        elevation: candidate.elevation!,
+        elevationEvidence: candidate.elevationEvidence,
         planEvidenceBoxPt: [candidate.word.x0, candidate.word.top, candidate.word.x1, candidate.word.bottom],
         wallOrder: index + 1,
         faceOpeningCount: ordered.length,
         alongWallFraction: candidate.wallLengthPt > 0
           ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt))
           : null,
-        distanceFromStartPt: candidate.alongPt,
-        confidence: "verified",
+        distanceFromStartPt: candidate.wallLengthPt > 0 ? candidate.alongPt : null,
+        // Placed either way — refusing an unvouched tag would lose openings on
+        // every set that does not print sheet references — but a placement the
+        // drawing never confirmed does not claim the confidence of one it did.
+        confidence: candidate.vouched ? "verified" : "ambiguous",
         basis: candidate.basis,
       });
     });
@@ -217,7 +252,7 @@ export function placeOpeningsOnPlan(args: {
     }
     const placement = placements.get(tag);
     return placement
-      ? { state: "resolved" as const, tag, placement }
+      ? { state: "resolved" as const, placement }
       : { state: "unresolved" as const, tag, reason: refused.get(tag) ?? "not tagged on any plan page" };
   });
 }

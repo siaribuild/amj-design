@@ -22,18 +22,24 @@ export interface PlanOpeningPlacement {
   planCandidateId: string;
   storey: string;
   /** The document's own name for the wall — a printed marker where there is
-   * one, otherwise the direction it faces. Never a vocabulary of ours. */
-  face: string;
-  faceEvidence: "marker" | "orientation";
+   * one, otherwise the direction it faces. Never a vocabulary of ours. The
+   * handover calls this the elevation, and Phase D consumes that name. */
+  elevation: string;
+  elevationEvidence: "marker" | "orientation";
   planEvidenceBoxPt: CropBoxPt;
   wallOrder: number;
   faceOpeningCount: number;
   alongWallFraction: number | null;
-  distanceFromStartPt: number;
+  /** Null where the wall's extent could not be established: an opening can be
+   * known as third along a wall nobody could measure. */
+  distanceFromStartPt: number | null;
   confidence: "verified" | "ambiguous";
   basis: string[];
 }
 
+/** One identity per outcome. A resolved outcome carries its tag inside the
+ * placement, where the rest of its evidence lives; two copies of an identity
+ * are two things that can disagree. */
 export type PlanPlacementOutcome =
-  | { state: "resolved"; tag: string; placement: PlanOpeningPlacement }
+  | { state: "resolved"; placement: PlanOpeningPlacement }
   | { state: "unresolved"; tag: string; reason: string };

@@ -70,8 +70,10 @@ export function validateStatedScale(raw: unknown, askedPageNo: number): number |
 export async function recoverPageScales(args: {
   inspected: InspectResponse;
   pageNos: number[];
-  /** What the text already settled, by page. Present pages are never re-read. */
-  stated?: Map<number, number | null>;
+  /** What the text already settled, by page. Required, not optional: a caller
+   * that forgets it would send pages the drawing already answered - or already
+   * called a conflict - back to a model. Present pages are never re-read. */
+  stated: Map<number, number | null>;
   deps: PageScaleRecoveryDeps;
 }): Promise<Map<number, number>> {
   const recovered = new Map<number, number>();
@@ -80,7 +82,7 @@ export async function recoverPageScales(args: {
   // one render, and a document with no readable scale anywhere does not get to
   // spend a call on every page it has.
   const wanted = [...new Set(args.pageNos)]
-    .filter((pageNo) => known.has(pageNo) && !(args.stated?.has(pageNo) ?? false))
+    .filter((pageNo) => known.has(pageNo) && !args.stated.has(pageNo))
     .slice(0, MAX_RECOVERY_PAGES);
   const read = await mapPool(wanted, RECOVERY_CONCURRENCY, async (pageNo) => {
     try {

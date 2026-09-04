@@ -2157,7 +2157,7 @@ test("plan placement: openings on one wall get plan-side ordinals and a position
     north: null,
   });
   assert.equal(outcomes.length, 7, "every scheduled opening gets exactly one outcome");
-  const onD = outcomes.filter((o) => o.state === "resolved" && o.placement.face === "D")
+  const onD = outcomes.filter((o) => o.state === "resolved" && o.placement.elevation === "D")
     .map((o) => o.placement).sort((a, b) => a.wallOrder - b.wallOrder);
   assert.deepEqual(onD.map((p) => p.tag), ["W1", "W2", "W3", "W4"],
     "ordinals run along the wall in plan order, whatever order the tags were printed in");
@@ -2197,7 +2197,7 @@ test("plan placement: a wall keeps its name when a section mark is printed nearb
     "every opening still lands: " + JSON.stringify(outcomes.filter((o) => o.state !== "resolved")));
   const faces = Object.fromEntries(outcomes
     .filter((o) => o.state === "resolved")
-    .map((o) => [o.placement.tag, o.placement.face]));
+    .map((o) => [o.placement.tag, o.placement.elevation]));
   assert.equal(faces.W1, "D", "the top wall is still D, though a C is printed against it");
   assert.equal(faces.W5, "B");
   assert.equal(faces.W6, "A", "the left wall is still A, though a B is printed against it");
@@ -2226,11 +2226,38 @@ test("plan placement: a plan that names no walls is placed by the way they face 
   });
   const faces = Object.fromEntries(outcomes
     .filter((o) => o.state === "resolved")
-    .map((o) => [o.tag, o.placement.face]));
+    .map((o) => [o.placement.tag, o.placement.elevation]));
   assert.deepEqual(faces, { W1: "N", W2: "S", W3: "W", W4: "E" },
     "with north known, a wall is named by the direction it faces");
-  assert.equal(outcomes.every((o) => o.state !== "resolved" || o.placement.faceEvidence === "orientation"), true,
+  assert.equal(outcomes.every((o) => o.state !== "resolved" || o.placement.elevationEvidence === "orientation"), true,
     "and the placement says that is where the name came from");
+});
+
+test("plan placement: a placement says how good its evidence was (P2-AC6)", () => {
+  // openingTagWords tells us whether a tag carried a sheet reference or would
+  // need looking at. A sole candidate still resolves - refusing it would lose
+  // openings on every set that does not print sheet references - but it must
+  // not claim the confidence of one the drawing vouched for.
+  const referenced = planSheet([
+    tagWord("W1", 297, 250), { text: "S08", x0: 297, top: 266, x1: 323, bottom: 280 },
+    tagWord("W2", 457, 540), { text: "S08", x0: 457, top: 556, x1: 483, bottom: 570 },
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  const bare = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 457, 540),
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  const withRef = placeOpeningsOnPlan({ pages: [referenced], roster: ["W1", "W2"], north: null });
+  const withoutRef = placeOpeningsOnPlan({ pages: [bare], roster: ["W1", "W2"], north: null });
+  assert.equal(withRef.every((o) => o.state === "resolved"), true);
+  assert.equal(withoutRef.every((o) => o.state === "resolved"), true);
+  assert.equal(withRef[0].placement.confidence, "verified", "a tag beside its sheet reference is vouched for");
+  assert.equal(withoutRef[0].placement.confidence, "ambiguous",
+    "a bare tag is still placed, but nothing in the drawing confirmed it is that opening");
 });
 
 test("plan placement: a legend entry is not a placement (P2-AC7)", () => {
@@ -2249,8 +2276,8 @@ test("plan placement: a legend entry is not a placement (P2-AC7)", () => {
   const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "W3", "W4"], north: null });
   assert.equal(outcomes.filter((o) => o.state === "resolved").length, 4,
     "the listed copies are not rival occurrences: " + JSON.stringify(outcomes.filter((o) => o.state !== "resolved")));
-  const w1 = outcomes.find((o) => o.tag === "W1");
-  assert.equal(w1.placement.face, "D", "W1 is placed from the tag against the building, not the one in the list");
+  const w1 = outcomes.find((o) => (o.placement?.tag ?? o.tag) === "W1");
+  assert.equal(w1.placement.elevation, "D", "W1 is placed from the tag against the building, not the one in the list");
   assert.equal(w1.placement.planEvidenceBoxPt[1], 250);
 });
 
@@ -2272,6 +2299,26 @@ test("plan placement: two sheets drawing one wall of one storey publish no ordin
     JSON.stringify(outcomes.map((o) => o.reason)));
 });
 
+test("plan placement: an unplaced neighbour makes a wall's count unknown (P2-AC2, AC3)", () => {
+  // W2 is tagged twice on the same wall, so nobody knows where it is. Numbering
+  // its neighbours around it would make W3 "2 of 2" on a wall that holds three,
+  // and Phase D would match it to the wrong frame with full confidence.
+  const sheet = planSheet([
+    tagWord("W1", 297, 250), tagWord("W2", 407, 250), tagWord("W2", 460, 250), tagWord("W3", 627, 250),
+    tagWord("W9", 457, 540),
+    ...planRooms,
+    { text: "D", x0: 495, top: 250, x1: 505, bottom: 264 },
+    { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
+  ]);
+  const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "W3", "W9"], north: null });
+  const byTag = Object.fromEntries(outcomes.map((o) => [o.placement?.tag ?? o.tag, o]));
+  assert.equal(byTag.W1.state, "unresolved", "the wall W2 belongs to cannot be numbered around it");
+  assert.equal(byTag.W3.state, "unresolved");
+  assert.match(byTag.W3.reason, /count is unknown/);
+  assert.equal(byTag.W9.state, "resolved", "and a wall with nothing in doubt is unaffected");
+  assert.equal(byTag.W9.placement.faceOpeningCount, 1);
+});
+
 test("plan placement: an opening nobody drew is still in the roster (P2-AC1, AC8)", () => {
   const sheet = planSheet([
     tagWord("W1", 297, 250), tagWord("W2", 457, 540),
@@ -2280,8 +2327,8 @@ test("plan placement: an opening nobody drew is still in the roster (P2-AC1, AC8
     { text: "B", x0: 495, top: 540, x1: 505, bottom: 554 },
   ]);
   const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2", "D9"], north: null });
-  assert.deepEqual(outcomes.map((o) => o.tag), ["W1", "W2", "D9"], "the roster keeps its shape");
-  const d9 = outcomes.find((o) => o.tag === "D9");
+  assert.deepEqual(outcomes.map((o) => o.placement?.tag ?? o.tag), ["W1", "W2", "D9"], "the roster keeps its shape");
+  const d9 = outcomes.find((o) => (o.placement?.tag ?? o.tag) === "D9");
   assert.equal(d9.state, "unresolved");
   assert.match(d9.reason, /not tagged on any plan page/);
   assert.equal(outcomes.filter((o) => o.state === "resolved").length, 2,
@@ -2307,10 +2354,10 @@ test("plan placement: an opening tagged more than once is not placed by whicheve
     { text: "C", x0: 740, top: 395, x1: 750, bottom: 409 },
   ]);
   const outcomes = placeOpeningsOnPlan({ pages: [sheet], roster: ["W1", "W2"], north: null });
-  const w1 = outcomes.find((o) => o.tag === "W1" || o.placement?.tag === "W1");
+  const w1 = outcomes.find((o) => (o.placement?.tag ?? o.tag) === "W1");
   assert.equal(w1.state, "unresolved", "three occurrences is an ambiguity, not a race the last one wins");
   assert.match(w1.reason, /more than one/);
-  assert.equal(outcomes.find((o) => o.placement?.tag === "W2").state, "resolved",
+  assert.equal(outcomes.find((o) => (o.placement?.tag ?? o.tag) === "W2").state, "resolved",
     "and one opening's ambiguity does not cost its neighbours");
 });
 
@@ -2321,7 +2368,7 @@ test("plan placement: the roster's rows are the outcomes, duplicates included (P
     north: null,
   });
   assert.equal(outcomes.length, 3, "three rows in, three outcomes out");
-  assert.deepEqual(outcomes.map((o) => o.tag), ["W1", "W2", "W1"]);
+  assert.deepEqual(outcomes.map((o) => o.placement?.tag ?? o.tag), ["W1", "W2", "W1"]);
   assert.equal(outcomes.filter((o) => /names this opening more than once/.test(o.reason ?? "")).length, 2,
     "a roster naming one opening twice is told so, rather than quietly counted once");
 });
@@ -2335,6 +2382,7 @@ test("scale recovery: one sheet's failure costs that sheet, not the run (AC19)",
   const recovered = await recoverPageScales({
     inspected,
     pageNos: [1, 2, 3, 4],
+    stated: new Map(),
     deps: {
       render: async ({ pageNo, dpi }) => {
         if (pageNo === 2) throw new Error("container render failed");
@@ -2388,6 +2436,7 @@ test("scale recovery: a document cannot ask for unbounded work (AC24)", async ()
     inspected,
     // Every page, and the same page asked for twice.
     pageNos: [...Array.from({ length: pageCount }, (_, at) => at + 1), 1, 1],
+    stated: new Map(),
     deps: {
       render: async (request) => {
         asked.push(request.pageNo);
@@ -2405,6 +2454,7 @@ test("scale recovery: a sheet that states its scale only in graphics still gets 
   const asked = [];
   const recovered = await recoverPageScales({
     pageNos: [4, 5],
+    stated: new Map(),
     inspected: {
       inventory: { pageCount: 2, producer: "test", fonts: [], hasAttachments: false, pages: [
         { pageNo: 4, widthPt: 1_684, heightPt: 1_191, rotation: 0, textChars: 900, imageCount: 0, imageAreaFraction: 0 },
