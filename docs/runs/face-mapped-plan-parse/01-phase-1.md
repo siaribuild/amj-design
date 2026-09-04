@@ -121,10 +121,19 @@ placement path needs. Git holds it all if a future set proves otherwise.
 - The reference set re-parsed after every fix; the map above is the result of
   the final one
 
-**Security — clean.** No new trust boundary and no new sink; all input is
-already-parsed word geometry. Prototype pollution through label-keyed objects
-checked and dismissed. Noted as correctness, not security: `expectedWidthPt(w,
-0)` returns `Infinity`, unreachable while candidates carry `ratio >= 1`.
+**Security — clean, on the phase including scale recovery.** No new trust
+boundary and no new sink: the new logic is coordinate arithmetic over
+already-parsed PDF words, and the one place a model answer enters is
+`validateStatedScale`, which admits a whole ratio between 1 and 20000 for the
+page that was asked about and nothing else. The rendered page becomes a
+`data:` string handed to an injected dependency, so no host or protocol is
+attacker-influenced. Prototype pollution through label-keyed objects checked and
+dismissed. Noted as correctness rather than security: `expectedWidthPt(w, 0)`
+returns `Infinity`, unreachable while candidates carry `ratio >= 1`.
+
+*The review failed twice before it ran, with autocompact thrashing, and
+completed once the compaction window was raised. CLAUDE.md line 93 still
+prescribes `--autocompact 100000`, which is what thrashed on a diff this size.*
 
 **Architect — conforms, no blocking findings.** Verified the move line-for-line
 against `91ba1701`: five segments byte-identical, non-ASCII bearings regex
