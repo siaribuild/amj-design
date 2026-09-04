@@ -75,7 +75,7 @@ const SCALE_LABEL = /^SCALE:?$/i;
  * whatever punctuation and connectors the drafter liked: `FALL: 1:100`,
  * `FALL TO 1:100`, `RAMP @ 1:20`. Read the phrase around the ratio, not the
  * one token touching it. */
-const NOT_A_SCALE = /^(?:FALL|FALLS|GRADE|GRADIENT|PITCH|SLOPE|RAMP|CROSSFALL|STEEPER|FLATTER)$/i;
+const NOT_A_SCALE = /^(?:FALL|FALLS|CROSSFALL|GRADE|GRADIENT|PITCH|SLOPE|STEEPER|FLATTER|RAMP|RAMPS|DRIVEWAY|DRIVEWAYS|STAIR|STAIRS|STAIRWAY|STEP|STEPS)$/i;
 const MAX_SCALE_RATIO = 20_000;
 const MAX_SCALE_WORDS = 3;
 /** Words sort by baseline, so only the last few lines can still take one. */
