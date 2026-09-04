@@ -167,6 +167,39 @@ These are review limits, not reasons to create pass-through wrappers. If a file 
 
 ## 7. Phase contracts
 
+### 7.0 The rule the engine follows
+
+Owner, 2026-09-04, restated verbatim because every contract below is a
+mechanisation of it:
+
+> "I see the opening, ground floor, elevation A. And I know, for a sake of an
+> argument, that it is the first opening on that elevation. Therefore, by going
+> to the elevation view, the target opening is the first one on the ground
+> floor. I can add distance from the edge of the building to be precise. This is
+> my step-by-step way of thinking of locating correct opening each and every
+> time. Once I have the correct opening, the center of it, all I need is to have
+> a crop (height: full floor height; width: center point +/- half of the opening
+> width.)"
+
+Four consequences bind every phase:
+
+1. The plan supplies identity and position — storey, face, ordinal on that
+   face, and distance along the wall. Ordinal is the key; distance refines it.
+2. The elevation supplies candidates — every opening drawn on that face and
+   storey, in printed order. What a tag or label sits near is not evidence of
+   where an opening is.
+3. Matching is ordinal to ordinal, once direction is settled. An elevation
+   looks at its face, so one face reads with the plan and the opposite against
+   it; distance along the wall is what catches a mirrored match that happens to
+   have the right count.
+4. The crop is the opening: the storey band in height, the opening's centre
+   plus and minus half its width, with §7.5's margin so the frame edges are
+   visible. The margin exists for legibility — a fixed pane is told from its
+   surround by its edges — and never to compensate for imprecise location.
+
+**No rule anywhere may key off one document's conventions.** The reference sets
+verify the engine; they do not shape it.
+
 ### 7.1 Phase C — plan placement
 
 ```ts
