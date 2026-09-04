@@ -138,6 +138,20 @@ export function parseSeverity(args) {
 // Dollars are not the measure either: the owner is on a subscription, so this
 // conductor prints tokens and time and never a currency figure.
 
+// The architect writes 02-tasks.json as a bare array — the shape the stage
+// prompt shows and the shape both readers below iterate. It has now written
+// `{ run, design, tasks: [...] }` instead THREE times, a reasonable-looking
+// file that threw "tasks is not iterable" from `conduct plan` and
+// "tasks.map is not a function" from `checkPlan`, killing the build at the
+// gate. Read it in one place, accept either, and the two readers stop caring
+// which shape the model felt like producing.
+function readTasks(file) {
+  const raw = JSON.parse(readFileSync(file, 'utf8'))
+  const tasks = Array.isArray(raw) ? raw : raw?.tasks
+  if (!Array.isArray(tasks)) throw new Error(file + ': no task array (expected [...] or { tasks: [...] })')
+  return tasks
+}
+
 const STAGES = [
   {
     id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
@@ -1039,7 +1053,7 @@ async function runBuild(run, spec, panes) {
   // The fix tier collapses spec and design to nothing, so nobody sliced this
   // build: the ask IS the task, and it is ONE developer session. Still
   // test-first - Probity does not care which tier a change was sized at.
-  const tasks = existsSync(tp) ? JSON.parse(readFileSync(tp, 'utf8'))
+  const tasks = existsSync(tp) ? readTasks(tp)
     : run.tier === 'fix'
       ? [{
           id: 't1',
@@ -1793,7 +1807,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tp = join(RUNS, run.slug, '02-tasks.json')
     if (existsSync(tp)) {
-      const tasks = JSON.parse(readFileSync(tp, 'utf8'))
+      const tasks = readTasks(tp)
       const done = new Set(run.tasksDone || [])
       console.log('\n  BUILD TASKS')
       for (const t of tasks) {
@@ -1847,7 +1861,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tasks = (() => {
       const tp = join(RUNS, run.slug, '02-tasks.json')
-      if (existsSync(tp)) return JSON.parse(readFileSync(tp, 'utf8'))
+      if (existsSync(tp)) return readTasks(tp)
       // Mirrors runBuild's own synthetic task exactly - the fix tier has no
       // architect to slice one, so there is nothing else to render here.
       if (run.tier === 'fix') return [{
