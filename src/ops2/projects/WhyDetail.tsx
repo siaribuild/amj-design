@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { OpenablePanel } from "../chrome/OpenablePanel";
+import { RowList } from "../chrome/RowList";
 import { SidePanel } from "../chrome/SidePanel";
 import type { LineRationaleDto, RationaleUnit } from "../../data/rationale";
 import {
   DETAIL, NO_SELECTION, basisLabel, candidateFigures, candidateName, chosenRowMark,
-  chosenLine, comparisonVerdict, deltaText, figuresText, ladderNote, rankedText,
+  chosenLine, comparisonVerdict, deltaLabel, deltaText, figuresText, ladderNote, rankedText,
   unitBandText, unitBasisLabel, verdictWord,
 } from "./whyCopy";
 
@@ -58,11 +59,11 @@ function Body({ dto }: { dto: Recommendation }) {
   const ladder = [dto.recommended, ...dto.alternatives];
   return (
     <div className="wd" data-testid="line-why-body">
-      <Block heading={DETAIL.hadToMeet} testId="why-requirement">
+      <OpenablePanel title={DETAIL.hadToMeet} testId="why-requirement">
         {dto.requirement.absent ? (
           <p className="wd__reason">{DETAIL.noRequirement}</p>
         ) : (
-          <dl className="wd__kv">
+          <dl className="lp-panel__lines">
             <Axis label="Uw" value={axisText(dto.requirement.maxUValue, "≤")} basis={dto.requirement.basis} />
             <Axis label="SHGC" value={shgcText(dto.requirement)} basis={dto.requirement.basis} />
           </dl>
@@ -71,20 +72,23 @@ function Body({ dto }: { dto: Recommendation }) {
             change to the product does not move it. Said out loud only where a
             reader might otherwise wonder. */}
         {dto.selectionChanged && <p className="wd__reason">{DETAIL.targetHeld}</p>}
-      </Block>
+      </OpenablePanel>
 
       {dto.selectionChanged && <Comparison dto={dto} />}
       {dto.composite && <Split dto={dto} composite={dto.composite} />}
       {dto.composite && <Bands units={dto.composite.units} />}
 
-      <Block heading={DETAIL.ladder} testId="why-ladder">
-        <ul className="wd__ladder" aria-label={DETAIL.ladder}>
+      <OpenablePanel title={DETAIL.ladder} testId="why-ladder" className="lp-panel--rows">
+        <RowList>
           {ladder.map((c, i) => {
             const delta = deltaText(c.deltaToSelected, i === 0);
             return (
+              // `ops2-row` earns the shared hairline (rows.css) and NOTHING else:
+              // every other rule in that file targets `> .ops2-row__open`, the
+              // pressable child this row deliberately does not have (R28).
               <li
                 key={`${c.productSlug}-${c.rank ?? i}`}
-                className={i === 0 ? "wd__row wd__row--chosen" : "wd__row"}
+                className={i === 0 ? "ops2-row wd__row wd__row--chosen" : "ops2-row wd__row"}
                 data-testid="why-ladder-row"
               >
                 <span className="wd__row-name">
@@ -93,19 +97,28 @@ function Body({ dto }: { dto: Recommendation }) {
                     <span className="wd__row-mark"> {chosenRowMark(dto.selectionChanged)}</span>
                   )}
                 </span>
-                <span className="wd__row-bottom">
+                <span className="wd__row-meta">
                   <span className="wd__row-figs">{candidateFigures(c)}</span>
                   <span className="wd__row-verdict">{verdictWord(c, dto.requirement, dto.tolerance)}</span>
-                  {delta != null && (
-                    <span className="wd__row-delta" data-testid="why-row-delta">{delta}</span>
-                  )}
                 </span>
+                {delta != null && (
+                  <span
+                    className={delta === "$---" ? "wd__row-delta wd__row-delta--absent" : "wd__row-delta"}
+                    data-testid="why-row-delta"
+                    // A bare "+" is not spoken. The class and the label are both
+                    // chosen from the RENDERED string, so "this is not an amount"
+                    // has one source of truth.
+                    aria-label={deltaLabel(c.deltaToSelected, i === 0) ?? undefined}
+                  >
+                    {delta}
+                  </span>
+                )}
               </li>
             );
           })}
-        </ul>
-        <p className="wd__reason">{ladderNote(ladder.length)}</p>
-      </Block>
+        </RowList>
+        <p className="lp-panel__more">{ladderNote(ladder.length)}</p>
+      </OpenablePanel>
 
       {/* WHY-AC-38 — the recorded sentence, quiet, at the end. When staff have
           resolved the review flag it lives on, the trace is gone and NOTHING is
@@ -141,9 +154,9 @@ function Recorded({ dto }: { dto: Exclude<LineRationaleDto, { kind: "recommendat
     <div className="wd" data-testid="line-why-body">
       <p className="wd__reason" data-testid="why-chosen">{chosen.text}</p>
 
-      <Block heading={DETAIL.hadToMeet} testId="why-requirement">
+      <OpenablePanel title={DETAIL.hadToMeet} testId="why-requirement">
         <p className="wd__reason ops2-absent">{DETAIL.notRecorded}</p>
-      </Block>
+      </OpenablePanel>
 
       {/* THE UNITS BLOCK IS THE RECOMMENDATION'S OWN, not a second copy of it. A
           human-decided split has exactly the units a machine-decided one does,
@@ -153,7 +166,7 @@ function Recorded({ dto }: { dto: Exclude<LineRationaleDto, { kind: "recommendat
       {units && units.length > 0 ? (
         <Bands units={units} />
       ) : (
-        <Block heading={DETAIL.ownFigures} testId="why-figures">
+        <OpenablePanel title={DETAIL.ownFigures} testId="why-figures">
           {/* `unresolved` is not an absent figure — it is a run that established
               there was nothing to select, and the two are told apart by the KIND
               and never by the figures, which are present-and-null in both. So it
@@ -162,12 +175,12 @@ function Recorded({ dto }: { dto: Exclude<LineRationaleDto, { kind: "recommendat
           <p className={dto.kind === "unresolved" ? "wd__reason" : "wd__reason wd__fig"}>
             {dto.kind === "unresolved" ? NO_SELECTION : figuresText(dto.current.figures)}
           </p>
-        </Block>
+        </OpenablePanel>
       )}
 
-      <Block heading={DETAIL.ladder} testId="why-ladder">
+      <OpenablePanel title={DETAIL.ladder} testId="why-ladder">
         <p className="wd__reason ops2-absent">{DETAIL.noAlternatives}</p>
-      </Block>
+      </OpenablePanel>
 
       <p className="wd__reason wd__closing">{DETAIL.closing}</p>
     </div>
@@ -190,7 +203,7 @@ function Axis({ label, value, basis }: { label: string; value: string | null; ba
   if (!value) return null;
   const origin = basisLabel(basis);
   return (
-    <div className="wd__kv-row">
+    <div>
       <dt>{label}</dt>
       <dd>
         <span className="wd__fig">{value}</span>
@@ -200,22 +213,13 @@ function Axis({ label, value, basis }: { label: string; value: string | null; ba
   );
 }
 
-function Block({ heading, testId, children }: { heading: string; testId: string; children: ReactNode }) {
-  return (
-    <section className="wd__blk" data-testid={testId} aria-label={heading}>
-      <h3 className="wd__blk-h">{heading}</h3>
-      {children}
-    </section>
-  );
-}
-
 /** BOTH ARE SHOWN, so the difference is readable — not so one of them is right
  *  (R2/R11). The platform's recommendation is rendered unchanged beside the
  *  line's current configuration, against the SAME caps. */
 function Comparison({ dto }: { dto: Recommendation }) {
   const currentVerdict = comparisonVerdict(dto.current.figures, dto.requirement, dto.tolerance);
   return (
-    <Block heading={DETAIL.comparison} testId="why-comparison">
+    <OpenablePanel title={DETAIL.comparison} testId="why-comparison">
       <div className="wd__cmp">
         <div className="wd__card">
           <div className="wd__who">{DETAIL.platformColumn}</div>
@@ -233,14 +237,14 @@ function Comparison({ dto }: { dto: Recommendation }) {
           {currentVerdict && <div className="wd__verd wd__verd--warn">{currentVerdict}</div>}
         </div>
       </div>
-      <p className="wd__reason">{DETAIL.comparisonNote}</p>
-    </Block>
+      <p className="lp-panel__more">{DETAIL.comparisonNote}</p>
+    </OpenablePanel>
   );
 }
 
 function Split({ dto, composite }: { dto: Recommendation; composite: NonNullable<Recommendation["composite"]> }) {
   return (
-    <Block heading={DETAIL.split} testId="why-split">
+    <OpenablePanel title={DETAIL.split} testId="why-split">
       <div className="wd__cmp">
         <div className="wd__card wd__card--current">
           <div className="wd__who">{DETAIL.splitMadeAs}</div>
@@ -259,8 +263,8 @@ function Split({ dto, composite }: { dto: Recommendation; composite: NonNullable
           </div>
         )}
       </div>
-      {composite.beatenSingle && <p className="wd__reason">{DETAIL.splitNote}</p>}
-    </Block>
+      {composite.beatenSingle && <p className="lp-panel__more">{DETAIL.splitNote}</p>}
+    </OpenablePanel>
   );
 }
 
@@ -269,12 +273,12 @@ function Split({ dto, composite }: { dto: Recommendation; composite: NonNullable
  *  bands, not one. */
 function Bands({ units }: { units: RationaleUnit[] }) {
   return (
-    <Block heading={DETAIL.bands} testId="why-bands">
-      <ul className="wd__lites">
+    <OpenablePanel title={DETAIL.bands} testId="why-bands" className="lp-panel--rows">
+      <RowList className="wd__lites">
         {units.map((u) => {
           const band = unitBandText(u.band);
           return (
-            <li key={u.code} className="wd__lite" data-testid="why-lite">
+            <li key={u.code} className="ops2-row wd__lite" data-testid="why-lite">
               <div className="wd__lite-h">
                 <span className="wd__lite-code">{u.code}</span>
                 <span className="wd__lite-name">{u.productName}</span>
@@ -296,8 +300,8 @@ function Bands({ units }: { units: RationaleUnit[] }) {
             </li>
           );
         })}
-      </ul>
-      <p className="wd__reason">{DETAIL.bandsNote}</p>
-    </Block>
+      </RowList>
+      <p className="lp-panel__more">{DETAIL.bandsNote}</p>
+    </OpenablePanel>
   );
 }

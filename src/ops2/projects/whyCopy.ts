@@ -539,13 +539,15 @@ const NUMBER_WORD = ["no", "One", "Two", "Three", "Four", "Five"];
  *  and NO COUNT OF ANYTHING BEYOND IT. The sentence counts what is on screen. */
 export function ladderNote(shown: number): string {
   if (shown >= 5) {
-    return "The chosen product and the next four by rank. Nothing here changes the line.";
+    return "The chosen product and the next four by rank. Each amount is that "
+      + "product's difference from the chosen one, and nothing here changes the line.";
   }
   // `shown` is 1-4 here: 5 and above took the branch above, and a ladder with
   // no rows renders no note at all.
   const count = NUMBER_WORD[shown];
   return `${count} candidate${shown === 1 ? " was" : "s were"} recorded for this opening — `
-    + "the list is what exists, with nothing padded and no remainder counted.";
+    + "the list is what exists, with nothing padded and no remainder counted. "
+    + "Each amount is that product's difference from the chosen one.";
 }
 
 /** A make-up's name in the ladder, from the units it is made of. A single names
@@ -573,6 +575,20 @@ export function deltaText(delta: number | null, chosen: boolean): string | null 
   const r = Math.round(delta);
   const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
   return r === 0 ? figure : `${r < 0 ? "-" : "+"}${figure}`;
+}
+
+/** THE SAME FACT, SPOKEN. A bare "+" does not survive being read aloud: most
+ *  screen readers announce "+$65" as "sixty-five dollars" and the direction —
+ *  the whole point of the figure — is lost. The visible string is unchanged;
+ *  this rides on it as `aria-label`. It lives beside `deltaText` so the node
+ *  test that scans this module for banned vocabulary sees it too. */
+export function deltaLabel(delta: number | null, chosen: boolean): string | null {
+  if (chosen) return null;
+  if (delta == null) return "no price difference was recorded";
+  const r = Math.round(delta);
+  const figure = `$${Math.abs(r).toLocaleString("en-AU")}`;
+  if (r === 0) return "the same price as the chosen product";
+  return `${figure} ${r < 0 ? "cheaper" : "dearer"} than the chosen product`;
 }
 
 /** WHY-AC-34 — a lite's own band. `null` when none was recorded, and NOTHING is

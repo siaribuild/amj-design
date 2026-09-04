@@ -49,11 +49,36 @@
       "source": "transcript",
       "session": "fae9f626-0886-4a65-a63f-8635aa26e917",
       "seconds": 319
+    },
+    "build-t3": {
+      "code": 0,
+      "contextTokens": 2418530,
+      "outputTokens": 19697,
+      "turns": 32,
+      "source": "transcript",
+      "session": "1aed69c4-788d-4376-bd98-41334aa43d91",
+      "seconds": 944
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 6851101,
+      "outputTokens": 34690,
+      "turns": 51,
+      "source": "transcript",
+      "session": "aa86adf9-016c-4c12-bbc1-80157439f179",
+      "seconds": 1356
     }
   },
   "tasksDone": [
     "t1",
-    "t2"
+    "t2",
+    "t3"
   ],
   "startedAt": "2026-09-03T16:16:51.275Z"
 }

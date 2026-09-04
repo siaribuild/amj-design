@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
  * The component never knows an address — it is handed a closure and a name;
  * the page composes the destination from its own resolved record.
  */
-export function OpenablePanel({ title, testId, busy, open, children }: {
+export function OpenablePanel({ title, testId, busy, open, className, children }: {
   /** The `<h2>` text AND the section's accessible name — one fact, one prop.
    *  OPTIONAL (owner, 2026-09-01): a panel presents whatever content it is
    *  handed, and a heading is the caller's choice, not this component's
@@ -28,6 +28,10 @@ export function OpenablePanel({ title, testId, busy, open, children }: {
    *  cannot name it differently. */
   testId: string;
   busy?: boolean;
+  /** ONE MODIFIER, APPENDED — the way `RowList` already takes one. Not a mode
+   *  flag: it composes a variant this file does not need to know about, such as
+   *  the edge-to-edge `lp-panel--rows` a card full of rows wants. */
+  className?: string;
   /** `label` must state the DESTINATION rather than merely that the panel is
    *  pressable, and comes from the surface's copy module — never a string
    *  typed at the call site. */
@@ -36,7 +40,7 @@ export function OpenablePanel({ title, testId, busy, open, children }: {
 }) {
   return (
     <section
-      className={open ? "lp-panel lp-panel--door" : "lp-panel"}
+      className={`lp-panel${open ? " lp-panel--door" : ""}${className ? ` ${className}` : ""}`}
       data-testid={testId}
       aria-label={title}
       aria-busy={busy ? "true" : undefined}

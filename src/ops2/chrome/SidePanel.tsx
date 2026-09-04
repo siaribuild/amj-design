@@ -88,8 +88,13 @@ export function SidePanel({
   footer?: ReactNode;
   /**
    * The PHONE form. `"sheet"` is the half-height bottom sheet with Ionic's
-   * drag handle; `"screen"` is full screen with no breakpoints, which is what
-   * R26 asked for and what an `IonModal` does when given neither; `"side"`
+   * drag handle; `"screen"` is FULL BLEED at every width below the change
+   * point — which is what R26 asked for, and it is true because
+   * `projects.css` says so under `pq-sheet--screen`, NOT because an unstyled
+   * `IonModal` happens to be. It was not: given neither class nor breakpoints
+   * Ionic renders its stock modal, full-bleed on a narrow phone and a centred,
+   * rounded, inset card from 768px up — which is the iPad, and which the owner
+   * caught on 2026-09-04. `"side"`
    * keeps the desk's 520px right-hand panel below the change point, for a
    * caller whose narrow form is still a screen rather than a phone gesture. The handle
    * disappears on its own, because Ionic renders it only for sheet modals — it
@@ -175,7 +180,8 @@ export function SidePanel({
       breakpoints={sheet ? [0, 0.5] : undefined}
       enterAnimation={fromRight ? slideIn : undefined}
       leaveAnimation={fromRight ? slideOut : undefined}
-      className={form === "side" ? "pq-sheet pq-sheet--side" : "pq-sheet"}
+      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}`
+        + `${form === "screen" ? " pq-sheet--screen" : ""}`}
       data-testid={testId}
       // REMOUNT WHEN THE FORM CHANGES. Ionic settles `isSheetModal`, its gesture
       // and its breakpoint during `present()`, so a window crossing the change

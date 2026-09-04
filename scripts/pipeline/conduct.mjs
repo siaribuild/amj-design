@@ -266,7 +266,7 @@ it representative.`,
     needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true, tiers: ['full'],
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 200000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
