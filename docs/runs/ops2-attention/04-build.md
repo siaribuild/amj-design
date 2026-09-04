@@ -157,3 +157,25 @@ npx playwright test scripts/tests/web/ops2-attention.spec.ts: 11/11 pass.
 typecheck:gate: green. npm test: 1066/1069 pass, 3 pre-existing failures in
 scripts/tests/pipeline.test.mjs (conductor session-resume arg-indexing),
 unrelated to this change and untouched by it.
+
+## Fix - Review finding: navigation spec still hardcoded eight destinations
+
+Files: scripts/tests/web/ops2-navigation.spec.ts.
+
+Finding: the enquiries destination (T1) was added to
+scripts/tests/ops2-navigation.test.mjs but never to this file's three
+hardcoded lists, so 3 of 9 tests failed (rail labels line 183, drawer
+labels line 244, resolved rail hrefs line 354). Confirmed red first:
+`ABR_PORT=8799 npx playwright test scripts/tests/web/ops2-navigation.spec.ts`
+-> 3 failed for the expected reason (locator resolved 9 elements vs the
+8-item expectation; missing "Enquiries"/"/enquiries" in each diff), 6
+passed.
+
+Fix: added ["Enquiries","/enquiries"] / "Enquiries" / "/enquiries" to
+the three lists, in each case directly after Customers, matching
+ops2-navigation.test.mjs's order and adding nothing else. No production
+code touched, no assertion loosened, no destination order or tab set
+changed.
+
+Green: same command, 9/9 pass (Note A's order-dependent back-button
+flake did not reproduce this run either). typecheck:gate: green.
