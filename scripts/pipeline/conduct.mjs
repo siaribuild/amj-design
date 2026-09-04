@@ -656,6 +656,12 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
 // fatal - it holds warm in its pane, which is what pane mode is for.
 const PANE_PERMISSION = 'acceptEdits'
 
+// Lever 1's on/off switch, pulled out pure so both branches - flag omitted
+// while CONTEXT_CAP is null, flag passed when a cap is set - are pinned by a
+// test without touching the module's live CONTEXT_CAP constant.
+export const autocompactArgs = (cap, compact) =>
+  cap === null ? [] : ['--autocompact', String(compact || cap)]
+
 // Rides on the session itself rather than on each prompt, because a rule every
 // prompt has to remember to repeat is a rule one of them will forget. The
 // conductor is the orchestrator: a stage that dispatches its own subagents
@@ -672,7 +678,7 @@ function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
   // Lever 1, OFF BY OWNER DECISION (2026-09-05). See CONTEXT_CAP.
-  if (CONTEXT_CAP !== null) a.push('--autocompact', String(spec.compact || CONTEXT_CAP))
+  a.push(...autocompactArgs(CONTEXT_CAP, spec.compact))
   a.push('--permission-mode', spec.readonly ? 'plan' : mode)
   if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
   // Always strict: an inherited user or global config drags its tool
@@ -1594,7 +1600,20 @@ function decisionsOpen(run) {
  * still stands.
  */
 const CYCLE_CAP = 2
-export const FIX_CAP = 3
+// 6, not 3, and raised deliberately rather than worked around. The cap is a
+// COST guard - "more of this cycle costs more than the findings it returns" -
+// and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
+// run the fourth finding was a P1 that left `npm test` red for every developer
+// in the repo, and both of the cap's own exits were worse than paying for
+// another round: shipping it is shipping a broken suite, and fixing it by hand
+// bypasses the developer AND Probity's red-test gate, against CLAUDE.md's
+// "reviewers report; only the developer fixes".
+//
+// What the cap is really protecting against is a fix cycle that stops
+// converging. Rounds 1-3 here each closed a distinct finding and none
+// reopened, so the signal it watches for was absent. If a run ever spends six,
+// that IS the stall the comment above describes - stop and look.
+export const FIX_CAP = 6
 
 const CAPS = {
   verify: { cap: CYCLE_CAP, field: 'verifyRounds', what: 'verify rounds' },
@@ -2213,7 +2232,7 @@ If you believe the finding is wrong, say so and change nothing.`
 }
 cmds.status = cmds.report
 
-export { STAGES, REVIEWERS, cmds }
+export { STAGES, REVIEWERS, cmds, CONTEXT_CAP }
 
 // Importing this file must not run it: the test suite reads the tables and calls
 // the commands directly, and main() ends in process.exit.
