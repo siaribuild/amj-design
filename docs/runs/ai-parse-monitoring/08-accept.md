@@ -1,210 +1,186 @@
-# ai-parse-monitoring — acceptance (stage 8, round 2)
+# ai-parse-monitoring — acceptance (stage 8, round 3)
 
-Supersedes the round-1 verdict previously held in this file. That verdict rejected the
-run; two developer fix rounds (`fix-0`, `fix-1`) and a third round of reviews followed it.
-This is the judgement over the state after those fixes.
+Supersedes the round-2 verdict previously held in this file.
 
 Evidence inputs, and nothing else: `01-spec.md` (the 28 criteria), `06-verify.md`
-(tester, round 2), `07-review-architecture.md`, `07-review-security.md`,
-`07-review-ponytail.md`, `07-review-codex.md`, `09-assumptions.md`, `DEBT.md`, `run.json`.
-No tests were run and no source was read for this verdict, per instruction.
+(tester, round 3, 2026-09-05), `07-review-architecture.md`, `07-review-security.md`,
+`07-review-ponytail.md`, `07-review-codex.md`, `09-assumptions.md`, `DEBT.md`,
+`run.json`. No tests were run and no source was read for this verdict, per
+instruction.
 
-**Verdict: REJECT — narrowly, and mostly for missing evidence rather than known-bad work.**
+**Verdict: REJECT — narrowly.** The feature is substantially built, the security
+axis is clean, and round 2's three missing pieces of evidence are now supplied.
+Three things stop it:
 
-Three things stand between this and acceptance:
+1. **The money numbers cannot yet be trusted**, and the money numbers are the whole
+   reason this feature exists ("is the AI budget about to run out"). Two unresolved
+   items sit under them: the reviewers' P1 finding that billed spend and the spend
+   cap may describe different scopes and different time windows, so the percentage
+   that turns the alarm red may not be a real percentage of a real budget; and the
+   unverified question of whether Cloudflare reports these figures in dollars or in
+   cents, which if wrong makes both cards read 100× high and means the low-credit
+   alarm never fires at all.
+2. **The independent tester's last report says FAIL, and the developer overruled it
+   rather than fixing it.** The reasoning is disclosed and, in my judgement as the
+   author of the spec, correct — but it is an owner-level ruling about how parses
+   are counted, and it rewrote two criteria of this spec. It needs the owner's word,
+   not mine.
+3. **Nobody has verified the tree since that overrule.** The developer amended two
+   criteria and re-pointed three of the tester's failing tests at different
+   behaviour. That is precisely the move that has to be independently walked, and it
+   has not been.
 
-1. **No tester has walked the feature since the fixes landed.** `run.json` records
-   `"verifyRounds": 2` with `fix-0` and `fix-1` running *after* the last verify. The only
-   tester report in the run is round 2, whose own verdict is **FAIL** with
-   `tests 23 / pass 19 / fail 4`. Three of its six findings are independently evidenced as
-   fixed by the round-3 reviewers; three criteria (7, 13, 17) have no evidence of their
-   post-fix state at all.
-2. **Codex still carries a P1 against the budget number** — billed spend is summed at
-   account level with no gateway or period match, then compared against one cap rule whose
-   window is discarded. "Is the AI budget about to run out" is half the reason this feature
-   exists; a headroom figure that can be wrong is not an acceptable answer to it.
-3. **The unit of the Cloudflare money figures is unverified** (`09-assumptions.md` §1).
-   If the API reports cents, both money cards read 100× high and the $5.00 low-credit alarm
-   never fires. This is the highest-cost open item in the run and it is one snapshot away
-   from being settled.
-
-Everything else about the feature is in good order: the page, the five cards, the chart,
-the cron write and the staff-only guard are all evidenced, the security review is clean,
-and no scope crept in.
+Nothing was silently descoped and nothing out of scope crept in. Every change of
+mind is disclosed in writing. This is a rejection about evidence and about two
+owner calls, not about sloppy work.
 
 ---
 
-## 1. Per-criterion result
-
-Legend: **MET** — evidence exists on the criterion's own surface, post-fix, unchallenged.
-**MET (at risk)** — evidenced, but an open reviewer finding attacks the same behaviour in
-production. **NO POST-FIX EVIDENCE** — the criterion failed or partially failed at verify
-round 2 and no tester has re-walked it since the fix. **NOT MET** — evidence contradicts
-the criterion.
+## 1. Criterion by criterion
 
 ### Money cards
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 1 | Balance card shows `$12.34`; no Cloudflare call on page load | MET (at risk) | `06-verify.md` round 2 — `test:ops2` 107/107, Playwright `ops2-attention.spec.ts` 21 passed, KV-only load probe. Risk: `09-assumptions.md` §1 — the dollars-vs-cents unit is undocumented and unverified. |
-| 2 | Cap outstanding shows headroom `$12.00` against cap `$20.00`, nothing hardcoded | MET (at risk) | `06-verify.md` round 2 (passing suite). Risk: **Codex P1** (`07-review-codex.md`, `worker/lib/monitoring.ts:103`) and architecture High — spend and cap can come from different scopes and periods, so the headroom can be wrong in production even though the fixture passes. |
-| 3 | Per-gateway cap, account-level fallback, source recorded | MET (at risk) | `06-verify.md` round 2 covers both paths. Same Codex P1 — the matched rule's `window`/`technique`/`duration`/`strategy` are discarded. |
-| 4 | No token → money cards "unavailable" (not zero, not red); counts still render | MET | `06-verify.md` round 2; `09-assumptions.md` "what you still have to do" §1 confirms this is the state production will actually be in until the secret is set. |
-| 5 | Cloudflare non-2xx/timeout → counts refreshed, money unavailable, failure logged, page still loads | MET (at risk) | `06-verify.md` round 2; `07-review-security.md` confirms the log line carries only a `pathSuffix()` slice. Risk: **Codex P2** — a malformed `takenAt` throws in `formatAsAt` and blanks the page rather than showing its error state. |
-| 6 | Snapshot older than 30 min → each card states "as at HH:MM" | MET (at risk) | `06-verify.md` round 2 records PASS (the round-1 gap — no browser render — was closed by `fix-0`). Same Codex P2 timestamp risk. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 1 | MET | Playwright renders `$12.34` from a ready snapshot; the worker log shows zero outbound Cloudflare requests during page load (`06-verify.md` C1). |
+| 2 | MET, at risk | Headroom computed, not hardcoded (`src/data/monitoring.ts:237`; node test `:256`). At risk: the P1 finding says the two figures being subtracted may not be comparable (`07-review-codex.md` P1; `07-review-architecture.md` High). |
+| 3 | MET, at risk | Per-gateway cap with account-level fallback, and the snapshot records which source supplied it (node `:372`, `:738`; snapshot type `src/data/monitoring.ts:12`). Same P1 risk: the rule's own window and technique are discarded. |
+| 4 | MET | Node `:294` plus two Playwright unavailable-state tests, including a placeholder account id treated distinctly from a missing token. |
+| 5 | MET | Node `:322`, `:603`, plus a live run against an unreachable Cloudflare — counts still refreshed, page still loaded. |
+| 6 | MET, at risk | Playwright stale sentence and per-card "as at" stamps. At risk: a snapshot with an unparseable timestamp passes validation and then blanks the whole page (`07-review-codex.md` P2; no evidence of a fix). |
 
 ### Parse counts
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 7 | 40 successes / 3 errors in the last 7 days | **NO POST-FIX EVIDENCE** | Round 2: **FAIL** (V-F2 — rolling SQL window against Melbourne calendar buckets, up to 24 h of parses silently dropped). `09-assumptions.md` §4 records the developer's resolution (seven Melbourne calendar dates, cards and chart now agree) and §7 records that the SQL-verbatim assertion was **edited** rather than satisfied. No tester has re-run it. |
-| 8 | A retried document counts once | MET | `06-verify.md` round 2 — `test:ai-jobs` 14/14. |
-| 9 | `processing` 31 min old with attempts exhausted → one error | MET (divergence recorded) | `06-verify.md` round 2. Divergence: `DEBT.md` F9 — the SQL predicate is age-only, so a row still eligible for retry is also counted as an error. The criterion as written passes; the implementation is broader than it. |
-| 10 | `processing` 5 min old → neither | MET | `06-verify.md` round 2. |
-| 11 | Ops-triggered building-model run excluded | MET | `06-verify.md` round 2; `triggered_by` filter, migration `0064`. `DEBT.md` F10: historical rows backfill to `'upload'`, so pre-deploy ops retries count as parses for up to 7 days — self-correcting. |
-| 12 | No parses → cards show `0`, chart shows empty state | MET | `06-verify.md` round 2, Playwright empty-state case. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 7 | MET | A live worker against a real D1, seeded with 40 completed and 3 failed parses, returned `success7d: 40, error7d: 3` (`06-verify.md` C7). Closes round 2's evidence gap. |
+| 8 | MET IN INTENT — ratified, pending one verification | The tester reported FAIL (F1). The developer did not change the counting code; he argues a real retry reuses the same claim row, so three attempts are one count, and that separate generations are separate parse jobs because the document set actually changed. The tester's own live evidence for F2 corroborates the in-place reclaim. I ratify the reading: it follows the owner's "one parse event = one claim lifecycle" ruling, and collapsing generations would hide genuine failures from the error card. But the spec text was amended by the developer, and the re-pointed test has not been walked by anyone independent. |
+| 9 | MET | A live 31-minute `processing` row produced `error7d: 1`. Note the criterion's "attempts exhausted" clause is not in the predicate — age alone decides (`DEBT.md` F9, low). |
+| 10 | MET | A live 5-minute `processing` row appeared in neither total nor any bucket. |
+| 11 | MET IN INTENT — ratified, pending one verification | The tester reported FAIL (F2). The criterion says *building-model* run, which is the separate `ai_runs` subsystem; the tester extended it to staff pressing "Try again" on a customer's document. Excluding that would erase a genuine customer parse from both cards — a document that failed, was retried by staff and then succeeded would appear nowhere at all, the opposite of what was asked for. I ratify the developer's reading as matching both the spec's own words and the business intent. Same caveat: unverified since the test was re-pointed. |
+| 12 | MET | Playwright empty states for both cards and the chart; node `:184`. |
 
 ### Chart
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 13 | Seven buckets whose sums equal the card totals | **NO POST-FIX EVIDENCE** | Round 2: **FAIL** (V-F2, same mismatch as criterion 7). Resolution recorded in `09-assumptions.md` §4; not re-tested. |
-| 14 | A zero-parse day appears as a zero bucket | MET (at risk) | `06-verify.md` round 2 PASS; carries criterion 13's risk since it shares the bucketing code. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 13 | MET | Node `:199`, `:578`, and live spread rows whose buckets sum exactly to the two count cards. Closes round 2's evidence gap. |
+| 14 | MET | Playwright asserts 7 columns including empty days; node `:565`. |
+
+Caveat on both: buckets key on a timestamp that a retry overwrites, so a parse can
+move between days after the fact — the tester watched an error jump from the
+2026-09-03 bucket to 2026-09-05 (`06-verify.md` F3, medium). The history is readable
+but not stable.
 
 ### Notification bubble
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 15 | Not red → count 0, no bubble drawn | MET | `06-verify.md` round 2 — browser coverage of the 0 state (the round-1 gap closed by `fix-0`). |
-| 16 | Balance below floor → bubble shows `1` | MET (at risk) | `06-verify.md` round 2. Risks: **Codex P2** — a transient cap-lookup failure marks *all* money unavailable and therefore suppresses a valid low-credit alarm; and `09-assumptions.md` §1 — if the balance unit is cents, the $5.00 floor never trips. |
-| 17 | Cap % above ceiling → `1`; both conditions → still `1` | **NO POST-FIX EVIDENCE** | Round 2: **PARTIAL** (V-F3 — `capUsd === 0` yields `NaN > 80` or `Infinity > 80`). Neither `DEBT.md` nor any round-3 review records this as fixed or accepted. Codex P1 additionally makes the percentage itself untrustworthy. |
-| 18 | Tapping the bubble navigates to Attention | MET | `06-verify.md` round 2, Playwright tap-through. |
-| 19 | Money unavailable → count 0, no false alarm | MET (at risk) | `06-verify.md` round 2. Codex P2 is this criterion's mirror image: correct on false alarms, wrong on *missed* alarms. |
-| 20 | A second source appends without changing the bubble, aggregation or container | MET | `06-verify.md` round 2; `07-review-ponytail.md` confirms one source and no source-specific branching. Ponytail's proposed collapse to `red ? 1 : 0` was **declined** (`DEBT.md`, `09-assumptions.md` §6) because the owner asked at the grill for the shape to be seeded — correct call. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 15 | MET | Node `:248`. |
+| 16 | MET, at risk | Node `:222`. At risk: if the cap lookup fails, the entire money block goes unavailable and a genuine low-credit alarm is suppressed (`07-review-codex.md` P2; `07-review-architecture.md` Medium) — the alarm failing silently in one of the situations it exists for. |
+| 17 | MET | Node `:238` plus `notificationCount: one source` (`:424`). Closes round 2's evidence gap. |
+| 18 | MET | Playwright bell navigation to Attention. |
+| 19 | MET | Node `:217`; per-flag `available === true` guards (`src/data/monitoring.ts:223-224`). |
+| 20 | MET | Node `:1002` — one source interface, one implementation, no source-specific branching. Two reviewers argue the registry is over-built for a single source; the developer declined on the owner's grill instruction to seed it. That is the owner's own call and it stands. |
 
 ### Freshness / cron
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 21 | The existing `*/10` cron writes one snapshot; no new trigger | MET | `06-verify.md` round 2 — `test:api` 77/77; architect conformance CONFORMS. |
-| 22 | Two open pages → no Cloudflare call, same snapshot | MET | `06-verify.md` round 2 probe. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 21 | MET | `wrangler.jsonc` still carries exactly one `*/10 * * * *` trigger; one KV key `monitoring:snapshot`. |
+| 22 | MET | Two sequential page loads, zero Cloudflare calls, identical snapshot timestamp. |
 
 ### Abuse cases
 
-| # | Criterion (short) | Result | Evidence |
-|---|---|---|---|
-| 23 | Signed-out visitor → 401/403, no figures | MET | `06-verify.md` round 2, live request: `401 {"error":"unauthorized"}`; after `fix-1` the endpoint refuses uniformly with 403 (`09-assumptions.md` §5). Either satisfies the criterion. |
-| 24 | Customer session → 403, no data | MET | `06-verify.md` round 2, live request: `403 {"error":"forbidden"}`. |
-| 25 | Manufacturer partner → 403, no data | MET (suite only) | `06-verify.md` round 2 — suite-executed; the hand-run attempt was blocked by a missing seeded partner account. Round 1 executed it live against a real role-flipped account. `07-review-security.md` traces the code path: `resolveStaff` rejects `role === "manufacturer"`. |
-| 26 | Payload carries no token, account id or gateway credential | MET | Round 2 flagged V-F4 (planted fields survived). `07-review-security.md` round 3: `parseMonitoringSnapshot` "rebuilds the snapshot field by field rather than validating the stored object in place", and the payload adds only `redBalance`, `redCap`, `floorUsd`. Fixed. |
-| 27 | Failure log contains no token or Authorization value | MET | `07-review-security.md` — the log prints a path suffix and a status only. `DEBT.md` F6 keeps the account-id-in-URL concern open as low debt; an account id is neither a token nor an Authorization value, so the criterion holds. |
-| 28 | Customer guessing `/attention` refused by the same ops2 staff guard; no new auth path | MET | Round 2: **FAIL** (V-F1 — cookie-only `resolveUser`, which would have 401'd every genuine staff request in production). `07-review-security.md` round 3, over the final diff: the endpoint "is gated by `resolveStaff(c.env, c.req.raw)`", equivalent to the `isStaffUser` predicate the design named, fails closed under Cloudflare Access, and route ordering was checked for shadowing. Fixed. |
+| # | Verdict | Evidence |
+|---|---|---|
+| 23 | MET | `curl` with an empty cookie jar → `HTTP 403 {"error":"forbidden"}`, no figures in the body. |
+| 24 | MET | A real customer session replayed at the ops host → `HTTP 403`. |
+| 25 | MET | Manufacturer role confirmed via `GET /api/ops/me` → `"role":"manufacturer"`, then `HTTP 403`. |
+| 26 | MET | The full 200 body was inspected: only the timestamp, the derived numbers, the cap source, day buckets, totals, red flags and the two thresholds. No token, no account id, no credentials. |
+| 27 | MET | A forced Cloudflare failure was logged; a grep of the log found zero hits for the token and for `authorization`. |
+| 28 | MET | Playwright: a customer at `/attention` is refused by the existing ops2 staff guard; node `:545`. No new auth path was introduced. |
 
-**Tally: 22 MET (9 of them carrying an open risk), 3 with no post-fix evidence (7, 13, 17),
-0 contradicted.**
+**Tally: 28 of 28 met or ratified as met — 6 of them carrying a named risk that no
+evidence closes, and 2 of them resting on an owner ruling that should be confirmed
+in writing.** The independent security review found nothing above its reporting bar
+and confirmed the endpoint fails closed, the token is secret-only, and the migration
+is a pure column add with no table rebuild (so the cascade hazard does not apply).
 
----
+## 2. Descoping
 
-## 2. Descoping check
+None silent. Three disclosed changes, each needing the owner's word:
 
-Nothing was silently dropped. All five cards, the chart, the bubble, the cron write and all
-six abuse cases exist and were exercised. Two changes to what "done" means were made
-in the open and need the owner's word rather than mine:
+- **The 7-day window is now seven Melbourne calendar dates, not a rolling 7×24
+  hours** (`09-assumptions.md` §4). The two could not both hold once the chart had
+  to sum to the cards. Cost: up to 24 hours less history depending on the time of
+  day. This contradicts an `ASSUMED:` in the spec and needs sign-off.
+- **The endpoint now refuses everyone with 403**; the earlier separate "sign in"
+  answer for signed-out callers is gone (`09-assumptions.md` §5). Criterion 23
+  allows either, and Cloudflare Access turns strangers away before the Worker sees
+  them. No loss.
+- **Criteria 8 and 11 were re-worded in this spec by the developer**, with the
+  reasoning left visible. Ratified above, but the counting rule is the owner's.
 
-- **The window was redefined.** The spec's `ASSUMED:` tag said a rolling 7×24 h window with
-  Melbourne day buckets. `09-assumptions.md` §4 shows those two cannot both hold, and the
-  developer chose seven Melbourne calendar dates so the chart sums to the cards. The cost is
-  between 0 and 24 hours less history than "last 7 days" implies. This is the right call for
-  the business question being asked, but criterion 7's wording no longer matches the build.
-- **The 401/403 split was collapsed to 403 for everyone** (`09-assumptions.md` §5). The panel
-  showed one message for both, and Access refuses strangers before the Worker sees them.
-  Criterion 23 permits either, so no scope was lost.
+Out of scope stayed out: no alerts, no amber tier, no drill-down, no queue
+introspection, no notification persistence, no change to the parse pipeline itself
+(the stuck-`processing` gap is counted, not repaired, exactly as specced), and no
+customer-facing surface.
 
-One near-descope worth naming: the "attempts exhausted" clause of criterion 9 is not in the
-SQL (`DEBT.md` F9). Recorded as a divergence, not fixed.
+## 3. Scope creep
 
-## 3. Scope creep check
+None found. The one thing beyond a bare reading of the spec — the notification
+source registry — was requested by the owner at the grill and is criterion 20.
 
-None. Architect conformance is CONFORMS; every path in `02-tasks.json` (T1–T6) exists.
-No alerting, drill-down, dismissal or queue introspection appeared, no customer surface was
-touched, and the parse pipeline itself was left alone as the spec required. Migration
-`0064` is additive (`ADD COLUMN … DEFAULT 'upload'`), design-sanctioned, and required by
-criterion 11; `07-review-security.md` confirms no table rebuild, so the cascade-delete
-hazard does not apply.
+## 4. Assumptions awaiting sign-off
 
-Ponytail's report is over-engineering only and finds ~90 removable lines, two of which were
-correctly declined as owner-requested. Nothing there blocks acceptance; it is debt, and it
-is recorded in `DEBT.md` with reasons.
-
-## 4. ASSUMED tags — sign-off status
-
-Six were tagged in `01-spec.md`. **None has been put to the owner. All six remain
-un-signed-off**, and `09-assumptions.md` adds three more judgement calls taken while he was
-away.
+Nine, none approved. The developer's ledger opens with "Nothing below was approved
+by him".
 
 | Assumption | Status |
 |---|---|
-| $5.00 credit floor / 80% cap ceiling, in wrangler `vars` | Built as specced; owner ruled "values in vars" at the grill (Q11), but the two numbers themselves were never confirmed. Needs sign-off. |
-| Rolling 7×24 h window with Melbourne day buckets | **Changed** to seven Melbourne calendar dates. Needs sign-off on the new definition. |
-| USD only, no AUD conversion | Built as specced. Needs sign-off. |
-| "Cap outstanding" = cap minus billed spend | Built as specced. Needs sign-off — and Codex P1 says the subtraction's two halves may not be comparable. |
-| Cards sit below "what needs a person" content | Moot in v1; no such content exists yet. |
-| Stale snapshot shown with timestamp rather than suppressed | Built and evidenced (criterion 6). Needs sign-off. |
-| *(new)* Cloudflare money figures are dollars, not cents | Unverified; a 100× error either way. Settled by looking at the first real snapshot. |
-| *(new)* `CF_ACCOUNT_ID` committed as a plain var | Reasonable — it is an identifier, already committed elsewhere in the same file, and the security review dismissed it explicitly. |
-| *(new)* Counting claim lifecycles, not documents | Owner already ruled this at the spec gate; the grill record simply lagged and has been struck through in place. |
+| $5.00 credit floor / 80% cap ceiling | Built. The owner ruled the values live in config; the two numbers themselves were never confirmed. |
+| Rolling 7×24h window | **Changed** to seven Melbourne calendar dates. Needs sign-off on the new definition. |
+| USD only, no AUD conversion | Built as specced. |
+| "Cap outstanding" = cap minus billed spend | Built as specced — and this is the subtraction the P1 finding questions. |
+| The five cards sit below "what needs a person" | Built; there is no such content in v1, so the cards are the page. |
+| A stale snapshot is shown with its timestamp rather than suppressed | Built and evidenced (criterion 6). |
+| Cloudflare money figures are dollars, not cents | **Unverified.** A 100× error either way. Settled by looking at the first real snapshot. |
+| `CF_ACCOUNT_ID` committed as a plain config value | Reasonable — an identifier, already committed elsewhere in the same file, and dismissed explicitly by the security review. |
+| Counting claim lifecycles, not documents | The owner ruled this at the spec gate; the grill record lagged and is struck through in place. Worth confirming, because criteria 8 and 11 now rest on it. |
 
-## 5. Pipeline integrity
+## 5. What goes back to the developer
 
-Better than at round 1, and now honest about what ran:
+1. Make the billed-spend figure and the cap figure describe the same thing — same
+   gateway, same window — or state plainly on the card what the percentage
+   measures. Until then the red alarm can fire on a number that means nothing, or
+   stay quiet when it should not.
+2. Keep the low-credit alarm alive when the cap lookup fails.
+3. Reject an unparseable snapshot timestamp instead of letting it blank the page.
+4. Then one clean verification round on a committed tree: criteria 8 and 11, the
+   three re-pointed tests, and a full suite run.
 
-- **All four reviewers completed** and their reports exist. `07-review-security.md` and
-  `07-review-ponytail.md` are both footed "Review round 3, over the final diff" and both
-  record that plan mode blocked the write to the run directory — the recurring pipeline
-  defect, recovered by hand. The reports themselves are complete.
-- **Verify did not re-run after `fix-0`/`fix-1`.** This is the gap in the evidence chain and
-  the main reason for the verdict. The tester's four deliberately-red tests
-  (`tests 23 / pass 19 / fail 4`) have no recorded green.
-- **Codex hit infrastructure failures** — `npm run build` and `npm run test:ai-monitoring`
-  both exited 1 with `Error: spawn EPERM`, plus two timeouts. That is an environment failure,
-  not a red test and not a clean pass; Codex's findings come from reading the diff, not from
-  running it.
-- **The branch sits on unmerged work.** `09-assumptions.md` §8: cut from `feat/ops2-attention`
-  (`591a912d`), still under review, and ~43 modified `src/` files from another session's
-  design-system work share the working tree. One Codex finding (`theme.css` shadow tokens
-  self-referencing through `@theme inline`, killing card/dialog/drawer shadows) belongs to
-  **that** work, not this feature — worth passing on separately; it looked real.
+Everything else the reviewers raised is either recorded in `DEBT.md` with a reason
+or was declined on the owner's own prior rulings.
 
-## 6. What goes back to the developer
+## 6. Pipeline integrity
 
-Blocking, in business-impact order:
-
-1. **Codex P1 — make the budget percentage mean something.** Match the billed-usage query to
-   the cap rule's gateway and period, or report the percentage unavailable rather than
-   computing a figure from mismatched scopes. Criteria 2, 3, 17, 19.
-2. **Re-run `verify` on a committed tree.** Criteria 7, 13 and 17 need a tester's word, and
-   the four red tests need a recorded green. This is the missing evidence, not new work.
-3. **Codex P2 — do not let a cap-lookup failure silence a low-credit alarm.** Separate the
-   availability of balance from the availability of cap. Criteria 16, 19.
-4. **Codex P2 — reject an invalid `takenAt`** rather than throwing in `formatAsAt` and
-   blanking the page. Criteria 5, 6.
-5. **V-F3 — guard `capUsd === 0`** so the ceiling comparison cannot be `NaN` or `Infinity`.
-   Criterion 17.
-6. **Settle the dollars-vs-cents question** before this is trusted in production
-   (`09-assumptions.md` §1) — one look at the first real snapshot.
-
-Non-blocking, carried as debt with reasons already recorded: `DEBT.md` F6, F7, F9, F10 and
-the ponytail shrinks. The two declined ponytail findings stay declined.
-
----
-
-## 7. Verdict
-
-**REJECT**, pending items 1–5 above and one verify round. The feature is close and the
-failure mode here is a missing tester pass rather than broken work — but "AI parsing is
-being watched" cannot be signed off while the budget number can be wrong, the low-credit
-alarm can be suppressed, and no tester has confirmed the counts and chart since they were
-rebuilt.
-
-This verdict is a recommendation. The product owner gives final sign-off, and the nine
-assumptions in section 4 are his to accept or veto.
+- The **security review ran and is clean**. The architecture, Codex and ponytail
+  reviews all ran. The architect's own conclusion is "I would not approve the
+  architecture yet" — that stands unresolved, and is the substance of item 1 above.
+- **Codex could not run commands locally** (build and test invocations failed with
+  permission errors, plus timeouts). Its findings come from reading the diff, not
+  from executing it. That is a weaker review than a clean one and should not be
+  presented as a full pass.
+- The **security and ponytail reviewers ran under plan mode**, which blocked their
+  reports from being written; both had to be recovered by hand. A standing pipeline
+  defect, not a defect in this feature — but a run can look reviewed on an axis that
+  never actually reported.
+- The branch sits on the unmerged `feat/ops2-attention`, and roughly 43 files from
+  another session's design-system work share the working tree. One Codex finding
+  (theme shadow tokens self-referencing) belongs to that other work, not this
+  feature — worth passing on, it looked real.
+- Before this works in production the Cloudflare API token still has to be set as a
+  Worker secret. Until then the two money cards correctly read "unavailable" and the
+  parse counts work — which means criteria 1, 2 and 3 have never been seen with real
+  data.
