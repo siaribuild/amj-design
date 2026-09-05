@@ -4,9 +4,22 @@
 /** The money half of a snapshot. Declared HERE, once: the Worker's IO shell and
  *  the console's hook both used to carry their own copy of this union, which is
  *  two places for one fact and the way they come to disagree. */
-export type MoneySnapshot =
-  | { available: true; creditBalanceUsd: number; billedSpendUsd: number; capUsd: number; capSource: "gateway" | "account" }
+export type BalanceSnapshot =
+  | { available: true; creditBalanceUsd: number }
   | { available: false; reason: string };
+
+export type BudgetSnapshot =
+  | { available: true; billedSpendUsd: number; capUsd: number; capSource: "gateway" | "account"; windowDays: number }
+  | { available: false; reason: string };
+
+/** Balance and budget answer SEPARATELY, and that separation is the point.
+ *
+ *  They were one union with one `available`, computed under one try/catch, so a
+ *  blip on the cap endpoint threw away a perfectly good credit balance — and
+ *  with it the low-credit warning, which is the outage this feature exists to
+ *  see coming. A cap we cannot read is a cap we do not know; it is not a
+ *  balance we do not know. */
+export type MoneySnapshot = { balance: BalanceSnapshot; budget: BudgetSnapshot };
 
 /** What the cron stores and this module vouches for. The route adds the
  *  evaluated `red` and its thresholds on the way out (MonitoringPayload). */
@@ -17,6 +30,45 @@ export type StoredSnapshot = {
   success7d: number;
   error7d: number;
 };
+
+// === true / === false only: anything else (a string "yes") would match neither
+// branch, skip every field check, and pass as a valid snapshot.
+function parseBalance(value: unknown): BalanceSnapshot | null {
+  if (typeof value !== "object" || value === null) return null;
+  const b = value as Record<string, unknown>;
+  if (b.available === true) {
+    if (typeof b.creditBalanceUsd !== "number") return null;
+    return { available: true, creditBalanceUsd: b.creditBalanceUsd };
+  }
+  if (b.available === false) {
+    if (typeof b.reason !== "string") return null;
+    return { available: false, reason: b.reason };
+  }
+  return null;
+}
+
+function parseBudget(value: unknown): BudgetSnapshot | null {
+  if (typeof value !== "object" || value === null) return null;
+  const b = value as Record<string, unknown>;
+  if (b.available === true) {
+    if (typeof b.billedSpendUsd !== "number") return null;
+    if (typeof b.capUsd !== "number") return null;
+    if (typeof b.capSource !== "string") return null;
+    if (typeof b.windowDays !== "number") return null;
+    return {
+      available: true,
+      billedSpendUsd: b.billedSpendUsd,
+      capUsd: b.capUsd,
+      capSource: b.capSource as "gateway" | "account",
+      windowDays: b.windowDays,
+    };
+  }
+  if (b.available === false) {
+    if (typeof b.reason !== "string") return null;
+    return { available: false, reason: b.reason };
+  }
+  return null;
+}
 
 // REBUILDS the snapshot field by field rather than validating in place. This is
 // the boundary between stored JSON and a staff-visible payload: returning the
@@ -32,25 +84,10 @@ export function parseMonitoringSnapshot(body: unknown): StoredSnapshot | null {
   const record = body as Record<string, unknown>;
   if (typeof record.money !== "object" || record.money === null) return null;
   const source = record.money as Record<string, unknown>;
-  // === true / === false only: anything else (a string "yes") would match
-  // neither branch, skip every field check below, and pass as a valid snapshot.
-  let money: MoneySnapshot;
-  if (source.available === true) {
-    if (typeof source.creditBalanceUsd !== "number") return null;
-    if (typeof source.billedSpendUsd !== "number") return null;
-    if (typeof source.capUsd !== "number") return null;
-    if (typeof source.capSource !== "string") return null;
-    money = {
-      available: true,
-      creditBalanceUsd: source.creditBalanceUsd,
-      billedSpendUsd: source.billedSpendUsd,
-      capUsd: source.capUsd,
-      capSource: source.capSource as "gateway" | "account",
-    };
-  } else if (source.available === false) {
-    if (typeof source.reason !== "string") return null;
-    money = { available: false, reason: source.reason };
-  } else return null;
+  const balance = parseBalance(source.balance);
+  const budget = parseBudget(source.budget);
+  if (!balance || !budget) return null;
+  const money: MoneySnapshot = { balance, budget };
   if (!Array.isArray(record.days) || record.days.length !== 7) return null;
   const days = [];
   for (const d of record.days) {
@@ -63,7 +100,10 @@ export function parseMonitoringSnapshot(body: unknown): StoredSnapshot | null {
   }
   if (typeof record.success7d !== "number") return null;
   if (typeof record.error7d !== "number") return null;
-  if (typeof record.takenAt !== "string") return null;
+  // A string is not an instant. "invalid" passed this check, then reached
+  // Intl.DateTimeFormat.format on the page, which throws on an invalid Date and
+  // blanked the whole surface instead of showing its error state.
+  if (typeof record.takenAt !== "string" || Number.isNaN(Date.parse(record.takenAt))) return null;
   return { takenAt: record.takenAt, money, days, success7d: record.success7d, error7d: record.error7d };
 }
 
@@ -178,11 +218,10 @@ export function evaluateRedFlags(
   floorUsd: number,
   ceilingPct: number,
 ): { balance: boolean; cap: boolean } {
-  const money = snapshot.money;
-  if (money.available === false) return { balance: false, cap: false };
+  const { balance, budget } = snapshot.money;
   return {
-    balance: money.creditBalanceUsd < floorUsd,
-    cap: capBreached(money, ceilingPct),
+    balance: balance.available === true && balance.creditBalanceUsd < floorUsd,
+    cap: budget.available === true && capBreached(budget, ceilingPct),
   };
 }
 

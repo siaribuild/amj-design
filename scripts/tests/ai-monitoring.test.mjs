@@ -16,7 +16,7 @@ const outfile = join(runDir, "ai-monitoring-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached } from ${p("src/data/monitoring.ts")};
+      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached, evaluateRedFlags } from ${p("src/data/monitoring.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ai-monitoring-entry.ts",
@@ -29,7 +29,7 @@ await build({
   logLevel: "silent",
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
-const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached } = M;
+const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached, evaluateRedFlags } = M;
 
 // worker/lib/monitoring.ts — IO shell (D1 counts, CF money fetch, KV
 // snapshot, notification sources). Design §3.2, §5, §6.
@@ -44,6 +44,7 @@ await build({
         NOTIFICATION_SOURCES,
         notificationCount,
         monitoringPayload,
+        __testingSources,
       } from ${p("worker/lib/monitoring.ts")};
     `,
     resolveDir: projectRoot,
@@ -64,21 +65,26 @@ const {
   NOTIFICATION_SOURCES,
   notificationCount,
   monitoringPayload,
+  __testingSources,
 } = Lib;
 
 test.after(async () => {
   await removeRunDir(runDir);
 });
 
+const money = (balance, budget) => ({ balance, budget });
+const BALANCE_OK = { available: true, creditBalanceUsd: 12.34 };
+const BUDGET_OK = {
+  available: true,
+  billedSpendUsd: 8,
+  capUsd: 20,
+  capSource: "gateway",
+  windowDays: 30,
+};
+
 const VALID_SNAPSHOT = {
   takenAt: "2026-09-01T00:00:00.000Z",
-  money: {
-    available: true,
-    creditBalanceUsd: 12.34,
-    billedSpendUsd: 8,
-    capUsd: 20,
-    capSource: "gateway",
-  },
+  money: money(BALANCE_OK, BUDGET_OK),
   success7d: 3,
   error7d: 1,
   days: Array.from({ length: 7 }, (_, i) => ({
@@ -99,6 +105,9 @@ test("parseMonitoringSnapshot: rejects malformed shapes as null, never partial",
   assert.equal(parseMonitoringSnapshot("not an object"), null);
   assert.equal(parseMonitoringSnapshot({}), null);
   assert.equal(parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: undefined }), null);
+  // Either half missing is a malformed snapshot: the page renders both.
+  assert.equal(parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: { balance: BALANCE_OK } }), null);
+  assert.equal(parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: { budget: BUDGET_OK } }), null);
   // days wrong length
   assert.equal(
     parseMonitoringSnapshot({ ...VALID_SNAPSHOT, days: VALID_SNAPSHOT.days.slice(0, 6) }),
@@ -112,7 +121,7 @@ test("parseMonitoringSnapshot: rejects malformed shapes as null, never partial",
   assert.equal(
     parseMonitoringSnapshot({
       ...VALID_SNAPSHOT,
-      money: { ...VALID_SNAPSHOT.money, creditBalanceUsd: undefined },
+      money: money({ ...BALANCE_OK, creditBalanceUsd: undefined }, BUDGET_OK),
     }),
     null,
   );
@@ -120,7 +129,7 @@ test("parseMonitoringSnapshot: rejects malformed shapes as null, never partial",
   assert.equal(
     parseMonitoringSnapshot({
       ...VALID_SNAPSHOT,
-      money: { ...VALID_SNAPSHOT.money, billedSpendUsd: undefined },
+      money: money(BALANCE_OK, { ...BUDGET_OK, billedSpendUsd: undefined }),
     }),
     null,
   );
@@ -128,7 +137,7 @@ test("parseMonitoringSnapshot: rejects malformed shapes as null, never partial",
   assert.equal(
     parseMonitoringSnapshot({
       ...VALID_SNAPSHOT,
-      money: { ...VALID_SNAPSHOT.money, capUsd: undefined },
+      money: money(BALANCE_OK, { ...BUDGET_OK, capUsd: undefined }),
     }),
     null,
   );
@@ -136,13 +145,13 @@ test("parseMonitoringSnapshot: rejects malformed shapes as null, never partial",
   assert.equal(
     parseMonitoringSnapshot({
       ...VALID_SNAPSHOT,
-      money: { ...VALID_SNAPSHOT.money, capSource: undefined },
+      money: money(BALANCE_OK, { ...BUDGET_OK, capSource: undefined }),
     }),
     null,
   );
   // money.available=false missing reason
   assert.equal(
-    parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: { available: false } }),
+    parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: money({ available: false }, BUDGET_OK) }),
     null,
   );
   // a day bucket with a non-string day
@@ -205,14 +214,14 @@ test("assembleParseCounts: bucket sums equal the two totals for sample rows", ()
 });
 
 test("evaluateRed: false when money unavailable", () => {
-  const snapshot = { ...VALID_SNAPSHOT, money: { available: false, reason: "no key" } };
+  const snapshot = { ...VALID_SNAPSHOT, money: money({ available: false, reason: "no key" }, { available: false, reason: "no key" }) };
   assert.equal(evaluateRed(snapshot, 5, 90), false);
 });
 
 test("evaluateRed: true when creditBalanceUsd is below the dollar floor", () => {
   const snapshot = {
     ...VALID_SNAPSHOT,
-    money: { available: true, creditBalanceUsd: 4, billedSpendUsd: 1, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 4 }, { available: true, billedSpendUsd: 1, capUsd: 20, capSource: "gateway", windowDays: 30 }),
   };
   assert.equal(evaluateRed(snapshot, 5, 90), true);
 });
@@ -220,7 +229,7 @@ test("evaluateRed: true when creditBalanceUsd is below the dollar floor", () => 
 test("evaluateRed: true when billedSpend/cap exceeds the percent ceiling", () => {
   const snapshot = {
     ...VALID_SNAPSHOT,
-    money: { available: true, creditBalanceUsd: 100, billedSpendUsd: 19, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 100 }, { available: true, billedSpendUsd: 19, capUsd: 20, capSource: "gateway", windowDays: 30 }),
   };
   assert.equal(evaluateRed(snapshot, 5, 90), true);
 });
@@ -228,7 +237,7 @@ test("evaluateRed: true when billedSpend/cap exceeds the percent ceiling", () =>
 test("evaluateRed: a single boolean true when both the floor and ceiling trip", () => {
   const snapshot = {
     ...VALID_SNAPSHOT,
-    money: { available: true, creditBalanceUsd: 4, billedSpendUsd: 19, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 4 }, { available: true, billedSpendUsd: 19, capUsd: 20, capSource: "gateway", windowDays: 30 }),
   };
   const result = evaluateRed(snapshot, 5, 90);
   assert.equal(typeof result, "boolean");
@@ -238,7 +247,7 @@ test("evaluateRed: a single boolean true when both the floor and ceiling trip", 
 test("evaluateRed: false when neither the floor nor the ceiling trips", () => {
   const snapshot = {
     ...VALID_SNAPSHOT,
-    money: { available: true, creditBalanceUsd: 12.34, billedSpendUsd: 8, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 12.34 }, { available: true, billedSpendUsd: 8, capUsd: 20, capSource: "gateway", windowDays: 30 }),
   };
   assert.equal(evaluateRed(snapshot, 5, 90), false);
 });
@@ -288,7 +297,8 @@ test("fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zer
     throw new Error("should not be called");
   };
   const result = await fetchMoneyNumbers({ CF_ACCOUNT_ID: "acct1" }, fetchImpl);
-  assert.deepEqual(result, { available: false, reason: "token_missing" });
+  assert.deepEqual(result.balance, { available: false, reason: "token_missing" });
+  assert.deepEqual(result.budget, { available: false, reason: "token_missing" });
   assert.equal(fetchCalls, 0);
 });
 
@@ -299,12 +309,12 @@ test("fetchMoneyNumbers: CF_ACCOUNT_ID unset or left at the wrangler.jsonc place
     throw new Error("should not be called");
   };
   const missing = await fetchMoneyNumbers({ CF_MONITORING_TOKEN: "tok" }, fetchImpl);
-  assert.deepEqual(missing, { available: false, reason: "account_id_missing" });
+  assert.deepEqual(missing.balance, { available: false, reason: "account_id_missing" });
   const placeholder = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "paste-real-cf-account-id-before-deploying" },
     fetchImpl,
   );
-  assert.deepEqual(placeholder, { available: false, reason: "account_id_missing" });
+  assert.deepEqual(placeholder.budget, { available: false, reason: "account_id_missing" });
   assert.equal(fetchCalls, 0);
 });
 
@@ -349,7 +359,8 @@ test("writeMonitoringSnapshot: CF failure still writes fresh D1 counts with mone
   assert.ok(fetchCalls > 0, "fetchImpl must actually be called");
   const put = calls.find((c) => c.key === "monitoring:snapshot");
   const snapshot = JSON.parse(put.value);
-  assert.equal(snapshot.money.available, false);
+  assert.equal(snapshot.money.balance.available, false, 'both halves failed, so both say so');
+  assert.equal(snapshot.money.budget.available, false);
   assert.equal(snapshot.success7d, 1);
   assert.ok(lines.length > 0, "a failure log line must be written");
   const logged = lines.join("\n");
@@ -374,19 +385,19 @@ test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with c
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.deepEqual(result, {
-    available: true,
-    creditBalanceUsd: 12.34,
-    billedSpendUsd: 8,
-    capUsd: 20,
-    capSource: "account",
-  });
+  assert.deepEqual(result.balance, { available: true, creditBalanceUsd: 12.34 });
+  assert.equal(result.budget.available, true);
+  assert.equal(result.budget.billedSpendUsd, 8);
+  assert.equal(result.budget.capUsd, 20);
+  assert.equal(result.budget.capSource, "account");
 });
 
 test("readMonitoringSnapshot: round-trips a snapshot written via writeMonitoringSnapshot", async () => {
@@ -413,7 +424,10 @@ test("notificationCount: one source, sums to 1 when the stored snapshot is red",
   let getCalls = 0;
   const redSnapshot = {
     takenAt: new Date().toISOString(),
-    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 2, capUsd: 100, capSource: "account" },
+    money: money(
+      { available: true, creditBalanceUsd: 1 },
+      { available: true, billedSpendUsd: 2, capUsd: 100, capSource: "account", windowDays: 30 },
+    ),
     days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
     success7d: 0,
     error7d: 0,
@@ -436,7 +450,7 @@ test("monitoringPayload: ships a red flag PER CONDITION and the floor, from ONE 
   let getCalls = 0;
   const redSnapshot = {
     takenAt: new Date().toISOString(),
-    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 19, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 1 }, { available: true, billedSpendUsd: 19, capUsd: 20, capSource: "gateway", windowDays: 30 }),
     days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
     success7d: 0,
     error7d: 0,
@@ -492,7 +506,10 @@ test("V-F2 assembleParseCounts: rows inside the rolling 7x24h SQL window are nev
 
 test("V-F3 evaluateRed: a zero spend cap is red whenever there is spend, and never NaN-quiet", () => {
   const zeroCap = (billedSpendUsd) => ({
-    money: { available: true, creditBalanceUsd: 100, billedSpendUsd, capUsd: 0 },
+    money: money(
+      { available: true, creditBalanceUsd: 100 },
+      { available: true, billedSpendUsd, capUsd: 0, capSource: "gateway", windowDays: 30 },
+    ),
   });
   // 0/0 = NaN, and NaN > ceiling is false: a cap of zero with zero spend silently
   // reports "not red" instead of being treated as an unusable cap.
@@ -507,7 +524,7 @@ test("V-F3 evaluateRed: a zero spend cap is red whenever there is spend, and nev
 test("V-F4 parseMonitoringSnapshot: returns only whitelisted fields and rejects a non-boolean money.available", () => {
   const injected = parseMonitoringSnapshot({
     ...VALID_SNAPSHOT,
-    money: { ...VALID_SNAPSHOT.money, cfToken: "SECRET-TOKEN", accountId: "acct-123" },
+    money: money({ ...BALANCE_OK, cfToken: "SECRET-TOKEN" }, { ...BUDGET_OK, accountId: "acct-123" }),
     internalDebug: "leak-me",
   });
   assert.ok(injected, "the snapshot itself is well-formed");
@@ -518,7 +535,7 @@ test("V-F4 parseMonitoringSnapshot: returns only whitelisted fields and rejects 
   // available is checked with === true / === false, so any other value skips every
   // money field check and a garbage money object is returned as valid.
   assert.equal(
-    parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: { available: "yes", anything: 1 } }),
+    parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: money({ available: "yes", anything: 1 }, BUDGET_OK) }),
     null,
     "a non-boolean money.available is malformed and must be rejected",
   );
@@ -603,7 +620,7 @@ test("fetchMoneyNumbers: a stalled Cloudflare endpoint is bounded, not waited on
     new Promise((resolve) => setTimeout(() => resolve("never-returned"), 5000)),
   ]);
   assert.equal(sawSignal, true, "every Cloudflare request must carry an abort signal");
-  assert.deepEqual(outcome, { available: false, reason: "fetch_failed" });
+  assert.equal(outcome.budget.available, false, "a stalled call ends, it does not hang");
 });
 
 test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", async () => {
@@ -639,19 +656,18 @@ test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", asy
         }),
       };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.deepEqual(result, {
-    available: true,
-    creditBalanceUsd: 12.34,
-    billedSpendUsd: 8, // 5 + 3, summed across the history entries
-    capUsd: 20,
-    capSource: "gateway",
-  });
+  assert.deepEqual(result.balance, { available: true, creditBalanceUsd: 12.34 });
+  assert.equal(result.budget.billedSpendUsd, 8, "5 + 3, summed across the history entries");
+  assert.equal(result.budget.capUsd, 20);
+  assert.equal(result.budget.capSource, "gateway");
   // value_grouping_window is a REQUIRED query parameter; without it the usage
   // call is a 400 and the money half of the feature never works at all.
   assert.ok(
@@ -670,13 +686,15 @@ test("fetchMoneyNumbers: a 200 that does not carry the documented fields is unav
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: null, duration: null } } }) };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+  assert.equal(result.budget.available, false);
 });
 
 test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply the first one", async () => {
@@ -704,14 +722,16 @@ test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply t
         }),
       };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.equal(result.capUsd, 20);
-  assert.equal(result.capSource, "gateway");
+  assert.equal(result.budget.capUsd, 20);
+  assert.equal(result.budget.capSource, "gateway");
 });
 
 test("fetchMoneyNumbers: the account fallback converts cents to dollars", async () => {
@@ -727,28 +747,31 @@ test("fetchMoneyNumbers: the account fallback converts cents to dollars", async 
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.equal(result.capUsd, 20, "2000 cents is twenty dollars");
-  assert.equal(result.capSource, "account");
+  assert.equal(result.budget.capUsd, 20, "2000 cents is twenty dollars");
+  assert.equal(result.budget.capSource, "account");
 });
 
 test("capBreached: the page's warning and the server's red flag agree at the rounding edge", () => {
   // The card rounded 79.6% to 80 and warned on >=, while evaluateRed compared
   // the raw 79.6 on >: the tile carried a cap warning that the bell and the
   // red flag both denied. One predicate, both surfaces, no rounding in it.
-  const money = { available: true, creditBalanceUsd: 100, billedSpendUsd: 79.6, capUsd: 100 };
-  assert.equal(capBreached(money, 80), false, "79.6% is not above an 80% ceiling");
-  assert.equal(evaluateRed({ money }, 5, 80), capBreached(money, 80));
-  const over = { ...money, billedSpendUsd: 80.4 };
+  const budget = { available: true, billedSpendUsd: 79.6, capUsd: 100, capSource: "gateway", windowDays: 30 };
+  const bal = { available: true, creditBalanceUsd: 100 };
+  assert.equal(capBreached(budget, 80), false, "79.6% is not above an 80% ceiling");
+  assert.equal(evaluateRed({ money: money(bal, budget) }, 5, 80), capBreached(budget, 80));
+  const over = { ...budget, billedSpendUsd: 80.4 };
   assert.equal(capBreached(over, 80), true);
-  assert.equal(evaluateRed({ money: over }, 5, 80), capBreached(over, 80));
+  assert.equal(evaluateRed({ money: money(bal, over) }, 5, 80), capBreached(over, 80));
   // No headroom at all is a breach however it is phrased.
-  assert.equal(capBreached({ ...money, capUsd: 0 }, 80), true);
+  assert.equal(capBreached({ ...budget, capUsd: 0 }, 80), true);
 });
 
 test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snapshot", async () => {
@@ -765,19 +788,18 @@ test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snap
         json: async () => ({ result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
       };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.deepEqual(result, {
-    available: true,
-    creditBalanceUsd: 3,
-    billedSpendUsd: 0,
-    capUsd: 20,
-    capSource: "gateway",
-  });
+  assert.deepEqual(result.balance, { available: true, creditBalanceUsd: 3 });
+  assert.equal(result.budget.available, true);
+  assert.equal(result.budget.billedSpendUsd, 0);
+  assert.equal(result.budget.capUsd, 20);
   // And the balance still drives the floor warning it is there to drive.
   assert.equal(evaluateRed({ money: result }, 5, 80), true);
 });
@@ -788,13 +810,15 @@ test("fetchMoneyNumbers: a usage response with no history array at all is still 
     if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: {} }) };
     if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
     if (url.includes("/billing/spending-limit")) return { ok: false, status: 404 };
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
     { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
     fetchImpl,
   );
-  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+  assert.equal(result.budget.available, false);
 });
 
 test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
@@ -815,6 +839,8 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
     if (url.includes("/billing/spending-limit")) {
       return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: 5000, duration: "monthly" } } }) };
     }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
     throw new Error(`unexpected url ${url}`);
   };
   const result = await fetchMoneyNumbers(
@@ -822,7 +848,7 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
     fetchImpl,
   );
   // Neither source has an enabled cap, so the money numbers are not claimed.
-  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+  assert.equal(result.budget.available, false);
 });
 
 test("readMonitoringSnapshot: unreadable stored JSON is no snapshot, not a thrown request", async () => {
@@ -844,7 +870,7 @@ test("monitoringPayload: one breached condition reddens only its own card", asyn
   // card — each pointing the reader at a number that was perfectly healthy.
   const snapshot = {
     takenAt: new Date().toISOString(),
-    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 1, capUsd: 20, capSource: "gateway" },
+    money: money({ available: true, creditBalanceUsd: 1 }, { available: true, billedSpendUsd: 1, capUsd: 20, capSource: "gateway", windowDays: 30 }),
     days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
     success7d: 0,
     error7d: 0,
@@ -858,4 +884,125 @@ test("monitoringPayload: one breached condition reddens only its own card", asyn
   assert.equal(payload.snapshot.redBalance, true, "$1 is below the $5 floor");
   assert.equal(payload.snapshot.redCap, false, "5% of the cap is not a cap problem");
   assert.equal(payload.notificationCount, 1, "still one notification, not two");
+});
+
+// --- Review round 3 (docs/runs/ai-parse-monitoring/07-review-*.md) ------------
+
+test("parseMonitoringSnapshot: a takenAt that is not a real instant is malformed", () => {
+  // A string passed the old check and then reached Intl.DateTimeFormat.format,
+  // which throws on an invalid Date — blanking the whole Attention page instead
+  // of showing the error state written for exactly this.
+  assert.equal(parseMonitoringSnapshot({ ...VALID_SNAPSHOT, takenAt: "invalid" }), null);
+  assert.equal(parseMonitoringSnapshot({ ...VALID_SNAPSHOT, takenAt: "" }), null);
+  assert.ok(parseMonitoringSnapshot(VALID_SNAPSHOT));
+});
+
+test("fetchMoneyNumbers: usage is asked for over the cap's OWN window, not all time", async () => {
+  // The cap is a per-gateway rule with its own window; usage-history defaults to
+  // the account's whole history. Dividing one by the other described no budget
+  // that Cloudflare actually enforces, and the percentage only ever grew.
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({
+          result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } },
+        }),
+      };
+    }
+    if (url.includes("/ai-gateway/gateways")) {
+      return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  const usage = seen.find((u) => u.includes("/billing/usage-history"));
+  const start = Number(new URL(usage).searchParams.get("start_time"));
+  const end = Number(new URL(usage).searchParams.get("end_time"));
+  assert.ok(start > 0 && end > 0, "usage-history must be bounded to the cap's window");
+  const spanDays = Math.round((end - start) / 86400000);
+  assert.equal(spanDays, 30, "a 2592000s rule window is thirty days of usage");
+  assert.equal(result.budget.available, true);
+  assert.equal(result.budget.billedSpendUsd, 4);
+  assert.equal(result.budget.capUsd, 20);
+});
+
+test("fetchMoneyNumbers: a second gateway makes the cap percentage unattributable, not wrong", async () => {
+  // usage-history is ACCOUNT-scoped and cannot be filtered by gateway. With one
+  // gateway the account's spend is that gateway's spend; with two it is not,
+  // and dividing it by one gateway's cap overstates the percentage.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 4 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({
+          result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } },
+        }),
+      };
+    }
+    if (url.includes("/ai-gateway/gateways")) {
+      return { ok: true, json: async () => ({ result: [{ id: "gw1" }, { id: "gw2" }] }) };
+    }
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.equal(result.budget.available, false);
+  assert.equal(result.budget.reason, "spend_not_attributable");
+  // The balance is untouched by any of that, and still raises its own alarm.
+  assert.equal(result.balance.available, true);
+  assert.equal(result.balance.creditBalanceUsd, 3);
+  assert.equal(evaluateRedFlags({ money: result }, 5, 80).balance, true);
+});
+
+test("fetchMoneyNumbers: a failed cap lookup never silences a real low-credit alarm", async () => {
+  // One catch around all three requests threw away a perfectly good balance
+  // because the cap endpoint blipped — suppressing the outage warning this
+  // feature exists to give.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 2 } }) };
+    if (url.includes("/billing/usage-history")) return { ok: false, status: 500 };
+    if (url.includes("/ai-gateway/gateways")) return { ok: false, status: 500 };
+    if (url.includes("/billing/spending-limit")) return { ok: false, status: 500 };
+    // The scope check: one gateway on the account, so its spend is the account's.
+    if (url.endsWith("/ai-gateway/gateways")) return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.equal(result.balance.available, true, "the balance answered, so it is reported");
+  assert.equal(result.balance.creditBalanceUsd, 2);
+  assert.equal(result.budget.available, false);
+  assert.equal(evaluateRedFlags({ money: result }, 5, 80).balance, true, "$2 is still below the $5 floor");
+  assert.equal(evaluateRedFlags({ money: result }, 5, 80).cap, false, "an unknown cap is never a cap alarm");
+});
+
+test("notificationCount: one failing source cannot hide every other notification", async () => {
+  // Promise.all rejects the whole payload on the first rejection, so a future
+  // orders or messages source throwing would blank the AI cards too.
+  const boom = async () => { throw new Error("source down"); };
+  const two = async () => 2;
+  const count = await __testingSources.countFrom([boom, two], { env: {}, snapshot: null });
+  assert.equal(count, 2, "a source that throws contributes nothing and stops nothing");
 });

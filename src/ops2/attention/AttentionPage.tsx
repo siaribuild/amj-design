@@ -197,15 +197,18 @@ export function AttentionPage() {
            repeat one timestamp five times. */
         const stamp = age?.stale ? <p className="att-card__stamp">as at {asAt}</p> : null;
         /* An unavailable figure is an em dash and the REASON — never a zero
-           (a lie) and never red (an alarm no one can act on). */
-        let unavailable = "";
-        if (money.available === false) {
-          unavailable = money.reason === "token_missing"
+           (a lie) and never red (an alarm no one can act on).
+           Balance and budget can be unavailable SEPARATELY: a cap we could not
+           read must not blank a credit balance that arrived perfectly well. */
+        const reasonText = (reason: string) =>
+          reason === "token_missing"
             ? "Unavailable. No Cloudflare token configured"
-            : money.reason === "account_id_missing"
+            : reason === "account_id_missing"
               ? "Unavailable. No Cloudflare account configured"
-              : `Unavailable. Cloudflare did not answer at ${asAt}`;
-        }
+              : reason === "spend_not_attributable"
+                ? "Unavailable. More than one gateway shares this account's spend"
+                : `Unavailable. Cloudflare did not answer at ${asAt}`;
+        const { balance, budget } = money;
         // Each card carries its OWN condition, both precomputed by the server
         // (UX §6.2 asks for red *flags*). One shared boolean reddened a healthy
         // balance because the cap was high, and a healthy cap because the
@@ -213,9 +216,22 @@ export function AttentionPage() {
         // still counts the pair as ONE notification.
         const balanceLow = snapshot.redBalance;
         const capOver = snapshot.redCap;
-        const capPct = money.available && money.capUsd > 0
-          ? Math.round((money.billedSpendUsd / money.capUsd) * 100)
+        const capPct = budget.available && budget.capUsd > 0
+          ? Math.round((budget.billedSpendUsd / budget.capUsd) * 100)
           : 0;
+        // Each note decided here, in one place, rather than as a ternary chain
+        // inside the markup: the card then renders a string it does not have to
+        // reason about.
+        const balanceNote = balance.available === false
+          ? reasonText(balance.reason)
+          : balanceLow
+            ? `⚠ Below the $${snapshot.floorUsd.toFixed(2)} floor`
+            : "USD, as Cloudflare reports it";
+        const budgetNote = budget.available === false
+          ? reasonText(budget.reason)
+          : capOver
+            ? `⚠ ${capPct}% of the $${budget.capUsd.toFixed(2)} ${budget.capSource} cap used`
+            : `$${budget.billedSpendUsd.toFixed(2)} of the $${budget.capUsd.toFixed(2)} ${budget.capSource} cap used (${capPct}%)`;
         return (
           <div className="att-monitoring">
             <div className="att-grid">
@@ -226,39 +242,31 @@ export function AttentionPage() {
                 <div className="att-pair">
                   <article
                     className="att-card"
-                    data-state={!money.available ? "unavailable" : balanceLow ? "red" : undefined}
+                    data-state={balance.available === false ? "unavailable" : balanceLow ? "red" : undefined}
                     data-testid="monitoring-credit-balance"
                   >
                     <h3 className="att-card__label">Credit balance</h3>
                     <p className="att-card__figure">
-                      {money.available ? `$${money.creditBalanceUsd.toFixed(2)}` : "—"}
+                      {balance.available ? `$${balance.creditBalanceUsd.toFixed(2)}` : "—"}
                     </p>
                     <p className="att-card__note">
-                      {!money.available
-                        ? unavailable
-                        : balanceLow
-                          ? `⚠ Below the $${snapshot.floorUsd.toFixed(2)} floor`
-                          : "USD, as Cloudflare reports it"}
+                      {balanceNote}
                     </p>
                     {stamp}
                   </article>
                   <article
                     className="att-card"
-                    data-state={!money.available ? "unavailable" : capOver ? "red" : undefined}
+                    data-state={budget.available === false ? "unavailable" : capOver ? "red" : undefined}
                     data-testid="monitoring-cap-outstanding"
                   >
                     {/* REMAINING, because the figure is headroom; the note
                         carries the percentage, because the ceiling is one. */}
                     <h3 className="att-card__label">Cap remaining</h3>
                     <p className="att-card__figure">
-                      {money.available ? `$${capOutstanding(money).toFixed(2)}` : "—"}
+                      {budget.available ? `$${capOutstanding(budget).toFixed(2)}` : "—"}
                     </p>
                     <p className="att-card__note">
-                      {!money.available
-                        ? unavailable
-                        : capOver
-                          ? `⚠ ${capPct}% of the $${money.capUsd.toFixed(2)} gateway cap used`
-                          : `$${money.billedSpendUsd.toFixed(2)} of the $${money.capUsd.toFixed(2)} ${money.capSource} cap used (${capPct}%)`}
+                      {budgetNote}
                     </p>
                     {stamp}
                   </article>

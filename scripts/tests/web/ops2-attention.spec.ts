@@ -258,7 +258,12 @@ const MONITORING_URL = (url: URL) => url.pathname === "/api/ops/monitoring";
 const FRESH_TAKEN_AT = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 const READY_SNAPSHOT = {
   takenAt: FRESH_TAKEN_AT,
-  money: { available: true, creditBalanceUsd: 12.34, billedSpendUsd: 40, capUsd: 50, capSource: "gateway" },
+  // Balance and budget are independently available: a cap we cannot read must
+  // not blank a credit balance that arrived perfectly well.
+  money: {
+    balance: { available: true, creditBalanceUsd: 12.34 },
+    budget: { available: true, billedSpendUsd: 40, capUsd: 50, capSource: "gateway", windowDays: 30 },
+  },
   success7d: 20,
   error7d: 3,
   // red/floorUsd/ceilingPct: server merges these into the snapshot itself
@@ -294,7 +299,7 @@ test("monitoring: ready snapshot renders cards, as-at, and 7 chart columns", asy
 test("monitoring: money unavailable shows an unavailable state, not zero, while counts/chart still show D1 numbers", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
   await page.route(MONITORING_URL, (route) => route.fulfill({
-    json: { snapshot: { ...READY_SNAPSHOT, money: { available: false, reason: "token_missing" } }, notificationCount: 0 },
+    json: { snapshot: { ...READY_SNAPSHOT, money: { balance: { available: false, reason: "token_missing" }, budget: { available: false, reason: "token_missing" } } }, notificationCount: 0 },
   }));
   await page.goto(ATTENTION);
 
@@ -307,7 +312,7 @@ test("monitoring: money unavailable shows an unavailable state, not zero, while 
 test("monitoring: money unavailable with a missing/placeholder CF_ACCOUNT_ID says so distinctly from a missing token", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
   await page.route(MONITORING_URL, (route) => route.fulfill({
-    json: { snapshot: { ...READY_SNAPSHOT, money: { available: false, reason: "account_id_missing" } }, notificationCount: 0 },
+    json: { snapshot: { ...READY_SNAPSHOT, money: { balance: { available: false, reason: "account_id_missing" }, budget: { available: false, reason: "account_id_missing" } } }, notificationCount: 0 },
   }));
   await page.goto(ATTENTION);
 

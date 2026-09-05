@@ -3,7 +3,7 @@
 import type { Env } from "../types";
 import {
   assembleParseCounts, evaluateRed, evaluateRedFlags, parseMonitoringSnapshot, parseWindowStart,
-  type MoneySnapshot,
+  type BalanceSnapshot, type BudgetSnapshot, type MoneySnapshot,
 } from "../../src/data/monitoring";
 
 const PARSE_OUTCOME_SQL = `SELECT updated_at,
@@ -72,8 +72,9 @@ const PLACEHOLDER_ACCOUNT_ID = "paste-real-cf-account-id-before-deploying";
  *  reporting one as "the cap" would understate the budget the console claims to
  *  be measuring against. Only an unscoped, enabled cost rule describes the
  *  whole gateway; if there is none, we do not know the cap and say so by
- *  failing to the account fallback. */
-function gatewayCapUsd(gateway: any): number | undefined {
+ *  failing to the account fallback. The RULE is returned rather than just its
+ *  limit, because its window decides the period the spend is measured over. */
+function gatewayCapRule(gateway: any): any {
   // Rules outlive the switch that enforces them. A saved rule read off a
   // disabled spend limit is a cap nothing applies — reporting it would put a
   // budget bar, and eventually a red alert, over spending that is not capped
@@ -86,67 +87,129 @@ function gatewayCapUsd(gateway: any): number | undefined {
       r?.limitType === "cost" && r?.enabled !== false && !r?.model && !r?.provider &&
       (!r?.metadata || Object.keys(r.metadata).length === 0),
   );
-  return whole?.limit;
+  return whole;
 }
 
 export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetch): Promise<MoneySnapshot> {
-  if (!env.CF_MONITORING_TOKEN) return { available: false, reason: "token_missing" };
+  if (!env.CF_MONITORING_TOKEN) return bothUnavailable("token_missing");
   if (!env.CF_ACCOUNT_ID || env.CF_ACCOUNT_ID === PLACEHOLDER_ACCOUNT_ID) {
-    return { available: false, reason: "account_id_missing" };
+    return bothUnavailable("account_id_missing");
   }
+  // Two independent answers, deliberately not one. The balance is a single
+  // reading; the budget needs a cap, then usage over that cap's own window.
+  // Sharing a try/catch let a cap blip delete a balance that had arrived
+  // perfectly well - and with it the low-credit alarm.
+  const [balance, budget] = await Promise.all([
+    fetchBalance(env, fetchImpl),
+    fetchBudget(env, fetchImpl),
+  ]);
+  return { balance, budget };
+}
+
+const bothUnavailable = (reason: string): MoneySnapshot => ({
+  balance: { available: false, reason },
+  budget: { available: false, reason },
+});
+
+function logFailure(err: unknown): "fetch_failed" {
+  const path = err instanceof Error ? err.message.replace(/^status \d+ for /, "") : "?";
+  console.log(`ai-parse monitoring: CF fetch failed for ${path}`);
+  return "fetch_failed";
+}
+
+async function fetchBalance(env: Env, fetchImpl: typeof fetch): Promise<BalanceSnapshot> {
   try {
-    const [balance, usage] = await Promise.all([
-      cfGet(env, fetchImpl, "/ai-gateway/billing/credit-balance"),
-      // value_grouping_window is REQUIRED; without it this is a 400 and the
-      // money half of the console never works at all. 'day' because the cards
-      // report a month to date, not an hourly curve.
-      cfGet(env, fetchImpl, "/ai-gateway/billing/usage-history?value_grouping_window=day"),
-    ]);
-    // history[] is a series of windows, so the spend is their sum — there is no
-    // single total field on this response. An EMPTY array is a real answer: a
-    // billing window with nothing billable in it. Only a missing or non-array
-    // history is malformed; treating [] as broken hid the balance and the cap
-    // too, in the quiet month where they are the only news there is.
+    const balance = await cfGet(env, fetchImpl, "/ai-gateway/billing/credit-balance");
+    return { available: true, creditBalanceUsd: requireNumber(balance?.balance, "balance") };
+  } catch (err) {
+    return { available: false, reason: logFailure(err) };
+  }
+}
+
+/** Spend AND the cap it is measured against - or neither.
+ *
+ *  A percentage means something only when its numerator and denominator
+ *  describe the same traffic over the same period. Cloudflare makes that
+ *  awkward: the cap is a per-gateway rule with its own window, while
+ *  usage-history is account-scoped and cannot be filtered by gateway. So the
+ *  window is matched explicitly here, and the scope is CHECKED rather than
+ *  assumed - with one gateway on the account its spend is this gateway's
+ *  spend; with two, an account total cannot be attributed to one gateway's cap
+ *  and a percentage built from it would overstate. Unknown beats confidently
+ *  wrong on a number that raises alarms. */
+async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSnapshot> {
+  try {
+    const cap = await fetchCap(env, fetchImpl);
+    const gateways = await cfGet(env, fetchImpl, "/ai-gateway/gateways");
+    if (Array.isArray(gateways) && gateways.length > 1) {
+      return { available: false, reason: "spend_not_attributable" };
+    }
+    const end = Date.now();
+    const start = end - cap.windowDays * 24 * 60 * 60 * 1000;
+    // value_grouping_window is REQUIRED; without it this is a 400 and the money
+    // half of the console never works at all. The bounds are the cap's own
+    // window - unbounded, this summed the account's entire history against a
+    // thirty-day cap, so the percentage only ever climbed.
+    const usage = await cfGet(
+      env, fetchImpl,
+      `/ai-gateway/billing/usage-history?value_grouping_window=day&start_time=${start}&end_time=${end}`,
+    );
+    // history[] is a series of windows, so the spend is their sum - there is no
+    // single total field. An EMPTY array is a real answer: a window with
+    // nothing billable in it. Only a missing or non-array history is malformed.
     const history = usage?.history;
     if (!Array.isArray(history)) throw new Error("missing usage history for /ai-gateway/");
     const billedSpendUsd = history.reduce(
       (total: number, entry: any) => total + requireNumber(entry?.aggregated_value, "aggregated_value"),
       0,
     );
-    let capUsd: number;
-    let capSource: "gateway" | "account";
-    try {
-      const gateway = await cfGet(env, fetchImpl, `/ai-gateway/gateways/${env.AI_GATEWAY_ID}`);
-      capUsd = requireNumber(gatewayCapUsd(gateway), "spend_limits.rules[].limit");
-      capSource = "gateway";
-    } catch {
-      // Deprecated by Cloudflare (its POST sibling always 403s now) and every
-      // config field is nullable, so this is a fallback that frequently has
-      // nothing to give — which is a cap we do not know, not a cap of zero.
-      const account = await cfGet(env, fetchImpl, "/ai-gateway/billing/spending-limit");
-      // Same rule as the gateway's: a stored amount under a disabled limit is
-      // not a cap. Every field of this config is nullable, and Cloudflare has
-      // deprecated the endpoint that sets it, so "nothing to give" is the
-      // normal answer here rather than the exceptional one.
-      if (account?.enabled === false) throw new Error("cap disabled for /ai-gateway/");
-      // The ONE money field on this surface whose unit Cloudflare documents,
-      // and it is cents. Reported raw it overstated the cap a hundredfold.
-      capUsd = requireNumber(account?.config?.amount, "config.amount") / 100;
-      capSource = "account";
-    }
     return {
       available: true,
-      creditBalanceUsd: requireNumber(balance?.balance, "balance"),
       billedSpendUsd,
-      capUsd,
-      capSource,
+      capUsd: cap.capUsd,
+      capSource: cap.capSource,
+      windowDays: cap.windowDays,
     };
   } catch (err) {
-    const path = err instanceof Error ? err.message.replace(/^status \d+ for /, "") : "?";
-    console.log(`ai-parse monitoring: CF fetch failed for ${path}`);
-    return { available: false, reason: "fetch_failed" };
+    return { available: false, reason: logFailure(err) };
   }
 }
+
+async function fetchCap(
+  env: Env, fetchImpl: typeof fetch,
+): Promise<{ capUsd: number; capSource: "gateway" | "account"; windowDays: number }> {
+  try {
+    const gateway = await cfGet(env, fetchImpl, `/ai-gateway/gateways/${env.AI_GATEWAY_ID}`);
+    const rule = gatewayCapRule(gateway);
+    return {
+      capUsd: requireNumber(rule?.limit, "spend_limits.rules[].limit"),
+      capSource: "gateway",
+      windowDays: windowDays(rule?.window),
+    };
+  } catch {
+    // Deprecated by Cloudflare (its POST sibling always 403s now) and every
+    // config field is nullable, so this fallback frequently has nothing to give
+    // - which is a cap we do not know, not a cap of zero.
+    const account = await cfGet(env, fetchImpl, "/ai-gateway/billing/spending-limit");
+    // A stored amount under a disabled limit is not a cap.
+    if (account?.enabled === false) throw new Error("cap disabled for /ai-gateway/");
+    return {
+      // The ONE money field on this surface whose unit Cloudflare documents,
+      // and it is cents. Reported raw it overstated the cap a hundredfold.
+      capUsd: requireNumber(account?.config?.amount, "config.amount") / 100,
+      capSource: "account",
+      windowDays: DURATION_DAYS[String(account?.config?.duration)] ?? 30,
+    };
+  }
+}
+
+const DURATION_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30 };
+
+// Cloudflare states a rule's window in seconds. A cap with no readable window
+// is read as monthly, the only duration the account-level endpoint ever offered
+// and the one this product's cap uses.
+const windowDays = (seconds: unknown): number =>
+  typeof seconds === "number" && seconds > 0 ? Math.round(seconds / 86400) : 30;
 
 export async function readMonitoringSnapshot(env: Env): Promise<ReturnType<typeof parseMonitoringSnapshot>> {
   // JSON.parse belongs INSIDE this seam. Left outside, a truncated or
@@ -172,7 +235,26 @@ function aiBudgetRed(ctx: NotificationContext): Promise<number> {
   if (!ctx.snapshot) return Promise.resolve(0);
   const floor = Number(ctx.env.AI_CREDIT_FLOOR_USD ?? 5);
   const ceiling = Number(ctx.env.AI_CAP_CEILING_PCT ?? 80);
-  return Promise.resolve(evaluateRed(ctx.snapshot as any, floor, ceiling) ? 1 : 0);
+  return Promise.resolve(evaluateRed(ctx.snapshot, floor, ceiling) ? 1 : 0);
+}
+
+/** Sum what the sources can answer, and let the rest fail alone.
+ *
+ *  Promise.all rejects on the first rejection, so one broken source would have
+ *  rejected the whole /api/ops/monitoring payload — hiding the AI cards, the
+ *  counts and every other notification because an unrelated source threw. A
+ *  source that cannot answer contributes nothing and stops nothing. */
+export async function countFrom(
+  sources: readonly NotificationSource[],
+  ctx: NotificationContext,
+): Promise<number> {
+  const settled = await Promise.allSettled(sources.map((source) => source(ctx)));
+  let total = 0;
+  for (const result of settled) {
+    if (result.status === "fulfilled") total += result.value;
+    else console.log(`ai-parse monitoring: a notification source failed: ${String(result.reason)}`);
+  }
+  return total;
 }
 
 export const NOTIFICATION_SOURCES: readonly NotificationSource[] = [aiBudgetRed];
@@ -184,9 +266,12 @@ export async function notificationCount(
   snapshot?: ReturnType<typeof parseMonitoringSnapshot> | null,
 ): Promise<number> {
   const resolved = snapshot !== undefined ? snapshot : await readMonitoringSnapshot(env);
-  const counts = await Promise.all(NOTIFICATION_SOURCES.map((source) => source({ env, snapshot: resolved })));
-  return counts.reduce((total, n) => total + n, 0);
+  return countFrom(NOTIFICATION_SOURCES, { env, snapshot: resolved });
 }
+
+// Exported for the aggregation test: countFrom is the behaviour under test and
+// NOTIFICATION_SOURCES has one entry, so the test supplies its own.
+export const __testingSources = { countFrom };
 
 // The one read the route needs: snapshot (enriched with the server-evaluated
 // red flag + configured floor/ceiling, UX §6.2) and notificationCount, both
