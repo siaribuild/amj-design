@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { plan, assertSafe, P, DISABLE } from "./go-live-plan.mjs";
+import { plan, assertSafe, P, DISABLE, NEW_PROFILES } from "./go-live-plan.mjs";
 
 const PROJECT_ID = "xjtrm1ex";
 const DATASET = "production";
@@ -65,8 +65,9 @@ async function loadWorld(io) {
       "categories": *[_type=="category"]{_id, name},
       "systems": *[_type=="frameSystem"]{_id, "slug": slug.current},
       "profiles": *[_type=="thermalProfile"]{_id, rows[]{_key, "glazing": glazing._ref, published, uValue, shgc, wersWindowId}},
+      "fullProfiles": *[_type=="thermalProfile" && _id in $profileIds]{_id, name, slug, frameTechnology, rows},
       "options": *[_type=="option"]{_id, name, isDefault, "type": optionType->slug.current}
-    }`),
+    }`, { profileIds: NEW_PROFILES.map((p) => p._id) }),
   ]);
   return { products: new Map(products.map((p) => [p.slug.current, p])), ...refs };
 }
@@ -102,7 +103,16 @@ export async function run({ write = false, verify = false, fetchImpl = globalThi
     return 1;
   }
   const io = { fetchImpl, token };
-  if (verify) return runVerify(io, log);
+  if (verify) {
+    const world = await loadWorld(io);
+    const { mutations } = planImpl(world);
+    for (const m of mutations) {
+      if (m.patch) log(`DRIFT ${m.patch.id}: ${Object.keys(m.patch.set ?? {}).join(", ")}`);
+      else log(`DRIFT ${(m.createOrReplace ?? m.createIfNotExists)._id}: missing`);
+    }
+    const sheetCode = await runVerify(io, log);
+    return mutations.length ? 1 : sheetCode;
+  }
 
   const world = await loadWorld(io);
   const { mutations, report, problems, summary } = planImpl(world);

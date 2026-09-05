@@ -45,7 +45,16 @@ export function makeWorld() {
     products.set(slug, { _id: `product-${slug}`, slug: { current: slug }, disabled: false });
   }
 
-  return { products, families: [], categories: [], systems, profiles, options };
+  const fullProfiles = NEW_PROFILES.map((p) => JSON.parse(JSON.stringify(p)));
+
+  return { products, families: [], categories: [], systems, profiles, options, fullProfiles };
+}
+
+// Returns a copy of world with one field of one fullProfiles doc changed —
+// for drift tests (plan() must then re-createOrReplace that doc).
+export function altered(world, docId, field, value) {
+  const fullProfiles = world.fullProfiles.map((p) => (p._id === docId ? { ...p, [field]: value } : p));
+  return { ...world, fullProfiles };
 }
 
 export function makeTransport(world) {
@@ -59,7 +68,7 @@ export function makeTransport(world) {
     const groq = u.searchParams.get("query") ?? "";
     let result;
     if (groq.includes('"families"')) {
-      result = { families: world.families, categories: world.categories, systems: world.systems, profiles: world.profiles, options: world.options };
+      result = { families: world.families, categories: world.categories, systems: world.systems, profiles: world.profiles, fullProfiles: world.fullProfiles, options: world.options };
     } else {
       const slugsParam = u.searchParams.get("$slugs");
       const slugs = slugsParam ? JSON.parse(slugsParam) : [];
