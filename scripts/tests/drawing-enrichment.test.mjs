@@ -17,8 +17,8 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { readOpenings } from ${p("worker/lib/drawing/faceMapped/readOpenings.ts")};
-      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_CONTAINER_INFLIGHT_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
-      export { inspectPdf, renderPage, reserveContainerMemory, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
+      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
+      export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
@@ -57,7 +57,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_CONTAINER_INFLIGHT_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, reserveContainerMemory, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -3619,8 +3619,24 @@ test("run: a page that will not render costs its own openings, not the file (P4)
   assert.equal(lost.gapCode, "frame_ambiguous");
   assert.match(lost.gapNote, /render/);
   assert.equal(lost.faceKey, JSON.stringify([6, "SOUTH", "GROUND FLOOR"]));
+  assert.equal(run.report.containerCalls, 3, "three renders were asked for: two faces and one crop");
+  assert.equal(run.report.steps.renderCrop.pagesRendered, 2, "two came back as pages; a render that timed out is not a rendered page");
   assert.equal(run.report.perOpening.find((o) => o.tag === "W1").failurePhase, null);
   assert.equal(run.report.perOpening.find((o) => o.tag === "W1").scaleRatio, 100);
+  // A sheet that is both plan and elevation is one page read.
+  const dual = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    planPages: [plan], elevationPages: [plan, north, south],
+    pageScales: new Map([[5, 100], [6, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`, readPlanPage: async () => null,
+      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] }),
+      reconcileFace: answering(async () => null), readComposition: answering(async () => null),
+    },
+  });
+  assert.equal(dual.report.steps.text.pagesRead, 3, "three sheets, one of them both plan and elevation");
   assert.match(run.readings[1].gapNote, /container timed out/, "and the reason says what the container said");
   assert.equal(run.readings[1].elevation, "SOUTH", "what the plan settled survives the render that did not");
 });
@@ -7683,6 +7699,7 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
       pageCount: 2, producer: "poppler", fonts: ["x"], hasAttachments: false,
       pages: [3, 5].map((pageNo) => ({ pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 1, imageAreaFraction: 0.9 })),
     },
+    timings: { inventoryMs: 1, textMs: 2, wordsMs: 3, totalMs: 6 },
     pages: [
       { pageNo: 3, text: "W1 LIVING KITCHEN BED ENTRY NORTH", words: [
         { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
@@ -7703,12 +7720,13 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     PLAN_PARSE: {},
   };
   const phases = [];
+  const messages = [];
   const limits = { inspect: [], render: [] };
   const result = await enrichOpenings(env, {
     projectId: "p", aiRunId: "r",
     files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
     scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
-    onProgress: async (_done, _total, phase) => { phases.push(phase); },
+    onProgress: async (_done, _total, phase, message) => { phases.push(phase); messages.push(message); },
   }, {
     inspect: async (_ns, _id, _bytes, _maxPages, _timeout, callLimits) => { limits.inspect.push(callLimits); await new Promise((done) => setTimeout(done, 30)); return inspected; },
     render: async (_ns, _id, _bytes, _request, _timeout, callLimits) => { limits.render.push(callLimits); return { images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }; },
@@ -7741,10 +7759,22 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
   assert.equal(result.report.files[0].containerCalls, 5,
     "the inspection, Phase A's two sheet renders, the face and the crop: the whole engine, not the part after Phase A");
   assert.equal(result.report.files[0].steps.renderCrop.pagesRendered, 4, "of which four are renders; an inspection is not a rendered page");
-  assert.deepEqual(limits.inspect, [{ budgeted: true, responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES }],
-    "the production branch budgets this engine's inspection under its own cap");
-  assert.deepEqual(limits.render, Array(4).fill({ budgeted: true, responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES }),
+  assert.deepEqual(limits.inspect, [{ responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES }],
+    "the production branch gives this engine's inspection its own cap");
+  assert.deepEqual(limits.render, Array(4).fill({ responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES }),
     "and every one of its renders - Phase A's sheets, the face, the crop");
+  // The report is the file's report: what the inspection found stays in it.
+  assert.deepEqual(result.report.files[0].inspectTimings, { inventoryMs: 1, textMs: 2, wordsMs: 3, totalMs: 6 });
+  assert.deepEqual(result.report.files[0].steps.inventory, { pages: 2, fonts: 1, images: 2, attachments: 0 });
+  assert.equal(result.report.files[0].steps.text.pagesRead, 2);
+  assert.deepEqual(result.report.files[0].steps.selectPages.selected.map((page) => [page.pageNo, page.tier, page.reason]),
+    [[3, "floorplan", "recovered sheet title"], [5, "elevation", 'title text: "NORTH ELEVATION"']],
+    "what the text layer selected keeps its own reason; what only a look recovered is added with its");
+  assert.equal(result.report.files[0].steps.selectPages.of, inspected.inventory.pageCount);
+  // And progress reaches the pipeline with its message, not just its count.
+  assert.equal(messages.slice(1).every((message) => typeof message === "string" && message.length > 0), true,
+    "every event of this engine's carries its message; the first, the shared inventory milestone, has none to carry");
+  assert.equal(messages.some((message) => /Locating elevation frames/.test(message)), true);
   assert.ok(result.report.files[0].wallMs >= 30, "and the clock starts at the inspection, where the engine starts");
 
   // The same set, with the sheet read failing at the provider for one page and
@@ -8101,114 +8131,43 @@ test("sheet facts: the scale is read from the title block, in no set's vocabular
   assert.doesNotMatch(prompt, /driveway|ramp|stair|pitch|\bfall\b/i);
 });
 
-test("container client: the face-mapped engine's memory is one arithmetic, and the other modes keep theirs (S1, Spec4)", async () => {
-  // What a face-mapped run holds at once: the PDF for the file's whole life;
-  // for each call in flight a framed copy of it, the response bytes and the
-  // string they decode to; the inspection for the file's life, which parses to
-  // up to 1.84x its wire size on the reference sets (measured; priced at 2x);
-  // the crops Phase E keeps between renders; and the runtime. The budget
-  // covers the first two, allowances the next two, and the sum fits the
-  // isolate - by construction. The other modes are not changed by this: their
-  // PDF cap, their response caps and their calls are what they were.
+test("container client: the face-mapped engine's memory is one arithmetic per run, and the other modes keep theirs (S1, Spec4)", async () => {
+  // What one face-mapped run holds at once, with its renders one at a time:
+  // the PDF for the file's whole life; a framed copy of it with the response
+  // in flight and the text it decodes to; the inspection kept parsed (measured
+  // at up to 1.84x its wire size, priced at 2x); the crops Phase E keeps
+  // between renders; and the runtime. No state outlives the run: the bound is
+  // the run's own concurrency, not a ledger shared across requests.
   const MB = 1024 * 1024;
   assert.equal(MAX_PDF_BYTES, 40 * MB, "the shared PDF cap is what it was");
   assert.equal(MAX_INSPECT_RESPONSE_BYTES, 16 * MB, "the other modes' inspection cap is what it was");
   assert.equal(MAX_RENDER_RESPONSE_BYTES, 16 * MB, "and their render cap: twelve crops in one response, a page at 300 DPI");
-  // Measured on the reference sets: 54-64 KB of inspect payload per page, so
-  // about 4 MB at the 60-page cap; a full sheet at 150 DPI is 2.03 MB of base64
-  // and a 300 DPI crop far less. Each face-mapped cap is twice the largest
-  // thing it bounds.
   assert.equal(FACE_MAPPED_INSPECT_RESPONSE_BYTES, 8 * MB);
   assert.equal(FACE_MAPPED_RENDER_RESPONSE_BYTES, 4 * MB);
   assert.equal(FACE_MAPPED_MAX_PDF_BYTES, 20 * MB);
-  assert.equal(MAX_CONTAINER_INFLIGHT_BYTES, 56 * MB);
   assert.equal(MAX_RETAINED_CROP_BYTES, 4 * 4 * 2_000_000, "four waves of four crops, from the same constants the waves use");
   assert.equal(RETAINED_INSPECTION_BYTES, 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES);
-  assert.ok(MAX_CONTAINER_INFLIGHT_BYTES + MAX_RETAINED_CROP_BYTES + RETAINED_INSPECTION_BYTES + 24 * MB <= WORKER_ISOLATE_BYTES,
-    "budget, retained crops, the parsed inspection and 24 MB of runtime fit the isolate");
-  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + (FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES) <= MAX_CONTAINER_INFLIGHT_BYTES,
-    "the largest face-mapped file and its inspection fit the budget together");
-  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + (FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES) <= MAX_CONTAINER_INFLIGHT_BYTES,
-    "and so do the file and one of its renders, so nothing waits for room that never comes");
+  const oneRender = FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES;
+  const oneInspection = FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES;
+  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + oneRender + RETAINED_INSPECTION_BYTES + MAX_RETAINED_CROP_BYTES + 24 * MB <= WORKER_ISOLATE_BYTES,
+    "the file, one render, the parsed inspection, the retained crops and 24 MB of runtime fit the isolate");
+  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + oneInspection + 24 * MB <= WORKER_ISOLATE_BYTES, "and the inspection, before anything else exists");
+
+  // Measured on the reference sets: 54-64 KB of inspect payload per page, so
+  // about 4 MB at the 60-page cap; a full sheet at 150 DPI is 2.03 MB of base64.
   const inspectLike = { inventory: { pageCount: 60, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [{ pageNo: 1, text: "x".repeat(4 * MB), words: [] }] };
-  const big = await inspectPdf({ get: () => ({ fetch: async () => new Response(JSON.stringify(inspectLike), { headers: { "content-type": "application/json" } }) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), undefined, undefined, { budgeted: true, responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES });
+  const answerWith = (body) => ({ get: () => ({ fetch: async () => new Response(body, { headers: { "content-type": "application/json" } }) }), idFromName: () => "id" });
+  const big = await inspectPdf(answerWith(JSON.stringify(inspectLike)), "prj", new Uint8Array([1]), undefined, undefined, { responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES });
   assert.equal(big.pages[0].text.length, 4 * MB, "a full-size inspection passes under the face-mapped cap");
-
-  // Admission is a queue: a budgeted call that does not fit waits its turn,
-  // a release admits every head that fits, and nobody jumps the queue.
-  const gate = [];
-  const started = [];
-  const answer = () => new Response(JSON.stringify({ images: [], dpi: 100 }), { headers: { "content-type": "application/json" } });
-  const waiting = {
-    get: () => ({ fetch: (_url, init) => {
-      const sent = new Uint8Array(init.body);
-      started.push(JSON.parse(new TextDecoder().decode(sent.slice(0, sent.indexOf(10)))).pageNo);
-      return new Promise((resolve) => gate.push(resolve));
-    } }),
-    idFromName: () => "id",
-  };
-  const faceMapped = { budgeted: true, responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES };
-  const perCall = 1 + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES;
-  const fits = Math.floor(MAX_CONTAINER_INFLIGHT_BYTES / perCall);
-  const calls = Array.from({ length: fits + 2 }, (_unused, at) => renderPage(waiting, "prj", new Uint8Array([1]), { pageNo: at + 1, dpi: 100 }, undefined, faceMapped));
-  await new Promise((done) => setTimeout(done, 10));
-  assert.equal(started.length, fits, "two more calls than the budget holds wait for a slot");
-  gate.shift()(answer());
-  gate.shift()(answer());
-  await new Promise((done) => setTimeout(done, 20));
-  assert.deepEqual(started.slice(fits), [fits + 1, fits + 2], "two released, both waiters admitted, in the order they asked");
-  for (const resolve of gate) resolve(answer());
-  await Promise.all(calls);
-
-  // Files hold their PDFs one at a time, in the order they asked; a file that
-  // cannot get its turn in time is a timeout and leaves the queue; a file too
-  // big for the budget is refused outright.
-  const order = [];
-  const releaseA = await reserveContainerMemory(10 * MB);
-  const fileB = reserveContainerMemory(10 * MB).then((release) => { order.push("B"); return release; });
-  const fileC = reserveContainerMemory(10 * MB).then((release) => { order.push("C"); return release; });
-  await new Promise((done) => setTimeout(done, 5));
-  assert.deepEqual(order, [], "two files wait while a first holds its PDF");
-  await assert.rejects(reserveContainerMemory(10 * MB, 30), (error) => error instanceof ContainerClientError && error.code === "timeout");
-  await assert.rejects(reserveContainerMemory(MAX_CONTAINER_INFLIGHT_BYTES + 1), (error) => error instanceof ContainerClientError && error.code === "too_large");
-  releaseA();
-  await new Promise((done) => setTimeout(done, 5));
-  assert.deepEqual(order, ["B"], "the first waiter gets the next turn, and only it");
-  (await fileB)();
-  await new Promise((done) => setTimeout(done, 5));
-  assert.deepEqual(order, ["B", "C"], "then the next, the timed-out waiter having left the queue");
-  (await fileC)();
-
-  // With the largest face-mapped file held, a call from another mode is not
-  // budgeted and starts at once; a budgeted call the budget can never hold
-  // beside the file is refused, not queued forever.
-  const release = await reserveContainerMemory(FACE_MAPPED_MAX_PDF_BYTES);
-  const plain = [];
-  await renderPage({ get: () => ({ fetch: () => { plain.push("started"); return Promise.resolve(answer()); } }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 });
-  assert.deepEqual(plain, ["started"], "the other modes' calls are as they were");
+  // The other modes' calls carry no limits of this engine's: a render this
+  // engine would refuse is, for them, what it always was.
+  const tenMb = JSON.stringify({ images: [{ pngB64: "x".repeat(10 * MB), widthPx: 1, heightPx: 1 }], dpi: 100 });
+  const plain = await renderPage(answerWith(tenMb), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 });
+  assert.equal(plain.images[0].pngB64.length, 10 * MB);
   await assert.rejects(
-    renderPage({ get: () => ({ fetch: () => Promise.resolve(answer()) }), idFromName: () => "id" }, "prj", new Uint8Array(FACE_MAPPED_MAX_PDF_BYTES), { pageNo: 1, dpi: 100 }, undefined, { budgeted: true, responseCap: MAX_RENDER_RESPONSE_BYTES }),
+    renderPage(answerWith(tenMb), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, undefined, { responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES }),
     (error) => error instanceof ContainerClientError && error.code === "too_large",
   );
-  // With one budgeted call in flight beside the file, a call too big for the
-  // room left waits inside its own deadline and leaves the queue when it
-  // passes - and the smaller call behind it is admitted at once, not left to
-  // wait for the next release.
-  let openGate;
-  const inFlight = renderPage({ get: () => ({ fetch: () => new Promise((resolve) => { openGate = () => resolve(answer()); }) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, undefined, faceMapped);
-  await new Promise((done) => setTimeout(done, 5));
-  const follower = [];
-  const head = renderPage({ get: () => ({ fetch: () => Promise.resolve(answer()) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 2, dpi: 100 }, 30, { budgeted: true, responseCap: MAX_RENDER_RESPONSE_BYTES });
-  const behind = renderPage({ get: () => ({ fetch: () => { follower.push("started"); return Promise.resolve(answer()); } }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 3, dpi: 100 }, undefined, faceMapped);
-  await new Promise((done) => setTimeout(done, 5));
-  assert.deepEqual(follower, [], "the follower waits behind the head");
-  await assert.rejects(head, (error) => error instanceof ContainerClientError && error.code === "timeout");
-  await new Promise((done) => setTimeout(done, 5));
-  assert.deepEqual(follower, ["started"], "the head's deadline passed and the follower, which fits, was admitted before any release");
-  await behind;
-  openGate();
-  await inFlight;
-  release();
 });
 
 test("enrich: a PDF over its cap is refused before it is read, and a face-mapped file has its own cap (S1)", async () => {
@@ -8233,49 +8192,112 @@ test("enrich: a PDF over its cap is refused before it is read, and a face-mapped
     });
     return { read, readings: result.readings.length, failedPhase: result.report.files[0].steps.failedPhase, inspectLimits };
   };
-  assert.deepEqual(await attempt(MAX_PDF_BYTES + 1, false), { read: false, readings: 0, failedPhase: "r2_lookup", inspectLimits: [] });
-  assert.deepEqual(await attempt(FACE_MAPPED_MAX_PDF_BYTES + 1, true), { read: false, readings: 0, failedPhase: "r2_lookup", inspectLimits: [] },
-    "the face-mapped engine reads files up to the size its arithmetic closes at, and a refused file is never inspected");
-  const legacy = await attempt(FACE_MAPPED_MAX_PDF_BYTES + 1, false);
+  assert.deepEqual(await attempt(FACE_MAPPED_MAX_PDF_BYTES + 1, true), { read: false, readings: 0, failedPhase: "pdf_size", inspectLimits: [] },
+    "the face-mapped engine reads files up to the size its arithmetic closes at; a refused file is never read, and the phase says why");
+  // The other modes are not touched by this engine's cap: they read what they
+  // always read, and the container client refuses what it always refused.
+  const legacy = await attempt(MAX_PDF_BYTES + 1, false);
   assert.equal(legacy.read, true, "the other modes read what they always read");
-  assert.deepEqual(legacy.inspectLimits, [{}], "and their calls carry no limits of this engine's: their caps and no budget");
+  assert.deepEqual(legacy.inspectLimits, [{}], "and their calls carry no limits of this engine's: their caps, no budget");
 });
 
-test("enrich: a face-mapped file waits for the budget only as long as its job has left (Codex 10d)", async () => {
-  // The job's deadline is the one clock. A file that cannot get its turn at the
-  // budget before the job is over fails then, and leaves the queue - it does
-  // not take the budget later, after its job has been given up on, and hold
-  // the next job's file out.
-  const inspected = { inventory: { pageCount: 1, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] };
-  const held = await reserveContainerMemory(1024);
-  // Through the stage the pipeline calls, so the hand-off is the one under
-  // test; a stage that dropped the deadline would wait its own ten minutes.
-  const env = {
-    AI_EXTRACTION_MODE: "face_mapped",
-    DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f", r2_key: "k" }] }) }) }) },
-    FILES: { get: async () => ({ size: 3, arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
-    PLAN_PARSE: {},
+test("enrich: the face-mapped engine renders one page at a time, and stops when its job's deadline passes (S1, S2)", async () => {
+  // Lot 623 in miniature again: two sheets whose text says nothing, so Phase A
+  // looks at both. Its renders go one at a time - that is what the memory
+  // arithmetic prices - and once the job's deadline has passed no further
+  // render or model call is made: the run ends with what it has, saying why,
+  // rather than working on after the job has been given up on.
+  const inspected = {
+    inventory: {
+      pageCount: 2, producer: "poppler", fonts: ["x"], hasAttachments: false,
+      pages: [3, 5].map((pageNo) => ({ pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 60, imageCount: 1, imageAreaFraction: 0.9 })),
+    },
+    pages: [
+      { pageNo: 3, text: "W1 LIVING KITCHEN BED ENTRY NORTH", words: [
+        { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+        { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+        { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+        { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+        { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+        { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+      ] },
+      { pageNo: 5, text: "NORTH ELEVATION", words: [
+        { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+        { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+      ] },
+    ],
   };
-  const outcome = await Promise.race([
-    runDrawingEnrichmentStage(env, {
-      projectId: "p", aiRunId: "r", planPdfDocs: [{ fileId: "f" }],
+  const env = { FILES: { get: async () => ({ size: 3, arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} }, PLAN_PARSE: {} };
+  const runWith = async ({ renderMs, deadlineAt }) => {
+    let inFlight = 0;
+    let peak = 0;
+    const modelCalls = [];
+    const result = await enrichOpenings(env, {
+      projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
       scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
-      deadlineAt: Date.now() + 40,
+      deadlineAt,
     }, {
-      inspect: async () => inspected, render: async () => ({ images: [], dpi: 100 }),
+      inspect: async () => inspected,
+      render: async () => {
+        inFlight += 1; peak = Math.max(peak, inFlight);
+        await new Promise((done) => setTimeout(done, renderMs));
+        inFlight -= 1;
+        return { images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 };
+      },
+      runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+      runFaceMapped: {
+        readSheet: answering(async ({ pageNo }) => { modelCalls.push(`sheet ${pageNo}`); return pageNo === 3 ? { pageNo, ratio: 100, drawingTitle: "GROUND FLOOR PLAN" } : { pageNo, ratio: 100, drawingTitle: "ELEVATIONS" }; }),
+        readPlanPage: async () => null,
+        inventoryElevation: answering(async () => { modelCalls.push("inventory"); return { storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] }; }),
+        reconcileFace: answering(async () => null),
+        readComposition: answering(async (input) => { modelCalls.push("composition"); return { readings: input.batch.map((task) => ({
+          tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+          operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+        })) }; }),
+      },
+    });
+    return { result, peak, modelCalls };
+  };
+  const whole = await runWith({ renderMs: 5 });
+  assert.equal(whole.peak, 1, "Phase A has two sheets to look at, and renders them one at a time");
+  assert.deepEqual(whole.result.readings.map((r) => r.splitState), ["value"]);
+
+  // The first render outlives the deadline. Nothing is asked after it: not the
+  // sheet read that render was for, not the second sheet, not the plan.
+  const cut = await runWith({ renderMs: 120, deadlineAt: Date.now() + 50 });
+  assert.deepEqual(cut.modelCalls, [], "no model call after the deadline");
+  assert.equal(cut.result.report.files[0].containerCalls, 2, "the inspection and the one render already in flight; no more");
+  assert.equal(cut.result.report.files[0].modelCalls, 0);
+  assert.deepEqual(cut.result.readings.map((r) => r.splitState), ["not_read"]);
+  assert.equal(cut.result.report.files[0].providerFailure?.warnings.some((w) => /deadline/.test(w)), true, "and the report says why");
+
+  // The inspection is inside the deadline too. A run whose deadline has already
+  // passed inspects nothing; a first inspection that times out on the last of
+  // the job's time is not retried after it.
+  const inspectAfter = async ({ deadlineAt, firstInspect }) => {
+    let inspections = 0;
+    const result = await enrichOpenings(env, {
+      projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
+      scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+      deadlineAt,
+    }, {
+      inspect: async () => { inspections += 1; return firstInspect(inspections); },
+      render: async () => ({ images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
       runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
       runFaceMapped: { readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null, reconcileFace: async () => null, readComposition: async () => null },
-    }),
-    new Promise((done) => setTimeout(() => done("still waiting"), 400)),
-  ]);
-  assert.notEqual(outcome, "still waiting", "given up at the job's deadline, not at a deadline of its own");
-  assert.equal(outcome.readings.length, 0);
-  assert.equal(outcome.report.files[0].steps.failedPhase, "r2_lookup");
-  // The queue is empty: the next file's reservation is admitted the moment the
-  // budget is free, with nobody abandoned ahead of it.
-  held();
-  const next = await Promise.race([reserveContainerMemory(1024, 50).then(() => "admitted"), new Promise((done) => setTimeout(() => done("stuck"), 100))]);
-  assert.equal(next, "admitted");
+    });
+    return { inspections, file: result.report.files[0] };
+  };
+  const expired = await inspectAfter({ deadlineAt: Date.now() - 1, firstInspect: () => inspected });
+  assert.equal(expired.inspections, 0, "nothing is asked of a run whose job is already over");
+  assert.equal(expired.file.containerCalls, 0);
+  assert.equal(expired.file.providerFailure?.warnings.some((w) => /deadline/.test(w)), true);
+  const lateRetry = await inspectAfter({
+    deadlineAt: Date.now() + 30,
+    firstInspect: async () => { await new Promise((done) => setTimeout(done, 60)); throw new ContainerClientError("timeout"); },
+  });
+  assert.equal(lateRetry.inspections, 1, "the cold-container retry is not taken after the deadline");
+  assert.equal(lateRetry.file.containerCalls, 1);
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {

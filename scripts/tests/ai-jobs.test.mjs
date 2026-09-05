@@ -56,11 +56,14 @@ test("aiJobDeadlineMs: drawing parsers receive 600s while non-drawing modes keep
 test("setDrawingProgress: writes phase + counts guarded by the exact processing token", async () => {
   const calls = [];
   const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
-  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20, "opening_read");
+  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20, "opening_read", "Rechecking 2 unclear openings");
   assert.equal(calls.length, 1);
-  assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?, drawings_phase=\?/);
+  assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?, drawings_phase=\?, drawings_message=\?/);
   assert.match(calls[0].sql, /WHERE project_id=\? AND source_generation=\? AND status='processing'\s+AND processing_token=\?/);
-  assert.deepEqual(calls[0].args, [7, 20, "opening_read", "proj_1", 3, "tok-abc"]);
+  assert.deepEqual(calls[0].args, [7, 20, "opening_read", "Rechecking 2 unclear openings", "proj_1", 3, "tok-abc"]);
+  // A caller with no message to give leaves the column empty, not stale.
+  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 8, 20, "opening_read");
+  assert.deepEqual(calls[1].args, [8, 20, "opening_read", null, "proj_1", 3, "tok-abc"]);
 });
 
 test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {

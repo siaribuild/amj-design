@@ -16,16 +16,17 @@ export const MAX_DPI = 300;
 export const MAX_INSPECT_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const MAX_RENDER_RESPONSE_BYTES = 16 * 1024 * 1024;
 
-// ── The face-mapped engine's memory, as one arithmetic (§8). The isolate is
-// 128 MB. A run holds: the PDF for the file's whole life; for each call in
-// flight a framed copy of it (the container reads its request by
-// Content-Length, so the copy stays), the response bytes and the string they
-// decode to; the inspection for the file's life, parsed; the crops Phase E
-// keeps between renders; and the runtime. The budget below covers the first
-// two and admits calls while their sum fits; the rest are allowances; the sum
-// fits the isolate with 24 MB of headroom, and the largest file fits beside its
-// own largest call, so nothing waits for room that never comes. Only this
-// engine's calls are budgeted: the other modes' memory is as it was. ──
+// ── The face-mapped engine's memory, as one arithmetic per run (§8). The
+// isolate is 128 MB. With its renders one at a time (pool.ts `serial`), a run
+// holds: the PDF for the file's whole life; one framed copy of it in flight
+// (the container reads its request by Content-Length, so the copy stays) with
+// the response bytes and the string they decode to; the inspection kept for
+// the file's life, parsed; the crops Phase E keeps between renders; and the
+// runtime. 20 + (20 + 8) + 16 + 32 + 24 = 120 < 128, and the inspection alone,
+// before anything else exists, 20 + (20 + 16) + 24 = 80. The bound is the
+// run's own concurrency; no ledger outlives the request, and two runs in one
+// isolate are the platform's scheduling to bound, not this engine's. Only this
+// engine's calls carry these caps: the other modes' memory is as it was. ──
 export const WORKER_ISOLATE_BYTES = 128 * 1024 * 1024;
 /** The largest PDF this engine reads: the size at which the arithmetic
  * closes. The reference sets are 2-6 MB. The other modes keep MAX_PDF_BYTES. */
@@ -44,11 +45,6 @@ export const COMPOSITION_BATCH_SIZE = 4;
 export const COMPOSITION_CONCURRENT_BATCHES = 4;
 export const MAX_CROP_BASE64 = 2_000_000;
 export const MAX_RETAINED_CROP_BYTES = COMPOSITION_BATCH_SIZE * COMPOSITION_CONCURRENT_BATCHES * MAX_CROP_BASE64;
-/** The budget: the face-mapped file's PDF for its life (one file at a time),
- * and for each of its calls in flight a framed copy of the PDF plus twice the
- * call's response cap. 56 + 32 (crops) + 16 (inspection) + 24 (runtime) = 128;
- * 20 + 20 + 16 (the file and its inspection) = 56. */
-export const MAX_CONTAINER_INFLIGHT_BYTES = 56 * 1024 * 1024;
 
 export type DrawingProgressPhase =
   | "inventory"

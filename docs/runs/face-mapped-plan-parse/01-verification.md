@@ -212,7 +212,8 @@ region for a second look (Codex accepts).
 Each a test before it was a change.
 
 - **Render response bounded where it is read.** The container client reads the
-  body against `MAX_CONTAINER_RESPONSE_BYTES` (16 MB) as it arrives - refused by
+  body against a per-call cap (16 MB then; split per mode since, see round
+  eleven) as it arrives - refused by
   declared length where it declares one, by count where it does not - and the
   reader is cancelled on overflow. This closes the memory finding that stood
   through two rounds; the engine's own 2 MB crop cap stays as defence in depth.
@@ -289,53 +290,64 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
 
 ### Review round ten: three standards findings and six spec findings
 
-- **One arithmetic for this engine's memory, and the other modes' as it
-  was.** `contract.ts` states it: 128 MB = a 56 MB budget for what the
-  face-mapped engine has in flight (its file's PDF for the file's whole life,
-  reserved on the object's size before the bytes are read from R2, one file at
-  a time, each waiting its turn for at most the job's own deadline; plus for
-  each of its calls a framed copy of the PDF and twice the call's response cap)
-  + 32 MB of crops Phase E keeps between renders (four waves of four, from the
-  constants the waves use) + 16 MB for the inspection kept for the file's life,
-  parsed (measured: word data reaches 1.84x its wire size, priced at 2x) + 24 MB
-  of runtime. Its caps are measured: inspection 8 MB (54-64 KB per page, about
-  4 MB at the 60-page cap), render 4 MB (a full sheet at 150 DPI is 2.03 MB of
-  base64), and the largest PDF this engine reads is 20 MB - the size at which
-  the arithmetic closes; the reference sets are 2-6 MB. The body is decoded as
-  it streams, so a response is in memory as bytes in flight and as text, not as
-  chunks and a Blob and text and JSON. Admission is a queue: a call that does
-  not fit waits its turn, inside its own deadline; a release, or a waiter whose
-  deadline passes, admits every head that fits; nobody jumps it; a call the
-  budget could never hold beside its file is refused at once, not queued
-  forever. Three inequalities are pinned by test, with every constant pinned
-  exactly: budget + crops + inspection + headroom fits the isolate; the largest
-  file plus its inspection fits the budget; the file plus one of its renders
-  fits the budget - so nothing waits for room that never comes. **The other
-  modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB, their inspection and
-  render caps stay 16 MB (twelve crops in one response, a page at 300 DPI),
-  their calls are not budgeted and never queue, and their crop retention is as
-  it was - bounding it is a change to existing modes the owner's own review
-  forbids without approval, and is not done here. What every mode does get: a
-  PDF refused on its object size before its bytes are read rather than after.
-  The two prompts this round changed - the second look and the sheet read -
-  carry version v2. The framed request copy stays: the container reads its
-  request by Content-Length, and the container is unchanged on this branch.
-  A file waits for the budget no longer than its job has left: the job runner
-  computes one absolute deadline, the pipeline and the enrichment stage carry
-  it, and a file that cannot get its turn before it fails then and leaves the
-  queue, rather than taking the budget after its job was given up on and
-  holding the next job's file out. The production branch is asserted to hand
-  this engine's limits to its own calls and none to the other modes'.
+- **One arithmetic for this engine's memory, per run, and the other modes'
+  as it was.** `contract.ts` states it: with its renders one at a time, a
+  face-mapped run holds the PDF for the file's whole life (at most 20 MB), one
+  framed copy of it in flight with the response and the text it decodes to
+  (20 + 8), the inspection kept parsed (measured at up to 1.84x its wire size,
+  priced at 2x: 16), the crops Phase E keeps between renders (four waves of
+  four, from the constants the waves use: 32), and 24 MB of runtime - 120 of
+  128 - and the inspection alone, before anything else exists, 20 + 36 + 24 =
+  80. The caps are measured: inspection 8 MB (54-64 KB per page, about 4 MB at
+  the 60-page cap), render 4 MB (a full sheet at 150 DPI is 2.03 MB of base64).
+  Renders are one at a time through `serial()` in `pool.ts`, an
+  invocation-local chain: **no ledger outlives the request** - a round-ten
+  shared budget with queues and leases in module state was the wrong shape for
+  a Worker and is gone. Two runs in one isolate are the platform's to schedule,
+  not this engine's to bound, and the document says so. The body is decoded as
+  it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
+  their inspection and render caps stay 16 MB, their calls carry none of this
+  engine's limits, they read files as they always did and are refused where
+  they always were, and their crop retention is as it was. The face-mapped
+  engine refuses a PDF over 20 MB on its object size, before the bytes are
+  read, as its own phase, `pdf_size`. The two prompts this round changed - the
+  second look and the sheet read - carry version v2. The framed request copy
+  stays: the container reads its request by Content-Length, and the container
+  is unchanged on this branch.
+- **Nothing is done after the job's deadline.** The job runner computes one
+  absolute deadline; the pipeline carries it down; and both of this engine's
+  call funnels enforce it - every model call is refused once it has passed, and
+  every render is refused when its turn comes (checked at dispatch, because four
+  waves can queue before the deadline and reach it after). Container calls made
+  inside the deadline are given no more time than remains. A refused call is
+  not counted as one. The run ends with what it has and the report says why.
+- **The report is the file's report.** The inspection's inventory, timings,
+  page count (a page that is both plan and elevation is one page) and page
+  selection stay on it; `pagesRendered` counts pages that came back, not
+  attempts.
+- **Rechecks are milestones the customer sees.** Migration 0065 adds
+  `drawings_message` beside the phase; the engine's message travels through
+  the pipeline, the API and the checklist, where a milestone with its own words
+  shows them - "Rechecking 2 unclear openings" is a row, not a pause.
 
-  **Owner ruling needed.** The handover says the existing byte limits apply.
-  This engine now reads PDFs up to 20 MB and responses up to 8 MB (inspection)
-  and 4 MB (render), where the shared limits are 40 / 16 / 16. The stricter
-  limits are the ones the memory arithmetic closes at: with the per-call PDF
-  copy the container protocol requires, 40 MB cannot be bounded within 128 MB.
-  The reference sets are 2-6 MB. Either the handover records these limits for
-  this engine, or the bound above 20 MB is a hope and the document should say
-  so. Deploying changes nothing until the mode is selected, so the decision can
-  wait for the owner; it is not made here.
+Codex over the result found four more, all closed: the inspection is inside the
+deadline too - an expired run inspects nothing, a cold-container retry is not
+taken after the deadline, and neither refusal counts as a call; the report keeps
+what the text layer selected with its own reasons and adds only what a look
+recovered; the engine counts pages read, not roles, on its own report as well;
+and two leftovers of the removed budget are gone.
+
+**Owner ruling needed.** The handover says the existing byte limits apply.
+This engine reads PDFs up to 20 MB and responses up to 8 MB (inspection) and
+4 MB (render), where the shared limits are 40 / 16 / 16. The stricter limits are
+the ones the per-run memory arithmetic closes at: with the per-call PDF copy
+the container protocol requires, 40 MB cannot be bounded within 128 MB. The
+reference sets are 2-6 MB. A 21-40 MB set in this mode falls to schedule
+fallback with `pdf_size` as the failed phase. Either the handover records these
+limits for this engine, or the bound above 20 MB is a hope and the document
+should say so. Deploying changes nothing until the mode is selected, so the
+decision can wait for the owner; it is not made here.
+
 - **Face titles are read once per document**, not once per page.
 - **Loss state** stays in three maps side by side, named as a `ponytail:` debt
   in `run.ts`: one typed result per phase when a fourth map is needed, not
@@ -359,11 +371,8 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
 - **The scale prompt names no set's details**: a ratio anywhere but the title
   block belongs to something the drawing measures.
 - **Rechecks are milestones** (§9): "Rechecking N unclear openings" before the
-  second looks and before a composition batch is asked again. In production the
-  progress adapter forwards counts and the persisted phase and drops the
-  message - carrying it is an additive column, an API field and the UI, a
-  pipeline change outside this engine; the persisted row's `updated_at` moves
-  on every recheck event. Deferred, stated.
+  second looks and before a composition batch is asked again - and, since round
+  eleven, carried to the customer's checklist (see below).
 - **Renders are counted apart from calls**: the report's `pagesRendered` is
   renders alone - an inspection is a container call, not a rendered page - and
   the look owes pairs for the openings it did not call absent, or for every

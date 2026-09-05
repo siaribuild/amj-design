@@ -2,7 +2,7 @@ import type { Skill } from "../../estimator/skills/types";
 import type { CropBoxPt, DrawingFileReport, DrawingReading, FailurePhase, RenderRequest, RenderResponse } from "../contract";
 import type { CompositionRead, CompositionTask } from "./compositions";
 import { readOpenings } from "./readOpenings";
-import { spendCounter, type UsageReport } from "./spend";
+import { DEADLINE_PASSED, spendCounter, type UsageReport } from "./spend";
 import {
   faceMappedFileReport, faceMappedProgress, faceMappedReadings,
   type FaceMappedPhase, type PlacedForReport,
@@ -102,17 +102,21 @@ export async function runFaceMappedParser(args: {
   // a malformed render are two different operational problems.
   const renderFailures = new Map<number, string>();
   const pageImage = async (pageNo: number, box?: CropBoxPt, dpi = RENDER_DPI) => {
-    containerCalls += 1;
-    pagesRendered += 1;
+    let rendered: RenderResponse;
     try {
-      const rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
-      const image = rendered.images[0];
-      if (!image) renderFailures.set(pageNo, "the render came back without an image");
-      return image ? { pngB64: image.pngB64, url: `data:image/png;base64,${image.pngB64}` } : null;
+      rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
     } catch (error) {
+      // A render the caller refused at the job's deadline never reached the
+      // container, and is not counted as a call to it.
+      if (!(error instanceof Error && error.message === DEADLINE_PASSED)) containerCalls += 1;
       renderFailures.set(pageNo, error instanceof Error ? error.message : String(error));
       return null;
     }
+    containerCalls += 1;
+    const image = rendered.images[0];
+    if (image) pagesRendered += 1;
+    else renderFailures.set(pageNo, "the render came back without an image");
+    return image ? { pngB64: image.pngB64, url: `data:image/png;base64,${image.pngB64}` } : null;
   };
   const renderReason = (pageNo: number, what: string) =>
     `${what} could not be rendered: ${renderFailures.get(pageNo) ?? "no image came back"}`;
@@ -248,7 +252,8 @@ export async function runFaceMappedParser(args: {
       fileId: args.fileId,
       sourceFileId: args.sourceFileId,
       readings,
-      pagesRead: args.planPages.length + args.elevationPages.length,
+      // Pages, not roles: a sheet that is both plan and elevation is one page.
+      pagesRead: new Set([...args.planPages, ...args.elevationPages].map((page) => page.geometry.pageNo)).size,
       crops: crops.size,
       attempted: cropCount,
       compositions,

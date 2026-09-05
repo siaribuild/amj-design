@@ -29,7 +29,7 @@ export type AiPhase =
       kind: "reading"; docs: number; stage?: AiProgressStage;
       /** Present only while a drawing read is running (§5) — the customer
        *  sees a counter, never which openings could not be read. */
-      drawingsDone?: number; drawingsTotal?: number; drawingsPhase?: DrawingProgressPhase;
+      drawingsDone?: number; drawingsTotal?: number; drawingsPhase?: DrawingProgressPhase; drawingsMessage?: string;
     }
   | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
   | { kind: "done"; refined: number }
@@ -68,12 +68,16 @@ export function documentChecklist(
     drawingsDone?: number;
     drawingsTotal?: number;
     drawingsPhase?: DrawingProgressPhase;
+    drawingsMessage?: string;
   } | undefined,
   stageLog: StageLogEntry[] = [],
 ): { steps: DocumentChecklistStep[]; current: number } {
   const total = phase?.drawingsTotal;
   const done = phase?.drawingsDone ?? 0;
-  const drawingDetail = (drawingDone: number, drawingTotal: number, drawingPhase?: DrawingProgressPhase): string => {
+  const drawingDetail = (drawingDone: number, drawingTotal: number, drawingPhase?: DrawingProgressPhase, message?: string): string => {
+    // A milestone with words of its own says them: a recheck moves no counter
+    // and changes no phase, and would otherwise look like a pause.
+    if (message) return ` · ${message}`;
     switch (drawingPhase) {
       case "inventory": return ` · preparing ${drawingTotal} opening read${drawingTotal === 1 ? "" : "s"}`;
       case "elevation_inventory": return " · finding relevant drawing views";
@@ -104,11 +108,11 @@ export function documentChecklist(
     if (s.key === "extracting_schedule" && total != null) {
       const drawingRows = observedDrawings.length
         ? observedDrawings
-        : [{ stage: "reading_openings" as const, at: undefined, drawing: { done, total, phase: phase?.drawingsPhase } }];
+        : [{ stage: "reading_openings" as const, at: undefined, drawing: { done, total, phase: phase?.drawingsPhase, message: phase?.drawingsMessage } }];
       drawingRows.forEach((entry, index) => steps.push({
         key: observedDrawings.length ? `reading_openings:${index}` : "reading_openings",
         label: "Reading your drawings",
-        detail: drawingDetail(entry.drawing!.done, entry.drawing!.total, entry.drawing!.phase),
+        detail: drawingDetail(entry.drawing!.done, entry.drawing!.total, entry.drawing!.phase, entry.drawing!.message),
         startedAt: entry.at,
       }));
     }
@@ -127,7 +131,7 @@ export type StageLogKey = AiProgressStage | "reading_openings" | "reading_openin
 export type StageLogEntry = {
   stage: StageLogKey;
   at: number;
-  drawing?: { done: number; total: number; phase?: DrawingProgressPhase };
+  drawing?: { done: number; total: number; phase?: DrawingProgressPhase; message?: string };
 };
 
 /** True once the run has either completed every drawing read or advanced past
@@ -378,8 +382,8 @@ export function useProjectDocuments(
     if (run.drawingsTotal != null && run.drawingsPhase) {
       setStageLog((prev) => {
         const last = [...prev].reverse().find((entry) => entry.stage === "reading_openings")?.drawing;
-        const next = { done: run.drawingsDone ?? 0, total: run.drawingsTotal!, phase: run.drawingsPhase };
-        return last?.done === next.done && last.total === next.total && last.phase === next.phase
+        const next = { done: run.drawingsDone ?? 0, total: run.drawingsTotal!, phase: run.drawingsPhase, message: run.drawingsMessage };
+        return last?.done === next.done && last.total === next.total && last.phase === next.phase && last.message === next.message
           ? prev
           : [...prev, { stage: "reading_openings", at: Date.now(), drawing: next }];
       });
@@ -536,6 +540,7 @@ export function useProjectDocuments(
             : {
                 kind: "reading", docs, stage: run.progressStage,
                 drawingsDone: run.drawingsDone, drawingsTotal: run.drawingsTotal, drawingsPhase: run.drawingsPhase,
+                drawingsMessage: run.drawingsMessage,
               });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });

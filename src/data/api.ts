@@ -613,6 +613,9 @@ export interface ExtractionRun {
     | "orientation"
     | "render_crops"
     | "opening_read";
+  /** The milestone in the parser's own words, where it has them - a recheck is
+   * work, not a pause. */
+  drawingsMessage?: string;
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:

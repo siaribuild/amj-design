@@ -26,9 +26,18 @@ export interface RunSpend {
  * the caller's Phase A looks and this engine's phases report to the same one,
  * so the report is not two totals added by hand. A dep that reports nothing
  * is one call, which is what it was before anyone counted. */
-export function spendCounter() {
+/** What the report says when the job's deadline cut a run short. */
+export const DEADLINE_PASSED = "the job's deadline passed; no further look or render was taken";
+
+export function spendCounter(deadlineAt?: number) {
   const spent: RunSpend = { modelCalls: 0, cachedTurns: 0, inputTokens: 0, outputTokens: 0, warnings: [], failureKind: null };
   const counted = <T>(call: (usage: UsageReport) => Promise<T>): Promise<T> => {
+    // Nothing is asked after the job has been given up on: a look taken then
+    // is spend nobody reads, and work overlapping the job's retry.
+    if (deadlineAt != null && Date.now() >= deadlineAt) {
+      if (!spent.warnings.includes(DEADLINE_PASSED)) spent.warnings.push(DEADLINE_PASSED);
+      return Promise.reject(new Error(DEADLINE_PASSED));
+    }
     let reported = false;
     const usage = (u: StageUsage) => {
       reported = true;

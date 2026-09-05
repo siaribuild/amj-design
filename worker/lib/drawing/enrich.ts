@@ -9,12 +9,12 @@
 // surface, because nothing in here is allowed to throw past this file's
 // own try/catch.
 import type { Env } from "../../types";
-import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
-import { FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_PDF_BYTES } from "./contract";
-import { ContainerClientError, inspectPdf, renderPage, reserveContainerMemory } from "./containerClient";
+import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, RenderRequest, RenderResponse, SplitReading } from "./contract";
+import { FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES } from "./contract";
+import { ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
 import { runFaceMappedParser, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
-import { spendCounter } from "./faceMapped/spend";
+import { DEADLINE_PASSED, spendCounter } from "./faceMapped/spend";
 import type { FaceMappedPhase } from "./faceMapped/report";
 import { pageScales } from "./harvest";
 import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
@@ -30,7 +30,7 @@ import { sha256hex, sha256hexText } from "../ai/hash";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
 import { locateFloorplanPage, orientationsFromNorth, resolveNorth, type Edge, type Storey } from "./locate";
-import { mapPool } from "./pool";
+import { mapPool, serial } from "./pool";
 import { composeMeasuredSplit, measureSplit } from "./measure";
 import { compositionFromSchedule, reconcileReading } from "./reconcile";
 
@@ -128,7 +128,7 @@ async function enrichFile(
   env: Env,
   args: {
     projectId: string; aiRunId: string; file: EnrichFile; scheduleRows: EnrichScheduleRow[];
-    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase, message?: string) => Promise<void>;
     /** When the job this file belongs to is given up on (epoch ms). */
     deadlineAt?: number;
   },
@@ -137,21 +137,17 @@ async function enrichFile(
   const startedAt = Date.now();
   const report = emptyFileReport(args.file.fileId);
   let currentPhase = "r2_lookup";
-  let releaseFile = () => {};
   try {
     const obj = await env.FILES.get(args.file.r2Key);
     if (!obj) return { readings: [], report };
-    // Refused on the object's size, before its bytes are pulled from R2:
-    // refusing a file after loading it is refusing it too late. The
-    // face-mapped engine reads up to the size its memory arithmetic closes at
-    // (contract.ts); the other modes read what they always read.
-    const size = obj.size ?? 0;
-    if (size > (deps.runFaceMapped ? FACE_MAPPED_MAX_PDF_BYTES : MAX_PDF_BYTES)) throw new ContainerClientError("too_large", `${size} bytes`);
-    // A face-mapped file's PDF is held for the file's whole life, through the
-    // budget its container calls draw on - one file at a time, waiting no
-    // longer than its job has left: a file that took the budget after its job
-    // was given up on would hold the next job's file out.
-    if (deps.runFaceMapped) releaseFile = await reserveContainerMemory(size, args.deadlineAt == null ? undefined : Math.max(0, args.deadlineAt - Date.now()));
+    // The face-mapped engine reads up to the size its memory arithmetic closes
+    // at (contract.ts), refused on the object's size before its bytes are
+    // pulled from R2 and named as its own phase. The other modes read what they
+    // always read, and are refused where they always were.
+    if (deps.runFaceMapped && (obj.size ?? 0) > FACE_MAPPED_MAX_PDF_BYTES) {
+      currentPhase = "pdf_size";
+      throw new ContainerClientError("too_large", `${obj.size} bytes is more than the face-mapped engine reads`);
+    }
     const pdfBytes = new Uint8Array(await obj.arrayBuffer());
     let cachedHarvest: FullDocumentHarvest | null = null;
     let harvestCache: { key: string; pdfSha256: string; scheduleSha256: string } | null = null;
@@ -176,18 +172,31 @@ async function enrichFile(
     if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "inventory");
     currentPhase = "inventory";
     let inspected: InspectResponse;
-    report.containerCalls++;
-    // The face-mapped engine's inspection draws on its memory budget and has
-    // its own, measured cap; the other modes' inspection is what it was.
-    const budgeted = deps.runFaceMapped ? { budgeted: true, responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES } : {};
+    // The face-mapped engine's inspection has its own, measured cap and runs
+    // inside its job's deadline - the retry too, each dispatch checked against
+    // the time left when its turn comes; the other modes' inspection is what
+    // it was. Phase A's looks and the engine's are spent on one counter, and
+    // the deadline is its business, so it exists before the first call.
+    const spend = spendCounter(args.deadlineAt);
+    const remaining = () => args.deadlineAt == null ? undefined : args.deadlineAt - Date.now();
+    const inspectLimits = deps.runFaceMapped ? { responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES } : {};
+    const inspectOnce = () => {
+      const left = deps.runFaceMapped ? remaining() : undefined;
+      if (left != null && left <= 0) {
+        spend.spent.warnings.push(DEADLINE_PASSED);
+        report.providerFailure = { failureKind: null, warnings: [...(report.providerFailure?.warnings ?? []), DEADLINE_PASSED] };
+        throw new ContainerClientError("timeout", DEADLINE_PASSED);
+      }
+      report.containerCalls++;
+      return deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes, undefined, left == null ? undefined : Math.min(INSPECT_TIMEOUT_MS, left), inspectLimits);
+    };
     try {
-      inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes, undefined, undefined, budgeted);
+      inspected = await inspectOnce();
     } catch (error) {
-      if (!(error instanceof ContainerClientError) || error.code !== "timeout") throw error;
+      if (!(error instanceof ContainerClientError) || error.code !== "timeout" || error.message.includes(DEADLINE_PASSED)) throw error;
       // A cold container can consume the whole request timeout while starting.
       // Retry once: the first request has usually left the instance ready.
-      report.containerCalls++;
-      inspected = await deps.inspect(env.PLAN_PARSE, args.projectId, pdfBytes, undefined, undefined, budgeted);
+      inspected = await inspectOnce();
     }
     report.inspectTimings = inspected.timings;
     report.steps.inventory = {
@@ -227,19 +236,45 @@ async function enrichFile(
       const readSheet = deps.runFaceMapped.readSheet;
       // Phase A's looks are spent before the engine starts, and are its spend:
       // one counter, handed on.
-      const spend = spendCounter();
-      // This engine's calls draw on its memory budget, and render one image each.
-      const faceMappedCall = { budgeted: true, responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES };
+      // This engine renders one image per call, under its own measured cap, one
+      // render at a time (the memory arithmetic in contract.ts is priced on
+      // that), and none after the job's deadline: a render taken then is memory
+      // and container time spent on a job that has been given up on.
+      const faceMappedCall = { responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES };
+      const pastDeadline = () => {
+        const left = remaining();
+        if (left == null || left > 0) return false;
+        if (!spend.spent.warnings.includes(DEADLINE_PASSED)) spend.spent.warnings.push(DEADLINE_PASSED);
+        return true;
+      };
+      // The deadline is checked when a render's turn comes, not when it queues:
+      // four waves can queue before the deadline and reach it after.
+      const renderOne = serial(async (request: RenderRequest) => {
+        if (pastDeadline()) throw new Error(DEADLINE_PASSED);
+        const left = remaining();
+        return deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request, left == null ? undefined : Math.min(RENDER_TIMEOUT_MS, Math.max(1, left)), faceMappedCall);
+      });
       let phaseARenders = 0;
+      let phaseARendered = 0;
       const recovered = silent.length
         ? await recoverSheetFacts({
           inspected,
           pageNos: silent,
           stated,
           deps: {
-            render: (request) => {
+            render: async (request) => {
+              // A render refused at the deadline never reached the container,
+              // and is not counted as a call to it.
+              let rendered: RenderResponse;
+              try {
+                rendered = await renderOne(request);
+              } catch (error) {
+                if (!(error instanceof Error && error.message === DEADLINE_PASSED)) phaseARenders += 1;
+                throw error;
+              }
               phaseARenders += 1;
-              return deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request, undefined, faceMappedCall);
+              if (rendered.images[0]) phaseARendered += 1;
+              return rendered;
             },
             readSheet: async ({ pageNo, imageDataUrl }) => {
               const skill = makeSheetFactsSkill(pageNo);
@@ -292,10 +327,10 @@ async function enrichFile(
         // started and counts the inspection and Phase A's renders.
         startedAt,
         containerCalls: report.containerCalls + phaseARenders,
-        pagesRendered: phaseARenders,
+        pagesRendered: phaseARendered,
         deps: {
           ...deps.runFaceMapped,
-          render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request, undefined, faceMappedCall),
+          render: renderOne,
           async storeCrop(renderId, pngB64) {
             const key = cropKey(args.projectId, args.aiRunId, renderId);
             try {
@@ -309,14 +344,31 @@ async function enrichFile(
           // Progress is persisted under ai_job_claim.drawings_phase, whose CHECK
           // (migration 0062) knows six names. A seventh is an UPDATE that fails
           // silently, so this engine's phases are told in the persisted
-          // vocabulary; its messages and durations stop here, because carrying
-          // them is a pipeline change, not this engine's.
+          // vocabulary. Its message travels with it (migration 0065), so a
+          // recheck is a milestone the customer sees; durations stop here.
           onProgress: async (event) => {
-            await args.onProgress?.(event.done, event.total, PERSISTED_PHASE[event.phase]);
+            await args.onProgress?.(event.done, event.total, PERSISTED_PHASE[event.phase], event.message);
           },
         },
       });
+      // The engine's report is the file's report: what the inspection found
+      // stays in it, and a page that is both plan and elevation is one page.
       run.report.steps.strategy = strategy;
+      run.report.steps.inventory = report.steps.inventory;
+      run.report.inspectTimings = inspected.timings;
+      run.report.steps.text.pagesRead = inspected.pages.length;
+      const selectedByText = selectPages(inspected.inventory, inspected.pages).selected;
+      run.report.steps.selectPages = {
+        // What the text layer selected, with its reasons, and what a look at a
+        // sheet recovered where the text had not already said the same.
+        selected: [
+          ...selectedByText,
+          ...[...recovered].flatMap(([pageNo, facts]) => facts.role && !selectedByText.some((item) => item.pageNo === pageNo && item.tier === facts.role)
+            ? [{ pageNo, tier: facts.role, reason: "recovered sheet title" }]
+            : []),
+        ].sort((a, b) => a.pageNo - b.pageNo),
+        of: inspected.inventory.pageCount,
+      };
       return run;
     }
 
@@ -722,8 +774,6 @@ async function enrichFile(
     report.steps.failedPhase = currentPhase;
     report.wallMs = Date.now() - startedAt;
     return { readings: [], report };
-  } finally {
-    releaseFile();
   }
 }
 
@@ -782,7 +832,7 @@ export async function runDrawingEnrichmentStage(
   env: Env,
   args: {
     projectId: string; aiRunId: string; planPdfDocs: { fileId: string }[]; scheduleRows: EnrichScheduleRow[];
-    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase, message?: string) => Promise<void>;
     /** When the job is given up on (epoch ms), so nothing here waits past it. */
     deadlineAt?: number;
   },
@@ -912,7 +962,7 @@ export async function enrichOpenings(
   args: {
     projectId: string; aiRunId: string; files: EnrichFile[]; scheduleRows: EnrichScheduleRow[];
     deadlineAt?: number;
-    onProgress?: (done: number, total: number, phase: DrawingProgressPhase) => Promise<void>;
+    onProgress?: (done: number, total: number, phase: DrawingProgressPhase, message?: string) => Promise<void>;
   },
   deps: EnrichDeps,
 ): Promise<{ readings: DrawingReading[]; report: DrawingReport }> {

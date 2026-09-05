@@ -1681,6 +1681,13 @@ test("documentChecklist: face-batched agent milestones describe real work withou
   }).steps[3].detail, " · reading elevation faces");
 });
 
+test("documentChecklist: a milestone with its own words shows them - rechecking is work the customer can see (§9)", () => {
+  assert.equal(M.documentChecklist({
+    stage: "building_envelope", drawingsDone: 4, drawingsTotal: 27, drawingsPhase: "opening_read",
+    drawingsMessage: "Rechecking 2 unclear openings",
+  }).steps[3].detail, " · Rechecking 2 unclear openings");
+});
+
 test("documentChecklist: observed drawing milestones remain as separate rows with separate durations", () => {
   const log = [
     { stage: "building_envelope", at: 10_000 },

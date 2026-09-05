@@ -809,8 +809,8 @@ export async function runAiExtraction(
         ...drawingContextForOpening(model, l.tag),
       }));
     const onProgress = opts.processingToken
-      ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase) =>
-          setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase)
+      ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase, message?: string) =>
+          setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase, message)
       : undefined;
     const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress, deadlineAt: opts.deadlineAt });
     drawingReadings = result.readings;

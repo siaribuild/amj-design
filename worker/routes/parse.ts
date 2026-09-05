@@ -374,7 +374,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
             j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at,
-            j.drawings_done, j.drawings_total, j.drawings_phase
+            j.drawings_done, j.drawings_total, j.drawings_phase, j.drawings_message
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -392,6 +392,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
     drawings_done: number | null;
     drawings_total: number | null;
     drawings_phase: string | null;
+    drawings_message: string | null;
   }>().catch(() => null);
   if (pending) {
     const diagnostic = (pending.status === "failed" || pending.failure_class === "quota")
@@ -419,6 +420,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
           drawingsDone: pending.drawings_done ?? 0,
           drawingsTotal: pending.drawings_total,
           ...(pending.drawings_phase ? { drawingsPhase: pending.drawings_phase } : {}),
+          ...(pending.drawings_message ? { drawingsMessage: pending.drawings_message } : {}),
         } : {}),
       },
       basis: {},

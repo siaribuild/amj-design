@@ -68,12 +68,16 @@ export async function setDrawingProgress(
   drawingsDone: number,
   drawingsTotal: number,
   drawingsPhase: DrawingProgressPhase,
+  /** The milestone in the engine's own words (migration 0065) - "Rechecking 2
+   *  unclear openings" - so work that moves no counter is still work the
+   *  customer sees. Absent, the column is cleared, never left stale. */
+  drawingsMessage?: string,
 ): Promise<void> {
   await env.DB.prepare(
-    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, updated_at=datetime('now')
+    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, drawings_message=?, updated_at=datetime('now')
       WHERE project_id=? AND source_generation=? AND status='processing'
         AND processing_token=?`,
-  ).bind(drawingsDone, drawingsTotal, drawingsPhase, projectId, sourceGeneration, processingToken).run().catch(() => {});
+  ).bind(drawingsDone, drawingsTotal, drawingsPhase, drawingsMessage ?? null, projectId, sourceGeneration, processingToken).run().catch(() => {});
 }
 
 class AiJobFault extends Error {
