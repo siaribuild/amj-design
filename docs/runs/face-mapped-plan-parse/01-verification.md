@@ -177,7 +177,8 @@ Three of the review's points are rejected, with the contract as the reason:
   on: the second call is served from the archive, costs nothing, and is the same
   answer.
 - **`run.ts` size.** The crop-and-read driver and the match phase are their own
-  modules; `run.ts` is 316 lines, under the 317 the owner accepted.
+  modules, and so is the spend counter (`spend.ts`); `run.ts` is 281 lines,
+  under the 317 the owner accepted.
 
 - **Calibration for a scale the frames contradict.** First rejected, then found
   in §7.4: "if several matched frames disagree consistently with the printed

@@ -13,7 +13,8 @@ import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingR
 import { FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_PDF_BYTES } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage, reserveContainerMemory } from "./containerClient";
 import { cropKey } from "./crops";
-import { runFaceMappedParser, spendCounter, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
+import { runFaceMappedParser, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
+import { spendCounter } from "./faceMapped/spend";
 import type { FaceMappedPhase } from "./faceMapped/report";
 import { pageScales } from "./harvest";
 import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
