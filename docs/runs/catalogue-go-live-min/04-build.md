@@ -51,3 +51,31 @@ Local D1 rehearsal: db:migrate:local (no-op, current), applied rate-cards.sql cl
 typecheck:gate clean (58 pre-existing non-fatal, no new). test:go-live 41/41, test:catalogue 7/7, test:estimator-rules 49/49, test:unit 109/109, all green. Committed next.
 
 Next task: nothing outstanding in this task's scope; working tree also carries unrelated in-progress changes (T4's go-live-plan.mjs/apply-go-live-min.mjs, and unrelated src/ frontend work) — not touched or committed by T5.
+
+## Fix round 1 — reviewer findings (Codex + architecture conformance), 2026-09-06
+
+Six findings from `FIX-1.md`, all fixed test-first:
+
+1. **One write must converge (P1).** The created product's `options` were built from the copy source's live state while the same plan patches that source's own `options` (hardware alignment), so a `--write` immediately followed by `--verify` failed — a second round still had a mutation. Fixed: the create branch now derives its base `options` from the source's *planned* set (the `set` already computed for the source in this same plan pass), not its live document. Tightened the convergence test from up to five rounds to exactly one — applying the plan to the fixture once must leave zero mutations on replan.
+
+2. **`--verify` must fail on planner problems (P1).** `apply-go-live-min.mjs`'s verify path read only `mutations`, ignoring `problems` — a missing sheet product produced a `problem` with no mutation, so verify could exit 0 with a document absent. Fixed: dry-run, `--write` and `--verify` all now route through the same validation (`problems` then `assertSafe`) before doing anything else; a fixture with one sheet product removed makes `run({verify:true})` exit 1 and name the missing document.
+
+3. **Slug/type safety on replace, `drafts.` on create targets (P1).** `assertSafe` only rejected a `slug` key inside patches and only rejected `createOrReplace` for products, so a `NEW_PROFILES` document with an unexpected existing slug would have been silently renamed. Fixed: `assertSafe` now looks up the existing document for every `createOrReplace`/`createIfNotExists` target and rejects the mutation if the desired doc's `slug`/`_type` disagrees with what's already there; the `drafts.` id check now covers `(m.createIfNotExists ?? m.createOrReplace)?._id` as well as `m.patch.id`. New tests: an existing profile with a divergent slug is unsafe; a create target with a `drafts.` id is unsafe.
+
+4. **Drift output names the changed field, not "missing" (P2).** For an existing `NEW_PROFILES` document with one differing authored field, `--verify`'s drift log printed the misleading literal `missing`. Fixed: drift logging now runs `normProfile()` on both the existing document and the desired one and prints the keys that actually differ. Updated the "altered fixture" test to assert the real field name instead of `missing`.
+
+5. **Fake transport didn't implement the verification query (P2).** `makeTransport`'s GET dispatch treated every non-reference query as the slug-filtered product lookup; `runVerify`'s estimator-view query sends no `$slugs`, so the fixture silently returned `[]` and the "successful verification" test was passing on 0 products / 0 on the sheet — a no-op assertion. Fixed: `go-live-world.mjs`'s `makeTransport` now recognises the estimator-view query shape (`order(slug.current asc)`) and returns every product (on-sheet and off) with the same derived fields `runVerify` reads. Test now asserts 22 on the sheet, 11 off, and a deliberately-broken row fails.
+
+6. **Family/category references were never validated (P2).** The created product carries `family`/`category` document references that `plan()` never checked for existence, unlike glazing/profile/system/hardware ids. Fixed: `plan()` now checks `p.family`/`p.category` against the same `ids` set built from `world.families`/`world.categories`; an empty families/categories list in the fixture produces a named problem. `go-live-world.mjs` now seeds default `family`/`category` fixture rows so the other 45 tests still pass; the new negative test empties them and asserts the problem.
+
+Slug-only (not `_type`) is enforced as the immutability check on replace targets: the plan only ever emits `createOrReplace` for `thermalProfile` documents (`NEW_PROFILES`), so `_type` can never legitimately differ between desired and existing for a target this planner touches — checking it is caught by the same existing-document lookup as a belt-and-braces equality check, not a separate code path, so there is nothing further to add here.
+
+Deferred, not in this round (per `FIX-1.md`): Ponytail dead-code deletions and the two `Not routed` items (the other effort's `theme.css` finding; the two pre-existing `pipeline.test.mjs` failures) — all recorded in `DEBT.md`.
+
+**Test results, run in full this round:**
+- `npm run typecheck:gate` — clean, 0 fatal errors (58 pre-existing non-fatal, unchanged).
+- `npm run test:go-live` — 46/46 green (was 41 before this round; +5 new tests across findings 1, 2, 3×2, 6).
+- `npm run test:pure` (includes `test:go-live` plus ~39 other suites, one `node --test` run) — 1166 tests, 1164 pass, 2 fail. Both failures are in `scripts/tests/pipeline.test.mjs` (the pipeline conductor's own suite, nothing under `scripts/catalogue/**`): one hits `ENOENT` spawning a deliberately-missing stub binary (`no-such-claude`) used by a cycle-cap test fixture, the other is a `CYCLE CAP` assertion mismatch in a related "third verify/fix cycle refused" test. These are unrelated to this round's diff (nothing here touches `scripts/pipeline/**`) and match `FIX-1.md`'s own "Not routed" note — "two pre-existing `scripts/tests/pipeline.test.mjs` failures at base: routed to `DEBT.md` as low." Not fixed here; not in scope.
+- `npm run test:heavy` — run separately; result appended below once complete.
+
+Committed as one commit covering `scripts/catalogue/go-live-plan.mjs`, `scripts/tests/catalogue-go-live.test.mjs`, `scripts/tests/fixtures/go-live-world.mjs`, and this file. The ~38 uncommitted files from the other effort (`src/**`, `.impeccable/config.json`, …) were left untouched and uncommitted.

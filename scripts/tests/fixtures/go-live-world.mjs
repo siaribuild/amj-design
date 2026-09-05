@@ -36,6 +36,7 @@ export function makeWorld() {
       name: p.name ?? null,
       familyName: "Existing Family",
       categoryName: "Existing Category",
+      operation: "existing",
       options: [],
       dimensionRule: {},
       seo: {},
@@ -47,7 +48,10 @@ export function makeWorld() {
 
   const fullProfiles = NEW_PROFILES.map((p) => JSON.parse(JSON.stringify(p)));
 
-  return { products, families: [], categories: [], systems, profiles, options, fullProfiles };
+  const families = [{ _id: "family-awning-window", name: "Awning Window" }];
+  const categories = [{ _id: "category-windows", name: "Windows" }];
+
+  return { products, families, categories, systems, profiles, options, fullProfiles };
 }
 
 // Returns a copy of world with one field of one fullProfiles doc changed —
@@ -69,6 +73,29 @@ export function makeTransport(world) {
     let result;
     if (groq.includes('"families"')) {
       result = { families: world.families, categories: world.categories, systems: world.systems, profiles: world.profiles, fullProfiles: world.fullProfiles, options: world.options };
+    } else if (groq.includes("order(slug.current asc)")) {
+      // Estimator-view query: every product, on-sheet and off-sheet — see runVerify().
+      const profileRows = new Map([...world.profiles, ...world.fullProfiles].map((p) => [p._id, p]));
+      const systemSlugById = new Map(world.systems.map((s) => [s._id, s.slug]));
+      result = [...world.products.values()]
+        .map((p) => {
+          const profile = p.thermalProfile?._ref ? profileRows.get(p.thermalProfile._ref) : null;
+          const published = profile ? profile.rows.filter((r) => r.published !== false && r.uValue != null && r.shgc != null).length : 0;
+          return {
+            slug: p.slug.current,
+            name: p.name ?? null,
+            disabled: p.disabled === true,
+            pricingRef: p.pricingRef ?? null,
+            operation: p.operation ?? (p.family ? "created" : null),
+            hasDim: p.dimensionRule?.minWidthMm != null && p.dimensionRule?.maxHeightMm != null,
+            system: p.frameSystem?._ref ? systemSlugById.get(p.frameSystem._ref) : null,
+            profile: p.thermalProfile?._ref ?? null,
+            published,
+            stdHardware: null,
+            paras: p.descriptionParagraphs?.length ?? 0,
+          };
+        })
+        .sort((a, b) => a.slug.localeCompare(b.slug));
     } else {
       const slugsParam = u.searchParams.get("$slugs");
       const slugs = slugsParam ? JSON.parse(slugsParam) : [];

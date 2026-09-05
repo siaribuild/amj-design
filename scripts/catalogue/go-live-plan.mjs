@@ -470,7 +470,10 @@ function plan(world) {
   for (const pr of NEW_PROFILES) {
     for (const r of pr.rows) if (!ids.has(r.glazing._ref)) problems.push(`${pr._id}: glazing ${r.glazing._ref} does not exist`);
     const existing = fullProfileById.get(pr._id);
-    if (existing && same(normProfile(existing), normProfile(pr))) {
+    const existingSlug = existing?.slug?.current ?? existing?.slug;
+    if (existing && existingSlug !== pr.slug.current) {
+      problems.push(`${pr._id}: existing slug "${existingSlug}" would be renamed to "${pr.slug.current}" — refusing`);
+    } else if (existing && same(normProfile(existing), normProfile(pr))) {
       report.push(`profile ${pr._id}: unchanged`);
     } else {
       report.push(existing ? `profile ${pr._id} exists — content differs, replacing` : `create profile ${pr._id} (${pr.rows.length} rows, ${pr.rows.filter((r) => r.published).length} published)`);
@@ -494,13 +497,24 @@ function plan(world) {
     mutations.push({ patch: { id, set } });
     report.push(`profile ${id}: ${flips.filter((r) => r !== target[0]).length} row(s) unpublished, keep ${keep.wers ?? keep.glazing}`);
   }
-  // 4. products.
+  // 4. products. A created product copies its options from the copy source's
+  // PLANNED state (the hardware alignment this same plan is about to write for
+  // that source), not its live state — otherwise a --write immediately
+  // followed by a replan still emits a stray options patch for the created
+  // product (criterion 28: one --write must converge).
+  const plannedOptionsBySlug = new Map();
+  for (const q of P) {
+    if (q.create) continue;
+    const ex = world.products.get(q.slug);
+    if (ex) plannedOptionsBySlug.set(q.slug, alignHardware(ex.options, q.hardware));
+  }
   for (const p of P) {
     const existing = world.products.get(p.slug);
     const source = p.copyFrom ? world.products.get(p.copyFrom) : existing;
+    const sourceOptions = p.copyFrom ? (plannedOptionsBySlug.get(p.copyFrom) ?? source?.options) : source?.options;
     if (!existing && !p.create) { problems.push(`product ${p.slug} does not exist`); continue; }
     if (p.create && !source) { problems.push(`product ${p.slug}: copy source ${p.copyFrom} does not exist`); continue; }
-    for (const id of [p.profile, systemId.get(p.system), p.hardware].filter(Boolean)) if (!ids.has(id)) problems.push(`product ${p.slug}: ${id} does not exist`);
+    for (const id of [p.profile, systemId.get(p.system), p.hardware, p.family, p.category].filter(Boolean)) if (!ids.has(id)) problems.push(`product ${p.slug}: ${id} does not exist`);
     if (!systemId.has(p.system)) problems.push(`product ${p.slug}: frame system ${p.system} unknown`);
     const name = p.name ?? existing?.name;
     const names = {
@@ -517,7 +531,7 @@ function plan(world) {
       descriptionParagraphs: p.paragraphs,
       keySpecs: buildKeySpecs(p),
       specs: buildSpecs(p, names),
-      ...(source?.options == null && !p.hardware ? {} : { options: rekey(alignHardware(source?.options, p.hardware), "opt") }),
+      ...(sourceOptions == null && !p.hardware ? {} : { options: rekey(alignHardware(sourceOptions, p.hardware), "opt") }),
       dimensionRule: buildDimensionRule(p, existing?.dimensionRule ?? source?.dimensionRule),
       seo: buildSeo(p, name, existing?.seo),
       ...(p.notes ? { notes: p.notes } : {}),
@@ -588,6 +602,8 @@ function assertSafe(mutations) {
         for (const k of Object.keys(m.patch.set)) if (k === "slug" || k.startsWith("slug.")) violations.push(`disallowed set key "${k}"`);
       }
     }
+    const createId = (m.createIfNotExists ?? m.createOrReplace)?._id;
+    if (createId?.startsWith("drafts.")) violations.push(`disallowed draft target id "${createId}"`);
     if (m.createOrReplace?._type === "product") violations.push(`disallowed createOrReplace of a product`);
   }
   return violations;

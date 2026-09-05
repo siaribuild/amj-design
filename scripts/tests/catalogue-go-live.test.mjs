@@ -65,6 +65,31 @@ test("assertSafe: catches a target id starting with drafts.", () => {
   assert.ok(assertSafe([{ patch: { id: "drafts.product-x", set: {} } }]).length > 0);
 });
 
+test("assertSafe: catches a drafts. id on createIfNotExists/createOrReplace, not only patch", () => {
+  assert.ok(assertSafe([{ createIfNotExists: { _id: "drafts.glz-x", _type: "option" } }]).length > 0);
+  assert.ok(assertSafe([{ createOrReplace: { _id: "drafts.thermal-x", _type: "thermalProfile" } }]).length > 0);
+});
+
+test("plan(): an existing NEW_PROFILES doc with an unexpected slug is a problem, never renamed", () => {
+  const world = makeWorld();
+  const target = NEW_PROFILES[0];
+  world.fullProfiles = world.fullProfiles.map((p) =>
+    p._id === target._id ? { ...p, slug: { _type: "slug", current: "some-other-slug" } } : p
+  );
+  const { mutations, problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(target._id)), problems.join("\n"));
+  assert.ok(!mutations.some((m) => m.createOrReplace?._id === target._id), "must not carry a rename");
+});
+
+test("plan(): create target referencing an unknown family/category is a problem", () => {
+  const world = makeWorld();
+  world.families = [];
+  world.categories = [];
+  const { problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes("family-awning-window")), problems.join("\n"));
+  assert.ok(problems.some((p) => p.includes("category-windows")), problems.join("\n"));
+});
+
 test("disable patch sets exactly {disabled: true}", () => {
   const { mutations } = plan(makeWorld());
   const slug = DISABLE[0];
@@ -314,35 +339,37 @@ test("NEW_PROFILES: converged fixture emits no createOrReplace for any of them",
 });
 
 // makeWorld() is deliberately pre-migration (drives the "21 amend, 1 create"
-// dry-run test) — repeatedly apply plan()'s own mutations until it emits none,
-// for a world with zero remaining drift, for the --verify tests below. The
-// created product needs a second pass: its first-round options are copied
-// from copyFrom's PRE-patch state, then re-aligned once copyFrom itself
-// converges — same fixed point a second real --write run would reach.
-function convergedWorld() {
-  let world = makeWorld();
-  for (let i = 0; i < 5; i++) {
-    const { mutations } = plan(world);
-    if (!mutations.length) return world;
-    const products = new Map(world.products);
-    const options = [...world.options];
-    for (const m of mutations) {
-      if (m.createIfNotExists?._id?.startsWith("product-")) {
-        const slug = m.createIfNotExists._id.slice("product-".length);
-        products.set(slug, { ...m.createIfNotExists, slug: { current: slug } });
-        continue;
-      }
-      if (!m.patch) continue; // NEW_PROFILES/glazing creates: already converged in makeWorld()
-      const { id, set } = m.patch;
-      const slug = id.startsWith("product-") ? id.slice("product-".length) : null;
-      if (slug && products.has(slug)) { products.set(slug, { ...products.get(slug), ...set }); continue; }
-      const oi = options.findIndex((o) => o._id === id);
-      if (oi !== -1) { options[oi] = { ...options[oi], ...set }; continue; }
-      throw new Error(`convergedWorld: unhandled patch target ${id}`);
+// dry-run test) — apply plan()'s own mutations to it ONCE, for a world with
+// zero remaining drift, for the --verify tests below. One round is the fixed
+// point a real --write run must reach: replanning the result must emit
+// nothing (criterion 28).
+function applyMutations(world, mutations) {
+  const products = new Map(world.products);
+  const options = [...world.options];
+  for (const m of mutations) {
+    if (m.createIfNotExists?._id?.startsWith("product-")) {
+      const slug = m.createIfNotExists._id.slice("product-".length);
+      products.set(slug, { ...m.createIfNotExists, slug: { current: slug } });
+      continue;
     }
-    world = { ...world, products, options };
+    if (!m.patch) continue; // NEW_PROFILES/glazing creates: already converged in makeWorld()
+    const { id, set } = m.patch;
+    const slug = id.startsWith("product-") ? id.slice("product-".length) : null;
+    if (slug && products.has(slug)) { products.set(slug, { ...products.get(slug), ...set }); continue; }
+    const oi = options.findIndex((o) => o._id === id);
+    if (oi !== -1) { options[oi] = { ...options[oi], ...set }; continue; }
+    throw new Error(`applyMutations: unhandled patch target ${id}`);
   }
-  throw new Error("convergedWorld: did not converge in 5 rounds");
+  return { ...world, products, options };
+}
+
+function convergedWorld() {
+  const world = makeWorld();
+  const { mutations } = plan(world);
+  const converged = applyMutations(world, mutations);
+  const { mutations: remaining } = plan(converged);
+  assert.deepEqual(remaining, [], "convergedWorld: did not converge in one round");
+  return converged;
 }
 
 // T4: --verify replans and fails on any remaining mutation (drift), printing
@@ -350,8 +377,11 @@ function convergedWorld() {
 test("run({verify:true}): converged fixture exits 0", async () => {
   const world = convergedWorld();
   const { fetchImpl } = makeTransport(world);
-  const code = await run({ verify: true, fetchImpl, log: () => {}, error: () => {} });
+  const lines = [];
+  const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
   assert.equal(code, 0);
+  const total = P.length + DISABLE.length;
+  assert.ok(lines.includes(`${total} products, ${P.length} on the sheet, 0 not as intended.`), lines.join("\n"));
 });
 
 test("run({verify:true}): altered fixture exits 1 and names the doc id and field", async () => {
@@ -361,7 +391,30 @@ test("run({verify:true}): altered fixture exits 1 and names the doc id and field
   const lines = [];
   const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
   assert.equal(code, 1);
-  assert.ok(lines.some((l) => l.includes(`DRIFT ${docId}`) && l.includes("missing")), lines.join("\n"));
+  assert.ok(lines.some((l) => l.includes(`DRIFT ${docId}`) && l.includes("frameTechnology")), lines.join("\n"));
+});
+
+test("run({verify:true}): one bad row on the sheet fails verify and is counted", async () => {
+  const world = convergedWorld();
+  const badSlug = P.find((p) => !p.create).slug;
+  world.products.set(badSlug, { ...world.products.get(badSlug), disabled: true });
+  const { fetchImpl } = makeTransport(world);
+  const lines = [];
+  const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
+  assert.equal(code, 1);
+  const total = P.length + DISABLE.length;
+  assert.ok(lines.includes(`${total} products, ${P.length} on the sheet, 1 not as intended.`), lines.join("\n"));
+});
+
+test("run({verify:true}): a missing sheet product is a verify failure that names it", async () => {
+  const world = convergedWorld();
+  const missingSlug = P.find((p) => !p.create).slug;
+  world.products.delete(missingSlug);
+  const { fetchImpl } = makeTransport(world);
+  const lines = [];
+  const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
+  assert.equal(code, 1);
+  assert.ok(lines.some((l) => l.includes(missingSlug)), lines.join("\n"));
 });
 
 // T5: rate-cards.sql is read-only in this suite (file never written to) —

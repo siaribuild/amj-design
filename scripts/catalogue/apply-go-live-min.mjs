@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { plan, assertSafe, P, DISABLE, NEW_PROFILES } from "./go-live-plan.mjs";
+import { plan, assertSafe, P, DISABLE, NEW_PROFILES, normProfile, same } from "./go-live-plan.mjs";
 
 const PROJECT_ID = "xjtrm1ex";
 const DATASET = "production";
@@ -105,10 +105,24 @@ export async function run({ write = false, verify = false, fetchImpl = globalThi
   const io = { fetchImpl, token };
   if (verify) {
     const world = await loadWorld(io);
-    const { mutations } = planImpl(world);
+    const { mutations, problems } = planImpl(world);
+    if (problems.length) {
+      for (const p of problems) error(`DRIFT: ${p}`);
+      return 1;
+    }
+    const violations = assertSafe(mutations);
+    if (violations.length) {
+      for (const v of violations) error(`DRIFT: ${v}`);
+      return 1;
+    }
     for (const m of mutations) {
-      if (m.patch) log(`DRIFT ${m.patch.id}: ${Object.keys(m.patch.set ?? {}).join(", ")}`);
-      else log(`DRIFT ${(m.createOrReplace ?? m.createIfNotExists)._id}: missing`);
+      if (m.patch) { log(`DRIFT ${m.patch.id}: ${Object.keys(m.patch.set ?? {}).join(", ")}`); continue; }
+      const doc = m.createOrReplace ?? m.createIfNotExists;
+      const existing = world.fullProfiles?.find((p) => p._id === doc._id);
+      if (!existing) { log(`DRIFT ${doc._id}: missing`); continue; }
+      const want = normProfile(doc), have = normProfile(existing);
+      const changed = Object.keys(want).filter((k) => !same(have[k], want[k]));
+      log(`DRIFT ${doc._id}: ${changed.join(", ")}`);
     }
     const sheetCode = await runVerify(io, log);
     return mutations.length ? 1 : sheetCode;
