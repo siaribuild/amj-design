@@ -1613,7 +1613,7 @@ function decisionsOpen(run) {
 // run had no verify left to prove it, so acceptance rejected on missing
 // evidence rather than on bad work. Raising FIX_CAP alone does not reach it:
 // six fixes against two verifies is the same dead end with more steps.
-const CYCLE_CAP = 3
+export const CYCLE_CAP = 3
 // 6, not 3, and raised deliberately rather than worked around. The cap is a
 // COST guard - "more of this cycle costs more than the findings it returns" -
 // and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
