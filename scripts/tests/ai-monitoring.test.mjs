@@ -746,3 +746,77 @@ test("capBreached: the page's warning and the server's red flag agree at the rou
   // No headroom at all is a breach however it is phrased.
   assert.equal(capBreached({ ...money, capUsd: 0 }, 80), true);
 });
+
+test("fetchMoneyNumbers: an empty usage history is zero spend, not a broken snapshot", async () => {
+  // A billing window with no billable requests legitimately returns history:[].
+  // Treating that as malformed hid the balance and the cap as well — and with
+  // them the low-credit warning, in exactly the quiet month where the console
+  // has least else to say.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: { history: [] } }) };
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({ result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
+      };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.deepEqual(result, {
+    available: true,
+    creditBalanceUsd: 3,
+    billedSpendUsd: 0,
+    capUsd: 20,
+    capSource: "gateway",
+  });
+  // And the balance still drives the floor warning it is there to drive.
+  assert.equal(evaluateRed({ money: result }, 5, 80), true);
+});
+
+test("fetchMoneyNumbers: a usage response with no history array at all is still malformed", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 3 } }) };
+    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: {} }) };
+    if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
+    if (url.includes("/billing/spending-limit")) return { ok: false, status: 404 };
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+});
+
+test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
+  // Saved rules survive switching the limit off. Reading them anyway reports a
+  // cap nothing is enforcing, and can raise a red over a budget that is not
+  // actually capped.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 19 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({ result: { spend_limits: { enabled: false, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
+      };
+    }
+    if (url.includes("/billing/spending-limit")) {
+      return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: 5000, duration: "monthly" } } }) };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  // Neither source has an enabled cap, so the money numbers are not claimed.
+  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+});

@@ -265,7 +265,12 @@ it representative.`,
     needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 100000, mcp: true, tiers: ['full'],
+    // 100k thrashed on ai-parse-monitoring (2026-09-05): the stage's own
+    // required reading (mock + ux + build log + the built sources) is ~80k
+    // tokens, so every compact wiped the material and the agent re-read it —
+    // three identical cycles, no report. 220k holds one full reading plus
+    // working room.
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 220000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -368,10 +373,16 @@ WRITE ${r.dir}/07-review-conformance.md.`,
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 100000, headless: true,
+    id: 'security', slash: '/security-review', compact: 220000, headless: true,
   },
   {
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 100000,
+    // 220k for the same reason polish carries it (2026-09-05): reading a
+    // feature diff plus the files around it costs more than 100k, so every
+    // compact threw away the reading and the reviewer started again. It
+    // thrashed out twice on ai-parse-monitoring and wrote no report either
+    // time — a review axis that silently produces nothing is worse than one
+    // that is switched off, because the run looks reviewed.
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 220000,
   },
   { id: 'codex', codex: true },
 ]

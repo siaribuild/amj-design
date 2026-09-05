@@ -75,6 +75,11 @@ const PLACEHOLDER_ACCOUNT_ID = "paste-real-cf-account-id-before-deploying";
  *  whole gateway; if there is none, we do not know the cap and say so by
  *  failing to the account fallback. */
 function gatewayCapUsd(gateway: any): number | undefined {
+  // Rules outlive the switch that enforces them. A saved rule read off a
+  // disabled spend limit is a cap nothing applies — reporting it would put a
+  // budget bar, and eventually a red alert, over spending that is not capped
+  // at all.
+  if (gateway?.spend_limits?.enabled === false) return undefined;
   const rules = gateway?.spend_limits?.rules;
   if (!Array.isArray(rules)) return undefined;
   const whole = rules.find(
@@ -99,9 +104,12 @@ export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetc
       cfGet(env, fetchImpl, "/ai-gateway/billing/usage-history?value_grouping_window=day"),
     ]);
     // history[] is a series of windows, so the spend is their sum — there is no
-    // single total field on this response.
-    const history = Array.isArray(usage?.history) ? usage.history : null;
-    if (!history?.length) throw new Error("empty usage history for /ai-gateway/");
+    // single total field on this response. An EMPTY array is a real answer: a
+    // billing window with nothing billable in it. Only a missing or non-array
+    // history is malformed; treating [] as broken hid the balance and the cap
+    // too, in the quiet month where they are the only news there is.
+    const history = usage?.history;
+    if (!Array.isArray(history)) throw new Error("missing usage history for /ai-gateway/");
     const billedSpendUsd = history.reduce(
       (total: number, entry: any) => total + requireNumber(entry?.aggregated_value, "aggregated_value"),
       0,
@@ -117,6 +125,11 @@ export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetc
       // config field is nullable, so this is a fallback that frequently has
       // nothing to give — which is a cap we do not know, not a cap of zero.
       const account = await cfGet(env, fetchImpl, "/ai-gateway/billing/spending-limit");
+      // Same rule as the gateway's: a stored amount under a disabled limit is
+      // not a cap. Every field of this config is nullable, and Cloudflare has
+      // deprecated the endpoint that sets it, so "nothing to give" is the
+      // normal answer here rather than the exceptional one.
+      if (account?.enabled === false) throw new Error("cap disabled for /ai-gateway/");
       // The ONE money field on this surface whose unit Cloudflare documents,
       // and it is cents. Reported raw it overstated the cap a hundredfold.
       capUsd = requireNumber(account?.config?.amount, "config.amount") / 100;
