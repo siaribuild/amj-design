@@ -154,3 +154,82 @@ F1/F4 above.
 
 `npx playwright test scripts/tests/web/ops2-attention.spec.ts` 21/21 (4 new:
 1 stale + 3 bell). `npm run typecheck:gate` clean. Full `npm test` 321/321.
+
+## Fix rounds 2 and 3 — applied by the conducting session, by hand
+
+The conductor refused further `conduct fix` sessions once `verifyRounds` hit its
+cap, and handed judgement over ("ship it, or fix it by hand"). Shipping a route
+that answers 401 to every production staff request was not an option, so these
+were applied directly, each test-first. Recorded here because the acceptance
+stage reads this file and not the git log.
+
+### Round 2 — verify round-2 findings (`e9b4f692`, `1c924202`, `5d07807a`)
+
+- **V-F1 (HIGH)** `worker/routes/ops.ts` resolved identity with `resolveUser`,
+  which reads the session cookie only. Production fronts ops.* with Cloudflare
+  Access, where identity arrives as an assertion header and no cookie exists —
+  so the route answered 401 to every real staff request while the local suite,
+  which blanks Access, stayed green. Now gated by `resolveStaff` like its 41
+  siblings. Test: `V-F1` in `ai-monitoring.test.mjs`.
+- **V-F2** the SQL window (rolling 7×24h) reached further back than the seven
+  Melbourne calendar buckets, so D1 returned rows no bucket could hold and they
+  vanished from the chart *and* the card totals. `parseWindowStart` is now the
+  single boundary. Test: `V-F2`.
+- **V-F3** a zero cap divided to `NaN` (read as "not red") with no spend and
+  `Infinity` with any. Test: `V-F3`.
+- **V-F4** `parseMonitoringSnapshot` returned the caller's own object, passing
+  unknown stored fields through to the client. It now rebuilds field by field.
+  Test: `V-F4`.
+
+### Round 3 — the review stage's findings (`6b961425`, `8607c397`, `4079d489`, `7f17722a`)
+
+- **Codex P1 / architecture Critical — the Cloudflare adapter did not match
+  Cloudflare.** Usage was read as `result.totalUsd` (it is
+  `result.history[].aggregated_value`, summed), the gateway cap as
+  `rules[0].amount` (it is `rules[].limit`), the account cap as `result.limit`
+  (it is `result.config.amount`, in CENTS). `value_grouping_window` — a REQUIRED
+  query parameter — was missing, so the usage call was a 400 regardless. Tests:
+  "decodes the documented Cloudflare response shapes", "the account fallback
+  converts cents to dollars".
+- **Codex P1 / architecture High — the cap percentage compared incompatible
+  scope and period.** Account-lifetime usage was divided by a per-gateway,
+  per-window cap whose `window` was discarded, so the ratio described no
+  enforced budget and only ever climbed. The usage query is now bounded to the
+  cap's own window, and the scope is checked: with more than one gateway on the
+  account the budget reports `spend_not_attributable` rather than publish a
+  percentage that overstates. Tests: "usage is asked for over the cap's OWN
+  window", "a second gateway makes the cap percentage unattributable".
+- **Codex/architecture Medium — one failure domain for three numbers.** Balance,
+  spend and cap shared one `available` flag and one try/catch, so a cap blip
+  discarded a good credit balance and silenced the low-credit alarm. `MoneySnapshot`
+  is now `{ balance, budget }`, fetched and failing independently. Test: "a
+  failed cap lookup never silences a real low-credit alarm".
+- **Codex P2 — both money cards reddened from one flag.** The server now ships
+  `redBalance` and `redCap`; the bell still counts the pair as one notification.
+  Tests: "one breached condition reddens only its own card", `ops2-attention.test.mjs`.
+- **Codex P2 — an empty billing month read as a broken snapshot**, hiding the
+  balance and cap too. Only a missing or non-array `history` is malformed now.
+- **Codex P2 — a disabled spend limit was still read as a cap.**
+- **Codex P2 — `takenAt: "invalid"` passed the parser**, then threw inside
+  `Intl.DateTimeFormat.format` and blanked the page. The boundary now requires a
+  parseable instant.
+- **Architecture Medium — every hook instance ran its own poll interval**, and
+  Ionic keeps routed pages mounted, so timers accumulated. One module-owned,
+  reference-counted loop now.
+- **Architecture Low — `JSON.parse` sat outside the KV seam**, so a corrupted
+  stored value threw out of the route as a 500.
+- **Ponytail — the 401/403 split was never read** (the panel renders one message
+  for both), costing a second identity round-trip per denial. Collapsed to 403,
+  matching every sibling route; `hasOpsCredential` deleted.
+- **Architecture Medium — `Promise.all` over notification sources** would let one
+  future source reject the whole payload. Now `allSettled`.
+
+### Verification run by hand after those fixes
+
+`typecheck:gate` clean · `ai-monitoring` 43/43 · `ops2` 107/107 · `api` 77/77 ·
+`ai-jobs` 14/14 · `ai-pipeline` 78/78 · `estimator-learning` 33/33 ·
+Playwright `ops2-attention.spec.ts` **21/21** (on the fifth attempt — port 8788
+is shared with another worktree that was cycling E2E runs).
+
+This is the conducting session's own verification, NOT an independent tester
+pass. That gap is what the verify stage below is for.
