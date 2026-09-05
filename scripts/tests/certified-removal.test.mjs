@@ -762,8 +762,16 @@ test("the reader handles a real `sanity dataset export`, not just its own fixtur
 
 test("the age gate catches the real archive first, because it is 2026-07 vintage", async () => {
   // Gate order is itself a property: the cheapest refusal comes first, so an
-  // 854-hour-old archive is turned away before anything is decompressed.
-  const r = await runNode(["--export", join(projectRoot, REAL_EXPORT), "--check"]);
+  // old archive is turned away before anything is decompressed. Git does not
+  // preserve mtimes, so give a byte-identical copy the date this fixture claims.
+  const dir = join(runDir, "real-aged");
+  await mkdir(dir, { recursive: true });
+  const copy = join(dir, "production-2026-07.tar.gz");
+  await writeFile(copy, await readFile(join(projectRoot, REAL_EXPORT)));
+  const old = new Date("2026-07-20T00:00:00Z");
+  await utimes(copy, old, old);
+
+  const r = await runNode(["--export", copy, "--check"]);
   assert.notEqual(r.code, 0);
   assert.match(`${r.stdout}${r.stderr}`, /h old/);
 });

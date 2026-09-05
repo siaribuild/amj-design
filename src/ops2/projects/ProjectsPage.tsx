@@ -71,12 +71,18 @@ export function ProjectsPage() {
   // state: `IonRouterOutlet` keeps this page mounted across navigation, so a
   // second visit with a stale/absent param must not re-apply an old chip.
   // Applied via effect, then the param is stripped so a refresh doesn't repeat it.
+  //
+  // GUARDED ON `location.pathname` because that mounted-but-hidden state means
+  // this effect keeps watching the GLOBAL location: without the guard, a
+  // sibling route's own `?wait=` (e.g. `/products?wait=customer`) applies the
+  // Projects chip and `history.replace`s the reader off the page they asked for.
   useEffect(() => {
+    if (location.pathname !== PROJECTS.path) return;
     const chip = chipFromSearch(location.search);
     if (chip === null) return;
     setQuery({ ...EMPTY_QUERY, chip });
     history.replace(PROJECTS.path);
-  }, [location.search]);
+  }, [location.pathname, location.search]);
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array

@@ -70,7 +70,13 @@ function fakeEnv({ responses = [], stageHit = null, vars = {} } = {}) {
     AI_GATEWAY_ID: "gw-test",
     DB: {
       prepare: (sql) => ({ bind: (...args) => ({
-        first: async () => (sql.includes("FROM ai_stage_runs") ? stageHit : null),
+        first: async () => {
+          if (/INSERT INTO ai_stage_runs/.test(sql)) {
+            dbWrites.push({ sql, args });
+            return { id: args[0] };
+          }
+          return sql.includes("FROM ai_stage_runs") ? stageHit : null;
+        },
         run: async () => { dbWrites.push({ sql, args }); return {}; },
         all: async () => ({ results: [] }),
       }) }),
@@ -151,11 +157,11 @@ test("escalation: critical-confidence threshold is a strict boundary", () => {
 });
 
 // ── §6.1-corrected idempotency hash ──────────────────────────────────────────
-test("stageInputHash: stable for identical parts; changes with prompt, model, pipeline or payload", async () => {
-  const base = { pipelineVersion: "p1", stage: "s", promptVersion: "v1", model: "m1", payload: { a: 1 } };
+test("stageInputHash: stable for identical parts; changes with prompt, model, reasoning, pipeline or payload", async () => {
+  const base = { pipelineVersion: "p1", stage: "s", promptVersion: "v1", model: "m1", reasoningEffort: "medium", payload: { a: 1 } };
   const h = await stageInputHash(base);
   assert.equal(await stageInputHash({ ...base }), h, "deterministic");
-  for (const [k, v] of [["promptVersion", "v2"], ["model", "m2"], ["pipelineVersion", "p2"], ["payload", { a: 2 }], ["stage", "s2"]]) {
+  for (const [k, v] of [["promptVersion", "v2"], ["model", "m2"], ["reasoningEffort", "low"], ["pipelineVersion", "p2"], ["payload", { a: 2 }], ["stage", "s2"]]) {
     assert.notEqual(await stageInputHash({ ...base, [k]: v }), h, `${k} change must re-run the stage`);
   }
 });
@@ -213,6 +219,21 @@ test("runner: AI_PRIMARY_MODEL overrides the default without a code change", asy
   assert.equal(aiCalls[0].model, "google/gemini-9.9-test");
 });
 
+test("runner: a verification call can select GLM with low reasoning", async () => {
+  const { env, aiCalls } = fakeEnv({ responses: [{
+    choices: [{ message: { content: JSON.stringify({ value: 1 }) } }],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  }] });
+  const run = await runSkill(env, testSkill, {}, {
+    model: "@cf/zai-org/glm-5.3-flash",
+    reasoningEffort: "low",
+  });
+  assert.ok(run.ok);
+  assert.equal(aiCalls[0].model, "@cf/zai-org/glm-5.3-flash");
+  assert.equal(aiCalls[0].params.reasoning_effort, "low");
+  assert.equal(aiCalls[0].params.max_completion_tokens, 32_768);
+});
+
 test("runner: schema failure triggers exactly ONE repair pass, which can rescue the run", async () => {
   const { env, aiCalls } = fakeEnv({ responses: [bad(), good(7)] });
   const run = await runSkill(env, testSkill, {});
@@ -242,6 +263,31 @@ test("runner: transport failure fails soft (degradation, not an exception)", asy
   assert.ok(!run.ok);
   assert.ok(run.warnings.includes("skill_call_failed"));
   assert.equal(run.failureKind, "permanent_request");
+});
+
+test("runner: provider failures emit a capped structured ops log", async () => {
+  const entries = [];
+  const original = console.error;
+  console.error = (entry) => entries.push(entry);
+  try {
+    const { env } = fakeEnv({ responses: [new Error(`2021: Invalid User Credentials ${"x".repeat(300)}`)] });
+    await runSkill(env, testSkill, {}, { telemetry: { aiRunId: "run-1", projectId: "project-1" } });
+  } finally {
+    console.error = original;
+  }
+
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0], {
+    event: "ai_model_call_error",
+    aiRunId: "run-1",
+    projectId: "project-1",
+    skill: "test_skill",
+    model: DEFAULT_PRIMARY_MODEL,
+    failureKind: "transient_provider",
+    error: entries[0].error,
+  });
+  assert.match(entries[0].error, /^Error: 2021: Invalid User Credentials/);
+  assert.equal(entries[0].error.length, 200);
 });
 
 test("runner: provider errors retain retry semantics", () => {
@@ -366,6 +412,23 @@ test("stage: failed skill call persists a 'failed' stage record and fails soft",
   assert.equal(stageWrite.args[2], "failed");
 });
 
+test("stage: a same-input retry updates the unique stage row with diagnostics and zero token counts", async () => {
+  const { env, dbWrites } = fakeEnv({ responses: [new Error("HTTP 503 upstream unavailable")] });
+  const res = await runStage(env, { aiRunId: "r", projectId: "p", skill: testSkill, input: {} });
+
+  assert.equal(res.failureKind, "transient_provider");
+  const started = dbWrites.find((w) => /INSERT INTO ai_stage_runs/.test(w.sql));
+  assert.match(started.sql, /ON CONFLICT\s*\(ai_run_id,\s*stage,\s*input_hash\)\s*DO UPDATE/i);
+  const completed = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
+  assert.match(completed.sql, /WHERE ai_run_id=\? AND stage=\? AND input_hash=\?/i);
+  assert.equal(completed.args[8], 0, "a provider failure before usage reports a known zero, not NULL");
+  assert.equal(completed.args[9], 0);
+  assert.deepEqual(JSON.parse(completed.args[10]), {
+    failureKind: "transient_provider",
+    warnings: res.warnings,
+  });
+});
+
 // ── Vendor schema shape (§13.4) ──────────────────────────────────────────────
 // Google's structured output is an OpenAPI 3.0 subset: one `type` plus
 // `nullable`. The JSON-Schema union `type: ["string","null"]` — which every
@@ -430,6 +493,11 @@ test("readModelText: reads Google candidates, falls back to the OpenAI shape", (
     "multi-part text is joined, not truncated to the first part",
   );
   assert.equal(readModelText({ response: "plain" }), "plain");
+  assert.equal(
+    readModelText({ choices: [{ message: { content: '{"a":2}' } }] }),
+    '{"a":2}',
+    "Cloudflare OpenAI-compatible responses expose generated text through choices",
+  );
   // No candidates falls through to the generic branch: a string, never a
   // throw. validate() then rejects it and the repair pass runs, which is the
   // designed path for an unusable response.

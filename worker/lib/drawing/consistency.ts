@@ -60,17 +60,6 @@ export function applyDrawingConsistencyFlags(
       if (sameScale && iou(frameBox(a), frameBox(b)) > 0.85) {
         flag([a, b], "duplicateFrame");
       }
-      if (!sameScale) continue;
-      const scheduleOrder = a.row.widthMm - b.row.widthMm;
-      const boxA = frameBox(a), boxB = frameBox(b);
-      const frameWidthA = boxA[2] - boxA[0];
-      const frameWidthB = boxB[2] - boxB[0];
-      const frameOrder = frameWidthA - frameWidthB;
-      const scheduleDistinct = Math.abs(scheduleOrder) / Math.max(a.row.widthMm, b.row.widthMm) > 0.05;
-      const framesDistinct = Math.abs(frameOrder) / Math.max(frameWidthA, frameWidthB) > 0.05;
-      if (scheduleDistinct && framesDistinct && scheduleOrder * frameOrder < 0) {
-        flag([a, b], "drawingInconsistency");
-      }
     }
   }
   const faces = new Map<string, ComparableReading[]>();
@@ -102,7 +91,8 @@ export function applyDrawingConsistencyFlags(
         const previous = frameBox(elevationOrder[index - 1]);
         const current = frameBox(elevationOrder[index]);
         const delta = (current[0] + current[2]) - (previous[0] + previous[2]);
-        if (delta) directions.add(Math.sign(delta));
+        const tolerance = Math.min(previous[2] - previous[0], current[2] - current[0]) * 0.2;
+        if (Math.abs(delta) > tolerance) directions.add(Math.sign(delta));
       }
       if (directions.size > 1) flag(elevationOrder, "drawingInconsistency");
     }

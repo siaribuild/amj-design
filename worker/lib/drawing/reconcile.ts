@@ -19,7 +19,10 @@ export function scheduleDrawingMismatch(
   scheduleType: string | null | undefined,
 ): { drawing: string; schedule: string } | null {
   const scheduled = operationFromSchedule(scheduleType);
-  const matches = scheduled === "fixed"
+  const matches = scheduled === "awning" && split.units.length > 1
+    ? split.units.some((unit) => unit.operation === "awning" || (!unit.operation && unit.role === "operable"))
+      && split.units.some((unit) => unit.operation ? unit.operation !== "awning" : unit.role === "passive")
+    : scheduled === "fixed"
     ? split.units.every((unit) => unit.operation ? passive.has(unit.operation) : unit.role === "passive")
     : split.units.some((unit) => unit.operation === scheduled || (!unit.operation && unit.role === "operable"));
   if (!scheduled || matches) return null;

@@ -41,13 +41,15 @@ const BANNED = [
   /should have/i, /failed to/i,
   // R5 — no certification vocabulary, in any phase.
   /\bcertifi/i, /\bWERS\b/i, /indicative estimate/i,
-  // D18 — no MONEY anywhere on this surface: no currency symbol, no GST, no
-  // ex/inc. Deliberately not the word "price": the approved copy says a pick
-  // was made "on fit and price", which names the rule that won and shows no
-  // figure. The stronger half of D18 — that no price VALUE can reach the screen
-  // — is enforced by the DTO having no price field and asserted on the raw
-  // response body in why-rationale-api.test.mjs, which is where it belongs.
-  /\$/, /\bGST\b/i, /\bAUD\b/i, /\b(ex|inc)\s+GST\b/i,
+  // D18 — a raw dollar delta may reach the screen (D1 reversal: one figure per
+  // runner-up), but no GST/tax/basis vocabulary ever does. Deliberately not the
+  // word "price": the approved copy says a pick was made "on fit and price",
+  // which names the rule that won and shows no figure. The stronger half of
+  // D18 — that no TOTAL can reach the screen — is enforced by the DTO having
+  // no total/currency field and asserted on the raw response body in
+  // why-rationale-api.test.mjs, which is where it belongs.
+  /\bGST\b/i, /\bAUD\b/i, /\b(ex|inc)\s+GST\b/i,
+  /\btax\b/i, /\binc\b/i, /\bex\b/i, /\bincl\b/i, /\bexcl\b/i, /inclusive/i, /exclusive/i,
 ];
 const stringsIn = (source) => [
   ...source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
@@ -72,6 +74,8 @@ test("R2/R5/D18 the banned vocabulary, over this module's WHOLE string table", (
   assert.deepEqual(banned("this was incorrect").length, 1);
   assert.deepEqual(banned("the reviewer should have chosen the other one").length, 1);
   assert.ok(banned("$1,840.00 ex GST").length >= 1);
+  assert.ok(banned("inc GST").length >= 1);
+  assert.deepEqual(banned("+$100"), []);
   assert.ok(banned("certified to WERS").length >= 2);
   assert.deepEqual(banned("nothing met the caps, so the cheapest within 8% of the closest"), []);
 
@@ -498,6 +502,7 @@ test("WHY-AC-12/13/33 the ladder names what it shows and counts nothing beyond i
 
   // WHY-AC-13: fewer than five states what exists and counts NOTHING beyond it.
   assert.match(M.ladderNote(5), /the next four by rank/);
+  assert.doesNotMatch(M.ladderNote(5), /no price|nothing to price/i);
   assert.match(M.ladderNote(3), /^Three candidates were recorded/);
   assert.match(M.ladderNote(1), /^One candidate was recorded/);
   for (const shown of [1, 2, 3, 4]) {
@@ -516,6 +521,28 @@ test("WHY-AC-12/13/33 the ladder names what it shows and counts nothing beyond i
     ["ranked 1st", "ranked 2nd", "ranked 3rd", "ranked 4th",
       "ranked 11th", "ranked 12th", "ranked 13th", "ranked 21st"]);
   assert.equal(M.rankedText(null), null);
+});
+
+test("criteria 2/3/4/5/13 deltaText — one raw dollar delta per runner-up, never a total", () => {
+  assert.equal(M.deltaText(100, false), "+$100");
+  assert.notEqual(M.deltaText(100, false), "110");
+  assert.equal(M.deltaText(-200, false), "-$200");
+  assert.equal(M.deltaText(null, false), "$---");
+  assert.equal(M.deltaText(0, true), null);
+  assert.equal(M.deltaText(65, true), null);
+  assert.equal(M.deltaText(0, false), "$0");
+  assert.equal(M.deltaText(1840, false), "+$1,840");
+
+  for (const [value, chosen] of [[100, false], [-200, false], [null, false], [0, true], [65, true], [0, false], [1840, false]]) {
+    const out = M.deltaText(value, chosen);
+    if (out != null) assert.doesNotMatch(out, /gst|tax|\binc\b|\bex\b|inclusive|exclusive/i);
+  }
+});
+
+test("criterion 12 recommendation.ts's price comment names the real basis, not GST-free", () => {
+  const source = readFileSync(join(projectRoot, "src/data/recommendation.ts"), "utf8");
+  assert.doesNotMatch(source, /GST-free/);
+  assert.match(source, /tax-inclusive/i);
 });
 
 test("WHY-AC-27 the comparison verdict, in WHY-AC-17's vocabulary and never attempted without figures", () => {
@@ -618,4 +645,24 @@ test("WHY-AC-5/6 the 'Chosen' sentence names the winning rule, and reads the ban
   for (const tier of ["within_tolerance", "misses", "thermal_unknown", "does_not_fit"]) {
     assert.equal(chosen({ competingTier: tier }).tone, "warn", `${tier} is unresolved, so it is toned`);
   }
+});
+
+test("deltaLabel — an unrecorded price and a genuine tie are different sentences", () => {
+  // Codex, review pass: the spoken label for an unpriced runner-up read "no
+  // price difference was recorded", which a listener hears as "no difference"
+  // — the same meaning as the tie label. So the two states a sighted reader
+  // tells apart at a glance, `$---` against `$0`, collapsed into one for
+  // everybody using assistive technology. The visible strings already differ;
+  // the spoken ones have to as well.
+  const missing = M.deltaLabel(null, false);
+  const tie = M.deltaLabel(0, false);
+  assert.notEqual(missing, tie, "an absent price is not a price that matched");
+  assert.match(missing, /recorded/, "it names the absence as an absence");
+  assert.equal(/difference/.test(missing), false, "and never as a difference of nothing");
+  assert.match(tie, /same price/);
+
+  // The direction still survives being read aloud — a bare "+" does not.
+  assert.match(M.deltaLabel(65, false), /dearer/);
+  assert.match(M.deltaLabel(-200, false), /cheaper/);
+  assert.equal(M.deltaLabel(0, true), null, "the chosen row is the baseline and says nothing");
 });

@@ -5,6 +5,7 @@ import { OpsPage } from "../chrome/OpsPage";
 import { RowList, Row } from "../chrome/RowList";
 import { destination } from "../nav/destinations";
 import { DESTINATION_ICON } from "../nav/icons";
+import { browserHref } from "../shellBase";
 import { attentionGroups } from "./attention";
 import { useSummary } from "./useSummary";
 import { useMonitoring, formatAsAt, snapshotAge, formatDayLabel } from "./useMonitoring";
@@ -100,6 +101,11 @@ export function AttentionPage() {
                     <Row
                       key={row.key}
                       edge={null}
+                      // A destination, so a real anchor — the row is
+                      // middle-clickable and copyable like the queue's. The
+                      // plain click stays the router's, so `href` is the
+                      // browser's spelling and `onActivate` the router's.
+                      href={browserHref(row.href)}
                       pressTestId={`attention-row-${row.key}`}
                       onActivate={() => history.push(row.href)}
                     >

@@ -173,7 +173,7 @@ test("every destination is reachable from the rail, and lights when you arrive",
 
   const expected = [
     ["Attention", "/attention"], ["Projects", "/projects"], ["Products", "/products"],
-    ["Pricing", "/pricing"], ["Customers", "/customers"],
+    ["Pricing", "/pricing"], ["Customers", "/customers"], ["Enquiries", "/enquiries"],
     ["Files", "/files"], ["Audit", "/audit"], ["Settings", "/settings"],
   ] as const;
 
@@ -242,7 +242,7 @@ test("`More` opens the drawer, and the drawer carries every destination and the 
   // two ways. Five of these eight have no other route below the change point,
   // which is what makes this the load-bearing half of narrow-width navigation.
   await expect(page.locator(".ops2-nav__item")).toHaveText([
-    "Attention", "Projects", "Products", "Pricing", "Customers", "Files", "Audit", "Settings",
+    "Attention", "Projects", "Products", "Pricing", "Customers", "Enquiries", "Files", "Audit", "Settings",
   ]);
 
   // Register row 14 and plane-shell §2.1: the account block, and the way out in
@@ -352,7 +352,7 @@ test("every browser-facing link stays inside ops2 while it coexists under /ops2"
   const railHrefs = await page.locator(".ops2-nav__item").evaluateAll(
     (nodes) => nodes.map((n) => (n as HTMLAnchorElement).href));
   expect(railHrefs).toEqual([
-    "/attention", "/projects", "/products", "/pricing", "/customers",
+    "/attention", "/projects", "/products", "/pricing", "/customers", "/enquiries",
     "/files", "/audit", "/settings",
   ].map((p) => `http://ops.localhost:8788/ops2${p}`));
 

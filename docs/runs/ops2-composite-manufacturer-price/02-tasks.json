@@ -1,0 +1,52 @@
+[
+  {
+    "id": "t1",
+    "title": "recomputeComposite loses ownership of a priced parent's total",
+    "files": ["worker/lib/composite.ts", "scripts/tests/api.test.mjs"],
+    "tests": ["scripts/tests/api.test.mjs"],
+    "done_when": "With price_calculated seeded non-NULL on a composite parent (via the suite's sql() helper), every segment operation (reprice, resize, add, remove, merge) leaves the parent's line_total and price_calculated exactly as they were while still re-deriving qty, coverage and status, and an unseeded parent still follows the sum; edit composite.ts only at recomputeComposite (lines 188-255: parent SELECT + effectiveTotal guard per design 2.1) and api.test.mjs only inside/after the composite journey (lines 509-604).",
+    "after": [],
+    "criteria": ["7", "8", "9", "10", "11", "13", "17", "27"]
+  },
+  {
+    "id": "t2",
+    "title": "PUT /lines/:id/price accepts a composite parent; clearing recomputes; abuse cases executed",
+    "files": ["worker/routes/ops.ts", "scripts/tests/api.test.mjs"],
+    "tests": ["scripts/tests/api.test.mjs"],
+    "done_when": "A staff PUT on a pre-issue composite parent returns 200 with line_total = the sent total (unmultiplied by qty) and price_calculated non-NULL even when the sum was unpriced; total:null restores the current sum (NULL when a segment is unpriced); the audit row after save and clear carries the resulting lineTotal and calculated only; unauthenticated, customer and manufacturer-partner requests are refused with no write; the project payload gains linesEditable from ISSUABLE_FROM; edit ops.ts only at the PUT price route (lines 1414-1486) and the GET /projects/:id project payload (lines 581-611), and api.test.mjs only at the composite journey's 409 assertion (line 593) plus new subtests (design section 4, t2 list).",
+    "after": ["t1"],
+    "criteria": ["2", "3", "4", "6", "12", "16", "18", "19", "20", "22", "23", "24", "25", "26"]
+  },
+  {
+    "id": "t3",
+    "title": "ops2 Price door follows the server's linesEditable; unit rows pinned price-free",
+    "files": [
+      "src/ops2/projects/record.ts",
+      "src/ops2/projects/LinePage.tsx",
+      "scripts/tests/ops2-record.test.mjs",
+      "scripts/tests/manufacturer-price.test.mjs"
+    ],
+    "tests": ["scripts/tests/ops2-record.test.mjs", "scripts/tests/manufacturer-price.test.mjs"],
+    "done_when": "ProjectRecord carries linesEditable parsed fail-closed (absent => false), LinePage passes editable={!isOrder && record.linesEditable} with the lineKind clause deleted, node tests assert a composite parent's unit rows render no money string whether the parent is priced or not and the Price panel shows one figure with no marker, and manufacturer-price.test.mjs's stale composite-parent comments are corrected without changing its behaviour assertions.",
+    "after": ["t2"],
+    "criteria": ["1", "5", "14", "15", "16", "21"]
+  },
+  {
+    "id": "t4",
+    "title": "Playwright: composite price-door journey and frozen-record no-door",
+    "files": ["scripts/tests/web/ops2-record.spec.ts", "scripts/tests/web/ops2-line-why.spec.ts"],
+    "tests": ["scripts/tests/web/ops2-record.spec.ts", "scripts/tests/web/ops2-line-why.spec.ts"],
+    "done_when": "Both specs' record fixtures (ops2-record.spec.ts line 66, ops2-line-why.spec.ts line 86) gain linesEditable:true so every existing door test still passes; a new ops2-record.spec.ts test drives a composite parent's Price door (chevron, accessible name, calculator opening on the current total) and asserts unit rows contain no price, and a linesEditable:false record renders no Price door on any line.",
+    "after": ["t3"],
+    "criteria": ["1", "2", "5", "14", "16"]
+  },
+  {
+    "id": "t5",
+    "title": "Sharpen CONTEXT.md, record ADR 0017, fix the stale ops v1 comment",
+    "files": ["CONTEXT.md", "docs/adr/0017-composite-parent-manufacturer-price.md", "src/ops/api.ts"],
+    "tests": [],
+    "done_when": "CONTEXT.md's Manufacturer price entry states the composite-parent ownership rule and the clearing semantics per design section 6 (the 'one-way: no clear action' sentence is gone), ADR 0017 records the ownership transfer, the parent-PATCH re-arm kept as-is, and the price_calculated fallback on an unpriced sum, and opsSetLinePrice's doc comment in src/ops/api.ts (lines 196-198) no longer claims a composite parent is refused.",
+    "after": ["t2"],
+    "criteria": ["6", "12"]
+  }
+]

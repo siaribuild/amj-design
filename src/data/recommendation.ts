@@ -109,8 +109,10 @@ export interface CandidateOutcome {
     breached: ("width" | "height" | "area" | "aspect")[];
   };
 
-  // commercial — the engine's single price basis (GST-free; display GST is the
-  // skin's job, per the GST-mode house rule)
+  // commercial — the engine's single price basis: the same tax-inclusive
+  // rate-card figure `quote_line.line_total` carries. `computePrice` performs
+  // no GST arithmetic; ex/inc display is the skin's job, per the GST-mode
+  // house rule.
   price: {
     total: number | null;         // null when unpriceable
     currency: "AUD";

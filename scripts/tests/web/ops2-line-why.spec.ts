@@ -87,7 +87,7 @@ const record = {
   project: {
     id: "p_rec", title: "Wattle Grove - Lot 14", publicRef: "OF-Q-10482",
     statusInternalLabel: "Technical review", customerName: "Ana Bianchi",
-    org: "Marchetti Constructions", unresolvedLineCount: 0,
+    org: "Marchetti Constructions", unresolvedLineCount: 0, linesEditable: true,
   },
   lifecycle: { stateLabel: "Technical review", waitingOn: "Us", phase: "Pricing" },
   daysInStage: 3,
@@ -131,11 +131,12 @@ const recommendation = (o: Record<string, unknown> = {}) => ({
   requirement: REQUIREMENT,
   tolerance: 0.08,
   competingTier: "meets",
-  recommended: candidate({ productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", rank: 1, figures: { uValue: 3.72, shgc: 0.41 } }),
+  recommended: candidate({ productSlug: "amj80-series-awning-window", productName: "AMJ80 Series Awning Window", rank: 1, figures: { uValue: 3.72, shgc: 0.41 }, deltaToSelected: 0 }),
   alternatives: [
-    candidate({ productSlug: "a2", productName: "AMJ100L Series Awning Window", rank: 2 }),
-    candidate({ productSlug: "a3", productName: "AMJ100T Awning Window", rank: 3, tier: "within_tolerance", figures: { uValue: 4.05, shgc: 0.42 } }),
-    candidate({ productSlug: "a4", productName: "amj-discontinued-awning", rank: 4, tier: "misses", figures: { uValue: 4.6, shgc: 0.44 } }),
+    candidate({ productSlug: "a2", productName: "AMJ100L Series Awning Window", rank: 2, deltaToSelected: 65 }),
+    candidate({ productSlug: "a3", productName: "AMJ100T Awning Window", rank: 3, tier: "within_tolerance", figures: { uValue: 4.05, shgc: 0.42 }, deltaToSelected: -30 }),
+    candidate({ productSlug: "a4", productName: "amj-discontinued-awning", rank: 4, tier: "misses", figures: { uValue: 4.6, shgc: 0.44 }, deltaToSelected: 120 }),
+    // No `deltaToSelected` at all: the no-price row (`$---`), not a manufactured 0.
     candidate({ productSlug: "a5", productName: "AMJ150 Series Awning Window", rank: 5, tier: "thermal_unknown", figures: { uValue: null, shgc: null } }),
   ],
   selectionChanged: null,
@@ -898,10 +899,34 @@ test("WHY-AC-12/13/14/15/16 the ladder shows five rows and nothing it must not",
   // D18/R9 ON THE RENDERED PAGE, not on the response. The server is asserted
   // separately; this is the half that would catch a skin inventing a delta.
   const text = await detail.innerText();
-  expect(text).not.toMatch(/\$|\bGST\b|\bAUD\b|\bex GST\b/i);
+  expect(text).not.toMatch(/gst|tax|inclusive|exclusive/i);
   expect(text).not.toMatch(/excluded|withheld|certifi|WERS/i);
   // R2: no word frames a person's change as an error.
   expect(text).not.toMatch(/\bwrong\b|\bincorrect\b|\bmistake\b|\berror\b|\bcorrection\b/i);
+});
+
+test("WHY-AC-D1 ladder rows show the seeded price delta against the chosen pick", async ({ page }) => {
+  await serve(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openLine(page, "l1");
+  await page.getByTestId("line-why-open").click();
+  const detail = page.getByTestId("line-why-detail");
+  const rows = detail.getByTestId("why-ladder-row");
+
+  // D1 — a runner-up's delta is the seeded outcome, not a re-derivation.
+  await expect(rows.nth(1).getByTestId("why-row-delta")).toHaveText("+$65");
+  await expect(rows.nth(2).getByTestId("why-row-delta")).toHaveText("-$30");
+  // No price recorded for this candidate: a fact about the record, not $0.
+  await expect(rows.nth(4).getByTestId("why-row-delta")).toHaveText("$---");
+  // The chosen row mutes its own delta (criterion 4) — nothing priced on it at all.
+  const chosenText = await rows.first().innerText();
+  expect(chosenText).not.toContain("$");
+  // A delta is a fact about the record, never a moment — no date or staleness
+  // wording rides along beside it.
+  const deltaRowText = await rows.nth(1).innerText();
+  expect(deltaRowText).not.toMatch(/\d{4}-\d{2}-\d{2}|\bstale\b|\bas of\b|\bupdated\b/i);
+  const wholeText = await detail.innerText();
+  expect(wholeText).not.toMatch(/gst|tax|inclusive|exclusive/i);
 });
 
 test("WHY-AC-22/28 a line a person changed shows BOTH, against the same target", async ({ page }) => {
@@ -1314,3 +1339,54 @@ test("MP-6 an emptied uplift is not zero — Confirm stays shut", async ({ page 
   await expect(page.getByTestId("line-price-work")).toContainText("$1,240.00");
   await expect(page.getByTestId("line-price-confirm")).not.toHaveAttribute("aria-disabled", "true");
 });
+
+// Criterion 19 — the name, the thermal verdict and the delta are readable at a
+// glance at every ops2 width. Added by verification: WHY-AC-D1 asserts the
+// delta text but only at 1280, and a figure that reads at the desk can still
+// overlap or clip on a phone, which no node test can see.
+for (const width of [375, 768, 1280]) {
+  test(`WHY-AC-D2 the delta reads beside the name at ${width}px, with no clip and no overlap`, async ({ page }) => {
+    await serve(page);
+    await page.setViewportSize({ width, height: 900 });
+    await openLine(page, "l1");
+    await page.getByTestId("line-why-open").click();
+    const detail = page.getByTestId("line-why-detail");
+    const rows = detail.getByTestId("why-ladder-row");
+    await expect(rows).toHaveCount(5);
+
+    for (let i = 1; i < 5; i += 1) {
+      const row = rows.nth(i);
+      const delta = row.getByTestId("why-row-delta");
+      const name = row.locator(".wd__row-name");
+      await expect(delta).toBeVisible();
+      await expect(name).toBeVisible();
+
+      // Nothing is cut off: the delta and the name each fit the box drawn for
+      // them, and the row itself does not scroll sideways.
+      for (const part of [delta, name, row]) {
+        const clipped = await part.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(clipped, `clipped at ${width}px, row ${i}`).toBeLessThanOrEqual(1);
+      }
+
+      // And they do not sit on top of one another. The name is a stretched grid
+      // item, so its box is far wider than its glyphs: measure the text itself,
+      // and take both rectangles in the SAME frame or a mid-slide panel gives
+      // two readings from different moments.
+      const geom = await row.evaluate((el) => {
+        const nameEl = el.querySelector(".wd__row-name");
+        const deltaEl = el.querySelector('[data-testid="why-row-delta"]');
+        if (!nameEl || !deltaEl) return null;
+        const r = document.createRange();
+        r.selectNodeContents(nameEl);
+        const ink = r.getBoundingClientRect();
+        const d = deltaEl.getBoundingClientRect();
+        return { ink: { right: ink.right, top: ink.top, bottom: ink.bottom }, d: { left: d.left, right: d.right, top: d.top, bottom: d.bottom } };
+      });
+      if (!geom) throw new Error(`no geometry at ${width}px, row ${i}`);
+      const apart = geom.d.left >= geom.ink.right - 1
+        || geom.d.top >= geom.ink.bottom - 1
+        || geom.ink.top >= geom.d.bottom - 1;
+      expect(apart, `name text and delta overlap at ${width}px, row ${i}: ${JSON.stringify(geom)}`).toBe(true);
+    }
+  });
+}

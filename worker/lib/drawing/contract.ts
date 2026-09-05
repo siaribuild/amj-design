@@ -196,13 +196,14 @@ export interface DrawingFileReport {
   repairedTurns?: number;
   inputTokens?: number;
   outputTokens?: number;
+  providerFailure?: { failureKind: string | null; warnings: string[] };
   containerCalls: number;
   inspectTimings?: { inventoryMs: number; textMs: number; wordsMs: number; totalMs: number };
 }
 
 /** Persisted to `ai_runs.drawing_report_json` (AC-11…AC-14, AC-24) — no
- *  filenames, no drawing text, no model output (AB-8): identifiers and
- *  counts only. */
+ *  filenames, drawing text or model output (AB-8); bounded provider diagnostics
+ *  remain available to staff. */
 export interface DrawingReport {
   files: DrawingFileReport[];
 }

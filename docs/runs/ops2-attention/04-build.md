@@ -129,3 +129,233 @@ response status (403, not 401) to keep this from regressing unnoticed, since
 useSummary.ts's UI copy is identical for both.
 
 10/10 pass. typecheck:gate green. No other files touched.
+
+## Fix - Review finding: two copy divergences from the mock (Attention)
+
+Files: src/ops2/attention/attention.ts, src/ops2/attention/useSummary.ts,
+scripts/tests/web/ops2-attention.spec.ts.
+
+Finding: enquiries row noun read "nobody has replied to" (mock/UX §3.2 say
+"waiting for a reply" — the only row whose number didn't lead a grammatical
+phrase); useSummary's error copy surfaced the raw HTTP status ("The server
+answered 500...") instead of the mock's §3.4 estimator-safe wording.
+
+Red first: updated line-75 assertion in ops2-attention.spec.ts to the mock's
+"2 waiting for a reply" (fails against old noun), and added toContainText
+assertions for "Can't tell you what's waiting." / "The counts didn't load,
+so none are shown..." to both the degraded-summary and 500 tests, plus a
+not.toContainText("500") assertion on the 500 case. Ran — 3 failures, all
+for the expected reason (old copy still in place).
+
+Green: attention.ts's newEnquiries noun -> "waiting for a reply". useSummary.ts's
+three error branches (non-ok, degraded, network catch) unified onto the
+mock's headline/detail — no more status-specific text, matching mock §3.4's
+"indistinguishable to the reader by design" (criteria 18, 19). Unauthorised
+branch untouched.
+
+npx playwright test scripts/tests/web/ops2-attention.spec.ts: 11/11 pass.
+typecheck:gate: green. npm test: 1066/1069 pass, 3 pre-existing failures in
+scripts/tests/pipeline.test.mjs (conductor session-resume arg-indexing),
+unrelated to this change and untouched by it.
+
+## Fix - Review finding: navigation spec still hardcoded eight destinations
+
+Files: scripts/tests/web/ops2-navigation.spec.ts.
+
+Finding: the enquiries destination (T1) was added to
+scripts/tests/ops2-navigation.test.mjs but never to this file's three
+hardcoded lists, so 3 of 9 tests failed (rail labels line 183, drawer
+labels line 244, resolved rail hrefs line 354). Confirmed red first:
+`ABR_PORT=8799 npx playwright test scripts/tests/web/ops2-navigation.spec.ts`
+-> 3 failed for the expected reason (locator resolved 9 elements vs the
+8-item expectation; missing "Enquiries"/"/enquiries" in each diff), 6
+passed.
+
+Fix: added ["Enquiries","/enquiries"] / "Enquiries" / "/enquiries" to
+the three lists, in each case directly after Customers, matching
+ops2-navigation.test.mjs's order and adding nothing else. No production
+code touched, no assertion loosened, no destination order or tab set
+changed.
+
+Green: same command, 9/9 pass (Note A's order-dependent back-button
+flake did not reproduce this run either). typecheck:gate: green.
+
+## Fix - Review finding: two pipeline-tooling defects from the context-cap removal
+
+Files: scripts/pipeline/conduct.mjs, scripts/tests/pipeline.test.mjs.
+
+Finding (Codex, via reviewer): (1) P1 - the three tests noted above as
+"pre-existing failures" were stale, not pre-existing-and-fine:
+CONTEXT_CAP was set null 2026-09-05 (lever 1 off), so sessionArgs
+omits --autocompact, but the pane-boot, answered-stage, and
+durable-restore tests still asserted the flag is always passed - 3
+fail, breaking `npm test` for every normal run. (2) P2 - cmds.tree
+still raw-`JSON.parse`d 02-tasks.json and iterated the result as an
+array, so it throws on the `{ feature, design, tasks: [...] }` wrapped
+shape `readTasks` was added to accept; `plan` and `build` already
+route through `readTasks`, `tree` didn't.
+
+Confirmed red first, one assertion at a time:
+- `node --test --test-name-pattern="tree reads the wrapped" scripts/tests/pipeline.test.mjs`
+  (new test, wrapped 02-tasks.json) -> `TypeError: tasks is not iterable` at
+  conduct.mjs's tree, before any production fix.
+- `--test-name-pattern="answered stage is resumed"` -> `'-p' !== '120000'`
+  (assertion expected --autocompact present; sessionArgs already omits it).
+- `--test-name-pattern="relaunched with --resume"` -> `'--resume' !== '120000'`
+  (same stale expectation on the resume path).
+(The pane-boot test's own red run was implicit in the reviewer's report,
+93 pass/3 fail confirmed before this session started.)
+
+Fix: (1) extracted the omit/pass switch into a pure, exported
+`autocompactArgs(cap, compact)` - `cap === null ? [] : ['--autocompact',
+String(compact || cap)]` - used by `sessionArgs` in place of the inline
+conditional, and exported `CONTEXT_CAP` alongside it so tests pin the
+live value directly rather than assuming it. Added one direct test of
+both branches (null -> omitted, set -> passed, per-stage compact wins
+over the general cap), then fixed the three boot-test assertions to
+expect the flag omitted, matching the owner's 2026-09-05 ruling instead
+of contradicting it. (2) changed cmds.tree's `JSON.parse(readFileSync(tp,
+'utf8'))` to `readTasks(tp)` - one seam, every reader, no behaviour
+change for the bare-array shape it already handled.
+
+Green: `node --test scripts/tests/pipeline.test.mjs` -> 98/98 (96 owed +
+2 new: the autocompactArgs direct-branch test and the tree wrapped-shape
+test). `node scripts/pipeline/conduct.mjs tree` runs clean against the
+real ops2-attention run, no throw. `npm run typecheck:gate`: green.
+
+## Review-finding fixes (07-review-codex, 07-review-ponytail)
+
+**(1) CODEX P2 — skeleton flash on re-entry.** `useSummary`'s effect set
+`{status:"loading"}` unconditionally on every `attempt` change, including the
+`ionViewWillEnter` refetch on an already-loaded page — violating design
+§4.2 ("re-entering the screen does not flash the skeleton"). Red first:
+added `"re-entering an already-loaded page never shows the skeleton (design
+§4.2)"` to `scripts/tests/web/ops2-attention.spec.ts` — holds the second
+`/api/ops/summary` call open after a leave-and-return, asserts the skeleton
+has count 0 and the prior row text is still showing while it's in flight,
+then releases and checks the new count lands. Ran red first (row vanished,
+never came back — confirmed the flash). Fix: `setLoad({status:"loading"})`
+-> `setLoad((prev) => prev.status === "ready" ? prev : {status:"loading"})`
+— only "ready" counts as a prior answer worth keeping; a retry from
+"error"/"unauthorised" still shows the skeleton, since there was nothing to
+show. The existing stale-response-guard test
+("leaving and returning re-fetches...never overwrites a newer one") stays
+green — untouched invariant. `npx playwright test ops2-attention`: 12/12.
+
+**(2) PONYTAIL — dead `AttentionRow.label`.** Never read: `AttentionPage`
+renders `row.count` and `row.noun` in their own slots, nothing imports
+`.label`. Its doc comment's accessible-name claim was false — no accessible
+name is built from it. Deleted the field, its doc comment, and the
+`label: \`${count} ${noun}\`` assignment in `attention.ts`; deleted the test
+that only exercised it (`"attentionGroups: every row label is
+number-leading"`, `scripts/tests/ops2-attention.test.mjs`). `npm run
+test:ops2`: 102/102.
+
+**(3) PONYTAIL — `.claude/launch.json` reformatting churn.** Reverted the
+one-line -> four-line `runtimeArgs` reformat on the four pre-existing
+entries (vite-dev, vite-ops2, worker-dev, sanity-studio), unrelated to this
+feature. Kept the new `ops2-worker` entry as-is.
+
+Verify: `npm run typecheck:gate` green (58 pre-existing non-fatal, none
+new). `npm run test:ops2` 102/102. `npx playwright test ops2-attention`
+12/12.
+
+## Review finding fix — `07-review-architecture.md` #3
+
+**Medium — Projects' `?wait=` effect watched the GLOBAL location with no
+pathname guard.** `IonRouterOutlet` keeps `ProjectsPage` mounted across
+navigation (the whole reason `?wait=` is applied via effect, not initial
+state), so the effect fired for a search string belonging to a DIFFERENT
+route. Navigating to a sibling such as `/products?wait=customer` ran
+`chipFromSearch`, set the Projects chip, and called
+`history.replace(PROJECTS.path)` — yanking the reader off the page they
+asked for onto Projects.
+
+Red first: added `"a sibling route's own ?wait= is ignored by a Projects
+page kept mounted behind it"` to `scripts/tests/web/ops2-projects.spec.ts`.
+Repro needed real browser history, not `page.goto` for the second hop —
+`goto` reloads the document and never mounts Projects at all. Sequence:
+`page.goto(PRODUCTS + "?wait=customer")` (entry A), click the Projects rail
+link (client-side push to entry B, mounts `ProjectsPage`), `page.goBack()`
+back to entry A. Ran red: URL landed on `/ops2/projects` instead of staying
+on `/ops2/products?wait=customer` — confirmed the yank.
+
+Fix: guarded the effect on `location.pathname === PROJECTS.path`, added
+`location.pathname` to its dependency array. One-shot semantics unchanged —
+a stale/absent param on the Projects route itself still doesn't re-apply,
+and the param is still stripped after use.
+
+Verify: `npx playwright test ops2-projects ops2-attention` 30/30. `npm run
+typecheck:gate` green (61 pre-existing non-fatal, none new). `npm run
+test:ops2` 122/122.
+
+## Review finding fix — `07-review-codex.md`, five defects
+
+**(1) MEDIUM — a browser test that could not fail.**
+`scripts/tests/web/ops2-attention.spec.ts` proved `?wait=` consumption by
+clicking the SUBMISSIONS row and asserting the `Needs us` chip lit — but
+`us` is `EMPTY_QUERY`'s own chip (`src/ops2/projects/queue.ts`), so the
+assertion held with the whole consumption effect deleted. Added *"awaiting-payment
+row lands on /projects with the Customer chip lit, not the default"*: that row
+carries `?wait=customer`, which nothing but the effect can produce. Asserts
+Customer pressed AND `Needs us` and `All` not. The submissions case is kept —
+it still pins the default's own behaviour and the All-clears-it path.
+
+**(2) MEDIUM — the reachability guard was unsound.** `docs.test.mjs` used
+`battery.includes(f)` on bare basenames, so `api.test.mjs` counted as reachable
+because `meta-api.test.mjs` is in the battery, and `pipeline.test.mjs` hid
+behind `ai-pipeline.test.mjs`. Removing a real suite from `npm test` could stay
+green. Red first: added *"reachability is an exact argument match, not a
+substring of another suite's name"*, which failed (expected two unreachable,
+got none). Green: extracted `unreachableSuites(battery, suites)` matching the
+whole argument `scripts/tests/<file>` against the battery's split args.
+
+**(3) MEDIUM, security-adjacent — one of six count keys was asserted.** The
+abuse pins in `api.test.mjs` and `api-edge.test.mjs` only checked
+`body.submissions === undefined`, so a denial leaking `inReview`,
+`readyToIssue`, `awaitingPayment`, `newEnquiries` or `tradeApplications` — a
+manufacturer partner reading a competitor's pipeline — stayed green. Added
+`assertNoCounts()` + `SUMMARY_COUNT_KEYS` to `scripts/tests/helpers.mjs`
+(the six keys Attention consumes) and used it at both sites. Proven to fail on
+a leak before adoption: `assertNoCounts({inReview: 2})` → "leaked: inReview".
+
+**(4) MEDIUM — wrong words in the unauthorised panel.**
+`src/ops2/attention/useSummary.ts` said *"Projects are staff-only. Ask an
+administrator to add the role."* — copy left from `useProjectQueue`, naming one
+of the three destinations Attention spans and a role this product does not have
+(`CONTEXT.md` Actors: the axis is **Staff**). Red first: the existing
+unauthorised browser test grew three assertions (names the three destinations,
+says "Ask OpenFrame Staff", contains no "administrator") and failed on the old
+string. New copy: *"Projects, Enquiries and Customers are staff-only. Ask
+OpenFrame Staff to add the role to this account."*
+
+**(5) MEDIUM — a row that goes somewhere was a `<button>`.** Attention rows
+navigated by `history.push` through `chrome/RowList`'s `Row`, losing
+middle-click, Ctrl/Cmd-click, "copy link address" and the link role. Red first:
+*"an attention row is a link, and a modified click opens the destination beside,
+not instead"* (asserts `href="/ops2/projects?wait=customer"`, Ctrl-clicks, the
+new tab lands on Projects, the original tab does not move), plus the existing
+control-count case flipped from `getByRole("button")` to `getByRole("link")`
+with `button` pinned at 0.
+
+Fix: `Row` takes an optional `href`; present → the pressable is an `<a>`
+carrying the SAME `.ops2-row__open` class, so the RowList invariant holds —
+leading edge, selection tint and hover wash are still all computed on one
+element. Plain clicks are still the router's (`preventDefault` + `onActivate`);
+modified clicks are the browser's. `isPlainClick` moved from
+`projects/rows.tsx` to `chrome/RowList.tsx` and is imported back by the desk
+table rather than duplicated. `rows.css` gains `text-decoration: none` so the
+anchor spells the same row as the button.
+
+Two guards bit during the fix, and both were right:
+
+- `ops2-record.test.mjs` went `ReferenceError: window is not defined` when
+  `RowList` imported `browserHref` — `../shellBase` reads `window.location` at
+  module scope and that suite bundles `LineReview` for node. So `href` is a
+  BROWSER href, based by the caller (`AttentionPage` passes
+  `browserHref(row.href)`), and chrome stays window-free.
+- `ops2-frame.test.mjs`'s basename guard then flagged `href={href}`. Rather
+  than weaken it, added a second narrow exception — a file that declares
+  `href?: string` as a prop and forwards it builds no URL, and the caller's own
+  `href={browserHref(...)}` is checked by the same loop, so the base is still
+  applied exactly once.

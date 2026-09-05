@@ -90,10 +90,13 @@ test("closed, the calculator is not in the page at all — no fields, no confirm
 });
 
 test("a line the endpoint cannot reprice gets no door at all", () => {
-  // A composite parent's total is the sum of its segments and the endpoint
-  // refuses one outright; an issued quote's lines are not found. A chevron onto
-  // a Confirm that can never succeed is worse than no chevron, and
-  // OpenablePanel takes openability as the presence of `open`.
+  // An issued quote's lines are not found by the endpoint. `editable` is no
+  // longer about the LINE'S OWN KIND — the endpoint now accepts a composite
+  // parent's price outright (t2) and LinePage follows the project's own
+  // `linesEditable` gate instead (t3) — so this panel is handed the answer as
+  // a prop rather than re-deriving it. A chevron onto a Confirm that can never
+  // succeed is worse than no chevron, and OpenablePanel takes openability as
+  // the presence of `open`.
   const html = panel({ editable: false });
   assert.equal(html.includes("lp-panel--door"), false, "no door class");
   assert.equal(html.includes("line-price-open"), false, "no control, no tab stop");

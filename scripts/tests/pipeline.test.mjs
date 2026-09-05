@@ -11,11 +11,11 @@ import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals } from '../pipeline/measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, finalReply } from '../pipeline/measure.mjs'
 import {
-  STAGES, REVIEWERS, cmds, checkPlan, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
+  STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
-  verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
+  verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP, autocompactArgs, CONTEXT_CAP,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -437,6 +437,26 @@ test('tree links tasks to the criteria they claim, and never smears an overall v
     'an untagged task must fall into UNLINKED, not silently vanish')
 })
 
+test('tree reads the wrapped { tasks: [...] } shape the same as the bare array', () => {
+  // readTasks exists because the architect has twice written
+  // { feature, design, tasks: [...] } instead of a bare array, and plan/build
+  // both route through it for that reason. tree still JSON.parsed 02-tasks.json
+  // raw and iterated the result as an array, so this exact wrapped shape threw
+  // here while working everywhere else readTasks is used.
+  const projects = tmp('tree-wrapped-projects')
+  const { root } = seedRun('tree-wrapped-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify({
+    feature: 'demo', design: '02-design.md',
+    tasks: [{ id: 't1', title: 'wrapped task', after: [] }],
+  }))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /t1\s+wrapped task/,
+    'a wrapped 02-tasks.json must render in tree the same as a bare array')
+})
+
 test('confirm-exhaustion on a GATED stage never prints the gate for an unfinished agent', () => {
   // Codex stop-gate finding: settleStage's exhaustion return (status:
   // "running", genuinely truthy) still flowed into afterStage at the caller -
@@ -751,6 +771,18 @@ test('writePrompt allowlists the slug too, not just the label', () => {
     'the legal path must be unchanged')
 })
 
+test('autocompactArgs pins lever 1 in both directions', () => {
+  // CONTEXT_CAP is null (owner ruling 2026-09-05) so every real boot omits the
+  // flag - pin that live value, not just the general behaviour.
+  assert.equal(CONTEXT_CAP, null, 'CONTEXT_CAP moved - the boots below no longer reflect it')
+  assert.deepEqual(autocompactArgs(null, 120000), [],
+    'a null cap must omit --autocompact entirely, not pass it with an empty value')
+  assert.deepEqual(autocompactArgs(120000, undefined), ['--autocompact', '120000'],
+    'a set cap with no per-stage compact must fall back to the cap itself')
+  assert.deepEqual(autocompactArgs(80000, 120000), ['--autocompact', '120000'],
+    'a per-stage compact must win over the general cap when both are set')
+})
+
 test('the pane boot carries the same native args as the headless one, plus the session id', () => {
   const ux = STAGES.find((s) => s.id === 'ux')
   const a = paneArgs(ux, 'sess-uuid', true)
@@ -760,9 +792,11 @@ test('the pane boot carries the same native args as the headless one, plus the s
   // An interactive boot must not be handed the headless-only flags.
   for (const flag of ['-p', '--output-format', '--verbose'])
     assert.ok(!a.includes(flag), 'pane boot passed the headless flag ' + flag)
-  // Lever 1 and the agent identity are not headless-only, and must survive.
+  // The agent identity is not headless-only, and must survive.
   assert.equal(a[a.indexOf('--agent') + 1], 'ux-designer')
-  assert.equal(a[a.indexOf('--autocompact') + 1], String(ux.compact))
+  // Lever 1 is OFF (CONTEXT_CAP null, owner ruling 2026-09-05) - the flag must
+  // not appear at all, not appear with a stale/empty value.
+  assert.ok(!a.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted')
   assert.equal(a[a.indexOf('--mcp-config') + 1], '.mcp.json')
   assert.ok(a.includes('--strict-mcp-config'))
   const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
@@ -813,7 +847,8 @@ test('an answered stage is resumed as itself - and a read-only reviewer is not a
 
   assert.equal(a[a.indexOf('--agent') + 1], design.agent, 'the answered stage lost its agent')
   assert.equal(a[a.indexOf('--resume') + 1], 'sess-uuid')
-  assert.equal(a[a.indexOf('--autocompact') + 1], String(design.compact))
+  // Lever 1 is OFF (CONTEXT_CAP null) - an answered boot must not resurrect it.
+  assert.ok(!a.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted')
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions')
   assert.ok(a.includes('--strict-mcp-config'))
 
@@ -1783,8 +1818,9 @@ test('a stage whose agent is gone is relaunched with --resume, on the SAME sessi
   assert.equal(native[1], 'sess-gone')
   assert.ok(!native.includes('--session-id'),
     'a resume must not also claim a fresh session id - one of them would be a lie')
-  assert.equal(native[native.indexOf('--autocompact') + 1], '120000',
-    'the restored boot dropped lever 1')
+  // Lever 1 is OFF (CONTEXT_CAP null) - a resumed boot must stay omitted too,
+  // the same as a fresh one, not selectively resurrect the flag.
+  assert.ok(!native.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted on resume')
 
   assert.equal(runJson(s).stages.spec.session, 'sess-gone', 'the session id changed across a restore')
   assert.equal(runJson(s).stages.spec.previousSessions, undefined,
@@ -2580,4 +2616,243 @@ test('a plan with no tasks in it cannot certify a build', () => {
   const empty = checkPlan([], '# design', '1. **Given** a thing, **when** x, **then** y')
   assert.equal(empty.fatal.length, 1, 'an empty plan must be fatal: ' + JSON.stringify(empty))
   assert.match(empty.fatal[0], /no tasks/i)
+})
+
+test('a fix round that has already failed once is escalated to a stronger model, not to the owner', () => {
+  // superpowers escalates the MODEL before it escalates to the human: rounds
+  // 1-3 resume the same implementer, 4-5 get a fresh one a tier up. Here the
+  // developer is pinned to sonnet in .claude/agents/developer.md, so a finding
+  // it could not fix went round after round at the same capability until the
+  // cap sent it to the owner. One cheap attempt, then a stronger one, then ask.
+  const first = fixSpec(0)
+  assert.equal(first.model, undefined,
+    'the first attempt must run on the agent\'s own pinned model, not a costly one')
+
+  const second = fixSpec(1)
+  assert.equal(second.model, 'opus',
+    'a finding the pinned developer already failed on must go up a tier, not sideways')
+  assert.equal(fixSpec(2).model, 'opus', 'every later round stays escalated')
+
+  // And the escalation has to actually reach the session, or it is decoration.
+  const argv = claudeArgs({ agent: 'developer', compact: 120000, model: 'opus' }, 'p', false)
+  assert.equal(argv[argv.indexOf('--model') + 1], 'opus',
+    'a spec carrying a model must boot with --model')
+  assert.equal(claudeArgs({ agent: 'developer', compact: 120000 }, 'p', false).includes('--model'), false,
+    'a spec with no model must not pin one - the agent file owns that choice')
+})
+
+test('the spec is checked for the things that make it unbuildable, before anyone designs from it', () => {
+  // spec-kit ships `checklist` - "unit tests for English" - to validate that
+  // requirements are complete, clear and consistent before the plan is drawn.
+  // Its full version is an LLM pass; the structural half is free, and it is the
+  // half that catches a spec nobody can build from.
+  const good = [
+    '## Problem', 'Staff cannot tell which panels open.', '',
+    '## Acceptance criteria',
+    '1. **Given** a panel with a destination, **when** it renders, **then** a chevron is shown',
+    '2. **Given** a panel with none, **when** it renders, **then** no chevron is shown',
+    '', '## Out of scope', 'Other panels.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(good), [], 'a complete spec must not be nagged at')
+
+  assert.ok(checkSpec('## Problem' + NL + 'no criteria here').some((w) => /no Given-When-Then criteria/i.test(w)),
+    'a spec with no Given-When-Then criteria is not a spec')
+
+  const gaps = checkSpec([
+    '1. **Given** a panel, **when** clicked, **then** it does something appropriate',
+    '3. **Given** a thing, **when** TBD, **then** [NEEDS CLARIFICATION]',
+    'ASSUMED: the owner wants this centred.',
+  ].join(NL))
+  assert.ok(gaps.some((w) => /unresolved|TBD|CLARIFICATION/i.test(w)),
+    'an unresolved placeholder must be reported: ' + gaps)
+  assert.ok(gaps.some((w) => /2/.test(w) && /number/i.test(w)),
+    'criteria that skip a number must be reported - one of them was lost: ' + gaps)
+  assert.ok(gaps.some((w) => /ASSUMED/.test(w)),
+    'an ASSUMED tag exists to be vetoed, so it must be surfaced: ' + gaps)
+  assert.ok(gaps.some((w) => /out of scope/i.test(w)),
+    'a spec with no out-of-scope section must be reported: ' + gaps)
+})
+
+test('an escalated fix keeps its model when it is resumed, not just when it is started', () => {
+  // Codex stop-gate finding: cmds.resume rebuilds the spec through stageSpec,
+  // whose fix- branch fell through to the generic developer spec. So a fix
+  // round that WAS escalated silently dropped back to the pinned model the
+  // moment it was interrupted and picked up again - which is precisely the
+  // long, hard fix that earned the escalation.
+  assert.equal(stageSpec('fix-0').model, undefined, 'the first round is not escalated')
+  assert.equal(stageSpec('fix-1').model, 'opus', 'a resumed second round lost its escalation')
+  assert.equal(stageSpec('fix-7').model, 'opus', 'every later resumed round stays escalated')
+  assert.equal(stageSpec('fix-1').agent, 'developer', 'a fix is still the developer')
+})
+
+test('checkSpec reads the criterion shapes this repo actually writes', () => {
+  // Codex stop-gate finding: the check keyed on a literal "N. **Given**", so
+  // every spec using the AC-<n> / L-S<n> heading convention - plan-parse,
+  // plan-parse-method, plan-parse-19-of-19, all accepted specs with dozens of
+  // criteria - would be told it had none at all. A warning that fires on good
+  // work is worse than no warning: it teaches you to stop reading them.
+  const acHeadings = [
+    '**AC-1 - the target case, end to end.**',
+    'Given the reference plan set, When the drawing read runs, Then W1 reads vertical',
+    '', '**AC-2 - declining is a first-class answer.**',
+    'Given an opening crop the model cannot read, When it declines, Then the unit is unread',
+    '', '## Out of scope', 'Everything else.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(acHeadings), [],
+    'the AC-<n> heading convention must read as criteria: ' + checkSpec(acHeadings))
+
+  const italic = [
+    '**L-S1 - elevation sheets are told apart.**',
+    '*Given* REF and pages {4,5}, *when* the read begins, *then* they are classified',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.deepEqual(checkSpec(italic), [], 'italic Given must read as a criterion: ' + checkSpec(italic))
+
+  // The numbering-gap check belongs only to the numbered convention. AC-1/L-S1
+  // carry their own sequences and must never be measured against 1..n.
+  const numbered = [
+    '1. **Given** a panel, **when** clicked, **then** it opens',
+    '3. **Given** a plain panel, **when** shown, **then** no chevron',
+    '', '## Out of scope', 'Nothing.',
+  ].join(NL)
+  assert.ok(checkSpec(numbered).some((w) => /number/i.test(w)),
+    'a gap in the numbered convention is still a lost criterion: ' + checkSpec(numbered))
+  assert.deepEqual(checkSpec(acHeadings).filter((w) => /number/i.test(w)), [],
+    'the AC convention must never be measured against 1..n')
+
+  // Still catches the thing it was built for.
+  assert.ok(checkSpec('## Problem' + NL + 'prose only, no criteria at all')
+    .some((w) => /no Given/i.test(w)), 'a spec with no criteria at all must still be reported')
+})
+
+test('a lone numbered criterion still reports the ones missing before it', () => {
+  // Codex stop-gate finding: guarding the contiguity check with `nums.length > 1`
+  // was meant to keep the AC-<n> convention out of it - but AC headings never
+  // match the numbered pattern in the first place, so the guard bought nothing
+  // and silenced the sharpest case it had. A spec whose only numbered criterion
+  // is "2." has lost criterion 1 outright, which is exactly what this catches.
+  const lost = ['2. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.ok(checkSpec(lost).some((w) => /skip number 1\b/.test(w)),
+    'a single criterion numbered 2 means criterion 1 was lost: ' + checkSpec(lost))
+
+  // And one correctly numbered criterion is not a gap.
+  const fine = ['1. **Given** a panel, **when** clicked, **then** it opens',
+    '', '## Out of scope', 'Nothing.'].join(NL)
+  assert.deepEqual(checkSpec(fine).filter((w) => /number/i.test(w)), [],
+    'a spec with exactly one criterion, correctly numbered, is not a gap')
+})
+
+test('a reviewer that exits 0 without a report is a gate that never ran', () => {
+  // The defect this whole branch exists to close, and the one nothing was
+  // asserting: reviewers boot read-only (--permission-mode plan) and are told
+  // to WRITE their report, which plan mode forbids. Each exited 0 having
+  // produced nothing, `review` was stamped code: 0 on that silence, and
+  // `accept` read the absent 07-review-*.md as "no findings". Every feature
+  // before this was gated by Codex alone without anyone being told.
+  //
+  // The gate's own comment says it was patched four times, each patch fixing
+  // one route to a false pass and opening another. That is the shape of a bug
+  // no test was watching.
+  const s = reviewRepo('review-no-report', { HERDR_STUB_STATES: 'idle;idle' })
+
+  const out = paned(s, 'run', 'review')
+
+  const st = runJson(s).stages
+  const dir = join(s.root, 'docs', 'runs', 'demo')
+
+  // THE PRECONDITION, asserted rather than assumed. Without this the test
+  // passes for a reviewer that failed for any other reason - a non-zero exit, a
+  // hold - and proves nothing about the exit-0-with-no-report case it is named
+  // for. finalizePane stamps status:'done' only on a clean settle, and the
+  // gate's rewrite spreads the object it found, so 'done' survives as evidence
+  // that this reviewer really did finish cleanly.
+  const conf = st['review-conformance']
+  assert.equal(conf.status, 'done',
+    'precondition: this reviewer must have SETTLED CLEANLY, or the test is ' +
+    'measuring an ordinary failure instead: ' + JSON.stringify(conf))
+  assert.equal(existsSync(join(dir, '07-review-conformance.md')), false,
+    'precondition: it must have written no report')
+
+  // ...and having settled clean with nothing to show, it is rejected.
+  assert.equal(conf.missingReport, true,
+    'a cleanly settled reviewer with no report must be marked missingReport: ' + JSON.stringify(conf))
+  assert.notEqual(conf.code, 0,
+    'a reviewer that produced nothing must not be left reading as a clean pass')
+  assert.equal('review' in st, false,
+    'the review rollup must be ABSENT when a reviewer produced no report - ' +
+    'a present code:0 here is the gate passing on silence: ' + JSON.stringify(st.review))
+  assert.match(out, /review-conformance produced NO REPORT/,
+    'the reviewer that wrote nothing must be named, not summarised: ' + out)
+})
+
+test('a reviewer that ends without a verdict yields no report, not its narration', () => {
+  // Codex P1 over today's diff. finalReply kept the last text it saw ANYWHERE
+  // in the transcript, so a reviewer whose final turn is a tool call - or that
+  // died mid-way - handed back its progress chatter ("let me look at the
+  // diff"). finalizePane writes that as the report, runReviews accepts any
+  // non-empty report with code 0, and the mandatory gate passes on narration.
+  // The same false pass this capture path exists to prevent, by another route.
+  const projects = tmp('final-reply')
+  const dir = join(projects, 'proj-fr')
+  mkdirSync(dir, { recursive: true })
+  const rec = (id, content) => JSON.stringify({ type: 'assistant', requestId: id, message: { content } })
+  process.env.CLAUDE_PROJECTS_DIR = projects
+
+  writeFileSync(join(dir, 'sess-noverdict.jsonl'), [
+    rec('req-1', [{ type: 'text', text: 'Let me look at the diff first.' }]),
+    rec('req-2', [{ type: 'tool_use', name: 'Bash', input: {} }]),
+  ].join(NL) + NL)
+  assert.equal(finalReply('sess-noverdict'), '',
+    'narration from an earlier turn must never stand in for a verdict the reviewer never gave')
+
+  writeFileSync(join(dir, 'sess-verdict.jsonl'), [
+    rec('req-1', [{ type: 'text', text: 'Let me look at the diff first.' }]),
+    rec('req-2', [{ type: 'tool_use', name: 'Bash', input: {} }]),
+    rec('req-3', [{ type: 'text', text: '## Findings' }]),
+    rec('req-3', [{ type: 'text', text: 'None above the bar.' }]),
+  ].join(NL) + NL)
+  assert.match(finalReply('sess-verdict'), /None above the bar/,
+    'a real final turn must still be returned, including every block of it')
+})
+
+test('checkPlan reads the same criterion shapes checkSpec accepts', () => {
+  // Codex P2 over today's diff: checkSpec was widened to the AC-<n> / L-S<n>
+  // heading convention and checkPlan was not, so for exactly those specs it
+  // found no criteria, skipped the whole coverage block, and called a plan with
+  // no criteria links clean. One patch, two disagreeing readings of the same
+  // file - the more dangerous half being the one that stays quiet.
+  const acSpec = [
+    '**AC-1 - the target case.**',
+    'Given the reference set, When the read runs, Then it reads vertical',
+    '', '**AC-2 - declining is an answer.**',
+    'Given a crop it cannot read, When it declines, Then the unit is unread',
+  ].join(NL)
+
+  const none = checkPlan([{ id: 't1', files: ['src/a.ts'] }], '', acSpec)
+  assert.ok(none.warn.some((w) => /no task declares which criteria/i.test(w)),
+    'an AC-style spec whose plan traces nothing must be reported, not skipped: ' + none.warn)
+
+  const partial = checkPlan([{ id: 't1', files: ['src/a.ts'], criteria: ['AC-1'] }], '', acSpec)
+  assert.ok(partial.warn.some((w) => /AC-2/.test(w)),
+    'an uncovered AC criterion must be named: ' + partial.warn)
+  assert.equal(partial.warn.filter((w) => /AC-1/.test(w)).length, 0,
+    'a covered criterion must not be reported: ' + partial.warn)
+})
+
+test('the slug INSIDE run.json is validated too - it is a path segment like any other', () => {
+  // Hardening the security review named without raising it as a finding: every
+  // other route to a slug goes through checkSlug, but the one read back out of
+  // run.json did not, and it is joined into every later path the run touches.
+  // Not reachable without repo write access, which is why it was below the bar -
+  // and one line, which is why leaving the chain with a gap in it is worse.
+  const { root } = seedRun('slug-in-runjson', {})
+  const rj = join(root, 'docs', 'runs', 'demo', 'run.json')
+  const run = JSON.parse(readFileSync(rj, 'utf8'))
+  run.slug = '../../../etc'
+  writeFileSync(rj, JSON.stringify(run))
+
+  assert.throws(() => execFileSync(process.execPath, [CONDUCT, 'plan'],
+    { cwd: root, encoding: 'utf8', stdio: 'pipe' }),
+  /slug/i, 'a traversing slug read back from run.json must be refused, not joined into a path')
 })

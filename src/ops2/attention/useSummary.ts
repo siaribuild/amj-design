@@ -20,7 +20,12 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
 
   useEffect(() => {
     let live = true;
-    setLoad({ status: "loading" });
+    // Re-entering with an answer already in hand keeps that answer on screen
+    // while the re-fetch runs (design §4.2) — loading is only for when there
+    // is nothing to show yet. "ready" is the only status that counts as an
+    // answer; "error"/"unauthorised" are not, so a retry from those still
+    // shows the skeleton.
+    setLoad((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
 
     fetch("/api/ops/summary", { credentials: "same-origin" })
       .then(async (res) => {
@@ -29,15 +34,22 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
           setLoad({
             status: "unauthorised",
             headline: "This account can't see what's waiting.",
-            detail: "Projects are staff-only. Ask an administrator to add the role.",
+            // NAMES WHAT THIS PAGE ACTUALLY SUMMARISES, in the product's own
+            // actor word. Copied from useProjectQueue, it said "Projects" —
+            // one of the three destinations Attention spans — and "an
+            // administrator", which is not a role this product has: staff-ness
+            // is an axis on an account (CONTEXT.md, Actors).
+            detail:
+              "Projects, Enquiries and Customers are staff-only. Ask OpenFrame Staff to add the role to this account.",
           });
           return;
         }
         if (!res.ok) {
           setLoad({
             status: "error",
-            headline: "Attention did not load.",
-            detail: `The server answered ${res.status}. Try again in a moment.`,
+            headline: "Can't tell you what's waiting.",
+            detail:
+              "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
           });
           return;
         }
@@ -46,8 +58,9 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (counts === "degraded") {
           setLoad({
             status: "error",
-            headline: "Attention did not load.",
-            detail: "The counts could not be trusted, so none are shown. Try again in a moment.",
+            headline: "Can't tell you what's waiting.",
+            detail:
+              "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
           });
           return;
         }
@@ -57,8 +70,9 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
         if (!live) return;
         setLoad({
           status: "error",
-          headline: "Attention did not load.",
-          detail: "The console could not reach the server. Check the connection.",
+          headline: "Can't tell you what's waiting.",
+          detail:
+            "The counts didn't load, so none are shown. This is not an empty console — try again, or open Projects directly.",
         });
       });
 

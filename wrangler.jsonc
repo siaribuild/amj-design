@@ -75,7 +75,7 @@
     {
       "class_name": "PlanParseContainer",
       "image": "registry.cloudflare.com/c3834ff3509fa7cb4c9769a6dee6c2d8/plan-parse:80327a502963969a01af99afee1e13a1d90260fe",
-      "instance_type": "basic",
+      "instance_type": { "vcpu": 1, "memory_mib": 4096, "disk_mb": 4000 },
       "max_instances": 5
     }
   ],
@@ -126,13 +126,16 @@
     // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
     // by default; override with AI_PRIMARY_MODEL without a code change.
     "AI_GATEWAY_ID": "openframe-estimator",
-    // ai-parse monitoring (design §5, §8): CF_ACCOUNT_ID is the AI Gateway
-    // billing endpoint's account id (not a secret — paste the real id before
-    // deploying). CF_MONITORING_TOKEN is a `wrangler secret put`-only value,
-    // deliberately absent here. Floor/ceiling drive the red-status threshold.
-    // The DRG Group account id, confirmed with `wrangler whoami` — and already
-    // committed above as the container image's registry namespace, so it is not
-    // a secret. The TOKEN is (wrangler secret CF_MONITORING_TOKEN).
+    "AI_PRIMARY_MODEL": "google/gemini-3.6-flash",
+    // Close-up verification is independently switchable. Keep Gemini as the
+    // safe default; @cf/zai-org/glm-5.3-flash + "low" is the measured trial.
+    "AI_VERIFY_MODEL": "google/gemini-3.6-flash",
+    "AI_VERIFY_REASONING_EFFORT": "medium",
+    // ai-parse monitoring (design §5, §8). CF_ACCOUNT_ID is the DRG Group
+    // account id, confirmed with `wrangler whoami` and already committed above
+    // as the container image's registry namespace — so it is not a secret.
+    // CF_MONITORING_TOKEN is, and is `wrangler secret put`-only: deliberately
+    // absent here. Floor and ceiling drive the red-status threshold.
     "CF_ACCOUNT_ID": "c3834ff3509fa7cb4c9769a6dee6c2d8",
     "AI_CREDIT_FLOOR_USD": "5",
     "AI_CAP_CEILING_PCT": "80",
@@ -142,10 +145,10 @@
     // runs (02-design-v2.md §4).
     // 'agentic_full': extraction fires AND the parallel full-document drawing
     // agent runs. It starts with the free deterministic PDF harvest, then uses
-    // at most four whole-set model turns. Select it explicitly at deployment;
-    // keeping auto_drawings here preserves the currently deployed behaviour.
+    // bounded whole-set model turns. This is the production default; deploy with
+    // auto_drawings or auto explicitly when the fallback path is required.
     // 'manual': emergency kill-switch, ops-triggered only, unchanged.
-    "AI_EXTRACTION_MODE": "auto_drawings",
+    "AI_EXTRACTION_MODE": "agentic_full",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an
     // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "T1",
+    "title": "Server metadata read: DTO types, deep module, /meta route, API tests",
+    "files": [
+      "src/data/lineMeta.ts",
+      "worker/lib/drawing/meta.ts",
+      "worker/routes/ops.ts",
+      "scripts/tests/meta-api.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/meta-api.test.mjs"],
+    "done_when": "New `GET /projects/:id/lines/:lineId/meta` route lands in worker/routes/ops.ts directly AFTER the rationale route (currently ends line 742) — touch nothing else in ops.ts in this task. Route ladder copied verbatim from rationale route (ops.ts:727-742): resolveStaff -> 403 {error:\"forbidden\"}; hasAssignedRole -> 403 {error:\"forbidden_role\"}; lineMeta null -> 404 {error:\"not_found\"}; else c.json(dto). worker/lib/drawing/meta.ts implements lineMeta(env,{projectId,lineId}) per design §3.2: single scoped entry SELECT (q.id=? AND q.project_id=? AND q.origin='schedule' AND q.parent_line_id IS NULL AND p.status_internal <> 'issued'), latest-run SELECT with rowid tiebreak, drawing_reading SELECT with LEFT JOIN file_asset, parse<T> helper pattern from worker/lib/estimator/rationale.ts, allow-list DTO builders — gap_note split on \"|\" into reasoningParts server-side, crop_key NEVER in DTO (hasCrop boolean only), region_json rendered as compact string. src/data/lineMeta.ts holds the DTO types from design §3.1, zero runtime imports. package.json: meta-api.test.mjs added to test:heavy (line 18) and new test:meta script `node --test --test-concurrency=1 scripts/tests/meta-api.test.mjs scripts/tests/ops2-meta.test.mjs` — only these two script entries change. Tests (red first): DTO shape, verbatim not_stated/not_read state words, nullable reading with real run content (AC-7), latest run only (AC-19), single source document from perOpening tag match (AC-18), 404 for manual line / issued project / cross-project lineId identical to nonexistent (AC-5/6/25), 403 ladder manufacturer/customer/unauthenticated (AC-22/23/24), no forbidden fields in response (AC-29), console capture shows no gap_note text or crop key logged (AC-30).",
+    "after": [],
+    "criteria": ["5", "6", "7", "10", "13", "15", "17", "18", "19", "22", "23", "24", "25", "29", "30"]
+  },
+  {
+    "id": "T2",
+    "title": "Crop endpoint: server-side key resolve, R2 stream, audit row",
+    "files": [
+      "worker/routes/ops.ts",
+      "worker/lib/drawing/meta.ts",
+      "scripts/tests/meta-api.test.mjs"
+    ],
+    "tests": ["scripts/tests/meta-api.test.mjs"],
+    "done_when": "New `GET /projects/:id/lines/:lineId/meta/crop` route in worker/routes/ops.ts directly after T1's /meta route — touch nothing else in ops.ts. Same two-rung auth ladder; lineCropKey(env,{projectId,lineId}) added to worker/lib/drawing/meta.ts reusing T1's entry SELECT and returning the latest reading's crop_key or null; null -> 404 {error:\"not_found\"}; env.FILES.get(key) null -> 404 (AC-27); success -> logEvent(c.env,{actor: staff.id, entityType:\"project\", entityId: projectId, action: `viewed parse crop for ${externalRef}`}) then stream body with headers Content-Type: image/png, X-Content-Type-Options: nosniff, Cache-Control: private, no-store, Referrer-Policy: no-referrer (pattern: staff download route ops.ts:2274-2308). Route accepts NO key/path/filename parameter (AC-26). Tests (red first): success bytes + headers, audit_event row naming staff id and project id with no crop key in action string (AC-28/30), 404 after purge with empty body and no stack detail (AC-27), 403 ladder on the crop route (AC-22/23/24), cross-project refusal (AC-25 surface).",
+    "after": ["T1"],
+    "criteria": ["9", "22", "23", "24", "26", "27", "28", "29", "30"]
+  },
+  {
+    "id": "T3",
+    "title": "URL grammar: meta views, suffixes, door mark, normalise rules",
+    "files": [
+      "src/ops2/projects/lineRoute.ts",
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "tests": ["scripts/tests/ops2-navigation.test.mjs"],
+    "done_when": "src/ops2/projects/lineRoute.ts: LineView gains \"meta\" | \"metaReading\" | \"metaRun\"; consts META_SUFFIX=\"/meta\", META_READING_SUFFIX=\"/meta/reading\", META_RUN_SUFFIX=\"/meta/run\" beside WHY_SUFFIX (line 145); parseLineRoute (line 167) gains fourth param hasMeta, judged exactly like hasWhy — /meta* suffixes valid whenever hasMeta regardless of content emptiness (AC-20), normalise to \"\" (Opening) when hasMeta is false (AC-5/6), no normalise while undecided (AC-3); one new presence-only door mark META_EXP_FROM_TAB with reader metaDoor(state) following the WHY mark pattern (marks lines 95-115, readers 121-134, at() helper 147). scripts/tests/ops2-navigation.test.mjs extended: existing tests updated for the new parseLineRoute arity; new cases for parse/normalise of all three meta suffixes under hasMeta true/false/undecided, and metaDoor mark round-trip. Pure functions only — no LinePage change in this task.",
+    "after": [],
+    "criteria": ["2", "3", "5", "6", "21"]
+  },
+  {
+    "id": "T4",
+    "title": "Client hook + MetaTab composition with tests",
+    "files": [
+      "src/ops2/projects/useLineMeta.ts",
+      "src/ops2/projects/MetaTab.tsx",
+      "scripts/tests/ops2-meta.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/ops2-meta.test.mjs"],
+    "done_when": "src/ops2/projects/useLineMeta.ts is a structural copy of useLineRationale.ts fetching /api/ops/projects/:id/lines/:lineId/meta: states loading/ready/missing/error, 404 -> missing, disabled -> synchronous missing. src/ops2/projects/MetaTab.tsx per design §3.6: props {dto, view, cropSrc, onOpenReading, onOpenRun, onClose}; no router import; Image panel first (inline <img> at panel width when hasCrop, AC-9; NO <img> plus verbatim gapCode reason when not, AC-10; onError -> stated load failure leaving rest of tab standing, AC-11); Reading and Run OpenablePanels with `open` ALWAYS passed (AC-20, comment citing spec decision 12); two SidePanels phoneForm=\"screen\" for metaReading/metaRun views with full contents per AC-14/15/18 — reasoningParts as separate lines, every flag in full, no truncation or \"+N more\" anywhere (AC-16, comment citing decision 15); state words not_stated/not_read printed verbatim (AC-13); confidence stored word; run summary startedAt + this opening's outcome (AC-17); empty expansions name what is missing (AC-7/20). package.json: ops2-meta.test.mjs added to test:pure (line 17) and test:ops2 (line 55) — only these two script entries change in this task. Tests (red first) cover hook states and every MetaTab AC listed in criteria.",
+    "after": ["T1"],
+    "criteria": ["4", "7", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "20"]
+  },
+  {
+    "id": "T5",
+    "title": "LinePage integration: tabs, readiness gate, closeChild, body switch",
+    "files": [
+      "src/ops2/projects/LinePage.tsx",
+      "scripts/tests/ops2-meta.test.mjs",
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/ops2-meta.test.mjs",
+      "scripts/tests/ops2-navigation.test.mjs"
+    ],
+    "done_when": "src/ops2/projects/LinePage.tsx per design §3.5: useLineMeta(id, lineId, !!line && !isOrder) beside the rationale hook (line 78); hasMeta = meta.status===\"ready\" fed to parseLineRoute (lines 94-98); readiness gate (line 133) extended with meta !== \"loading\", and while meta loads with a /meta* suffix render the existing skeleton, never the Opening body (AC-3); OpsPage (lines 246-251) gains controls slot rendered ONLY when meta ready — two .pq-chip buttons copied from ProjectRecordPage.tsx:298-331 markup, aria-pressed from parsed view, no count/dot (AC-1/8); tab press = history.replace(linePath +/- META_SUFFIX), expansion opens push with META_EXP_FROM_TAB mark reusing the opener-ref focus pattern (lines 165-189); meta views render <MetaTab/> in place of <LineReview/>, Opening body byte-for-byte unchanged (AC-1); closeChild (lines 234-243) cold-replace target becomes linePath + META_SUFFIX when suffix starts with \"/meta/\", and metaDoor joins the viewerDoor||whyDoor mark check (AC-21). Integration tests: tabs only when ready, absent on missing (manual/purged, AC-5/6), deep link /meta renders Metadata active without Opening flash (AC-3), tab switch replace + back-from-expansion lands /meta (AC-21), no badge/dot (AC-8).",
+    "after": ["T3", "T4"],
+    "criteria": ["1", "2", "3", "5", "6", "8", "21"]
+  }
+]

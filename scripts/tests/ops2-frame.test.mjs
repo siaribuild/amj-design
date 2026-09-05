@@ -228,7 +228,16 @@ test("every browser-facing URL in ops2 carries the basename, and the one excepti
       // selection AND doubles the path. Its anchor is corrected after render
       // instead.
       const isTabButtonKey = expression.trim() === "d.path" && /IonTabButton/.test(bare);
-      assert.ok(expression.includes("browserHref(") || isTabButtonKey,
+      // A SECOND exception, as narrow as the first: a component that FORWARDS
+      // an href its caller passed in. `href={href}` in a file that declares
+      // `href?: string` as a prop builds no URL of its own — and the caller's
+      // `href={browserHref(...)}` is checked by this same loop, so the base is
+      // still applied exactly once, by the file that knows the router path.
+      // chrome/RowList cannot apply it itself: `../shellBase` reads
+      // `window.location` at module scope and node suites bundle chrome
+      // components (ops2-record.test.mjs imports LineReview outside a browser).
+      const isForwardedProp = expression.trim() === "href" && /\bhref\?: string;/.test(bare);
+      assert.ok(expression.includes("browserHref(") || isTabButtonKey || isForwardedProp,
         `${file}: href={${expression}} is neither browserHref() nor IonTabButton's routing key`);
     }
   }

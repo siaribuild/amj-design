@@ -345,6 +345,28 @@ ion-modal.pq-sheet--side::part(content) {
   box-shadow: var(--ds-layer-overlay);
 }
 
+/* ── The same panel's FULL-SCREEN form ──────────────────────────────────────
+ * A screen is a screen at every width below the change point, and not only on a
+ * phone. Without these three lines the `screen` form falls through to Ionic's
+ * stock modal, which is a centred, rounded, inset card between 768px and the
+ * 1024px `--cp-shell-rail` change point — the iPad band, where a detail the
+ * console presents as a SCREEN arrived as a popup.
+ *
+ * No media query: `form` already resolves to `side` above the change point, so
+ * this class only ever exists below it. Above 1024px nothing here applies and
+ * the desk keeps its 520px slide-out untouched.
+ *
+ * `ponytail:` these rules live in projects.css because the `--side` rules
+ * already do. Move both to a chrome stylesheet when a third caller appears. */
+ion-modal.pq-sheet--screen {
+  --width: 100%;
+  --height: 100%;
+  --border-radius: 0;
+}
+/* Flush with the window on all four edges, so there is no edge for a shadow to
+   be cast over. */
+ion-modal.pq-sheet--screen::part(content) { box-shadow: none; }
+
 /* The predicted count sits away from the label it qualifies. Without this it
    renders as "Ready to issue0" — a number touching a word reads as part of it. */
 .pq-sheet .pq-count {

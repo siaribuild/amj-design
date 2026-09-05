@@ -224,7 +224,10 @@ export async function orderLines(env: Env, orderId: string) {
           qtyPerParent: unit.qty_per_parent,
           qty: unit.qty,
           // Display-only, same rule as the quote: the parent's lineTotal is
-          // authoritative and a client must never sum these.
+          // authoritative and a client must never sum these. STAFF-VISIBLE:
+          // this mapper serves the ops contract view too, and the customer
+          // read redacts it at its own boundary (routes/orders.ts) - the
+          // mapper describes the data, the route decides its audience.
           lineTotal: unit.line_total,
           options: optionsOf(unit),
           status: "Ready" as const,

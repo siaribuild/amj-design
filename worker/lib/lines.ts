@@ -33,8 +33,12 @@ export interface ApiSegment {
    *  segment with 2, not two identical rows). */
   qtyPerParent: number;
   qty: number;
-  /** Display-only. The parent's lineTotal is authoritative — never sum these. */
-  lineTotal: number | null;
+  /** WHETHER this unit is priced, never how much. The parent's lineTotal is
+   *  authoritative, and once it carries a manufacturer price the gap between
+   *  it and the units' computed prices is a MARGIN - so the figure must not
+   *  reach a customer-readable payload at all (verify F3). The client only
+   *  ever used it to decide `incomplete`. */
+  priced: boolean;
   options: Record<string, string>;
   status: "Ready" | "Needs review";
   /** Free text on the unit, stored in room_label — the same column an opening

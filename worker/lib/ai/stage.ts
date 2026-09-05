@@ -50,11 +50,11 @@ export async function stageHashPayload(value: unknown): Promise<unknown> {
 /** The §6.1-corrected idempotency key. Pure + exported so tests can prove that a
  *  prompt, model or pipeline change produces a DIFFERENT hash (i.e. a re-run). */
 export async function stageInputHash(parts: {
-  pipelineVersion: string; stage: string; promptVersion: string; model: string; payload: unknown;
+  pipelineVersion: string; stage: string; promptVersion: string; model: string; reasoningEffort?: string; payload: unknown;
 }): Promise<string> {
   const payloadHash = await sha256hex(enc.encode(JSON.stringify(await stageHashPayload(parts.payload)) ?? "null"));
   return sha256hex(enc.encode(
-    `${parts.pipelineVersion}|${parts.stage}|${parts.promptVersion}|${parts.model}|${payloadHash}`,
+    `${parts.pipelineVersion}|${parts.stage}|${parts.promptVersion}|${parts.model}|${parts.reasoningEffort ?? ""}|${payloadHash}`,
   ));
 }
 
@@ -63,6 +63,8 @@ export interface StageArgs<I, O> {
   projectId: string;
   skill: Skill<I, O>;
   input: I;
+  model?: string;
+  reasoningEffort?: string;
   /** Derive §13.2 escalation signals from the validated output (optional —
    *  schema failure is always signalled automatically). */
   signals?: (data: O | null, run: SkillRun<O>) => StageSignals;
@@ -83,13 +85,24 @@ export interface StageResult<O> {
   outputTokens: number;
 }
 
+/** Promotes a failed stage through a caller that otherwise returns only data. */
+export class StageCallError extends Error {
+  constructor(
+    readonly failureKind: SkillFailureKind | null,
+    readonly warnings: string[],
+  ) {
+    super(`stage_call_failed:${failureKind ?? "unknown"}:${warnings.join("|")}`);
+  }
+}
+
 interface CachedRow { id: string; result_r2_key: string | null }
 
 export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<StageResult<O>> {
   const { aiRunId, projectId, skill, input } = args;
-  const model = primaryModel(env);
+  const model = args.model ?? primaryModel(env);
   const inputHash = await stageInputHash({
-    pipelineVersion: PIPELINE_VERSION, stage: skill.id, promptVersion: skill.promptVersion, model, payload: input,
+    pipelineVersion: PIPELINE_VERSION, stage: skill.id, promptVersion: skill.promptVersion,
+    model, reasoningEffort: args.reasoningEffort, payload: input,
   });
 
   // ── Idempotent replay: any completed run of this project with the same hash ──
@@ -132,17 +145,26 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   // Persist the in-flight stage BEFORE calling the provider. Previously the row
   // was written only after the call returned, so a killed invocation left no
   // evidence of which model task had stalled.
-  const stageRunId = uuid();
-  await env.DB.prepare(
+  const proposedStageRunId = uuid();
+  const stageRow = await env.DB.prepare(
     `INSERT INTO ai_stage_runs
        (id, ai_run_id, stage, model, prompt_version, input_hash, status)
-     VALUES (?,?,?,?,?,?,'running')`,
+     VALUES (?,?,?,?,?,?,'running')
+     ON CONFLICT(ai_run_id, stage, input_hash) DO UPDATE SET
+       model=excluded.model, prompt_version=excluded.prompt_version, status='running',
+       result_r2_key=NULL, output_hash=NULL, escalation_triggered=0,
+       escalation_reasons=NULL, escalation_taken=0, input_tokens=NULL,
+       output_tokens=NULL, metrics_json=NULL
+     RETURNING id`,
   ).bind(
-    stageRunId, aiRunId, skill.id, model, skill.promptVersion, inputHash,
-  ).run().catch(() => { /* observability must not block the estimate */ });
+    proposedStageRunId, aiRunId, skill.id, model, skill.promptVersion, inputHash,
+  ).first<{ id: string }>().catch(() => null);
+  const stageRunId = stageRow?.id ?? proposedStageRunId;
 
   // ── Fresh primary-model run (with the runner's single §22.3 repair pass) ─────
   let run = await runSkill(env, skill, input, {
+    model,
+    reasoningEffort: args.reasoningEffort,
     telemetry: { aiRunId, projectId },
   });
   let modelCalls = run.modelCalls;
@@ -158,6 +180,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   if (decision.triggered && escalationEnabled(env)) {
     const escalated = await runSkill(env, skill, input, {
       model: escalationModel(env),
+      reasoningEffort: args.reasoningEffort,
       telemetry: { aiRunId, projectId },
     });
     modelCalls += escalated.modelCalls;
@@ -187,18 +210,20 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
       .catch(() => { /* diagnostics are best-effort */ });
   }
 
-  // ── Persist the stage record (OR REPLACE keeps within-run retries clean) ─────
+  // ── Persist the stage result onto the unique run/stage/input record ──────────
   const status = run.ok ? "completed" : (run.warnings.includes("skill_call_failed") ? "failed" : "invalid");
   await env.DB.prepare(
     `UPDATE ai_stage_runs
         SET model=?, prompt_version=?, status=?, result_r2_key=?, output_hash=?,
             escalation_triggered=?, escalation_reasons=?, escalation_taken=?,
-            input_tokens=?, output_tokens=?
-      WHERE id=?`,
+             input_tokens=?, output_tokens=?, metrics_json=?
+       WHERE ai_run_id=? AND stage=? AND input_hash=?`,
   ).bind(
     run.modelId, skill.promptVersion, status, r2Key, run.outputHash,
     decision.triggered ? 1 : 0, decision.reasons.length ? JSON.stringify(decision.reasons) : null, taken ? 1 : 0,
-    inputTokens || null, outputTokens || null, stageRunId,
+    inputTokens ?? null, outputTokens ?? null,
+    JSON.stringify({ failureKind: run.failureKind, warnings: run.warnings }),
+    aiRunId, skill.id, inputHash,
   ).run().catch(() => { /* the stage record is observability, never a blocker */ });
 
   return {

@@ -37,21 +37,34 @@ import type { Env } from "../../types";
 // Its free PDF harvest, persistent set context, evidence-backed crop loop and
 // room-correction precedence can produce different output for the same input;
 // the legacy auto_drawings path remains available unchanged.
-export const PIPELINE_VERSION = "2026-08-31.2";
+// 2026-09-03.1: full-document v19 adds page-role and identity recovery,
+// mandatory per-opening close-up verification, drawing-only composition,
+// bounded per-batch correction and stable provider diagnostics. The same plan
+// can produce materially different readings, so older stage archives must not
+// replay into this pipeline.
+// 2026-09-04.1: provider-call budgeting scales mandatory close-up capacity with
+// the opening count while preserving discovery turns for larger schedules.
+// 2026-09-04.2: close-up verification has an independently hash-bound model /
+// reasoning profile and runs in four failure-isolated concurrent batches.
+export const PIPELINE_VERSION = "2026-09-04.3";
 // 1.2: OpeningV1.wallOrientationSource and EnergyRequirementV1.derivation. Both
 // additive — validateBuildingModelShape is unchanged and a 1.1 model still reads.
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.2";
 
-// §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):
-// everything runs on the primary model; the escalation model is configured but
-// SHADOW-ONLY — triggers are logged for frequency analysis, and the Pro call is
-// made only when AI_ESCALATION_MODE='on' (an explicit, reversible opt-in once the
-// shadow data shows escalation would be frequent/useful enough to pay for).
+// §13 model routing. Extraction uses the primary model; mandatory close-up
+// verification may use its own model; escalation remains shadow-only unless
+// AI_ESCALATION_MODE='on'.
 export const DEFAULT_PRIMARY_MODEL = "google/gemini-3.6-flash";
 export const DEFAULT_ESCALATION_MODEL = "google/gemini-3.1-pro";
 
 export const primaryModel = (env: Env): string =>
   (env.AI_PRIMARY_MODEL || "").trim() || DEFAULT_PRIMARY_MODEL;
+
+export const verificationModel = (env: Env): string =>
+  (env.AI_VERIFY_MODEL || "").trim() || primaryModel(env);
+
+export const verificationReasoningEffort = (env: Env): string =>
+  (env.AI_VERIFY_REASONING_EFFORT || "").trim().toLowerCase() || thinkingLevel(env);
 
 export const escalationModel = (env: Env): string =>
   (env.AI_ESCALATION_MODEL || "").trim() || DEFAULT_ESCALATION_MODEL;

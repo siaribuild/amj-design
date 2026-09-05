@@ -54,9 +54,10 @@ function capturedFigures(json: string | null | undefined): RationaleFigures | nu
 }
 
 /** ADDITIVE FROM AN ALLOW-LIST, never a spread of the stored outcome. The
- *  stored `CandidateOutcome` carries price, deltaToSelected, exclusions and the
- *  learned layer; every one of them is forbidden on this surface (D18, R9), and
- *  a copy-then-delete would forward the next field somebody adds. */
+ *  stored `CandidateOutcome` carries a total, a currency, exclusions and the
+ *  learned layer; every one of them is forbidden on this surface (D18, R9),
+ *  and a copy-then-delete would forward the next field somebody adds.
+ *  `deltaToSelected` alone crosses: a relative figure with no total behind it. */
 const candidateOf = (o: CandidateOutcome): RationaleCandidate => ({
   productSlug: o.productSlug,
   productName: productName(o.productSlug),
@@ -64,6 +65,7 @@ const candidateOf = (o: CandidateOutcome): RationaleCandidate => ({
   form: o.form === "split" ? "split" : "single",
   tier: o.tier,
   rank: o.rank ?? null,
+  deltaToSelected: typeof o.price?.deltaToSelected === "number" ? o.price.deltaToSelected : null,
   figures: { uValue: o.thermal?.uValue ?? null, shgc: o.thermal?.shgc ?? null },
   fits: !!o.fit?.fits,
   units: o.form === "split" && o.units

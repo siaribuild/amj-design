@@ -12,7 +12,8 @@
  *  • R2 — nothing here calls a person's decision wrong. Stating that a figure
  *    misses a cap is a fact about two numbers; stating that somebody erred is
  *    not, and is banned from the whole table.
- *  • D18 — no money, ever. There is no price in the DTO to format.
+ *  • D18 — one raw dollar delta per runner-up is allowed (never a total); no
+ *    GST/tax/basis wording ever reaches this surface.
  *  • R5 — no certification vocabulary, in any phase.
  *  • WHY-AC-4 — a figure that is not a number is never rendered as a number, a
  *    zero or a dash, and WHICH absence it is comes from the DTO's KIND, never
@@ -538,14 +539,15 @@ const NUMBER_WORD = ["no", "One", "Two", "Three", "Four", "Five"];
  *  and NO COUNT OF ANYTHING BEYOND IT. The sentence counts what is on screen. */
 export function ladderNote(shown: number): string {
   if (shown >= 5) {
-    return "The chosen product and the next four by rank. No price, nothing to price, "
-      + "and nothing here changes the line.";
+    return "The chosen product and the next four by rank. Each amount is that "
+      + "product's difference from the chosen one, and nothing here changes the line.";
   }
   // `shown` is 1-4 here: 5 and above took the branch above, and a ladder with
   // no rows renders no note at all.
   const count = NUMBER_WORD[shown];
   return `${count} candidate${shown === 1 ? " was" : "s were"} recorded for this opening — `
-    + "the list is what exists, with nothing padded and no remainder counted.";
+    + "the list is what exists, with nothing padded and no remainder counted. "
+    + "Each amount is that product's difference from the chosen one.";
 }
 
 /** A make-up's name in the ladder, from the units it is made of. A single names
@@ -562,6 +564,38 @@ export function candidateFigures(c: RationaleCandidate): string {
   return c.form === "split" && c.units
     ? `${c.units.length} units`
     : figuresText(c.figures);
+}
+
+/** Whole dollars, unsigned — the shape queue.ts and record.ts already use on
+ *  ops. Both delta functions round and format the same way, and did it twice;
+ *  the SIGN is theirs to add, because one spells it and the other says it. */
+const money = (rounded: number): string => `$${Math.abs(rounded).toLocaleString("en-AU")}`;
+
+/** D1 reversal — one raw dollar delta per runner-up row. `chosen` mutes it
+ *  (criterion 4). null: "$---" — a fact about the record, never $0 or a blank
+ *  (D4). Whole dollars, same shape as queue.ts/record.ts money on ops. */
+export function deltaText(delta: number | null, chosen: boolean): string | null {
+  if (chosen) return null;
+  if (delta == null) return "$---";
+  const r = Math.round(delta);
+  return r === 0 ? money(r) : `${r < 0 ? "-" : "+"}${money(r)}`;
+}
+
+/** THE SAME FACT, SPOKEN. A bare "+" does not survive being read aloud: most
+ *  screen readers announce "+$65" as "sixty-five dollars" and the direction —
+ *  the whole point of the figure — is lost. The visible string is unchanged;
+ *  this rides on it as `aria-label`. It lives beside `deltaText` so the node
+ *  test that scans this module for banned vocabulary sees it too. */
+export function deltaLabel(delta: number | null, chosen: boolean): string | null {
+  if (chosen) return null;
+  // MISSING IS NOT EQUAL. "No price difference was recorded" and "the same
+  // price" both mean "no difference" to someone hearing them, so the two
+  // states a sighted reader tells apart at a glance — $--- against a genuine
+  // tie — collapsed into one for everybody else. Name the absence as absence.
+  if (delta == null) return "no price was recorded for this product";
+  const r = Math.round(delta);
+  if (r === 0) return "the same price as the chosen product";
+  return `${money(r)} ${r < 0 ? "cheaper" : "dearer"} than the chosen product`;
 }
 
 /** WHY-AC-34 — a lite's own band. `null` when none was recorded, and NOTHING is

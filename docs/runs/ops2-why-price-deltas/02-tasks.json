@@ -1,0 +1,48 @@
+{
+  "run": "ops2-why-price-deltas",
+  "design": "docs/runs/ops2-why-price-deltas/02-design.md",
+  "tasks": [
+    {
+      "id": "t1",
+      "title": "Contract + candidateOf allow-list + API test flip",
+      "files": [
+        "scripts/tests/why-rationale-api.test.mjs",
+        "src/data/rationale.ts",
+        "worker/lib/estimator/rationale.ts",
+        "src/data/recommendation.ts"
+      ],
+      "tests": ["scripts/tests/why-rationale-api.test.mjs"],
+      "after": [],
+      "criteria": ["1", "5", "6", "9", "10", "11", "12", "13", "14", "15", "16"],
+      "done_when": "Red first in why-rationale-api.test.mjs: split mentionsMoney (lines 94-97) into mentionsForbiddenMoney = /\"price\"|\"total\"|\"currency\"|\"AUD\"|GST|\\$/i with deltaToSelected now REQUIRED; flip X-AC-5 (lines 389-396) to assert body.recommended.deltaToSelected === 0 and alternatives deltas 65, 50, -30, -50 verbatim while the forbidden set stays absent; add a fixture outcome with NO price key mapping to deltaToSelected null (criterion 6); extend the outcome builder (line 56) so one fixture carries exclusions and learned, asserting neither key reaches the raw body while deltas do (criterion 11); add one assertion each to X-AC-3 (line 616), the role loop (line 607) and the cross-project 404 (line 648) that the refusal body contains no deltaToSelected and no $. Then green: add `deltaToSelected: number | null` to RationaleCandidate (src/data/rationale.ts line 25) with the design's doc comment and rewrite the header lines 8-14 (delta deliberately present; total/currency, exclusions, learned, withheld, current.variantId still absent by shape); in worker/lib/estimator/rationale.ts extend candidateOf (line 60) with `deltaToSelected: typeof o.price?.deltaToSelected === \"number\" ? o.price.deltaToSelected : null` and rewrite its comment (lines 56-59) per the design — never a spread; lineRationale (line 146) and the runner-up slice (lines 224-228) are NOT changed. Fix the src/data/recommendation.ts price-block comment (~line 112): not GST-free — the same tax-inclusive rate-card figure as quote_line.line_total, computePrice performs no GST arithmetic. npm run test:why green.",
+      "notes": "No migration, no route change, no arithmetic anywhere. worker/routes/ops.ts untouched."
+    },
+    {
+      "id": "t2",
+      "title": "whyCopy deltaText + ladderNote + banned-vocabulary re-scope",
+      "files": [
+        "scripts/tests/ops2-why.test.mjs",
+        "src/ops2/projects/whyCopy.ts"
+      ],
+      "tests": ["scripts/tests/ops2-why.test.mjs"],
+      "after": [],
+      "criteria": ["2", "3", "4", "5", "7", "12", "13"],
+      "done_when": "Red first in ops2-why.test.mjs: BANNED (lines 38-51) drops /\\$/ and gains /\\btax\\b/i, /\\binc\\b/i, /\\bex\\b/i, /\\bincl\\b/i, /\\bexcl\\b/i, /inclusive/i, /exclusive/i (GST/AUD bans kept, D18 comment rewritten per design); scanner self-checks (lines 72-76) updated: '+$100' clean, '$1,840.00 ex GST' still flags; deltaText unit tests exactly per the design's table ((100,false)='+$100' and never '110'; (-200,false)='-$200'; (null,false)='$---'; (0,true)=null; (65,true)=null; (0,false)='$0'; (1840,false)='+$1,840'; outputs match none of /gst|tax|\\binc\\b|\\bex\\b|inclusive|exclusive/i); ladderNote(5) keeps /the next four by rank/ (line 500) and no longer matches /no price|nothing to price/i; new source scan asserting src/data/recommendation.ts no longer matches /GST-free/ and matches /tax-inclusive/i. Then green in whyCopy.ts: export deltaText verbatim from the design (beside candidateFigures, line 561); rewrite ladderNote's >=5 branch (lines 539-549) dropping 'No price, nothing to price, and'; update the header money rule (line 15). npm run test:ops2 green.",
+      "notes": "deltaText takes (number | null, boolean) so this slice does not depend on t1's type change. Formatter precedent: queue.ts:492 / record.ts:705 — Math.round + toLocaleString('en-AU'). All strings live in whyCopy.ts, never JSX."
+    },
+    {
+      "id": "t3",
+      "title": "WhyDetail ladder render + row readability + E2E",
+      "files": [
+        "scripts/tests/web/ops2-line-why.spec.ts",
+        "src/ops2/projects/WhyDetail.tsx",
+        "src/ops2/styles/line.css"
+      ],
+      "tests": ["scripts/tests/web/ops2-line-why.spec.ts"],
+      "after": ["t1", "t2"],
+      "criteria": ["1", "2", "3", "4", "5", "7", "8", "19", "20"],
+      "done_when": "Red first in ops2-line-why.spec.ts (ladder assertions, lines 888-896): runner-up rows show '+$'/'-$' deltas from the seeded outcomes, a no-price row shows '$---', the chosen row's text contains no '$', the detail's text matches none of /gst|tax|inclusive|exclusive/i and carries no date/staleness wording near a delta; the existing line-896 assertion (zero button/a/[role=button] inside rows) stays green. If the spec's seeded outcome fixtures lack price objects, add price/deltaToSelected to them (and leave one without, for '$---'). Then green in WhyDetail.tsx: import deltaText, compute per row `deltaText(c.deltaToSelected, i === 0)`, render only when non-null as <span className=\"wd__row-delta\" data-testid=\"why-row-delta\"> inside the ladder rows (lines 80-102); restructure the row per design D5 (name + mark first; figures, verdict and delta on the second visual line); rows remain <li> with zero handlers. line.css: wd__row-delta style + whatever flex/grid the restructure needs at ops2 breakpoints so nothing truncates or overlaps. npm run test:web green for this spec.",
+      "notes": "DOM seam is fixed by the design (class + testid); visual polish belongs to the UX/polish stages. R28: delta is never pressable. No staleness caption (criterion 8)."
+    }
+  ]
+}

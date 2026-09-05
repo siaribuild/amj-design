@@ -6,14 +6,17 @@ import { destination } from "../nav/destinations";
 import { OpsPage } from "../chrome/OpsPage";
 import { DrawingViewer } from "../chrome/DrawingViewer";
 import { LineReview } from "./LineReview";
+import { MetaTab } from "./MetaTab";
 import { WhyDetail } from "./WhyDetail";
 import { WhyPanel } from "./WhyPanel";
 import { PricePanel } from "./PricePanel";
 import { drawingSubject, viewerUnitCount } from "./drawingSubject";
 import {
-  drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, whyDoor,
+  drawingSuffix, lineSuffixOf, parseLineRoute, viewerDoor, whyDoor, metaDoor,
   VIEWER_FROM_LINE, WHY_FROM_LINE, WHY_SUFFIX,
+  META_SUFFIX, META_READING_SUFFIX, META_RUN_SUFFIX, META_EXP_FROM_TAB,
 } from "./lineRoute";
+import { useLineMeta } from "./useLineMeta";
 import { useLineRationale } from "./useLineRationale";
 import { useProjectRecord } from "./useProjectRecord";
 
@@ -91,10 +94,30 @@ export function LinePage() {
   // address, whatever it resolved to.
   const hasWhy = rationale.status === "ready";
 
+  // THE METADATA TAB'S OWN READ — same D2 gate as the rationale, same reason:
+  // an order record has nothing to audit, so the endpoint is not called rather
+  // than called and hidden. `hasMeta` is judged exactly like `hasWhy`: whether
+  // `/meta` is an address THIS line serves, not whether the metadata behind it
+  // has any content (AC-20) — a manual line and a purged crop both 404 to
+  // `missing`, which withholds the tabs the same way "no rationale" withholds
+  // `/why`.
+  const { load: meta, reload: reloadMeta } = useLineMeta(id, lineId, !!line && !isOrder);
+  // READY OR ERROR, NOT READY ALONE — codex P2. `missing` is a 404: this line
+  // serves no `/meta`, so the tabs are withheld exactly as "no rationale"
+  // withholds `/why`. `error` is a 500 or a dropped connection, which says
+  // NOTHING about whether the address exists. Collapsing the two made a
+  // transient failure look identical to a manual line: the tabs vanished, a
+  // pasted `/meta` link was rewritten to Opening, and nothing offered a retry.
+  // An audit surface that quietly becomes "there was nothing to audit" when the
+  // server hiccups is the same class of lie as the image panel contradicting
+  // the reading beside it.
+  const hasMeta = meta.status === "ready" || meta.status === "error";
+
   const route = parseLineRoute(
     lineSuffixOf(location.pathname),
     line ? viewerUnitCount(line) : 0,
     hasWhy,
+    hasMeta,
   );
 
   // NORMALISE ONLY ONCE THE RECORD HAS ANSWERED. The unit count is what an
@@ -130,7 +153,12 @@ export function LinePage() {
   // `/line/l99/why` uncorrected in the address bar behind the not-found
   // sentence and put one rule — D2's "an order record has no rationale" — in
   // three places at once.
-  const ready = load.status === "ready" && rationale.status !== "loading";
+  //
+  // AND THE METADATA READ, for the same reason again — `/meta*` is judged
+  // against `hasMeta`, and correcting a deep `/meta` link before that read has
+  // answered would throw away an address that turns out to be perfectly good
+  // (AC-3: the flash this is here to prevent).
+  const ready = load.status === "ready" && rationale.status !== "loading" && meta.status !== "loading";
   const stray = ready && !line && route.view !== "line";
   useEffect(() => {
     if (!ready) return;
@@ -179,8 +207,25 @@ export function LinePage() {
     history.push(linePath + WHY_SUFFIX, WHY_FROM_LINE);
   }, [history, linePath]);
 
+  // THE METADATA TAB'S OWN DOOR — same presence-only mark as `why`'s, and a
+  // separate key from it for the same reason `whyFrom`/`viewerFrom` stay
+  // separate (`./lineRoute.ts`): a why entry read as a meta entry, or the
+  // reverse, would answer the wrong screen's back question.
+  const openMetaReading = useCallback(() => {
+    opener.current = document.activeElement as HTMLElement | null;
+    history.push(linePath + META_READING_SUFFIX, META_EXP_FROM_TAB);
+  }, [history, linePath]);
+
+  const openMetaRun = useCallback(() => {
+    opener.current = document.activeElement as HTMLElement | null;
+    history.push(linePath + META_RUN_SUFFIX, META_EXP_FROM_TAB);
+  }, [history, linePath]);
+
   useEffect(() => {
-    if (route.view !== "line" || !opener.current) return;
+    // "line" is the drawing/why doors' base view; "meta" is the tab's own —
+    // closing a reading/run expansion returns to the Metadata tab, not to
+    // Opening, so focus must return there too.
+    if ((route.view !== "line" && route.view !== "meta") || !opener.current) return;
     const el = opener.current;
     opener.current = null;
     // After the modal has released its focus trap.
@@ -230,17 +275,41 @@ export function LinePage() {
    * Read off `history.location` rather than the render's `location` for the same
    * reason the pathname guard above is: what this control does is decided at the
    * moment it is pressed.
+   *
+   * `/meta` IS THE SAME GUARD, one level in. `SidePanel` wires `onClose` to both
+   * the back button's click AND the modal's own `onDidDismiss` — one press, two
+   * calls. For a one-level door (why, drawing) the first call's pop already
+   * lands on `""`, so the guard above absorbs the second call for free. Meta
+   * nests one level deeper: the first call's pop lands on `/meta`, not `""`, so
+   * without this line the second call sees a non-empty suffix, finds Ionic still
+   * willing to pop, and overshoots straight past the tab onto Opening.
    */
   const closeChild = useCallback(() => {
-    if (lineSuffixOf(history.location.pathname) === "") return;
+    const suffix = lineSuffixOf(history.location.pathname);
+    if (suffix === "" || suffix === META_SUFFIX) return;
     if (router.canGoBack()) { router.goBack(); return; }
-    // EITHER MARK MEANS A PAGE OF OURS IS BEHIND THIS ENTRY. The two are
-    // separate keys because the two surfaces have different exits, but the
+    // EITHER MARK MEANS A PAGE OF OURS IS BEHIND THIS ENTRY. The three are
+    // separate keys because the three surfaces have different exits, but the
     // question asked here — warm or cold — is the same question, and asking it
-    // once is what stops the second surface answering it differently.
-    if (viewerDoor(history.location.state) || whyDoor(history.location.state)) history.goBack();
-    else history.replace(linePath);
+    // once is what stops a surface answering it differently.
+    if (viewerDoor(history.location.state) || whyDoor(history.location.state) || metaDoor(history.location.state)) {
+      history.goBack();
+      return;
+    }
+    // A COLD CLOSE OUT OF AN EXPANSION LANDS ON THE TAB IT EXPANDED FROM, not
+    // on Opening — `/meta/reading` and `/meta/run` are the Metadata tab's own
+    // children, so a pasted or reloaded link into either replaces to `/meta`,
+    // the same way a cold drawing/why close replaces to the bare line path.
+    history.replace(suffix.startsWith("/meta/") ? linePath + META_SUFFIX : linePath);
   }, [history, router, linePath]);
+
+  // AC-3: A DEEP `/meta*` LINK MUST NEVER FLASH THE OPENING BODY. Until the
+  // meta read answers, `hasMeta` reads false and the route parses the address
+  // as unserved (`line`) — rendering `LineReview` under it for one frame is
+  // the flash. The existing record skeleton stands in instead, so there is one
+  // loading picture, not two.
+  const metaPending = meta.status === "loading" && lineSuffixOf(location.pathname).startsWith(META_SUFFIX);
+  const isMetaView = route.view === "meta" || route.view === "metaReading" || route.view === "metaRun";
 
   return (
     <OpsPage
@@ -248,8 +317,34 @@ export function LinePage() {
       title={line?.code || "Line"}
       backTo={{ label: record ? record.ref : "Project", href: recordPath }}
       width="full"
+      controls={hasMeta ? (
+        <div className="pq-controls">
+          <div className="pq-chips" role="group" aria-label="What to show">
+            <button
+              type="button"
+              className="pq-chip"
+              data-testid="line-tab"
+              data-tab="opening"
+              aria-pressed={!isMetaView}
+              onClick={() => history.replace(linePath)}
+            >
+              Opening
+            </button>
+            <button
+              type="button"
+              className="pq-chip"
+              data-testid="line-tab"
+              data-tab="meta"
+              aria-pressed={isMetaView}
+              onClick={() => history.replace(linePath + META_SUFFIX)}
+            >
+              Metadata
+            </button>
+          </div>
+        </div>
+      ) : undefined}
     >
-      {load.status === "loading" && (
+      {(load.status === "loading" || metaPending) && (
         <div className="rec-skeleton" data-testid="line-skeleton" aria-busy="true">
           <IonSkeletonText animated style={{ height: "260px" }} />
           <IonSkeletonText animated style={{ height: "180px" }} />
@@ -294,16 +389,41 @@ export function LinePage() {
         </div>
       )}
 
-      {record && line && (
-        <LineReview
-          line={line}
-          onOpenDrawing={openDrawing}
-          why={<WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />}
-          price={(
-            <PricePanel line={line} reload={reload}
-              editable={!isOrder && line.lineKind !== "composite_parent"} />
-          )}
-        />
+      {record && line && !metaPending && (
+        meta.status === "error" && isMetaView ? (
+          // THE ADDRESS SURVIVES THE FAILURE. The tab stays selected and says
+          // what happened, with the one control that can change the answer.
+          // Falling through to LineReview here would put the Opening body under
+          // a lit Metadata tab — the screen contradicting its own chrome.
+          <section className="lp-panel" data-testid="meta-error" aria-label="Metadata">
+            <h2 className="lp-panel__title">Metadata</h2>
+            <p className="ops2-absent">
+              The parse metadata for this opening could not be loaded.
+            </p>
+            <IonButton size="small" fill="outline" onClick={reloadMeta} data-testid="meta-retry">
+              Try again
+            </IonButton>
+          </section>
+        ) : meta.status === "ready" && isMetaView ? (
+          <MetaTab
+            dto={meta.dto}
+            view={route.view}
+            cropSrc={`/api/ops/projects/${encodeURIComponent(id)}/lines/${encodeURIComponent(lineId)}/meta/crop`}
+            onOpenReading={openMetaReading}
+            onOpenRun={openMetaRun}
+            onClose={closeChild}
+          />
+        ) : (
+          <LineReview
+            line={line}
+            onOpenDrawing={openDrawing}
+            why={<WhyPanel load={rationale} onOpen={openWhy} reload={reloadRationale} />}
+            price={(
+              <PricePanel line={line} reload={reload}
+                editable={!isOrder && record.linesEditable} />
+            )}
+          />
+        )
       )}
 
       <DrawingViewer subject={subject} onClose={closeChild} />

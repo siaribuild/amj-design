@@ -27,7 +27,22 @@ export function cropKey(projectId: string, runId: string, tag: string): string {
 
 /** Deletes every crop the project has ever produced, across every run —
  *  the whole review window's worth, which is what "the draft cleared" and
- *  "the quote issued" both mean to end. */
+ *  "the quote issued" both mean to end.
+ *
+ *  AND THE HARVEST CACHE, for the same reason and on the same triggers. The
+ *  harvest is not metadata: it holds page text excerpts, the words beside each
+ *  tag, room-label candidates and datum strings — verbatim text lifted from the
+ *  customer's drawings, across the whole document. A crop is one opening; the
+ *  harvest is the drawing set. It was surviving quote-issue and draft-clear,
+ *  deleted only when the source PDF itself was deleted, which is not what the
+ *  retention ruling says (owner, 2026-08-29; CONTEXT.md "Crop evidence").
+ *
+ *  `runs/harvest/` and NOT `runs/`: that prefix also holds stage archives with
+ *  a different lifecycle, pinned by the test above requiring them to survive.
+ *  Worth stating because the fix on the conformance line purges
+ *  `projects/<id>/harvest/`, which is where THAT line writes it — copied here
+ *  unchanged it would have matched nothing and deleted nothing. */
 export async function purgeProjectCrops(env: Env, projectId: string): Promise<void> {
   await purgeR2Prefix(env.FILES, `projects/${safeSeg(projectId)}/crops/`);
+  await purgeR2Prefix(env.FILES, `projects/${safeSeg(projectId)}/runs/harvest/`);
 }

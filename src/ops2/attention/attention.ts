@@ -49,10 +49,8 @@ export type AttentionRow = {
   count: number;
   /** The work, without its number ("new submissions"). The page renders it in
    *  its own slot beside the count so the number can be tabular and leading
-   *  (mock §2); `label` stays the two read together, so the accessible name and
-   *  the visible text cannot drift apart. */
+   *  (mock §2). */
   noun: string;
-  label: string; // sentence-style, number leading ("4 new submissions")
   href: string; // path from nav/destinations + optional ?wait=
 };
 
@@ -87,7 +85,7 @@ const GROUP_SPECS: readonly { id: DestinationId; rows: readonly RowSpec[] }[] = 
   {
     id: "enquiries",
     rows: [
-      { key: "newEnquiries", noun: () => "nobody has replied to", href: destination("enquiries").path },
+      { key: "newEnquiries", noun: () => "waiting for a reply", href: destination("enquiries").path },
     ],
   },
   {
@@ -116,7 +114,7 @@ export function attentionGroups(counts: SummaryCounts): AttentionGroup[] {
       const count = counts[rowSpec.key];
       if (count === 0) continue;
       const noun = rowSpec.noun(count);
-      rows.push({ key: rowSpec.key, count, noun, label: `${count} ${noun}`, href: rowSpec.href });
+      rows.push({ key: rowSpec.key, count, noun, href: rowSpec.href });
     }
     if (rows.length === 0) continue;
     groups.push({ id: spec.id, label: destination(spec.id).label, rows });

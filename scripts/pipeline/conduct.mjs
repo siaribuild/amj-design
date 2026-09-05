@@ -11,9 +11,12 @@
 // stages hand off through files on disk instead of through a model's context.
 //
 // Three levers, in measured order of impact:
-//   1. Context per turn is capped (--autocompact). Context tokens are the sum of
-//      context re-sent each turn; an uncapped 1M window is why single runs hit
-//      182M. Capping at ~120k takes a straight multiple off every role.
+//   1. Context per turn WAS capped (--autocompact). Context tokens are the sum
+//      of context re-sent each turn; an uncapped 1M window is why single runs
+//      hit 182M, and capping at ~120k took a straight multiple off every role.
+//      TURNED OFF by the owner on 2026-09-05 because it was failing stages
+//      rather than merely metering them - see CONTEXT_CAP for what happened and
+//      what it costs. Levers 2 and 3 still stand.
 //   2. The orchestrator is gone. This script costs nothing.
 //   3. Long roles are sliced into short, scoped runs and handed exact paths.
 //      Splitting an N-turn run into k runs divides its quadratic term by k.
@@ -23,10 +26,10 @@
 
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt } from './measure.mjs'
+import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, fmt, finalReply } from './measure.mjs'
 import {
   available as herdrAvailable, ensureCockpit, launchStage, writePrompt, watch, notify,
   agentPrompt, splitPane, paneReady, agentInfo,
@@ -128,7 +131,18 @@ export function parseSeverity(args) {
 }
 
 // --- stage table -----------------------------------------------------------
-// compact: context window cap, in tokens.
+// compact: context window cap, in tokens. 600k everywhere, owner 2026-09-04.
+//
+// It was 100k-200k per stage and four stages died of it in a single run — ux,
+// polish, review-security and review-ponytail, every one of them ending in
+// `terminal_reason: rapid_refill_breaker`: the context refilled to the cap
+// within three turns of a compact, three times running, and the model gave up.
+// A stage that reads a mock, a spec, a design and a diff cannot do it inside
+// 100k, so it compacts, re-reads to answer the next question, and compacts
+// again. Raising the cap is not indulgence; below it these stages cannot
+// finish at all, and a stage that cannot finish is the most expensive kind.
+//
+// This is a CAP, not an allocation: a stage that needs 80k still uses 80k.
 // tiers:   which tier sizes run this stage.
 //
 // There is deliberately NO runaway guard here - no dollar ceiling, no token
@@ -139,11 +153,12 @@ export function parseSeverity(args) {
 // conductor prints tokens and time and never a currency figure.
 
 // The architect writes 02-tasks.json as a bare array — the shape the stage
-// prompt shows and the shape both readers below iterate. It has twice written
-// `{ feature, design, tasks: [...] }` instead, which is a reasonable-looking
-// file that made `conduct plan` throw "tasks is not iterable" and would have
-// made the build die at the gate. Read it in one place, accept either, and the
-// two readers stop caring which the model felt like producing.
+// prompt shows and the shape both readers below iterate. It has now written
+// `{ run, design, tasks: [...] }` instead THREE times, a reasonable-looking
+// file that threw "tasks is not iterable" from `conduct plan` and
+// "tasks.map is not a function" from `checkPlan`, killing the build at the
+// gate. Read it in one place, accept either, and the two readers stop caring
+// which shape the model felt like producing.
 function readTasks(file) {
   const raw = JSON.parse(readFileSync(file, 'utf8'))
   const tasks = Array.isArray(raw) ? raw : raw?.tasks
@@ -151,10 +166,33 @@ function readTasks(file) {
   return tasks
 }
 
+/**
+ * The per-stage context cap, or null for none.
+ *
+ * REMOVED BY THE OWNER, 2026-09-05, after three stages died on it rather than
+ * on their work: build-T5 and polish each hit "autocompact is thrashing - the
+ * context refilled to the limit within 3 turns of the previous compact, 3 times
+ * in a row" and exited having written nothing. Polish had made TEN ordinary file
+ * reads. This repo's source carries more rationale comment than code on purpose,
+ * so a stage that must hold a mock plus the chrome it composes from is over the
+ * line before it has done anything, and the cap converts that into a stage
+ * failure instead of a larger bill.
+ *
+ * WHAT IT COSTS, stated rather than buried: this was lever 1 of the three in the
+ * header note, and the measured one - an uncapped window is what turned single
+ * v1 runs into 182M context tokens. Expect runs to cost materially more. Levers
+ * 2 (no orchestrator) and 3 (sliced roles, exact paths) are untouched and still
+ * carry most of the structural saving.
+ *
+ * The per-stage `compact:` values below are LEFT IN PLACE deliberately: setting
+ * this back to a number restores the old behaviour exactly, in one line.
+ */
+const CONTEXT_CAP = null
+
 const STAGES = [
   {
-    id: 'spec', agent: 'product-manager', compact: 120000, tiers: ['full'],
-    needs: ['00-ask.md'], produces: ['01-spec.md'],
+    id: 'spec', agent: 'product-manager', compact: 600000, tiers: ['full'],
+    needs: ['00-ask.md'], produces: ['01-spec.md'], check: checkSpec,
     prompt: (r) => `Write the spec for this feature.
 
 READ ONLY THESE (do not search the codebase for background):
@@ -180,7 +218,7 @@ with your recommendation, and stop. The human answers in that file directly.
 Be economical: you are being metered. Read what you were given, write the spec.`,
   },
   {
-    id: 'design', agent: 'architect', compact: 120000, tiers: ['full'],
+    id: 'design', agent: 'architect', compact: 600000, tiers: ['full'],
     needs: ['01-spec.md'], produces: ['02-design.md', '02-tasks.json'],
     prompt: (r) => `Design the implementation for this spec.
 
@@ -240,7 +278,7 @@ Owner-only decisions go in ${r.dir}/DECISIONS.md with your recommendation, then
 stop. Do not guess at business rules.`,
   },
   {
-    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 200000, mcp: true, tiers: ['full'],
+    id: 'ux', agent: 'ux-designer', ui: true, gate: 'mock', compact: 600000, mcp: true, tiers: ['full'],
     needs: ['02-design.md'], produces: ['03-ux.md'],
     prompt: (r) => `Design the interaction and produce the mock.
 
@@ -259,18 +297,25 @@ treatment. Implementation does not start until the owner approves this, so make
 it representative.`,
   },
   {
-    id: 'build', agent: 'developer', sliced: true, compact: 120000, tiers: ['full', 'fix'],
+    // A build task's working set is not what it WRITES — it is the PATTERN it
+    // copies: the route it sits beside plus the test file it is modelled on.
+    // Measured on ops2-parse-metadata T1, that pair was a 2,506-line route and
+    // a 49k-char test; at 120k the pair does not fit beside the turn, so every
+    // compact dropped them, the next turn re-read them, and the run died on the
+    // rapid-refill breaker twice — 9.5M context tokens to write one file of
+    // five. A cap below the working set does not save the difference; it pays
+    // it repeatedly and then fails.
+    //
+    // That measurement sized this at 250k. The owner then set 600k across every
+    // stage (2026-09-04), which supersedes it — same reasoning, more headroom.
+    // It is a CAP, not an allocation: a task needing 90k still uses 90k.
+    id: 'build', agent: 'developer', sliced: true, compact: 600000, tiers: ['full', 'fix'],
     // Not 02-tasks.json: the fix tier has no architect to write one, and for
     // the full tier runBuild gives a better message about its absence.
     needs: ['00-ask.md'], produces: ['04-build.md'],
   },
   {
-    // 100k thrashed on ai-parse-monitoring (2026-09-05): the stage's own
-    // required reading (mock + ux + build log + the built sources) is ~80k
-    // tokens, so every compact wiped the material and the agent re-read it —
-    // three identical cycles, no report. 220k holds one full reading plus
-    // working room.
-    id: 'polish', agent: 'ui-designer', ui: true, compact: 220000, mcp: true, tiers: ['full'],
+    id: 'polish', agent: 'ui-designer', ui: true, compact: 600000, mcp: true, tiers: ['full'],
     needs: ['04-build.md'], produces: ['05-polish.md'],
     prompt: (r) => `Audit and polish the UI that was just built.
 
@@ -281,7 +326,7 @@ Bring the built result up to the approved mock. Use the impeccable skill.
 WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
   },
   {
-    id: 'verify', agent: 'tester', compact: 120000, tiers: ['full', 'fix'],
+    id: 'verify', agent: 'tester', compact: 600000, tiers: ['full', 'fix'],
     cycle: true,
     needs: ['04-build.md'], produces: ['06-verify.md'],
     prompt: (r) => verifyPrompt(r, changedPaths(r.base)),
@@ -293,7 +338,7 @@ WRITE ${r.dir}/05-polish.md: what you changed and why, files touched.`,
     id: 'review', parallel: true, tiers: ['full'], needs: ['04-build.md'], produces: [],
   },
   {
-    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 100000, tiers: ['full'],
+    id: 'accept', agent: 'product-manager', gate: 'signoff', compact: 600000, tiers: ['full'],
     needs: ['06-verify.md'], produces: ['08-accept.md'],
     prompt: (r) => `Issue the acceptance verdict.
 
@@ -352,7 +397,7 @@ Findings go back to a developer, not to you - do not fix code.`
 // Read-only reviewers. Independent of each other, so they fan out in parallel.
 const REVIEWERS = [
   {
-    id: 'conformance', agent: 'architect', compact: 100000,
+    id: 'conformance', agent: 'architect', compact: 600000,
     prompt: (r) => `Design-conformance review.
 
 READ ${r.dir}/02-design.md and ${r.dir}/02-tasks.json, then the paths that
@@ -366,26 +411,44 @@ diff-reading review always misses), was anything built the design never named.
 Open a specific file's content ONLY if the path list alone can't answer a
 structural question - never the whole diff up front.
 
-WRITE ${r.dir}/07-review-conformance.md.`,
+Report your findings in your reply, most serious first. Your final message IS
+the report - it is captured to ${r.dir}/07-review-conformance.md. Do not try to
+write a file: you are read-only by design and the write will be refused.`,
   },
   {
     // Headless in EVERY mode, and not by preference: /security-review is
     // compiled into the CLI. There is no file on disk for it, the Skill tool
     // cannot reach it, and nothing typed into a pane fires a built-in slash
     // command reliably. It is a property of the tool.
-    id: 'security', slash: '/security-review', compact: 220000, headless: true,
+    // BOTH READ THE WHOLE DIFF, which is why they were the two that kept dying.
+    // Measured on ops2-parse-metadata (1,609 insertions over 12 files): security
+    // and ponytail both hit the rapid-refill breaker at 100k having produced
+    // NOTHING, while conformance — which reads a path list — finished inside
+    // 241k. Observed independently on ops2-why-price-deltas, where the same two
+    // failed the same way and the run reached an acceptance gate with half its
+    // review missing. A cap below the working set is spent repeatedly and then
+    // fails anyway, and here it fails by silently removing a review layer.
+    id: 'security', slash: '/security-review', compact: 600000, headless: true,
   },
   {
-    // 220k for the same reason polish carries it (2026-09-05): reading a
-    // feature diff plus the files around it costs more than 100k, so every
-    // compact threw away the reading and the reviewer started again. It
-    // thrashed out twice on ai-parse-monitoring and wrote no report either
-    // time — a review axis that silently produces nothing is worse than one
-    // that is switched off, because the run looks reviewed.
-    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 220000,
+    id: 'ponytail', slash: '/ponytail:ponytail-review', compact: 600000,
   },
   { id: 'codex', codex: true },
 ]
+
+// ON. Turned off by the owner on 2026-09-02 ("do not use Codex for reviews
+// until further notice") to protect tokens for parallel Codex work, and turned
+// back on by him the same day once that work freed up. Left as one constant
+// because it has now been flipped twice: this is a spending dial, not a
+// judgement about Codex, and it will be flipped again.
+//
+// Whichever way it points, a disabled reviewer is NOT a silently skipped one.
+// runReviews prints when codex is off, because the failure this pipeline has
+// already recorded is a review stage that reports success while producing
+// nothing - a run must never read as having had four reviewers when it had
+// three. The plugin stays installed either way: this governs the automated
+// stage, not `/codex:review` by hand.
+const CODEX_REVIEWS = true
 
 // --- run state -------------------------------------------------------------
 
@@ -394,7 +457,14 @@ const withDir = (r) => { r.dir = 'docs/runs/' + r.slug; return r }
 function loadRun(slug) {
   const p = join(RUNS, slug, 'run.json')
   if (!existsSync(p)) die('no run at ' + p + '\n  start one with:  conduct start <slug> "<ask>"')
-  return withDir(JSON.parse(readFileSync(p, 'utf8')))
+  const r = JSON.parse(readFileSync(p, 'utf8'))
+  // The slug read back OUT of run.json is a path segment like every other one,
+  // and it is joined into every path the rest of this run touches. Every other
+  // route to a slug is validated; leaving this one unchecked left the chain with
+  // a gap in it. Named by /security-review as hardening, below its own bar only
+  // because reaching it needs repo write access.
+  checkSlug(r.slug)
+  return withDir(r)
 }
 
 /**
@@ -586,6 +656,12 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
 // fatal - it holds warm in its pane, which is what pane mode is for.
 const PANE_PERMISSION = 'acceptEdits'
 
+// Lever 1's on/off switch, pulled out pure so both branches - flag omitted
+// while CONTEXT_CAP is null, flag passed when a cap is set - are pinned by a
+// test without touching the module's live CONTEXT_CAP constant.
+export const autocompactArgs = (cap, compact) =>
+  cap === null ? [] : ['--autocompact', String(compact || cap)]
+
 // Rides on the session itself rather than on each prompt, because a rule every
 // prompt has to remember to repeat is a rule one of them will forget. The
 // conductor is the orchestrator: a stage that dispatches its own subagents
@@ -601,15 +677,17 @@ const NO_SUBAGENTS = "You are ONE stage of a scripted pipeline. Never dispatch s
 function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
-  // Lever 1. Context tokens are the sum of context re-sent per turn; an
-  // uncapped 1M window is what turns a long run into 182M.
-  a.push('--autocompact', String(spec.compact || 120000))
+  // Lever 1, OFF BY OWNER DECISION (2026-09-05). See CONTEXT_CAP.
+  a.push(...autocompactArgs(CONTEXT_CAP, spec.compact))
   a.push('--permission-mode', spec.readonly ? 'plan' : mode)
   if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
   // Always strict: an inherited user or global config drags its tool
   // definitions - Sanity's are large - into every turn of every stage.
   a.push('--strict-mcp-config')
   a.push('--append-system-prompt', NO_SUBAGENTS)
+  // Only when a stage asks for one. Left off, the agent file owns the choice
+  // (developer is pinned to sonnet there), which is where it belongs.
+  if (spec.model) a.push('--model', spec.model)
   return a
 }
 
@@ -716,6 +794,16 @@ function runClaude(spec, promptText, run, label) {
         ...(previousSessions && { previousSessions }),
       }
       run.stages[label] = s
+      // THE REPORT IS THE REPLY, for a stage that cannot write one. A reviewer
+      // boots in `plan` mode by design (see BLOCK_HOLDS above) and every
+      // reviewer prompt told it to WRITE its 07-review-*.md - which plan mode
+      // forbids. The result was a gate that exited 0 having produced nothing:
+      // no run in docs/runs/ has ever contained a Claude reviewer's report,
+      // while `review` recorded code 0 and `accept` read the missing files as
+      // "no findings". Capturing the final message is what runCodexJob already
+      // does, and it keeps the reviewer read-only instead of buying the report
+      // with write access to the tree.
+      if (spec.capture && result?.result) writeFileSync(spec.capture, result.result)
       saveRun(run)
       // The headless half of settleStage. A stage that stopped to ask the owner
       // something is held whichever mode it ran in - without this the record
@@ -789,7 +877,7 @@ async function holdWarm(run, label, reason, started) {
  * The stage is done. Meter it from its own transcript by the id we recorded,
  * free the claude, and leave the pane and its scrollback exactly where they are.
  */
-async function finalizePane(run, label, started) {
+async function finalizePane(run, label, started, spec) {
   const s = run.stages[label]
   // Pane transcripts are written live, so there is no flush race to sleep
   // through here; anything still missing heals on the next report (refreshRun).
@@ -801,6 +889,16 @@ async function finalizePane(run, label, started) {
     seconds: Math.round((Date.now() - started) / 1000),
   })
   delete s.holdReason
+  // THE PANE'S REPORT. `runClaude` captures from the `result` object it
+  // streamed; a pane stage has no such object, so its reply comes from the
+  // transcript. Without this a pane reviewer was marked done having written
+  // nothing, and the gate passed on silence - Codex P1, 2026-09-02. An empty
+  // reply is deliberately NOT written: the gate must see no report, not an
+  // empty one it might mistake for a clean review.
+  if (spec?.capture) {
+    const reply = finalReply(s.session)
+    if (reply.trim()) writeFileSync(spec.capture, reply)
+  }
   saveRun(run)
   // Free the process, keep the evidence.
   await agentPrompt(label, '/exit').catch((e) => console.log('  .. ' + label + ' would not /exit (' + e.message + ')'))
@@ -828,7 +926,7 @@ const CONFIRM_MS = 2000
 const CONFIRM_RETRIES = 5
 
 /** Wait for the agent to settle, then hold it warm or finish it off. */
-async function settleStage(run, label, started) {
+async function settleStage(run, label, started, spec) {
   for (let attempt = 0; ; attempt++) {
     const r = await watch(label)
     if (r.state === 'lost') {
@@ -854,7 +952,7 @@ async function settleStage(run, label, started) {
       return run.stages[label]
     }
     if (decisionsPending(run)) return holdWarm(run, label, 'decisions', started)
-    return finalizePane(run, label, started)
+    return finalizePane(run, label, started, spec)
   }
 }
 
@@ -922,7 +1020,7 @@ async function runPaneStage(spec, promptText, run, label, resume = null) {
     run.stages[label].pendingLine = boot.pendingLine
     return holdWarm(run, label, 'blocked-launch', started)
   }
-  return settleStage(run, label, started)
+  return settleStage(run, label, started, spec)
 }
 
 // --- sliced build: one short session per task -------------------------------
@@ -946,6 +1044,56 @@ function notesFor(run, afterIds) {
   const sections = readFileSync(p, 'utf8').split(/^(?=## )/m)
     .filter((sec) => wanted.has((sec.match(/^## (\S+)/) || [])[1]))
   return sections.length ? sections.join('\n').trim() : null
+}
+
+/**
+ * The structural half of spec-kit`s `checklist` - "unit tests for English".
+ *
+ * Its full version is an LLM pass over clarity and completeness. This is the
+ * half a script can do for nothing, and it is the half that catches a spec
+ * nobody can build from: no criteria, a criterion lost between two numbers, a
+ * placeholder nobody resolved, an assumption that was never put to the owner.
+ * Reported, never fatal - every one of these is a judgement the operator makes.
+ */
+export function checkSpec(text) {
+  const out = []
+  // A criterion is recognised by its SHAPE, not by a numeric prefix. This repo
+  // writes at least three forms and all of them are accepted specs: "1.
+  // **Given**", a bold "**AC-1 - ...**" heading with a plain Given beneath, and
+  // an italic "*Given*". Keying on the first alone reported plan-parse and
+  // plan-parse-method - dozens of criteria each - as having none, and a warning
+  // that fires on good work teaches you to stop reading warnings.
+  const criteria = ((text || '').match(/^\s*(?:\d+\.\s+)?[*_]{0,2}Given\b/gm) || []).length
+  if (!criteria) out.push('no Given-When-Then criteria - the tester has nothing to execute')
+
+  // The contiguity check belongs ONLY to the numbered convention. AC-1 / L-S1
+  // carry their own sequences and must never be measured against 1..n.
+  const nums = [...(text || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => Number(m[1]))
+  if (nums.length) {
+    const missing = []
+    for (let i = 1; i < Math.max(...nums); i++) if (!nums.includes(i)) missing.push(i)
+    if (missing.length)
+      out.push('criteria skip number ' + missing.join(', ') + ' - one was written and lost, or the numbering is wrong')
+  }
+
+  const placeholders = (text || '').match(/\bTBD\b|\bTODO\b|\[NEEDS CLARIFICATION[^\]]*\]|\?\?\?/g)
+  if (placeholders)
+    out.push('unresolved placeholder in the spec: ' + [...new Set(placeholders)].join(', '))
+
+  // ASSUMED exists to be vetoed. A spec stage that writes one and is never
+  // read again has made the decision by default, which is the thing the tag
+  // was invented to prevent.
+  const assumed = ((text || '').match(/^.*\bASSUMED:/gm) || []).length
+  if (assumed)
+    out.push(assumed + ' ASSUMED tag(s) - each is a decision taken on the owner`s behalf until he vetoes it')
+
+  // The heading may be numbered — the stage prompt asks for an ordered spec and
+  // the model obliges with `## 3. Out of scope`. Matching only bare text made
+  // checkSpec warn that a section was missing while it sat two lines below.
+  if (!/^#+\s*(?:\d+[.)]?\s*)?out of scope/im.test(text || ''))
+    out.push('no `Out of scope` section - what this feature is NOT is how it stops growing')
+
+  return out
 }
 
 /**
@@ -996,13 +1144,22 @@ export function checkPlan(tasks, design, spec) {
       warn.push('the design names ' + f + ' but no task lists it in `files` - it will not be written')
 
   const claimedCriteria = new Set(tasks.flatMap((t) => (t.criteria || []).map(String)))
-  const specCriteria = [...(spec || '').matchAll(/^(\d+)\.\s+\*\*Given\*\*/gm)].map((m) => m[1])
+  // The SAME shapes checkSpec accepts. Widening one and not the other left
+  // AC-<n> / L-S<n> specs with no criteria found here at all, so the coverage
+  // block was skipped entirely and a plan tracing nothing read as clean - the
+  // quiet half of a disagreement inside one patch. Codex P2, 2026-09-04.
+  const specCriteria = [
+    ...[...(spec || '').matchAll(/^\s*(\d+)\.\s+[*_]{0,2}Given\b/gm)].map((m) => m[1]),
+    ...[...(spec || '').matchAll(/^\s*\*\*([A-Za-z][\w-]*?\d+)\b/gm)].map((m) => m[1]),
+  ]
   if (specCriteria.length && !claimedCriteria.size)
     warn.push('no task declares which criteria it satisfies, so none of the spec' + "'" + 's ' +
       specCriteria.length + ' can be traced to the work that covers it')
   else
+    // A task names a criterion either in full ("AC-1") or by its number ("1"),
+    // and those are the same criterion.
     for (const c of specCriteria)
-      if (!claimedCriteria.has(c))
+      if (!claimedCriteria.has(c) && !claimedCriteria.has(c.replace(/^\D+/, '')))
         warn.push('spec criterion ' + c + ' is claimed by no task')
 
   return { fatal, warn }
@@ -1043,6 +1200,14 @@ async function runBuild(run, spec, panes) {
       ? `FILES - these are the only files you may touch. They were located for you;
 do NOT search the repo for them and do NOT widen the scope:
 ${(t.files || []).map((f) => '  ' + f).join('\n')}
+
+A FILE ON THAT LIST CAN STILL BE TOO BIG TO READ WHOLE. Read the SPAN you need -
+Read with offset/limit, or grep the anchor first and read around it. DONE_WHEN
+names line numbers for exactly this reason. Measured: one task re-read a
+2,506-line route file 14 times across autocompacts, died on the rapid-refill
+breaker after 47 minutes, and had written one of its five files. A single
+whole-file read worth a third of the window cannot survive a compact, so the
+next turn re-reads it, and that is the whole failure.
 
 TESTS: ${(t.tests || []).join(', ') || 'see the design'}`
       : `SCOPE - read the ask and fix exactly that:
@@ -1209,22 +1374,145 @@ Report findings in your reply, most serious first.`],
 // completion is awaited - a fan-out that starts the second only once the first
 // has finished is a sequential loop wearing a costume - and one reviewer
 // holding on a question does not stall the rest.
+/**
+ * Every report this run is REQUIRED to produce, as {id, file} - the one list
+ * the cleanup and the gate both derive from.
+ *
+ * It is a function and not a constant because membership depends on the run:
+ * codex is a toggle (CODEX_REVIEWS), and the architecture review exists only
+ * on the full tier, since a fix-tier run has no design stage and so no
+ * architecture to review.
+ *
+ * The architecture reviewer is the reason this exists. It writes
+ * 07-review-architecture.md but is NOT in REVIEWERS - it is called directly by
+ * runReviews - so every loop written over REVIEWERS silently omitted it: it was
+ * never cleared between rounds and never gated at all. Deriving both from here
+ * is what stops the next loop making the same omission.
+ */
+function expectedReports(run) {
+  const out = REVIEWERS
+    .filter((rv) => !(rv.codex && !CODEX_REVIEWS))
+    .map((rv) => ({ id: rv.id, file: '07-review-' + rv.id + '.md' }))
+  if (CODEX_REVIEWS && (run.tier || 'full') === 'full')
+    out.push({ id: 'codex-architecture', file: '07-review-architecture.md' })
+  return out
+}
+
+/**
+ * Every report a review round COULD produce, enabled or not - which is a
+ * different list from `expectedReports`, and the difference matters.
+ *
+ * The gate asks which reports must exist; cleanup must clear every report that
+ * could exist. Clearing only the enabled set leaves a DISABLED reviewer's file
+ * from an earlier round sitting on disk, and `accept` reads every
+ * 07-review-*.md as coverage - so turning a reviewer off makes its last report
+ * immortal and it goes on vouching for code it never saw. Codex has already
+ * been toggled twice on this run.
+ */
+function allReportFiles() {
+  return [
+    ...REVIEWERS.map((rv) => '07-review-' + rv.id + '.md'),
+    '07-review-architecture.md',
+  ]
+}
+
 async function runReviews(run, panes) {
+  // CLEAR LAST ROUND'S REPORTS FIRST. The gate accepts a non-empty
+  // 07-review-<id>.md as proof a reviewer ran - but on a RE-review those files
+  // are already on disk from the previous round, describing a tree that has
+  // since moved. A reviewer that then fails to produce anything is covered by
+  // its own stale report and the gate passes on evidence about different code.
+  // Observed on this very run: two reports sat describing the branch as it was
+  // 15 commits earlier, complete with findings already fixed.
+  //
+  // Deleting them makes "the file exists" mean "produced THIS round" by
+  // construction, rather than by comparing timestamps and hoping. The cost is
+  // that a failed re-review leaves no report at all - which is the honest
+  // outcome, and louder than a stale one.
+  for (const file of allReportFiles())
+    rmSync(join(RUNS, run.slug, file), { force: true })
   const jobs = REVIEWERS.filter((rv) => !rv.codex).map((rv) => {
-    const spec = { agent: rv.agent, compact: rv.compact, readonly: true }
+    const capture = join(RUNS, run.slug, '07-review-' + rv.id + '.md')
+    const spec = { agent: rv.agent, compact: rv.compact, readonly: true, capture }
     const text = rv.slash
       ? rv.slash + '\n\nReview the branch diff against ' + run.base +
-        '. Write your findings to ' + run.dir + '/07-review-' + rv.id +
-        '.md and reply with only that path.'
+        '. Report your findings in your reply, most serious first. Your final' +
+        ' message IS the report - it is captured to ' + run.dir + '/07-review-' +
+        rv.id + '.md, so do not try to write a file and do not reply with a path.'
       : rv.prompt(run)
     const label = 'review-' + rv.id
     if (!panes || rv.headless) return runClaude(spec, text, run, label)
     return runPaneStage(spec, text, run, label).then((s) => s || runClaude(spec, text, run, label))
   })
-  await Promise.all([...jobs, runCodex(run), runCodexArchitecture(run)])
-  // Same bookkeeping runBuild does for 'build': mark the parent stage done so
-  // `next` advances past it instead of re-running all four reviewers on a
-  // second call - review has no single session of its own to report.
+  if (!CODEX_REVIEWS)
+    process.stdout.write('\n  -- codex reviews OFF by owner instruction' +
+      ' (CODEX_REVIEWS in conduct.mjs). This work is UNREVIEWED by Codex;\n' +
+      '     do not present it as reviewed by four reviewers.\n')
+  await Promise.all([...jobs,
+    ...(CODEX_REVIEWS ? [runCodex(run), runCodexArchitecture(run)] : [])])
+  // THE GATE ASSERTS ITS OWN EVIDENCE. A reviewer is not "done" because its
+  // process exited - it is done when its report exists and has something in it.
+  // Two ways this pipeline has already failed that test: plan mode forbade the
+  // write, so conformance exited 0 having produced nothing; and `spec.capture`
+  // is consumed by runClaude only, so a pane-mode reviewer (herdr available)
+  // still writes nothing while finalizePane marks it done. Both end the same
+  // way - `accept` reads an absent 07-review-*.md as "no findings" and the
+  // mandatory gate passes on silence.
+  //
+  // Checked here rather than in each launch path because the requirement
+  // belongs to the GATE, not to how a particular reviewer happened to boot.
+  // THE GATE, STATED ONCE. A reviewer is in exactly one of three states, and
+  // only the first satisfies the gate:
+  //
+  //   REPORTED  - exited 0 AND left a non-empty 07-review-<id>.md
+  //   FAILED    - exited non-zero, or exited 0 with no report (which is not a
+  //               review; plan mode forbade the write, or nothing captured it)
+  //   WAITING   - held warm for the owner, so it has no report YET
+  //
+  // This was patched four times, each patch fixing one route to a false pass
+  // and opening another, because it kept describing the states instead of
+  // deciding on them. So: classify every enabled reviewer, then write the
+  // rollup only if every one of them REPORTED.
+  const held = [], failed = []
+  for (const r of expectedReports(run)) {
+    const label = 'review-' + r.id
+    const st = run.stages[label]
+    if (st?.status === 'held') { held.push(r.id); continue }
+    const path = join(RUNS, run.slug, r.file)
+    const reported = existsSync(path) && !!readFileSync(path, 'utf8').trim()
+    if (reported && (st?.code ?? 0) === 0) continue
+    failed.push(r.id)
+    if (!reported) {
+      run.stages[label] = { ...(st || {}), code: 1, missingReport: true }
+      process.stdout.write('\n  !! ' + label + ' produced NO REPORT (' + path + ').\n' +
+        '     Its process may have exited 0; that is not a review.\n')
+    } else {
+      process.stdout.write('\n  !! ' + label + ' exited ' + st.code + '.\n')
+    }
+  }
+
+  // NOT DONE IS AN ABSENT KEY, in either failing case. `review` is a rollup
+  // with no session, so it cannot carry a `held` or `error` status that
+  // `finished`, `resume` or `plan` know how to act on - inventing one
+  // deadlocked the flow. And it must be DELETED rather than merely left
+  // unwritten, because a re-review runs against a run whose previous round
+  // already wrote `code: 0` here, and `next` reads only this key.
+  if (held.length || failed.length) {
+    delete run.stages['review']
+    saveRun(run)
+    if (failed.length)
+      process.stdout.write('\n  == REVIEW INCOMPLETE - ' + failed.join(', ') + ' did not\n' +
+        '     produce a clean report. This work is UNREVIEWED by those reviewers;\n' +
+        '     do not present it as reviewed. Re-run:  conduct run review\n')
+    if (held.length)
+      process.stdout.write('\n  == REVIEW HELD - ' + held.join(', ') + ' stopped for you.\n' +
+        '     Answer it and let it finish, then:  conduct run review\n')
+    return
+  }
+
+  // Same bookkeeping runBuild does for 'build': mark the parent done so `next`
+  // advances instead of re-running every reviewer on a second call - review
+  // has no single session of its own to report.
   run.stages['review'] = { code: 0, contextTokens: 0, outputTokens: 0, turns: 0, rollup: true }
   saveRun(run)
   process.stdout.write('\n  reviews done. Findings go to a developer, never patched inline:\n' +
@@ -1251,13 +1539,26 @@ async function runReviews(run, panes) {
  * `build-<task>` or a `review-<reviewer>`; `fix-<n>` is the developer shape
  * cmds.fix uses. Needed on a relaunch, which has to rebuild the same argv.
  */
-export function stageSpec(label) {
+export function stageSpec(label, run) {
   const stage = STAGES.find((s) => s.id === label)
   if (stage) return stage
   if (label.startsWith('build-')) return STAGES.find((s) => s.id === 'build')
   const rv = REVIEWERS.find((r) => 'review-' + r.id === label)
-  if (rv) return { agent: rv.agent, compact: rv.compact, readonly: true }
-  return { agent: 'developer', compact: 120000 }
+
+  // `capture` IS part of the launch spec, so rebuilding one without it does not
+  // reproduce the launch - it produces a reviewer that runs, settles, and
+  // writes no report. That is the gate passing on silence again, reached this
+  // time by `resume` and `answer` rather than by a first run. Codex, 2026-09-02.
+  if (rv) return {
+    agent: rv.agent, compact: rv.compact, readonly: true,
+    ...(run && { capture: join(RUNS, run.slug, '07-review-' + rv.id + '.md') }),
+  }
+
+  // fix-<n> is the nth fix session, so n IS the number of rounds spent before
+  // it - and a resumed fix has to come back at the model it was escalated to,
+  // not the pinned one it already failed at.
+  if (label.startsWith('fix-')) return fixSpec(Number(label.slice('fix-'.length)) || 0)
+  return { agent: 'developer', compact: 600000 }
 }
 
 // --- gates -----------------------------------------------------------------
@@ -1306,12 +1607,45 @@ function decisionsOpen(run) {
  * the run had no verify left to prove it, so acceptance rejected on missing
  * evidence rather than on bad work.
  */
+// 3, not 2: the `review` stage runs AFTER `verify`, so at 2 a finding review
+// raises can be fixed and then never re-verified. ai-parse-monitoring hit
+// exactly that — the review stage returned two P1s, they were fixed, and the
+// run had no verify left to prove it, so acceptance rejected on missing
+// evidence rather than on bad work. Raising FIX_CAP alone does not reach it:
+// six fixes against two verifies is the same dead end with more steps.
 const CYCLE_CAP = 3
-export const FIX_CAP = 3
+// 6, not 3, and raised deliberately rather than worked around. The cap is a
+// COST guard - "more of this cycle costs more than the findings it returns" -
+// and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
+// run the fourth finding was a P1 that left `npm test` red for every developer
+// in the repo, and both of the cap's own exits were worse than paying for
+// another round: shipping it is shipping a broken suite, and fixing it by hand
+// bypasses the developer AND Probity's red-test gate, against CLAUDE.md's
+// "reviewers report; only the developer fixes".
+//
+// What the cap is really protecting against is a fix cycle that stops
+// converging. Rounds 1-3 here each closed a distinct finding and none
+// reopened, so the signal it watches for was absent. If a run ever spends six,
+// that IS the stall the comment above describes - stop and look.
+export const FIX_CAP = 6
 
 const CAPS = {
   verify: { cap: CYCLE_CAP, field: 'verifyRounds', what: 'verify rounds' },
   fix: { cap: FIX_CAP, field: 'fixRounds', what: 'fix sessions' },
+}
+
+/**
+ * The session a fix round runs as, given how many have already been spent.
+ *
+ * superpowers escalates the model before it escalates to the human - rounds
+ * 1-3 resume the implementer, 4-5 get a fresh one a tier up. The developer here
+ * is pinned to sonnet in its agent file, so before this a finding it could not
+ * fix was retried at the same capability until the cap handed it to the owner.
+ * One cheap attempt, then a stronger one, and only then his time.
+ */
+export function fixSpec(roundsSpent) {
+  const spec = { agent: 'developer', compact: 600000 }
+  return roundsSpent > 0 ? { ...spec, model: 'opus' } : spec
 }
 
 function cycleCapped(run, kind = 'verify') {
@@ -1346,6 +1680,11 @@ function afterStage(run, spec) {
     if (decisionsOpen(r)) { r.gateStage = r.gateStage || spec.id; saveRun(r); return false }
   }
   const missing = (spec.produces || []).filter((f) => !existsSync(join(RUNS, r.slug, f)))
+  // A stage that declares a check has it run over its own first artifact, so
+  // the reading happens once, here, rather than in each stage`s own branch.
+  if (spec.check && !missing.length && spec.produces?.length)
+    for (const w of spec.check(readFileSync(join(RUNS, r.slug, spec.produces[0]), 'utf8')))
+      console.log('  !! ' + w)
   for (const f of missing)
     console.log('  !! stage "' + spec.id + '" did not write ' + r.dir + '/' + f +
       ' - it was supposed to. Re-run it before continuing.')
@@ -1445,11 +1784,9 @@ const cmds = {
       (tier === 'full' ? `
 
   Next - the grill. It is the one stage that talks to you, so it does not run
-  here. In its own herdr pane, in this directory (--autocompact caps the
-  window the same way every conducted stage does - a long interactive grill
-  with none would grow toward the default and resend it on every turn):
+  here. In its own herdr pane, in this directory:
 
-      claude --autocompact 100000
+      claude
       > /grilling      (then paste the ask)
 
   Put its conclusions, and the actors-and-needs section, into
@@ -1586,14 +1923,14 @@ const cmds = {
     const run = loadRun(activeSlug())
     const st = run.stages[label]
     if (!st) die('no stage "' + label + '" in this run')
-    const spec = stageSpec(label)
+    const spec = stageSpec(label, run)
     const started = Date.parse(st.startedAt) || Date.now()
     const panes = await paneMode(flags)
 
     if (panes && st.mode === 'pane' && await agentInfo(label)) {
       console.log('\n  > ' + label + ' is still in progress - reattaching to session ' +
         st.session + '. Nothing re-booted.')
-      return finished(run, label, spec, await settleStage(run, label, started))
+      return finished(run, label, spec, await settleStage(run, label, started, spec))
     }
     if (!panes) die(label + ' was running in a pane and herdr is not here to give it back.\n' +
       '  Start herdr and try again, or re-run the stage with:  conduct run ' + label)
@@ -1631,7 +1968,7 @@ const cmds = {
     // A gate is held by an AGENT, and its label may be `build-<task>` or
     // `review-<id>` as readily as a stage id. STAGES.find resolves only the
     // last kind; stageSpec resolves all three, which is what it exists for.
-    const spec = stageSpec(id)
+    const spec = stageSpec(id, run)
     const st = run.stages[id] || {}
     const sid = st.session
     if (!sid) die('no session recorded for ' + id + ' - re-run it with: conduct run ' + id)
@@ -1653,7 +1990,7 @@ const cmds = {
       delete st.holdReason
       run.gateStage = null
       saveRun(run)
-      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now()))
+      finished(run, id, spec, await settleStage(run, id, Date.parse(st.startedAt) || Date.now(), spec))
       return
     }
     console.log('  resuming ' + id + ' warm with your answers (no re-boot)')
@@ -1678,6 +2015,17 @@ append them to DECISIONS.md and stop again. Otherwise delete DECISIONS.md.`
       seconds: (st.seconds || 0) + Math.round((Date.now() - started) / 1000),
     })
     delete st.holdReason
+    // AND THE REPORT, on this path too. The headless answer spawns with
+    // stdio inherit, so there is no result object for `runClaude` to capture
+    // from and no `finalizePane` to read the transcript - a reviewer answered
+    // this way ran, settled and wrote nothing. That is the FOURTH way this
+    // gate has been reached without evidence (first run, pane completion,
+    // resume, and here); enumerating the paths is what finally closed it,
+    // rather than fixing whichever one was reported last.
+    if (spec?.capture) {
+      const reply = finalReply(sid)
+      if (reply.trim()) writeFileSync(spec.capture, reply)
+    }
     run.stages[id] = st
     run.gateStage = null
     saveRun(run)
@@ -1718,7 +2066,9 @@ ${run.dir}/06-verify.md - read only the one this finding came from.
 If it is a code defect: write the failing test that captures it FIRST, watch it
 fail, then fix. Commit. Append what you did to ${run.dir}/04-build.md.
 If you believe the finding is wrong, say so and change nothing.`
-    await runClaude({ agent: 'developer', compact: 120000 }, prompt, run,
+    // fixRounds was incremented above, so round 1 reads 1 here: the count of
+    // rounds already SPENT before this one is one less.
+    await runClaude(fixSpec((run.fixRounds || 1) - 1), prompt, run,
       'fix-' + Object.keys(run.stages).filter((k) => k.startsWith('fix-')).length)
     console.log('\n  re-verify before accepting:  conduct run verify\n')
   },
@@ -1805,7 +2155,7 @@ If you believe the finding is wrong, say so and change nothing.`
 
     const tasks = (() => {
       const tp = join(RUNS, run.slug, '02-tasks.json')
-      if (existsSync(tp)) return JSON.parse(readFileSync(tp, 'utf8'))
+      if (existsSync(tp)) return readTasks(tp)
       // Mirrors runBuild's own synthetic task exactly - the fix tier has no
       // architect to slice one, so there is nothing else to render here.
       if (run.tier === 'fix') return [{
@@ -1896,7 +2246,7 @@ If you believe the finding is wrong, say so and change nothing.`
 }
 cmds.status = cmds.report
 
-export { STAGES, REVIEWERS, cmds }
+export { STAGES, REVIEWERS, cmds, CONTEXT_CAP }
 
 // Importing this file must not run it: the test suite reads the tables and calls
 // the commands directly, and main() ends in process.exit.

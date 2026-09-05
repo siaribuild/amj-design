@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -50,6 +51,15 @@ const seedEmail = (id) => {
 export const seedUserCount = seedUserRows.length;
 export const demoEmail = seedEmail("u_demo");
 export const staffEmail = seedEmail("u_staff");
+// wrangler 4.111 resolves the account and validates the containers image's
+// OWNER even for `--local` dev with containers disabled. The token is fake
+// (nothing remote is called with it), but the account id must match the image
+// ref in wrangler.jsonc — it is the public account hash from that ref, not a
+// credential.
+export const wranglerLocalAuthEnv = {
+  CLOUDFLARE_API_TOKEN: "wrangler-local-dev-not-a-real-credential",
+  CLOUDFLARE_ACCOUNT_ID: "c3834ff3509fa7cb4c9769a6dee6c2d8",
+};
 const needsShell = (command) => process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
 
 export async function makeRunDir(label) {
@@ -187,6 +197,25 @@ export async function requestJson(session, path, options = {}, expectedStatus = 
     throw new Error(`${options.method ?? "GET"} ${path}: expected ${expectedStatus}, received ${response.status}\n${JSON.stringify(body)}`);
   }
   return { response, body };
+}
+
+/**
+ * A refused ops request must carry NO part of the summary — not just the first
+ * key someone thought to check.
+ *
+ * It was `assert.equal(body.submissions, undefined)`, which is one of six
+ * counts: a denial leaking `inReview` or `awaitingPayment` — the pipeline of a
+ * business a manufacturer partner competes with — stayed green. The six are
+ * the keys `/api/ops/summary` answers with that this console reads
+ * (src/ops2/attention/attention.ts).
+ */
+export const SUMMARY_COUNT_KEYS = [
+  "submissions", "inReview", "readyToIssue", "awaitingPayment", "newEnquiries", "tradeApplications",
+];
+
+export function assertNoCounts(body, label = "denial body carries no counts") {
+  const leaked = SUMMARY_COUNT_KEYS.filter((key) => body?.[key] !== undefined);
+  assert.deepEqual(leaked, [], `${label} — leaked: ${leaked.join(", ")}`);
 }
 
 // Every login gets its own source address. Code issuance is now capped per source

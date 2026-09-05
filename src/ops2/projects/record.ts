@@ -162,6 +162,12 @@ export interface ProjectRecord {
   orderNo: string | null;
   /** The order's own total once one exists — freight included. */
   orderTotal: number | null;
+  /** Whether the PRICE DOOR can open on this project right now —
+   *  `ISSUABLE_FROM.has(status_internal)`, the server's own gate
+   *  (`worker/routes/ops.ts`). FAILS CLOSED: a project that cannot prove it is
+   *  still editable renders no door rather than a door onto a 409, the same
+   *  reasoning `RecordDelivery.editable` already gives one level down. */
+  linesEditable: boolean;
 }
 
 // ── Reading the endpoint ─────────────────────────────────────────────────────
@@ -366,6 +372,7 @@ export function parseProjectRecord(body: unknown): ProjectRecord | null {
     actions: Array.isArray(b.actions) ? b.actions.flatMap(parseAction) : [],
     orderNo: order ? str(order.orderNo) : null,
     orderTotal: order ? num(order.total) : null,
+    linesEditable: p.linesEditable === true,
   };
 }
 

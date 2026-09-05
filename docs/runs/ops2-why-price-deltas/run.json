@@ -1,0 +1,151 @@
+{
+  "slug": "ops2-why-price-deltas",
+  "tier": "full",
+  "base": "9cb41bfd",
+  "branch": "feat/ops2-why-price-deltas",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 118204,
+      "outputTokens": 4267,
+      "turns": 3,
+      "source": "transcript",
+      "session": "dabc20e6-4c0a-41c4-a6d1-85996332953c",
+      "seconds": 67
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1199165,
+      "outputTokens": 25701,
+      "turns": 19,
+      "source": "transcript",
+      "session": "ef4dd9bb-80d7-4a8c-96c7-d4e65b5de848",
+      "seconds": 495
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 5934618,
+      "outputTokens": 28896,
+      "turns": 50,
+      "source": "transcript",
+      "session": "9175d720-93a5-46b2-9f3e-e678d74b0c33",
+      "seconds": 591
+    },
+    "build-t1": {
+      "code": 0,
+      "contextTokens": 4740386,
+      "outputTokens": 35521,
+      "turns": 62,
+      "source": "transcript",
+      "session": "1a3d083f-d5c0-4cfe-a691-3bfc30349e47",
+      "seconds": 2076
+    },
+    "build-t2": {
+      "code": 0,
+      "contextTokens": 1307110,
+      "outputTokens": 9761,
+      "turns": 18,
+      "source": "transcript",
+      "session": "fae9f626-0886-4a65-a63f-8635aa26e917",
+      "seconds": 319
+    },
+    "build-t3": {
+      "code": 0,
+      "contextTokens": 2418530,
+      "outputTokens": 19697,
+      "turns": 32,
+      "source": "transcript",
+      "session": "1aed69c4-788d-4376-bd98-41334aa43d91",
+      "seconds": 944
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 6851101,
+      "outputTokens": 34690,
+      "turns": 51,
+      "source": "transcript",
+      "session": "aa86adf9-016c-4c12-bbc1-80157439f179",
+      "seconds": 1356
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 8546391,
+      "outputTokens": 69240,
+      "turns": 113,
+      "source": "transcript",
+      "session": "98020206-cf91-4388-8acc-90b31837fab0",
+      "seconds": 2976
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 480322,
+      "outputTokens": 8805,
+      "turns": 10,
+      "source": "transcript",
+      "session": "3fc7c60f-67bf-42d0-a9a3-4a40e678d889",
+      "seconds": 159
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 1244558,
+      "outputTokens": 10266,
+      "turns": 13,
+      "source": "transcript",
+      "session": "158a0a16-5345-48ff-8d0b-0afb0a752ba1",
+      "seconds": 184
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 1064603,
+      "outputTokens": 7836,
+      "turns": 10,
+      "source": "transcript",
+      "session": "6776df13-ade3-4224-abae-68ad2b8e2eff",
+      "seconds": 141
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "accept": {
+      "code": 0,
+      "contextTokens": 558036,
+      "outputTokens": 8219,
+      "turns": 9,
+      "source": "transcript",
+      "session": "694d8385-15b0-48cc-8567-f6ec07ce5e13",
+      "seconds": 125
+    }
+  },
+  "tasksDone": [
+    "t1",
+    "t2",
+    "t3"
+  ],
+  "startedAt": "2026-09-03T16:16:51.275Z",
+  "verifyRounds": 1
+}
