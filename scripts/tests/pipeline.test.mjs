@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, finalReply } from '../pipeline/measure.mjs'
+import { CYCLE_CAP } from '../pipeline/conduct.mjs'
 import {
   STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
@@ -2187,7 +2188,10 @@ test('a cycle-cap refusal stops next cleanly - a clear message, not a crash or a
     { spec: { code: 0 }, design: { code: 0 }, build: { code: 0 }, polish: { code: 0 } })
   const dir = join(root, 'docs', 'runs', 'demo')
   const run = JSON.parse(readFileSync(rj, 'utf8'))
-  run.verifyRounds = 2
+  // Reads the real cap rather than restating it: this test exists to prove the
+  // refusal is clean, not to pin a particular number, and a copy of the number
+  // here silently rots the day the cap moves.
+  run.verifyRounds = CYCLE_CAP
   writeFileSync(rj, JSON.stringify(run, null, 2))
   writeFileSync(join(dir, '04-build.md'), '# build' + NL)
   const env = { ...process.env, CONDUCT_CLAUDE_BIN: join(root, 'no-such-claude') }
@@ -2196,7 +2200,7 @@ test('a cycle-cap refusal stops next cleanly - a clear message, not a crash or a
     { cwd: root, encoding: 'utf8', env })
 
   assert.match(out, /CYCLE CAP/, 'the refusal was not reported - it must never retry silently')
-  assert.equal(JSON.parse(readFileSync(rj, 'utf8')).verifyRounds, 2,
+  assert.equal(JSON.parse(readFileSync(rj, 'utf8')).verifyRounds, CYCLE_CAP,
     'a refused cycle must not itself burn a round')
   assert.equal(existsSync(join(dir, 'logs')), false, 'a capped stage must not spawn a tester')
 })
@@ -2301,7 +2305,7 @@ test('a third verify/fix cycle is refused - what is still open is printed instea
   const { root, runJson } = seedRun('cycle-cap', { verify: { code: 0 } })
   const dir = join(root, 'docs', 'runs', 'demo')
   const run = JSON.parse(readFileSync(runJson, 'utf8'))
-  run.verifyRounds = 2
+  run.verifyRounds = CYCLE_CAP
   writeFileSync(runJson, JSON.stringify(run, null, 2))
   writeFileSync(join(dir, '04-build.md'), '# build' + NL)
   writeFileSync(join(dir, 'DEBT.md'), '- [cosmetic] the report columns are misaligned' + NL)
@@ -2315,7 +2319,7 @@ test('a third verify/fix cycle is refused - what is still open is printed instea
   assert.match(out, /columns are misaligned/, 'the cap must print what is still open, not just stop')
   assert.match(out, /06-verify\.md/, 'the cap never says where the last verdict is')
   assert.equal(existsSync(join(dir, 'logs')), false, 'the capped verify still spawned a tester')
-  assert.equal(JSON.parse(readFileSync(runJson, 'utf8')).verifyRounds, 2,
+  assert.equal(JSON.parse(readFileSync(runJson, 'utf8')).verifyRounds, CYCLE_CAP,
     'a refused cycle must not itself burn a round')
 
   // A fix that can never be re-verified is the other half of the same loop.

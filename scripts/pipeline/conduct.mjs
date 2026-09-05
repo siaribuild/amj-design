@@ -1598,8 +1598,22 @@ function decisionsOpen(run) {
  * human decides. That is a CYCLE ceiling, not a token or dollar one - the stage
  * table's "no runaway guard" ruling is about the cost of a running stage, and
  * still stands.
+ *
+ * CYCLE_CAP is 3, not 2, because the stage order needs three: one verify after
+ * the build, one after the fixes that verify itself demands, and one after the
+ * fixes the REVIEW stage demands - and review runs after verify, so with a cap
+ * of 2 its findings could be fixed but never re-verified. ai-parse-monitoring
+ * hit exactly that: the review stage returned two P1s, they were fixed, and
+ * the run had no verify left to prove it, so acceptance rejected on missing
+ * evidence rather than on bad work.
  */
-const CYCLE_CAP = 2
+// 3, not 2: the `review` stage runs AFTER `verify`, so at 2 a finding review
+// raises can be fixed and then never re-verified. ai-parse-monitoring hit
+// exactly that — the review stage returned two P1s, they were fixed, and the
+// run had no verify left to prove it, so acceptance rejected on missing
+// evidence rather than on bad work. Raising FIX_CAP alone does not reach it:
+// six fixes against two verifies is the same dead end with more steps.
+export const CYCLE_CAP = 3
 // 6, not 3, and raised deliberately rather than worked around. The cap is a
 // COST guard - "more of this cycle costs more than the findings it returns" -
 // and its escape hatch is "ship it, or fix it by hand". On the ops2-attention

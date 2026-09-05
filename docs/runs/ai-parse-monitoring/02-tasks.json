@@ -1,160 +1,82 @@
-{
-  "feature": "ai-parse-monitoring",
-  "design": "docs/runs/ai-parse-monitoring/02-design.md",
-  "note": "Parse counting unit is RESOLVED (owner, 2026-09-03): claim-level — one parse event = one ai_job_claim lifecycle; supersedes grill decision 4's per-document wording; error definition stays claim-based per decision 9. Design §2.2 is final.",
-  "tasks": [
-    {
-      "id": "shared-model",
-      "title": "Shared monitoring types + pure money rules (design §2.1)",
-      "files": [
-        "src/data/monitoring.ts",
-        "scripts/tests/ai-monitoring.test.mjs",
-        "package.json"
-      ],
-      "after": [],
-      "criteria": [
-        "C2: cap outstanding = cap minus billed spend, both figures from data",
-        "C6: isStale(takenAt, now, 30) drives the 'as at HH:MM' label",
-        "C16: balance below floor is red",
-        "C17: cap-used % above ceiling is red; both conditions together are still one red",
-        "C19: unavailable money is never red"
-      ],
-      "done_when": [
-        "src/data/monitoring.ts exports MoneySnapshot, ParseDayBucket, MonitoringSnapshot, capOutstandingUsd, isRed, isStale exactly as design §2.1 specifies (pure, no I/O, no imports from worker/).",
-        "scripts/tests/ai-monitoring.test.mjs exists using the esbuild-bundle pattern from scripts/tests/ai-jobs.test.mjs (stdin entry re-exporting from src/data/monitoring.ts), covering the isRed truth table (incl. capUsd null and available:false), capOutstandingUsd, and isStale boundaries.",
-        "package.json: scripts/tests/ai-monitoring.test.mjs appended to the test:pure command (line 17) and a new script \"test:monitoring\": \"node --test scripts/tests/ai-monitoring.test.mjs scripts/tests/ops2-attention.test.mjs\" added (the second file arrives in task attention-page; the script may list it now).",
-        "npm run typecheck:gate green; node --test scripts/tests/ai-monitoring.test.mjs green."
-      ]
-    },
-    {
-      "id": "snapshot-writer",
-      "title": "worker/lib/monitoring.ts writer + Env/vars + cron append (design §2.2–2.4)",
-      "files": [
-        "worker/lib/monitoring.ts",
-        "worker/types.ts",
-        "wrangler.jsonc",
-        "worker/index.ts",
-        "scripts/tests/ai-monitoring.test.mjs"
-      ],
-      "after": ["shared-model"],
-      "criteria": [
-        "C3: gateway spend_limits.rules cap with fallback to account spending-limit endpoint; capSource recorded",
-        "C4: no token/account id configured -> money unavailable (reason not-configured), no CF calls",
-        "C5: CF non-2xx/timeout -> money unavailable, D1 counts still computed, snapshot still written, failure logged",
-        "C8: a retried document counts once (claim-row reset — no code, proven by fixture)",
-        "C9: processing with updated_at older than 30 minutes counts as one error",
-        "C10: processing 5 minutes old counts as neither",
-        "C11: ai_runs rows without a claim never enter counts or buckets",
-        "C13: bucket sums equal the totals (same classified rows feed both)",
-        "C14: zero days appear as zero buckets (7 Melbourne-day keys, zero-filled)",
-        "C21: snapshot written by the existing */10 scheduled handler; no new cron trigger",
-        "C26: JSON.stringify(snapshot) contains no token and no account id",
-        "C27: log lines contain no token and no Authorization header value"
-      ],
-      "done_when": [
-        "worker/lib/monitoring.ts exports SNAPSHOT_KEY (\"monitoring:snapshot:v1\"), writeMonitoringSnapshot(env, fetchImpl = fetch), readMonitoringSnapshot(env) per design §2.4: money fetch with AbortSignal.timeout(10000) per call, gateway->account cap fallback, tolerant numeric extractors that degrade to {available:false}, counts via the single SQL predicate in §2.2, TS bucketing via Intl.DateTimeFormat('en-CA', {timeZone:'Australia/Melbourne'}), red = isRed(...) evaluated here, KV.put without TTL.",
-        "worker/types.ts Env gains CF_ACCOUNT_ID?, CF_MONITORING_API_TOKEN?, AI_BALANCE_FLOOR_USD?, AI_CAP_USED_CEILING_PCT? (optional strings, doc comments) appended after ABR_BASE_URL (~line 104).",
-        "wrangler.jsonc vars gain CF_ACCOUNT_ID, AI_BALANCE_FLOOR_USD: \"5\", AI_CAP_USED_CEILING_PCT: \"80\" (token stays a secret, never a var).",
-        "worker/index.ts scheduled handler (lines ~340–354) gains one appended line in the existing per-job .catch() style calling writeMonitoringSnapshot(env); crons array unchanged.",
-        "scripts/tests/ai-monitoring.test.mjs: append new test() blocks only (do not modify shared-model's blocks) driving writeMonitoringSnapshot with fake env (DB/KV/fetchImpl/console capture) for every criterion above, including the log-redaction and payload-secret-absence assertions.",
-        "npm run typecheck:gate green; node --test scripts/tests/ai-monitoring.test.mjs green."
-      ]
-    },
-    {
-      "id": "route-and-heavy",
-      "title": "Staff-guarded snapshot endpoint + heavy API/abuse suite (design §2.5, §5)",
-      "files": [
-        "worker/routes/ops.ts",
-        "scripts/tests/monitoring-api.test.mjs",
-        "package.json"
-      ],
-      "after": ["snapshot-writer"],
-      "criteria": [
-        "C4: endpoint 200 with money unavailable when no token configured",
-        "C7: success/error totals correct from seeded claims",
-        "C9: seeded 31-minute processing claim counts as error",
-        "C10: seeded 5-minute processing claim counts as neither",
-        "C11: seeded ai_runs row without a claim is invisible to counts",
-        "C21: cron fired via --test-scheduled writes the snapshot; no new trigger",
-        "C22: two page loads read the same KV snapshot; no CF call on read",
-        "C23: signed-out request -> 401/403 with no balance/spend/cap/count values",
-        "C24: Customer session -> 403, no monitoring data",
-        "C25: Manufacturer session -> 403, no monitoring data",
-        "C26: staff payload contains no token, no account id, no gateway credentials"
-      ],
-      "done_when": [
-        "worker/routes/ops.ts gains ops.get(\"/monitoring/snapshot\", ...) near /summary (~line 311): resolveStaff guard returning 403 {error:\"forbidden\"} on null, then c.json({ok:true, snapshot: await readMonitoringSnapshot(c.env)}); resolveOpsUser is NOT used; handler is ≤10 lines with no other edits to ops.ts.",
-        "scripts/tests/monitoring-api.test.mjs exists, harness copied from scripts/tests/api.test.mjs (helpers.mjs: freePort/start/stop/waitForUrl/requestJson/Session/login/staffEmail, local D1 migrate + wrangler d1 execute seeding, wrangler dev --local with api.test.mjs's --var set) plus --test-scheduled; seeds 2 completed, 1 failed, 1 processing@31min, 1 processing@5min, 1 superseded ai_job_claim rows and 1 ai_runs row with no claim; fires GET /__scheduled?cron=*%2F10+*+*+*+* then executes every criterion above, asserting the forbidden responses carry zero numeric monitoring fields and the staff payload matches the MonitoringSnapshot key whitelist.",
-        "package.json: scripts/tests/monitoring-api.test.mjs appended to the test:heavy command (line 18).",
-        "npm run typecheck:gate green; node --test scripts/tests/monitoring-api.test.mjs green."
-      ]
-    },
-    {
-      "id": "attention-page",
-      "title": "AttentionPage cards + chart + route swap (design §2.6)",
-      "files": [
-        "src/ops2/pages/AttentionPage.tsx",
-        "src/ops2/Ops2App.tsx",
-        "scripts/tests/ops2-attention.test.mjs",
-        "package.json"
-      ],
-      "after": ["shared-model", "route-and-heavy"],
-      "criteria": [
-        "C1: balance card renders snapshot value; page load makes no Cloudflare call",
-        "C2: cap outstanding card shows headroom and the cap, neither hardcoded",
-        "C4: money cards render an unavailable state (not zero, not red) while count cards and chart still render",
-        "C6: every card shows 'as at HH:MM' when the snapshot is older than 30 minutes",
-        "C7: success and error cards show the snapshot counts",
-        "C12: zero parses -> count cards show 0 and the chart renders an empty state",
-        "C13: chart shows 7 day-buckets whose sums equal the count cards",
-        "C14: zero days render as zero buckets, not missing days",
-        "C28: /attention stays behind the existing ops2 staff guard; the page adds no auth code"
-      ],
-      "done_when": [
-        "src/ops2/pages/AttentionPage.tsx renders the five cards + chart from GET /api/ops/monitoring/snapshot per design §2.6: uses capOutstandingUsd and isStale from src/data/monitoring.ts, plain div/CSS grouped bars (no chart library), explicit states for money-unavailable, snapshot-null (\"no snapshot yet\"), and zero-parse chart empty state.",
-        "src/ops2/Ops2App.tsx: ONLY the route-swap lines (~200–202) change in this task — add the d.id === \"attention\" ? <AttentionPage /> branch beside the existing projects branch; the tab bar (lines 272–289) is task notification-seed's.",
-        "scripts/tests/ops2-attention.test.mjs exists using the pattern from scripts/tests/ops2-frame.test.mjs (esbuild-bundle pure logic, source-assert JSX): stubbed-snapshot card rendering incl. headroom arithmetic, unavailable state, stale label, zero/empty states, 7 buckets incl. zero days, and the structural C28 check (AttentionPage contains no auth logic and fetches only /api/ops/monitoring/snapshot).",
-        "package.json: scripts/tests/ops2-attention.test.mjs appended to the test:pure command (line 17) and to the test:ops2 script.",
-        "npm run typecheck:gate green; node --test scripts/tests/ops2-attention.test.mjs green."
-      ]
-    },
-    {
-      "id": "notification-seed",
-      "title": "NotificationSource seed + bell and tab badges (design §2.7)",
-      "files": [
-        "src/ops2/notifications/sources.ts",
-        "src/ops2/chrome/OpsPage.tsx",
-        "src/ops2/Ops2App.tsx",
-        "scripts/tests/ops2-attention.test.mjs"
-      ],
-      "after": ["attention-page"],
-      "criteria": [
-        "C15: count 0 -> no bubble drawn on either surface",
-        "C16: balance below floor -> bubble shows 1 (via snapshot.red)",
-        "C17: cap over ceiling -> 1; both conditions -> still 1 (red collapsed at write time)",
-        "C18: tapping the non-zero bubble navigates to Attention",
-        "C19: unavailable money -> count 0, never a false red",
-        "C20: NotificationSource interface with exactly one v1 implementation; aggregator has no source-specific branching"
-      ],
-      "done_when": [
-        "src/ops2/notifications/sources.ts exports NotificationSource {id, count()}, sources array with exactly one entry (aiBudgetRed: fetch /api/ops/monitoring/snapshot, return snapshot?.red ? 1 : 0, fetch failure -> 0), notificationCount() summing Promise.all over sources with no reference to any source id, and useNotificationCount() hook per design §2.7.",
-        "src/ops2/chrome/OpsPage.tsx: badge rendered inside the existing ops2-bell button (lines 173–180) only when count > 0; the button's existing history.push(HOME_PATH) onClick is untouched.",
-        "src/ops2/Ops2App.tsx: ONLY the tab bar (lines 272–289) changes in this task — IonBadge inside the Attention IonTabButton when count > 0.",
-        "scripts/tests/ops2-attention.test.mjs: append test() blocks only — aggregator sums sources without branching on ids, sources.length === 1, bubble 0/1 behaviour incl. unavailable->0, badge lives inside the bell button whose onClick navigates.",
-        "npm run typecheck:gate green; node --test scripts/tests/ops2-attention.test.mjs green."
-      ]
-    },
-    {
-      "id": "vocabulary",
-      "title": "CONTEXT.md vocabulary (design §7)",
-      "files": [
-        "CONTEXT.md"
-      ],
-      "after": ["notification-seed"],
-      "criteria": [],
-      "done_when": [
-        "CONTEXT.md gains Parse, Snapshot, Red, and Errored parse using the exact wording of design §7 (Parse = one job-claim lifecycle; retries collapse into it; supersedes grill decision 4's per-document wording, owner ruling 2026-09-03) and amends the Attention-page description."
-      ]
-    }
-  ]
-}
+[
+  {
+    "id": "T1",
+    "title": "Pure monitoring core: snapshot types, bucketing, red evaluation",
+    "files": [
+      "src/data/monitoring.ts",
+      "scripts/tests/ai-monitoring.test.mjs",
+      "package.json"
+    ],
+    "tests": ["scripts/tests/ai-monitoring.test.mjs"],
+    "done_when": "npm run test:ai-monitoring passes; suite covers: parseMonitoringSnapshot rejects malformed shapes (returns null, never a partial); assembleParseCounts produces exactly 7 Melbourne-day buckets oldest-first with zero days present and bucket sums equal to the two totals; evaluateRed returns false when money unavailable, true below the $ floor, true above the % ceiling, and one boolean when both trip; capOutstanding = cap - billedSpend. package.json gains test:ai-monitoring and the file is appended to the test:pure list (line 17) so npm test runs it. Design 02-design.md sections 3.1-3.3.",
+    "after": [],
+    "criteria": [8, 10, 12, 13, 14, 17, 19]
+  },
+  {
+    "id": "T2",
+    "title": "Migration 0064 triggered_by + threading through enqueue/retry",
+    "files": [
+      "migrations/0064_ai_job_claim_triggered_by.sql",
+      "worker/lib/ai/jobs.ts",
+      "scripts/tests/ai-jobs.test.mjs"
+    ],
+    "tests": ["scripts/tests/ai-jobs.test.mjs"],
+    "done_when": "npm run test:ai-jobs passes with new asserts: enqueueAiExtraction INSERT (jobs.ts:265-273) includes triggered_by, defaulting to 'upload'; retryCurrentAiExtraction threads triggeredBy='ops' only into its completed-generation fall-through enqueue; the in-place reset UPDATE (jobs.ts:337-354) does NOT mention triggered_by. Migration is the exact ALTER from design section 4 with the children-affected comment (nothing REFERENCES ai_job_claim); npm run db:migrate:local applies clean. parse.ts is untouched.",
+    "after": [],
+    "criteria": [11]
+  },
+  {
+    "id": "T3",
+    "title": "IO shell: money fetch, count query, snapshot write/read, notification sources",
+    "files": [
+      "worker/lib/monitoring.ts",
+      "worker/types.ts",
+      "wrangler.jsonc",
+      "scripts/tests/ai-monitoring.test.mjs"
+    ],
+    "tests": ["scripts/tests/ai-monitoring.test.mjs"],
+    "done_when": "Lib tests (fake {DB,KV} env per ai-jobs.test.mjs pattern, injected fetchImpl) pass: count SQL matches design section 3.2 verbatim including triggered_by='upload' and the 30-minute processing clause; CF_MONITORING_TOKEN unset yields {available:false,reason:'token_missing'} with zero fetch calls; CF non-2xx/throw still writes a snapshot with fresh D1 counts and money unavailable, and the captured console.log line contains no token and no Authorization value; gateway cap failure falls back to /ai-gateway/billing/spending-limit with capSource 'account'; NOTIFICATION_SOURCES is a list with one entry and notificationCount sums it with no source-specific branching. worker/types.ts adds CF_MONITORING_TOKEN?/CF_ACCOUNT_ID?/AI_CREDIT_FLOOR_USD?/AI_CAP_CEILING_PCT? after AI_GATEWAY_ID (line 54) with the ABR_GUID-style secret comment; wrangler.jsonc vars add CF_ACCOUNT_ID, AI_CREDIT_FLOOR_USD '5', AI_CAP_CEILING_PCT '80' (token is wrangler secret only).",
+    "after": ["T1", "T2"],
+    "criteria": [3, 4, 5, 20, 21, 27]
+  },
+  {
+    "id": "T4",
+    "title": "Route GET /api/ops/monitoring, ops trigger tag, cron append",
+    "files": [
+      "worker/routes/ops.ts",
+      "worker/index.ts",
+      "scripts/tests/api-edge.test.mjs"
+    ],
+    "tests": ["scripts/tests/api-edge.test.mjs"],
+    "done_when": "api-edge subtests pass against the booted worker: anon request to /api/ops/monitoring gets 401 with no balance/spend/cap/count values in the body; customer session gets 403 likewise; manufacturer-partner session gets 403 likewise (guard is isStaffUser at ops.ts:110, NOT the bare resolveStaff /summary uses); staff 200 body is {snapshot,notificationCount} and contains no token, no account id, no gateway credentials; before first cron write snapshot is null and notificationCount 0. ops.ts:2074 call passes 'ops' to retryCurrentAiExtraction. worker/index.ts scheduled() (line 340) appends writeMonitoringSnapshot(env).catch(...) matching siblings at 344-353; crons list in wrangler.jsonc unchanged.",
+    "after": ["T3"],
+    "criteria": [21, 22, 23, 24, 25, 26]
+  },
+  {
+    "id": "T5",
+    "title": "Attention page monitoring cards + 7-day CSS-bar chart",
+    "files": [
+      "src/ops2/attention/useMonitoring.ts",
+      "src/ops2/attention/AttentionPage.tsx",
+      "src/ops2/styles/attention.css"
+    ],
+    "tests": [],
+    "done_when": "Monitoring section renders BELOW the existing attention groups: credit-balance card ($12.34 style), cap-outstanding card showing headroom and the cap it was measured against, success and error count cards, and a 7-column CSS-bar chart (success+error per day, zero days as zero columns, all-zero window renders an explicit empty state). Money cards render an 'unavailable' state (not zero, not red) when money.available is false while count cards and chart still show D1 numbers. Every card states 'as at HH:MM' from takenAt (Melbourne time). snapshot null renders a 'no snapshot yet' state. No Cloudflare call from the page: useMonitoring fetches /api/ops/monitoring only (copy useSummary.ts mechanics). npm run typecheck:gate green; matches approved mock docs/mocks/ai-parse-monitoring.html.",
+    "after": ["T3", "T4"],
+    "criteria": [1, 2, 4, 6, 7, 9, 12, 13, 14]
+  },
+  {
+    "id": "T6",
+    "title": "Notification bubble: shared count hook, desk bell badge, phone tab badge",
+    "files": [
+      "src/ops2/chrome/useNotificationCount.ts",
+      "src/ops2/chrome/OpsPage.tsx",
+      "src/ops2/Ops2App.tsx",
+      "src/ops2/styles/nav.css"
+    ],
+    "tests": [],
+    "done_when": "useNotificationCount reads .notificationCount from /api/ops/monitoring with a module-level cache (~60s TTL, shared inflight promise) so bell and tab share one fetch. Desk bell (OpsPage.tsx:173-180, already navigating to HOME_PATH) draws a badge only when count > 0; count 0 draws nothing. Phone attention IonTabButton (Ops2App.tsx:276-281, d.id === 'attention') gets the same badge behaviour. Tapping either lands on /attention. npm run typecheck:gate green.",
+    "after": ["T4"],
+    "criteria": [15, 16, 17, 18]
+  }
+]

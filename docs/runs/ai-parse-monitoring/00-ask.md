@@ -36,10 +36,20 @@ surface changes.
    a person still leads.
 3. **No drill-down in v1.** Numbers and a chart only. Error rows / per-quote
    drill is a later feature.
-4. **One document == one parse.** The chart and the 7d totals count per
-   uploaded document, not per job-claim generation or model request.
-   Ops-triggered building-model runs are not in the chart; money numbers
-   cover everything regardless because Cloudflare is their source.
+4. **~~One document == one parse.~~ SUPERSEDED at the spec gate — one parse
+   event = one claim lifecycle.** The original wording is kept struck through
+   rather than rewritten, because a reviewer has already read the old line as
+   binding and reported the implementation for disobeying it.
+
+   The schema has no document↔claim link: a claim covers every clean upload in
+   a project at once, and per-document numbers could only be estimated from
+   timestamps. The error definition in decision 9 was claim-based from the
+   start, so a per-document reading would also have counted one stuck claim on
+   a five-document project as five errors. Owner accepted the recommendation to
+   count claims (2026-09-03, `DECISIONS.md` Q1, since folded into `02-design.md`).
+
+   Ops-triggered building-model runs are not in the chart; money numbers cover
+   everything regardless because Cloudflare is their source.
 5. **Cloudflare is the source of truth for money.**
    - Credit balance: `GET /accounts/{account_id}/ai-gateway/billing/credit-balance`
    - Billed spend: `GET /accounts/{account_id}/ai-gateway/billing/usage-history`
@@ -82,6 +92,30 @@ surface changes.
   billed usage-history proves insufficient
 - Notification persistence, dismissal, read-state
 - Any change to the parse pipeline itself
+
+## Addendum 2026-09-04 — owner rulings after the mock gate
+
+1. **The Attention dashboard now exists** — `feat/ops2-attention` landed
+   (under review, unmerged): `src/ops2/attention/AttentionPage.tsx` renders
+   zero-suppressed row groups (Projects / Enquiries / Customers) from one
+   summary endpoint. Owner ruling: **this feature's cards are APPENDED to
+   that existing page** — do not build a container, do not restructure their
+   groups. Decision 1's "the Attention page becomes a card container" is
+   superseded: the page is theirs, the AI-parsing section is ours.
+2. **Base branch changed**: `feat/ai-parse-monitoring` is now cut from
+   `feat/ops2-attention` (591a912d), not `apertly/main` — decision 10
+   superseded. If their review lands fixes, rebase; their merge to main
+   precedes ours.
+3. **Mock approved with that one modification** (owner, 2026-09-04:
+   "proceed as per plan… dashboard shall be appended to the existing one").
+   The cards' look is approved as mocked; only their placement changes —
+   an "AI parsing" section on the existing AttentionPage, below the
+   attention groups (what needs a person still leads, per the blurb).
+   The header notification bubble remains in scope — their branch did not
+   build one.
+4. **Autonomy**: owner is away; grounded assumptions are permitted, must be
+   collected and surfaced for screening at the end. Codex engaged for
+   reviews of major pieces (the mandatory review stage covers this).
 
 ## Facts established during the grill
 

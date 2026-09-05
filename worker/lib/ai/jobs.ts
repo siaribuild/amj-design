@@ -247,6 +247,7 @@ export async function enqueueAiExtraction(
   ctx: BackgroundContext,
   projectId: string,
   delaySeconds = 10,
+  triggeredBy: "upload" | "ops" = "upload",
 ): Promise<AiExtractionJob> {
   const current = await env.DB.prepare(
     "SELECT ai_generation FROM project WHERE id=? AND status_customer='draft'",
@@ -264,13 +265,13 @@ export async function enqueueAiExtraction(
     ).bind(job.generation, projectId, current.ai_generation),
     env.DB.prepare(
       `INSERT INTO ai_job_claim
-         (project_id, source_generation, debounce_token, status, attempts)
-       SELECT ?, ?, ?, 'scheduled', 0
+         (project_id, source_generation, debounce_token, status, attempts, triggered_by)
+       SELECT ?, ?, ?, 'scheduled', 0, ?
         WHERE EXISTS (
           SELECT 1 FROM project
            WHERE id=? AND status_customer='draft' AND ai_generation=?
         )`,
-    ).bind(projectId, job.generation, job.debounceToken, projectId, job.generation),
+    ).bind(projectId, job.generation, job.debounceToken, triggeredBy, projectId, job.generation),
   ]);
   if (Number(created[0]?.meta?.changes ?? 0) !== 1 ||
       Number(created[1]?.meta?.changes ?? 0) !== 1) {
@@ -289,6 +290,7 @@ export async function retryCurrentAiExtraction(
   env: Env,
   ctx: BackgroundContext,
   projectId: string,
+  triggeredBy: "upload" | "ops" = "upload",
 ): Promise<{ job: AiExtractionJob; alreadyQueued: boolean }> {
   const current = await env.DB.prepare(
     `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token,
@@ -370,7 +372,7 @@ export async function retryCurrentAiExtraction(
     return { job, alreadyQueued: false };
   }
 
-  return { job: await enqueueAiExtraction(env, ctx, projectId, 0), alreadyQueued: false };
+  return { job: await enqueueAiExtraction(env, ctx, projectId, 0, triggeredBy), alreadyQueued: false };
 }
 
 async function recordJobFailure(

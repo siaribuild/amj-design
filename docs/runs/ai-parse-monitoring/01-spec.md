@@ -97,7 +97,16 @@ route, which stops being a `DestinationRoot` placeholder and becomes a card cont
 
 8. **Given** one document whose parse was retried three times before succeeding,
    **when** the 7-day counts are computed, **then** it counts as exactly one success
-   and zero errors (one document == one parse).
+   and zero errors.
+
+   ~~(one document == one parse)~~ — superseded by the owner's Q1 ruling: **one
+   parse event = one claim lifecycle**. The criterion itself is unchanged and is
+   met, because a retry reuses its claim row: `retryCurrentAiExtraction`
+   reclaims in place (`UPDATE ... WHERE project_id=? AND source_generation=?`)
+   and the automatic path only bumps `attempts`. Three attempts, one row, one
+   count. Separate `source_generation` rows are NOT retries — the generation
+   moves when the project's document set changes — so they are separate parse
+   jobs and count separately.
 
 9. **Given** a claim in `processing` whose row is 31 minutes old with attempts
    exhausted, **when** the 7-day counts are computed, **then** it counts as one
@@ -109,6 +118,14 @@ route, which stops being a `DestinationRoot` placeholder and becomes a card cont
 
 11. **Given** an ops-triggered building-model run in the window, **when** the 7-day
     counts are computed, **then** it is excluded from both counts and from the chart.
+
+    Scope, because a verification round read this more widely: this is the
+    building-model subsystem (`ai_runs`), and the ops retry of a CUSTOMER's
+    document is not that. That retry reclaims the customer's own claim row in
+    place; tagging it `'ops'` would delete a real customer parse from both
+    cards, so a document that failed, was retried by staff and then succeeded
+    would appear nowhere. The fall-through enqueue, which starts a genuinely new
+    generation from ops, IS tagged `'ops'` and is excluded.
 
 12. **Given** no parses at all in the last 7 days, **when** Staff opens the Attention
     page, **then** the count cards show `0` and the chart renders an empty state —
