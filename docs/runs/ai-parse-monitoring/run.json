@@ -103,12 +103,12 @@
     },
     "verify": {
       "code": 0,
-      "contextTokens": 8508874,
-      "outputTokens": 58169,
-      "turns": 117,
+      "contextTokens": 13349453,
+      "outputTokens": 85121,
+      "turns": 89,
       "source": "transcript",
-      "session": "590a3b85-8ec8-4f36-9e07-0bbfc3b21b36",
-      "seconds": 2181
+      "session": "79650317-a76e-4f52-98c2-56ed7e950f2a",
+      "seconds": 1814
     },
     "review-conformance": {
       "code": 0,
@@ -196,7 +196,7 @@
   ],
   "startedAt": "2026-09-03T12:19:00.485Z",
   "gateStage": null,
-  "verifyRounds": 0,
+  "verifyRounds": 1,
   "fixRounds": 0,
   "notes": [
     "apertly/main merged in at 89284534 (main had moved 113 commits and the ops2 Attention host page shipped with its own review fixes). base moved to a76b8119 = main tip, so base...HEAD is this feature alone.",

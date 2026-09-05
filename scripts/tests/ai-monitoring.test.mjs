@@ -1106,3 +1106,120 @@ test("writeMonitoringSnapshot: a failed parse counts as one error", async () => 
   assert.equal(stored.error7d, 1);
   assert.equal(stored.success7d, 1);
 });
+
+// --- TESTER round 4: the day a parse lands on must not depend on the host clock -
+//
+// D1 writes `updated_at` with `datetime('now')`, which is UTC in the format
+// "YYYY-MM-DD HH:MM:SS" — a space separator and NO timezone designator.
+// `assembleParseCounts` reads it back with `new Date(row.updatedAt)`, and for
+// that shape V8 falls back to its implementation-defined parser, which treats
+// the string as LOCAL time. The stamp is UTC, so every bucket decision is
+// silently offset by the host's UTC offset.
+//
+// Reproduced end to end through `wrangler dev` on a UTC+10 host: a claim
+// completed at 2026-09-05 17:07:35 UTC — Melbourne 2026-09-06 — was drawn on
+// 2026-09-05. Worse, near the oldest bucket's edge the row lands in no bucket
+// at all while still counting toward the card total, so criterion 13's
+// "the sum of the buckets equals the two count cards" breaks outright.
+//
+// This test pins the stamp's meaning instead of the machine's: the assertion
+// is computed from the SAME instant the row records, so it is true in every
+// timezone and fails only if the parse is wrong. Fix is one line in
+// src/data/monitoring.ts: read the D1 stamp as UTC
+// (`new Date(row.updatedAt.replace(" ", "T") + "Z")`).
+test("TESTER-F1 assembleParseCounts: a D1 stamp is UTC, whatever the host clock says", () => {
+  const melbourne = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Melbourne" });
+  // 15:30 UTC is 01:30 the NEXT Melbourne day — the window where a local-time
+  // reading of the stamp moves the row back a calendar day.
+  const instant = new Date("2026-09-05T15:30:00.000Z");
+  const d1Stamp = instant.toISOString().slice(0, 19).replace("T", " ");
+  const expectedDay = melbourne.format(instant);
+
+  const result = assembleParseCounts([{ updatedAt: d1Stamp, outcome: "success" }], new Date("2026-09-06T02:00:00.000Z"));
+  const bucket = result.days.find((d) => d.success === 1);
+  assert.ok(bucket, `no bucket held the row; buckets=${JSON.stringify(result.days.map((d) => d.day))}`);
+  assert.equal(bucket.day, expectedDay, "the row belongs on the Melbourne day of its UTC stamp");
+});
+
+// The same defect, stated as the invariant the spec actually asks for
+// (criterion 13). A row inside the SQL window that no bucket can hold is
+// counted on the card and missing from the chart beside it, so the two
+// disagree — which is the failure a reader would notice first.
+test("TESTER-F2 assembleParseCounts: every row inside the window lands in a bucket (criterion 13)", () => {
+  const now = new Date("2026-09-06T02:00:00.000Z");
+  const windowStart = parseWindowStart(now);
+  // One minute after the oldest bucket's midnight: unambiguously inside the
+  // window the SQL selects, so a bucket must hold it.
+  const instant = new Date(windowStart.getTime() + 60_000);
+  const d1Stamp = instant.toISOString().slice(0, 19).replace("T", " ");
+
+  const result = assembleParseCounts([{ updatedAt: d1Stamp, outcome: "success" }], now);
+  const bucketed = result.days.reduce((total, d) => total + d.success, 0);
+  assert.equal(
+    bucketed, result.success7d,
+    `bucket sums must equal the card total; buckets=${JSON.stringify(result.days)} card=${result.success7d} stamp=${d1Stamp}`,
+  );
+});
+
+// --- TESTER round 4: criterion 27, and the scope check that fails open -------
+//
+// Criterion 27: "Given a Cloudflare API failure, when it is logged, then the
+// log line contains no token and no Authorization header value."
+//
+// `pathSuffix` is the sanitiser written for exactly that, but it only ever runs
+// on the `status N for <suffix>` Error that `cfGet` builds itself. A TRANSPORT
+// failure — the connection refused, DNS, TLS, abort — arrives as an Error whose
+// message the fetch implementation wrote, and `logFailure` prints that message
+// verbatim. Nothing in this module bounds what a log line can contain on the
+// one path criterion 27 names.
+//
+// The fix is to log the suffix of the URL that was ATTEMPTED rather than
+// whatever the transport put in `err.message`.
+test("TESTER-F3 fetchMoneyNumbers: a transport failure logs a bounded path, never the error's own text (criterion 27)", async () => {
+  const TOKEN = "cf-tok-SUPERSECRET-9f3a";
+  const env = { CF_MONITORING_TOKEN: TOKEN, CF_ACCOUNT_ID: "acct-1234", AI_GATEWAY_ID: "openframe-estimator" };
+  const lines = [];
+  const realLog = console.log;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    // The transport controls this string, so the module must not trust it.
+    await fetchMoneyNumbers(env, async (url, init) => {
+      throw new Error(`connect ECONNREFUSED for ${url} headers=${JSON.stringify(init.headers)}`);
+    });
+  } finally {
+    console.log = realLog;
+  }
+  assert.ok(lines.length > 0, "a Cloudflare failure must be logged at all");
+  for (const line of lines) {
+    assert.ok(!line.includes(TOKEN), `log line carries the API token: ${line}`);
+    assert.ok(!/authorization|bearer/i.test(line), `log line carries the Authorization header: ${line}`);
+  }
+});
+
+// Round 3 fixed "the cap percentage compared incompatible scope" by refusing to
+// publish a percentage when more than one gateway shares the account, on the
+// stated principle that "unknown beats confidently wrong on a number that
+// raises alarms". The check is `Array.isArray(gateways) && gateways.length > 1`,
+// so an answer that is NOT an array — a paginated object, or `result: null` on
+// a soft 200 failure — skips the guard entirely and the percentage is published
+// from account-wide spend it could not attribute. Account spend is always >= one
+// gateway's, so the error is always toward a FALSE RED: the alarm this feature
+// exists to make trustworthy.
+test("TESTER-F4 fetchMoneyNumbers: a gateway list that is not an array is unknown scope, not one gateway", async () => {
+  const env = { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct", AI_GATEWAY_ID: "openframe-estimator" };
+  const reply = (result) => ({ ok: true, status: 200, json: async () => ({ result }) });
+  const answer = async (url) => {
+    if (url.includes("credit-balance")) return reply({ balance: 30 });
+    if (url.includes("/gateways/")) return reply({ spend_limits: { enabled: true, rules: [{ limitType: "cost", limit: 20, window: 2592000 }] } });
+    // Cloudflare answers 200 but the shape is not the bare array this expects.
+    if (url.endsWith("/ai-gateway/gateways")) return reply({ gateways: [{ id: "a" }, { id: "b" }, { id: "c" }] });
+    if (url.includes("usage-history")) return reply({ history: [{ aggregated_value: 19 }] });
+    throw new Error(`unexpected ${url}`);
+  };
+  const { budget } = await fetchMoneyNumbers(env, answer);
+  assert.equal(
+    budget.available, false,
+    "an unreadable gateway list means the spend cannot be attributed; publishing 95% of the cap raises a red nobody can act on",
+  );
+  assert.equal(budget.reason, "spend_not_attributable");
+});

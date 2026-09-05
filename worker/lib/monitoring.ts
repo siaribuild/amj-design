@@ -41,10 +41,21 @@ const CF_TIMEOUT_MS = 10_000;
 
 async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<any> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}${path}`;
-  const res = await fetchImpl(url, {
-    headers: { Authorization: `Bearer ${env.CF_MONITORING_TOKEN}` },
-    signal: AbortSignal.timeout(Number(env.CF_TIMEOUT_MS ?? CF_TIMEOUT_MS)),
-  });
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      headers: { Authorization: `Bearer ${env.CF_MONITORING_TOKEN}` },
+      signal: AbortSignal.timeout(Number(env.CF_TIMEOUT_MS ?? CF_TIMEOUT_MS)),
+    });
+  } catch {
+    // The transport's OWN message is discarded here, deliberately. A connection
+    // failure, a DNS error or the abort arrives as an Error whose text the fetch
+    // implementation wrote — it may quote the full request, headers included,
+    // and this module has no say in it. Criterion 27 cannot be enforced by
+    // sanitising a string someone else composed, so nothing composed elsewhere
+    // is ever logged: the message below is built from the path we attempted.
+    throw new Error(`request failed for ${pathSuffix(url)}`);
+  }
   if (!res.ok) throw new Error(`status ${res.status} for ${pathSuffix(url)}`);
   const body = await res.json<{ result?: unknown }>();
   return body.result;
@@ -112,7 +123,13 @@ const bothUnavailable = (reason: string): MoneySnapshot => ({
 });
 
 function logFailure(err: unknown): "fetch_failed" {
-  const path = err instanceof Error ? err.message.replace(/^status \d+ for /, "") : "?";
+  // Every throw that reaches here is one this module composed, and each ends
+  // with " for <path suffix>". Publish ONLY that suffix: if a message ever
+  // arrives in another shape it is not printed at all, so the log line cannot
+  // carry a URL, an account id or a header, whoever wrote the error.
+  const message = err instanceof Error ? err.message : "";
+  const suffix = message.slice(message.lastIndexOf(" for ") + 5);
+  const path = message.includes(" for ") && suffix.startsWith("/ai-gateway/") ? suffix : "?";
   console.log(`ai-parse monitoring: CF fetch failed for ${path}`);
   return "fetch_failed";
 }
@@ -140,8 +157,15 @@ async function fetchBalance(env: Env, fetchImpl: typeof fetch): Promise<BalanceS
 async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSnapshot> {
   try {
     const cap = await fetchCap(env, fetchImpl);
+    // FAILS CLOSED. Publish a percentage only when the answer positively says
+    // this account has exactly one gateway, because only then is the account's
+    // spend this gateway's spend. Anything else — a paginated object, a shape
+    // change, `result: null` from one of Cloudflare's soft-failure 200s — is an
+    // answer we cannot attribute, and the old `length > 1` test skipped the
+    // guard entirely for all of them, publishing a percentage built from spend
+    // that may belong to another gateway. That direction of error invents a red.
     const gateways = await cfGet(env, fetchImpl, "/ai-gateway/gateways");
-    if (Array.isArray(gateways) && gateways.length > 1) {
+    if (!Array.isArray(gateways) || gateways.length !== 1) {
       return { available: false, reason: "spend_not_attributable" };
     }
     const end = Date.now();

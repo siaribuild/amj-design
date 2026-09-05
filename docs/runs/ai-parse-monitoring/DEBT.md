@@ -1,5 +1,3 @@
-- [low] F6: worker/lib/monitoring.ts:65 logs upstream error verbatim - transport failure prints full URL incl CF_ACCOUNT_ID, contradicting the comment above pathSuffix
-- [low] F7: assembleParseCounts parses D1 'YYYY-MM-DD HH:MM:SS' as local time; fixtures use ISO strings D1 never emits; correct in prod (UTC runtime), latent portability debt
 - [low] F9: criterion 9 'attempts exhausted' clause absent from PARSE_OUTCOME_SQL - age-only predicate counts still-retryable processing rows as errors; likely deliberate per grill decision 9, divergence recorded
 - [low] F10: migration 0064 backfills historical rows to 'upload' - pre-migration ops retries count as parses for up to 7 days post-deploy; self-correcting
 - [declined] ponytail: collapse the one-source notification registry

@@ -162,6 +162,23 @@ export function parseWindowStart(now: Date): Date {
   return new Date(naive - melbourneOffsetMs(new Date(first)));
 }
 
+/** The instant a D1 timestamp names.
+ *
+ *  `datetime('now')` writes UTC as `YYYY-MM-DD HH:MM:SS` — a space separator
+ *  and no zone designator. V8 has no spec rule for that shape, so it falls
+ *  through to its implementation-defined parser and reads it as LOCAL time.
+ *  Every bucket decision was then offset by the host's UTC offset: a parse
+ *  drawn on the wrong calendar day, and near the window's edge a row that
+ *  counted toward the card total while landing in no bucket at all — which is
+ *  criterion 13's sum breaking outright.
+ *
+ *  Production runs UTC, so this was invisible there and wrong everywhere else.
+ *  The stamp says what it means; it should not depend on the machine reading it. */
+function d1Instant(stamp: string): Date {
+  const zoned = /(?:[Zz]|[+-]\d{2}:?\d{2})$/.test(stamp);
+  return new Date(zoned ? stamp : stamp.trim().replace(" ", "T") + "Z");
+}
+
 export function assembleParseCounts(
   rows: { updatedAt: string; outcome: "success" | "error" }[],
   now: Date,
@@ -175,7 +192,7 @@ export function assembleParseCounts(
     // The query is bounded at the earliest bucket's midnight (parseWindowStart),
     // so in production there is nothing outside — and if a caller ever passes
     // something older, the cards under-report rather than silently discard it.
-    const bucket = byDay.get(melbourneDayKey(new Date(row.updatedAt)));
+    const bucket = byDay.get(melbourneDayKey(d1Instant(row.updatedAt)));
     if (row.outcome === "success") {
       success7d++;
       if (bucket) bucket.success++;
