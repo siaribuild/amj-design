@@ -15,6 +15,18 @@ import { ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, inspectPdf
 import { cropKey } from "./crops";
 import { runFaceMappedParser, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
 import { DEADLINE_PASSED, spendCounter } from "./faceMapped/spend";
+
+/** One call at a time through `call`, in the order asked. The face-mapped
+ * engine's memory is priced on one render in flight (contract.ts); this is how
+ * a run keeps to that, with nothing that outlives the run. */
+function serial<A extends unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+  let last: Promise<unknown> = Promise.resolve();
+  return (...args) => {
+    const next = last.then(() => call(...args));
+    last = next.catch(() => {});
+    return next;
+  };
+}
 import type { FaceMappedPhase } from "./faceMapped/report";
 import { pageScales } from "./harvest";
 import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
@@ -30,7 +42,7 @@ import { sha256hex, sha256hexText } from "../ai/hash";
 import { normalizeOpeningRef } from "../ai/energyMap";
 import { boxesByRegion, elevationRegions, type ElevationRegion } from "./elevationRegions";
 import { locateFloorplanPage, orientationsFromNorth, resolveNorth, type Edge, type Storey } from "./locate";
-import { mapPool, serial } from "./pool";
+import { mapPool } from "./pool";
 import { composeMeasuredSplit, measureSplit } from "./measure";
 import { compositionFromSchedule, reconcileReading } from "./reconcile";
 
@@ -148,7 +160,21 @@ async function enrichFile(
       currentPhase = "pdf_size";
       throw new ContainerClientError("too_large", `${obj.size} bytes is more than the face-mapped engine reads`);
     }
+    // A face-mapped run whose job is already over is refused here, named,
+    // before it asks for anything.
+    if (deps.runFaceMapped && args.deadlineAt != null && Date.now() >= args.deadlineAt) {
+      currentPhase = "deadline";
+      report.providerFailure = { failureKind: null, warnings: [DEADLINE_PASSED] };
+      throw new Error(DEADLINE_PASSED);
+    }
     const pdfBytes = new Uint8Array(await obj.arrayBuffer());
+    // Reading the PDF can itself outlive the job's deadline; a run that is over
+    // here is refused as such, before anything is asked or written.
+    if (deps.runFaceMapped && args.deadlineAt != null && Date.now() >= args.deadlineAt) {
+      currentPhase = "deadline";
+      report.providerFailure = { failureKind: null, warnings: [DEADLINE_PASSED] };
+      throw new Error(DEADLINE_PASSED);
+    }
     let cachedHarvest: FullDocumentHarvest | null = null;
     let harvestCache: { key: string; pdfSha256: string; scheduleSha256: string } | null = null;
     if (deps.runFullAgentTurn) {
@@ -169,7 +195,11 @@ async function enrichFile(
       } catch { /* corrupt or unavailable cache: rebuild from the PDF */ }
     }
 
-    if (args.onProgress) await args.onProgress(0, args.scheduleRows.length, "inventory");
+    // Reading the PDF can itself outlive a face-mapped job's deadline; the first
+    // progress write is inside the deadline like every later one.
+    if (args.onProgress && !(deps.runFaceMapped && args.deadlineAt != null && Date.now() >= args.deadlineAt)) {
+      await args.onProgress(0, args.scheduleRows.length, "inventory");
+    }
     currentPhase = "inventory";
     let inspected: InspectResponse;
     // The face-mapped engine's inspection has its own, measured cap and runs
@@ -332,10 +362,20 @@ async function enrichFile(
           ...deps.runFaceMapped,
           render: renderOne,
           async storeCrop(renderId, pngB64) {
+            // A crop stored after the deadline is evidence for a job that has
+            // been given up on: not stored, so the opening reads as unread -
+            // checked before the decode, again before the put, and a put that
+            // finished late is taken back.
+            if (pastDeadline()) return null;
             const key = cropKey(args.projectId, args.aiRunId, renderId);
             try {
               const bytes = Uint8Array.from(atob(pngB64), (char) => char.charCodeAt(0));
+              if (pastDeadline()) return null;
               await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
+              if (pastDeadline()) {
+                await env.FILES.delete(key).catch(() => {});
+                return null;
+              }
               return key;
             } catch {
               return null;
@@ -347,6 +387,8 @@ async function enrichFile(
           // vocabulary. Its message travels with it (migration 0065), so a
           // recheck is a milestone the customer sees; durations stop here.
           onProgress: async (event) => {
+            // Progress written after the deadline would overwrite the retry's.
+            if (pastDeadline()) return;
             await args.onProgress?.(event.done, event.total, PERSISTED_PHASE[event.phase], event.message);
           },
         },
@@ -954,6 +996,17 @@ export async function runDrawingEnrichmentStage(
       };
 
   const result = await enrichOpenings(env, { projectId: args.projectId, aiRunId: args.aiRunId, files, scheduleRows: args.scheduleRows, onProgress: args.onProgress, deadlineAt: args.deadlineAt }, deps);
+  // The job runner has given up on this extraction at the deadline. Whatever
+  // the face-mapped run still produced after it is not evidence against the
+  // retry: no readings, and a report that says the deadline is what ended it -
+  // a file that had already failed for a reason of its own keeps that reason.
+  // The other modes never had this clock and are not gated by it.
+  if (parserMode === "face_mapped" && args.deadlineAt != null && Date.now() >= args.deadlineAt) {
+    return {
+      readings: [],
+      report: { files: result.report.files.map((file) => ({ ...file, steps: { ...file.steps, failedPhase: file.steps.failedPhase ?? "deadline" } })) },
+    };
+  }
   return result;
 }
 

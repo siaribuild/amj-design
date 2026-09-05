@@ -573,6 +573,77 @@ export interface AiExtractionSummary {
   errorCode?: string | null;
 }
 
+/** The job's deadline reached the drawing stage after it was given up on. */
+export class DrawingDeadlinePassed extends Error {
+  constructor() {
+    super("ai_processing_deadline_exceeded");
+    this.name = "DrawingDeadlinePassed";
+  }
+}
+
+/**
+ * Runs the drawing stage and persists what it produced - the report, then the
+ * readings - inside the job's deadline. Past it, a face-mapped extraction has
+ * been given up on and its retry may be running: nothing more is written, and
+ * the deadline is thrown for the caller to stop on. A write that began in time
+ * may still land; the check is made before each. The other modes never had
+ * this clock and are not gated by it. `deps` are the seam the persistence
+ * boundaries are tested through; production passes none.
+ */
+export async function persistDrawingStage(
+  env: Env,
+  args: {
+    projectId: string;
+    run: { id: string };
+    planPdfDocs: { fileId: string }[];
+    scheduleRows: Parameters<typeof runDrawingEnrichmentStage>[1]["scheduleRows"];
+    onProgress?: Parameters<typeof runDrawingEnrichmentStage>[1]["onProgress"];
+    deadlineAt?: number;
+    warnings: string[];
+  },
+  deps: { stage: typeof runDrawingEnrichmentStage; persist: typeof persistReadings } = { stage: runDrawingEnrichmentStage, persist: persistReadings },
+): Promise<Awaited<ReturnType<typeof runDrawingEnrichmentStage>>> {
+  const { projectId, run, warnings } = args;
+  const pastDeadline = () => drawingParserMode(env) === "face_mapped" && args.deadlineAt != null && Date.now() >= args.deadlineAt;
+  const refuse = () => {
+    warnings.push("drawing_persist_skipped:deadline");
+    throw new DrawingDeadlinePassed();
+  };
+  const result = await deps.stage(env, { projectId, aiRunId: run.id, planPdfDocs: args.planPdfDocs, scheduleRows: args.scheduleRows, onProgress: args.onProgress, deadlineAt: args.deadlineAt });
+  if (pastDeadline()) refuse();
+  const stageReadings = result.readings;
+  const drawingReport = result.report;
+  const failedDrawingPhases = new Set((drawingReport?.files ?? []).flatMap((file) =>
+    file.steps.failedPhase ? [file.steps.failedPhase] : []));
+  warnings.push(...[...failedDrawingPhases].map((phase) => `drawing_enrichment_failed_phase:${phase}`));
+  if (drawingReport) {
+    await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
+      .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
+    const files = drawingReport.files;
+    console.log({
+      event: "drawing_enrichment", aiRunId: run.id, projectId,
+      filesTried: files.length,
+      containerCalls: files.reduce((sum, file) => sum + file.containerCalls, 0),
+      modelCalls: files.reduce((sum, file) => sum + file.modelCalls, 0),
+      readingsProduced: stageReadings.length,
+      notReadCount: stageReadings.filter((reading) => reading.splitState !== "value").length,
+      wallMs: files.reduce((sum, file) => sum + file.wallMs, 0),
+      inspectTimings: files.map((file) => file.inspectTimings ?? null),
+    });
+  }
+  // Checked again: writing the report may have used the time left.
+  if (pastDeadline()) refuse();
+  if (stageReadings.length) {
+    await deps.persist(env, projectId, run.id, stageReadings).catch((error) => {
+      warnings.push(`drawing_readings_persist_failed:${error instanceof Error ? error.name : "Error"}`);
+    });
+  }
+  // And again: a readings write that crossed the deadline has landed, but the
+  // pipeline does not walk on into the model and the pricing with that time.
+  if (pastDeadline()) refuse();
+  return { readings: stageReadings, report: drawingReport };
+}
+
 export async function runAiExtraction(
   env: Env,
   projectId: string,
@@ -812,34 +883,14 @@ export async function runAiExtraction(
       ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase, message?: string) =>
           setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase, message)
       : undefined;
-    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress, deadlineAt: opts.deadlineAt });
-    drawingReadings = result.readings;
-    drawingReport = result.report;
-    const failedDrawingPhases = new Set((result.report?.files ?? []).flatMap((file) =>
-      file.steps.failedPhase ? [file.steps.failedPhase] : []));
-    warnings.push(...[...failedDrawingPhases].map((phase) => `drawing_enrichment_failed_phase:${phase}`));
+    const staged = await persistDrawingStage(env, { projectId, run, planPdfDocs, scheduleRows, onProgress, deadlineAt: opts.deadlineAt, warnings });
+    drawingReadings = staged.readings;
+    drawingReport = staged.report;
     applyDrawingOrientation(model, drawingReadings);
-    if (drawingReport) {
-      await env.DB.prepare("UPDATE ai_runs SET drawing_report_json=? WHERE id=?")
-        .bind(JSON.stringify(drawingReport), run.id).run().catch(() => {});
-      const files = drawingReport.files;
-      console.log({
-        event: "drawing_enrichment", aiRunId: run.id, projectId,
-        filesTried: files.length,
-        containerCalls: files.reduce((sum, file) => sum + file.containerCalls, 0),
-        modelCalls: files.reduce((sum, file) => sum + file.modelCalls, 0),
-        readingsProduced: drawingReadings.length,
-        notReadCount: drawingReadings.filter((reading) => reading.splitState !== "value").length,
-        wallMs: files.reduce((sum, file) => sum + file.wallMs, 0),
-        inspectTimings: files.map((file) => file.inspectTimings ?? null),
-      });
-    }
-    if (drawingReadings.length) {
-      await persistReadings(env, projectId, run.id, drawingReadings).catch((error) => {
-        warnings.push(`drawing_readings_persist_failed:${error instanceof Error ? error.name : "Error"}`);
-      });
-    }
   } catch (err) {
+    // The job's deadline is not a warning to walk past into the split hints,
+    // the model and the pricing: the extraction has been given up on, and stops.
+    if (err instanceof DrawingDeadlinePassed) throw err;
     warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
   }
 
@@ -1162,6 +1213,9 @@ export async function runAiExtraction(
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
   } catch (error) {
+    // The job's deadline is the runner's to record, as the deadline: not a
+    // failed summary that reads as a document nobody understood.
+    if (error instanceof DrawingDeadlinePassed) throw error;
     console.log({
       event: "ai_pipeline_error", aiRunId: run.id, projectId,
       name: error instanceof Error ? error.name : "Error",

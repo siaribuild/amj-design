@@ -1,4 +1,4 @@
-import { MAX_CROP_BASE64, type CropBoxPt } from "../contract";
+import { COMPOSITION_RETRY_BUDGET, MAX_CROP_BASE64, type CropBoxPt } from "../contract";
 import {
   compositionBatches, runCompositions,
   type CompositionOutcome, type CompositionRead, type CompositionTask,
@@ -7,8 +7,6 @@ import { openingCropTasks, type OpeningCropTask } from "./crops";
 import type { MatchedOpeningFrame } from "./matchFrames";
 import type { CropForReport, faceMappedProgress } from "./report";
 
-/** How many of a run's composition batches may be asked twice. */
-const COMPOSITION_RETRY_BUDGET = 4;
 
 /**
  * Phase D's crops and Phase E's reads, together: crops are made in batches of

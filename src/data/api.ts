@@ -568,6 +568,9 @@ export interface ParseJob {
 }
 
 // ── AI extraction status (multi-file UX spec §2) ─────────────────────────────
+/** The persisted progress vocabulary the worker writes (its contract.ts). */
+export type DrawingsPhase = "inventory" | "elevation_inventory" | "floorplan_location" | "orientation" | "render_crops" | "opening_read";
+
 export interface ExtractionRun {
   id: string;
   status: "queued" | "running" | "partial" | "completed" | "failed" | "cancelled";
@@ -606,16 +609,16 @@ export interface ExtractionRun {
   drawingsTotal?: number;
   /** Page-wide preparation is real drawing work, but it cannot honestly
    * advance the completed-opening numerator. This phase explains that time. */
-  drawingsPhase?:
-    | "inventory"
-    | "elevation_inventory"
-    | "floorplan_location"
-    | "orientation"
-    | "render_crops"
-    | "opening_read";
+  drawingsPhase?: DrawingsPhase;
   /** The milestone in the parser's own words, where it has them - a recheck is
    * work, not a pause. */
   drawingsMessage?: string;
+  /** Every milestone so far, append-only, so the checklist shows the ones a
+   * poll did not happen to catch. */
+  drawingsLog?: { at: number; phase: DrawingsPhase; done: number; total: number; message?: string }[];
+  /** The server's clock when it answered, so the log above can be read on the
+   * client's clock. */
+  serverNow?: number;
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:

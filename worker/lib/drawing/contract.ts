@@ -17,16 +17,19 @@ export const MAX_INSPECT_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const MAX_RENDER_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 // ── The face-mapped engine's memory, as one arithmetic per run (§8). The
-// isolate is 128 MB. With its renders one at a time (pool.ts `serial`), a run
+// isolate is 128 MB. With its renders one at a time (enrich.ts, `serial`), a run
 // holds: the PDF for the file's whole life; one framed copy of it in flight
 // (the container reads its request by Content-Length, so the copy stays) with
 // the response bytes and the string they decode to; the inspection kept for
 // the file's life, parsed; the crops Phase E keeps between renders; and the
 // runtime. 20 + (20 + 8) + 16 + 32 + 24 = 120 < 128, and the inspection alone,
-// before anything else exists, 20 + (20 + 16) + 24 = 80. The bound is the
-// run's own concurrency; no ledger outlives the request, and two runs in one
-// isolate are the platform's scheduling to bound, not this engine's. Only this
-// engine's calls carry these caps: the other modes' memory is as it was. ──
+// before anything else exists, 20 + (20 + 16) + 24 = 80. The limit is the
+// isolate's, not the invocation's, and one isolate serves concurrent requests:
+// how many face-mapped jobs run at once is the job runner's setting - the
+// queue consumer's concurrency - and is put to the owner in the verification
+// document; this engine bounds one run and holds no state across requests.
+// Only this engine's calls carry these caps: the other modes' memory is as it
+// was. ──
 export const WORKER_ISOLATE_BYTES = 128 * 1024 * 1024;
 /** The largest PDF this engine reads: the size at which the arithmetic
  * closes. The reference sets are 2-6 MB. The other modes keep MAX_PDF_BYTES. */
@@ -45,14 +48,13 @@ export const COMPOSITION_BATCH_SIZE = 4;
 export const COMPOSITION_CONCURRENT_BATCHES = 4;
 export const MAX_CROP_BASE64 = 2_000_000;
 export const MAX_RETAINED_CROP_BYTES = COMPOSITION_BATCH_SIZE * COMPOSITION_CONCURRENT_BATCHES * MAX_CROP_BASE64;
+/** How many of a run's composition batches may be asked twice (§7.6). */
+export const COMPOSITION_RETRY_BUDGET = 4;
 
-export type DrawingProgressPhase =
-  | "inventory"
-  | "elevation_inventory"
-  | "floorplan_location"
-  | "orientation"
-  | "render_crops"
-  | "opening_read";
+/** The persisted progress vocabulary (migration 0062): the six names the
+ * CHECK constraint knows, as a value so the API can validate against it. */
+export const DRAWING_PROGRESS_PHASES = ["inventory", "elevation_inventory", "floorplan_location", "orientation", "render_crops", "opening_read"] as const;
+export type DrawingProgressPhase = (typeof DRAWING_PROGRESS_PHASES)[number];
 
 export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed" | "timeout";
 

@@ -20,6 +20,10 @@ await build({
         retryCurrentAiExtraction,
         aiJobDeadlineMs,
         setDrawingProgress,
+        MAX_PROGRESS_LOG_BYTES,
+        MAX_PROGRESS_MESSAGE_CHARS,
+        parseDrawingProgressLog,
+        processAiExtractionJob,
       } from ${p("worker/lib/ai/jobs.ts")};
       export { completeAiRun } from ${p("worker/lib/ai/runs.ts")};
     `,
@@ -42,8 +46,27 @@ const {
   retryCurrentAiExtraction,
   aiJobDeadlineMs,
   setDrawingProgress,
+  MAX_PROGRESS_LOG_BYTES,
+  MAX_PROGRESS_MESSAGE_CHARS,
+  parseDrawingProgressLog,
+  processAiExtractionJob,
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
+
+test("parseDrawingProgressLog: rows are rebuilt from what the writer produces, nothing else crosses the API", () => {
+  const raw = JSON.stringify([
+    { at: 1_000, phase: "opening_read", done: 4, total: 27, message: "Rechecking 2 unclear openings" },
+    { at: 2_000, phase: "opening_read", done: 8, total: 27, message: 7 },
+    { at: 3_000, phase: "not_a_phase", done: 9, total: 27 },
+    { phase: "opening_read", done: 9, total: 27 },
+    "junk",
+  ]);
+  assert.deepEqual(parseDrawingProgressLog(raw), [
+    { at: 1_000, phase: "opening_read", done: 4, total: 27, message: "Rechecking 2 unclear openings" },
+    { at: 2_000, phase: "opening_read", done: 8, total: 27 },
+  ]);
+  assert.deepEqual(parseDrawingProgressLog("not json"), []);
+});
 
 test("aiJobDeadlineMs: drawing parsers receive 600s while non-drawing modes keep the 120s lease", () => {
   assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto_drawings" }), 600_000);
@@ -56,14 +79,31 @@ test("aiJobDeadlineMs: drawing parsers receive 600s while non-drawing modes keep
 test("setDrawingProgress: writes phase + counts guarded by the exact processing token", async () => {
   const calls = [];
   const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
+  const before = Date.now();
   await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 7, 20, "opening_read", "Rechecking 2 unclear openings");
   assert.equal(calls.length, 1);
   assert.match(calls[0].sql, /UPDATE ai_job_claim SET drawings_done=\?, drawings_total=\?, drawings_phase=\?, drawings_message=\?/);
+  // Append-only (§9): every milestone is kept in a log the client reads, not
+  // only the latest snapshot a poll happens to catch.
+  // The log is one D1 row, so it stops growing by bytes - not by a count that
+  // assumes how many plan files or schedule rows a project holds - well inside
+  // the row limit, while the snapshot columns keep writing; past it the client
+  // shows the live snapshot. (A 480-row run emits at most 730 milestones from
+  // the engine, progressMilestoneCeiling in report.ts, plus the stage's
+  // inventory milestone; the guard holds several such runs.)
+  assert.match(calls[0].sql, new RegExp(`drawings_log=CASE WHEN length\\(CAST\\(coalesce\\(drawings_log,'\\[\\]'\\) AS BLOB\\)\\) < ${MAX_PROGRESS_LOG_BYTES} THEN json_insert\\(coalesce\\(drawings_log,'\\[\\]'\\), '\\$\\[#\\]', json\\(\\?\\)\\) ELSE drawings_log END`));
+  assert.equal(MAX_PROGRESS_LOG_BYTES, 400_000);
   assert.match(calls[0].sql, /WHERE project_id=\? AND source_generation=\? AND status='processing'\s+AND processing_token=\?/);
-  assert.deepEqual(calls[0].args, [7, 20, "opening_read", "Rechecking 2 unclear openings", "proj_1", 3, "tok-abc"]);
-  // A caller with no message to give leaves the column empty, not stale.
+  assert.deepEqual(calls[0].args.slice(0, 4), [7, 20, "opening_read", "Rechecking 2 unclear openings"]);
+  assert.deepEqual(calls[0].args.slice(5), ["proj_1", 3, "tok-abc"]);
+  const entry = JSON.parse(calls[0].args[4]);
+  assert.deepEqual({ ...entry, at: undefined }, { phase: "opening_read", done: 7, total: 20, message: "Rechecking 2 unclear openings", at: undefined });
+  assert.ok(entry.at >= before && entry.at <= Date.now());
+  // A caller with no message to give leaves the column empty, not stale, and
+  // the log entry carries no message either.
   await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 8, 20, "opening_read");
-  assert.deepEqual(calls[1].args, [8, 20, "opening_read", null, "proj_1", 3, "tok-abc"]);
+  assert.deepEqual(calls[1].args.slice(0, 4), [8, 20, "opening_read", null]);
+  assert.equal("message" in JSON.parse(calls[1].args[4]), false);
 });
 
 test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {
@@ -202,7 +242,8 @@ test("staff retry resets and dispatches the same failed generation durably", asy
   assert.equal(writes.length, 1);
   assert.match(writes[0].sql, /status='scheduled'/);
   assert.match(writes[0].sql, /attempts=0/);
-  assert.match(writes[0].sql, /drawings_done=NULL,\s+drawings_total=NULL, drawings_phase=NULL/);
+  assert.match(writes[0].sql, /drawings_done=NULL,\s+drawings_total=NULL, drawings_phase=NULL, drawings_message=NULL, drawings_log=NULL/,
+    "a fresh attempt starts a fresh log; the previous attempt's milestones are not shown beside it");
   assert.equal(sends.length, 1, "the reset claim is sent through the durable queue");
   assert.equal(puts.length, 1, "debounce state follows the replacement token");
 });
@@ -314,4 +355,48 @@ test("AC-42 signing in schedules no AI job and re-decides no product", async () 
   // is reached by signing in.
   assert.ok(callers.get("ops.ts").every((fn) => /retry|runProjectEstimate/.test(fn)), callers.get("ops.ts").join());
   assert.ok(callers.get("parse.ts").every((fn) => /retry|matchSchedule/.test(fn)), callers.get("parse.ts").join());
+});
+
+test("classifyJobException: a deadline that reached the runner as an exception is the deadline, transient, not a document nobody understood", () => {
+  assert.deepEqual(classifyJobException(new Error("ai_processing_deadline_exceeded")), { failureClass: "transient", code: "ai_processing_deadline_exceeded" });
+});
+
+test("setDrawingProgress: a milestone's words are bounded - they carry names read off the customer's drawings", async () => {
+  const calls = [];
+  const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
+  await setDrawingProgress(fakeEnv, "proj_1", 3, "tok-abc", 1, 20, "elevation_inventory", "Reading ".padEnd(5_000, "x"));
+  assert.equal(MAX_PROGRESS_MESSAGE_CHARS, 200);
+  assert.equal(calls[0].args[3].length, MAX_PROGRESS_MESSAGE_CHARS, "the snapshot column");
+  assert.equal(JSON.parse(calls[0].args[4]).message.length, MAX_PROGRESS_MESSAGE_CHARS, "the log entry");
+});
+
+test("processAiExtractionJob: a pipeline that throws the deadline is recorded as the deadline, transient, and the run it abandons is cancelled", async () => {
+  const statements = [];
+  const deadline = () => { throw new Error("ai_processing_deadline_exceeded"); };
+  const env = {
+    DB: {
+      prepare: (sql) => ({ bind: (...args) => ({
+        sql, args,
+        first: async () => {
+          if (sql.startsWith("SELECT ai_generation, status_customer FROM project")) return { ai_generation: 4, status_customer: "draft" };
+          if (/UPDATE ai_job_claim\s+SET status='processing'/.test(sql)) return { project_id: "proj_1", attempts: 1 };
+          return deadline();
+        },
+        run: async () => {
+          statements.push({ sql, args });
+          if (sql.startsWith("UPDATE ai_job_claim") || sql.startsWith("INSERT INTO ai_runs")) return { meta: { changes: 1 } };
+          return deadline();
+        },
+        all: async () => deadline(),
+      }) }),
+      batch: async (bound) => { statements.push(...bound); return bound.map(() => ({ meta: { changes: 1 } })); },
+    },
+    KV: { get: async () => null, delete: async () => {} },
+  };
+  const result = await processAiExtractionJob(env, { projectId: "proj_1", generation: 4, debounceToken: "tok" });
+  // One automatic attempt is configured, so the deadline is terminal.
+  assert.equal(result.state, "failed");
+  const transition = statements.find((s) => /UPDATE ai_job_claim\s+SET status=\?, lease_expires_at=NULL/.test(s.sql));
+  assert.deepEqual(transition.args.slice(0, 3), ["failed", "ai_processing_deadline_exceeded", "transient"]);
+  assert.ok(statements.some((s) => /UPDATE ai_runs SET status='cancelled'/.test(s.sql)), "the abandoned run row is cancelled");
 });

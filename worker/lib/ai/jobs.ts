@@ -2,7 +2,7 @@ import type { Env } from "../../types";
 import { runAiExtraction, type AiExtractionSummary } from "./pipeline";
 import { uuid } from "../util";
 import { hasAnyExactPricingCoverage } from "../estimator/catalogue";
-import type { DrawingProgressPhase } from "../drawing/contract";
+import { DRAWING_PROGRESS_PHASES, type DrawingProgressPhase } from "../drawing/contract";
 
 export interface AiExtractionJob {
   projectId: string;
@@ -60,6 +60,33 @@ export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
  *  setProgress: it never writes past the token that owns the lease (§5,
  *  migration 0059). Denominator is the schedule-opening count and is never
  *  shortened — a gap still advances the numerator. */
+/** The progress log is one D1 row, so it stops growing here - by bytes, not
+ * by a count that assumes how many plan files or schedule rows a project holds
+ * - well inside the row limit, while the snapshot columns keep writing; the
+ * client then shows the live snapshot, so the screen never freezes. A
+ * milestone's words are bounded too: they carry names read off the customer's
+ * drawings. */
+export const MAX_PROGRESS_LOG_BYTES = 400_000;
+export const MAX_PROGRESS_MESSAGE_CHARS = 200;
+
+/** The append-only progress log as stored (migration 0066), rebuilt row by row
+ * from what the writer produces - the six persisted phase names, numbers where
+ * numbers belong, a message only where one is - and nothing else. */
+export function parseDrawingProgressLog(raw: string): { at: number; phase: DrawingProgressPhase; done: number; total: number; message?: string }[] {
+  try {
+    const rows: unknown = JSON.parse(raw);
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((row: unknown) => {
+      const item = (row ?? {}) as Record<string, unknown>;
+      if (typeof item.at !== "number" || typeof item.phase !== "string" || !(DRAWING_PROGRESS_PHASES as readonly string[]).includes(item.phase)
+        || typeof item.done !== "number" || typeof item.total !== "number") return [];
+      return [{ at: item.at, phase: item.phase as DrawingProgressPhase, done: item.done, total: item.total, ...(typeof item.message === "string" ? { message: item.message } : {}) }];
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function setDrawingProgress(
   env: Pick<Env, "DB">,
   projectId: string,
@@ -73,11 +100,17 @@ export async function setDrawingProgress(
    *  customer sees. Absent, the column is cleared, never left stale. */
   drawingsMessage?: string,
 ): Promise<void> {
+  // Progress is append-only (§9 of the face-mapped handover): every milestone
+  // is kept in the log the client reads, not only the snapshot a poll catches.
+  const message = drawingsMessage?.slice(0, MAX_PROGRESS_MESSAGE_CHARS);
+  const entry = JSON.stringify({ at: Date.now(), phase: drawingsPhase, done: drawingsDone, total: drawingsTotal, ...(message ? { message } : {}) });
   await env.DB.prepare(
-    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, drawings_message=?, updated_at=datetime('now')
+    `UPDATE ai_job_claim SET drawings_done=?, drawings_total=?, drawings_phase=?, drawings_message=?,
+        drawings_log=CASE WHEN length(CAST(coalesce(drawings_log,'[]') AS BLOB)) < ${MAX_PROGRESS_LOG_BYTES} THEN json_insert(coalesce(drawings_log,'[]'), '$[#]', json(?)) ELSE drawings_log END,
+        updated_at=datetime('now')
       WHERE project_id=? AND source_generation=? AND status='processing'
         AND processing_token=?`,
-  ).bind(drawingsDone, drawingsTotal, drawingsPhase, drawingsMessage ?? null, projectId, sourceGeneration, processingToken).run().catch(() => {});
+  ).bind(drawingsDone, drawingsTotal, drawingsPhase, message ?? null, entry, projectId, sourceGeneration, processingToken).run().catch(() => {});
 }
 
 class AiJobFault extends Error {
@@ -168,6 +201,11 @@ export function classifyJobException(error: unknown): {
     };
   }
   const message = errorText(error);
+  // The drawing stage throws the deadline when it reaches it after the race
+  // was decided the other way; either way it is the deadline, and transient.
+  if (message === "ai_processing_deadline_exceeded") {
+    return { failureClass: "transient", code: "ai_processing_deadline_exceeded" };
+  }
   if (looksRateLimited(message)) {
     return {
       failureClass: "quota",
@@ -351,7 +389,7 @@ export async function retryCurrentAiExtraction(
               processing_token=NULL, lease_expires_at=NULL,
               last_error=NULL, failure_class=NULL, retry_after=NULL,
               progress_stage='queued', drawings_done=NULL,
-              drawings_total=NULL, drawings_phase=NULL,
+              drawings_total=NULL, drawings_phase=NULL, drawings_message=NULL, drawings_log=NULL,
               updated_at=datetime('now')
         WHERE project_id=? AND source_generation=?
           AND (status='failed'
@@ -486,7 +524,7 @@ export async function processAiExtractionJob(
             processing_token=?, last_error=NULL, failure_class=NULL,
             retry_after=NULL, lease_expires_at=datetime('now','+135 seconds'),
             progress_stage='reading_documents', drawings_done=NULL,
-            drawings_total=NULL, drawings_phase=NULL,
+            drawings_total=NULL, drawings_phase=NULL, drawings_message=NULL, drawings_log=NULL,
             updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (

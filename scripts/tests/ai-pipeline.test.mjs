@@ -28,7 +28,7 @@ await build({
   stdin: {
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
-      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints } from ${p("worker/lib/ai/pipeline.ts")};
+      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
@@ -47,7 +47,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
+  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
@@ -1740,4 +1740,64 @@ test("a proposal that CAN price the opening retires the reason saying it could n
     "the patch must SAY something about `product` — silence leaves the old sentence in place");
   assert.equal(patch.product, null,
     "null is how json_patch deletes a key: the line has a product and a price, so the reason is retired");
+});
+
+test("persistDrawingStage: a face-mapped run past its deadline writes nothing more, and the deadline is not swallowed (S2)", async () => {
+  // The job runner gives up on the extraction at its deadline. Whatever the
+  // drawing stage still returns after it is not written - neither the report
+  // nor the readings - and the refusal is an exception the caller sees, not a
+  // warning it walks past into split hints, model persistence and pricing.
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  const harness = ({ mode = "face_mapped", reportWriteMs = 0, persistMs = 0 } = {}) => {
+    const writes = [];
+    const persisted = [];
+    const warnings = [];
+    const env = {
+      AI_EXTRACTION_MODE: mode,
+      DB: { prepare: (sql) => ({ bind: () => ({ run: async () => { writes.push(sql); if (/drawing_report_json/.test(sql) && reportWriteMs) await sleep(reportWriteMs); } }) }) },
+    };
+    const stageResult = { readings: [{ externalRef: "W1", splitState: "value" }], report: { files: [{ fileId: "f", steps: { failedPhase: undefined }, containerCalls: 1, modelCalls: 1, wallMs: 5 }] } };
+    const run = (deadlineAt, stageMs = 0) => persistDrawingStage(env, {
+      projectId: "p", run: { id: "r" }, planPdfDocs: [{ fileId: "f" }], scheduleRows: [], warnings, deadlineAt,
+    }, {
+      stage: async () => { if (stageMs) await sleep(stageMs); return stageResult; },
+      persist: async (_env, _projectId, _runId, readings) => { if (persistMs) await sleep(persistMs); persisted.push(readings); },
+    });
+    return { writes, persisted, warnings, run, stageResult };
+  };
+
+  // Inside the deadline: report written, readings persisted and returned.
+  const fine = harness();
+  const result = await fine.run(Date.now() + 5_000);
+  assert.equal(fine.writes.filter((sql) => /drawing_report_json/.test(sql)).length, 1);
+  assert.equal(fine.persisted.length, 1);
+  assert.deepEqual(result.readings, fine.stageResult.readings);
+
+  // The stage returns past the deadline: nothing written, nothing persisted, thrown.
+  const late = harness();
+  await assert.rejects(late.run(Date.now() + 30, 60), (error) => error instanceof DrawingDeadlinePassed && error.message === "ai_processing_deadline_exceeded");
+  assert.equal(late.writes.length, 0, "no report write");
+  assert.deepEqual(late.persisted, [], "no readings persisted");
+  assert.ok(late.warnings.includes("drawing_persist_skipped:deadline"));
+
+  // The report write itself crosses the deadline: it began in time and lands,
+  // but the readings behind it are not persisted, and the deadline is thrown.
+  const crossing = harness({ reportWriteMs: 60 });
+  await assert.rejects(crossing.run(Date.now() + 30), (error) => error instanceof DrawingDeadlinePassed);
+  assert.equal(crossing.writes.filter((sql) => /drawing_report_json/.test(sql)).length, 1);
+  assert.deepEqual(crossing.persisted, []);
+
+  // The readings write itself crosses the deadline: it began in time and lands,
+  // and the deadline is still thrown, so the pipeline does not walk on into the
+  // model and the pricing with the time already spent.
+  const persistCrossing = harness({ persistMs: 60 });
+  await assert.rejects(persistCrossing.run(Date.now() + 30), (error) => error instanceof DrawingDeadlinePassed);
+  assert.equal(persistCrossing.persisted.length, 1);
+  assert.ok(persistCrossing.warnings.includes("drawing_persist_skipped:deadline"));
+
+  // The other modes never had this clock: past a deadline they write as before.
+  const legacy = harness({ mode: "auto_drawings" });
+  const asBefore = await legacy.run(Date.now() - 1, 0);
+  assert.equal(legacy.persisted.length, 1);
+  assert.deepEqual(asBefore.readings, legacy.stageResult.readings);
 });

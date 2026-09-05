@@ -134,6 +134,42 @@ export type StageLogEntry = {
   drawing?: { done: number; total: number; phase?: DrawingProgressPhase; message?: string };
 };
 
+/** The server's append-only drawing log becomes the drawing rows, replacing
+ * whatever snapshots the polls happened to catch; every other stage row stays.
+ * A live snapshot newer than the log's last row is a row too, so a log that
+ * reached its cap does not freeze the screen. Returns `prev` itself when
+ * nothing changes, so nothing re-renders for nothing. */
+export function mergeDrawingLog(
+  prev: StageLogEntry[],
+  log: NonNullable<ExtractionRun["drawingsLog"]>,
+  snapshot?: StageLogEntry["drawing"],
+  /** Browser clock minus server clock, measured on the poll that carried the
+   * log, so its rows sort and time against browser-stamped stages. */
+  skewMs = 0,
+): StageLogEntry[] {
+  const toDrawing = (entry: (typeof log)[number]): NonNullable<StageLogEntry["drawing"]> =>
+    ({ done: entry.done, total: entry.total, phase: entry.phase, ...(entry.message ? { message: entry.message } : {}) });
+  const sameDrawing = (a?: StageLogEntry["drawing"], b?: StageLogEntry["drawing"]) =>
+    a?.done === b?.done && a?.total === b?.total && a?.phase === b?.phase && a?.message === b?.message;
+  const previousDrawingRows = prev.filter((entry) => entry.stage === "reading_openings");
+  // One clock offset for the run: the poll that first showed the log set it,
+  // and every later poll - each measuring its own latency - moves the rows it
+  // brings by that same offset, so nothing already shown moves.
+  const first = previousDrawingRows[0];
+  const offset = first && log[0] && sameDrawing(first.drawing, toDrawing(log[0])) ? first.at - log[0].at : skewMs;
+  const rows: StageLogEntry[] = log.map((entry) => ({ stage: "reading_openings", at: entry.at + offset, drawing: toDrawing(entry) }));
+  const last = rows[rows.length - 1]?.drawing;
+  if (snapshot && !sameDrawing(last, snapshot)) {
+    rows.push({ stage: "reading_openings", at: Math.max(Date.now(), (rows[rows.length - 1]?.at ?? 0) + 1), drawing: { ...snapshot } });
+  }
+  const same = (a: StageLogEntry, b: StageLogEntry) => a.at === b.at && sameDrawing(a.drawing, b.drawing);
+  // A snapshot row already there, with its own clock, is the same row.
+  if (previousDrawingRows.length === rows.length && previousDrawingRows.every((entry, index) =>
+    same(entry, rows[index]) || (index === rows.length - 1 && snapshot && same({ ...entry, at: rows[index].at }, rows[index])))) return prev;
+  const others = prev.filter((entry) => entry.stage !== "reading_openings");
+  return [...others, ...rows].sort((a, b) => a.at - b.at);
+}
+
 /** True once the run has either completed every drawing read or advanced past
  * drawing work. The latter matters when drawing inspection fails before the
  * per-opening counter can move: later rows must not inherit the drawing timer. */
@@ -379,7 +415,16 @@ export function useProjectDocuments(
     setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
   };
   const recordRunProgress = (run: ExtractionRun) => {
-    if (run.drawingsTotal != null && run.drawingsPhase) {
+    // The server's log is read only with the server's clock beside it; without
+    // it the rows would be sorted against the browser's clock, so the
+    // browser-stamped snapshot path stands in.
+    if (run.drawingsLog?.length && run.serverNow != null) {
+      const snapshot = run.drawingsTotal != null && run.drawingsPhase
+        ? { done: run.drawingsDone ?? 0, total: run.drawingsTotal, phase: run.drawingsPhase, message: run.drawingsMessage }
+        : undefined;
+      const skewMs = run.serverNow != null ? Date.now() - run.serverNow : 0;
+      setStageLog((prev) => mergeDrawingLog(prev, run.drawingsLog!, snapshot, skewMs));
+    } else if (run.drawingsTotal != null && run.drawingsPhase) {
       setStageLog((prev) => {
         const last = [...prev].reverse().find((entry) => entry.stage === "reading_openings")?.drawing;
         const next = { done: run.drawingsDone ?? 0, total: run.drawingsTotal!, phase: run.drawingsPhase, message: run.drawingsMessage };
@@ -543,10 +588,13 @@ export function useProjectDocuments(
                 drawingsMessage: run.drawingsMessage,
               });
         } else if (run?.status === "failed") {
+          recordRunProgress(run);   // a failed attempt keeps its milestones too (§9)
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
         } else if (run && sawRun) {
-          // The run we watched finished — swap the tail for its outcome.
+          // The run we watched finished — swap the tail for its outcome, after
+          // the milestones the last running poll did not catch (§9).
+          recordRunProgress(run);
           if (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0) {
             setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           } else {

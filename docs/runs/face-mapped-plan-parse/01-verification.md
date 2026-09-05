@@ -300,12 +300,20 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   128 - and the inspection alone, before anything else exists, 20 + 36 + 24 =
   80. The caps are measured: inspection 8 MB (54-64 KB per page, about 4 MB at
   the 60-page cap), render 4 MB (a full sheet at 150 DPI is 2.03 MB of base64).
-  Renders are one at a time through `serial()` in `pool.ts`, an
-  invocation-local chain: **no ledger outlives the request** - a round-ten
-  shared budget with queues and leases in module state was the wrong shape for
-  a Worker and is gone. Two runs in one isolate are the platform's to schedule,
-  not this engine's to bound, and the document says so. The body is decoded as
-  it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
+  Renders are one at a time through a small `serial()` chain local to
+  `enrich.ts` - a round-ten shared budget with queues and leases in module
+  state was the wrong shape for a Worker and is gone, and so (round thirteen,
+  on the reviewer's ruling) is round twelve's per-isolate run slot: it
+  serialised unrelated jobs with a silent wait of up to ten minutes and a
+  starvation case, which is a policy nobody approved. **What remains is a
+  fact the owner must decide on**: the limit is the isolate's, one isolate
+  serves concurrent requests, and this engine bounds one run at 120 MB. Two
+  face-mapped jobs in one isolate at once could exceed 128 MB. The honest
+  control is the job runner's, not this engine's: the queue consumer's
+  concurrency (`wrangler.jsonc`, `max_concurrency: 1` for `apertly-ai-jobs`)
+  or a Durable Object that hands out turns. Jobs are also dispatched from
+  routes through `waitUntil`, which the queue setting does not cover. This
+  engine holds no state across requests. The body is decoded as it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
   their inspection and render caps stay 16 MB, their calls carry none of this
   engine's limits, they read files as they always did and are refused where
   they always were, and their crop retention is as it was. The face-mapped
@@ -314,21 +322,67 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   second look and the sheet read - carry version v2. The framed request copy
   stays: the container reads its request by Content-Length, and the container
   is unchanged on this branch.
-- **Nothing is done after the job's deadline.** The job runner computes one
-  absolute deadline; the pipeline carries it down; and both of this engine's
-  call funnels enforce it - every model call is refused once it has passed, and
-  every render is refused when its turn comes (checked at dispatch, because four
-  waves can queue before the deadline and reach it after). Container calls made
-  inside the deadline are given no more time than remains. A refused call is
-  not counted as one. The run ends with what it has and the report says why.
+- **After the job's deadline: no new dispatch; no crop, progress, report or
+  reading written.** The job runner computes one absolute deadline; the
+  pipeline carries it down; both of this engine's call funnels refuse once it
+  has passed - every model call, and every render when its turn comes (checked
+  at dispatch, because four waves can queue before the deadline and reach it
+  after) - and container calls made inside it are given no more time than
+  remains. A call already in flight cannot be cancelled; its result is
+  discarded: no crop is stored (checked before the decode, before the put, and a
+  put that finished late is taken back) and no progress written after the
+  deadline - not even the first, which follows the read from R2 - the stage
+  returns no readings and names `deadline` as the phase (a file that had
+  already failed for a reason of its own keeps that reason), and the pipeline
+  writes neither report nor readings, checking before each, **and stops**: the
+  deadline is thrown out of the drawing stage, not logged as a warning and
+  walked past into the split hints, the model and the pricing (round
+  thirteen). The persistence boundaries themselves are tested: a stage that
+  returns late writes nothing; a report write that crosses the deadline lands
+  but the readings behind it do not; another mode is untouched. A write that
+  began in time may still land - the check is before each write, not a
+  transaction around it. The abandoned run row is cancelled by the runner as
+  it records the failure. What can still land: the stage archive
+  row of a call that was already in flight, and the pipeline's own downstream
+  writes for the run, which are as they were for every mode - the job runner's
+  revoked processing token is what stops those, as before. A run whose job is
+  already over before it starts is refused before it asks for anything. The
+  other modes never had this clock and are not gated by it. A refused call is
+  not counted as one.
 - **The report is the file's report.** The inspection's inventory, timings,
   page count (a page that is both plan and elevation is one page) and page
   selection stay on it; `pagesRendered` counts pages that came back, not
   attempts.
-- **Rechecks are milestones the customer sees.** Migration 0065 adds
-  `drawings_message` beside the phase; the engine's message travels through
-  the pipeline, the API and the checklist, where a milestone with its own words
-  shows them - "Rechecking 2 unclear openings" is a row, not a pause.
+Codex over the result found nine, then five, then three, then two more, all
+closed the same way. The reviewer's round thirteen then removed the run slot
+(above) and made the deadline stop the pipeline (above); it also found the
+progress cap short of the largest run and the two clocks mixed, both closed.
+
+- **Rechecks are milestones the customer sees, and progress is append-only
+  (§9).** Migration 0065 adds `drawings_message` beside the phase; migration
+  0066 adds `drawings_log`, every milestone appended as it happens - capped in
+  bytes, well inside the D1 row it lives in, with the snapshot columns writing
+  on past the cap so the screen never freezes; a milestone's words are bounded
+  too, since they carry names read off the customer's drawings - and started
+  afresh on every attempt, so what a five-second poll did not happen to catch
+  is still a row. How many milestones a run emits is counted from every emitter
+  (`progressMilestoneCeiling`, report.ts, checked against a real run's events):
+  at most 730 per plan file from the engine for a 480-row schedule, plus the
+  stage's one inventory milestone per file - a run's total is the sum over its
+  plan files - so the cap holds several such files. The guard is checked before
+  each append, so the last entry may overshoot the bound by one bounded entry,
+  under a kilobyte, against a row limit of two megabytes. And the attempt that
+  finishes between two polls keeps its milestones: the terminal response
+  carries the completed claim's log, and the client merges it before it leaves
+  the checklist. The engine's words travel through the
+  pipeline, the API (rows rebuilt in the job layer against the six phase names,
+  the route thin) and the checklist, where the server's log is the drawing rows,
+  moved onto the browser's clock by one offset - the skew the poll that first
+  showed the log measured, kept by the rows it stamped and applied to the rows
+  later polls bring, so nothing already shown moves with the network - so they
+  sort and time against the browser-stamped stages; a live snapshot newer than the log is
+  a row too, and a milestone with its own words shows them - "Rechecking 2
+  unclear openings" is a row, not a pause.
 
 Codex over the result found four more, all closed: the inspection is inside the
 deadline too - an expired run inspects nothing, a cold-container retry is not
@@ -336,6 +390,62 @@ taken after the deadline, and neither refusal counts as a call; the report keeps
 what the text layer selected with its own reasons and adds only what a look
 recovered; the engine counts pages read, not roles, on its own report as well;
 and two leftovers of the removed budget are gone.
+
+Codex over round thirteen found one P1 and four more, all closed, each a test
+first: the deadline thrown out of the drawing stage was caught again by the
+pipeline's outer catch and returned as a failed summary, so the pipeline
+rethrows it and the job runner records it as what it is - the deadline,
+transient, `ai_processing_deadline_exceeded`; the cap counted milestones on an
+assumption - one plan file, a 480-row schedule - that nothing in the pipeline
+enforces (a project holds up to twenty-five files, each schedule up to two
+hundred rows, and the roster is their merge), and a count is not a byte bound
+anyway when the words are read off the customer's drawings, so the log is now
+capped in bytes and the words in length, tested with an oversized message; the
+server's log is merged only with the server's clock beside it, else the
+browser-stamped snapshot path stands in as before; and names. Codex also asked
+whether the run row a failure abandons is cancelled: it is - the runner cancels
+it on every terminal failure, and with one automatic attempt configured
+(`MAX_AUTOMATIC_ATTEMPTS`) every failure is terminal; the retry branch would
+not, but nothing reaches it, and a change nothing reaches is not surgical, so it
+is noted here and left. Tested through the runner with a pipeline that throws
+the deadline: recorded as the deadline, transient, and the run cancelled.
+
+A third Codex pass found the clock offset recomputed on every poll, so a change
+in network latency moved every row already shown; closed - one offset per run,
+set by the poll that first showed the log, tested with the same log through a
+different latency. It also found the engine's milestone ceiling quoted one too
+high (730 from the engine; the stage adds the inventory milestone), fixed in the
+wording. Two of its findings are not closed here and are stated as they are:
+
+- **The pipeline's two rethrows of the deadline are covered by review, not by a
+  test.** The runner-level test proves classification and cancellation of an
+  exception that reaches the runner; a test that reaches `persistDrawingStage`
+  through `runAiExtraction` would need a harness for everything before the
+  drawing stage - file manifest, ingestion, classification, the schedule
+  skills - which this repository does not have, and building it is test
+  infrastructure outside this feature. The two lines are `if (error instanceof
+  DrawingDeadlinePassed) throw error;` at each catch; Codex read both and called
+  them correct.
+A fourth Codex pass found a P1 and closed it: the readings write is the last
+write of the stage, and a deadline that passed while it ran was not checked
+after it, so the pipeline could walk on into the model and the pricing with the
+time already spent; the boundary now checks after that write too, tested with
+a persist that crosses the deadline (it lands; the deadline is thrown). It also
+found the terminal poll dropped the milestones between the last running poll
+and the finish - closed, above, tested through the route - and the ceiling's
+scope and the soft cap misstated, both fixed in the wording above. A fifth pass
+found the failed terminal branch left that log unmerged (the same one line, now
+there) and a test naming a phase that does not exist; nothing else.
+
+- **Owner ruling needed.** §9 says progress is append-only at milestones. The
+  log is one D1 row and is bounded at 400 KB - roughly four to five 480-row
+  plan files, or a great many ordinary ones - and past the bound milestones are
+  not kept; the snapshot columns go on and the customer sees the live state, so the
+  screen never freezes, but a recheck that happened past the bound and between
+  two polls is not a row. Recommended: ratify the bound - a run that emits
+  thousands of milestones is the pathological case, and the poll carries the
+  whole log each time, so an unbounded log is a payload problem before it is a
+  storage one. The alternative is one row per milestone and an incremental read.
 
 **Owner ruling needed.** The handover says the existing byte limits apply.
 This engine reads PDFs up to 20 MB and responses up to 8 MB (inspection) and

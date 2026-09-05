@@ -1,5 +1,4 @@
 import { StageCallError } from "../../ai/stage";
-
 /** What one stage call cost, as the stage layer reports it. */
 export interface StageUsage {
   modelCalls: number;

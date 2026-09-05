@@ -17,15 +17,3 @@ export async function mapPool<T, R>(
   await Promise.all(workers);
   return results;
 }
-
-/** One call at a time through `call`, in the order asked. The face-mapped
- * engine's memory is priced on one render in flight (contract.ts); this is
- * how a run keeps to that, with nothing that outlives the run. */
-export function serial<A extends unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
-  let last: Promise<unknown> = Promise.resolve();
-  return (...args) => {
-    const next = last.then(() => call(...args));
-    last = next.catch(() => {});
-    return next;
-  };
-}

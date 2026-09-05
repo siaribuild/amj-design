@@ -17,6 +17,7 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { readOpenings } from ${p("worker/lib/drawing/faceMapped/readOpenings.ts")};
+      export { progressMilestoneCeiling } from ${p("worker/lib/drawing/faceMapped/report.ts")};
       export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
       export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
@@ -57,7 +58,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, progressMilestoneCeiling, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -4304,6 +4305,7 @@ test("run: a face with fewer frames than openings gets its second look, and an o
     "a direction the second look chose is a direction, and is reported");
   assert.equal(hidden.events.some((event) => /Rechecking 3 unclear openings/.test(event.message)), true,
     "the second look is a milestone the user can see (§9)");
+  assert.ok(hidden.events.length <= progressMilestoneCeiling(3), "a run with a second look stays under the ceiling the progress log is sized by");
 
   // The same pairs with nothing said about W2: the look did not see it hidden,
   // so it is an inventory or matching conflict still open, and says so.
@@ -8149,6 +8151,9 @@ test("container client: the face-mapped engine's memory is one arithmetic per ru
   assert.equal(RETAINED_INSPECTION_BYTES, 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES);
   const oneRender = FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES;
   const oneInspection = FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES;
+  // One run at its peak fits the isolate. The limit is the isolate's and one
+  // isolate serves concurrent requests; how many face-mapped jobs may run at
+  // once is the job runner's setting, put to the owner (verification document).
   assert.ok(FACE_MAPPED_MAX_PDF_BYTES + oneRender + RETAINED_INSPECTION_BYTES + MAX_RETAINED_CROP_BYTES + 24 * MB <= WORKER_ISOLATE_BYTES,
     "the file, one render, the parsed inspection, the retained crops and 24 MB of runtime fit the isolate");
   assert.ok(FACE_MAPPED_MAX_PDF_BYTES + oneInspection + 24 * MB <= WORKER_ISOLATE_BYTES, "and the inspection, before anything else exists");
@@ -8168,6 +8173,42 @@ test("container client: the face-mapped engine's memory is one arithmetic per ru
     renderPage(answerWith(tenMb), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, undefined, { responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES }),
     (error) => error instanceof ContainerClientError && error.code === "too_large",
   );
+});
+
+test("runDrawingEnrichmentStage: a run that ends after its job's deadline persists nothing (S2)", async () => {
+  // The job runner gives up on the extraction at the deadline; whatever the
+  // abandoned run still produces is not written against the retry.
+  const inspected = { inventory: { pageCount: 1, producer: null, fonts: [], hasAttachments: false, pages: [{ pageNo: 3, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 0, imageCount: 0, imageAreaFraction: 0 }] }, pages: [{ pageNo: 3, text: "", words: [] }] };
+  const env = {
+    AI_EXTRACTION_MODE: "face_mapped",
+    DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f", r2_key: "k" }] }) }) }) },
+    FILES: { get: async () => ({ size: 3, arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
+    PLAN_PARSE: {},
+  };
+  const result = await runDrawingEnrichmentStage(env, {
+    projectId: "p", aiRunId: "r", planPdfDocs: [{ fileId: "f" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    deadlineAt: Date.now() + 40,
+  }, {
+    inspect: async () => { await new Promise((done) => setTimeout(done, 80)); return inspected; },
+    render: async () => ({ images: [], dpi: 100 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+    runFaceMapped: { readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null, reconcileFace: async () => null, readComposition: async () => null },
+  });
+  assert.deepEqual(result.readings, [], "readings a dead job produced are not persisted");
+  assert.equal(result.report.files[0].steps.failedPhase, "deadline", "and the report says the job's deadline is what ended it");
+
+  // The other modes are not gated by a deadline they never had.
+  const legacy = await runDrawingEnrichmentStage({ ...env, AI_EXTRACTION_MODE: "auto_drawings" }, {
+    projectId: "p", aiRunId: "r", planPdfDocs: [{ fileId: "f" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    deadlineAt: Date.now() - 1,
+  }, {
+    inspect: async () => inspected,
+    render: async () => ({ images: [], dpi: 100 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+  });
+  assert.notEqual(legacy.report.files[0].steps.failedPhase, "deadline", "an existing mode's result is what it always was");
 });
 
 test("enrich: a PDF over its cap is refused before it is read, and a face-mapped file has its own cap (S1)", async () => {
@@ -8232,10 +8273,12 @@ test("enrich: the face-mapped engine renders one page at a time, and stops when 
     let inFlight = 0;
     let peak = 0;
     const modelCalls = [];
+    const progressAt = [];
     const result = await enrichOpenings(env, {
       projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
       scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
       deadlineAt,
+      onProgress: async () => { progressAt.push(Date.now()); },
     }, {
       inspect: async () => inspected,
       render: async () => {
@@ -8256,20 +8299,23 @@ test("enrich: the face-mapped engine renders one page at a time, and stops when 
         })) }; }),
       },
     });
-    return { result, peak, modelCalls };
+    return { result, peak, modelCalls, progressAt };
   };
   const whole = await runWith({ renderMs: 5 });
+  assert.ok(whole.progressAt.length >= 3, "a whole run reports its milestones");
   assert.equal(whole.peak, 1, "Phase A has two sheets to look at, and renders them one at a time");
   assert.deepEqual(whole.result.readings.map((r) => r.splitState), ["value"]);
 
   // The first render outlives the deadline. Nothing is asked after it: not the
   // sheet read that render was for, not the second sheet, not the plan.
-  const cut = await runWith({ renderMs: 120, deadlineAt: Date.now() + 50 });
+  const cutDeadline = Date.now() + 50;
+  const cut = { ...(await runWith({ renderMs: 120, deadlineAt: cutDeadline })), deadlineAt: cutDeadline };
   assert.deepEqual(cut.modelCalls, [], "no model call after the deadline");
   assert.equal(cut.result.report.files[0].containerCalls, 2, "the inspection and the one render already in flight; no more");
   assert.equal(cut.result.report.files[0].modelCalls, 0);
   assert.deepEqual(cut.result.readings.map((r) => r.splitState), ["not_read"]);
   assert.equal(cut.result.report.files[0].providerFailure?.warnings.some((w) => /deadline/.test(w)), true, "and the report says why");
+  assert.equal(cut.progressAt.filter((at) => at >= cut.deadlineAt).length, 0, "and no progress is written after the deadline either");
 
   // The inspection is inside the deadline too. A run whose deadline has already
   // passed inspects nothing; a first inspection that times out on the last of
@@ -8298,6 +8344,35 @@ test("enrich: the face-mapped engine renders one page at a time, and stops when 
   });
   assert.equal(lateRetry.inspections, 1, "the cold-container retry is not taken after the deadline");
   assert.equal(lateRetry.file.containerCalls, 1);
+
+  // Reading the PDF from R2 can itself outlive the deadline; the first progress
+  // write, which comes after it, is inside the deadline too.
+  const progressWrites = [];
+  const slowRead = await enrichOpenings({ FILES: { get: async () => ({ size: 3, arrayBuffer: async () => { await new Promise((done) => setTimeout(done, 60)); return new ArrayBuffer(3); } }), put: async () => {} }, PLAN_PARSE: {} }, {
+    projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    deadlineAt: Date.now() + 30,
+    onProgress: async (...event) => { progressWrites.push(event); },
+  }, {
+    inspect: async () => inspected, render: async () => ({ images: [], dpi: 100 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+    runFaceMapped: { readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null, reconcileFace: async () => null, readComposition: async () => null },
+  });
+  assert.deepEqual(progressWrites, [], "no progress is written once the deadline has passed, not even the first");
+  assert.equal(slowRead.report.files[0].containerCalls, 0);
+  assert.equal(slowRead.report.files[0].steps.failedPhase, "deadline", "and the phase says the deadline is what ended it, not the inspection that never happened");
+
+  // A read from R2 that fails after the slot was taken is an R2 failure, not
+  // isolate contention.
+  const unreadable = await enrichOpenings({ FILES: { get: async () => ({ size: 3, arrayBuffer: async () => { throw new Error("R2 unavailable"); } }), put: async () => {} }, PLAN_PARSE: {} }, {
+    projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+  }, {
+    inspect: async () => inspected, render: async () => ({ images: [], dpi: 100 }),
+    runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+    runFaceMapped: { readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null, reconcileFace: async () => null, readComposition: async () => null },
+  });
+  assert.equal(unreadable.report.files[0].steps.failedPhase, "r2_lookup");
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {

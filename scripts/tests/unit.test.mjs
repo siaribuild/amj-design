@@ -40,7 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
-      export { checklistStepDuration, documentChecklist, drawingProgressEnded, pollWindowMs } from ${p("src/data/useProjectDocuments.ts")};
+      export { checklistStepDuration, documentChecklist, drawingProgressEnded, mergeDrawingLog, pollWindowMs } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1686,6 +1686,43 @@ test("documentChecklist: a milestone with its own words shows them - rechecking 
     stage: "building_envelope", drawingsDone: 4, drawingsTotal: 27, drawingsPhase: "opening_read",
     drawingsMessage: "Rechecking 2 unclear openings",
   }).steps[3].detail, " · Rechecking 2 unclear openings");
+});
+
+test("mergeDrawingLog: the server's append-only log is the drawing rows, whatever the polls happened to catch (§9)", () => {
+  const prev = [{ stage: "queued", at: 1_000 }, { stage: "reading_openings", at: 5_000, drawing: { done: 0, total: 27, phase: "floorplan_location" } }];
+  const log = [
+    { at: 4_000, phase: "floorplan_location", done: 0, total: 27, message: "Mapping floor plans" },
+    { at: 6_000, phase: "opening_read", done: 4, total: 27, message: "Reading opening compositions" },
+    { at: 6_500, phase: "opening_read", done: 4, total: 27, message: "Rechecking 2 unclear openings" },
+  ];
+  const merged = M.mergeDrawingLog(prev, log);
+  assert.deepEqual(merged.map((entry) => [entry.stage, entry.at, entry.drawing?.message]), [
+    ["queued", 1_000, undefined],
+    ["reading_openings", 4_000, "Mapping floor plans"],
+    ["reading_openings", 6_000, "Reading opening compositions"],
+    ["reading_openings", 6_500, "Rechecking 2 unclear openings"],
+  ], "the server's rows replace the snapshots the client caught; a recheck between two polls is still a row");
+  assert.equal(M.mergeDrawingLog(merged, log), merged, "the same log again changes nothing");
+  // A log that stopped growing - its cap reached - does not freeze the screen:
+  // a snapshot newer than the log's last row is a row too.
+  const snapshot = { done: 8, total: 27, phase: "opening_read", message: "Reading opening compositions" };
+  const withSnapshot = M.mergeDrawingLog(merged, log, snapshot);
+  assert.deepEqual(withSnapshot.slice(-1).map((entry) => [entry.drawing?.done, entry.drawing?.message]), [[8, "Reading opening compositions"]]);
+  assert.equal(M.mergeDrawingLog(withSnapshot, log, snapshot), withSnapshot, "and the same snapshot again changes nothing");
+  // Same timestamps and messages, different counts: still a change.
+  const recounted = log.map((entry) => ({ ...entry, done: entry.done + 1 }));
+  assert.notEqual(M.mergeDrawingLog(merged, recounted), merged, "a changed count is a change, whatever the timestamps say");
+  // The server's clock is not the browser's: its rows are moved onto the
+  // browser's clock by the skew the poll measured, so ordering and durations
+  // against the browser-stamped stages hold.
+  const skewed = M.mergeDrawingLog([{ stage: "queued", at: 1_000 }], log, undefined, 5_000);
+  assert.deepEqual(skewed.filter((entry) => entry.stage === "reading_openings").map((entry) => entry.at), [9_000, 11_000, 11_500]);
+  // One clock offset for the run: the same log polled again through a different
+  // latency is the same rows, and a row a later poll brings lands on the offset
+  // the first poll set, so nothing already shown moves.
+  assert.equal(M.mergeDrawingLog(skewed, log, undefined, 9_000), skewed);
+  const grown = M.mergeDrawingLog(skewed, [...log, { ...log[2], at: 8_000, done: 3 }], undefined, 9_000);
+  assert.deepEqual(grown.filter((entry) => entry.stage === "reading_openings").map((entry) => entry.at), [9_000, 11_000, 11_500, 13_000]);
 });
 
 test("documentChecklist: observed drawing milestones remain as separate rows with separate durations", () => {

@@ -11,7 +11,7 @@ import {
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 import { uuid } from "../lib/util";
-import { aiJobDeadlineMs, customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
+import { aiJobDeadlineMs, customerSafeJobDiagnostic, parseDrawingProgressLog, retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { derivedKeys } from "../lib/ai/ingest";
 import { purgeProjectCrops } from "../lib/drawing/crops";
 
@@ -374,7 +374,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
             j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at,
-            j.drawings_done, j.drawings_total, j.drawings_phase, j.drawings_message
+            j.drawings_done, j.drawings_total, j.drawings_phase, j.drawings_message, j.drawings_log
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -393,6 +393,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
     drawings_total: number | null;
     drawings_phase: string | null;
     drawings_message: string | null;
+    drawings_log: string | null;
   }>().catch(() => null);
   if (pending) {
     const diagnostic = (pending.status === "failed" || pending.failure_class === "quota")
@@ -413,6 +414,9 @@ parse.get("/projects/current/extraction-status", async (c) => {
         // against a 600s auto_drawings lease — and a run that went on to
         // succeed was reported to the customer as interrupted.
         deadlineMs: aiJobDeadlineMs(c.env),
+        // The server's clock, so the client can put the server-stamped progress
+        // log onto its own clock beside its own stage timings.
+        serverNow: Date.now(),
         // Present only while a drawing read is running (§5) — absent on
         // every job that predates this feature and on any run with no
         // drawings. No unread/gap detail rides along either (AC-25).
@@ -421,6 +425,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
           drawingsTotal: pending.drawings_total,
           ...(pending.drawings_phase ? { drawingsPhase: pending.drawings_phase } : {}),
           ...(pending.drawings_message ? { drawingsMessage: pending.drawings_message } : {}),
+          ...(pending.drawings_log ? { drawingsLog: parseDrawingProgressLog(pending.drawings_log) } : {}),
         } : {}),
       },
       basis: {},
@@ -431,6 +436,13 @@ parse.get("/projects/current/extraction-status", async (c) => {
       WHERE project_id = ? ORDER BY started_at DESC LIMIT 1`,
   ).bind(project.id).first<{ id: string; status: string; started_at: string; completed_at: string | null; summary_json: string | null }>();
   if (!r) return c.json({ run: null });
+  // §9: the attempt that finished between two polls keeps its milestones - the
+  // completed claim's log rides the terminal response, the server's clock beside it.
+  const finished = await c.env.DB.prepare(
+    `SELECT j.drawings_log FROM ai_job_claim j JOIN project p ON p.id=j.project_id
+      WHERE j.project_id=? AND j.source_generation=p.ai_generation AND j.status='completed'
+      LIMIT 1`,
+  ).bind(project.id).first<{ drawings_log: string | null }>().catch(() => null);
   let summary: unknown = null;
   try { summary = r.summary_json ? JSON.parse(r.summary_json) : null; } catch { /* unreadable summary is absent, not an error */ }
   // Per-line basis for the trust chips (UX spec §5): explicit_energy_report vs
@@ -457,6 +469,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
       completedAt: r.completed_at,
       summary,
       progressStage: r.completed_at ? "complete" : "preparing_quote",
+      ...(finished?.drawings_log ? { drawingsLog: parseDrawingProgressLog(finished.drawings_log), serverNow: Date.now() } : {}),
     },
     basis,
   });

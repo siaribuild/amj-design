@@ -177,6 +177,19 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal("drawingsTotal" in withoutCounts.body.run, false);
       assert.equal("drawingsPhase" in withoutCounts.body.run, false);
 
+      // §9: the job finishing between two polls loses no milestone - the
+      // terminal response carries the finished attempt's log, the server's
+      // clock beside it, so the client merges what the last running poll did
+      // not catch before it leaves the checklist.
+      const log = [{ at: 1_000, phase: "opening_read", done: 20, total: 20 }, { at: 2_000, phase: "opening_read", done: 20, total: 20, message: "Read 20 of 20 openings" }];
+      await sql(`UPDATE ai_job_claim SET status='completed', drawings_log='${JSON.stringify(log)}' WHERE project_id='${pid}'`);
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version, status, source_generation, completed_at) VALUES ('run-${pid}', '${pid}', 'test', 'completed', ${gen}, datetime('now'))`);
+      const finished = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal(finished.body.run.status, "completed");
+      assert.deepEqual(finished.body.run.drawingsLog, log);
+      assert.equal(typeof finished.body.run.serverNow, "number");
+
+      await sql(`DELETE FROM ai_runs WHERE id='run-${pid}'`);
       await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });
 
