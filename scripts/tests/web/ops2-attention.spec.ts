@@ -58,8 +58,34 @@ const SUMMARY_STUB = {
   tradeApplications: 1,
 };
 
+// /api/ops/projects — the queue endpoint AttentionPage now also reads (via
+// useProjectQueue) to derive the four project counts and, downstream, the
+// exact set each row's press opens. PA-PF is the shared fixture from
+// docs/runs/ops2-attention-prefilter/02-design.md §5 (mirrored in
+// scripts/tests/ops2-attention.test.mjs's `row()`/PA_PF): counts 1/2/1/2,
+// non-empty, pairwise non-identical, PF matches no predicate at all.
+const QUEUE_URL = (url: URL) => url.pathname === "/api/ops/projects";
+
+const fixtureRow = (over: Record<string, unknown>) => ({
+  id: "p_x", ref: "OF-Q-19999", title: "A project", customerName: "A customer",
+  org: null, lineCount: 4, value: 1000, valueBasis: "est.", unresolved: 0, issuable: false,
+  waitingOn: "Us", daysInStage: 1, phase: "Pricing", stateLabel: "Pricing", orderNo: null,
+  statusCustomer: "", orderStage: null, updatedAt: "2026-08-20 00:00:00", ...over,
+});
+
+const PA_PF = [
+  fixtureRow({ id: "p_pa", ref: "PA", title: "PA", statusCustomer: "submitted" }),
+  fixtureRow({ id: "p_pb", ref: "PB", title: "PB", statusCustomer: "under_review" }),
+  fixtureRow({ id: "p_pc", ref: "PC", title: "PC", statusCustomer: "under_review", issuable: true }),
+  fixtureRow({ id: "p_pd", ref: "PD", title: "PD", statusCustomer: "accepted", orderStage: "deposit_invoiced" }),
+  fixtureRow({ id: "p_pe", ref: "PE", title: "PE", statusCustomer: "accepted", orderStage: "balance_invoiced" }),
+  fixtureRow({ id: "p_pf", ref: "PF", title: "PF", statusCustomer: "accepted", orderStage: "manufacturing" }),
+];
+const ALL_REFS = PA_PF.map((r) => r.ref);
+
 test("groups render with the endpoint's numbers and expose no mutating control", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
@@ -68,10 +94,12 @@ test("groups render with the endpoint's numbers and expose no mutating control",
   const enquiries = page.getByTestId("attention-enquiries");
   const customers = page.getByTestId("attention-customers");
 
-  await expect(projects.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+  // Counts come from PA-PF via selectProjects(rows, attentionQuery(key)) —
+  // 1/2/1/2 — not SUMMARY_STUB's stale legacy fields above (4/2/1/3).
+  await expect(projects.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
   await expect(projects.getByTestId("attention-row-inReview")).toHaveText("2 being priced");
   await expect(projects.getByTestId("attention-row-readyToIssue")).toHaveText("1 ready to issue");
-  await expect(projects.getByTestId("attention-row-awaitingPayment")).toHaveText("3 awaiting payment");
+  await expect(projects.getByTestId("attention-row-awaitingPayment")).toHaveText("2 awaiting payment");
   await expect(enquiries.getByTestId("attention-row-newEnquiries")).toHaveText("2 waiting for a reply");
   await expect(customers.getByTestId("attention-row-tradeApplications")).toHaveText(
     "1 trade application waiting on a decision",
@@ -86,41 +114,118 @@ test("groups render with the endpoint's numbers and expose no mutating control",
   await expect(projects.getByRole("button")).toHaveCount(0);
 });
 
-test("submissions row goes to /projects with Needs-us lit, All clears it", async ({ page }) => {
+test("project row counts come from the rows fixture, never the summary's stale project fields", async ({ page }) => {
+  // Same PA-PF fixture (1/2/1/2), but the summary's legacy project-count
+  // fields are set to a value PA-PF cannot produce — 999 — so a rendered 999
+  // anywhere would prove the page fell back to reading the summary instead of
+  // selectProjects(rows, attentionQuery(key)).
+  await page.route(SUMMARY_URL, (route) => route.fulfill({
+    json: { ...SUMMARY_STUB, submissions: 999, inReview: 999, readyToIssue: 999, awaitingPayment: 999 },
+  }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
+  await expect(page.getByTestId("attention-row-inReview")).toHaveText("2 being priced");
+  await expect(page.getByTestId("attention-row-readyToIssue")).toHaveText("1 ready to issue");
+  await expect(page.getByTestId("attention-row-awaitingPayment")).toHaveText("2 awaiting payment");
+  await expect(page.getByText("999", { exact: true })).toHaveCount(0);
+});
+
+// Criterion: pressing each of the four project rows lands on /ops2/projects
+// listing EXACTLY that predicate's PA-PF refs — the other rows' exclusive
+// projects absent. Asserted on the listed row text, never chip state: chips
+// are an unrelated control the queue still owns (t4), and asserting them here
+// would pass even if the Attention→Projects wiring were deleted.
+const NARROWING_CASES: { key: string; expected: string[] }[] = [
+  { key: "submissions", expected: ["PA"] },
+  { key: "inReview", expected: ["PB", "PC"] },
+  { key: "readyToIssue", expected: ["PC"] },
+  { key: "awaitingPayment", expected: ["PD", "PE"] },
+];
+
+for (const { key, expected } of NARROWING_CASES) {
+  test(`the ${key} row lands on /projects listing exactly its predicate's fixture refs`, async ({ page }) => {
+    await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+    await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
+    await page.goto(ATTENTION);
+
+    await page.getByTestId(`attention-row-${key}`).click();
+    await expect(page).toHaveURL(`${OPS2}/projects`); // ?attn= consumed and stripped (t4)
+    await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
+
+    const rows = page.getByTestId("queue-row");
+    await expect(rows).toHaveCount(expected.length);
+    for (const ref of expected) {
+      await expect(rows.filter({ hasText: ref })).toBeVisible();
+    }
+    for (const ref of ALL_REFS.filter((r) => !expected.includes(r))) {
+      await expect(rows.filter({ hasText: ref })).toHaveCount(0);
+    }
+  });
+}
+
+test("submissions row goes to /projects", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   await page.getByTestId("attention-row-submissions").click();
   await expect(page).toHaveURL(`${OPS2}/projects`);
   await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
-
-  const chips = page.getByTestId("queue-chip");
-  await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "true");
-
-  await chips.nth(0).click(); // All
-  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "true");
-  await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "false");
 });
 
-test("awaiting-payment row lands on /projects with the Customer chip lit, not the default", async ({ page }) => {
-  // THE CASE THAT PROVES THE MECHANISM. `submissions` carries `?wait=us` and
-  // `us` is EMPTY_QUERY's own chip (queue.ts), so a submissions-row assertion
-  // passes with the whole `?wait=` consumption effect deleted. This row carries
-  // `?wait=customer`, which nothing but that effect can produce.
+test("a fixture change between visits moves both the count and the list it opens", async ({ page }) => {
+  // Call 1 (initial mount) answers with only PA (submissions: 1). Leaving and
+  // returning re-fetches the queue (design §4.2) — call 2 onward answers with
+  // a different pair of refs, proving the number on Attention and the list
+  // Projects opens both track the SAME re-fetched fixture, not a cached one.
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  let calls = 0;
+  await page.route(QUEUE_URL, (route) => {
+    calls += 1;
+    const projects = calls === 1
+      ? [fixtureRow({ id: "p_pa", ref: "PA", title: "PA", statusCustomer: "submitted" })]
+      : [
+          fixtureRow({ id: "p_pg", ref: "PG", title: "PG", statusCustomer: "submitted" }),
+          fixtureRow({ id: "p_ph", ref: "PH", title: "PH", statusCustomer: "submitted" }),
+        ];
+    return route.fulfill({ json: { projects } });
+  });
+
+  await page.goto(ATTENTION);
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
+
+  await page.getByRole("link", { name: "Products" }).click();
+  await expect(page).toHaveURL(`${OPS2}/products`);
+  await page.getByRole("link", { name: "Attention" }).click();
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("2 new submissions");
+
+  await page.getByTestId("attention-row-submissions").click();
+  await expect(page).toHaveURL(`${OPS2}/projects`);
+  const rows = page.getByTestId("queue-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: "PG" })).toBeVisible();
+  await expect(rows.filter({ hasText: "PH" })).toBeVisible();
+  await expect(rows.filter({ hasText: "PA" })).toHaveCount(0);
+});
+
+test("a fixture with no row matching a predicate draws no row for it", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [fixtureRow({ id: "p_pa", ref: "PA", title: "PA", statusCustomer: "submitted" })] },
+  }));
   await page.goto(ATTENTION);
 
-  await page.getByTestId("attention-row-awaitingPayment").click();
-  await expect(page).toHaveURL(`${OPS2}/projects`); // and the param is stripped after use
-
-  const chips = page.getByTestId("queue-chip");
-  await expect(chips.nth(2)).toHaveAttribute("aria-pressed", "true"); // Customer
-  await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "false"); // Needs us — the default, off
-  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "false"); // All
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
+  await expect(page.getByTestId("attention-row-inReview")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-readyToIssue")).toHaveCount(0);
+  await expect(page.getByTestId("attention-row-awaitingPayment")).toHaveCount(0);
 });
 
 test("enquiries row goes to the /enquiries placeholder root", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   await page.getByTestId("attention-row-newEnquiries").click();
@@ -135,10 +240,11 @@ test("an attention row is a link, and a modified click opens the destination bes
   // link role — the same affordance the Projects queue's wide row carries, and
   // for the same desk reason: two things open at once.
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   const link = page.getByTestId("attention-row-awaitingPayment");
-  await expect(link).toHaveAttribute("href", "/ops2/projects?wait=customer");
+  await expect(link).toHaveAttribute("href", "/ops2/projects?attn=awaitingPayment");
 
   const opened = context.waitForEvent("page");
   await link.click({ modifiers: ["ControlOrMeta"] });
@@ -153,8 +259,24 @@ test("an attention row is a link, and a modified click opens the destination bes
   await expect(page.getByTestId("attention-row-awaitingPayment")).toBeVisible();
 });
 
+test("summary ok but the queue 500s draws attention-error, not a half-ready page", async ({ page }) => {
+  // combineLoads precedence: only `summary` can be "unauthorised"; a queue
+  // failure with a healthy summary still folds into "error" (criterion 15) —
+  // the whole page fails rather than rendering enquiries/customers alone.
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(ATTENTION);
+
+  const error = page.getByTestId("attention-error");
+  await expect(error).toBeVisible();
+  await expect(error).toHaveAttribute("role", "alert");
+  await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
+});
+
 test("trade applications row goes to /customers", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   await page.getByTestId("attention-row-tradeApplications").click();
@@ -164,6 +286,7 @@ test("trade applications row goes to /customers", async ({ page }) => {
 
 test("a degraded summary renders the error panel with a retry, not zero rows disguised as ready", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: { degraded: true } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   const error = page.getByTestId("attention-error");
@@ -182,6 +305,7 @@ test("a degraded summary renders the error panel with a retry, not zero rows dis
 
 test("a 500 renders the same error panel and copy — no raw HTTP status leaked, and zero rows", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
 
   const error = page.getByTestId("attention-error");
@@ -198,6 +322,7 @@ test("a 500 renders the same error panel and copy — no raw HTTP status leaked,
 
 test("retry after unrouting a failed summary recovers to ready", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
   await page.goto(ATTENTION);
   const error = page.getByTestId("attention-error");
   await expect(error).toBeVisible();
@@ -208,7 +333,7 @@ test("retry after unrouting a failed summary recovers to ready", async ({ page }
   await error.getByRole("button", { name: "Try again" }).click();
 
   await expect(page.getByTestId("attention-error")).toHaveCount(0);
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
 });
 
 test("the skeleton shows before the summary response resolves", async ({ page }) => {
@@ -218,6 +343,7 @@ test("the skeleton shows before the summary response resolves", async ({ page })
     await held;
     await route.fulfill({ json: SUMMARY_STUB });
   });
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
 
   const loading = page.goto(ATTENTION);
   await expect(page.getByTestId("attention-skeleton")).toBeVisible();
@@ -226,7 +352,7 @@ test("the skeleton shows before the summary response resolves", async ({ page })
   release();
   await loading;
   await expect(page.getByTestId("attention-skeleton")).toHaveCount(0);
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+  await expect(page.getByTestId("attention-row-submissions")).toHaveText("1 new submission");
 });
 
 test("leaving and returning re-fetches, and a slow reply to a superseded request never overwrites a newer one", async ({ page }) => {
@@ -235,6 +361,10 @@ test("leaving and returning re-fetches, and a slow reply to a superseded request
   // once with a different count. If useSummary's `live` guard is broken,
   // releasing call 1 below — after call 2 has already rendered — stomps
   // call 2's count back to the stale value.
+  //
+  // Raced on `newEnquiries`, not `submissions`: project counts moved to the
+  // queue selector (t3) and `submissions` is no longer read off the summary
+  // body at all, so racing it here would prove nothing.
   let release1 = () => {};
   const held1 = new Promise<void>((r) => { release1 = r; });
   let calls = 0;
@@ -242,10 +372,11 @@ test("leaving and returning re-fetches, and a slow reply to a superseded request
     calls += 1;
     if (calls === 1) {
       await held1;
-      return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 999 } });
+      return route.fulfill({ json: { ...SUMMARY_STUB, newEnquiries: 999 } });
     }
-    return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 7 } });
+    return route.fulfill({ json: { ...SUMMARY_STUB, newEnquiries: 7 } });
   });
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
 
   const loading = page.goto(ATTENTION);
   await expect(page.getByTestId("attention-skeleton")).toBeVisible(); // call 1, held
@@ -256,18 +387,19 @@ test("leaving and returning re-fetches, and a slow reply to a superseded request
   await productsLink.click();
   await expect(page).toHaveURL(`${OPS2}/products`);
   await attentionLink.click();
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions"); // call 2
+  await expect(page.getByTestId("attention-row-newEnquiries")).toHaveText("7 waiting for a reply"); // call 2
 
   release1();
   await loading;
   await page.waitForTimeout(200); // give the stale call 1 reply a chance to land, if it's going to
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("7 new submissions");
+  await expect(page.getByTestId("attention-row-newEnquiries")).toHaveText("7 waiting for a reply");
 });
 
 test("re-entering an already-loaded page never shows the skeleton (design §4.2)", async ({ page }) => {
   // Call 1 resolves immediately (first load). Call 2 (the re-fetch on
   // return) is held open, so the assertion below happens while it is still
   // in flight — the previous answer must stay on screen, not the skeleton.
+  // Raced on `newEnquiries` for the same reason as above.
   let release2 = () => {};
   const held2 = new Promise<void>((r) => { release2 = r; });
   let calls = 0;
@@ -277,11 +409,12 @@ test("re-entering an already-loaded page never shows the skeleton (design §4.2)
       return route.fulfill({ json: SUMMARY_STUB });
     }
     await held2;
-    return route.fulfill({ json: { ...SUMMARY_STUB, submissions: 9 } });
+    return route.fulfill({ json: { ...SUMMARY_STUB, newEnquiries: 9 } });
   });
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
 
   await page.goto(ATTENTION);
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+  await expect(page.getByTestId("attention-row-newEnquiries")).toHaveText("2 waiting for a reply");
 
   const attentionLink = page.getByRole("link", { name: "Attention" });
   const productsLink = page.getByRole("link", { name: "Products" });
@@ -291,10 +424,10 @@ test("re-entering an already-loaded page never shows the skeleton (design §4.2)
   await attentionLink.click();
 
   await expect(page.getByTestId("attention-skeleton")).toHaveCount(0);
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("4 new submissions");
+  await expect(page.getByTestId("attention-row-newEnquiries")).toHaveText("2 waiting for a reply");
 
   release2();
-  await expect(page.getByTestId("attention-row-submissions")).toHaveText("9 new submissions");
+  await expect(page.getByTestId("attention-row-newEnquiries")).toHaveText("9 waiting for a reply");
 });
 
 test("a signed-in customer (non-staff) loading /attention gets the unauthorised treatment, not zero counts", async ({ browser }) => {
