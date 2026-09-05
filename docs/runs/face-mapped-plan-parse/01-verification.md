@@ -56,7 +56,7 @@ every phase reports what it refused and why.
 ## Owner rulings, 2026-09-05, and what changed
 
 1. **A tag is a type letter and a serial number.** W001, W01, W1, W-1 and
-   "W 1" are one opening. `canonicalTag` in `planFaces.ts` compares tags that
+   "W 1" are one opening. `canonicalTag` in `faceMapped/tags.ts` compares tags that
    way everywhere the engine compares them; a schedule that spells one number
    twice has named the same opening twice and is refused as the duplicate it is.
    Placement unchanged: 312 19/19, 939 18/18, 623 18-19/29.
@@ -78,10 +78,80 @@ One note from the security review, not security and not this branch's: the R2
 crop key sanitiser collapses `W1/A` and `W1_A` to one key, so two such schedule
 tags would overwrite each other's crop within a run.
 
+## Second review, 2026-09-05: fifteen findings, and what changed
+
+Five standards findings and ten spec findings. Every one is a code change with a
+test, except the last, which is a fact.
+
+- **The stage ran a pass-through validator and hashed one image.** Invalid model
+  output could be recorded as a completed stage, and two faces on one sheet
+  could be served each other's cached answer. Every look now runs its real skill
+  through the stage layer, and the stage input is the whole request: the prompt
+  (page, face, storey, count, candidates), every image, and the attempt number
+  of a corrective retry, so a retry cannot replay the answer it is meant to
+  correct. Each skill's
+  validator checks shape and returns the answer in its own shape, normalised, so
+  what the stage archives replays as itself; the engine judges meaning. Phase E
+  reads under the verification model.
+- **Every 300 DPI crop sat in memory until Phase E began.** Crops are now
+  rendered, stored, read and released batch by batch - batches of four, at most
+  four in flight, which is §7.6's own parallel contract, so at most sixteen
+  crops are ever held. A batch whose crops half fail reads the half that did not.
+- **Wall naming walked unbounded label permutations.** Bounded at eight distinct
+  labels; a page strewn with more is refused, not solved.
+- **Two scale-recovery implementations.** One now; the scale-only path delegates.
+- **Oversized modules.** Reconciliation, tag identity, width judgement and wall
+  naming each have their own file; `planFaces.ts` is 241 lines and
+  `matchFrames.ts` 266.
+- **Reconciliation saw only the elevation.** It is shown the plan and the
+  elevation together, as §7.3 step 5 says - and if the plan will not render, the
+  second look is not taken, because the elevation alone is the first look again.
+- **One page size for every crop.** Each crop is bounded by its own sheet, and a
+  neighbouring opening is one on the same sheet.
+- **One render failure erased every reading.** A page that will not render
+  costs the openings on it and nothing else.
+- **Regions were strips, not grids.** Four elevations in a two-by-two are four
+  cells: rows first, then columns within a row. Titles are one row when their
+  baselines sit within one and a half title heights, not a fraction of the page.
+- **Scale provenance and calibration were missing.** Each reading reports
+  whether its page's scale was printed or recovered - the production branch
+  says which. A page with no scale borrows one from every frame matched on it,
+  across the whole page and not face by face, as the median of drawn over
+  scheduled (§14). Fewer than three frames is not a scale, and neither is a
+  median a majority of the frames do not agree with; the widths and crops sized
+  this way say so.
+- **Progress and audit were thin.** Composition progress is reported per settled
+  batch; each opening's report row carries the plan candidate, the frame, the
+  reading direction, the scale source and the crop basis. The pipeline's
+  progress adapter still takes `(done, total, phase)` only, so the message and
+  duration this engine emits stop at the adapter; changing that is a pipeline
+  change, not this engine's.
+- **The gate counted `drawn: false` as a match.** It is a third verdict now,
+  excluded from both the numerator and the denominator, whether or not a
+  reading row came back for the opening.
+
+Three of the review's points are rejected, with the contract as the reason:
+
+- *A `drawn: false` label that also asserts other fields should be `not_drawn`.*
+  The gate's own acceptance fixture (AC-G3) has such a label score its stated
+  fields and count; only the split is excluded. A bare `drawn: false` is the
+  case that was inflating the score, and that is what is now `not_drawn`.
+
+- *A crop can contain part of a neighbour whose centre is outside it.* §7.5
+  rule 7 says to reject a crop containing a neighbouring opening's **centre**,
+  and the margin exists so closely spaced frames show their edges. The rule is
+  applied as written; a neighbour is one on the same sheet and the same storey.
+- *Four concurrent batches hold sixteen crops, not four.* §7.6 sets batch size
+  four and at most four batches in flight. Sixteen 300 DPI crops is well inside
+  a Worker's memory; one at a time would be a different contract.
+
 ## Readiness
 
-The security review of the whole branch found nothing. The engine is a mode the
-default configuration does not select, so deploying it changes nothing until
-`AI_EXTRACTION_MODE` is set to `face_mapped` - which is how real tests would be
-run. Expect placement to work and most compositions to come back unread, per the
-numbers above.
+**The release gate has not passed, and this document does not claim it has.**
+Placement works on all three sets. Composition reads are 0-5 per set and vary
+between runs; the three-run identity, cost and timing comparison §14 requires has
+not been done. The security review of the whole branch found nothing. The engine
+is a mode the default configuration does not select, so deploying it changes
+nothing until `AI_EXTRACTION_MODE` is set to `face_mapped` - which is how real
+tests would be run. Expect placement to work and most compositions to come back
+unread.

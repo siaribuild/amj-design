@@ -185,6 +185,14 @@ export interface DrawingFileReport {
     pageNo: number | null;
     confidence?: DrawingConfidence | null;
     flags?: DrawingFlag[];
+    /** Face-mapped engine lineage: the plan candidate an opening was placed
+     *  from, the frame it was read from, which way the wall was read, where the
+     *  page's scale came from, and how the crop was sized. */
+    planCandidateId?: string | null;
+    frameId?: string | null;
+    direction?: "with_plan" | "against_plan" | null;
+    scaleSource?: "printed" | "recovered" | null;
+    cropBasis?: "scaled" | "calibrated" | "wider_frame" | "wide_unscaled" | null;
     attempts?: number;
     acceptedTurn?: number | null;
     corrections?: {

@@ -4,7 +4,8 @@ import { normalizeOpeningRef } from "../../ai/energyMap";
 import type { CropBoxPt } from "../contract";
 import { openingTagWords } from "../locate";
 import type { PlanPlacementOutcome } from "./contract";
-import { rosterVocabulary, type PlanPage } from "./planFaces";
+import type { PlanPage } from "./planFaces";
+import { rosterVocabulary } from "./tags";
 
 /** What a look at the plan settled for one candidate: which named wall, and
  * where along it if it could tell. */
@@ -142,7 +143,7 @@ export interface PlanFacePage {
 export function makePlanFaceSkill(
   page: PlanFacePage,
   faceNames: Set<string>,
-): Skill<{ imageDataUrl: string }, Map<string, RecoveredFace>> {
+): Skill<{ prompt?: string; imageDataUrls: string[] }, { placements: (RecoveredFace & { planCandidateId: string })[] }> {
   const faces = [...faceNames];
   const askedIds = new Set(page.candidates.map((candidate) => candidate.planCandidateId));
   const onPageIds = new Set(page.pageCandidateIds ?? []);
@@ -193,7 +194,7 @@ export function makePlanFaceSkill(
     buildPrompt: () => prompt,
     buildContent: (input) => [
       { type: "text", text: prompt },
-      { type: "image_url", image_url: { url: input.imageDataUrl } },
+      ...input.imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } })),
     ],
     validate(raw) {
       const payload = typeof raw === "string" ? parseModelJson(raw) : raw;
@@ -202,7 +203,10 @@ export function makePlanFaceSkill(
       const answered = validatePlanFaceAnswer(rows, askedIds, faceNames, onPageIds);
       // An answer that was refused is unusable, not an answer that placed
       // nothing: the runner records those differently, and so does the report.
-      return rows.length && !answered.size ? null : answered;
+      // What is kept is the provider's own shape, normalised, so the stage
+      // archive replays as itself.
+      if (rows.length && !answered.size) return null;
+      return { placements: [...answered].map(([planCandidateId, face]) => ({ planCandidateId, ...face })) };
     },
   };
 }

@@ -93,9 +93,36 @@ function readingOf(row: Record<string, unknown>, task: CompositionTask): Composi
   };
 }
 
+/** A batch's answer as the model returned it, normalised. */
+export interface CompositionRead {
+  readings: Record<string, unknown>[];
+}
+
+/** One outcome per task in the batch, from whichever row answers for it. */
+export function readingsToOutcomes(read: CompositionRead | null, batch: CompositionTask[]): CompositionOutcome[] | null {
+  if (!read) return null;
+  return batch.map((task) => {
+    const answers = read.readings.flatMap((row) => {
+      const outcome = readingOf(row, task);
+      return outcome ? [outcome] : [];
+    });
+    // Two answers about one opening that disagree are not evidence of either,
+    // and taking whichever came first is picking at random.
+    const agreed = answers.length === 1
+      || (answers.length > 1 && answers.every((answer) => JSON.stringify(answer) === JSON.stringify(answers[0])));
+    if (agreed) return answers[0];
+    return {
+      state: "not_read" as const,
+      tag: task.tag,
+      cropRenderId: task.cropRenderId,
+      reason: "the batch came back without a usable reading for this opening",
+    };
+  });
+}
+
 export function makeCompositionSkill(
   batch: CompositionTask[],
-): Skill<unknown, CompositionOutcome[]> {
+): Skill<{ prompt?: string; imageDataUrls: string[] }, CompositionRead> {
   const prompt = [
     "TASK",
     "Each image is a close-up of one window or door drawn on an elevation.",
@@ -145,34 +172,18 @@ export function makeCompositionSkill(
       },
     },
     buildPrompt: () => prompt,
-    buildContent: () => [
+    buildContent: (input) => [
       { type: "text", text: prompt },
-      ...batch.flatMap((task) => task.imageDataUrl
-        ? [{ type: "image_url", image_url: { url: task.imageDataUrl } }]
-        : []),
+      ...input.imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } })),
     ],
+    // Shape only: rows that are objects, in the order listed. Which row answers
+    // for which opening, and whether it holds together, is readingsToOutcomes'
+    // judgement - so the archive replays as itself.
     validate(raw) {
       const payload = typeof raw === "string" ? parseModelJson(raw) : raw;
       const rows = (payload as { readings?: unknown } | null)?.readings;
       if (!Array.isArray(rows)) return null;
-      return batch.map((task) => {
-        const answers = rows.flatMap((row) => {
-          if (!row || typeof row !== "object") return [];
-          const outcome = readingOf(row as Record<string, unknown>, task);
-          return outcome ? [outcome] : [];
-        });
-        // Two answers about one opening that disagree are not evidence of
-        // either, and taking whichever came first is picking at random.
-        const agreed = answers.length === 1
-          || (answers.length > 1 && answers.every((answer) => JSON.stringify(answer) === JSON.stringify(answers[0])));
-        if (agreed) return answers[0];
-        return {
-          state: "not_read" as const,
-          tag: task.tag,
-          cropRenderId: task.cropRenderId,
-          reason: "the batch came back without a usable reading for this opening",
-        };
-      });
+      return { readings: rows.filter((row): row is Record<string, unknown> => !!row && typeof row === "object") };
     },
   };
 }
@@ -188,39 +199,61 @@ export async function runCompositions(args: {
   tasks: CompositionTask[];
   /** Provider calls this run may make in total, retries included. */
   callCeiling?: number;
-  ask(batch: CompositionTask[], attempt: number): Promise<unknown>;
+  /** Makes a batch's crops when its turn comes - render, store, fill each
+   *  task's image - so four crops are in memory at a time, not the whole run's.
+   *  A task still without an image afterwards is one whose crop could not be
+   *  made, and is not asked about. */
+  prepare?(batch: CompositionTask[]): Promise<void>;
+  /** Called as each batch settles, with how many openings are done. */
+  onBatch?(done: number, total: number): Promise<void>;
+  /** Asks about the openings whose crops exist, and answers with what the
+   *  batch's skill made of the reply - never the raw text. */
+  ask(
+    batch: CompositionTask[],
+    attempt: number,
+    skill: Skill<{ prompt?: string; imageDataUrls: string[] }, CompositionRead>,
+  ): Promise<CompositionRead | null>;
 }): Promise<CompositionOutcome[]> {
   const batches = compositionBatches(args.tasks);
   let calls = 0;
+  let done = 0;
   const spend = () => (args.callCeiling == null || calls < args.callCeiling) && ++calls > 0;
+  const unread = (task: CompositionTask, reason: string): CompositionOutcome =>
+    ({ state: "not_read", tag: task.tag, cropRenderId: task.cropRenderId, reason });
   const answered = await mapPool(batches, MAX_CONCURRENT_BATCHES, async (batch) => {
-    const skill = makeCompositionSkill(batch);
     try {
+      // A wave whose crops half fail still reads the half that did not: the
+      // failure costs the openings whose crops were never made, not the wave.
+      try { await args.prepare?.(batch); } catch { /* the tasks left without an image say so below */ }
+      const imaged = batch.filter((task) => task.imageDataUrl);
+      const skill = makeCompositionSkill(imaged);
       let best: CompositionOutcome[] | null = null;
       for (const attempt of [1, 2]) {
-        if (!spend()) break;
-        const read = await skill.validate(await args.ask(batch, attempt).catch(() => null));
+        if (!imaged.length || !spend()) break;
+        const read = readingsToOutcomes(await args.ask(imaged, attempt, skill).catch(() => null), imaged);
         // Keep whichever answer said more about each opening, and ask again
         // while any of them is still unread: one usable record out of four is
         // not an answered batch.
-        best = read ? (best ?? read).map((was, at) =>
-          was.state === "not_read" ? read[at] : was) : best;
-        if (best?.every((outcome) => outcome.state !== "not_read")) return best;
+        best = read
+          ? (best ?? read).map((was, at) => was.state === "not_read" ? read[at] : was)
+          : best;
+        if (best?.every((outcome) => outcome.state !== "not_read")) break;
       }
-      if (best) return best;
+      return batch.map((task) => {
+        const at = imaged.indexOf(task);
+        if (at < 0) return unread(task, "no crop could be made for this opening");
+        return best?.[at] ?? unread(task, "the batch this opening was in did not come back");
+      });
     } catch {
-      // Falls through to the unread outcomes below: a thrown provider is the
-      // same to this batch's openings as one that answered with nothing.
+      // A thrown provider is the same to this batch's openings as one that
+      // answered with nothing.
+      return batch.map((task) => unread(task, "the batch this opening was in did not come back"));
     } finally {
       // The base64 of four 300 DPI crops is the largest thing this run holds.
       for (const task of batch) task.imageDataUrl = null;
+      done += batch.length;
+      await args.onBatch?.(done, args.tasks.length);
     }
-    return batch.map((task): CompositionOutcome => ({
-      state: "not_read",
-      tag: task.tag,
-      cropRenderId: task.cropRenderId,
-      reason: "the batch this opening was in did not come back",
-    }));
   });
   return answered.flat();
 }

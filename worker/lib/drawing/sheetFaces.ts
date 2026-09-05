@@ -22,11 +22,14 @@ export interface SheetPage {
 // Only the second names a face, and reading one off the first lets a
 // cut-through be inventoried as though it were the wall.
 const VIEW_TITLE = /^ELEVATIONS?$/;
+/** Titles whose baselines differ by less than this many title heights are one
+ * row of drawings. */
+const ROW_TOLERANCE = 1.5;
 const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
 
 /** Every face title printed in a set, with where it is printed. */
-function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: number; y: number }[] {
-  const found: { label: string; pageNo: number; x: number; y: number }[] = [];
+function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: number; y: number; height: number }[] {
+  const found: { label: string; pageNo: number; x: number; y: number; height: number }[] = [];
   for (const { page, geometry } of pages) {
     const rows = new Map<number, PageWord[]>();
     for (const word of page.words) {
@@ -74,6 +77,7 @@ function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: num
             pageNo: geometry.pageNo,
             x: (neighbour.x0 + neighbour.x1) / 2,
             y: (neighbour.top + neighbour.bottom) / 2,
+            height: Math.max(neighbour.bottom - neighbour.top, 1),
           });
         }
       });
@@ -110,20 +114,27 @@ export function documentFaceRegions(pages: SheetPage[]): Map<string, { pageNo: n
       regions.set(onSheet[0].label, { pageNo: geometry.pageNo, regionPt: [0, 0, geometry.widthPt, geometry.heightPt] });
       continue;
     }
-    const xs = onSheet.map((title) => title.x);
-    const ys = onSheet.map((title) => title.y);
-    const sideBySide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
-    const sorted = [...onSheet].sort((a, b) => sideBySide ? a.x - b.x : a.y - b.y);
-    sorted.forEach((title, at) => {
-      const before = at === 0 ? 0 : sideBySide ? (sorted[at - 1].x + title.x) / 2 : sorted[at - 1].y;
-      const after = sideBySide
-        ? (at === sorted.length - 1 ? geometry.widthPt : (title.x + sorted[at + 1].x) / 2)
-        : title.y;
-      regions.set(title.label, {
-        pageNo: geometry.pageNo,
-        regionPt: sideBySide
-          ? [before, 0, after, geometry.heightPt]
-          : [0, before, geometry.widthPt, after],
+    // Rows first, then columns within a row: a sheet of four elevations is as
+    // often a two-by-two as a strip, and a strip cut one way across a grid
+    // hands each reader two drawings. Titles sit under their drawings, so a
+    // row reaches from the title above down to its own; columns meet halfway
+    // between titles.
+    const rows: { y: number; titles: typeof onSheet }[] = [];
+    for (const title of [...onSheet].sort((a, b) => a.y - b.y)) {
+      // Titles in one row share a baseline to within their own height; a fixed
+      // fraction of the page merges two stacked drawings on a tall sheet.
+      const row = rows.find((item) => Math.abs(item.y - title.y) <= title.height * ROW_TOLERANCE);
+      if (row) row.titles.push(title);
+      else rows.push({ y: title.y, titles: [title] });
+    }
+    rows.forEach((row, rowAt) => {
+      const top = rowAt === 0 ? 0 : rows[rowAt - 1].y;
+      const bottom = rows.length === 1 ? geometry.heightPt : row.y;
+      const across = [...row.titles].sort((a, b) => a.x - b.x);
+      across.forEach((title, at) => {
+        const left = at === 0 ? 0 : (across[at - 1].x + title.x) / 2;
+        const right = at === across.length - 1 ? geometry.widthPt : (title.x + across[at + 1].x) / 2;
+        regions.set(title.label, { pageNo: geometry.pageNo, regionPt: [left, top, right, bottom] });
       });
     });
   }

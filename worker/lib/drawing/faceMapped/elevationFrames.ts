@@ -231,7 +231,7 @@ export function validateElevationFrames(raw: unknown, task: ElevationFaceTask): 
  */
 export function makeElevationInventorySkill(
   task: ElevationFaceTask,
-): Skill<{ imageDataUrl: string }, ElevationInventoryOutcome> {
+): Skill<{ prompt?: string; imageDataUrls: string[] }, ElevationInventoryRead> {
   const prompt = [
     "TASK",
     `This is an elevation sheet. Look only at the ${task.elevation} elevation, and only at its ${task.storey}.`,
@@ -276,8 +276,34 @@ export function makeElevationInventorySkill(
     buildPrompt: () => prompt,
     buildContent: (input) => [
       { type: "text", text: prompt },
-      { type: "image_url", image_url: { url: input.imageDataUrl } },
+      ...input.imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } })),
     ],
-    validate: (raw) => validateElevationFrames(typeof raw === "string" ? parseModelJson(raw) : raw, task),
+    // Shape only. Whether the frames agree with the plan is judged by
+    // validateElevationFrames, against the task - a count that disagrees is a
+    // legitimate answer to record, not junk to refuse.
+    validate(raw) {
+      const payload = typeof raw === "string" ? parseModelJson(raw) : raw;
+      const record = (payload ?? null) as { storeyBand?: unknown; frames?: unknown } | null;
+      if (!record || typeof record !== "object" || !Array.isArray(record.frames)) return null;
+      const box = (value: unknown) => Array.isArray(value) && value.length === 4 && value.every((n) => Number.isFinite(Number(n)))
+        ? value.map(Number) as [number, number, number, number] : null;
+      const frames = record.frames.flatMap((row) => {
+        const item = (row ?? {}) as Record<string, unknown>;
+        const b = box(item.box);
+        return b ? [{
+          box: b,
+          ...(typeof item.order === "number" ? { order: item.order } : {}),
+          ...(item.confidence === "ambiguous" || item.confidence === "verified" ? { confidence: item.confidence } : {}),
+        }] : [];
+      });
+      return { storeyBand: box(record.storeyBand), frames };
+    },
   };
+}
+
+/** A frame inventory as the model returned it, normalised: fractions of the
+ * render, in the order listed. */
+export interface ElevationInventoryRead {
+  storeyBand: [number, number, number, number] | null;
+  frames: { box: [number, number, number, number]; order?: number; confidence?: "verified" | "ambiguous" }[];
 }

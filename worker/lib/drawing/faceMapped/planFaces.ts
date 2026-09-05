@@ -2,6 +2,8 @@ import { normalizeOpeningRef } from "../../ai/energyMap";
 import type { CropBoxPt, PageInventory, PageText, PageWord } from "../contract";
 import { alongWall, openingTagWords, planPageFacts, printedStorey, type Edge } from "../locate";
 import type { PlanOpeningPlacement, PlanPlacementOutcome } from "./contract";
+import { canonicalTag, rosterVocabulary } from "./tags";
+import { nameWalls } from "./walls";
 
 /**
  * Phase C, §7.0 step one: for each scheduled opening, which wall of the
@@ -29,106 +31,6 @@ function alongFraction(candidate: { recoveredFraction: number | null; alongPt: n
     ?? (candidate.wallLengthPt > 0 ? Math.min(1, Math.max(0, candidate.alongPt / candidate.wallLengthPt)) : 0);
 }
 
-/**
- * What a tag is: a type letter and a serial number (owner ruling, 2026-09-05).
- * W001, W01, W1, W-1 and "W 1" are one opening — the letter says what kind and
- * the number says which, and the rest is a draughtsman's habit. Everything that
- * compares tags compares this.
- */
-export function canonicalTag(entry: string): string {
-  const tag = normalizeOpeningRef(entry) ?? entry;
-  const split = /^([A-Z]+)0*(\d+)([A-Z]*)$/.exec(tag);
-  return split ? `${split[1]}${Number(split[2])}${split[3]}` : tag;
-}
-
-/**
- * The roster's spellings, and every spelling a drawing might print them as.
- *
- * Measured on a real set: its window schedule prints W1, W2, W3 and its floor
- * plans print W01, W02, W03. Matched as strings that places none of them. Every
- * spelling of a tag's number is admitted, and what comes back out is always the
- * name the schedule gave. A schedule that spells one number twice has named the
- * same opening twice, which the roster's own duplicate rule refuses.
- */
-export function rosterVocabulary(roster: string[]): { vocabulary: Set<string>; tagOf: Map<string, string> } {
-  const vocabulary = new Set<string>();
-  const tagOf = new Map<string, string>();
-  for (const entry of roster) {
-    const tag = normalizeOpeningRef(entry) ?? entry;
-    const split = /^([A-Z]+)0*(\d+)([A-Z]*)$/.exec(tag);
-    // Padded to one, two or three digits: the widths drawings print.
-    const spellings = split
-      ? [1, 2, 3].map((width) => `${split[1]}${String(Number(split[2])).padStart(width, "0")}${split[3]}`)
-      : [];
-    for (const spelling of new Set([tag, ...spellings])) {
-      vocabulary.add(spelling);
-      if (!tagOf.has(spelling)) tagOf.set(spelling, tag);
-    }
-  }
-  return { vocabulary, tagOf };
-}
-
-const EDGES: Edge[] = ["top", "right", "bottom", "left"];
-
-/**
- * Which label names which wall, decided across the whole sheet at once.
- *
- * A name belongs to one wall and a wall answers to one name, so the question is
- * not "which label is nearest this edge" but "which pairing of labels to walls
- * is nearest overall". That distinction is what a plan printing section marks
- * beside its elevation markers turns on: no edge is decidable alone — the same
- * letter can be nearest two of them — while the sheet as a whole still has
- * exactly one best answer.
- *
- * Naming more walls beats naming them closer, because an unnamed wall loses
- * every opening on it. Two assignments equally good is an ambiguity, and
- * ambiguity is not resolved by taking the first.
- */
-export function nameWalls(
-  candidates: { label: string; edge: Edge; distancePt: number }[],
-): { walls: Partial<Record<Edge, string>>; tied: boolean } {
-  const nearest = new Map<string, number>();
-  for (const { label, edge, distancePt } of candidates) {
-    const key = `${edge}|${label}`;
-    if (!nearest.has(key) || distancePt < nearest.get(key)!) nearest.set(key, distancePt);
-  }
-  const labels = [...new Set(candidates.map((candidate) => candidate.label))];
-  let best: { named: number; distance: number; pairs: [Edge, string][] } | null = null;
-  let tied = false;
-
-  const walk = (at: number, used: Set<string>, pairs: [Edge, string][], distance: number): void => {
-    if (at === EDGES.length) {
-      const scored = { named: pairs.length, distance, pairs: [...pairs] };
-      if (!best || scored.named > best.named
-        || (scored.named === best.named && scored.distance < best.distance - 0.001)) {
-        best = scored;
-        tied = false;
-      } else if (best && scored.named === best.named
-        && Math.abs(scored.distance - best.distance) <= 0.001
-        && JSON.stringify(scored.pairs) !== JSON.stringify(best.pairs)) {
-        tied = true;
-      }
-      return;
-    }
-    const edge = EDGES[at];
-    walk(at + 1, used, pairs, distance);
-    for (const label of labels) {
-      if (used.has(label)) continue;
-      const reach = nearest.get(`${edge}|${label}`);
-      if (reach === undefined) continue;
-      used.add(label);
-      pairs.push([edge, label]);
-      walk(at + 1, used, pairs, distance + reach);
-      pairs.pop();
-      used.delete(label);
-    }
-  };
-  walk(0, new Set(), [], 0);
-
-  if (tied) return { walls: {}, tied: true };
-  if (!best) return { walls: {}, tied: false };
-  return { walls: Object.fromEntries((best as { pairs: [Edge, string][] }).pairs), tied: false };
-}
 
 interface Candidate {
   tag: string;

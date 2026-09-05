@@ -64,7 +64,7 @@ export interface EnrichDeps {
    *  consulted behind it. */
   runFaceMapped?: Omit<FaceMappedDeps, "render" | "storeCrop" | "onProgress"> & {
     /** Phase A's look at a sheet whose text layer says nothing. */
-    readSheet(input: FaceMappedCall & { pageNo: number }): Promise<unknown>;
+    readSheet(input: FaceMappedCall & { pageNo: number }): Promise<{ ratio: number | null; drawingTitle: string | null } | null>;
   };
 }
 
@@ -214,7 +214,8 @@ async function enrichFile(
             render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
             readSheet: async ({ pageNo, imageDataUrl }) => {
               const skill = makeSheetFactsSkill(pageNo);
-              return skill.validate(await readSheet({ pageNo, imageDataUrl, skill }));
+              const read = await readSheet({ pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [imageDataUrl], skill });
+              return read ? { pageNo, ratio: read.ratio, title: read.drawingTitle } : null;
             },
           },
         })
@@ -230,7 +231,14 @@ async function enrichFile(
           return geometry ? [{ page, geometry }] : [];
         });
       const scales = new Map(stated);
-      for (const [pageNo, facts] of recovered) if (facts.ratio != null && !scales.has(pageNo)) scales.set(pageNo, facts.ratio);
+      const scaleSources = new Map<number, "printed" | "recovered">();
+      for (const [pageNo, ratio] of stated) if (ratio != null) scaleSources.set(pageNo, "printed");
+      for (const [pageNo, facts] of recovered) {
+        if (facts.ratio != null && !scales.has(pageNo)) {
+          scales.set(pageNo, facts.ratio);
+          scaleSources.set(pageNo, "recovered");
+        }
+      }
 
       const run = await runFaceMappedParser({
         fileId: args.file.fileId,
@@ -239,6 +247,7 @@ async function enrichFile(
         planPages: pagesOf("floorplan"),
         elevationPages: pagesOf("elevation"),
         pageScales: scales,
+        scaleSources,
         // Only titles that are titles: the ones a look at the sheet recovered.
         // A sheet's own title band is read where it has one, and handing the
         // whole page's text over instead makes every plan sheet claim the same
@@ -673,6 +682,30 @@ async function enrichFile(
 
 export type DrawingParserMode = "disabled" | "legacy" | "full_document" | "face_mapped";
 
+export type FaceMappedStageKind = "sheet" | "plan" | "inventory" | "reconcile" | "composition";
+
+/**
+ * A face-mapped look at a page, as the stage layer runs it: the skill that will
+ * judge the answer is the skill the stage runs, so junk is a failed stage and
+ * never a completed one; and the input the stage is replayed by is the whole
+ * request - the prompt, which carries the face, storey, count and candidates the
+ * skill closed over, and every image - so two faces on one sheet cannot be
+ * served each other's cached answer. Phase E reads under the verification model
+ * (§7.6); the other phases under the primary.
+ */
+export function faceMappedStageRequest(env: Env, kind: FaceMappedStageKind, input: FaceMappedCall & { attempt?: number }) {
+  return {
+    skill: input.skill,
+    // A corrective retry is a different request: with the cache on, one that
+    // hashed the same would replay the useless first answer it is meant to
+    // correct.
+    input: { prompt: input.prompt, imageDataUrls: input.imageDataUrls, ...(input.attempt ? { attempt: input.attempt } : {}) },
+    ...(kind === "composition"
+      ? { model: verificationModel(env), reasoningEffort: verificationReasoningEffort(env) }
+      : {}),
+  };
+}
+
 export function drawingParserMode(env: Pick<Env, "AI_EXTRACTION_MODE">): DrawingParserMode {
   const mode = (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase();
   // An unset mode runs nothing: a deployment cannot acquire a parser by
@@ -742,25 +775,14 @@ export async function runDrawingEnrichmentStage(
       return res.data;
     },
   };
-  /** The stage layer validates with the skill it is given, and this engine
-   *  validates the answer itself — so the call goes out under the real skill's
-   *  id, version and schema, and its output comes back untouched for the phase
-   *  that asked for it to judge. */
-  const passThrough = <T>(skill: { id: string; promptVersion: string; responseSchema: Record<string, unknown>; buildPrompt(input: T): string; buildContent?(input: T): unknown }) => ({
-    ...skill,
-    validate: (raw: unknown) => raw ?? null,
-  });
-  const faceMappedCall = async (
-    input: { imageDataUrl: string; skill: Parameters<typeof passThrough>[0] },
-  ) => {
+  const faceMappedCall = (kind: FaceMappedStageKind) => async (input: FaceMappedCall) => {
     const res = await runStage(env, {
       aiRunId: args.aiRunId,
       projectId: args.projectId,
-      skill: passThrough(input.skill) as never,
-      input: { imageDataUrl: input.imageDataUrl },
-    });
+      ...faceMappedStageRequest(env, kind, input),
+    } as never);
     if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
-    return res.data;
+    return res.data as never;
   };
 
   const deps: EnrichDeps = depsOverride
@@ -771,14 +793,11 @@ export async function runDrawingEnrichmentStage(
     ? {
         ...baseDeps,
         runFaceMapped: {
-          readSheet: faceMappedCall,
-          readPlanPage: faceMappedCall,
-          inventoryElevation: faceMappedCall,
-          reconcileFace: faceMappedCall,
-          readComposition: (input) => faceMappedCall({
-            imageDataUrl: input.batch.map((task) => task.imageDataUrl).find(Boolean) ?? "",
-            skill: input.skill as never,
-          }),
+          readSheet: faceMappedCall("sheet"),
+          readPlanPage: faceMappedCall("plan"),
+          inventoryElevation: faceMappedCall("inventory"),
+          reconcileFace: faceMappedCall("reconcile"),
+          readComposition: faceMappedCall("composition"),
         },
       }
     : parserMode === "full_document"

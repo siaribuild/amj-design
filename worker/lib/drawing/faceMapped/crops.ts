@@ -1,5 +1,6 @@
 import type { CropBoxPt } from "../contract";
 import type { ElevationFrame } from "./elevationFrames";
+import { WIDTH_TOLERANCE } from "./widths";
 
 /**
  * §7.5. What to cut out of the elevation for one opening, and on what grounds.
@@ -23,7 +24,7 @@ export interface OpeningCropTask {
   frameBoxPt: CropBoxPt;
   /** How the width was arrived at, so a crop sized by fallback is never taken
    * for one sized by measurement. */
-  basis: "scaled" | "wider_frame" | "wide_unscaled";
+  basis: "scaled" | "calibrated" | "wider_frame" | "wide_unscaled";
   warnings: string[];
 }
 
@@ -36,15 +37,16 @@ const MARGIN_MAX_FRACTION = 0.25;
 const STOREY_MARGIN = 0.05;
 
 export function openingCropTasks(args: {
-  matches: { tag: string; frame: ElevationFrame; expectedWidthPt: number | null }[];
-  pageSizePt: [number, number];
+  matches: { tag: string; frame: ElevationFrame; expectedWidthPt: number | null; widthBasis?: "scaled" | "calibrated" | null }[];
+  /** Each sheet's own size: elevation sheets in one set need not be alike. */
+  pageSizeOf(pageNo: number): [number, number];
   sourceFileId: string;
 }): OpeningCropTask[] {
-  const [pageWidth, pageHeight] = args.pageSizePt;
   const centres = args.matches.map((match) =>
     (match.frame.outerFrameBoxPt[0] + match.frame.outerFrameBoxPt[2]) / 2);
 
   return args.matches.flatMap((match, at) => {
+    const [pageWidth, pageHeight] = args.pageSizeOf(match.frame.pageNo);
     const box = match.frame.outerFrameBoxPt;
     const drawn = box[2] - box[0];
     const centre = centres[at];
@@ -56,16 +58,20 @@ export function openingCropTasks(args: {
       width = drawn;
       basis = "wide_unscaled";
       warnings.push("the page states no scale, so this crop is sized from the drawn frame");
-    } else if (drawn > match.expectedWidthPt) {
+    } else if (drawn > match.expectedWidthPt * (1 + WIDTH_TOLERANCE)) {
       // Never crop inside a complete frame: the frame that was drawn is the
       // thing being read, and a measurement that says it is narrower than it
       // looks is a disagreement to record, not a reason to cut it in half.
+      // Within tolerance the scale width stands (§7.5 rule 3); the margin
+      // below keeps a frame that much wider inside the crop.
       width = drawn;
       basis = "wider_frame";
       warnings.push(`the drawn frame is wider than the scheduled width at this scale (${drawn.toFixed(1)}pt against ${match.expectedWidthPt.toFixed(1)}pt)`);
     } else {
       width = match.expectedWidthPt;
-      basis = "scaled";
+      // A width from a scale the frames themselves supplied (§14) is a
+      // measurement of a kind, and a crop sized by it says which kind.
+      basis = match.widthBasis === "calibrated" ? "calibrated" : "scaled";
     }
 
     const margin = Math.max(MARGIN_MIN_PT, Math.min(width * MARGIN_FRACTION, width * MARGIN_MAX_FRACTION));
@@ -84,7 +90,16 @@ export function openingCropTasks(args: {
     // centre gets that neighbour read and filed under this tag — worse than
     // reading nothing.
     if (bbox[0] < 0 || bbox[2] > pageWidth) return [];
-    if (centres.some((other, index) => index !== at && other > bbox[0] && other < bbox[2])) return [];
+    // A neighbour is an opening on the same sheet and the same storey: a frame
+    // on another page, or on the storey above, at the same x is not in this
+    // crop, whatever its coordinates say.
+    if (centres.some((other, index) => {
+      const near = args.matches[index].frame;
+      return index !== at
+        && near.pageNo === match.frame.pageNo
+        && near.outerFrameBoxPt[3] > bbox[1] && near.outerFrameBoxPt[1] < bbox[3]
+        && other > bbox[0] && other < bbox[2];
+    })) return [];
 
     return [{
       tag: match.tag,

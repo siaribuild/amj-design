@@ -5,7 +5,7 @@ import {
   compositionBatches, makeCompositionSkill, runCompositions,
   type CompositionOutcome, type CompositionTask,
 } from "./compositions";
-import { openingCropTasks } from "./crops";
+import { openingCropTasks, type OpeningCropTask } from "./crops";
 import {
   elevationFaceTasks, makeElevationInventorySkill, validateElevationFrames,
   type ElevationFaceTask,
@@ -14,12 +14,14 @@ import {
   faceMappedFileReport, faceMappedProgress, faceMappedReadings,
   type CropForReport, type PlacedForReport,
 } from "./report";
-import {
-  faceReconciliationTasks, makeFaceReconcileSkill, matchFacePlacements,
-  type FaceReconcileTask, type MatchedOpeningFrame,
-} from "./matchFrames";
+import { matchFacePlacements, type MatchedOpeningFrame } from "./matchFrames";
+import { faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, type FaceReconcileTask } from "./reconcileFace";
 import { makePlanFaceSkill, planFaceRecoveryRequest, type RecoveredFace } from "./planFacesSkill";
-import { placeOpeningsOnPlan, rosterVocabulary, type PlanPage } from "./planFaces";
+import type { ElevationInventoryRead } from "./elevationFrames";
+import type { CompositionRead } from "./compositions";
+import { calibrateWidths } from "./widths";
+import { placeOpeningsOnPlan, type PlanPage } from "./planFaces";
+import { rosterVocabulary } from "./tags";
 import { openingTagWords } from "../locate";
 import { normalizeOpeningRef } from "../../ai/energyMap";
 
@@ -31,23 +33,25 @@ import { normalizeOpeningRef } from "../../ai/energyMap";
 export interface FaceMappedDeps {
   render(request: RenderRequest): Promise<RenderResponse>;
   storeCrop(id: string, pngB64: string): Promise<string | null>;
-  readPlanPage(input: FaceMappedCall & { pageNo: number; prompt: string }): Promise<unknown>;
-  inventoryElevation(input: FaceMappedCall & { task: ElevationFaceTask }): Promise<unknown>;
-  reconcileFace(input: FaceMappedCall & {
-    faceKey: string; prompt: string; frameIds: string[];
-    /** The plan region and the elevation overview together (§7.3 step 5): the
-     *  question is about the two of them, so both go. */
-    imageDataUrls: string[];
-  }): Promise<unknown>;
-  readComposition(input: { batch: CompositionTask[]; attempt: number; skill: Skill<unknown, unknown> }): Promise<unknown>;
+  readPlanPage(input: FaceMappedCall & { pageNo: number }): Promise<{ placements: (RecoveredFace & { planCandidateId: string })[] } | null>;
+  inventoryElevation(input: FaceMappedCall & { task: ElevationFaceTask }): Promise<ElevationInventoryRead | null>;
+  reconcileFace(input: FaceMappedCall & { faceKey: string; frameIds: string[] }): Promise<{ pairs: { tag: string; frameId: string }[] } | null>;
+  readComposition(input: FaceMappedCall & { batch: CompositionTask[]; attempt: number }): Promise<CompositionRead | null>;
   onProgress?(event: { phase: string; message: string; done: number; total: number; ms: number }): Promise<void>;
 }
 
-/** What every look at a page is given: the image, and the skill whose identity
- * the call is made under. The caller runs it; this engine validates it. */
-export interface FaceMappedCall {
-  imageDataUrl: string;
-  skill: Skill<{ imageDataUrl: string }, unknown>;
+/** The request a look at a page is, as it is made: the skill the call runs
+ * under, its prompt, and every image it is asked about. The caller runs the
+ * skill and answers with what the skill's own validator made of the reply - a
+ * stage is replayed by the hash of exactly this, so a request that hashed one
+ * image and no question would serve one face another face's answer. */
+export interface FaceMappedCallInput {
+  prompt?: string;
+  imageDataUrls: string[];
+}
+export interface FaceMappedCall extends FaceMappedCallInput {
+  prompt: string;
+  skill: Skill<FaceMappedCallInput, unknown>;
 }
 
 const RENDER_DPI = 100;
@@ -63,8 +67,11 @@ export async function runFaceMappedParser(args: {
   scheduleRows: { tag: string; widthMm: number; typeText?: string | null }[];
   planPages: PlanPage[];
   elevationPages: PlanPage[];
-  /** Printed page scales from Phase A, by page number. */
+  /** Page scales from Phase A, by page number. */
   pageScales: Map<number, number | null>;
+  /** Where each scale came from: printed in the sheet's text, or read off a
+   *  render of it. A matcher cannot tell them apart from the number alone. */
+  scaleSources?: Map<number, "printed" | "recovered">;
   sheetTitles: Map<number, string>;
   deps: FaceMappedDeps;
 }): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
@@ -83,12 +90,22 @@ export async function runFaceMappedParser(args: {
   let modelCalls = 0;
   let containerCalls = 0;
 
+  // A page that will not render costs the openings on it and nothing else:
+  // one container timeout on one elevation sheet is not a reason to report a
+  // whole schedule as unread.
   const pageImage = async (pageNo: number, box?: CropBoxPt, dpi = RENDER_DPI) => {
     containerCalls += 1;
-    const rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
-    const image = rendered.images[0];
-    return image ? { pngB64: image.pngB64, url: `data:image/png;base64,${image.pngB64}` } : null;
+    try {
+      const rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
+      const image = rendered.images[0];
+      return image ? { pngB64: image.pngB64, url: `data:image/png;base64,${image.pngB64}` } : null;
+    } catch {
+      return null;
+    }
   };
+  // Provenance is a fact the caller knows and this engine does not: a number
+  // alone cannot say whether a sheet printed it or a model read it.
+  const scaleSourceOf = (pageNo: number) => args.scaleSources?.get(pageNo) ?? null;
 
   // ── Phase C: which wall each opening is in, and where along it. ──────────
   await progress.step("plan_faces", "Mapping floor plans", 0, roster.length);
@@ -104,10 +121,10 @@ export async function runFaceMappedParser(args: {
     const image = await pageImage(request.pageNo);
     if (!image) continue;
     modelCalls += 1;
-    const answer = skill.validate(
-      await args.deps.readPlanPage({ pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrl: image.url }), imageDataUrl: image.url, skill })
-        .catch(() => null));
-    for (const [id, face] of answer ?? []) faceByCandidate.set(id, face);
+    const answer = await args.deps.readPlanPage({
+      pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill,
+    }).catch(() => null);
+    for (const { planCandidateId, ...face } of answer?.placements ?? []) faceByCandidate.set(planCandidateId, face);
   }
   if (faceByCandidate.size) {
     outcomes = placeOpeningsOnPlan({
@@ -151,13 +168,19 @@ export async function runFaceMappedParser(args: {
     // The face's own region, at a resolution that holds up when it is a
     // quarter of a sheet.
     const image = await pageImage(task.pageNo, task.overviewBoxPt, FACE_DPI);
-    if (!image) continue;
+    if (!image) {
+      for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, `sheet ${task.pageNo} could not be rendered`);
+      continue;
+    }
     modelCalls += 1;
     const inventorySkill = makeElevationInventorySkill(task);
-    const inventory = inventorySkill.validate(
-      await args.deps.inventoryElevation({ task, imageDataUrl: image.url, skill: inventorySkill }).catch(() => null));
-    if (inventory.state === "unresolved") {
-      for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, inventory.reason);
+    const read = await args.deps.inventoryElevation({
+      task, prompt: inventorySkill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill: inventorySkill,
+    }).catch(() => null);
+    const inventory = read ? validateElevationFrames(read, task) : null;
+    if (!inventory || inventory.state === "unresolved") {
+      const reason = inventory?.reason ?? "the look at this face did not come back";
+      for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, reason);
       continue;
     }
     const match = matchFacePlacements({
@@ -191,16 +214,24 @@ export async function runFaceMappedParser(args: {
     const skill = makeFaceReconcileSkill(face);
     const image = await pageImage(face.frames[0].pageNo);
     const planImage = await pageImage(face.placements[0].planPageNo);
-    if (!image) continue;
+    // The second look is at the plan and the elevation together (§7.3 step 5).
+    // Without the plan it is the first look again, and is not taken.
+    if (!image || !planImage) {
+      const reason = !planImage
+        ? `${face.reason}; the plan page could not be rendered for a second look`
+        : face.reason;
+      for (const placement of face.placements) unplaced.set(placement.tag, reason);
+      continue;
+    }
     modelCalls += 1;
-    const settled = skill.validate(await args.deps.reconcileFace({
+    const settled = reconcileMatches(await args.deps.reconcileFace({
       faceKey: face.faceKey,
-      prompt: skill.buildPrompt({ imageDataUrl: image.url }),
-      imageDataUrl: image.url,
+      prompt: skill.buildPrompt({ imageDataUrls: [] }),
+      // The plan region and the elevation together (§7.3 step 5).
       imageDataUrls: [planImage?.url, image.url].flatMap((url) => url ? [url] : []),
       frameIds: face.frames.map((frame) => frame.frameId),
       skill,
-    }).catch(() => null));
+    }).catch(() => null), face);
     if (settled) matched.push(...settled.matches);
     else for (const placement of face.placements) unplaced.set(placement.tag, face.reason);
   }
@@ -208,50 +239,77 @@ export async function runFaceMappedParser(args: {
     for (const placement of face.placements) unplaced.set(placement.tag, face.reason);
   }
 
-  // ── Phase D: the crops, sized by the schedule through the page scale. ────
-  const crops = new Map<string, CropForReport>();
-  const compositionTasks: CompositionTask[] = [];
-  const cropTasks = openingCropTasks({
-    matches: matched.map((match) => ({
-      tag: match.tag, frame: match.frame, expectedWidthPt: match.expectedWidthPt,
-    })),
-    pageSizePt: matched.length
-      ? [pageBox(args.elevationPages, matched[0].frame.pageNo)[2], pageBox(args.elevationPages, matched[0].frame.pageNo)[3]]
-      : [0, 0],
-    sourceFileId: args.sourceFileId,
-  });
-  for (const [at, task] of cropTasks.entries()) {
-    await progress.step("opening_crops", "Creating opening crops", at, cropTasks.length);
-    const image = await pageImage(task.pageNo, task.bboxPt, CROP_DPI);
-    if (!image) continue;
-    const cropRenderId = `${task.tag}_${task.frameId}`;
-    const cropKey = await args.deps.storeCrop(cropRenderId, image.pngB64);
-    // A crop that is nowhere is not evidence. Reading it anyway produces an
-    // answer whose lineage cannot be followed back to anything, which is the
-    // one thing a reading has to be able to do.
-    if (!cropKey) {
-      unplaced.set(task.tag, "the crop for this opening could not be stored");
-      continue;
-    }
-    crops.set(task.tag, { cropRenderId, cropKey, pageNo: task.pageNo, bboxPt: task.bboxPt, frameBoxPt: task.frameBoxPt });
-    compositionTasks.push({ tag: task.tag, frameId: task.frameId, cropRenderId, imageDataUrl: image.url });
+  // §14: a page that states no scale borrows one from every frame matched on
+  // it - the median across the page, not each face's own, so a face drawn at
+  // half the width of the rest is a disagreement rather than a private scale.
+  for (const pageNo of new Set(matched.map((match) => match.frame.pageNo))) {
+    if (args.pageScales.get(pageNo) != null) continue;
+    const onPage = calibrateWidths(matched.filter((match) => match.frame.pageNo === pageNo), widthByTag);
+    for (const calibrated of onPage) matched[matched.findIndex((match) => match.tag === calibrated.tag)] = calibrated;
   }
 
-  // ── Phase E: what is drawn inside each crop. ─────────────────────────────
+  // ── Phase D and E together: crops are made in batches of four, read, and let
+  // go - at most four batches in flight (§7.6), so at most sixteen crops. The
+  // base64 of a 300 DPI crop is the largest thing this run holds, and holding
+  // every crop of a 27-opening set at once is how a Worker runs out of memory
+  // on a big house.
+  const crops = new Map<string, CropForReport>();
+  const cropBasis = new Map<string, OpeningCropTask["basis"]>();
+  const cropTasks = openingCropTasks({
+    matches: matched.map((match) => ({
+      tag: match.tag, frame: match.frame, expectedWidthPt: match.expectedWidthPt, widthBasis: match.widthBasis,
+    })),
+    pageSizeOf: (pageNo) => {
+      const box = pageBox(args.elevationPages, pageNo);
+      return [box[2], box[3]];
+    },
+    sourceFileId: args.sourceFileId,
+  });
+  const cropById = new Map(cropTasks.map((task) => [`${task.tag}_${task.frameId}`, task]));
   let compositions: CompositionOutcome[] = [];
-  if (compositionTasks.length) {
-    await progress.step("composition_reads", "Reading opening compositions", 0, compositionTasks.length);
+  if (cropTasks.length) {
+    let cropped = 0;
+    await progress.step("composition_reads", "Reading opening compositions", 0, cropTasks.length);
     compositions = await runCompositions({
-      tasks: compositionTasks,
+      tasks: cropTasks.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: `${task.tag}_${task.frameId}`, imageDataUrl: null,
+      })),
       // Retries included: a document cannot spend the run's whole budget on one
       // batch that will not answer.
-      callCeiling: compositionBatches(compositionTasks).length + COMPOSITION_RETRY_BUDGET,
-      ask: async (batch, attempt) => {
+      callCeiling: compositionBatches(cropTasks).length + COMPOSITION_RETRY_BUDGET,
+      prepare: async (batch) => {
+        for (const task of batch) {
+          const crop = cropById.get(task.cropRenderId)!;
+          const image = await pageImage(crop.pageNo, crop.bboxPt, CROP_DPI);
+          if (!image) {
+            unplaced.set(task.tag, "the crop for this opening could not be rendered");
+            continue;
+          }
+          const cropKey = await args.deps.storeCrop(task.cropRenderId, image.pngB64);
+          // A crop that is nowhere is not evidence. Reading it anyway produces
+          // an answer whose lineage cannot be followed back to anything, which
+          // is the one thing a reading has to be able to do.
+          if (!cropKey) {
+            unplaced.set(task.tag, "the crop for this opening could not be stored");
+            continue;
+          }
+          crops.set(task.tag, { cropRenderId: task.cropRenderId, cropKey, pageNo: crop.pageNo, bboxPt: crop.bboxPt, frameBoxPt: crop.frameBoxPt });
+          cropBasis.set(task.tag, crop.basis);
+          task.imageDataUrl = image.url;
+        }
+        cropped += batch.length;
+        await progress.step("opening_crops", "Creating opening crops", cropped, cropTasks.length);
+      },
+      onBatch: (done, total) => progress.step("composition_reads", "Reading opening compositions", done, total),
+      ask: async (batch, attempt, skill) => {
         modelCalls += 1;
-        return args.deps.readComposition({ batch, attempt, skill: makeCompositionSkill(batch) });
+        return args.deps.readComposition({
+          batch, attempt, skill,
+          prompt: skill.buildPrompt({ imageDataUrls: [] }),
+          imageDataUrls: batch.map((task) => task.imageDataUrl!),
+        });
       },
     });
-    await progress.step("composition_reads", "Reading opening compositions", compositionTasks.length, compositionTasks.length);
   }
 
   for (const tag of crops.keys()) unplaced.delete(tag);
@@ -281,10 +339,18 @@ export async function runFaceMappedParser(args: {
       readings,
       pagesRead: args.planPages.length + args.elevationPages.length,
       crops: crops.size,
-      attempted: compositionTasks.length,
+      attempted: cropTasks.length,
       compositions,
       placed: placements.size,
       recovered: faceByCandidate.size,
+      // Where each reading came from, for the report to say.
+      lineage: new Map(matched.map((match) => [match.tag, {
+        planCandidateId: match.placement.planCandidateId,
+        frameId: match.frame.frameId,
+        direction: match.direction,
+        scaleSource: scaleSourceOf(match.frame.pageNo),
+        cropBasis: cropBasis.get(match.tag) ?? null,
+      }])),
       modelCalls,
       containerCalls,
       startedAt: started,

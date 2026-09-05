@@ -78,32 +78,23 @@ export async function recoverPageScales(args: {
   stated: Map<number, number | null>;
   deps: PageScaleRecoveryDeps;
 }): Promise<Map<number, number>> {
+  // One implementation: the scale-only read is the sheet read with the title
+  // ignored. Pages the text already settled are filtered here, as this path
+  // always did, so a document does not spend a render on a page it answered.
+  const facts = await recoverSheetFacts({
+    inspected: args.inspected,
+    pageNos: args.pageNos.filter((pageNo) => !args.stated.has(pageNo)),
+    stated: args.stated,
+    deps: {
+      render: args.deps.render,
+      readSheet: async (input) => {
+        const answer = await args.deps.readStatedScale(input);
+        return answer ? { pageNo: answer.pageNo, ratio: answer.ratio } : null;
+      },
+    },
+  });
   const recovered = new Map<number, number>();
-  const known = new Set(args.inspected.inventory.pages.map((page) => page.pageNo));
-  // Deduplicated and capped before any work starts: a page asked for twice is
-  // one render, and a document with no readable scale anywhere does not get to
-  // spend a call on every page it has.
-  const wanted = [...new Set(args.pageNos)]
-    .filter((pageNo) => known.has(pageNo) && !args.stated.has(pageNo))
-    .slice(0, MAX_RECOVERY_PAGES);
-  const read = await mapPool(wanted, RECOVERY_CONCURRENCY, async (pageNo) => {
-    try {
-      const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
-      const image = render.images[0];
-      if (!image?.pngB64) return null;
-      const stated = await args.deps.readStatedScale({
-        pageNo,
-        imageDataUrl: `data:image/png;base64,${image.pngB64}`,
-      });
-      return validateStatedScale(stated, pageNo);
-    } catch {
-      return null;
-    }
-  });
-  wanted.forEach((pageNo, at) => {
-    const ratio = read[at];
-    if (ratio !== null && ratio !== undefined) recovered.set(pageNo, ratio);
-  });
+  for (const [pageNo, fact] of facts) if (fact.ratio != null) recovered.set(pageNo, fact.ratio);
   return recovered;
 }
 
@@ -129,10 +120,12 @@ export interface SheetReadInput {
  * was printed, the title as printed — and validated again on the way back,
  * because a schema is advisory to a provider.
  */
-export function makeSheetFactsSkill(pageNo: number): Skill<{ imageDataUrl: string }, { pageNo: number; ratio: unknown; title: unknown }> {
+export function makeSheetFactsSkill(pageNo: number): Skill<{ prompt?: string; imageDataUrls: string[] }, { ratio: number | null; drawingTitle: string | null }> {
   const prompt = [
     "TASK",
-    "This is one sheet from a set of architectural drawings.",
+    // The page number is in the request so two sheets that happen to render
+    // alike are still two requests to the stage layer.
+    `This is sheet ${pageNo} of a set of architectural drawings.`,
     "Report the drawing scale the sheet states in its title block, and the sheet's drawing title.",
     "",
     "RULES",
@@ -160,13 +153,20 @@ export function makeSheetFactsSkill(pageNo: number): Skill<{ imageDataUrl: strin
     buildPrompt: () => prompt,
     buildContent: (input) => [
       { type: "text", text: prompt },
-      { type: "image_url", image_url: { url: input.imageDataUrl } },
+      ...input.imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } })),
     ],
+    // Shape only: whether the ratio is this page's scale is judged where the
+    // text layer's own answer is known. The output is the input, normalised, so
+    // the archive replays as itself.
     validate(raw) {
       const payload = typeof raw === "string" ? parseModelJson(raw) : raw;
       if (!payload || typeof payload !== "object") return null;
       const record = payload as Record<string, unknown>;
-      return { pageNo, ratio: record.ratio, title: record.drawingTitle };
+      const title = record.drawingTitle ?? record.title;
+      return {
+        ratio: typeof record.ratio === "number" && Number.isFinite(record.ratio) ? record.ratio : null,
+        drawingTitle: typeof title === "string" && title.trim() ? title.trim() : null,
+      };
     },
   };
 }

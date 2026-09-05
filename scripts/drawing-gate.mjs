@@ -74,6 +74,11 @@ export function compareOpening(reading, label) {
   if (labelError) {
     return { verdict: "mismatch", fields: { label: "mismatch" }, note: `invalid label: ${labelError}` };
   }
+  // An opening with nothing to read is not_drawn whether or not a row came
+  // back for it; a missing row is not a miss when there was nothing to hit.
+  if (label?.drawn === false && Object.keys(label).every((key) => key === "drawn")) {
+    return { verdict: "not_drawn", fields: { split: "not_drawn" }, note: "split not drawn on any elevation" };
+  }
   if (!reading) {
     return { verdict: "not_read", gapCode: reading?.gap_code ?? null };
   }
@@ -108,6 +113,13 @@ export function compareOpening(reading, label) {
     fields.pageNo = pageMatch ? "match" : "mismatch";
     if (!pageMatch) allMatch = false;
   }
+  // An opening with nothing to read is neither a hit nor a miss. Calling it a
+  // match inflates the headline; calling it a miss blames the engine for the
+  // drawing.
+  const scored = Object.values(fields).filter((verdict) => verdict !== "not_drawn");
+  if (!scored.length && label?.drawn === false) {
+    return { verdict: "not_drawn", fields, note: "split not drawn on any elevation" };
+  }
   return { verdict: allMatch ? "match" : "mismatch", fields, ...(label?.drawn === false ? { note: "split not drawn on any elevation" } : {}) };
 }
 
@@ -138,7 +150,8 @@ export function runGate(readings, labels) {
   // stopped — which are fixed in different places.
   const unresolved = perOpening.filter((opening) =>
     opening.verdict === "not_read" || readings.find((row) => row.external_ref === opening.externalRef)?.gap_code).length;
-  return { perOpening, summary: { total: perOpening.length, of: perOpening.length, matched, byField, unresolved } };
+  const notDrawn = perOpening.filter((opening) => opening.verdict === "not_drawn").length;
+  return { perOpening, summary: { total: perOpening.length, of: perOpening.length - notDrawn, matched, byField, unresolved } };
 }
 
 // CLI entry — only when run directly, not when imported by the test suite.

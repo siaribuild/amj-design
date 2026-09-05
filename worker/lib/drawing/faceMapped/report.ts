@@ -181,6 +181,11 @@ export function faceMappedFileReport(args: {
   modelCalls: number;
   containerCalls: number;
   startedAt: number;
+  /** Where each read opening came from, by the engine's spelling of its tag. */
+  lineage: Map<string, {
+    planCandidateId: string; frameId: string; direction: "with_plan" | "against_plan";
+    scaleSource: "printed" | "recovered" | null; cropBasis: DrawingFileReport["perOpening"][number]["cropBasis"];
+  }>;
 }): DrawingFileReport {
   return {
     fileId: args.fileId,
@@ -208,14 +213,22 @@ export function faceMappedFileReport(args: {
       },
       northAssumed: false,
     },
-    perOpening: args.readings.map((reading) => ({
-      tag: reading.externalRef,
-      outcome: reading.splitState === "value" ? "read" as const : "not_read" as const,
-      cropKey: reading.cropKey,
-      pageNo: reading.pageNo,
-      confidence: reading.confidence,
-      flags: reading.flags,
-    })),
+    perOpening: args.readings.map((reading) => {
+      const from = args.lineage.get(normalizeOpeningRef(reading.externalRef) ?? reading.externalRef);
+      return {
+        tag: reading.externalRef,
+        outcome: reading.splitState === "value" ? "read" as const : "not_read" as const,
+        cropKey: reading.cropKey,
+        pageNo: reading.pageNo,
+        confidence: reading.confidence,
+        flags: reading.flags,
+        planCandidateId: from?.planCandidateId ?? null,
+        frameId: from?.frameId ?? null,
+        direction: from?.direction ?? null,
+        scaleSource: from?.scaleSource ?? null,
+        cropBasis: from?.cropBasis ?? null,
+      };
+    }),
     wallMs: Date.now() - args.startedAt,
     modelCalls: args.modelCalls,
     containerCalls: args.containerCalls,
