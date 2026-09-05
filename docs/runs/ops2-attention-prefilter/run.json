@@ -103,12 +103,12 @@
     },
     "verify": {
       "code": 0,
-      "contextTokens": 1695827,
-      "outputTokens": 17410,
-      "turns": 21,
+      "contextTokens": 11148760,
+      "outputTokens": 56779,
+      "turns": 85,
       "source": "transcript",
-      "session": "da57a88b-a844-4cdb-b249-3033bf96ffdf",
-      "seconds": 847
+      "session": "88eee602-ad95-4cc7-ae12-b7458ba6698e",
+      "seconds": 2214
     },
     "review-security": {
       "code": 0,
@@ -195,6 +195,6 @@
     "t6"
   ],
   "startedAt": "2026-09-05T17:57:51.899Z",
-  "verifyRounds": 1,
+  "verifyRounds": 2,
   "fixRounds": 2
 }

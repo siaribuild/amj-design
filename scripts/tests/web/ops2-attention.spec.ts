@@ -165,6 +165,31 @@ for (const { key, expected } of NARROWING_CASES) {
   });
 }
 
+// Criterion 11, on the path a reader actually takes. `ops2-projects.spec.ts`
+// covers the reset after a page.goto arrival — a full document load, a
+// different lifecycle — and that one passes. The prefilter applied by CLICKING
+// an Attention row survives a later rail navigation instead: the one-shot
+// `justAppliedAttnRef` set when the param is consumed is only cleared by the
+// NEXT `ionViewWillEnter`, and on a fast hop the arrival's own lifecycle event
+// does not arrive before the reader leaves, so the flag is still set when the
+// re-entry reads it and the reset it was meant to skip once is skipped for
+// good. Written red by the tester (06-verify.md F4).
+test("a prefilter applied by pressing a row is reset by later rail navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));
+  await page.goto(ATTENTION);
+
+  await page.getByTestId("attention-row-submissions").click();
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("New submissions");
+
+  await page.locator('.ops2-nav__item[href$="/products"]').click();
+  await page.locator('.ops2-nav__item[href$="/projects"]').click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-row")).toHaveCount(ALL_REFS.length);
+});
+
 test("submissions row goes to /projects", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
   await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: PA_PF } }));

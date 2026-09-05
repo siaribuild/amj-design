@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
-  useIonViewWillEnter,
 } from "@ionic/react";
 import { funnelOutline, searchOutline, warningOutline } from "ionicons/icons";
 import { destination } from "../nav/destinations";
@@ -84,36 +83,66 @@ export function ProjectsPage() {
   // resets to `EMPTY_QUERY` rather than leaving the current query alone — the
   // raw value reaches no DOM sink and is validated into `null` before it does
   // anything.
-  // Set the instant the effect below applies a prefilter, so the enter-reset
-  // hook can tell "the param was just consumed this arrival" apart from a
-  // plain re-entry — see that hook for why `location.search` alone can't do
-  // this (F2, docs/runs/ops2-attention-prefilter/06-verify.md).
-  const justAppliedAttnRef = useRef(false);
+  // WHICH ARRIVAL OWNS THE PREFILTER ON SCREEN — an identity, not a flag.
+  //
+  // A boolean cleared by the next `ionViewWillEnter` was the first attempt (F2)
+  // and it produced F4: on a fast hop the arrival's own enter event never fires
+  // at all, so the flag was still set when the reader came back, the reset
+  // consumed it as though THAT were the arrival, and the prefilter stayed on for
+  // good — the queue opening narrowed on plain rail navigation, which is
+  // exactly what P5/criterion 11 forbids.
+  //
+  // A one-shot whose clearing depends on an event that may never fire is not a
+  // one-shot. So this records WHICH history entry applied the filter, and the
+  // reset asks a question that needs no event to have fired: "am I on a
+  // different entry from the one that set this?" React Router gives every entry
+  // a distinct `key`, and `history.replace` mints a new one — so the value
+  // stored here is the key of the entry the reader is standing on AFTER the
+  // strip, which is the entry the filter belongs to.
+  const attnEntryRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (location.pathname !== PROJECTS.path) return;
     if (!new URLSearchParams(location.search).has("attn")) return;
     const key = attentionFromSearch(location.search);
     setQuery(key ? attentionQuery(key) : EMPTY_QUERY);
-    justAppliedAttnRef.current = true;
     history.replace(PROJECTS.path);
+    // Read AFTER the replace: `history.location.key` is the entry the strip
+    // just created, which is where the reader now stands.
+    attnEntryRef.current = history.location.key ?? null;
   }, [location.pathname, location.search]);
 
-  // Re-entering the view with no `attn` instruction while the prefilter is
-  // still on (rail navigation, back from a record) resets it — design §3.3
-  // point 3. On a single-hop arrival (Attention row -> Projects), the effect
-  // above and this hook race: `history.replace` commits and updates
-  // `location` BEFORE this fires, so by the time it runs the search is
-  // already stripped bare and reading it here can no longer tell "just
-  // arrived with attn" from "plain re-entry" — the `justAppliedAttnRef` flag
-  // set immediately before that `replace()` is what survives the race.
-  const locationRef = useRef(location);
-  locationRef.current = location;
-  useIonViewWillEnter(() => {
-    if (justAppliedAttnRef.current) { justAppliedAttnRef.current = false; return; }
-    if (new URLSearchParams(locationRef.current.search).has("attn")) return;
+  // THE RESET LIVES ON THE LOCATION, NOT ON IONIC'S LIFECYCLE.
+  //
+  // MEASURED, after two fixes that failed identically because the premise was
+  // wrong rather than the logic: `ionViewWillEnter` DOES NOT FIRE on a rail
+  // navigation back into this view. Probed in the running console — arrival
+  // logs one `willEnter`, then rail-away and rail-back log nothing at all,
+  // while the prefilter stays on screen. Any reset written inside that hook is
+  // unreachable on the one path that needs it, which is why both a consumed
+  // flag (F2) and an entry-key comparison read from a render-lagged ref (F4)
+  // behaved the same: neither ever ran.
+  //
+  // A location change always happens, because it IS the navigation. So the
+  // reset hangs off the router, and asks the question the lifecycle could not
+  // answer: is the reader standing on a different history entry from the one
+  // that applied this filter? React Router mints a fresh key per entry and
+  // `history.replace` mints one for the strip, so same key means "still the
+  // arrival that set it" and any other key means "they navigated away and
+  // came back".
+  // LEAVING THE ROUTE ENDS THE ARRIVAL, which the entry key alone cannot say.
+  // Opening a record and coming back is a POP to the very entry that applied
+  // the filter, so the keys match and an identity test on its own would keep a
+  // prefilter the reader has visibly navigated away from. Clearing the ref the
+  // moment the pathname is not ours makes "did they leave" a fact rather than
+  // an inference, and the return trip then takes the reset branch below.
+  useEffect(() => {
+    if (location.pathname !== PROJECTS.path) { attnEntryRef.current = null; return; }
+    if (new URLSearchParams(location.search).has("attn")) return;
+    if (attnEntryRef.current && location.key === attnEntryRef.current) return;
+    attnEntryRef.current = null;
     setQuery((q) => (q.attention ? EMPTY_QUERY : q));
-  });
+  }, [location.pathname, location.search, location.key]);
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array
