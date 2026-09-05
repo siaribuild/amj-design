@@ -370,6 +370,11 @@ export function AttentionPage() {
                   );
                 })}
               </div>
+              {/* The chart is a card like the four above it and gets the same
+                  stamp when the snapshot is stale. Without it, a reader who has
+                  scrolled the page-level freshness line out of view — which the
+                  phone does readily — sees a chart that looks current. */}
+              {stamp}
             </section>
           </div>
         );

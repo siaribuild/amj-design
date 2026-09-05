@@ -25,3 +25,34 @@
   the bell as absent. Preserving last-known state or an explicit unavailable
   status would tell them apart. Not taken: inventing an alarm from a failed
   fetch is the worse error of the two.
+
+## Round-6 reviewer findings not taken, with reasons
+
+- [declined, twice more] architecture + ponytail: the notification registry
+  lives in `worker/lib/monitoring.ts` and carries an AI snapshot, so a future
+  orders or messages source would depend on AI monitoring. Ponytail says delete
+  it; architecture says move it to a neutral notifications module. Both are
+  right about the shape and both are overruled by the same owner decision
+  (grill decision 8: seed the subsystem so later sources append without
+  rework). Recorded a third time because two independent reviewers now agree —
+  worth the owner's second look, not the developer's.
+- [low] architecture: `useNotificationCount` returns 0 for a failed fetch, so
+  the bell cannot tell healthy-zero from unavailable and a failed first load
+  silently removes the warning. Not taken: inventing an alarm from a failed
+  fetch is the worse error, and an explicit unavailable state is a UI decision
+  the v1 bell (a number) has nowhere to put.
+- [low] architecture: the route's payload has no shared typed parser — the
+  client redeclares the enriched shape and reads the extra fields raw.
+- [low] ponytail: `useMonitoring` and `useNotificationCount` keep two caches
+  over the SAME endpoint, so the Attention page fetches `/api/ops/monitoring`
+  twice at desk width and throws away the `notificationCount` already in its
+  own response. One request could serve both.
+- [low] ponytail: `useNotificationCount`'s hand-rolled subscriber Set is
+  `useSyncExternalStore`'s job.
+- [low] ponytail: `melbourneOffsetMs` reconstructs an offset that
+  `Intl.DateTimeFormat` reports directly via `timeZoneName: "longOffset"`.
+  Deliberately not touched late: the current version is proved across three
+  timezones by test, and timezone maths is not where to take an unforced risk.
+- [low] ponytail: `evaluateRed` is a thin wrapper over `evaluateRedFlags`, and
+  `capOutstanding` is a one-line subtraction with one caller. Both kept under
+  the "one place per fact" house rule.

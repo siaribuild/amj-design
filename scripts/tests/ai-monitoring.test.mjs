@@ -45,7 +45,7 @@ await build({
         NOTIFICATION_SOURCES,
         notificationCount,
         monitoringPayload,
-        __testingSources,
+        countFrom,
       } from ${p("worker/lib/monitoring.ts")};
     `,
     resolveDir: projectRoot,
@@ -66,7 +66,7 @@ const {
   NOTIFICATION_SOURCES,
   notificationCount,
   monitoringPayload,
-  __testingSources,
+  countFrom,
 } = Lib;
 
 test.after(async () => {
@@ -442,8 +442,11 @@ test("notificationCount: one source, sums to 1 when the stored snapshot is red",
     },
   };
   assert.equal(NOTIFICATION_SOURCES.length, 1);
-  const count = await notificationCount(env);
-  assert.ok(getCalls > 0, "the notification source must actually read the snapshot");
+  // The caller hands in the snapshot it already read — notificationCount no
+  // longer re-reads KV for itself, which is what made the route read twice.
+  const snapshot = await readMonitoringSnapshot(env);
+  const count = await notificationCount(env, snapshot);
+  assert.equal(getCalls, 1, "exactly one KV read serves the count");
   assert.equal(count, 1);
 });
 
@@ -1004,7 +1007,7 @@ test("notificationCount: one failing source cannot hide every other notification
   // orders or messages source throwing would blank the AI cards too.
   const boom = async () => { throw new Error("source down"); };
   const two = async () => 2;
-  const count = await __testingSources.countFrom([boom, two], { env: {}, snapshot: null });
+  const count = await countFrom([boom, two], { env: {}, snapshot: null });
   assert.equal(count, 2, "a source that throws contributes nothing and stops nothing");
 });
 

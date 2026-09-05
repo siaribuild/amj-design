@@ -103,30 +103,30 @@
     },
     "verify": {
       "code": 0,
-      "contextTokens": 15259974,
-      "outputTokens": 74262,
-      "turns": 93,
+      "contextTokens": 16468501,
+      "outputTokens": 78445,
+      "turns": 103,
       "source": "transcript",
-      "session": "d267f9d5-0c06-4a4b-bd3d-f15053c97c72",
-      "seconds": 1405
+      "session": "754c14b2-69d1-4c6f-aee2-0cb30232bcb5",
+      "seconds": 2417
     },
     "review-conformance": {
       "code": 0,
-      "contextTokens": 441122,
-      "outputTokens": 7052,
-      "turns": 9,
+      "contextTokens": 235061,
+      "outputTokens": 4396,
+      "turns": 5,
       "source": "transcript",
-      "session": "d2349370-104f-4549-8cc1-c80b4f6ea194",
-      "seconds": 146
+      "session": "768ffe2d-3dae-4a0f-b367-19da52cf3f2e",
+      "seconds": 112
     },
     "review-security": {
       "code": 0,
-      "contextTokens": 973429,
-      "outputTokens": 11737,
-      "turns": 9,
+      "contextTokens": 755389,
+      "outputTokens": 6185,
+      "turns": 8,
       "source": "transcript",
-      "session": "79e65241-0a21-4d84-b1b0-955a60afc3f3",
-      "seconds": 215
+      "session": "9f56c49b-e7d5-41cb-8402-0545103b00f1",
+      "seconds": 145
     },
     "review-codex": {
       "code": 0,
@@ -137,12 +137,12 @@
     },
     "review-ponytail": {
       "code": 0,
-      "contextTokens": 946530,
-      "outputTokens": 10357,
-      "turns": 10,
+      "contextTokens": 725703,
+      "outputTokens": 6698,
+      "turns": 8,
       "source": "transcript",
-      "session": "86264b0c-3270-4309-aec5-8fd8d9f8487c",
-      "seconds": 188
+      "session": "a396c279-9196-4246-9746-0e0fd4ee3992",
+      "seconds": 143
     },
     "review-codex-architecture": {
       "code": 0,
@@ -196,7 +196,7 @@
   ],
   "startedAt": "2026-09-03T12:19:00.485Z",
   "gateStage": null,
-  "verifyRounds": 2,
+  "verifyRounds": 3,
   "fixRounds": 0,
   "notes": [
     "apertly/main merged in at 89284534 (main had moved 113 commits and the ops2 Attention host page shipped with its own review fixes). base moved to a76b8119 = main tip, so base...HEAD is this feature alone.",

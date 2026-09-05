@@ -28,6 +28,18 @@ export async function writeMonitoringSnapshot(env: Env, fetchImpl: typeof fetch 
 
 // Logs only the endpoint path suffix + status — never the token, never the
 // Authorization header, never the account id in a full URL (design §8).
+/** A Cloudflare call that failed, carrying ONLY the endpoint path it failed on.
+ *
+ *  The sanitised path travels as a field rather than inside a message that the
+ *  logger has to parse back out — the two functions no longer share a string
+ *  protocol, and a message this module did not compose cannot be mistaken for
+ *  one it did. */
+class CfFailure extends Error {
+  constructor(readonly pathSuffix: string, status?: number) {
+    super(status ? `status ${status} for ${pathSuffix}` : `request failed for ${pathSuffix}`);
+  }
+}
+
 function pathSuffix(url: string): string {
   const i = url.indexOf("/ai-gateway/");
   return i === -1 ? "?" : url.slice(i);
@@ -53,10 +65,10 @@ async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<a
     // implementation wrote — it may quote the full request, headers included,
     // and this module has no say in it. Criterion 27 cannot be enforced by
     // sanitising a string someone else composed, so nothing composed elsewhere
-    // is ever logged: the message below is built from the path we attempted.
-    throw new Error(`request failed for ${pathSuffix(url)}`);
+    // is ever logged: only the path we attempted, which is in hand right here.
+    throw new CfFailure(pathSuffix(url));
   }
-  if (!res.ok) throw new Error(`status ${res.status} for ${pathSuffix(url)}`);
+  if (!res.ok) throw new CfFailure(pathSuffix(url), res.status);
   const body = await res.json<{ result?: unknown }>();
   return body.result;
 }
@@ -67,7 +79,7 @@ async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<a
 // D1 counts as well. Every number crossing this boundary is checked here.
 function requireNumber(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`missing ${field} for /ai-gateway/`);
+    throw new CfFailure(`/ai-gateway/ (missing ${field})`);
   }
   return value;
 }
@@ -123,13 +135,11 @@ const bothUnavailable = (reason: string): MoneySnapshot => ({
 });
 
 function logFailure(err: unknown): "fetch_failed" {
-  // Every throw that reaches here is one this module composed, and each ends
-  // with " for <path suffix>". Publish ONLY that suffix: if a message ever
-  // arrives in another shape it is not printed at all, so the log line cannot
-  // carry a URL, an account id or a header, whoever wrote the error.
-  const message = err instanceof Error ? err.message : "";
-  const suffix = message.slice(message.lastIndexOf(" for ") + 5);
-  const path = message.includes(" for ") && suffix.startsWith("/ai-gateway/") ? suffix : "?";
+  // Only a CfFailure carries a path this module built, and only that path is
+  // ever printed. Anything else — an error from a dependency, a bug in here —
+  // logs nothing but "?", so a log line cannot carry a URL, an account id or a
+  // header whoever composed it. The guarantee is the TYPE, not a string parse.
+  const path = err instanceof CfFailure ? err.pathSuffix : "?";
   console.log(`ai-parse monitoring: CF fetch failed for ${path}`);
   return "fetch_failed";
 }
@@ -157,16 +167,21 @@ async function fetchBalance(env: Env, fetchImpl: typeof fetch): Promise<BalanceS
 async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSnapshot> {
   try {
     const cap = await fetchCap(env, fetchImpl);
-    // FAILS CLOSED. Publish a percentage only when the answer positively says
-    // this account has exactly one gateway, because only then is the account's
-    // spend this gateway's spend. Anything else — a paginated object, a shape
-    // change, `result: null` from one of Cloudflare's soft-failure 200s — is an
-    // answer we cannot attribute, and the old `length > 1` test skipped the
-    // guard entirely for all of them, publishing a percentage built from spend
-    // that may belong to another gateway. That direction of error invents a red.
-    const gateways = await cfGet(env, fetchImpl, "/ai-gateway/gateways");
-    if (!Array.isArray(gateways) || gateways.length !== 1) {
-      return { available: false, reason: "spend_not_attributable" };
+    // Scope only has to be proved for a GATEWAY cap. usage-history is
+    // account-wide, so an account-level cap is measured against account-level
+    // spend whatever the gateway count is — asking the question there blanked a
+    // cap card that was perfectly attributable.
+    //
+    // For a gateway cap it FAILS CLOSED: publish only when the answer
+    // positively says this account has exactly one gateway, because only then
+    // is the account's spend this gateway's spend. Anything else — a paginated
+    // object, a shape change, `result: null` from one of Cloudflare's
+    // soft-failure 200s — is an answer we cannot attribute.
+    if (cap.capSource === "gateway") {
+      const gateways = await cfGet(env, fetchImpl, "/ai-gateway/gateways");
+      if (!Array.isArray(gateways) || gateways.length !== 1) {
+        return { available: false, reason: "spend_not_attributable" };
+      }
     }
     const end = Date.now();
     const start = end - cap.windowDays * 24 * 60 * 60 * 1000;
@@ -307,19 +322,16 @@ export async function countFrom(
 
 export const NOTIFICATION_SOURCES: readonly NotificationSource[] = [aiBudgetRed];
 
-// snapshot is optional so existing single-argument callers (and tests) keep
-// their own KV read; monitoringPayload passes the one it already made.
+// The snapshot is REQUIRED: both callers already hold the one KV read this
+// route makes, and an optional parameter that silently re-reads KV is how the
+// two-reads bug got in the first time.
 export async function notificationCount(
   env: Env,
-  snapshot?: ReturnType<typeof parseMonitoringSnapshot> | null,
+  snapshot: ReturnType<typeof parseMonitoringSnapshot> | null,
 ): Promise<number> {
-  const resolved = snapshot !== undefined ? snapshot : await readMonitoringSnapshot(env);
-  return countFrom(NOTIFICATION_SOURCES, { env, snapshot: resolved });
+  return countFrom(NOTIFICATION_SOURCES, { env, snapshot });
 }
 
-// Exported for the aggregation test: countFrom is the behaviour under test and
-// NOTIFICATION_SOURCES has one entry, so the test supplies its own.
-export const __testingSources = { countFrom };
 
 // The one read the route needs: snapshot (enriched with the server-evaluated
 // red flag + configured floor/ceiling, UX §6.2) and notificationCount, both
