@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops2 — Attention prefilter</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS — copied verbatim from src/ops2/theme/*.css and src/ops2/styles/tokens.css.
+   Nothing below invents a colour, a radius, a size or a step.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --theme-sage-50:#f4f8f6; --theme-sage-100:#e6efe9; --theme-sage-200:#cddfd4;
+  --theme-sage-400:#7dab8e; --theme-sage-500:#5a7a6a; --theme-sage-600:#4a6858;
+  --theme-neutral-0:#ffffff; --theme-neutral-50:#fafaf7; --theme-neutral-100:#f5f4f0;
+  --theme-neutral-150:#edecea; --theme-neutral-200:#e4e2dd; --theme-neutral-300:#d4d1cb;
+  --theme-neutral-400:#b5b2ab; --theme-neutral-500:#8b8880; --theme-neutral-600:#6f6c67;
+  --theme-ink-800:#1f1d1b; --theme-ink-900:#161412;
+  --theme-warning-50:#fdf9f0; --theme-warning-500:#8a6a2a; --theme-warning-700:#624410;
+  --theme-attention-50:#fdf4f3; --theme-attention-200:#f5c7c2; --theme-attention-500:#c0392b;
+  --theme-info-500:#4c6a88; --theme-info-700:#31485f;
+  --theme-radius-xs:3px;
+
+  --ds-color-brand:var(--theme-sage-500); --ds-color-brand-wash:var(--theme-sage-50);
+  --ds-color-brand-subtle:var(--theme-sage-100);
+  --ds-text-primary:var(--theme-ink-900); --ds-text-secondary:var(--theme-neutral-600);
+  --ds-text-muted:var(--theme-neutral-500); --ds-text-inverse:var(--theme-neutral-0);
+  --ds-text-brand:var(--theme-sage-600); --ds-text-link:var(--theme-sage-600);
+  --ds-surface-page:var(--theme-neutral-50); --ds-surface-card:var(--theme-neutral-0);
+  --ds-surface-sunken:var(--theme-neutral-100); --ds-surface-brand:var(--theme-sage-500);
+  --ds-surface-darker:var(--theme-ink-900);
+  --ds-border-subtle:var(--theme-neutral-200); --ds-border-default:var(--theme-neutral-300);
+  --ds-border-input:var(--theme-neutral-300); --ds-border-focus:var(--theme-sage-500);
+  --ds-color-warning:var(--theme-warning-500); --ds-color-warning-subtle:var(--theme-warning-50);
+  --ds-color-warning-text:var(--theme-warning-700);
+  --ds-color-error:var(--theme-attention-500); --ds-color-error-subtle:var(--theme-attention-50);
+  --ds-color-info:var(--theme-info-500); --ds-color-info-text:var(--theme-info-700);
+  --ds-layer-raised:0 1px 3px rgba(42,40,38,.06), 0 1px 2px rgba(42,40,38,.04);
+  --ds-radius-surface:5px; --ds-radius-control:3px;
+
+  --theme-spacing-2xs:.125rem; --theme-spacing-xs:.25rem; --theme-spacing-sm:.5rem;
+  --theme-spacing-md:.75rem; --theme-spacing-lg:1rem; --theme-spacing-xl:1.5rem;
+  --theme-spacing-2xl:2rem;
+  --theme-font-display:'Space Grotesk','Inter',system-ui,sans-serif;
+  --theme-font-sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --theme-font-weight-regular:400; --theme-font-weight-medium:500;
+  --theme-font-weight-semibold:600; --theme-font-weight-bold:700;
+  --theme-font-size-xs:.75rem; --theme-font-size-sm:.8125rem; --theme-font-size-base:.9375rem;
+  --theme-font-size-md:1rem; --theme-font-size-lg:1.125rem; --theme-font-size-xl:1.3125rem;
+  --theme-font-size-2xl:1.625rem;
+  --theme-letter-spacing-tight:-.02em; --theme-letter-spacing-wide:.025em;
+  --theme-letter-spacing-wider:.05em;
+  --theme-line-height-tight:1.1; --theme-line-height-snug:1.25;
+  --theme-line-height-normal:1.5; --theme-line-height-none:1;
+}
+
+/* ── The mock page's own chrome. NOT product. ───────────────────────────── */
+*{box-sizing:border-box}
+body{margin:0;background:#e9e7e2;font-family:var(--theme-font-sans);color:var(--ds-text-primary);
+  -webkit-font-smoothing:antialiased}
+::selection{background:var(--theme-sage-200);color:var(--ds-text-primary)}
+.doc{max-width:1180px;margin:0 auto;padding:32px 20px 90px}
+.doc h1{font-family:var(--theme-font-display);font-size:1.5rem;margin:0 0 6px;letter-spacing:-.02em}
+.doc>p.lede{margin:0 0 8px;max-width:70ch;font-size:.875rem;color:#55524d;line-height:1.55}
+.sec{margin:44px 0 0;padding-top:22px;border-top:2px solid #cfccc6}
+.sec>h2{font-family:var(--theme-font-display);font-size:1.125rem;margin:0 0 4px;letter-spacing:-.01em}
+.sec>p.note{margin:0 0 18px;max-width:74ch;font-size:.8125rem;color:#55524d;line-height:1.6}
+.row-of-frames{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.frame{background:var(--ds-surface-page);border:1px solid #c4c1bb;border-radius:6px;overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.frame--phone{width:375px;flex:none}
+.frame--desk{width:100%;max-width:1120px}
+.frame--half{width:100%;max-width:540px;flex:1 1 460px}
+.cap{font-size:.6875rem;letter-spacing:.04em;text-transform:uppercase;color:#6a6660;margin:0 0 6px;font-weight:600}
+.cap em{text-transform:none;letter-spacing:0;font-style:normal;font-weight:400;color:#55524d}
+.stack{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ann{max-width:80ch;font-size:.75rem;line-height:1.55;color:#55524d;margin:10px 0 0}
+.ann code,.sec>p.note code,.doc>p.lede code{background:#fff;border:1px solid #d6d3cd;border-radius:3px;
+  padding:0 3px;font-size:.6875rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.urlbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#dedad3;border-bottom:1px solid #c4c1bb;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.6875rem;color:#4a4742}
+.urlbar b{font-weight:600;color:#2a2826}
+.urlbar span.dot{width:8px;height:8px;border-radius:50%;background:#bdb8b0;flex:none}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRODUCT SURFACE — ops2's existing vocabulary, class for class.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ops2{font-family:var(--theme-font-sans);color:var(--ds-text-primary);font-size:var(--theme-font-size-base)}
+.ops2 button{font-family:inherit}
+
+/* chrome/OpsPage.tsx + nav.css */
+.ops2-page__body{padding:var(--theme-spacing-lg);max-width:72ch}
+.ops2-page__body--full{max-width:none}
+.ops2-page__band{margin:calc(-1 * var(--theme-spacing-lg)) calc(-1 * var(--theme-spacing-lg)) var(--theme-spacing-lg);
+  padding:var(--theme-spacing-lg) var(--theme-spacing-lg) 0;
+  background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle)}
+.ops2-page__head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--theme-spacing-md);min-height:2.75rem}
+.ops2-page__title{margin:0 0 var(--theme-spacing-sm)}
+.ds-type-heading-lg{font-family:var(--theme-font-display);font-size:var(--theme-font-size-2xl);font-weight:600;
+  line-height:var(--theme-line-height-snug);letter-spacing:var(--theme-letter-spacing-tight)}
+.ds-type-heading-md{font-family:var(--theme-font-display);font-size:var(--theme-font-size-xl);font-weight:600;
+  line-height:var(--theme-line-height-snug)}
+.ds-type-caption{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-xs);font-weight:400;
+  line-height:var(--theme-line-height-normal)}
+.ds-type-label-md{font-family:var(--theme-font-sans);font-size:var(--theme-font-size-xs);font-weight:500;
+  line-height:1;letter-spacing:var(--theme-letter-spacing-wider);text-transform:uppercase}
+.ds-surface-card{background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised)}
+.ops2-sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
+
+/* the desk top bar + rail — nav.css */
+.ops2-topbar{display:flex;align-items:center;gap:var(--theme-spacing-sm);min-height:56px;
+  padding:0 var(--theme-spacing-md) 0 var(--theme-spacing-lg);background:var(--ds-surface-card);
+  border-bottom:1px solid var(--ds-border-subtle)}
+.ops2-topbar__title{margin:0;flex:1 1 auto;color:var(--ds-text-primary)}
+.ops2-bell{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:var(--ds-radius-control);
+  background:transparent;color:var(--ds-text-secondary);cursor:pointer}
+.ops2-account{display:flex;align-items:center;gap:var(--theme-spacing-sm);min-height:44px;
+  padding:var(--theme-spacing-xs) var(--theme-spacing-sm);border:0;border-radius:var(--ds-radius-control);
+  background:transparent;text-align:start;cursor:pointer}
+.ops2-account__avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;
+  border-radius:var(--ds-radius-surface);background:var(--ds-surface-brand);color:var(--ds-text-inverse);
+  font-size:var(--theme-font-size-xs);font-weight:600;letter-spacing:var(--theme-letter-spacing-wide)}
+.ops2-account__who{display:flex;flex-direction:column;gap:1px}
+.ops2-account__name{font-size:var(--theme-font-size-sm);font-weight:500}
+.ops2-account__role{font-size:var(--theme-font-size-xs);color:var(--ds-text-muted)}
+.ops2-account--topbar{color:var(--ds-text-primary)}
+.desk{display:grid;grid-template-columns:224px 1fr;min-height:520px}
+.ops2-nav{background:var(--ds-surface-darker);padding:var(--theme-spacing-lg) var(--theme-spacing-md);
+  display:flex;flex-direction:column;gap:var(--theme-spacing-lg)}
+.ops2-wordmark{display:inline-flex;align-items:baseline;gap:var(--theme-spacing-xs);padding:0 var(--theme-spacing-sm)}
+.ops2-wordmark__name{font-family:var(--theme-font-display);font-size:var(--theme-font-size-lg);font-weight:600;
+  letter-spacing:var(--theme-letter-spacing-tight);color:var(--ds-text-inverse)}
+.ops2-wordmark__suffix{color:color-mix(in srgb,var(--ds-text-inverse) 52%,var(--ds-surface-darker))}
+.ops2-nav__sections{display:flex;flex-direction:column;gap:var(--theme-spacing-lg)}
+.ops2-nav__section-label{margin:0 0 var(--theme-spacing-xs);padding:0 var(--theme-spacing-sm);
+  color:color-mix(in srgb,var(--ds-text-inverse) 46%,var(--ds-surface-darker))}
+.ops2-nav__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.ops2-nav__item{display:flex;align-items:center;gap:var(--theme-spacing-md);min-height:44px;
+  padding:0 var(--theme-spacing-sm);border-radius:var(--ds-radius-control);
+  color:color-mix(in srgb,var(--ds-text-inverse) 82%,var(--ds-surface-darker));
+  font-size:var(--theme-font-size-base);text-decoration:none}
+.ops2-nav__item[aria-current="page"]{background:var(--ds-surface-brand);color:var(--ds-text-inverse);font-weight:500}
+.ops2-nav__icon{flex:none;width:18px;height:18px}
+.ops2-nav__foot{margin-top:auto;padding-top:var(--theme-spacing-md);
+  border-top:1px solid color-mix(in srgb,var(--ds-text-inverse) 12%,var(--ds-surface-darker))}
+.ops2-account--rail{width:100%;color:var(--ds-text-inverse)}
+.ops2-account--rail .ops2-account__role{color:color-mix(in srgb,var(--ds-text-inverse) 58%,var(--ds-surface-darker))}
+
+/* the phone tab bar — nav.css */
+.ops2-tabbar{display:grid;grid-template-columns:repeat(4,1fr);background:var(--ds-surface-card);
+  border-top:1px solid var(--ds-border-subtle)}
+.ops2-tab{position:relative;display:grid;justify-items:center;gap:2px;padding:8px 0 10px;
+  color:var(--ds-text-muted);font-size:.625rem}
+.ops2-tab svg{width:22px;height:22px}
+.ops2-tab[aria-selected="true"]{color:var(--ds-text-primary);font-weight:500}
+.ops2-tab[aria-selected="true"]::before{content:"";position:absolute;inset-block-start:0;inset-inline:20%;height:2px;
+  background:var(--ds-surface-brand)}
+
+/* the row and the list — chrome/RowList.tsx + styles/rows.css, unchanged */
+.ops2-rows{margin:0;padding:0;list-style:none;overflow:hidden}
+.ops2-row + .ops2-row{border-top:1px solid var(--ds-border-subtle)}
+.ops2-row__open{display:flex;align-items:center;gap:var(--theme-spacing-sm);width:100%;min-height:44px;
+  padding:var(--theme-spacing-sm) var(--theme-spacing-md);background:var(--ds-surface-card);border:0;
+  text-align:left;font:inherit;color:inherit;text-decoration:none;cursor:pointer}
+.ops2-row:hover > .ops2-row__open{background:var(--ds-color-brand-wash)}
+.ops2-row[data-edge="warning"] > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-warning)}
+.ops2-row[data-edge="info"] > .ops2-row__open{box-shadow:inset 3px 0 0 var(--ds-color-info)}
+.ops2-row__chev{flex:none;width:16px;height:16px;color:var(--ds-text-muted)}
+.is-focus > .ops2-row__open{outline:2px solid var(--ds-border-focus);outline-offset:-2px}
+
+/* styles/attention.css — unchanged by this feature */
+.att-groups{display:flex;flex-direction:column;gap:var(--theme-spacing-xl)}
+.att-group__head{display:flex;align-items:center;gap:var(--theme-spacing-sm);margin:0 0 var(--theme-spacing-sm)}
+.att-group__head svg{flex:none;width:18px;height:18px;color:var(--ds-text-muted)}
+.att-group__head h2{margin:0;font-family:var(--theme-font-display);font-size:var(--theme-font-size-md);
+  font-weight:600;color:var(--ds-text-primary)}
+.att-row{display:flex;align-items:baseline;gap:var(--theme-spacing-sm);flex:1 1 auto;min-width:0}
+.att-row__count{flex:none;min-width:1.5ch;font-size:var(--theme-font-size-md);font-weight:600;
+  font-variant-numeric:tabular-nums;color:var(--ds-text-primary)}
+.att-row__noun{min-width:0;font-size:var(--theme-font-size-base);color:var(--ds-text-primary);
+  line-height:var(--theme-line-height-normal)}
+.att-rows .ops2-row__open{padding-block:var(--theme-spacing-md)}
+
+/* styles/projects.css — the control row, unchanged */
+.pq-controls{display:flex;align-items:stretch;justify-content:space-between;flex-wrap:wrap;
+  gap:var(--theme-spacing-sm) var(--theme-spacing-lg);min-height:calc(2.75rem + 2px)}
+.pq-chips{display:flex;gap:var(--theme-spacing-md);align-items:stretch;flex-wrap:wrap}
+.pq-chip{position:relative;display:inline-flex;align-items:center;gap:var(--theme-spacing-2xs);
+  min-height:2.75rem;padding:0 var(--theme-spacing-2xs);background:none;border:0;border-bottom:2px solid transparent;
+  color:var(--ds-text-secondary);font-size:var(--theme-font-size-sm);font-weight:500;white-space:nowrap;cursor:pointer}
+.pq-chip[aria-pressed="true"]{color:var(--ds-text-primary);border-bottom-color:var(--ds-color-brand);font-weight:600}
+.pq-count{font-variant-numeric:tabular-nums;opacity:.75}
+.pq-chip .pq-count::before{content:"·";margin-right:.3em}
+.pq-tools{flex:1 1 auto;display:flex;align-items:center;justify-content:flex-end;gap:var(--theme-spacing-sm);
+  padding-bottom:2px}
+.pq-search{flex:1 1 20rem;max-width:32rem;display:flex;align-items:center;gap:var(--theme-spacing-sm);
+  height:2.75rem;padding:0 var(--theme-spacing-md);background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-input);border-radius:var(--ds-radius-control);
+  color:var(--ds-text-muted);font-size:var(--theme-font-size-sm)}
+.pq-search svg{flex:none;width:16px;height:16px}
+.pq-funnel{display:inline-flex;align-items:center;justify-content:center;height:2.75rem;width:2.5rem;
+  border:0;border-radius:var(--ds-radius-control);background:transparent;color:var(--ds-text-secondary);cursor:pointer}
+.pq-funnel svg{width:18px;height:18px}
+.pq-icon-btn{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:var(--ds-radius-control);
+  background:transparent;color:var(--ds-text-secondary);cursor:pointer}
+.pq-icon-btn svg{width:20px;height:20px}
+
+/* styles/projects.css — the active-filters strip.
+   TWO NEW DECLARATIONS ONLY (marked): the strip's own flex/type rules already
+   exist; the prefilter name reuses the card chip recipe .pq-flag with a third
+   tone. */
+.pq-active{display:flex;align-items:center;justify-content:space-between;gap:var(--theme-spacing-sm);
+  margin-bottom:var(--theme-spacing-sm);padding-left:var(--theme-spacing-2xs);
+  font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary)}
+.pq-active__names{display:flex;align-items:center;gap:var(--theme-spacing-xs);flex-wrap:wrap;min-width:0} /* NEW */
+.pq-clear{flex:none;padding:4px 8px;border:0;border-radius:var(--ds-radius-control);background:transparent;
+  color:var(--ds-text-link);font-size:var(--theme-font-size-sm);font-weight:500;cursor:pointer}
+.pq-clear:hover{background:var(--ds-color-brand-wash)}
+
+/* styles/projects.css — the card chip, unchanged except the new brand tone */
+.pq-flag{display:inline-flex;align-items:center;gap:.3em;padding:.15rem var(--theme-spacing-xs);
+  border-radius:var(--theme-radius-xs);font-size:var(--theme-font-size-xs);font-weight:500;white-space:nowrap}
+.pq-flag svg{width:.95em;height:.95em}
+.pq-flag[data-tone="warning"]{background:var(--ds-color-warning-subtle);color:var(--ds-color-warning-text)}
+.pq-flag[data-tone="neutral"]{background:var(--ds-surface-sunken);color:var(--ds-text-secondary)}
+.pq-flag[data-tone="brand"]{background:var(--ds-color-brand-subtle);color:var(--ds-text-brand)} /* NEW */
+
+/* styles/projects.css — the phone card, unchanged */
+.pq-cards .ops2-row__open{padding-block:19px}
+.pq-card{display:grid;gap:2px;width:100%;min-width:0}
+.pq-card__top,.pq-card__bottom{display:flex;align-items:baseline;justify-content:space-between;
+  gap:var(--theme-spacing-sm);min-width:0}
+.pq-card__bottom{margin-top:var(--theme-spacing-2xs);font-size:var(--theme-font-size-xs);color:var(--ds-text-secondary)}
+.pq-ref{font-size:var(--theme-font-size-xs);font-weight:600;letter-spacing:var(--theme-letter-spacing-wide);
+  text-transform:uppercase;color:var(--ds-text-muted);white-space:nowrap}
+.pq-title{display:block;font-size:var(--theme-font-size-base);color:var(--ds-text-primary);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.pq-customer{display:block;font-size:var(--theme-font-size-sm);color:var(--ds-text-secondary);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pq-wait{flex:none;min-width:0;font-size:var(--theme-font-size-xs);color:var(--ds-text-muted);white-space:nowrap}
+.pq-wait b,.pq-next{font-weight:600}
+.pq-wait[data-waiting="Us"] b,.pq-next[data-waiting="Us"]{color:var(--ds-color-warning-text)}
+.pq-wait[data-waiting="Customer"] b,.pq-next[data-waiting="Customer"]{color:var(--ds-color-info-text)}
+.pq-wait[data-waiting="Nobody"] b,.pq-next[data-waiting="Nobody"]{color:var(--ds-text-muted);font-weight:500}
+.pq-age{color:var(--ds-text-muted);font-size:var(--theme-font-size-xs)}
+.pq-money{flex:none;font-size:var(--theme-font-size-base);font-weight:700;line-height:var(--theme-line-height-tight);
+  color:var(--ds-text-primary);font-variant-numeric:tabular-nums}
+.pq-money[data-priced="false"]{font-size:var(--theme-font-size-xs);font-weight:500;color:var(--ds-text-muted);
+  font-style:italic}
+.pq-flags{display:flex;flex-wrap:wrap;gap:var(--theme-spacing-2xs);margin-top:var(--theme-spacing-xs)}
+
+/* styles/projects.css — the desk table, unchanged */
+.pq-table-wrap{background:var(--ds-surface-card);border:1px solid var(--ds-border-subtle);
+  border-radius:var(--ds-radius-surface);box-shadow:var(--ds-layer-raised);overflow-x:auto}
+.pq-table{width:100%;border-collapse:collapse;font-size:var(--theme-font-size-sm)}
+.pq-table th,.pq-table td{padding:var(--theme-spacing-sm) var(--theme-spacing-md);
+  border-bottom:1px solid var(--ds-border-subtle);text-align:left;vertical-align:middle}
+.pq-table th{font-size:var(--theme-font-size-xs);font-weight:500;letter-spacing:var(--theme-letter-spacing-wider);
+  text-transform:uppercase;color:var(--ds-text-muted)}
+.pq-table tbody tr{cursor:pointer}
+.pq-table tbody tr:last-child td{border-bottom:0}
+.pq-table tbody tr:hover{background:var(--ds-color-brand-wash)}
+.pq-table tbody tr[data-waiting="Us"] td:first-child{box-shadow:inset 3px 0 0 var(--ds-color-warning)}
+.pq-table tbody tr[data-waiting="Customer"] td:first-child{box-shadow:inset 3px 0 0 var(--ds-color-info)}
+.pq-table .pq-num{text-align:right;font-variant-numeric:tabular-nums}
+.pq-table .pq-stage{color:var(--ds-text-secondary)}
+.pq-table .pq-chevron{width:1.5rem;color:var(--ds-text-muted);text-align:right}
+.pq-table .pq-age{display:block}
+.pq-open{display:block;color:inherit;text-decoration:none}
+.pq-open:hover .pq-title{text-decoration:underline}
+
+/* styles/projects.css — the states that are not a list, unchanged */
+.pq-empty,.pq-error{display:flex;flex-direction:column;align-items:flex-start;gap:var(--theme-spacing-xs);
+  padding:var(--theme-spacing-2xl) var(--theme-spacing-lg);background:var(--ds-surface-card);
+  border:1px solid var(--ds-border-subtle);border-radius:var(--ds-radius-surface)}
+.pq-empty{align-items:center;text-align:center}
+.pq-error{flex-direction:row;align-items:center;gap:var(--theme-spacing-md);padding:var(--theme-spacing-lg);
+  border-color:var(--theme-attention-200);background:var(--ds-color-error-subtle)}
+.pq-error svg{flex:none;width:1.5rem;height:1.5rem;color:var(--ds-color-error)}
+.pq-error > div{flex:1 1 auto;display:flex;flex-direction:column;gap:var(--theme-spacing-2xs)}
+.pq-empty strong,.pq-error strong{font-size:var(--theme-font-size-base);font-weight:600}
+.pq-empty .ds-type-caption,.pq-error .ds-type-caption{color:var(--ds-text-secondary);max-width:44ch}
+.ion-btn-outline{align-self:center;flex:none;margin-top:var(--theme-spacing-sm);padding:6px 12px;
+  border:1px solid var(--ds-border-default);border-radius:var(--ds-radius-control);background:transparent;
+  color:var(--ds-text-primary);font-size:var(--theme-font-size-sm);font-weight:500;cursor:pointer;white-space:nowrap}
+.pq-error .ion-btn-outline{margin-top:0}
+.pq-skeleton{display:flex;flex-direction:column;gap:var(--theme-spacing-sm);margin-top:0}
+.sk{display:block;border-radius:var(--ds-radius-surface);background:var(--theme-neutral-150);
+  animation:sk 1.6s ease-in-out infinite}
+@keyframes sk{0%,100%{opacity:.55}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-attention" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="256" r="196"/><path d="M256 144v130" stroke-linecap="round"/><circle cx="256" cy="352" r="20" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-projects" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round">
+    <path d="M160 128h288M160 256h288M160 384h288"/><circle cx="72" cy="128" r="16" fill="currentColor" stroke="none"/>
+    <circle cx="72" cy="256" r="16" fill="currentColor" stroke="none"/><circle cx="72" cy="384" r="16" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-products" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M256 64 448 160v192L256 448 64 352V160z"/><path d="M64 160l192 96 192-96M256 256v192"/></symbol>
+  <symbol id="i-pricing" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M64 64h176l208 208-176 176L64 240z"/><circle cx="150" cy="150" r="26"/></symbol>
+  <symbol id="i-customers" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="176" r="88"/><path d="M96 432c22-80 84-128 160-128s138 48 160 128" stroke-linecap="round"/></symbol>
+  <symbol id="i-enquiries" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M416 96H96a32 32 0 0 0-32 32v192a32 32 0 0 0 32 32h64v72l88-72h168a32 32 0 0 0 32-32V128a32 32 0 0 0-32-32z"/></symbol>
+  <symbol id="i-files" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linejoin="round">
+    <path d="M64 128h136l48 56h200v232H64z"/></symbol>
+  <symbol id="i-audit" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round">
+    <circle cx="256" cy="256" r="196"/><path d="M256 136v128l88 56"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="256" r="72"/><path d="M256 40v56M256 416v56M40 256h56M416 256h56M104 104l40 40M368 368l40 40M408 104l-40 40M144 368l-40 40" stroke-linecap="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M184 112l144 144-144 144"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round">
+    <path d="M256 64c-70 0-112 48-112 128 0 88-32 112-48 136h320c-16-24-48-48-48-136 0-80-42-128-112-128z"/>
+    <path d="M216 384a40 40 0 0 0 80 0" stroke-linecap="round"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round">
+    <path d="M85 400h342c18 0 29-19 20-35L277 68c-9-16-33-16-42 0L65 365c-9 16 2 35 20 35z"/>
+    <path d="M256 190v104" stroke-linecap="round"/><circle cx="256" cy="345" r="18" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-search" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="36" stroke-linecap="round">
+    <circle cx="220" cy="220" r="150"/><path d="M330 330l120 120"/></symbol>
+  <symbol id="i-funnel" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M48 80h416L304 272v136l-96 56V272z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <circle cx="256" cy="256" r="180"/><path d="M256 152v122" stroke-linecap="round"/><circle cx="256" cy="344" r="17" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="34">
+    <path d="M256 128c114 0 202 96 224 128-22 32-110 128-224 128S54 288 32 256c22-32 110-128 224-128z"/><circle cx="256" cy="256" r="56"/></symbol>
+</svg>
+
+<div class="doc">
+<h1>ops2 — Attention prefilter</h1>
+<p class="lede">One change, said in one sentence: <strong>pressing an Attention row opens the queue on exactly the
+projects that row counted</strong> — not on the broad “waiting on us” set it lands on today. The number and the list
+come from one selector, so they cannot disagree.</p>
+<p class="lede">Nothing is added to the Attention page's look and no control is added to the queue. The only new thing
+on screen is the queue's <em>existing</em> active-filters strip, now naming the prefilter and offering the one way
+back. Two new CSS declarations in total, both marked in the stylesheet above.</p>
+
+<p class="lede" style="margin-top:14px"><strong>The six projects every frame below is drawn from</strong> — the
+design's own fixture, shaped so the four predicates give non-empty, non-identical sets:</p>
+<div class="frame frame--desk ops2" style="background:var(--ds-surface-card);max-width:1120px">
+  <table class="pq-table" style="font-size:.75rem">
+    <thead><tr><th>Ref</th><th>Project</th><th>statusCustomer</th><th>issuable</th><th>orderStage</th><th>Counted by</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pq-ref">P-1042</span></td><td>Wilson St duplex</td><td>submitted</td><td>—</td><td>—</td><td>new submissions</td></tr>
+      <tr><td><span class="pq-ref">P-1038</span></td><td>Marina Apartments L2</td><td>under_review</td><td>—</td><td>—</td><td>being priced</td></tr>
+      <tr><td><span class="pq-ref">P-1031</span></td><td>Ryde townhouses stage 2</td><td>under_review</td><td>yes</td><td>—</td><td>being priced <em>+</em> ready to issue</td></tr>
+      <tr><td><span class="pq-ref">P-1024</span></td><td>Bayview retail fitout</td><td>accepted</td><td>—</td><td>deposit_invoiced</td><td>awaiting payment</td></tr>
+      <tr><td><span class="pq-ref">P-1009</span></td><td>Hartley Rd house</td><td>accepted</td><td>—</td><td>balance_invoiced</td><td>awaiting payment</td></tr>
+      <tr><td><span class="pq-ref">P-0996</span></td><td>Kembla warehouse</td><td>accepted</td><td>—</td><td>manufacturing</td><td>nothing</td></tr>
+    </tbody>
+  </table>
+</div>
+<p class="ann">P-1031 is counted twice on purpose — a project can be both <em>being priced</em> and <em>ready to
+issue</em>, and each row counts its own predicate. P-0996 is counted by nothing, which is how a reader can see the
+list narrowed rather than merely rendered.</p>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>1 · Attention, desk 1440 — unchanged to look at</h2>
+  <p class="note">Same rows, same order, same zero-suppression. What changed is underneath: the four project counts
+  are now <code>selectProjects(rows, attentionQuery(key)).length</code> over the same <code>/api/ops/projects</code>
+  the queue reads, and each row's link carries <code>?attn=&lt;key&gt;</code> instead of the broad
+  <code>?wait=</code>. Enquiries and Trade are untouched — summary counts, their own destinations.</p>
+
+  <div class="frame frame--desk ops2">
+    <div class="desk">
+      <nav class="ops2-nav">
+        <div class="ops2-wordmark"><span class="ops2-wordmark__name">OpenFrame<span class="ops2-wordmark__suffix"> ops</span></span></div>
+        <div class="ops2-nav__sections">
+          <div>
+            <p class="ops2-nav__section-label ds-type-label-md">WORKSPACE</p>
+            <ul class="ops2-nav__list">
+              <li><a class="ops2-nav__item" aria-current="page" href="#"><svg class="ops2-nav__icon"><use href="#i-attention"/></svg><span>Attention</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-projects"/></svg><span>Projects</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-products"/></svg><span>Products</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-pricing"/></svg><span>Pricing</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-customers"/></svg><span>Customers</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-enquiries"/></svg><span>Enquiries</span></a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="ops2-nav__section-label ds-type-label-md">SYSTEM</p>
+            <ul class="ops2-nav__list">
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-files"/></svg><span>Files</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-audit"/></svg><span>Audit</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-settings"/></svg><span>Settings</span></a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="ops2-nav__foot">
+          <button class="ops2-account ops2-account--rail">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+      </nav>
+
+      <div>
+        <div class="ops2-topbar">
+          <h1 class="ops2-topbar__title ds-type-heading-md">Attention</h1>
+          <button class="ops2-bell" aria-label="Attention"><svg width="20" height="20"><use href="#i-bell"/></svg></button>
+          <button class="ops2-account ops2-account--topbar">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+
+        <div class="ops2-page__body">
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">new submission</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row is-focus"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">ready to issue</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">awaiting payment</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-enquiries"/></svg><h2>Enquiries</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">waiting for a reply</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-customers"/></svg><h2>Customers</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">trade application waiting on a decision</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ann">Keyboard focus is shown on <em>1 ready to issue</em> — the row is an anchor, so it is still
+  middle-clickable and copyable. Its href is now <code>/ops2/projects?attn=readyToIssue</code>. The row's own key
+  <em>is</em> the parameter value: one vocabulary, not a translation table.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>2 · The press — the queue opens on the one project that row counted</h2>
+  <p class="note">The strip above the list is the queue's existing <code>pq-active</code> escape strip, which until now
+  only appeared for funnel refinements. It names the prefilter in the sage chip and carries the one way out. The tabs
+  stay live and their counts are honest <em>within</em> the filtered set: <code>All · 1</code> because the set is one
+  project. <strong>The address is stripped after arrival</strong> — the one-shot behaviour <code>?wait=</code> already
+  has, so coming back from a record does not re-apply an old filter.</p>
+
+  <div class="frame frame--desk ops2">
+    <div class="urlbar"><span class="dot"></span>openframe.com.au/ops2/projects<b>?attn=readyToIssue</b> &nbsp;→&nbsp; consumed once, then replaced with <b>/ops2/projects</b></div>
+    <div class="desk">
+      <nav class="ops2-nav">
+        <div class="ops2-wordmark"><span class="ops2-wordmark__name">OpenFrame<span class="ops2-wordmark__suffix"> ops</span></span></div>
+        <div class="ops2-nav__sections">
+          <div>
+            <p class="ops2-nav__section-label ds-type-label-md">WORKSPACE</p>
+            <ul class="ops2-nav__list">
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-attention"/></svg><span>Attention</span></a></li>
+              <li><a class="ops2-nav__item" aria-current="page" href="#"><svg class="ops2-nav__icon"><use href="#i-projects"/></svg><span>Projects</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-products"/></svg><span>Products</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-pricing"/></svg><span>Pricing</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-customers"/></svg><span>Customers</span></a></li>
+              <li><a class="ops2-nav__item" href="#"><svg class="ops2-nav__icon"><use href="#i-enquiries"/></svg><span>Enquiries</span></a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="ops2-nav__foot">
+          <button class="ops2-account ops2-account--rail">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+      </nav>
+
+      <div>
+        <div class="ops2-topbar">
+          <h1 class="ops2-topbar__title ds-type-heading-md">Projects</h1>
+          <button class="ops2-bell" aria-label="Attention"><svg width="20" height="20"><use href="#i-bell"/></svg></button>
+          <button class="ops2-account ops2-account--topbar">
+            <span class="ops2-account__avatar">LK</span>
+            <span class="ops2-account__who"><span class="ops2-account__name">Liis Karu</span><span class="ops2-account__role">Estimator</span></span>
+          </button>
+        </div>
+        <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+          <div class="pq-controls">
+            <div class="pq-chips">
+              <button class="pq-chip" aria-pressed="true">All<span class="pq-count">1</span></button>
+              <button class="pq-chip" aria-pressed="false">Needs us<span class="pq-count">1</span></button>
+              <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">0</span></button>
+            </div>
+            <div class="pq-tools">
+              <span class="pq-search"><svg><use href="#i-search"/></svg>Search project, customer or reference</span>
+              <button class="pq-funnel" aria-label="Filters"><svg><use href="#i-funnel"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ops2-page__body ops2-page__body--full">
+          <div class="pq-active">
+            <span class="pq-active__names">
+              <span class="pq-flag" data-tone="brand">Ready to issue</span>
+            </span>
+            <button class="pq-clear">Clear</button>
+          </div>
+          <div class="pq-table-wrap">
+            <table class="pq-table">
+              <thead><tr>
+                <th>Project</th><th>Next action</th><th>Stage</th>
+                <th class="pq-num">Lines</th><th class="pq-num">Total</th><th><span class="ops2-sr-only">Open</span></th>
+              </tr></thead>
+              <tbody>
+                <tr data-waiting="Us">
+                  <td><a class="pq-open" href="#"><span class="pq-ref">P-1031</span><strong class="pq-title">Ryde townhouses stage 2</strong></a><span class="pq-customer">Kestrel Homes</span></td>
+                  <td><span class="pq-next" data-waiting="Us">Us · Priced</span><span class="pq-age">6 days</span></td>
+                  <td class="pq-stage">Pricing</td>
+                  <td class="pq-num">9</td>
+                  <td class="pq-num"><span class="pq-money" data-priced="true">$61,905</span></td>
+                  <td class="pq-chevron">›</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ann"><strong>Why the chip reads sage rather than plain grey.</strong> The reader arrives at a list that has
+  been narrowed by something they cannot see in the address, with <em>All</em> lit above it. The strip is the only thing
+  on screen that explains the short list, so it wears the console's own “this is on” colour — the same sage the active
+  tab uses — in the card-chip recipe the queue already ships (<code>.pq-flag</code>). One new declaration:
+  <code>.pq-flag[data-tone="brand"]</code>.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>3 · Awaiting payment — the row nobody could reach before</h2>
+  <p class="note">These two projects are waiting on the <em>customer</em>, so under the queue's default
+  <code>Needs us</code> tab they do not exist. That is precisely why the prefilter is its own axis and arrives with the
+  tab set to <code>All</code>: the predicate alone defines the set. Reading down, <code>Needs us · 0</code> is an
+  honest count of what that tab would leave <em>inside</em> this filter.</p>
+
+  <div class="frame frame--desk ops2">
+    <div class="urlbar"><span class="dot"></span>openframe.com.au/ops2/projects<b>?attn=awaitingPayment</b></div>
+    <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+      <div class="pq-controls">
+        <div class="pq-chips">
+          <button class="pq-chip" aria-pressed="true">All<span class="pq-count">2</span></button>
+          <button class="pq-chip" aria-pressed="false">Needs us<span class="pq-count">0</span></button>
+          <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">2</span></button>
+        </div>
+        <div class="pq-tools">
+          <span class="pq-search"><svg><use href="#i-search"/></svg>Search project, customer or reference</span>
+          <button class="pq-funnel" aria-label="Filters"><svg><use href="#i-funnel"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="ops2-page__body ops2-page__body--full">
+      <div class="pq-active">
+        <span class="pq-active__names"><span class="pq-flag" data-tone="brand">Awaiting payment</span></span>
+        <button class="pq-clear">Clear</button>
+      </div>
+      <div class="pq-table-wrap">
+        <table class="pq-table">
+          <thead><tr>
+            <th>Project</th><th>Next action</th><th>Stage</th>
+            <th class="pq-num">Lines</th><th class="pq-num">Total</th><th><span class="ops2-sr-only">Open</span></th>
+          </tr></thead>
+          <tbody>
+            <tr data-waiting="Customer">
+              <td><a class="pq-open" href="#"><span class="pq-ref">P-1009</span><strong class="pq-title">Hartley Rd house</strong></a><span class="pq-customer">Devine Constructions</span></td>
+              <td><span class="pq-next" data-waiting="Customer">Customer · Balance invoiced</span><span class="pq-age">9 days</span></td>
+              <td class="pq-stage">Accepted</td><td class="pq-num">7</td>
+              <td class="pq-num"><span class="pq-money" data-priced="true">$44,150</span></td>
+              <td class="pq-chevron">›</td>
+            </tr>
+            <tr data-waiting="Customer">
+              <td><a class="pq-open" href="#"><span class="pq-ref">P-1024</span><strong class="pq-title">Bayview retail fitout</strong></a><span class="pq-customer">Tarn Commercial</span></td>
+              <td><span class="pq-next" data-waiting="Customer">Customer · Deposit invoiced</span><span class="pq-age">4 days</span></td>
+              <td class="pq-stage">Accepted</td><td class="pq-num">21</td>
+              <td class="pq-num"><span class="pq-money" data-priced="true">$128,760</span></td>
+              <td class="pq-chevron">›</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <p class="ann">Order is the queue's own, unchanged: ours first, then longest-neglected. Nine days before four.
+  P-0996 (in manufacturing) and the three pre-issue projects are absent — the list narrowed, it did not merely render.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>4 · Turning it off, and narrowing inside it</h2>
+  <p class="note">Two frames, side by side. <strong>Left:</strong> a tab pressed while the prefilter is on — the reader
+  narrows <em>within</em> the named set, and the strip still says which set. <strong>Right:</strong> the strip's
+  <em>Clear</em>, which is the one exit: back to the queue's default <code>Needs us</code>, refinements and search
+  dropped with it, address bare.</p>
+
+  <div class="row-of-frames">
+    <div class="stack">
+      <p class="cap">narrowed inside the prefilter <em>— “being priced”, then Needs us</em></p>
+      <div class="frame frame--half ops2">
+        <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+          <div class="pq-controls">
+            <div class="pq-chips">
+              <button class="pq-chip" aria-pressed="false">All<span class="pq-count">2</span></button>
+              <button class="pq-chip" aria-pressed="true">Needs us<span class="pq-count">2</span></button>
+              <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">0</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="ops2-page__body ops2-page__body--full">
+          <div class="pq-active">
+            <span class="pq-active__names"><span class="pq-flag" data-tone="brand">Being priced</span></span>
+            <button class="pq-clear">Clear</button>
+          </div>
+          <ul class="ops2-rows pq-cards ds-surface-card">
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1031</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 6d</span></span></span>
+                <strong class="pq-title">Ryde townhouses stage 2</strong>
+                <span class="pq-customer">Kestrel Homes</span>
+                <span class="pq-card__bottom"><span>9 lines · Priced</span><span class="pq-money" data-priced="true">$61,905</span></span>
+                <span class="pq-flags"><span class="pq-flag" data-tone="neutral"><svg><use href="#i-eye"/></svg>Needs review</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1038</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 3d</span></span></span>
+                <strong class="pq-title">Marina Apartments L2</strong>
+                <span class="pq-customer">Corbett Glass &amp; Alu</span>
+                <span class="pq-card__bottom"><span>14 lines · Estimating</span><span class="pq-money" data-priced="true">$38,420</span></span>
+                <span class="pq-flags"><span class="pq-flag" data-tone="warning"><svg><use href="#i-alert"/></svg>Unresolved 3</span><span class="pq-flag" data-tone="neutral"><svg><use href="#i-eye"/></svg>Needs review</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">The prefilter travels with the tab press, so the strip cannot go stale
+      while the set is still narrowed. Clear remains the single exit.</p>
+    </div>
+
+    <div class="stack">
+      <p class="cap">after Clear <em>— the default queue, no strip</em></p>
+      <div class="frame frame--half ops2">
+        <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+          <div class="pq-controls">
+            <div class="pq-chips">
+              <button class="pq-chip" aria-pressed="false">All<span class="pq-count">6</span></button>
+              <button class="pq-chip" aria-pressed="true">Needs us<span class="pq-count">3</span></button>
+              <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">2</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="ops2-page__body ops2-page__body--full">
+          <ul class="ops2-rows pq-cards ds-surface-card">
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1031</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 6d</span></span></span>
+                <strong class="pq-title">Ryde townhouses stage 2</strong>
+                <span class="pq-customer">Kestrel Homes</span>
+                <span class="pq-card__bottom"><span>9 lines · Priced</span><span class="pq-money" data-priced="true">$61,905</span></span>
+                <span class="pq-flags"><span class="pq-flag" data-tone="neutral"><svg><use href="#i-eye"/></svg>Needs review</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1038</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 3d</span></span></span>
+                <strong class="pq-title">Marina Apartments L2</strong>
+                <span class="pq-customer">Corbett Glass &amp; Alu</span>
+                <span class="pq-card__bottom"><span>14 lines · Estimating</span><span class="pq-money" data-priced="true">$38,420</span></span>
+                <span class="pq-flags"><span class="pq-flag" data-tone="warning"><svg><use href="#i-alert"/></svg>Unresolved 3</span><span class="pq-flag" data-tone="neutral"><svg><use href="#i-eye"/></svg>Needs review</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1042</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 1d</span></span></span>
+                <strong class="pq-title">Wilson St duplex</strong>
+                <span class="pq-customer">Hale Build Co</span>
+                <span class="pq-card__bottom"><span>6 lines · Submitted</span><span class="pq-money" data-priced="false">Not priced</span></span>
+                <span class="pq-flags"><span class="pq-flag" data-tone="warning"><svg><use href="#i-alert"/></svg>Unresolved 6</span><span class="pq-flag" data-tone="neutral"><svg><use href="#i-eye"/></svg>Needs review</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">Identical to the queue reached from the rail or a bookmark. Arriving by any
+      route other than an Attention row shows no strip and no prefilter.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>5 · Phone, 375 — the same two screens</h2>
+  <p class="note">No top bar at this width: the page says its own name in the white band and the tab bar carries the
+  destinations. The strip sits directly under the band, above the first card, and reads at the same size the funnel's
+  strip already does — the longest label, <em>Awaiting payment</em>, sits beside <em>Clear</em> with room to spare.</p>
+
+  <div class="row-of-frames">
+    <div class="stack">
+      <p class="cap">attention <em>— the landing screen</em></p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body" style="min-height:600px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div>
+              <button class="pq-icon-btn" aria-label="Notifications"><svg><use href="#i-bell"/></svg></button></div>
+          </div>
+          <div class="att-groups">
+            <section>
+              <div class="att-group__head"><svg><use href="#i-projects"/></svg><h2>Projects</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">new submission</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">being priced</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">ready to issue</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">awaiting payment</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-enquiries"/></svg><h2>Enquiries</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">2</span><span class="att-row__noun">waiting for a reply</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+            <section>
+              <div class="att-group__head"><svg><use href="#i-customers"/></svg><h2>Customers</h2></div>
+              <ul class="ops2-rows att-rows ds-surface-card">
+                <li class="ops2-row"><a class="ops2-row__open" href="#"><span class="att-row"><span class="att-row__count">1</span><span class="att-row__noun">trade application waiting on a decision</span></span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="ops2-tabbar">
+          <div class="ops2-tab" aria-selected="true"><svg><use href="#i-attention"/></svg>Attention</div>
+          <div class="ops2-tab"><svg><use href="#i-projects"/></svg>Projects</div>
+          <div class="ops2-tab"><svg><use href="#i-products"/></svg>Products</div>
+          <div class="ops2-tab"><svg><use href="#i-customers"/></svg>Customers</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <p class="cap">after pressing “2 awaiting payment”</p>
+      <div class="frame frame--phone ops2">
+        <div class="ops2-page__body ops2-page__body--full" style="min-height:600px">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Projects</h1></div>
+              <button class="pq-icon-btn" aria-label="Search projects"><svg><use href="#i-search"/></svg></button></div>
+            <div class="pq-controls">
+              <div class="pq-chips">
+                <button class="pq-chip" aria-pressed="true">All<span class="pq-count">2</span></button>
+                <button class="pq-chip" aria-pressed="false">Needs us<span class="pq-count">0</span></button>
+                <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">2</span></button>
+              </div>
+              <div class="pq-tools"><button class="pq-funnel" aria-label="Filters"><svg><use href="#i-funnel"/></svg></button></div>
+            </div>
+          </div>
+          <div class="pq-active">
+            <span class="pq-active__names"><span class="pq-flag" data-tone="brand">Awaiting payment</span></span>
+            <button class="pq-clear">Clear</button>
+          </div>
+          <ul class="ops2-rows pq-cards ds-surface-card">
+            <li class="ops2-row" data-edge="info"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1009</span><span class="pq-wait" data-waiting="Customer"><b>Waiting on the customer</b><span class="pq-age"> · 9d</span></span></span>
+                <strong class="pq-title">Hartley Rd house</strong>
+                <span class="pq-customer">Devine Constructions</span>
+                <span class="pq-card__bottom"><span>7 lines · Balance invoiced</span><span class="pq-money" data-priced="true">$44,150</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+            <li class="ops2-row" data-edge="info"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1024</span><span class="pq-wait" data-waiting="Customer"><b>Waiting on the customer</b><span class="pq-age"> · 4d</span></span></span>
+                <strong class="pq-title">Bayview retail fitout</strong>
+                <span class="pq-customer">Tarn Commercial</span>
+                <span class="pq-card__bottom"><span>21 lines · Deposit invoiced</span><span class="pq-money" data-priced="true">$128,760</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="ops2-tabbar">
+          <div class="ops2-tab"><svg><use href="#i-attention"/></svg>Attention</div>
+          <div class="ops2-tab" aria-selected="true"><svg><use href="#i-projects"/></svg>Projects</div>
+          <div class="ops2-tab"><svg><use href="#i-products"/></svg>Products</div>
+          <div class="ops2-tab"><svg><use href="#i-customers"/></svg>Customers</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ann">The phone's card is the same card as today — the status <em>word</em> first, colour second. Nothing on
+  it changes; only which cards are in the list.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>6 · The states that are not a filtered list</h2>
+  <p class="note">Four, and each says something different. Two are new copy; two are today's panels, shown because the
+  Attention page's failure now covers the projects request as well.</p>
+
+  <div class="row-of-frames">
+    <div class="stack">
+      <p class="cap">a · the set emptied between the count and the press <em>— new copy</em></p>
+      <div class="frame frame--half ops2">
+        <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+          <div class="pq-controls">
+            <div class="pq-chips">
+              <button class="pq-chip" aria-pressed="true">All<span class="pq-count">0</span></button>
+              <button class="pq-chip" aria-pressed="false">Needs us<span class="pq-count">0</span></button>
+              <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">0</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="ops2-page__body ops2-page__body--full">
+          <div class="pq-active">
+            <span class="pq-active__names"><span class="pq-flag" data-tone="brand">Ready to issue</span></span>
+            <button class="pq-clear">Clear</button>
+          </div>
+          <div class="pq-empty">
+            <strong>Nothing here is “Ready to issue” now.</strong>
+            <span class="ds-type-caption">These projects moved on after Attention counted them.</span>
+            <button class="ion-btn-outline">Back to Needs us</button>
+          </div>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">Reachable only when a colleague issued the quote in the seconds between the
+      gate rendering and the row being pressed. It says <em>why</em> rather than blaming the filter, and the strip stays
+      so the reader can see what they asked for.</p>
+    </div>
+
+    <div class="stack">
+      <p class="cap">b · unknown or tampered <code>?attn=</code> <em>— today's default, no strip, nothing echoed</em></p>
+      <div class="frame frame--half ops2">
+        <div class="urlbar"><span class="dot"></span>/ops2/projects<b>?attn=&lt;script&gt;…</b> &nbsp;→&nbsp; discarded, address stripped</div>
+        <div style="background:var(--ds-surface-card);border-bottom:1px solid var(--ds-border-subtle);padding:0 var(--theme-spacing-lg)">
+          <div class="pq-controls">
+            <div class="pq-chips">
+              <button class="pq-chip" aria-pressed="false">All<span class="pq-count">6</span></button>
+              <button class="pq-chip" aria-pressed="true">Needs us<span class="pq-count">3</span></button>
+              <button class="pq-chip" aria-pressed="false">Customer<span class="pq-count">2</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="ops2-page__body ops2-page__body--full">
+          <ul class="ops2-rows pq-cards ds-surface-card">
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1031</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 6d</span></span></span>
+                <strong class="pq-title">Ryde townhouses stage 2</strong>
+                <span class="pq-customer">Kestrel Homes</span>
+                <span class="pq-card__bottom"><span>9 lines · Priced</span><span class="pq-money" data-priced="true">$61,905</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+            <li class="ops2-row" data-edge="warning"><a class="ops2-row__open" href="#">
+              <span class="pq-card">
+                <span class="pq-card__top"><span class="pq-ref">P-1038</span><span class="pq-wait" data-waiting="Us"><b>Waiting on us</b><span class="pq-age"> · 3d</span></span></span>
+                <strong class="pq-title">Marina Apartments L2</strong>
+                <span class="pq-customer">Corbett Glass &amp; Alu</span>
+                <span class="pq-card__bottom"><span>14 lines · Estimating</span><span class="pq-money" data-priced="true">$38,420</span></span>
+              </span><svg class="ops2-row__chev"><use href="#i-chev"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">No error panel, no “unknown filter” message, and the value never reaches the
+      page — an unrecognised <code>attn</code> is indistinguishable from no <code>attn</code> at all.</p>
+    </div>
+  </div>
+
+  <div class="row-of-frames" style="margin-top:26px">
+    <div class="stack">
+      <p class="cap">c · attention, projects request failed <em>— counts drawn as failure, never as zero</em></p>
+      <div class="frame frame--half ops2">
+        <div class="ops2-page__body">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-error" role="alert">
+            <svg><use href="#i-warning"/></svg>
+            <div>
+              <strong>Can't tell you what's waiting.</strong>
+              <span class="ds-type-caption">The counts didn't load, so none are shown. This is not an empty console —
+              try again, or open Projects directly.</span>
+            </div>
+            <button class="ion-btn-outline">Try again</button>
+          </div>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">Either source failing fails the whole page, and it keeps the Attention
+      page's own words — not the queue's “The queue did not load.” No row is drawn, so no row can promise a set that
+      was never counted.</p>
+    </div>
+
+    <div class="stack">
+      <p class="cap">d · loading <em>— unchanged, one request longer</em></p>
+      <div class="frame frame--half ops2">
+        <div class="ops2-page__body">
+          <div class="ops2-page__band">
+            <div class="ops2-page__head"><div><h1 class="ops2-page__title ds-type-heading-lg">Attention</h1></div></div>
+          </div>
+          <div class="pq-skeleton" aria-busy="true">
+            <span class="sk" style="height:1rem;width:7rem;margin-bottom:.25rem"></span>
+            <span class="sk" style="height:134px"></span>
+            <span class="sk" style="height:1rem;width:7rem;margin:.75rem 0 .25rem"></span>
+            <span class="sk" style="height:45px"></span>
+          </div>
+        </div>
+      </div>
+      <p class="ann" style="max-width:52ch">The same constant shape as today. It now waits on two requests instead of
+      one, which is the only reason it is here.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2>7 · What the developer builds</h2>
+  <p class="note">Everything on this page in one list, so the mock and the spec cannot drift.</p>
+  <div class="frame frame--desk ops2" style="background:var(--ds-surface-card);max-width:1120px">
+    <table class="pq-table">
+      <thead><tr><th>Surface</th><th>Change</th><th>New CSS</th></tr></thead>
+      <tbody>
+        <tr><td><strong class="pq-title">Attention rows</strong></td><td>Counts from <code>/api/ops/projects</code> via the queue's selector; href <code>?attn=&lt;key&gt;</code>. Look unchanged.</td><td class="pq-stage">none</td></tr>
+        <tr><td><strong class="pq-title">Attention failure</strong></td><td>Either request failing shows the existing single error panel, in Attention's own words.</td><td class="pq-stage">none</td></tr>
+        <tr><td><strong class="pq-title">Queue arrival</strong></td><td>Valid <code>?attn=</code> applies the prefilter with the tab on <code>All</code>, then strips the address. Unknown value → default, silently.</td><td class="pq-stage">none</td></tr>
+        <tr><td><strong class="pq-title">Active-filters strip</strong></td><td>Shows for the prefilter as well as refinements; the prefilter's name leads, in a sage chip. Clear returns to <code>Needs us</code>.</td><td class="pq-stage">2 declarations</td></tr>
+        <tr><td><strong class="pq-title">Queue empty state</strong></td><td>One new branch: the prefiltered set emptied since it was counted.</td><td class="pq-stage">none</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="ann">Full copy, props and states: <code>docs/runs/ops2-attention-prefilter/03-ux.md</code>.</p>
+</section>
+
+</div>
+</body>
+</html>

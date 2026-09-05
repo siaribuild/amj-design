@@ -309,6 +309,17 @@ ion-searchbar.pq-search .searchbar-input {
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-secondary);
 }
+/* The names wrap; `Clear` never does. The strip carries a chip and a run of
+   plain text at different baselines, so the run is centred against the chip
+   rather than left to sit on the text baseline, and it wraps to a second line
+   at 375 instead of squeezing the exit. */
+.pq-active__names {
+  display: flex;
+  align-items: center;
+  gap: var(--theme-spacing-xs);
+  flex-wrap: wrap;
+  min-width: 0;
+}
 
 /* ── The filter panel, at the desk ──────────────────────────────────────────
  * A RIGHT-HAND SLIDE-OUT. `ion-modal` centres its wrapper in the viewport, so
@@ -499,6 +510,14 @@ ion-modal.pq-sheet--screen::part(content) { box-shadow: none; }
 .pq-flag[data-tone="neutral"] {
   background: var(--ds-surface-sunken);
   color: var(--ds-text-secondary);
+}
+/* The prefilter's own tone, and the only place this one is used: the console's
+   "this is on" sage, the same colour lighting the active chip above it. It is
+   redundant reinforcement — the name is text and reads identically in
+   greyscale. sage-600 on sage-100 is 5.2:1, AA at 12px. */
+.pq-flag[data-tone="brand"] {
+  background: var(--ds-color-brand-subtle);
+  color: var(--ds-text-brand);
 }
 
 /* ── Rows: the wide table ───────────────────────────────────────────────────

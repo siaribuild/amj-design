@@ -84,23 +84,33 @@ export function ProjectsPage() {
   // resets to `EMPTY_QUERY` rather than leaving the current query alone — the
   // raw value reaches no DOM sink and is validated into `null` before it does
   // anything.
+  // Set the instant the effect below applies a prefilter, so the enter-reset
+  // hook can tell "the param was just consumed this arrival" apart from a
+  // plain re-entry — see that hook for why `location.search` alone can't do
+  // this (F2, docs/runs/ops2-attention-prefilter/06-verify.md).
+  const justAppliedAttnRef = useRef(false);
+
   useEffect(() => {
     if (location.pathname !== PROJECTS.path) return;
     if (!new URLSearchParams(location.search).has("attn")) return;
     const key = attentionFromSearch(location.search);
     setQuery(key ? attentionQuery(key) : EMPTY_QUERY);
+    justAppliedAttnRef.current = true;
     history.replace(PROJECTS.path);
   }, [location.pathname, location.search]);
 
   // Re-entering the view with no `attn` instruction while the prefilter is
   // still on (rail navigation, back from a record) resets it — design §3.3
-  // point 3. Read through a ref rather than the `location` closed over by
-  // `useIonViewWillEnter`'s first render: the arrival that CARRIES the param
-  // is safe regardless, because at that enter moment the search still holds
-  // it (the strip above happens in the effect, after).
+  // point 3. On a single-hop arrival (Attention row -> Projects), the effect
+  // above and this hook race: `history.replace` commits and updates
+  // `location` BEFORE this fires, so by the time it runs the search is
+  // already stripped bare and reading it here can no longer tell "just
+  // arrived with attn" from "plain re-entry" — the `justAppliedAttnRef` flag
+  // set immediately before that `replace()` is what survives the race.
   const locationRef = useRef(location);
   locationRef.current = location;
   useIonViewWillEnter(() => {
+    if (justAppliedAttnRef.current) { justAppliedAttnRef.current = false; return; }
     if (new URLSearchParams(locationRef.current.search).has("attn")) return;
     setQuery((q) => (q.attention ? EMPTY_QUERY : q));
   });
@@ -128,9 +138,6 @@ export function ProjectsPage() {
   const attentionLabel = query.attention
     ? ATTENTION_FILTERS.find((f) => f.key === query.attention)?.label
     : undefined;
-  const activeLabels = [attentionLabel, ...activeRefinements].filter(
-    (label): label is string => !!label,
-  );
 
   const closeSearch = () => { setSearching(false); setQuery((q) => ({ ...q, search: "" })); };
 
@@ -377,9 +384,26 @@ export function ProjectsPage() {
           {/* WHICH refinements are on, not just how many. A count tells you the
               number of filters and still leaves you guessing which row went
               missing and why. */}
-          {activeLabels.length > 0 && (
+          {(attentionLabel || activeRefinements.length > 0) && (
             <div className="pq-active" data-testid="queue-active-filters">
-              <span>{activeLabels.join(" + ")}</span>
+              <span className="pq-active__names">
+                {/* THE PREFILTER IS A CHIP, THE REFINEMENTS ARE TEXT. They are
+                    not the same kind of thing and the strip should not read as
+                    though they are: the prefilter is the set the reader was
+                    sent here for and the only thing on screen explaining a
+                    short list under a lit `All`, while a refinement is
+                    something they turned on themselves and can see in the
+                    funnel. The sage wash is the console's "this is on" colour,
+                    redundant to the name it carries. */}
+                {attentionLabel && (
+                  <span className="pq-flag" data-tone="brand">{attentionLabel}</span>
+                )}
+                {activeRefinements.length > 0 && (
+                  <span>
+                    {attentionLabel ? `+ ${activeRefinements.join(" + ")}` : activeRefinements.join(" + ")}
+                  </span>
+                )}
+              </span>
               <IonButton
                 fill="clear"
                 size="small"
