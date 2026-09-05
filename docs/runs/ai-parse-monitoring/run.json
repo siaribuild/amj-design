@@ -160,12 +160,12 @@
     },
     "accept": {
       "code": 0,
-      "contextTokens": 592916,
-      "outputTokens": 18580,
-      "turns": 12,
+      "contextTokens": 444365,
+      "outputTokens": 12522,
+      "turns": 7,
       "source": "transcript",
-      "session": "6ad70618-7841-4ffb-9de1-854997c6393a",
-      "seconds": 504
+      "session": "69afe67b-20d4-40c8-bc08-8746b6ba15d2",
+      "seconds": 180
     },
     "fix-0": {
       "code": 0,
