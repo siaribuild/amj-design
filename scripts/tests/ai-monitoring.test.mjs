@@ -16,7 +16,7 @@ const outfile = join(runDir, "ai-monitoring-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding } from ${p("src/data/monitoring.ts")};
+      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart } from ${p("src/data/monitoring.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ai-monitoring-entry.ts",
@@ -29,7 +29,7 @@ await build({
   logLevel: "silent",
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
-const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding } = M;
+const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart } = M;
 
 // worker/lib/monitoring.ts — IO shell (D1 counts, CF money fetch, KV
 // snapshot, notification sources). Design §3.2, §5, §6.
@@ -270,10 +270,15 @@ test("writeMonitoringSnapshot: D1 count query matches design §3.2 verbatim", as
     calls[0].sql,
     /status = 'processing' AND updated_at < datetime\(\?, '-30 minutes'\)/,
   );
-  assert.match(calls[0].sql, /updated_at >= datetime\(\?, '-7 days'\)/);
+  // Was `datetime(?, '-7 days')` with `now` bound twice. That rolling window
+  // reached back further than the seven Melbourne calendar buckets, so the
+  // query returned rows no bucket could hold and the cards disagreed with the
+  // chart beside them (V-F2). The lower bound is now the earliest bucket's own
+  // midnight, so the two arguments are deliberately DIFFERENT instants.
+  assert.match(calls[0].sql, /updated_at >= datetime\(\?\)/);
   assert.match(calls[0].sql, /status = 'completed'\s+OR status = 'failed'/);
   assert.equal(calls[0].args.length, 2);
-  assert.equal(calls[0].args[0], calls[0].args[1]);
+  assert.equal(calls[0].args[0], parseWindowStart(new Date(calls[0].args[1])).toISOString());
 });
 
 test("fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zero fetch calls", async () => {
@@ -284,6 +289,22 @@ test("fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zer
   };
   const result = await fetchMoneyNumbers({ CF_ACCOUNT_ID: "acct1" }, fetchImpl);
   assert.deepEqual(result, { available: false, reason: "token_missing" });
+  assert.equal(fetchCalls, 0);
+});
+
+test("fetchMoneyNumbers: CF_ACCOUNT_ID unset or left at the wrangler.jsonc placeholder yields account_id_missing with zero fetch calls", async () => {
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    throw new Error("should not be called");
+  };
+  const missing = await fetchMoneyNumbers({ CF_MONITORING_TOKEN: "tok" }, fetchImpl);
+  assert.deepEqual(missing, { available: false, reason: "account_id_missing" });
+  const placeholder = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "paste-real-cf-account-id-before-deploying" },
+    fetchImpl,
+  );
+  assert.deepEqual(placeholder, { available: false, reason: "account_id_missing" });
   assert.equal(fetchCalls, 0);
 });
 
@@ -441,4 +462,75 @@ test("monitoringPayload: no snapshot yet — null snapshot, zero notifications, 
   };
   const payload = await monitoringPayload(env);
   assert.deepEqual(payload, { snapshot: null, notificationCount: 0 });
+});
+
+// --- Verify round 2 (docs/runs/ai-parse-monitoring/06-verify.md) ---------------
+// These three tests pin defects found by the tester. They are expected to FAIL
+// until a developer fixes the implementation; do not delete them to go green.
+
+test("V-F2 assembleParseCounts: rows inside the rolling 7x24h SQL window are never dropped by calendar bucketing", () => {
+  // now = 2026-09-05 14:00 Melbourne. PARSE_OUTCOME_SQL selects updated_at >= now-7d,
+  // i.e. back to 2026-08-29 14:00 Melbourne. The buckets only start at 2026-08-30
+  // 00:00 Melbourne, so ~10h of rows the query returned fall through `if (!bucket)`.
+  const now = new Date("2026-09-05T04:00:00.000Z");
+  const rows = [
+    { updatedAt: "2026-09-05T02:00:00.000Z", outcome: "success" }, // in bucket range
+    { updatedAt: "2026-08-29T06:00:00.000Z", outcome: "success" }, // 2026-08-29 16:00 Melb — inside SQL window
+    { updatedAt: "2026-08-29T10:00:00.000Z", outcome: "error" }, // 2026-08-29 20:00 Melb — inside SQL window
+  ];
+  const result = assembleParseCounts(rows, now);
+  assert.equal(result.success7d, 2, "every success the SQL window returned must be counted");
+  assert.equal(result.error7d, 1, "every error the SQL window returned must be counted");
+});
+
+test("V-F3 evaluateRed: a zero spend cap is red whenever there is spend, and never NaN-quiet", () => {
+  const zeroCap = (billedSpendUsd) => ({
+    money: { available: true, creditBalanceUsd: 100, billedSpendUsd, capUsd: 0 },
+  });
+  // 0/0 = NaN, and NaN > ceiling is false: a cap of zero with zero spend silently
+  // reports "not red" instead of being treated as an unusable cap.
+  assert.equal(
+    evaluateRed(zeroCap(0), 5, 80),
+    true,
+    "cap of 0 means no headroom at all — that is a red, not a quiet false",
+  );
+  assert.equal(evaluateRed(zeroCap(1), 5, 80), true);
+});
+
+test("V-F4 parseMonitoringSnapshot: returns only whitelisted fields and rejects a non-boolean money.available", () => {
+  const injected = parseMonitoringSnapshot({
+    ...VALID_SNAPSHOT,
+    money: { ...VALID_SNAPSHOT.money, cfToken: "SECRET-TOKEN", accountId: "acct-123" },
+    internalDebug: "leak-me",
+  });
+  assert.ok(injected, "the snapshot itself is well-formed");
+  assert.equal(injected.internalDebug, undefined, "unknown top-level fields must not pass through");
+  assert.equal(injected.money.cfToken, undefined, "a token field must never reach the client payload");
+  assert.equal(injected.money.accountId, undefined, "an account id must never reach the client payload");
+
+  // available is checked with === true / === false, so any other value skips every
+  // money field check and a garbage money object is returned as valid.
+  assert.equal(
+    parseMonitoringSnapshot({ ...VALID_SNAPSHOT, money: { available: "yes", anything: 1 } }),
+    null,
+    "a non-boolean money.available is malformed and must be rejected",
+  );
+});
+
+test("V-F1 GET /api/ops/monitoring uses the shared ops staff guard (criterion 28: no new auth path)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../../worker/routes/ops.ts", import.meta.url), "utf8");
+  const route = src.slice(src.indexOf('ops.get("/monitoring"'));
+  const body = route.slice(0, route.indexOf("\n});"));
+  // resolveUser reads the session cookie only. In production ACCESS_TEAM_DOMAIN /
+  // ACCESS_AUD are set, so staff identity arrives as a Cf-Access-Jwt-Assertion header
+  // and there is no session cookie to read: every real staff request 401s.
+  assert.ok(
+    /resolveStaff\(/.test(body),
+    "the monitoring route must resolve identity through resolveStaff like every other ops route",
+  );
+  assert.ok(
+    !/resolveUser\(/.test(body),
+    "resolveUser is session-cookie-only and is bypassed by Cloudflare Access in production",
+  );
 });

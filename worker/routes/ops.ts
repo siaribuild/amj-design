@@ -12,7 +12,7 @@ import {
 import { monitoringPayload } from "../lib/monitoring";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
-import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
+import { findOrCreateInternalUser, hasAssignedRole, hasOpsCredential, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issuableNow, issueQuote, ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
@@ -347,17 +347,21 @@ ops.get("/summary", async (c) => {
   }
 });
 
-// GET /api/ops/monitoring — ai-parse monitoring snapshot + notification count
-// (staff-gated). Distinguishes 401 (no session) from 403 (wrong role) — every
-// other staff route above collapses both to 403 via resolveStaff, but this
-// panel's own denial screens need to tell "sign in" from "not for you".
+// GET /api/ops/monitoring — ai-parse monitoring snapshot + notification count.
+//
+// Gated by resolveStaff, the same guard the other ops routes use: it is the one
+// that knows staff arrive as a Cloudflare Access assertion in production and as
+// a session cookie only where Access is not configured. A cookie-only read here
+// answered 401 to every real staff request while the local suite — which blanks
+// Access — stayed green.
+//
+// The 401/403 split (this panel's denial screens tell "sign in" from "not for
+// you") comes from hasOpsCredential, which asks the same question the same way.
 ops.get("/monitoring", async (c) => {
-  const user = await resolveUser(c.env, c.req.raw);
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const staff = user.type === "internal" ? { role: user.role } : null;
-  if (!isStaffUser(staff)) return c.json({ error: "forbidden" }, 403);
-
-  return c.json(await monitoringPayload(c.env));
+  if (await resolveStaff(c.env, c.req.raw)) return c.json(await monitoringPayload(c.env));
+  return (await hasOpsCredential(c.env, c.req.raw))
+    ? c.json({ error: "forbidden" }, 403)
+    : c.json({ error: "unauthorized" }, 401);
 });
 
 // GET /api/ops/queues/submissions — projects awaiting triage / review.

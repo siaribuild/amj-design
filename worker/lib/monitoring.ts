@@ -1,20 +1,21 @@
 // AI parse monitoring — IO shell: D1 counts, CF money fetch, KV snapshot,
 // notification sources. Design: docs/runs/ai-parse-monitoring/02-design.md §3.2, §5, §6.
 import type { Env } from "../types";
-import { assembleParseCounts, evaluateRed, parseMonitoringSnapshot } from "../../src/data/monitoring";
+import { assembleParseCounts, evaluateRed, parseMonitoringSnapshot, parseWindowStart } from "../../src/data/monitoring";
 
 const PARSE_OUTCOME_SQL = `SELECT updated_at,
        CASE WHEN status = 'completed' THEN 'success' ELSE 'error' END AS outcome
 FROM ai_job_claim
 WHERE triggered_by = 'upload'
-  AND updated_at >= datetime(?, '-7 days')
+  AND updated_at >= datetime(?)
   AND (status = 'completed'
        OR status = 'failed'
        OR (status = 'processing' AND updated_at < datetime(?, '-30 minutes')))`;
 
 export async function writeMonitoringSnapshot(env: Env, fetchImpl: typeof fetch = fetch): Promise<void> {
   const now = new Date();
-  const { results } = await env.DB.prepare(PARSE_OUTCOME_SQL).bind(now.toISOString(), now.toISOString()).all();
+  const { results } = await env.DB.prepare(PARSE_OUTCOME_SQL)
+    .bind(parseWindowStart(now).toISOString(), now.toISOString()).all();
   const rows = (results ?? []).map((r: any) => ({ updatedAt: r.updated_at, outcome: r.outcome }));
   const counts = assembleParseCounts(rows, now);
   const money = await fetchMoneyNumbers(env, fetchImpl);
@@ -41,8 +42,15 @@ async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<a
   return body.result;
 }
 
+// Kept as a real string (not imported from wrangler.jsonc) so this check
+// stays valid even if the comment above the placeholder in wrangler.jsonc changes.
+const PLACEHOLDER_ACCOUNT_ID = "paste-real-cf-account-id-before-deploying";
+
 export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetch): Promise<MoneySnapshot> {
   if (!env.CF_MONITORING_TOKEN) return { available: false, reason: "token_missing" };
+  if (!env.CF_ACCOUNT_ID || env.CF_ACCOUNT_ID === PLACEHOLDER_ACCOUNT_ID) {
+    return { available: false, reason: "account_id_missing" };
+  }
   try {
     const [balance, usage] = await Promise.all([
       cfGet(env, fetchImpl, "/ai-gateway/billing/credit-balance"),
