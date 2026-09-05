@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { run, resolveToken } from "../catalogue/apply-go-live-min.mjs";
-import { plan, assertSafe, DISABLE } from "../catalogue/go-live-plan.mjs";
+import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs } from "../catalogue/go-live-plan.mjs";
 import { makeWorld, makeTransport } from "./fixtures/go-live-world.mjs";
 
 test("dry run: zero writes, correct summary line", async () => {
@@ -86,6 +86,219 @@ test("product with null options and no hardware column: no options key in its pa
   const m = mutations.find((m) => m.patch?.id === p._id);
   assert.ok(m, "expected a patch mutation for this product");
   assert.ok(!("options" in m.patch.set), JSON.stringify(m.patch.set));
+});
+
+// Characterization test: plan() line 467 already pushes
+// `profile ${id}: expected exactly one row...` whenever target.length !== 1,
+// so a zero-match fixture passes immediately (no red phase needed).
+test("one-row-published: zero-match fixture yields problem naming the profile", () => {
+  const world = makeWorld();
+  const [profileId] = Object.keys(KEEP_PUBLISHED);
+  const pr = world.profiles.find((p) => p._id === profileId);
+  pr.rows[0].glazing = "glz-nomatch";
+  pr.rows[0].wersWindowId = "NOMATCH";
+  const { problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(profileId)), problems.join("\n"));
+});
+
+// Characterization test: plan() line 467's target.length !== 1 branch also
+// fires on a two-match fixture (found 2), naming the profile.
+test("one-row-published: two-match fixture yields problem naming the profile", () => {
+  const world = makeWorld();
+  const [profileId] = Object.keys(KEEP_PUBLISHED);
+  const pr = world.profiles.find((p) => p._id === profileId);
+  pr.rows[1].glazing = pr.rows[0].glazing;
+  pr.rows[1].wersWindowId = pr.rows[0].wersWindowId;
+  const { problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(profileId) && p.includes("found 2")), problems.join("\n"));
+});
+
+// Characterization test: plan() line 468 pushes "no Uw/SHGC" when the kept
+// row's uValue or shgc is null, regardless of the row otherwise matching.
+test("one-row-published: kept row missing uValue yields problem naming the profile", () => {
+  const world = makeWorld();
+  const [profileId] = Object.keys(KEEP_PUBLISHED);
+  const pr = world.profiles.find((p) => p._id === profileId);
+  pr.rows[0].uValue = null;
+  const { problems } = plan(world);
+  assert.ok(problems.some((p) => p.includes(profileId) && p.includes("Uw/SHGC")), problems.join("\n"));
+});
+
+// Characterization test: apply-go-live-min.mjs line 110-113 returns 1 and
+// logs each problem, before assertSafe or any write, whenever plan has problems.
+test("run(): a plan with problems exits non-zero before any POST", async () => {
+  const world = makeWorld();
+  const { fetchImpl, requests } = makeTransport(world);
+  const errors = [];
+  const planImpl = () => ({ mutations: [], report: [], problems: ["profile x: broken"], summary: { amend: 0, create: 0 } });
+  const code = await run({ write: false, fetchImpl, log: () => {}, error: (l) => errors.push(l), planImpl });
+  assert.equal(code, 1);
+  assert.ok(errors.some((l) => l.includes("profile x: broken")), errors.join("\n"));
+  assert.equal(requests.filter((r) => r.method === "POST").length, 0);
+});
+
+// Characterization test: alignHardware line 426 sets availability:"standard"
+// on the option matching hardwareId (column H).
+test("alignHardware: sets column-H hardware to standard", () => {
+  const options = [{ _key: "a", _type: "productOption", option: { _ref: "option-hardware-x" }, availability: "optional" }];
+  const out = alignHardware(options, "option-hardware-x");
+  assert.equal(out[0].availability, "standard");
+});
+
+// Characterization test: alignHardware line 427 demotes a different
+// previously-standard hardware option to "optional".
+test("alignHardware: demotes previous standard hardware to optional", () => {
+  const options = [
+    { _key: "a", _type: "productOption", option: { _ref: "option-hardware-old" }, availability: "standard" },
+    { _key: "b", _type: "productOption", option: { _ref: "option-hardware-new" }, availability: "optional" },
+  ];
+  const out = alignHardware(options, "option-hardware-new");
+  assert.equal(out.find((o) => o.option._ref === "option-hardware-old").availability, "optional");
+  assert.equal(out.find((o) => o.option._ref === "option-hardware-new").availability, "standard");
+});
+
+// Characterization test: alignHardware line 429 appends a new standard row
+// when hardwareId is absent from the list — length only grows, never shrinks.
+test("alignHardware: appends when hardwareId absent, list never shrinks", () => {
+  const options = [{ _key: "a", _type: "productOption", option: { _ref: "option-hardware-old" }, availability: "standard" }];
+  const out = alignHardware(options, "option-hardware-new");
+  assert.equal(out.length, 2);
+  assert.ok(out.some((o) => o.option._ref === "option-hardware-new" && o.availability === "standard"));
+});
+
+// Characterization test: alignHardware line 425's `if (!isHardware(...)) continue`
+// skips non-hardware options (isHardware requires an "option-hardware-" ref prefix, line 417).
+test("alignHardware: leaves non-hardware options untouched", () => {
+  const colour = { _key: "c", _type: "productOption", option: { _ref: "option-colour-red" }, availability: "standard" };
+  const out = alignHardware([colour], "option-hardware-new");
+  assert.deepEqual(out.find((o) => o._key === "c"), colour);
+});
+
+// Characterization test: buildDimensionRule line 412 always overwrites the
+// four bound fields from p.dim, regardless of what existing carried.
+test("buildDimensionRule: replaces bounds from p.dim", () => {
+  const p = { dim: [700, 2100, 800, 2200] };
+  const existing = { _type: "object", ruleVersion: "v1", minWidthMm: 1, maxWidthMm: 2, minHeightMm: 3, maxHeightMm: 4 };
+  const rule = buildDimensionRule(p, existing);
+  assert.deepEqual(
+    { minWidthMm: rule.minWidthMm, maxWidthMm: rule.maxWidthMm, minHeightMm: rule.minHeightMm, maxHeightMm: rule.maxHeightMm },
+    { minWidthMm: 700, maxWidthMm: 2100, minHeightMm: 800, maxHeightMm: 2200 },
+  );
+});
+
+// Characterization test: buildDimensionRule line 412's `{ ...(existing ?? ...) }`
+// spread carries any other field on existing (e.g. a foreign key) through untouched.
+test("buildDimensionRule: carries an unrelated foreign key on existing through", () => {
+  const p = { dim: [700, 2100, 800, 2200] };
+  const existing = { _type: "object", ruleVersion: "v1", someRef: { _type: "reference", _ref: "other-doc" } };
+  const rule = buildDimensionRule(p, existing);
+  assert.deepEqual(rule.someRef, { _type: "reference", _ref: "other-doc" });
+});
+
+// Characterization test: buildDimensionRule line 414 recomputes maxAreaM2 only
+// when existing already carried it as a number; otherwise it stays absent.
+test("buildDimensionRule: recomputes maxAreaM2 only when existing had one", () => {
+  const p = { dim: [700, 2000, 800, 2500] };
+  const withArea = buildDimensionRule(p, { maxAreaM2: 1.23 });
+  assert.equal(withArea.maxAreaM2, Math.round((2000 * 2500) / 10_000) / 100);
+  const withoutArea = buildDimensionRule(p, {});
+  assert.equal("maxAreaM2" in withoutArea, false);
+});
+
+// Characterization test: real P data (Grep confirmed) — the sliding/bi-fold/
+// casement door entries carry minHeight 1900 (amj80t-casement-door is the
+// known exception at 1500, excluded), and the AMJ80 slider's maxHeight is 2400.
+test("P data: door minima are 1900, AMJ80 slider maxHeight is 2400", () => {
+  const doors1900 = ["amj80-series-sliding-door", "amj100l-series-sliding-door", "amj150-series-sliding-door", "amj100t-series-casement-door", "amj100t-series-sliding-door", "amj68-series-bi-fold-door"];
+  for (const slug of doors1900) assert.equal(P.find((p) => p.slug === slug).dim[2], 1900, slug);
+  assert.equal(P.find((p) => p.slug === "amj80-series-sliding-door").dim[3], 2400);
+});
+
+// Characterization test: go-live-plan.mjs has no "delete" mutation builder
+// anywhere in its source (Grep confirmed zero matches) — the real plan()
+// output must never carry a delete key.
+test("nothing-deleted: no mutation in the full plan carries a delete key", () => {
+  const { mutations } = plan(makeWorld());
+  for (const m of mutations) assert.ok(!("delete" in m), JSON.stringify(m));
+});
+
+// Characterization test: NEW_PROFILES rows built via the `derived()` helper
+// (go-live-plan.mjs line 66-67) carry certificationRef "DERIVED — ...", no
+// wersWindowId (row() only sets it when passed, derived() never passes it),
+// and the owning P entry's notes name the derivation (lines 191/236/248/328/340).
+test("field: derived rows carry DERIVED certificationRef, no wersWindowId, and the owning P notes say so", () => {
+  let sawDerived = false;
+  for (const profile of NEW_PROFILES) {
+    for (const row of profile.rows) {
+      if (!row.certificationRef?.startsWith("DERIVED")) continue;
+      sawDerived = true;
+      assert.equal(row.wersWindowId, undefined, profile.slug.current);
+      const owner = P.find((p) => p.profile === `thermal-${profile.slug.current}`);
+      assert.ok(owner, `no P entry uses profile thermal-${profile.slug.current}`);
+      assert.ok(owner.notes?.toLowerCase().includes("derived"), owner.slug);
+    }
+  }
+  assert.ok(sawDerived);
+});
+
+// Characterization test: real P data — every entry with uw:null (Grep
+// confirmed 9 such entries) has no "Uw" mentioned in its marketing paragraphs.
+test("field: no Uw claim in paragraphs when uw is null", () => {
+  const withNullUw = P.filter((p) => p.uw === null);
+  assert.ok(withNullUw.length > 0);
+  for (const p of withNullUw) assert.ok(!p.paragraphs.join(" ").includes("Uw"), p.slug);
+});
+
+// Characterization test: P entry at line 133-135 names the AMJ80ST awning
+// window and points at the thermally-broken profile; "amj80-awning" (the
+// wrong, non-broken id) is confirmed absent anywhere in the file (Grep).
+test("field: amj80-series-awning-window uses the thermally-broken profile and AMJ80ST name", () => {
+  const p = P.find((p) => p.slug === "amj80-series-awning-window");
+  assert.equal(p.profile, "thermal-amj80t-thermally-broken-awning-window");
+  assert.equal(p.name, "AMJ80ST Awning Window");
+  for (const entry of P) assert.ok(!entry.profile.includes("amj80-awning"), entry.slug);
+});
+
+// Characterization test: amj80t-casement-door P entry (Grep confirmed lines
+// 154-157) is thermally broken with DG12 glass — the constant DG12
+// (line 7) is the "5+12A+5mm clear double tempered glass" string.
+test("field: amj80t-casement-door is thermally broken with 5+12+5 glass", () => {
+  const p = P.find((p) => p.slug === "amj80t-casement-door");
+  assert.equal(p.tb, true);
+  assert.match(p.glass, /5\+12A\+5/);
+});
+
+// Characterization test: buildSpecs (go-live-plan.mjs line 377-389) has an
+// unconditional ["Grade", p.grade] row and buildKeySpecs (line 390-401) an
+// unconditional ["Grade", p.grade] chip — neither is gated behind a ternary.
+test("field: specs and keySpecs both carry a Grade entry", () => {
+  const p = P[0];
+  const names = { family: "F", category: "C", hardware: null };
+  assert.ok(buildSpecs(p, names).some((r) => r.label === "Grade" && r.value === p.grade));
+  assert.ok(buildKeySpecs(p).some((r) => r.label === "Grade" && r.value === p.grade));
+});
+
+// Characterization test: colour default logic (go-live-plan.mjs line 534-538)
+// patches any colour option whose isDefault disagrees with (_id === DEFAULT_COLOUR)
+// — a wrongly-defaulted colour gets demoted to false, never removed.
+test("field: Night Sky is the only isDefault colour, no colour removed", () => {
+  const world = makeWorld();
+  const wrong = { _id: "option-colour-wrong", name: "Wrong", isDefault: true, type: "colour" };
+  world.options = [...world.options, wrong];
+  const { mutations } = plan(world);
+  assert.equal(mutations.find((m) => m.patch?.id === DEFAULT_COLOUR), undefined);
+  const wrongPatch = mutations.find((m) => m.patch?.id === wrong._id);
+  assert.equal(wrongPatch.patch.set.isDefault, false);
+});
+
+// Characterization test: P entries (Grep confirmed lines 111, 122, 349) patch
+// amj72t-awning-window, amj72t-fixed-window and amj68-series-bi-fold-door to
+// system "sys-80"; "sys-72" is confirmed absent from go-live-plan.mjs entirely.
+test("field: AMJ72T pair and AMJ68 bi-fold patch frameSystem to sys-80, never sys-72", () => {
+  for (const slug of ["amj72t-awning-window", "amj72t-fixed-window", "amj68-series-bi-fold-door"]) {
+    assert.equal(P.find((p) => p.slug === slug).system, "sys-80", slug);
+  }
+  for (const p of P) assert.notEqual(p.system, "sys-72", p.slug);
 });
 
 test("write: an unsafe plan aborts before any POST", async () => {
