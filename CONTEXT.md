@@ -91,6 +91,9 @@ A product complete enough to be shown and sold. Half-authored products are withh
 **Authored-as-none vs not-yet-authored**:
 An empty list (`[]`) means a curator decided "none apply"; `NULL` means "not yet authored". These are different facts and must never be collapsed — the offerability gate depends on the distinction. Glazing is optional: a product without glazing options can still be offerable.
 
+**Derived thermal row**:
+A thermal profile row whose Uw/SHGC are taken from the nearest WERS-rated sibling frame rather than a certificate. It states its basis in `certificationRef` (`DERIVED — <source>; not WERS-rated`), carries no `wersWindowId`, and the owning product's ops-only `notes` repeats the derivation. A Uw from a derived row is never quoted in customer-facing prose.
+
 **Option**:
 A choice on a product (colour, glazing, hardware) drawn from the catalogue's option types.
 

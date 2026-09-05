@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { run, resolveToken } from "../catalogue/apply-go-live-min.mjs";
 import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs } from "../catalogue/go-live-plan.mjs";
 import { makeWorld, makeTransport, altered } from "./fixtures/go-live-world.mjs";
@@ -360,6 +362,59 @@ test("run({verify:true}): altered fixture exits 1 and names the doc id and field
   const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
   assert.equal(code, 1);
   assert.ok(lines.some((l) => l.includes(`DRIFT ${docId}`) && l.includes("missing")), lines.join("\n"));
+});
+
+// T5: rate-cards.sql is read-only in this suite (file never written to) —
+// scan its text for the go-live-min safety criteria (21, 23, 33).
+const RATE_CARDS_SQL_PATH = fileURLToPath(new URL("../../docs/runs/catalogue-go-live-min/rate-cards.sql", import.meta.url));
+const rateCardsSql = readFileSync(RATE_CARDS_SQL_PATH, "utf8");
+const rateCardsNoComments = rateCardsSql.replace(/--.*$/gm, "");
+
+test("rate-cards.sql: no DELETE/DROP/ALTER/CREATE TABLE token once comments are stripped", () => {
+  assert.doesNotMatch(rateCardsNoComments, /\b(DELETE|DROP|ALTER|CREATE TABLE)\b/i);
+});
+
+test("rate-cards.sql: every statement targets only UPDATE or INSERT INTO pricing_rate_card", () => {
+  const statements = rateCardsNoComments.split(";").map((s) => s.trim()).filter(Boolean);
+  assert.ok(statements.length > 0);
+  for (const stmt of statements) {
+    assert.ok(
+      /^UPDATE pricing_rate_card\b/i.test(stmt) || /^INSERT INTO pricing_rate_card\b/i.test(stmt),
+      stmt,
+    );
+  }
+});
+
+test("rate-cards.sql: every UPDATE carries the version-bump expression and updated_at", () => {
+  const VERSION_BUMP = `'v' || (CAST(substr(version, 2) AS INTEGER) + 1)`;
+  const updates = rateCardsNoComments.split(";").map((s) => s.trim()).filter((s) => /^UPDATE pricing_rate_card\b/i.test(s));
+  assert.ok(updates.length > 0);
+  for (const stmt of updates) {
+    assert.ok(stmt.includes(VERSION_BUMP), stmt);
+    assert.ok(stmt.includes("updated_at = datetime('now')"), stmt);
+  }
+});
+
+test("rate-cards.sql: the INSERT block starts every new row at 'v1'", () => {
+  const insertBlock = rateCardsNoComments.split(";").map((s) => s.trim()).find((s) => /^INSERT INTO pricing_rate_card\b/i.test(s));
+  assert.ok(insertBlock);
+  const rows = insertBlock.match(/\([^()]*\)/g).slice(1); // drop the column list, keep VALUES rows
+  assert.ok(rows.length > 0);
+  for (const row of rows) assert.match(row, /'v1'/);
+});
+
+test("rate-cards.sql: 354.64 present, 322.40 (the ÷1.1 mistake) absent", () => {
+  assert.ok(rateCardsSql.includes("354.64"));
+  assert.ok(!rateCardsSql.includes("322.40"));
+});
+
+test("source scan: apply-go-live-min.mjs and go-live-plan.mjs never mention child_process or wrangler", () => {
+  const applySrc = readFileSync(fileURLToPath(new URL("../catalogue/apply-go-live-min.mjs", import.meta.url)), "utf8");
+  const planSrc = readFileSync(fileURLToPath(new URL("../catalogue/go-live-plan.mjs", import.meta.url)), "utf8");
+  for (const src of [applySrc, planSrc]) {
+    assert.ok(!src.includes("child_process"), src.slice(0, 40));
+    assert.ok(!src.includes("wrangler"), src.slice(0, 40));
+  }
 });
 
 test("write: an unsafe plan aborts before any POST", async () => {
