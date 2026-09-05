@@ -1223,3 +1223,45 @@ test("TESTER-F4 fetchMoneyNumbers: a gateway list that is not an array is unknow
   );
   assert.equal(budget.reason, "spend_not_attributable");
 });
+
+// TESTER-F5 (round 5) — the red thresholds are read straight out of `vars` with
+// `Number(env.X ?? default)`, and `??` only catches an ABSENT var. This repo's
+// own dev harness sets vars to the empty string (`--var ACCESS_TEAM_DOMAIN:`),
+// where `Number("")` is 0 — a floor of $0.00 no balance can fall below. A typo
+// (`"5 USD"`, `"80%"`) is worse: `Number(...)` is NaN, every comparison against
+// it is false, and the ONE alarm this feature exists to raise is silently off.
+// NaN also serialises as `null`, which useMonitoring.ts rejects as an untrusted
+// snapshot — so the whole monitoring panel is replaced by "the snapshot could
+// not be trusted", pointing the reader at the snapshot rather than at the var.
+// A threshold that cannot be read must fall back to the documented default.
+test("TESTER-F5 monitoringPayload: an unreadable threshold var falls back to the default, never to a silent no-alarm", async () => {
+  const stored = {
+    takenAt: new Date().toISOString(),
+    money: {
+      // Below the $5 floor and above the 80% ceiling: both conditions are red
+      // under any correctly-read threshold.
+      balance: { available: true, creditBalanceUsd: 0.5 },
+      budget: { available: true, billedSpendUsd: 19.9, capUsd: 20, capSource: "gateway", windowDays: 30 },
+    },
+    days: Array.from({ length: 7 }, (_, i) => ({ day: `2026-09-0${i + 1}`, success: 0, error: 0 })),
+    success7d: 0,
+    error7d: 0,
+  };
+  const KV = { get: async () => JSON.stringify(stored), put: async () => {} };
+
+  for (const [label, vars] of Object.entries({
+    "empty string": { AI_CREDIT_FLOOR_USD: "", AI_CAP_CEILING_PCT: "" },
+    "a typo": { AI_CREDIT_FLOOR_USD: "5 USD", AI_CAP_CEILING_PCT: "80%" },
+  })) {
+    const payload = await monitoringPayload({ KV, ...vars });
+    assert.equal(
+      payload.notificationCount, 1,
+      `${label}: an unreadable threshold silently disabled the only notification this feature has`,
+    );
+    assert.equal(payload.snapshot.redBalance, true, `${label}: the balance card should still redden`);
+    assert.equal(
+      Number.isFinite(payload.snapshot.floorUsd), true,
+      `${label}: floorUsd must cross the wire as a real number — NaN serialises to null and the client discards the whole snapshot`,
+    );
+  }
+});

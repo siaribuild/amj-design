@@ -276,10 +276,28 @@ export function Ops2App() {
               {!wide && (
                 <IonTabBar slot="bottom" className="ops2-tabbar">
                   {TAB_DESTINATIONS.map((d) => (
-                    <IonTabButton key={d.id} tab={d.id} href={d.path}>
+                    <IonTabButton
+                      key={d.id}
+                      tab={d.id}
+                      href={d.path}
+                    >
                       <IonIcon icon={DESTINATION_ICON[d.id]} aria-hidden="true" />
                       {d.id === "attention" && notificationCount > 0 && (
-                        <span className="ops2-tab-badge" aria-hidden="true">{notificationCount}</span>
+                        <>
+                          <span className="ops2-tab-badge" aria-hidden="true">{notificationCount}</span>
+                          {/* NAME FROM CONTENT, not aria-label: Ionic owns the
+                              element that carries role="tab" and does not
+                              forward a label prop onto it, so the count has to
+                              be text inside the button. It matters most here —
+                              the desk bell that says the same thing does not
+                              exist at this width (OpsPage, "DESK ONLY"), so
+                              without it a screen reader on a phone hears only
+                              "Attention" on the one surface where Attention is
+                              a permanent tab. */}
+                          <span className="ops2-sr-only">
+                            {`${notificationCount} item${notificationCount === 1 ? "" : "s"} waiting`}
+                          </span>
+                        </>
                       )}
                       <IonLabel>{d.label}</IonLabel>
                     </IonTabButton>

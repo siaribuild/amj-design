@@ -521,3 +521,23 @@ test("the unauthorised panel has no retry — pressing it would fail the same wa
   await expect(error.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await context.close();
 });
+
+// TESTER-F6 (round 5) — the desk bell earns its accessible name
+// (`aria-label="Attention — 1 item"`), the phone tab does not: its badge span
+// is aria-hidden, its icon is aria-hidden, and IonLabel carries only
+// "Attention". On the phone the bell does not exist at all, so a screen-reader
+// user on the surface where Attention is a permanent tab gets no signal that
+// anything is waiting.
+test("bubble: the phone attention tab announces its count to assistive tech, as the desk bell does", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: READY_SNAPSHOT, notificationCount: 1 } }));
+  await page.goto(ATTENTION);
+
+  // The badge is on screen — this is about what is ANNOUNCED, not what is drawn.
+  await expect(page.locator(".ops2-tab-badge")).toHaveText("1");
+  await expect(
+    page.getByRole("tab", { name: /1/ }),
+    "the attention tab's accessible name carries the count",
+  ).toHaveCount(1);
+});

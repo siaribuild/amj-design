@@ -255,11 +255,35 @@ export async function readMonitoringSnapshot(env: Env): Promise<ReturnType<typeo
 export type NotificationContext = { env: Env; snapshot: ReturnType<typeof parseMonitoringSnapshot> | null };
 export type NotificationSource = (ctx: NotificationContext) => Promise<number>;
 
+/** The red thresholds, read defensively.
+ *
+ *  `Number(env.X ?? 5)` catches an ABSENT var and nothing else, and two
+ *  reachable states walked straight past it. An EMPTY var — this repo's own
+ *  idiom, `--var ACCESS_TEAM_DOMAIN:` in the web-server harness — reads as 0,
+ *  making a floor no balance can fall below and silently disabling the alarm.
+ *  A typo like "80%" reads as NaN: every comparison against it is false, the
+ *  red evaluation is off with no signal, and `floorUsd: NaN` serialises to
+ *  null, which the client rejects — replacing the WHOLE panel with "the
+ *  snapshot could not be trusted", pointing the reader at the snapshot instead
+ *  of at the var that broke.
+ *
+ *  A threshold that cannot be read is the default, not zero and not NaN. */
+function threshold(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return raw !== undefined && raw.trim() !== "" && Number.isFinite(value) ? value : fallback;
+}
+
+export function redThresholds(env: Env): { floorUsd: number; ceilingPct: number } {
+  return {
+    floorUsd: threshold(env.AI_CREDIT_FLOOR_USD, 5),
+    ceilingPct: threshold(env.AI_CAP_CEILING_PCT, 80),
+  };
+}
+
 function aiBudgetRed(ctx: NotificationContext): Promise<number> {
   if (!ctx.snapshot) return Promise.resolve(0);
-  const floor = Number(ctx.env.AI_CREDIT_FLOOR_USD ?? 5);
-  const ceiling = Number(ctx.env.AI_CAP_CEILING_PCT ?? 80);
-  return Promise.resolve(evaluateRed(ctx.snapshot, floor, ceiling) ? 1 : 0);
+  const { floorUsd, ceilingPct } = redThresholds(ctx.env);
+  return Promise.resolve(evaluateRed(ctx.snapshot, floorUsd, ceilingPct) ? 1 : 0);
 }
 
 /** Sum what the sources can answer, and let the rest fail alone.
@@ -303,8 +327,7 @@ export const __testingSources = { countFrom };
 export async function monitoringPayload(env: Env): Promise<{ snapshot: unknown; notificationCount: number }> {
   const snapshot = await readMonitoringSnapshot(env);
   if (!snapshot) return { snapshot: null, notificationCount: await notificationCount(env, null) };
-  const floor = Number(env.AI_CREDIT_FLOOR_USD ?? 5);
-  const ceiling = Number(env.AI_CAP_CEILING_PCT ?? 80);
+  const { floorUsd: floor, ceilingPct: ceiling } = redThresholds(env);
   const red = evaluateRedFlags(snapshot, floor, ceiling);
   return {
     // floorUsd travels because the balance card prints it ("Below the $5.00
