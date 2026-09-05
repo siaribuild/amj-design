@@ -542,16 +542,20 @@ export async function processAiExtractionJob(
     }
 
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    // One clock: the stages that wait for shared resources are told when the
+    // job is given up on, so none of them takes a resource after it.
+    const deadlineAt = Date.now() + aiJobDeadlineMs(env);
     const extraction = runAiExtraction(env, job.projectId, {
       sourceGeneration: job.generation,
       processingToken,
+      deadlineAt,
     });
     const summary = await Promise.race([
       extraction,
       new Promise<never>((_resolve, reject) => {
         deadlineTimer = setTimeout(
           () => reject(new AiJobFault("ai_processing_deadline_exceeded", "transient")),
-          aiJobDeadlineMs(env),
+          Math.max(0, deadlineAt - Date.now()),
         );
       }),
     ]).finally(() => {

@@ -1,4 +1,4 @@
-import type { CropBoxPt } from "../contract";
+import { MAX_CROP_BASE64, type CropBoxPt } from "../contract";
 import {
   compositionBatches, runCompositions,
   type CompositionOutcome, type CompositionRead, type CompositionTask,
@@ -9,10 +9,6 @@ import type { CropForReport, faceMappedProgress } from "./report";
 
 /** How many of a run's composition batches may be asked twice. */
 const COMPOSITION_RETRY_BUDGET = 4;
-/** The most base64 one crop may weigh. A 300 DPI crop of a frame and its storey
- * band is a few hundred kilobytes; one that is not is a render gone wrong, and
- * sixteen of them at once is how a Worker runs out of memory. */
-const MAX_CROP_BASE64 = 2_000_000;
 
 /**
  * Phase D's crops and Phase E's reads, together: crops are made in batches of
@@ -58,15 +54,16 @@ export async function readOpenings(args: {
   // either order. Every progress write goes down one chain, each with the
   // count it was made at, and reads are held - every settled batch its own
   // milestone (§9) - until every crop has been reported, or the persisted
-  // phase goes from crops to reads and back to crops. Progress is not
-  // evidence: a write that fails costs nothing but itself.
+  // phase goes from crops to reads and back to crops. A batch asked again is a
+  // milestone too (§9): rechecking is work the user can see, not a pause.
   let writes: Promise<void> = Promise.resolve();
   const report = (phase: "opening_crops" | "composition_reads", message: string, count: number) =>
-    (writes = writes.then(() => args.progress.step(phase, message, count, args.total)).catch(() => {}));
-  const settled: number[] = [];
+    (writes = writes.then(() => args.progress.step(phase, message, count, args.total)));
+  const settled: { count: number; message: string }[] = [];
+  let lastSettled = 0;
   const reportReads = () => {
     if (cropped !== cropTasks.length) return Promise.resolve();
-    for (const count of settled.splice(0)) report("composition_reads", "Reading opening compositions", count);
+    for (const { count, message } of settled.splice(0)) report("composition_reads", message, count);
     return writes;
   };
   await report("opening_crops", "Creating opening crops", 0);
@@ -110,7 +107,8 @@ export async function readOpenings(args: {
         await reportReads();
       }
     },
-    onBatch: (done) => { settled.push(done); return reportReads(); },
+    onBatch: (done) => { lastSettled = done; settled.push({ count: done, message: "Reading opening compositions" }); return reportReads(); },
+    onRetry: (unread) => { settled.push({ count: lastSettled, message: `Rechecking ${unread} unclear opening${unread === 1 ? "" : "s"}` }); return reportReads(); },
     ask: (batch, attempt, skill) => args.ask({
       batch, attempt, skill,
       prompt: skill.buildPrompt({ imageDataUrls: [] }),

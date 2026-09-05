@@ -1,6 +1,7 @@
 import type { Skill } from "../../estimator/skills/types";
 import { parseModelJson } from "../../estimator/skills/json";
 import type { DrawingFlag, OpeningOperation, SplitAxis } from "../contract";
+import { COMPOSITION_BATCH_SIZE, COMPOSITION_CONCURRENT_BATCHES } from "../contract";
 import { mapPool } from "../pool";
 
 /**
@@ -34,9 +35,10 @@ export type CompositionOutcome =
   | { state: "not_stated"; tag: string; cropRenderId: string; reason: string }
   | { state: "not_read"; tag: string; cropRenderId: string | null; reason: string };
 
-const BATCH_SIZE = 4;
-/** §7.6 fixes this: four batches in flight, not a caller's preference. */
-const MAX_CONCURRENT_BATCHES = 4;
+/** §7.6 fixes these - four per batch, four batches in flight - and the memory
+ * arithmetic in contract.ts is priced on them, so they live there. */
+const BATCH_SIZE = COMPOSITION_BATCH_SIZE;
+const MAX_CONCURRENT_BATCHES = COMPOSITION_CONCURRENT_BATCHES;
 export const OPERATIONS: OpeningOperation[] = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"];
 const AXES: SplitAxis[] = ["vertical", "horizontal"];
 /** Parts read off a drawing are eyeballed fractions, so they need not add to
@@ -206,6 +208,9 @@ export async function runCompositions(args: {
   prepare?(batch: CompositionTask[]): Promise<void>;
   /** Called as each batch settles, with how many openings are done. */
   onBatch?(done: number, total: number): Promise<void>;
+  /** Called before a batch is asked again, with how many of its openings the
+   * first answer left unread (§9: rechecking is a milestone). */
+  onRetry?(unread: number): Promise<void>;
   /** Asks about the openings whose crops exist, and answers with what the
    *  batch's skill made of the reply - never the raw text. */
   ask(
@@ -230,6 +235,7 @@ export async function runCompositions(args: {
       let best: CompositionOutcome[] | null = null;
       for (const attempt of [1, 2]) {
         if (!imaged.length || !spend()) break;
+        if (attempt > 1) await args.onRetry?.(best ? best.filter((outcome) => outcome.state === "not_read").length : imaged.length);
         const read = readingsToOutcomes(await args.ask(imaged, attempt, skill).catch(() => null), imaged);
         // Keep whichever answer said more about each opening, and ask again
         // while any of them is still unread: one usable record out of four is

@@ -159,7 +159,11 @@ export function faceMappedProgress(
       const at = now();
       const ms = at - last;
       last = at;
-      await emit({ phase, message, done, total, ms });
+      // Progress is observational. A status row that would not take costs
+      // nothing but itself; the readings are the work, and none is lost to it.
+      try {
+        await emit({ phase, message, done, total, ms });
+      } catch { /* the run goes on; the next step reports the next milestone */ }
     },
   };
 }
@@ -180,6 +184,8 @@ export function faceMappedFileReport(args: {
   /** What the run cost, as the stage layer reported it. */
   spent: { modelCalls: number; cachedTurns: number; inputTokens: number; outputTokens: number; warnings: string[]; failureKind: string | null };
   containerCalls: number;
+  /** Renders alone: an inspection is a container call, not a rendered page. */
+  pagesRendered: number;
   startedAt: number;
   /** Where each placed opening came from and how far it got, by the engine's
    * spelling of its tag. */
@@ -200,7 +206,7 @@ export function faceMappedFileReport(args: {
       text: { pagesRead: args.pagesRead },
       selectPages: { selected: [], of: args.pagesRead },
       elevationRegions: [],
-      renderCrop: { pagesRendered: args.containerCalls, cropsMade: args.crops },
+      renderCrop: { pagesRendered: args.pagesRendered, cropsMade: args.crops },
       read: {
         attempted: args.attempted,
         returned: args.compositions.filter((outcome) => outcome.state === "value").length,

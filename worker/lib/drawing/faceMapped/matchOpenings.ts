@@ -88,7 +88,7 @@ export async function matchOpenings(ctx: {
     const inventory = read ? validateElevationFrames(read, task) : null;
     const frames = inventory?.frames ?? [];
     if (!inventory || !frames.length) {
-      const reason = inventory?.reason ?? "the look at this face did not come back";
+      const reason = inventory?.state === "unresolved" ? inventory.reason : "the look at this face did not come back";
       for (const placement of placementsOn(ctx.outcomes, task)) ctx.unplaced.set(placement.tag, reason);
       return;
     }
@@ -132,8 +132,14 @@ export async function matchOpenings(ctx: {
   // §7.3 step 5: the faces neither reading settled get one look each, at the
   // plan and the elevation together. A face that look cannot settle either is
   // left unmatched — its openings keep the wall the plan gave them and lose
-  // only the frame nobody could name.
-  for (const face of faceReconciliationTasks(unsettled)) {
+  // only the frame nobody could name. The looks are a milestone (§9): work the
+  // user can see, not a pause.
+  const rechecks = faceReconciliationTasks(unsettled);
+  if (rechecks.length) {
+    const unclear = rechecks.reduce((count, face) => count + face.placements.length, 0);
+    await ctx.progress.step("elevation_frames", `Rechecking ${unclear} unclear opening${unclear === 1 ? "" : "s"}`, done, built.tasks.length);
+  }
+  for (const face of rechecks) {
     const skill = makeFaceReconcileSkill(face);
     const image = await ctx.render(face.frames[0].pageNo, face.regionPt, FACE_DPI);
     const planImage = await ctx.render(face.placements[0].planPageNo);
@@ -159,10 +165,13 @@ export async function matchOpenings(ctx: {
     })).catch(() => null), face);
     if (settled) {
       matched.push(...settled.matches);
-      for (const tag of settled.unpaired ?? []) ctx.unplaced.set(tag, `${face.reason}; not drawn on this elevation, by the second look`);
+      for (const tag of settled.absent ?? []) ctx.unplaced.set(tag, `${face.reason}; not drawn on this elevation, by the second look`);
+      // Not paired and not seen to be hidden: an inventory that missed a frame
+      // looks exactly like this, so it stays a conflict and says so.
+      for (const tag of settled.unpaired ?? []) ctx.unplaced.set(tag, `${face.reason}; the second look paired the frames it could see and did not account for ${tag}`);
     } else for (const placement of face.placements) ctx.unplaced.set(placement.tag, face.reason);
   }
-  for (const face of unsettled.slice(faceReconciliationTasks(unsettled).length)) {
+  for (const face of unsettled.slice(rechecks.length)) {
     for (const placement of face.placements) ctx.unplaced.set(placement.tag, face.reason);
   }
   ctx.lostIn("matching");

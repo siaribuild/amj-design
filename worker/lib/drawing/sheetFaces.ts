@@ -139,8 +139,9 @@ export function documentFaceRegions(pages: SheetPage[], storeyNames: Set<string>
   // each, and the second must not overwrite the first.
   const keyOf = (pageNo: number, label: string) => `${pageNo}|${label}`;
   const regions = new Map<string, { pageNo: number; regionPt: CropBoxPt }>();
+  const titles = faceTitles(pages, storeyNames, planText);
   for (const { geometry } of pages) {
-    const onSheet = faceTitles(pages, storeyNames, planText).filter((title) => title.pageNo === geometry.pageNo);
+    const onSheet = titles.filter((title) => title.pageNo === geometry.pageNo);
     if (!onSheet.length) continue;
     if (onSheet.length === 1) {
       regions.set(keyOf(geometry.pageNo, onSheet[0].label), { pageNo: geometry.pageNo, regionPt: [0, 0, geometry.widthPt, geometry.heightPt] });

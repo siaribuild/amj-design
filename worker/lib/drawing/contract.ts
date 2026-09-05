@@ -9,10 +9,46 @@ export const MAX_PDF_BYTES = 40 * 1024 * 1024;
 export const MAX_PAGES = 60;
 export const MAX_CROPS_PER_PAGE = 12;
 export const MAX_DPI = 300;
-/** The most the container may answer with. A page render at 100 DPI is well
- * under a megabyte and a 300 DPI crop a few hundred kilobytes; an answer past
- * this is a render gone wrong, and the Worker never holds it to find out. */
-export const MAX_CONTAINER_RESPONSE_BYTES = 16 * 1024 * 1024;
+/** The most the container may answer with, per call, for the modes that were
+ * here before the face-mapped engine: unchanged for them. A render holds what
+ * they ask for - twelve crops in one response, a page at 300 DPI. Past a cap is
+ * a render gone wrong, never held to find out. */
+export const MAX_INSPECT_RESPONSE_BYTES = 16 * 1024 * 1024;
+export const MAX_RENDER_RESPONSE_BYTES = 16 * 1024 * 1024;
+
+// ── The face-mapped engine's memory, as one arithmetic (§8). The isolate is
+// 128 MB. A run holds: the PDF for the file's whole life; for each call in
+// flight a framed copy of it (the container reads its request by
+// Content-Length, so the copy stays), the response bytes and the string they
+// decode to; the inspection for the file's life, parsed; the crops Phase E
+// keeps between renders; and the runtime. The budget below covers the first
+// two and admits calls while their sum fits; the rest are allowances; the sum
+// fits the isolate with 24 MB of headroom, and the largest file fits beside its
+// own largest call, so nothing waits for room that never comes. Only this
+// engine's calls are budgeted: the other modes' memory is as it was. ──
+export const WORKER_ISOLATE_BYTES = 128 * 1024 * 1024;
+/** The largest PDF this engine reads: the size at which the arithmetic
+ * closes. The reference sets are 2-6 MB. The other modes keep MAX_PDF_BYTES. */
+export const FACE_MAPPED_MAX_PDF_BYTES = 20 * 1024 * 1024;
+/** Measured on the reference sets: an inspection is 54-64 KB of payload per
+ * page, about 4 MB at the 60-page cap; a full sheet at 150 DPI is 2.03 MB of
+ * base64 and a 300 DPI crop far less. Each cap is twice what it bounds. */
+export const FACE_MAPPED_INSPECT_RESPONSE_BYTES = 8 * 1024 * 1024;
+export const FACE_MAPPED_RENDER_RESPONSE_BYTES = 4 * 1024 * 1024;
+/** The inspection is kept for the file's life, parsed: word objects take up to
+ * 1.84x their wire size on the reference sets (measured), priced at 2x. */
+export const RETAINED_INSPECTION_BYTES = 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES;
+/** Phase E reads crops in waves: this many per batch, this many batches in
+ * flight (§7.6), and so this many crops of at most MAX_CROP_BASE64 kept. */
+export const COMPOSITION_BATCH_SIZE = 4;
+export const COMPOSITION_CONCURRENT_BATCHES = 4;
+export const MAX_CROP_BASE64 = 2_000_000;
+export const MAX_RETAINED_CROP_BYTES = COMPOSITION_BATCH_SIZE * COMPOSITION_CONCURRENT_BATCHES * MAX_CROP_BASE64;
+/** The budget: the face-mapped file's PDF for its life (one file at a time),
+ * and for each of its calls in flight a framed copy of the PDF plus twice the
+ * call's response cap. 56 + 32 (crops) + 16 (inspection) + 24 (runtime) = 128;
+ * 20 + 20 + 16 (the file and its inspection) = 56. */
+export const MAX_CONTAINER_INFLIGHT_BYTES = 56 * 1024 * 1024;
 
 export type DrawingProgressPhase =
   | "inventory"

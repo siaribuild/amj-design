@@ -17,8 +17,8 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { readOpenings } from ${p("worker/lib/drawing/faceMapped/readOpenings.ts")};
-      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_CONTAINER_RESPONSE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
-      export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
+      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_CONTAINER_INFLIGHT_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
+      export { inspectPdf, renderPage, reserveContainerMemory, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
       export { elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth } from ${p("worker/lib/drawing/locate.ts")};
@@ -57,7 +57,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_CONTAINER_RESPONSE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_CONTAINER_INFLIGHT_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, reserveContainerMemory, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2769,7 +2769,7 @@ test("face reconciliation: one look at a face nothing settled, at only what it w
   assert.match(skill.buildPrompt(), /f3/);
 
   const task = faceReconciliationTasks(faces)[0];
-  const settle = (pairs) => reconcileMatches(skill.validate({ pairs }), task);
+  const settle = (answer) => reconcileMatches(skill.validate(Array.isArray(answer) ? { pairs: answer } : answer), task);
   const settled = settle([
     { tag: "W1", frameId: "f3" }, { tag: "W2", frameId: "f2" }, { tag: "W3", frameId: "f1" },
   ]);
@@ -2802,8 +2802,24 @@ test("face reconciliation: one look at a face nothing settled, at only what it w
   const settleTwo = (pairs) => reconcileMatches(makeFaceReconcileSkill(two).validate({ pairs }), two);
   const partial = settleTwo([{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f2" }]);
   assert.deepEqual(partial.matches.map((m) => [m.tag, m.frame.frameId]), [["W1", "f1"], ["W3", "f2"]]);
-  assert.deepEqual(partial.unpaired, ["W2"]);
+  assert.deepEqual([partial.unpaired, partial.absent], [["W2"], []],
+    "an opening the look did not pair and did not see to be hidden is unaccounted for, not absent");
   assert.equal(partial.direction, "with_plan");
+  // The look may say an opening is not drawn on this elevation - hidden behind
+  // a garage, round a return - and only then is it absent rather than missed.
+  const hidden = reconcileMatches(makeFaceReconcileSkill(two).validate({ pairs: [{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f2" }], absent: ["W2"] }), two);
+  assert.deepEqual([hidden.unpaired, hidden.absent], [[], ["W2"]]);
+  assert.equal(makeFaceReconcileSkill(two).validate({ pairs: [{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f2" }], absent: ["W1"] }), null,
+    "an opening both paired and absent is a contradiction");
+  assert.equal(makeFaceReconcileSkill(two).validate({ pairs: [{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f2" }], absent: ["W9"] }), null,
+    "and an absent opening the face does not have is an invention");
+  assert.equal(skill.validate({ pairs: [{ tag: "W1", frameId: "f1" }], absent: ["W2", "W2"] }), null,
+    "an opening said absent twice is not two openings the look need not pair");
+  // Three openings, three frames, one of them hidden: the look owes pairs for
+  // the two it can see, and the frame that is neither is named, not a refusal.
+  const oneHidden = settle({ pairs: [{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f3" }], absent: ["W2"] });
+  assert.deepEqual([oneHidden.matches.map((m) => m.tag), oneHidden.absent, oneHidden.unpaired], [["W1", "W3"], ["W2"], []]);
+  assert.match(oneHidden.matches[0].warnings.join("; "), /f2/);
   assert.equal(partial.matches.every((m) => m.warnings.some((w) => w.includes(task.reason))), true,
     "every pairing the look made says why the drawing alone could not make it");
   assert.equal(settleTwo([{ tag: "W1", frameId: "f2" }, { tag: "W3", frameId: "f1" }]).direction, "against_plan");
@@ -3693,7 +3709,8 @@ test("crops and reads: every crop is reported before any read, each wave once, o
     // is still reported and the reads still start.
     storeCrop: async (id) => { if (id.startsWith("W3_")) throw new Error("R2 unavailable"); return `key_${id}`; },
     ask: async (input) => {
-      return input.skill.validate({ readings: input.batch.map((task) => ({
+      // W5 is unread on the first attempt, so its batch is asked again.
+      return input.skill.validate({ readings: input.batch.filter((task) => !(input.attempt === 1 && task.tag === "W5")).map((task) => ({
         tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
         operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
       })) });
@@ -3703,7 +3720,10 @@ test("crops and reads: every crop is reported before any read, each wave once, o
   assert.equal(result.compositions.filter((outcome) => outcome.state === "value").length, 11);
   assert.match(unplaced.get("W3"), /stored/);
   assert.deepEqual(events.filter((event) => event.phase === "opening_crops").map((event) => event.done), [0, 4, 8, 12]);
-  assert.deepEqual(events.filter((event) => event.phase === "composition_reads").map((event) => event.done), [4, 8, 12]);
+  const reads = events.filter((event) => event.phase === "composition_reads");
+  assert.deepEqual(reads.filter((event) => !/Rechecking/.test(event.message)).map((event) => event.done), [4, 8, 12]);
+  assert.equal(reads.some((event) => /Rechecking 1 unclear opening\b/.test(event.message)), true,
+    "a batch asked again is a milestone the user can see (§9), not a pause");
   assert.equal(events.every((event) => event.total === 20), true, "over the roster, not over the openings that got this far");
 });
 
@@ -4133,6 +4153,42 @@ test("run: frames that disagree with the printed scale by one factor recalibrate
   assert.equal(Math.round(byTag.W1.scaleRatio), 50);
 });
 
+test("run: a progress sink that fails costs no reading (Spec2)", async () => {
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] }),
+      reconcileFace: answering(async () => null),
+      readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) })),
+      // Every progress write fails. Progress is observational; the readings
+      // are the work, and none of it is lost to a status row that would not take.
+      onProgress: async () => { throw new Error("D1 unavailable"); },
+    },
+  });
+  assert.deepEqual(run.readings.map((r) => [r.externalRef, r.splitState]), [["W1", "value"]]);
+});
+
 test("run: a frame whose crop would run off the sheet is lost at the crop, and the report says so (Codex 9.5)", async () => {
   const plan = facePage(3, "GROUND FLOOR PLAN", [
     { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
@@ -4169,11 +4225,13 @@ test("run: a frame whose crop would run off the sheet is lost at the crop, and t
   assert.equal(run.report.perOpening[0].failurePhase, "crop", "lost where the crop could not be made, not at the read that never happened");
 });
 
-test("run: a face with fewer frames than openings gets its second look, and the openings it cannot show are named (Spec1, §10)", async () => {
-  // The plan puts three openings on NORTH; the elevation draws two of them - the
-  // third is behind the garage. Section 10: a face count conflict is one face
-  // reconciliation, not a face lost. The look pairs what it can see; the
-  // opening it cannot is unresolved for that reason and nothing else.
+test("run: a face with fewer frames than openings gets its second look, and an opening it cannot see is not called hidden (Spec1, §10)", async () => {
+  // The plan puts three openings on NORTH; the inventory finds two frames.
+  // Section 10: a face count conflict is one face reconciliation, not a face
+  // lost. The look pairs what it can see. The third opening is "not drawn on
+  // this elevation" only if the look says it is hidden; an inventory that
+  // simply missed a frame looks exactly the same from here, so an opening the
+  // look does not account for stays an unresolved conflict, named as one.
   const plan = facePage(3, "GROUND FLOOR PLAN", [
     { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
     { text: "W2", x0: 407, top: 250, x1: 433, bottom: 264 },
@@ -4189,39 +4247,55 @@ test("run: a face with fewer frames than openings gets its second look, and the 
     { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
     { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
   ]);
-  const looked = [];
-  const run = await runFaceMappedParser({
-    fileId: "file_1", sourceFileId: "src_1",
-    scheduleRows: ["W1", "W2", "W3"].map((tag) => ({ tag, widthMm: 1800, heightMm: 1200, typeText: "AWNING" })),
-    planPages: [plan], elevationPages: [elevations],
-    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
-    deps: {
-      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
-      storeCrop: async (id) => `key_${id}`,
-      readPlanPage: async () => null,
-      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.05, 0.3, 0.101, 0.6] }, { box: [0.50, 0.3, 0.551, 0.6] }] }),
-      reconcileFace: answering(async (input) => {
-        looked.push(input.frameIds.length);
-        // W1 is the left frame, W3 the right; W2 is not on this elevation.
-        return { pairs: [{ tag: "W1", frameId: input.frameIds[0] }, { tag: "W3", frameId: input.frameIds[1] }] };
-      }),
-      readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
-        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
-        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
-      })) })),
-    },
-  });
-  assert.deepEqual(looked, [2], "one look, given the two frames that were found");
-  const byTag = Object.fromEntries(run.readings.map((r) => [r.externalRef, r]));
-  assert.equal(byTag.W1.splitState, "value");
-  assert.equal(byTag.W3.splitState, "value");
-  assert.equal(byTag.W2.splitState, "not_read");
-  assert.match(byTag.W2.gapNote, /not drawn on this elevation|not paired/i);
-  assert.equal(byTag.W2.elevation, "NORTH", "it keeps the wall the plan gave it");
-  assert.equal(run.report.perOpening.find((o) => o.tag === "W2").failurePhase, "matching",
+  const runWith = async (answer) => {
+    const looked = [];
+    const events = [];
+    const run = await runFaceMappedParser({
+      fileId: "file_1", sourceFileId: "src_1",
+      scheduleRows: ["W1", "W2", "W3"].map((tag) => ({ tag, widthMm: 1800, heightMm: 1200, typeText: "AWNING" })),
+      planPages: [plan], elevationPages: [elevations],
+      pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+      deps: {
+        render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+        storeCrop: async (id) => `key_${id}`,
+        readPlanPage: async () => null,
+        inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.05, 0.3, 0.101, 0.6] }, { box: [0.50, 0.3, 0.551, 0.6] }] }),
+        reconcileFace: answering(async (input) => {
+          looked.push(input.frameIds.length);
+          return answer(input);
+        }),
+        readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
+          tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+          operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+        })) })),
+        onProgress: async (event) => { events.push(event); },
+      },
+    });
+    return { run, looked, events, byTag: Object.fromEntries(run.readings.map((r) => [r.externalRef, r])) };
+  };
+
+  // W1 is the left frame, W3 the right, and the look says W2 is hidden.
+  const hidden = await runWith((input) => ({ pairs: [{ tag: "W1", frameId: input.frameIds[0] }, { tag: "W3", frameId: input.frameIds[1] }], absent: ["W2"] }));
+  assert.deepEqual(hidden.looked, [2], "one look, given the two frames that were found");
+  assert.equal(hidden.byTag.W1.splitState, "value");
+  assert.equal(hidden.byTag.W3.splitState, "value");
+  assert.equal(hidden.byTag.W2.splitState, "not_read");
+  assert.match(hidden.byTag.W2.gapNote, /not drawn on this elevation/);
+  assert.equal(hidden.byTag.W2.elevation, "NORTH", "it keeps the wall the plan gave it");
+  assert.equal(hidden.run.report.perOpening.find((o) => o.tag === "W2").failurePhase, "matching",
     "lost by the look at the face, not by the count of its frames");
-  assert.equal(run.report.perOpening.find((o) => o.tag === "W1").direction, "with_plan",
+  assert.equal(hidden.run.report.perOpening.find((o) => o.tag === "W1").direction, "with_plan",
     "a direction the second look chose is a direction, and is reported");
+  assert.equal(hidden.events.some((event) => /Rechecking 3 unclear openings/.test(event.message)), true,
+    "the second look is a milestone the user can see (§9)");
+
+  // The same pairs with nothing said about W2: the look did not see it hidden,
+  // so it is an inventory or matching conflict still open, and says so.
+  const missed = await runWith((input) => ({ pairs: [{ tag: "W1", frameId: input.frameIds[0] }, { tag: "W3", frameId: input.frameIds[1] }] }));
+  assert.equal(missed.byTag.W1.splitState, "value");
+  assert.equal(missed.byTag.W2.splitState, "not_read");
+  assert.doesNotMatch(missed.byTag.W2.gapNote, /not drawn/);
+  assert.match(missed.byTag.W2.gapNote, /did not account for W2/);
 });
 
 test("run: a tag printed on the elevation reaches the matcher (§7.3)", async () => {
@@ -7595,6 +7669,8 @@ test("switch wiring: each phase of the face-mapped engine calls under its own sk
   ].map((skill) => `${skill.id}@${skill.promptVersion}`);
   assert.equal(new Set(ids).size, 4, "a shared id would let one phase serve another phase's cached answer");
   assert.equal(ids.every((id) => /^[a-z_]+@v\d+$/.test(id)), true, ids.join(" "));
+  assert.equal(ids[2], "face_reconciliation@v2", "a prompt that changed carries a new version");
+  assert.equal(makeSheetFactsSkill(3).promptVersion, "v2");
 });
 
 test("switch wiring: a sheet whose title block is drawn gets looked at before the plan is read (Task 11, AC25)", async () => {
@@ -7623,18 +7699,19 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     ],
   };
   const env = {
-    FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
+    FILES: { get: async () => ({ size: 3, arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
     PLAN_PARSE: {},
   };
   const phases = [];
+  const limits = { inspect: [], render: [] };
   const result = await enrichOpenings(env, {
     projectId: "p", aiRunId: "r",
     files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
     scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
     onProgress: async (_done, _total, phase) => { phases.push(phase); },
   }, {
-    inspect: async () => inspected,
-    render: async () => ({ images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+    inspect: async (_ns, _id, _bytes, _maxPages, _timeout, callLimits) => { limits.inspect.push(callLimits); await new Promise((done) => setTimeout(done, 30)); return inspected; },
+    render: async (_ns, _id, _bytes, _request, _timeout, callLimits) => { limits.render.push(callLimits); return { images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }; },
     runElevation: async () => null,
     runFloorplan: async () => null,
     runOpening: async () => null,
@@ -7661,6 +7738,14 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     "and the plan the look found is the plan the openings are placed on");
   assert.equal(result.report.files[0].steps.placements.fromText, 1);
   assert.equal(result.report.files[0].modelCalls, 4, "two sheet reads, one inventory, one composition - the sheet reads count too");
+  assert.equal(result.report.files[0].containerCalls, 5,
+    "the inspection, Phase A's two sheet renders, the face and the crop: the whole engine, not the part after Phase A");
+  assert.equal(result.report.files[0].steps.renderCrop.pagesRendered, 4, "of which four are renders; an inspection is not a rendered page");
+  assert.deepEqual(limits.inspect, [{ budgeted: true, responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES }],
+    "the production branch budgets this engine's inspection under its own cap");
+  assert.deepEqual(limits.render, Array(4).fill({ budgeted: true, responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES }),
+    "and every one of its renders - Phase A's sheets, the face, the crop");
+  assert.ok(result.report.files[0].wallMs >= 30, "and the clock starts at the inspection, where the engine starts");
 
   // The same set, with the sheet read failing at the provider for one page and
   // the render failing for the other: both are named in the report, not
@@ -7913,7 +7998,7 @@ test("container client: a render response too big to hold is refused before it i
   // more than any render could need is refused at this boundary, by its
   // declared length where it declares one and by counting bytes where it does
   // not, so the isolate never allocates what it cannot afford.
-  const declared = { get: () => ({ fetch: async () => new Response("x".repeat(10), { headers: { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }), idFromName: () => "id" };
+  const declared = { get: () => ({ fetch: async () => new Response("x".repeat(10), { headers: { "content-length": String(MAX_RENDER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }), idFromName: () => "id" };
   await assert.rejects(
     renderPage(declared, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
     (error) => error instanceof ContainerClientError && error.code === "too_large",
@@ -7978,7 +8063,7 @@ test("container client: a body that stalls after its headers is a timeout, not a
     get: () => ({ fetch: async () => new Response(new ReadableStream({
       start(controller) { controller.enqueue(new TextEncoder().encode("x")); },
       cancel() { cancelled = true; },
-    }), { headers: { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }),
+    }), { headers: { "content-length": String(MAX_RENDER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }),
     idFromName: () => "id",
   };
   await assert.rejects(
@@ -7998,13 +8083,199 @@ test("container client: a body that stalls after its headers is a timeout, not a
     (error) => error instanceof ContainerClientError && error.code === "timeout",
   );
   await assert.rejects(
-    renderPage(failing("{}", { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1) }), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    renderPage(failing("{}", { "content-length": String(MAX_RENDER_RESPONSE_BYTES + 1) }), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
     (error) => error instanceof ContainerClientError && error.code === "too_large",
   );
   await assert.rejects(
     renderPage(failing("not json"), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
     (error) => error instanceof ContainerClientError && error.code === "render_failed",
   );
+});
+
+test("sheet facts: the scale is read from the title block, in no set's vocabulary (Spec5, §7.4)", () => {
+  // A ratio printed elsewhere on the sheet belongs to something the drawing
+  // measures; the rule says so without naming any set's details, because a set
+  // whose details are called something else is not thereby excluded.
+  const prompt = makeSheetFactsSkill(3).buildPrompt({ imageDataUrls: [] });
+  assert.match(prompt, /title block/i);
+  assert.doesNotMatch(prompt, /driveway|ramp|stair|pitch|\bfall\b/i);
+});
+
+test("container client: the face-mapped engine's memory is one arithmetic, and the other modes keep theirs (S1, Spec4)", async () => {
+  // What a face-mapped run holds at once: the PDF for the file's whole life;
+  // for each call in flight a framed copy of it, the response bytes and the
+  // string they decode to; the inspection for the file's life, which parses to
+  // up to 1.84x its wire size on the reference sets (measured; priced at 2x);
+  // the crops Phase E keeps between renders; and the runtime. The budget
+  // covers the first two, allowances the next two, and the sum fits the
+  // isolate - by construction. The other modes are not changed by this: their
+  // PDF cap, their response caps and their calls are what they were.
+  const MB = 1024 * 1024;
+  assert.equal(MAX_PDF_BYTES, 40 * MB, "the shared PDF cap is what it was");
+  assert.equal(MAX_INSPECT_RESPONSE_BYTES, 16 * MB, "the other modes' inspection cap is what it was");
+  assert.equal(MAX_RENDER_RESPONSE_BYTES, 16 * MB, "and their render cap: twelve crops in one response, a page at 300 DPI");
+  // Measured on the reference sets: 54-64 KB of inspect payload per page, so
+  // about 4 MB at the 60-page cap; a full sheet at 150 DPI is 2.03 MB of base64
+  // and a 300 DPI crop far less. Each face-mapped cap is twice the largest
+  // thing it bounds.
+  assert.equal(FACE_MAPPED_INSPECT_RESPONSE_BYTES, 8 * MB);
+  assert.equal(FACE_MAPPED_RENDER_RESPONSE_BYTES, 4 * MB);
+  assert.equal(FACE_MAPPED_MAX_PDF_BYTES, 20 * MB);
+  assert.equal(MAX_CONTAINER_INFLIGHT_BYTES, 56 * MB);
+  assert.equal(MAX_RETAINED_CROP_BYTES, 4 * 4 * 2_000_000, "four waves of four crops, from the same constants the waves use");
+  assert.equal(RETAINED_INSPECTION_BYTES, 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES);
+  assert.ok(MAX_CONTAINER_INFLIGHT_BYTES + MAX_RETAINED_CROP_BYTES + RETAINED_INSPECTION_BYTES + 24 * MB <= WORKER_ISOLATE_BYTES,
+    "budget, retained crops, the parsed inspection and 24 MB of runtime fit the isolate");
+  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + (FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_INSPECT_RESPONSE_BYTES) <= MAX_CONTAINER_INFLIGHT_BYTES,
+    "the largest face-mapped file and its inspection fit the budget together");
+  assert.ok(FACE_MAPPED_MAX_PDF_BYTES + (FACE_MAPPED_MAX_PDF_BYTES + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES) <= MAX_CONTAINER_INFLIGHT_BYTES,
+    "and so do the file and one of its renders, so nothing waits for room that never comes");
+  const inspectLike = { inventory: { pageCount: 60, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [{ pageNo: 1, text: "x".repeat(4 * MB), words: [] }] };
+  const big = await inspectPdf({ get: () => ({ fetch: async () => new Response(JSON.stringify(inspectLike), { headers: { "content-type": "application/json" } }) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), undefined, undefined, { budgeted: true, responseCap: FACE_MAPPED_INSPECT_RESPONSE_BYTES });
+  assert.equal(big.pages[0].text.length, 4 * MB, "a full-size inspection passes under the face-mapped cap");
+
+  // Admission is a queue: a budgeted call that does not fit waits its turn,
+  // a release admits every head that fits, and nobody jumps the queue.
+  const gate = [];
+  const started = [];
+  const answer = () => new Response(JSON.stringify({ images: [], dpi: 100 }), { headers: { "content-type": "application/json" } });
+  const waiting = {
+    get: () => ({ fetch: (_url, init) => {
+      const sent = new Uint8Array(init.body);
+      started.push(JSON.parse(new TextDecoder().decode(sent.slice(0, sent.indexOf(10)))).pageNo);
+      return new Promise((resolve) => gate.push(resolve));
+    } }),
+    idFromName: () => "id",
+  };
+  const faceMapped = { budgeted: true, responseCap: FACE_MAPPED_RENDER_RESPONSE_BYTES };
+  const perCall = 1 + 2 * FACE_MAPPED_RENDER_RESPONSE_BYTES;
+  const fits = Math.floor(MAX_CONTAINER_INFLIGHT_BYTES / perCall);
+  const calls = Array.from({ length: fits + 2 }, (_unused, at) => renderPage(waiting, "prj", new Uint8Array([1]), { pageNo: at + 1, dpi: 100 }, undefined, faceMapped));
+  await new Promise((done) => setTimeout(done, 10));
+  assert.equal(started.length, fits, "two more calls than the budget holds wait for a slot");
+  gate.shift()(answer());
+  gate.shift()(answer());
+  await new Promise((done) => setTimeout(done, 20));
+  assert.deepEqual(started.slice(fits), [fits + 1, fits + 2], "two released, both waiters admitted, in the order they asked");
+  for (const resolve of gate) resolve(answer());
+  await Promise.all(calls);
+
+  // Files hold their PDFs one at a time, in the order they asked; a file that
+  // cannot get its turn in time is a timeout and leaves the queue; a file too
+  // big for the budget is refused outright.
+  const order = [];
+  const releaseA = await reserveContainerMemory(10 * MB);
+  const fileB = reserveContainerMemory(10 * MB).then((release) => { order.push("B"); return release; });
+  const fileC = reserveContainerMemory(10 * MB).then((release) => { order.push("C"); return release; });
+  await new Promise((done) => setTimeout(done, 5));
+  assert.deepEqual(order, [], "two files wait while a first holds its PDF");
+  await assert.rejects(reserveContainerMemory(10 * MB, 30), (error) => error instanceof ContainerClientError && error.code === "timeout");
+  await assert.rejects(reserveContainerMemory(MAX_CONTAINER_INFLIGHT_BYTES + 1), (error) => error instanceof ContainerClientError && error.code === "too_large");
+  releaseA();
+  await new Promise((done) => setTimeout(done, 5));
+  assert.deepEqual(order, ["B"], "the first waiter gets the next turn, and only it");
+  (await fileB)();
+  await new Promise((done) => setTimeout(done, 5));
+  assert.deepEqual(order, ["B", "C"], "then the next, the timed-out waiter having left the queue");
+  (await fileC)();
+
+  // With the largest face-mapped file held, a call from another mode is not
+  // budgeted and starts at once; a budgeted call the budget can never hold
+  // beside the file is refused, not queued forever.
+  const release = await reserveContainerMemory(FACE_MAPPED_MAX_PDF_BYTES);
+  const plain = [];
+  await renderPage({ get: () => ({ fetch: () => { plain.push("started"); return Promise.resolve(answer()); } }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 });
+  assert.deepEqual(plain, ["started"], "the other modes' calls are as they were");
+  await assert.rejects(
+    renderPage({ get: () => ({ fetch: () => Promise.resolve(answer()) }), idFromName: () => "id" }, "prj", new Uint8Array(FACE_MAPPED_MAX_PDF_BYTES), { pageNo: 1, dpi: 100 }, undefined, { budgeted: true, responseCap: MAX_RENDER_RESPONSE_BYTES }),
+    (error) => error instanceof ContainerClientError && error.code === "too_large",
+  );
+  // With one budgeted call in flight beside the file, a call too big for the
+  // room left waits inside its own deadline and leaves the queue when it
+  // passes - and the smaller call behind it is admitted at once, not left to
+  // wait for the next release.
+  let openGate;
+  const inFlight = renderPage({ get: () => ({ fetch: () => new Promise((resolve) => { openGate = () => resolve(answer()); }) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, undefined, faceMapped);
+  await new Promise((done) => setTimeout(done, 5));
+  const follower = [];
+  const head = renderPage({ get: () => ({ fetch: () => Promise.resolve(answer()) }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 2, dpi: 100 }, 30, { budgeted: true, responseCap: MAX_RENDER_RESPONSE_BYTES });
+  const behind = renderPage({ get: () => ({ fetch: () => { follower.push("started"); return Promise.resolve(answer()); } }), idFromName: () => "id" }, "prj", new Uint8Array([1]), { pageNo: 3, dpi: 100 }, undefined, faceMapped);
+  await new Promise((done) => setTimeout(done, 5));
+  assert.deepEqual(follower, [], "the follower waits behind the head");
+  await assert.rejects(head, (error) => error instanceof ContainerClientError && error.code === "timeout");
+  await new Promise((done) => setTimeout(done, 5));
+  assert.deepEqual(follower, ["started"], "the head's deadline passed and the follower, which fits, was admitted before any release");
+  await behind;
+  openGate();
+  await inFlight;
+  release();
+});
+
+test("enrich: a PDF over its cap is refused before it is read, and a face-mapped file has its own cap (S1)", async () => {
+  // The cap is checked on the object's size, before the bytes are pulled from
+  // R2: refusing a file after loading it is refusing it too late.
+  const inspected = { inventory: { pageCount: 1, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] };
+  const attempt = async (size, runFaceMapped) => {
+    let read = false;
+    const inspectLimits = [];
+    const env = { FILES: { get: async () => ({ size, arrayBuffer: async () => { read = true; return new ArrayBuffer(3); } }), put: async () => {} }, PLAN_PARSE: {} };
+    const result = await enrichOpenings(env, {
+      projectId: "p", aiRunId: "r", files: [{ fileId: "f", r2Key: "k" }],
+      scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    }, {
+      inspect: async (_ns, _id, _bytes, _maxPages, _timeout, callLimits) => { inspectLimits.push(callLimits); return inspected; },
+      render: async () => ({ images: [], dpi: 100 }),
+      runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+      ...(runFaceMapped ? { runFaceMapped: {
+        readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null,
+        reconcileFace: async () => null, readComposition: async () => null,
+      } } : {}),
+    });
+    return { read, readings: result.readings.length, failedPhase: result.report.files[0].steps.failedPhase, inspectLimits };
+  };
+  assert.deepEqual(await attempt(MAX_PDF_BYTES + 1, false), { read: false, readings: 0, failedPhase: "r2_lookup", inspectLimits: [] });
+  assert.deepEqual(await attempt(FACE_MAPPED_MAX_PDF_BYTES + 1, true), { read: false, readings: 0, failedPhase: "r2_lookup", inspectLimits: [] },
+    "the face-mapped engine reads files up to the size its arithmetic closes at, and a refused file is never inspected");
+  const legacy = await attempt(FACE_MAPPED_MAX_PDF_BYTES + 1, false);
+  assert.equal(legacy.read, true, "the other modes read what they always read");
+  assert.deepEqual(legacy.inspectLimits, [{}], "and their calls carry no limits of this engine's: their caps and no budget");
+});
+
+test("enrich: a face-mapped file waits for the budget only as long as its job has left (Codex 10d)", async () => {
+  // The job's deadline is the one clock. A file that cannot get its turn at the
+  // budget before the job is over fails then, and leaves the queue - it does
+  // not take the budget later, after its job has been given up on, and hold
+  // the next job's file out.
+  const inspected = { inventory: { pageCount: 1, producer: null, fonts: [], hasAttachments: false, pages: [] }, pages: [] };
+  const held = await reserveContainerMemory(1024);
+  // Through the stage the pipeline calls, so the hand-off is the one under
+  // test; a stage that dropped the deadline would wait its own ten minutes.
+  const env = {
+    AI_EXTRACTION_MODE: "face_mapped",
+    DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [{ id: "f", r2_key: "k" }] }) }) }) },
+    FILES: { get: async () => ({ size: 3, arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
+    PLAN_PARSE: {},
+  };
+  const outcome = await Promise.race([
+    runDrawingEnrichmentStage(env, {
+      projectId: "p", aiRunId: "r", planPdfDocs: [{ fileId: "f" }],
+      scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+      deadlineAt: Date.now() + 40,
+    }, {
+      inspect: async () => inspected, render: async () => ({ images: [], dpi: 100 }),
+      runElevation: async () => null, runFloorplan: async () => null, runOpening: async () => null,
+      runFaceMapped: { readSheet: async () => null, readPlanPage: async () => null, inventoryElevation: async () => null, reconcileFace: async () => null, readComposition: async () => null },
+    }),
+    new Promise((done) => setTimeout(() => done("still waiting"), 400)),
+  ]);
+  assert.notEqual(outcome, "still waiting", "given up at the job's deadline, not at a deadline of its own");
+  assert.equal(outcome.readings.length, 0);
+  assert.equal(outcome.report.files[0].steps.failedPhase, "r2_lookup");
+  // The queue is empty: the next file's reservation is admitted the moment the
+  // budget is free, with nobody abandoned ahead of it.
+  held();
+  const next = await Promise.race([reserveContainerMemory(1024, 50).then(() => "admitted"), new Promise((done) => setTimeout(() => done("stuck"), 100))]);
+  assert.equal(next, "admitted");
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {

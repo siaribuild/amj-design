@@ -22,10 +22,11 @@ export interface MatchedOpeningFrame {
 }
 
 export type FaceMatch =
-  /** `unpaired`: openings the plan put on this face that the second look found
-   * no frame for - behind a garage, round a return - named so the report can
-   * say so. */
-  | { direction: "with_plan" | "against_plan"; matches: MatchedOpeningFrame[]; reason: null; unpaired?: string[] }
+  /** `absent`: openings the second look says this elevation does not draw -
+   * behind a garage, round a return. `unpaired`: openings it neither paired
+   * nor saw to be hidden - a frame the inventory missed, or one it could not
+   * tell - still an open conflict, and named as one. */
+  | { direction: "with_plan" | "against_plan"; matches: MatchedOpeningFrame[]; reason: null; unpaired?: string[]; absent?: string[] }
   | { direction: "unresolved"; matches: never[]; reason: string };
 
 /**

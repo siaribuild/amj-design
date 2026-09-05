@@ -286,6 +286,88 @@ A fourth pass found one: reads that settled while crops were still rendering
 were reported only as the latest count. Every settled batch is now queued and
 reported in order once the crops are, as §9 asks; a fifth pass verified it.
 
+### Review round ten: three standards findings and six spec findings
+
+- **One arithmetic for this engine's memory, and the other modes' as it
+  was.** `contract.ts` states it: 128 MB = a 56 MB budget for what the
+  face-mapped engine has in flight (its file's PDF for the file's whole life,
+  reserved on the object's size before the bytes are read from R2, one file at
+  a time, each waiting its turn for at most the job's own deadline; plus for
+  each of its calls a framed copy of the PDF and twice the call's response cap)
+  + 32 MB of crops Phase E keeps between renders (four waves of four, from the
+  constants the waves use) + 16 MB for the inspection kept for the file's life,
+  parsed (measured: word data reaches 1.84x its wire size, priced at 2x) + 24 MB
+  of runtime. Its caps are measured: inspection 8 MB (54-64 KB per page, about
+  4 MB at the 60-page cap), render 4 MB (a full sheet at 150 DPI is 2.03 MB of
+  base64), and the largest PDF this engine reads is 20 MB - the size at which
+  the arithmetic closes; the reference sets are 2-6 MB. The body is decoded as
+  it streams, so a response is in memory as bytes in flight and as text, not as
+  chunks and a Blob and text and JSON. Admission is a queue: a call that does
+  not fit waits its turn, inside its own deadline; a release, or a waiter whose
+  deadline passes, admits every head that fits; nobody jumps it; a call the
+  budget could never hold beside its file is refused at once, not queued
+  forever. Three inequalities are pinned by test, with every constant pinned
+  exactly: budget + crops + inspection + headroom fits the isolate; the largest
+  file plus its inspection fits the budget; the file plus one of its renders
+  fits the budget - so nothing waits for room that never comes. **The other
+  modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB, their inspection and
+  render caps stay 16 MB (twelve crops in one response, a page at 300 DPI),
+  their calls are not budgeted and never queue, and their crop retention is as
+  it was - bounding it is a change to existing modes the owner's own review
+  forbids without approval, and is not done here. What every mode does get: a
+  PDF refused on its object size before its bytes are read rather than after.
+  The two prompts this round changed - the second look and the sheet read -
+  carry version v2. The framed request copy stays: the container reads its
+  request by Content-Length, and the container is unchanged on this branch.
+  A file waits for the budget no longer than its job has left: the job runner
+  computes one absolute deadline, the pipeline and the enrichment stage carry
+  it, and a file that cannot get its turn before it fails then and leaves the
+  queue, rather than taking the budget after its job was given up on and
+  holding the next job's file out. The production branch is asserted to hand
+  this engine's limits to its own calls and none to the other modes'.
+
+  **Owner ruling needed.** The handover says the existing byte limits apply.
+  This engine now reads PDFs up to 20 MB and responses up to 8 MB (inspection)
+  and 4 MB (render), where the shared limits are 40 / 16 / 16. The stricter
+  limits are the ones the memory arithmetic closes at: with the per-call PDF
+  copy the container protocol requires, 40 MB cannot be bounded within 128 MB.
+  The reference sets are 2-6 MB. Either the handover records these limits for
+  this engine, or the bound above 20 MB is a hope and the document should say
+  so. Deploying changes nothing until the mode is selected, so the decision can
+  wait for the owner; it is not made here.
+- **Face titles are read once per document**, not once per page.
+- **Loss state** stays in three maps side by side, named as a `ponytail:` debt
+  in `run.ts`: one typed result per phase when a fourth map is needed, not
+  before the release gate. Deferred, not dismissed.
+- **Hidden is what the second look says.** The look may name an opening
+  `absent` - not drawn on this elevation - and only then is it reported so. An
+  opening it neither pairs nor sees to be hidden is an open conflict, named as
+  "the second look paired the frames it could see and did not account for W2":
+  an inventory that missed a frame looks exactly like that, and the engine no
+  longer calls it hidden. The favourable and the unfavourable answer are both
+  tested.
+- **Progress is observational.** A status write that fails costs nothing but
+  itself; the readings survive a sink that throws on every event.
+- **The report is the file's report**: it starts at the inspection and counts
+  the inspection and Phase A's renders, so the release gate can measure wall
+  time, container calls and cost for the whole engine.
+- **The shared client change is deliberate and stated.** The cap and the
+  deadline bound every parser mode's calls; the measured payloads leave the cap
+  at least twice the largest expected inspection, and the whole battery runs
+  the other modes through the same client.
+- **The scale prompt names no set's details**: a ratio anywhere but the title
+  block belongs to something the drawing measures.
+- **Rechecks are milestones** (§9): "Rechecking N unclear openings" before the
+  second looks and before a composition batch is asked again. In production the
+  progress adapter forwards counts and the persisted phase and drops the
+  message - carrying it is an additive column, an API field and the UI, a
+  pipeline change outside this engine; the persisted row's `updated_at` moves
+  on every recheck event. Deferred, stated.
+- **Renders are counted apart from calls**: the report's `pagesRendered` is
+  renders alone - an inspection is a container call, not a rendered page - and
+  the look owes pairs for the openings it did not call absent, or for every
+  frame, whichever is fewer.
+
 Not yet checked, and said so: the three-run identity, cost and timing comparison
 §14 requires; compound face names on a real set (none of the three prints one);
 a storey-prefixed elevation title on a real set (none of the three prints one).

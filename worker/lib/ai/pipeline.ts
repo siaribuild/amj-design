@@ -576,7 +576,7 @@ export interface AiExtractionSummary {
 export async function runAiExtraction(
   env: Env,
   projectId: string,
-  opts: { sourceGeneration?: number; processingToken?: string } = {},
+  opts: { sourceGeneration?: number; processingToken?: string; deadlineAt?: number } = {},
 ): Promise<AiExtractionSummary> {
   const manifest = await env.DB.prepare(
     "SELECT id, checksum, filename FROM file_asset WHERE project_id = ? AND virus_status = 'clean' ORDER BY id",
@@ -812,7 +812,7 @@ export async function runAiExtraction(
       ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase) =>
           setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase)
       : undefined;
-    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress });
+    const result = await runDrawingEnrichmentStage(env, { projectId, aiRunId: run.id, planPdfDocs, scheduleRows, onProgress, deadlineAt: opts.deadlineAt });
     drawingReadings = result.readings;
     drawingReport = result.report;
     const failedDrawingPhases = new Set((result.report?.files ?? []).flatMap((file) =>

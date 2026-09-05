@@ -67,7 +67,7 @@ export interface RunSpend {
 }
 
 type PlanFaceRead = { placements: (RecoveredFace & { planCandidateId: string })[] };
-type FaceReconcileRead = { pairs: { tag: string; frameId: string }[] };
+type FaceReconcileRead = { pairs: { tag: string; frameId: string }[]; absent?: string[] };
 
 const RENDER_DPI = 100;
 const CROP_DPI = 300;
@@ -117,9 +117,15 @@ export async function runFaceMappedParser(args: {
   sheetTitles: Map<number, string>;
   /** The caller's counter, where it spent before this engine started. */
   spend?: ReturnType<typeof spendCounter>;
+  /** When the caller started on this file and how many container calls it had
+   * made - the inspection, Phase A's renders - so the report clocks and counts
+   * the whole engine, not the part after Phase A. */
+  startedAt?: number;
+  containerCalls?: number;
+  pagesRendered?: number;
   deps: FaceMappedDeps;
 }): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
-  const started = Date.now();
+  const started = args.startedAt ?? Date.now();
   const progress = faceMappedProgress(async (event) => { await args.deps.onProgress?.(event); });
   const roster = args.scheduleRows.map((row) => row.tag);
   // A row whose width the schedule did not state is not a row that says zero.
@@ -133,7 +139,8 @@ export async function runFaceMappedParser(args: {
   const planStoreys = documentPlanStoreys(args.planPages, args.sheetTitles);
   const planText = args.planPages.map((page) => page.page.text).join(" ");
   const faceSheets = documentFaceSheets(args.elevationPages, planStoreys, planText);
-  let containerCalls = 0;
+  let containerCalls = args.containerCalls ?? 0;
+  let pagesRendered = args.pagesRendered ?? 0;
   const { spent, counted } = args.spend ?? spendCounter();
 
   // A page that will not render costs the openings on it and nothing else:
@@ -144,6 +151,7 @@ export async function runFaceMappedParser(args: {
   const renderFailures = new Map<number, string>();
   const pageImage = async (pageNo: number, box?: CropBoxPt, dpi = RENDER_DPI) => {
     containerCalls += 1;
+    pagesRendered += 1;
     try {
       const rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
       const image = rendered.images[0];
@@ -163,6 +171,9 @@ export async function runFaceMappedParser(args: {
     calibratedRatio.has(pageNo) ? "calibrated" as const : args.scaleSources?.get(pageNo) ?? null;
   // The first phase that lost an opening owns the loss (§7.7), named in the
   // handover's words (§12).
+  // ponytail: loss state is three maps side by side - unplaced (reason), lostAt
+  // (phase), faceKeys - snapshotted between phases; one typed result per phase
+  // when a fourth is needed, not before the release gate.
   const lostAt = new Map<string, FailurePhase>();
   const lostIn = (phase: FailurePhase) => {
     for (const tag of unplaced.keys()) if (!lostAt.has(tag)) lostAt.set(tag, phase);
@@ -311,6 +322,7 @@ export async function runFaceMappedParser(args: {
       lostAt,
       spent,
       containerCalls,
+      pagesRendered,
       startedAt: started,
     }),
   };
