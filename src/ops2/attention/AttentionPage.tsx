@@ -8,7 +8,7 @@ import { DESTINATION_ICON } from "../nav/icons";
 import { attentionGroups } from "./attention";
 import { useSummary } from "./useSummary";
 import { useMonitoring, formatAsAt, snapshotAge, formatDayLabel } from "./useMonitoring";
-import { capBreached, capOutstanding } from "../../data/monitoring";
+import { capOutstanding } from "../../data/monitoring";
 
 /**
  * The console's front door (design.md §5). One request (useSummary), grouped
@@ -206,6 +206,13 @@ export function AttentionPage() {
               ? "Unavailable. No Cloudflare account configured"
               : `Unavailable. Cloudflare did not answer at ${asAt}`;
         }
+        // Each card carries its OWN condition, both precomputed by the server
+        // (UX §6.2 asks for red *flags*). One shared boolean reddened a healthy
+        // balance because the cap was high, and a healthy cap because the
+        // balance was low — pointing the reader at the wrong number. The bell
+        // still counts the pair as ONE notification.
+        const balanceLow = snapshot.redBalance;
+        const capOver = snapshot.redCap;
         const capPct = money.available && money.capUsd > 0
           ? Math.round((money.billedSpendUsd / money.capUsd) * 100)
           : 0;
@@ -219,7 +226,7 @@ export function AttentionPage() {
                 <div className="att-pair">
                   <article
                     className="att-card"
-                    data-state={!money.available ? "unavailable" : snapshot.red ? "red" : undefined}
+                    data-state={!money.available ? "unavailable" : balanceLow ? "red" : undefined}
                     data-testid="monitoring-credit-balance"
                   >
                     <h3 className="att-card__label">Credit balance</h3>
@@ -229,7 +236,7 @@ export function AttentionPage() {
                     <p className="att-card__note">
                       {!money.available
                         ? unavailable
-                        : money.creditBalanceUsd < snapshot.floorUsd
+                        : balanceLow
                           ? `⚠ Below the $${snapshot.floorUsd.toFixed(2)} floor`
                           : "USD, as Cloudflare reports it"}
                     </p>
@@ -237,7 +244,7 @@ export function AttentionPage() {
                   </article>
                   <article
                     className="att-card"
-                    data-state={!money.available ? "unavailable" : snapshot.red ? "red" : undefined}
+                    data-state={!money.available ? "unavailable" : capOver ? "red" : undefined}
                     data-testid="monitoring-cap-outstanding"
                   >
                     {/* REMAINING, because the figure is headroom; the note
@@ -249,7 +256,7 @@ export function AttentionPage() {
                     <p className="att-card__note">
                       {!money.available
                         ? unavailable
-                        : capBreached(money, snapshot.ceilingPct)
+                        : capOver
                           ? `⚠ ${capPct}% of the $${money.capUsd.toFixed(2)} gateway cap used`
                           : `$${money.billedSpendUsd.toFixed(2)} of the $${money.capUsd.toFixed(2)} ${money.capSource} cap used (${capPct}%)`}
                     </p>

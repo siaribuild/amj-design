@@ -12,7 +12,7 @@ import {
 import { monitoringPayload } from "../lib/monitoring";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
-import { findOrCreateInternalUser, hasAssignedRole, hasOpsCredential, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
+import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issuableNow, issueQuote, ISSUABLE_FROM, ISSUE_BLOCKING_LINE_STATUSES } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
@@ -355,13 +355,14 @@ ops.get("/summary", async (c) => {
 // answered 401 to every real staff request while the local suite — which blanks
 // Access — stayed green.
 //
-// The 401/403 split (this panel's denial screens tell "sign in" from "not for
-// you") comes from hasOpsCredential, which asks the same question the same way.
+// One status for every refusal, like its siblings. This briefly split 401 from
+// 403 so the panel could say "sign in" rather than "not for you", but the panel
+// renders one message for both (useMonitoring.ts), and in production Access
+// turns anyone away before the Worker sees them — so the distinction cost a
+// second identity round-trip per denial and was never read.
 ops.get("/monitoring", async (c) => {
-  if (await resolveStaff(c.env, c.req.raw)) return c.json(await monitoringPayload(c.env));
-  return (await hasOpsCredential(c.env, c.req.raw))
-    ? c.json({ error: "forbidden" }, 403)
-    : c.json({ error: "unauthorized" }, 401);
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  return c.json(await monitoringPayload(c.env));
 });
 
 // GET /api/ops/queues/submissions — projects awaiting triage / review.

@@ -157,20 +157,6 @@ export async function resolveStaff(env: Env, req: Request): Promise<UserRow | nu
   return user && user.role !== "manufacturer" ? user : null;
 }
 
-/** Is there ANY ops credential on this request — never who, never whether they
- *  may see anything. resolveStaff is the gate; this only tells a denial apart:
- *  401 (nobody is signed in) from 403 (signed in, not staff), which the console's
- *  two denial screens say different things about.
- *
- *  Mirrors resolveInternalUser's own branch deliberately. Reading the session
- *  cookie unconditionally would answer "nobody" for every production request,
- *  because Cloudflare Access carries staff identity in a header and mints no
- *  cookie at all. */
-export async function hasOpsCredential(env: Env, req: Request): Promise<boolean> {
-  if (env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) return !!req.headers.get("Cf-Access-Jwt-Assertion");
-  return (await resolveUser(env, req)) !== null;
-}
-
 async function resolveInternalUser(env: Env, req: Request): Promise<UserRow | null> {
   const accessConfigured = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
   if (accessConfigured) {

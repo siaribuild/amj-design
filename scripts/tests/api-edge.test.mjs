@@ -1515,10 +1515,15 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
     });
 
     await t.test("ops monitoring: staff-only, and leaks nothing to anyone else", async () => {
-      // No session at all is 401 — distinct from "wrong role", which is 403.
-      const anonDenied = await requestJson(anon, "/api/ops/monitoring", {}, 401);
+      // 403 for everyone who is not staff, exactly like the 41 sibling ops
+      // routes. This route briefly answered 401 to a caller with no session, to
+      // let the panel say "sign in" rather than "not for you" — but the panel
+      // renders ONE message for both statuses (useMonitoring.ts), so the split
+      // cost a second identity round-trip on every denial and bought a
+      // distinction nothing read.
+      const anonDenied = await requestJson(anon, "/api/ops/monitoring", {}, 403);
       for (const key of ["balance", "spend", "cap", "count", "snapshot", "notificationCount"]) {
-        assert.equal(anonDenied.body[key], undefined, "401 body carries no monitoring values");
+        assert.equal(anonDenied.body[key], undefined, "403 body carries no monitoring values");
       }
 
       // A customer session exists but is not staff: 403, same leakage checks.

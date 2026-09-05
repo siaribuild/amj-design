@@ -20,7 +20,7 @@ async function fetchNotificationCount(): Promise<number> {
     try {
       const res = await fetch("/api/ops/monitoring", { credentials: "same-origin" });
       if (!res.ok) return cache?.value ?? 0;
-      const body = await res.json();
+      const body = (await res.json()) as { notificationCount?: unknown };
       const value = typeof body?.notificationCount === "number" ? body.notificationCount : 0;
       cache = { value, fetchedAt: Date.now() };
       for (const notify of subscribers) notify(value);
@@ -34,28 +34,42 @@ async function fetchNotificationCount(): Promise<number> {
   return inflight;
 }
 
+// ONE loop for the whole console, owned by the module and reference-counted by
+// its subscribers. Each hook used to start its own interval, and Ionic keeps
+// routed pages mounted — so timers accumulated page by page for as long as the
+// console stayed open, all asking the same question.
+let poll: ReturnType<typeof setInterval> | null = null;
+
+function refreshIfVisible() {
+  // A backgrounded tab polling all night is a request a minute nobody reads.
+  if (document.visibilityState === "visible") fetchNotificationCount();
+}
+
+function startPolling() {
+  if (poll) return;
+  poll = setInterval(refreshIfVisible, TTL_MS);
+  // Coming back to the tab is the moment the number is most likely stale and
+  // most likely to be looked at.
+  document.addEventListener("visibilitychange", refreshIfVisible);
+}
+
+function stopPollingIfIdle() {
+  if (subscribers.size > 0 || !poll) return;
+  clearInterval(poll);
+  poll = null;
+  document.removeEventListener("visibilitychange", refreshIfVisible);
+}
+
 export function useNotificationCount(): number {
   const [count, setCount] = useState(cache?.value ?? 0);
 
   useEffect(() => {
     subscribers.add(setCount);
+    startPolling();
     fetchNotificationCount();
-    // The console is a long-lived SPA: an ops2 tab can sit open all day. Asking
-    // once on mount meant the TTL was never consulted again, so a budget that
-    // went red — or recovered — at 10am was still showing its 9am state at
-    // 5pm. Only while the tab is actually being looked at: a backgrounded tab
-    // polling all night is a request per minute nobody reads.
-    const poll = setInterval(() => {
-      if (document.visibilityState === "visible") fetchNotificationCount();
-    }, TTL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") fetchNotificationCount();
-    };
-    document.addEventListener("visibilitychange", onVisible);
     return () => {
       subscribers.delete(setCount);
-      clearInterval(poll);
-      document.removeEventListener("visibilitychange", onVisible);
+      stopPollingIfIdle();
     };
   }, []);
 
@@ -66,6 +80,12 @@ export function useNotificationCount(): number {
 // ops2-frame.test.mjs; not part of the public hook surface.
 export const __testing = {
   fetchNotificationCount,
-  resetCache: () => { cache = null; inflight = null; subscribers.clear(); },
+  resetCache: () => {
+    cache = null;
+    inflight = null;
+    subscribers.clear();
+    stopPollingIfIdle();
+  },
   subscribers,
+  isPolling: () => poll !== null,
 };

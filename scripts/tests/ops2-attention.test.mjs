@@ -237,25 +237,31 @@ test("AttentionPage: monitoring section — useMonitoring wired, five load state
 // F3 (docs/runs/ai-parse-monitoring/06-verify.md): the red card must render
 // from the server-evaluated snapshot.red flag, never a client-side
 // recomputation of the raw money numbers against a threshold (UX §4/§6.2).
-test("AttentionPage: AI-budget cards render red from snapshot.red — never re-derived from raw numbers (F3)", () => {
+test("AttentionPage: each AI-budget card reddens from its OWN precomputed flag, never from raw numbers (F3, UX 6.2)", () => {
   const page = read("src/ops2/attention/AttentionPage.tsx");
   const bare = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   const dataStateExprs = [...bare.matchAll(/data-state=\{([^}]*)\}/g)].map((m) => m[1]);
-  const redExprs = dataStateExprs.filter((expr) => expr.includes("snapshot.red"));
+  // Two cards, two conditions, two server-evaluated flags. One shared boolean
+  // reddened a healthy balance because the cap was high (Codex review), which
+  // UX 6.2 rules out: two conditions red at once render two red cards, so one
+  // condition red must render one.
+  const redExprs = dataStateExprs.filter((expr) => /balanceLow|capOver/.test(expr));
   assert.ok(
     redExprs.length >= 2,
-    "both AI-budget cards' data-state must be driven by snapshot.red",
+    "each AI-budget card's data-state must be driven by its own red flag",
   );
+  const bareSource = bare.replace(/\s+/g, " ");
+  assert.match(bareSource, /const balanceLow = snapshot\.redBalance/);
+  assert.match(bareSource, /const capOver = snapshot\.redCap/);
   for (const expr of redExprs) {
     assert.ok(
       !/[<>]/.test(expr),
-      `data-state expression "${expr}" must not compare raw numbers to a threshold — use snapshot.red`,
+      `data-state expression "${expr}" must not compare raw numbers to a threshold — use the server's flag`,
     );
   }
 
   assert.match(bare, /snapshot\.floorUsd/, "the floor shown in red copy must come from the server snapshot");
-  assert.match(bare, /snapshot\.ceilingPct/, "the ceiling shown in red copy must come from the server snapshot");
   assert.match(bare, /Below the/, "credit-balance red note must state the floor was breached");
   assert.match(bare, /cap used/, "cap-outstanding red note must keep stating the cap usage");
 });

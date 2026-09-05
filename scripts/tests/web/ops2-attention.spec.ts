@@ -264,9 +264,9 @@ const READY_SNAPSHOT = {
   // red/floorUsd/ceilingPct: server merges these into the snapshot itself
   // (worker/lib/monitoring.ts monitoringPayload, commit 5d07807a) — useMonitoring.ts
   // requires all three on the snapshot object or it falls into "error" status.
-  red: false,
+  redBalance: false,
+  redCap: false,
   floorUsd: 5,
-  ceilingPct: 80,
   days: [
     { day: "2026-08-30", success: 2, error: 0 },
     { day: "2026-08-31", success: 3, error: 1 },

@@ -1,19 +1,40 @@
 // AI parse monitoring — pure core: snapshot types, bucketing, red evaluation.
 // No IO, no Worker types. Design: docs/runs/ai-parse-monitoring/02-design.md §3.1-3.3.
 
+/** The money half of a snapshot. Declared HERE, once: the Worker's IO shell and
+ *  the console's hook both used to carry their own copy of this union, which is
+ *  two places for one fact and the way they come to disagree. */
+export type MoneySnapshot =
+  | { available: true; creditBalanceUsd: number; billedSpendUsd: number; capUsd: number; capSource: "gateway" | "account" }
+  | { available: false; reason: string };
+
+/** What the cron stores and this module vouches for. The route adds the
+ *  evaluated `red` and its thresholds on the way out (MonitoringPayload). */
+export type StoredSnapshot = {
+  takenAt: string;
+  money: MoneySnapshot;
+  days: { day: string; success: number; error: number }[];
+  success7d: number;
+  error7d: number;
+};
+
 // REBUILDS the snapshot field by field rather than validating in place. This is
 // the boundary between stored JSON and a staff-visible payload: returning the
 // caller's own object would carry anything else the value happened to hold —
 // a token, an account id, a debug field — straight through to the client. Only
 // the fields below ever cross.
-export function parseMonitoringSnapshot(body: unknown): unknown {
+//
+// The declared return type is the point: as `unknown` it forced an `as any` at
+// every call site, so the one module that actually knows the shape was the only
+// one that could not say it.
+export function parseMonitoringSnapshot(body: unknown): StoredSnapshot | null {
   if (typeof body !== "object" || body === null) return null;
   const record = body as Record<string, unknown>;
   if (typeof record.money !== "object" || record.money === null) return null;
   const source = record.money as Record<string, unknown>;
   // === true / === false only: anything else (a string "yes") would match
   // neither branch, skip every field check below, and pass as a valid snapshot.
-  let money: Record<string, unknown>;
+  let money: MoneySnapshot;
   if (source.available === true) {
     if (typeof source.creditBalanceUsd !== "number") return null;
     if (typeof source.billedSpendUsd !== "number") return null;
@@ -24,7 +45,7 @@ export function parseMonitoringSnapshot(body: unknown): unknown {
       creditBalanceUsd: source.creditBalanceUsd,
       billedSpendUsd: source.billedSpendUsd,
       capUsd: source.capUsd,
-      capSource: source.capSource,
+      capSource: source.capSource as "gateway" | "account",
     };
   } else if (source.available === false) {
     if (typeof source.reason !== "string") return null;
@@ -145,19 +166,33 @@ export function capBreached(
   return (money.billedSpendUsd / money.capUsd) * 100 > ceilingPct;
 }
 
+/** The two conditions, answered separately.
+ *
+ *  UX §6.2 asks for precomputed red *flags* and says two conditions red at once
+ *  render as two red cards — so one condition red must redden one card. A
+ *  single boolean could not express that: painting both cards from it reddened
+ *  a healthy balance because the cap was high, telling the reader to act on the
+ *  wrong number. The bell still counts the pair as ONE notification. */
+export function evaluateRedFlags(
+  snapshot: { money: MoneySnapshot },
+  floorUsd: number,
+  ceilingPct: number,
+): { balance: boolean; cap: boolean } {
+  const money = snapshot.money;
+  if (money.available === false) return { balance: false, cap: false };
+  return {
+    balance: money.creditBalanceUsd < floorUsd,
+    cap: capBreached(money, ceilingPct),
+  };
+}
+
 export function evaluateRed(
-  snapshot: {
-    money:
-      | { available: true; creditBalanceUsd: number; billedSpendUsd: number; capUsd: number }
-      | { available: false };
-  },
+  snapshot: { money: MoneySnapshot },
   floorUsd: number,
   ceilingPct: number,
 ): boolean {
-  const money = snapshot.money;
-  if (money.available === false) return false;
-  if (money.creditBalanceUsd < floorUsd) return true;
-  return capBreached(money, ceilingPct);
+  const flags = evaluateRedFlags(snapshot, floorUsd, ceilingPct);
+  return flags.balance || flags.cap;
 }
 
 export function capOutstanding(money: { capUsd: number; billedSpendUsd: number }): number {

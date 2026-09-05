@@ -66,6 +66,11 @@ export interface Env {
   /** Percent-of-cap ceiling above which billed spend evaluates red (design
    *  §3.3). Defaults in code to 80. */
   AI_CAP_CEILING_PCT?: string;
+  /** Milliseconds before a Cloudflare billing request is aborted. Defaults in
+   *  code to 10000; set only by the test that proves the abort rather than
+   *  waiting ten seconds for it. Declared because an undeclared env read is
+   *  one nobody can find. */
+  CF_TIMEOUT_MS?: string;
   /** Primary multimodal model for the LLM building-modelling tier (LLM strategy
    *  §13.1). Defaults in code to google/gemini-3.6-flash; override without a code
    *  change once the model is enabled in the gateway. */

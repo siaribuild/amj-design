@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIonViewWillEnter } from "@ionic/react";
-import { parseMonitoringSnapshot } from "../../data/monitoring";
+import { parseMonitoringSnapshot, type MoneySnapshot, type StoredSnapshot } from "../../data/monitoring";
 
-export type MoneySnapshot =
-  | { available: true; creditBalanceUsd: number; billedSpendUsd: number; capUsd: number; capSource: "gateway" | "account" }
-  | { available: false; reason: string };
+export type { MoneySnapshot };
 
-export type MonitoringSnapshot = {
-  takenAt: string;
-  money: MoneySnapshot;
-  success7d: number;
-  error7d: number;
-  days: { day: string; success: number; error: number }[];
-  red: boolean;
+/** What the ROUTE returns: the stored snapshot plus the server's own red
+ *  evaluation and the thresholds it used. Built on the core's StoredSnapshot
+ *  rather than restating its five fields, which is how the two copies of this
+ *  shape would otherwise drift apart. */
+export type MonitoringSnapshot = StoredSnapshot & {
+  redBalance: boolean;
+  redCap: boolean;
   floorUsd: number;
-  ceilingPct: number;
 };
 
 export type MonitoringLoad =
@@ -67,15 +64,22 @@ export function useMonitoring(): { load: MonitoringLoad; reload: () => void } {
         const enriched = record.snapshot as Record<string, unknown>;
         if (
           parsed === null ||
-          typeof (parsed as Record<string, unknown>).takenAt !== "string" ||
-          typeof enriched.red !== "boolean" ||
-          typeof enriched.floorUsd !== "number" ||
-          typeof enriched.ceilingPct !== "number"
+          typeof enriched.redBalance !== "boolean" ||
+          typeof enriched.redCap !== "boolean" ||
+          typeof enriched.floorUsd !== "number"
         ) {
           setLoad({ status: "error", headline: "Couldn't load the monitoring figures", detail: "The snapshot could not be trusted, so none is shown. Nothing is wrong with parsing itself." });
           return;
         }
-        setLoad({ status: "ready", snapshot: { ...parsed, red: enriched.red, floorUsd: enriched.floorUsd, ceilingPct: enriched.ceilingPct } as MonitoringSnapshot });
+        setLoad({
+          status: "ready",
+          snapshot: {
+            ...parsed,
+            redBalance: enriched.redBalance,
+            redCap: enriched.redCap,
+            floorUsd: enriched.floorUsd,
+          },
+        });
       })
       .catch(() => {
         if (!live) return;
@@ -135,7 +139,8 @@ const MELBOURNE_WEEKDAY = new Intl.DateTimeFormat("en-AU", { timeZone: "UTC", we
  * UTC midnight — the page does no timezone maths of its own (UX §5).
  */
 export function formatDayLabel(dayKey: string): { weekday: string; date: string } {
-  const [year, month, day] = dayKey.split("-").map(Number);
-  const at = new Date(Date.UTC(year, month - 1, day));
-  return { weekday: MELBOURNE_WEEKDAY.format(at), date: String(day) };
+  // An ISO date-only string parses as UTC midnight by spec, which is exactly
+  // what the hand-rolled split/Date.UTC pair was reconstructing.
+  const at = new Date(dayKey);
+  return { weekday: MELBOURNE_WEEKDAY.format(at), date: String(at.getUTCDate()) };
 }

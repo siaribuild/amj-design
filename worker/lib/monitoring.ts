@@ -1,7 +1,10 @@
 // AI parse monitoring — IO shell: D1 counts, CF money fetch, KV snapshot,
 // notification sources. Design: docs/runs/ai-parse-monitoring/02-design.md §3.2, §5, §6.
 import type { Env } from "../types";
-import { assembleParseCounts, evaluateRed, parseMonitoringSnapshot, parseWindowStart } from "../../src/data/monitoring";
+import {
+  assembleParseCounts, evaluateRed, evaluateRedFlags, parseMonitoringSnapshot, parseWindowStart,
+  type MoneySnapshot,
+} from "../../src/data/monitoring";
 
 const PARSE_OUTCOME_SQL = `SELECT updated_at,
        CASE WHEN status = 'completed' THEN 'success' ELSE 'error' END AS outcome
@@ -23,10 +26,6 @@ export async function writeMonitoringSnapshot(env: Env, fetchImpl: typeof fetch 
   await env.KV.put("monitoring:snapshot", JSON.stringify(snapshot));
 }
 
-type MoneySnapshot =
-  | { available: true; creditBalanceUsd: number; billedSpendUsd: number; capUsd: number; capSource: "gateway" | "account" }
-  | { available: false; reason: string };
-
 // Logs only the endpoint path suffix + status — never the token, never the
 // Authorization header, never the account id in a full URL (design §8).
 function pathSuffix(url: string): string {
@@ -47,7 +46,7 @@ async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<a
     signal: AbortSignal.timeout(Number(env.CF_TIMEOUT_MS ?? CF_TIMEOUT_MS)),
   });
   if (!res.ok) throw new Error(`status ${res.status} for ${pathSuffix(url)}`);
-  const body = await res.json();
+  const body = await res.json<{ result?: unknown }>();
   return body.result;
 }
 
@@ -150,9 +149,18 @@ export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetc
 }
 
 export async function readMonitoringSnapshot(env: Env): Promise<ReturnType<typeof parseMonitoringSnapshot>> {
+  // JSON.parse belongs INSIDE this seam. Left outside, a truncated or
+  // corrupted KV value threw out of the route as a 500 — while the client
+  // already had a "the snapshot could not be trusted" state that would never
+  // be reached. An unreadable value is no snapshot, which is a thing the page
+  // knows how to say.
   const raw = await env.KV.get("monitoring:snapshot");
   if (!raw) return null;
-  return parseMonitoringSnapshot(JSON.parse(raw));
+  try {
+    return parseMonitoringSnapshot(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }
 
 // ctx carries the ONE snapshot read the route makes, so a second source never
@@ -188,9 +196,12 @@ export async function monitoringPayload(env: Env): Promise<{ snapshot: unknown; 
   if (!snapshot) return { snapshot: null, notificationCount: await notificationCount(env, null) };
   const floor = Number(env.AI_CREDIT_FLOOR_USD ?? 5);
   const ceiling = Number(env.AI_CAP_CEILING_PCT ?? 80);
-  const red = evaluateRed(snapshot as any, floor, ceiling);
+  const red = evaluateRedFlags(snapshot, floor, ceiling);
   return {
-    snapshot: { ...(snapshot as Record<string, unknown>), red, floorUsd: floor, ceilingPct: ceiling },
+    // floorUsd travels because the balance card prints it ("Below the $5.00
+    // floor"). The ceiling does not: the cap card shows the percentage USED,
+    // never the threshold, so shipping it would be a field nothing reads.
+    snapshot: { ...snapshot, redBalance: red.balance, redCap: red.cap, floorUsd: floor },
     notificationCount: await notificationCount(env, snapshot),
   };
 }

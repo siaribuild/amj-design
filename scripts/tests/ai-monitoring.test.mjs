@@ -432,7 +432,7 @@ test("notificationCount: one source, sums to 1 when the stored snapshot is red",
   assert.equal(count, 1);
 });
 
-test("monitoringPayload: ships the server-evaluated red flag and floor/ceiling, from ONE KV read (F3/F11)", async () => {
+test("monitoringPayload: ships a red flag PER CONDITION and the floor, from ONE KV read (F3/F11, UX 6.2)", async () => {
   let getCalls = 0;
   const redSnapshot = {
     takenAt: new Date().toISOString(),
@@ -453,9 +453,13 @@ test("monitoringPayload: ships the server-evaluated red flag and floor/ceiling, 
   };
   const payload = await monitoringPayload(env);
   assert.equal(getCalls, 1, "one KV read must serve both the snapshot and the notification count");
-  assert.equal(payload.snapshot.red, true);
+  // Balance $1 is under the $5 floor; spend 19/20 is 95%, over the 80% ceiling.
+  // Both conditions trip here, so both cards redden — and the bell still counts
+  // the pair as ONE notification.
+  assert.equal(payload.snapshot.redBalance, true);
+  assert.equal(payload.snapshot.redCap, true);
   assert.equal(payload.snapshot.floorUsd, 5);
-  assert.equal(payload.snapshot.ceilingPct, 80);
+  assert.equal(payload.snapshot.ceilingPct, undefined, "the ceiling is never displayed, so it is never shipped");
   assert.equal(payload.notificationCount, 1);
 });
 
@@ -819,4 +823,39 @@ test("fetchMoneyNumbers: a switched-off spend limit is not a cap", async () => {
   );
   // Neither source has an enabled cap, so the money numbers are not claimed.
   assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+});
+
+test("readMonitoringSnapshot: unreadable stored JSON is no snapshot, not a thrown request", async () => {
+  // JSON.parse sat outside the strict parser, so a truncated or corrupted KV
+  // value threw straight out of the route as a 500 — the one shape the client's
+  // "snapshot could not be trusted" path was written for and never saw.
+  const env = { KV: { get: async () => "{not json at all" } };
+  assert.equal(await readMonitoringSnapshot(env), null);
+});
+
+test("monitoringPayload: unreadable stored JSON answers empty rather than failing the request", async () => {
+  const env = { KV: { get: async () => "{not json at all" } };
+  assert.deepEqual(await monitoringPayload(env), { snapshot: null, notificationCount: 0 });
+});
+
+
+test("monitoringPayload: one breached condition reddens only its own card", async () => {
+  // A low balance used to redden the cap card too, and a high cap the balance
+  // card — each pointing the reader at a number that was perfectly healthy.
+  const snapshot = {
+    takenAt: new Date().toISOString(),
+    money: { available: true, creditBalanceUsd: 1, billedSpendUsd: 1, capUsd: 20, capSource: "gateway" },
+    days: Array.from({ length: 7 }, () => ({ day: "2026-09-05", success: 0, error: 0 })),
+    success7d: 0,
+    error7d: 0,
+  };
+  const env = {
+    AI_CREDIT_FLOOR_USD: "5",
+    AI_CAP_CEILING_PCT: "80",
+    KV: { get: async () => JSON.stringify(snapshot) },
+  };
+  const payload = await monitoringPayload(env);
+  assert.equal(payload.snapshot.redBalance, true, "$1 is below the $5 floor");
+  assert.equal(payload.snapshot.redCap, false, "5% of the cap is not a cap problem");
+  assert.equal(payload.notificationCount, 1, "still one notification, not two");
 });
