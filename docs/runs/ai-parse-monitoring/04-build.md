@@ -115,3 +115,42 @@ and is included with it.
 
 `npm run test:ops2` 107/107, `npm run test:api` 77/77, `npm run
 typecheck:gate` clean, full `npm test` 321/321.
+
+## Review fixes — F1, F2, F4, F5 (06-verify.md)
+
+Files: `scripts/tests/web/ops2-attention.spec.ts` only. `wrangler.jsonc` and
+`worker/lib/monitoring.ts` needed no change — F5's server-side
+`account_id_missing` reason and the UI's distinct "No Cloudflare account
+configured" copy were already shipped and tested (see F3 entry above); the
+finding's own text confirmed this, asking only for a browser-level test.
+`CF_ACCOUNT_ID` in `wrangler.jsonc` stays the placeholder string — never
+invented a real one.
+
+**F2** (`takenAt` hard-pinned to a wall-clock date, breaks once real time
+passes it): `FRESH_TAKEN_AT`/`READY_SNAPSHOT` fixture now computes
+`takenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString()` — relative to
+test run time, not a fixed date.
+
+**F4** (stale state never rendered in a browser): one new test, "monitoring:
+stale snapshot renders the stale sentence and per-card as-at stamps" —
+`takenAt` 45 minutes back, asserts the `.att-asat` freshness line contains
+"The 10-minute job may have stopped." and all four `.att-card__stamp`
+elements are visible.
+
+**F1** (bell has zero browser coverage): three new tests, desk bell only
+(`OpsPage.tsx`'s `.ops2-bell`) — "bell: no badge when notificationCount is
+0", "bell: badge reads 1 when notificationCount is 1", "bell: clicking it
+lands on /attention" (navigates from `/projects` first, so the click proves
+a real route change). Phone tab badge (`Ops2App.tsx`'s `.ops2-tab-badge`) is
+deliberately not duplicated — both read the same `useNotificationCount()`
+module-level cache from the same `/api/ops/monitoring` fetch (see the
+shared-source comment at `OpsPage.tsx:168`), so one surface's coverage
+stands for both sources of truth being wired correctly.
+
+**F5**: confirmed already covered by the existing "monitoring: money
+unavailable with a missing/placeholder CF_ACCOUNT_ID says so distinctly from
+a missing token" test — no server or UI change, no new test needed beyond
+F1/F4 above.
+
+`npx playwright test scripts/tests/web/ops2-attention.spec.ts` 21/21 (4 new:
+1 stale + 3 bell). `npm run typecheck:gate` clean. Full `npm test` 321/321.

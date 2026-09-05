@@ -252,11 +252,21 @@ test("a signed-in customer (non-staff) loading /attention gets the unauthorised 
 // Monitoring (T5) — second, independent request. SUMMARY_URL stubbed too so
 // the page's primary section resolves and stays out of the way.
 const MONITORING_URL = (url: URL) => url.pathname === "/api/ops/monitoring";
+// Relative to test-run time, not hard-pinned (F2, 06-verify.md): a fixed past
+// timestamp eventually crosses the 30-minute stale threshold on its own and
+// fails on a clock, not on a real regression.
+const FRESH_TAKEN_AT = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 const READY_SNAPSHOT = {
-  takenAt: "2026-09-05T04:30:00.000Z",
+  takenAt: FRESH_TAKEN_AT,
   money: { available: true, creditBalanceUsd: 12.34, billedSpendUsd: 40, capUsd: 50, capSource: "gateway" },
   success7d: 20,
   error7d: 3,
+  // red/floorUsd/ceilingPct: server merges these into the snapshot itself
+  // (worker/lib/monitoring.ts monitoringPayload, commit 5d07807a) — useMonitoring.ts
+  // requires all three on the snapshot object or it falls into "error" status.
+  red: false,
+  floorUsd: 5,
+  ceilingPct: 80,
   days: [
     { day: "2026-08-30", success: 2, error: 0 },
     { day: "2026-08-31", success: 3, error: 1 },
@@ -294,6 +304,19 @@ test("monitoring: money unavailable shows an unavailable state, not zero, while 
   await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
 });
 
+test("monitoring: money unavailable with a missing/placeholder CF_ACCOUNT_ID says so distinctly from a missing token", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, money: { available: false, reason: "account_id_missing" } }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  const credit = page.getByTestId("monitoring-credit-balance");
+  await expect(credit).toContainText("Unavailable. No Cloudflare account configured");
+  await expect(credit).not.toContainText("No Cloudflare token configured");
+  await expect(credit).not.toContainText("$0.00");
+});
+
 test("monitoring: an all-zero window renders an explicit empty chart state", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
   const zeroDays = READY_SNAPSHOT.days.map((d) => ({ ...d, success: 0, error: 0 }));
@@ -327,6 +350,53 @@ test("monitoring: a 500 shows the error panel with a retry button", async ({ pag
   const errorPanel = page.getByTestId("monitoring-error");
   await expect(errorPanel).toBeVisible();
   await expect(errorPanel.getByRole("button", { name: "Try again" })).toBeVisible();
+});
+
+test("monitoring: stale snapshot renders the stale sentence and per-card as-at stamps", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  const staleTakenAt = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, takenAt: staleTakenAt }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  await expect(page.locator(".att-asat")).toContainText("The 10-minute job may have stopped.");
+  await expect(page.getByTestId("monitoring-credit-balance").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-success-count").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-error-count").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-cap-outstanding").locator(".att-card__stamp")).toBeVisible();
+});
+
+const PROJECTS = `${OPS2}/projects`;
+const QUEUE_URL = (url: URL) => url.pathname === "/api/ops/projects";
+
+test("bell: no badge when notificationCount is 0", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 0 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.goto(PROJECTS);
+
+  const bell = page.locator(".ops2-bell");
+  await expect(bell).toBeVisible();
+  await expect(bell.locator(".ops2-bell__badge")).toHaveCount(0);
+});
+
+test("bell: badge reads 1 when notificationCount is 1", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 1 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.goto(PROJECTS);
+
+  await expect(page.locator(".ops2-bell__badge")).toHaveText("1");
+});
+
+test("bell: clicking it lands on /attention", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 1 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.goto(PROJECTS);
+
+  await page.locator(".ops2-bell").click();
+  await expect(page).toHaveURL(ATTENTION);
+  await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
 });
 
 test("the unauthorised panel has no retry — pressing it would fail the same way (mock §3.5)", async ({ browser }) => {
