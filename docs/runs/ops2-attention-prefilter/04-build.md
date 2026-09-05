@@ -96,3 +96,19 @@ genuine timing race, not a permanent break — it just always loses on the direc
 in `src/ops2/projects/ProjectsPage.tsx` (unify the two effects, or gate the reset on something
 other than a ref racing an async Ionic lifecycle event), which is outside the files this task may
 touch. Left red rather than weakened or worked around.
+
+## t6 - Record the vocabulary: CONTEXT.md term and ADR 0018
+
+Files: `CONTEXT.md`, `docs/adr/0018-queue-attention-prefilter-own-axis.md`. Doc-only, no
+Probity-gated file touched, no test.
+
+CONTEXT.md: 'Attention (destination)' now states the four project counts derive from queue
+rows through `selectProjects(rows, attentionQuery(key)).length`, not the summary body. New
+'Attention prefilter' entry: queue's link-set fourth query axis, one-shot `?attn=` consumption,
+not a refinement (ADR 0018), distinct from the record's Attention filter pill.
+
+ADR 0018: records design §8.1 — refinements fail criteria 4/10 structurally (chip-riding makes
+"awaiting payment" an empty intersection under default `us` chip; untoggle-restore would hijack
+`ready`'s semantics), plus independently against owner's 2026-09-01 no-extra-controls ruling.
+
+Nothing further needed by next task from t6.
