@@ -19,3 +19,27 @@ per design (t1's worker DTO change was already committed/merged before this task
 
 Next task (t3, attention.ts + AttentionPage) can import `ATTENTION_FILTERS`/`attentionQuery` directly —
 `selectProjects(rows, attentionQuery(key)).length` is the count contract.
+
+## t3 - Derive the Attention gate's four project counts from queue rows through the one selector
+
+Files: `src/ops2/attention/attention.ts`, `src/ops2/attention/AttentionPage.tsx`,
+`scripts/tests/ops2-attention.test.mjs`. Commit `7df23973`.
+
+`SummaryCounts` narrowed to `newEnquiries`/`tradeApplications` (parseSummary strict on those two
+only, old project-count fields go unread). New `combineLoads(summary, queue): AttentionLoad`,
+precedence unauthorised > error > loading > ready (only `summary` can be unauthorised — queue
+folds 401/403 into error). `attentionGroups(counts, rows)` computes each project row's count via
+`selectProjects(rows, attentionQuery(key)).length`, href = projects path + `?attn=<key>`;
+enquiries/customers rows unchanged (summary counts, no query string). Zero-suppression/testid keys
+unchanged. `AttentionPage` now calls `useSummary()` + `useProjectQueue()`, merges via
+`combineLoads`, ready branch calls `attentionGroups(load.counts, load.rows)`; skeleton/error/
+unauthorised JSX untouched.
+
+Tests: PA-PF fixture counts == filtered-list lengths per key, state-move membership swap
+(criterion 6), PF-proves-narrowing (5), combineLoads precedence (all 4 branches), href shape
+(`?attn=<key>` on project rows, no query on enquiries/customers), zero-suppression, parseSummary
+strict + ignores old project fields. 17 tests, all green; `test:ops2` (134) and
+`typecheck:gate` both green.
+
+Next task (t4, ProjectsPage `?attn=` consumption per design §3.3) can use `attentionFromSearch`/
+`attentionQuery` from queue.ts directly — nothing in this task's files needs revisiting.
