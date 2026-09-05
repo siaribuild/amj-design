@@ -43,3 +43,25 @@ strict + ignores old project fields. 17 tests, all green; `test:ops2` (134) and
 
 Next task (t4, ProjectsPage `?attn=` consumption per design §3.3) can use `attentionFromSearch`/
 `attentionQuery` from queue.ts directly — nothing in this task's files needs revisiting.
+
+## t4 - Make ProjectsPage consume ?attn=: apply, show in the active strip, clear to Needs us, reset on plain re-entry
+
+Files: `src/ops2/projects/ProjectsPage.tsx`, `src/ops2/projects/queue.ts`,
+`scripts/tests/web/ops2-projects.spec.ts`. Commit `e17e0d2d`.
+
+The `?wait=` effect became the `?attn=` effect: valid key → `attentionQuery(key)`, unrecognised →
+`EMPTY_QUERY`, either way `history.replace(PROJECTS.path)` strips the param (unchanged pathname
+guard). New `useIonViewWillEnter` resets `query.attention` to `EMPTY_QUERY` on any re-entry whose
+search carries no `attn` (rail nav, back-from-record) — reads location via a ref so the
+arrival-that-carries-the-param isn't raced. `pq-active` strip now renders on
+`attentionLabel || activeRefinements.length`, prefilter label leading; its Clear applies
+`EMPTY_QUERY` when a prefilter is on, else the old refinements-only clear. `chipFromSearch`
+deleted from queue.ts (superseded by t2's `attentionFromSearch`) along with its ProjectsPage import.
+
+Tests (5 new, `ops2-projects.spec.ts`, all against the QUEUE_URL stub except the rewritten sibling
+test): apply+narrow+Clear-to-Needs-us, rail-nav/back-from-record reset, bogus+3 injection payloads
+→ default set with nothing echoed, signed-out → `queue-error` + zero rows. All 22 web tests green,
+`test:ops2` node suites green, `typecheck:gate` green.
+
+Nothing outstanding for t5 (attention web spec rewrite) — it only touches
+`scripts/tests/web/ops2-attention.spec.ts`.
