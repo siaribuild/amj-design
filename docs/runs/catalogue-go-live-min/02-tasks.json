@@ -1,0 +1,126 @@
+[
+  {
+    "id": "T1",
+    "title": "Split plan module out of apply script; testable run() with injectable fetch, token pre-flight, atomic write, summary line",
+    "files": [
+      "scripts/catalogue/go-live-plan.mjs",
+      "scripts/catalogue/apply-go-live-min.mjs",
+      "scripts/tests/fixtures/go-live-world.mjs",
+      "scripts/tests/catalogue-go-live.test.mjs",
+      "package.json"
+    ],
+    "tests": [
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "done_when": "go-live-plan.mjs holds the sheet data and pure logic moved verbatim from apply-go-live-min.mjs L64-493 and L511-613, exported per design §3, with plan() returning summary {amend, create}. apply-go-live-min.mjs is a thin CLI exporting resolveToken(env) and run({write, verify, fetchImpl, log, error}) -> exit code, with query/mutate routed through fetchImpl, the chunk helper and 40-per-batch write loop deleted in favour of ONE mutate(mutations) call, --write refusing with a clear message and exit 1 when resolveToken() is null BEFORE any network request, and main guarded by import.meta.url === pathToFileURL(process.argv[1]).href. Fixture exports makeWorld() (plan accepts it with 0 problems, glazing option docs generated from NEW_PROFILES rows) and makeTransport(world) recording every request. Red-first tests pass: dry run via fake transport records ZERO POST requests and prints '21 amend target(s), 1 create target(s)' on the fixture; run({write:true}) with no token returns 1 with zero requests recorded. package.json: test file added to the test:pure list (line 17) and a test:go-live script added. Live check: node scripts/catalogue/apply-go-live-min.mjs still dry-runs clean against Sanity.",
+    "after": [],
+    "criteria": [
+      "1",
+      "26",
+      "30",
+      "31"
+    ]
+  },
+  {
+    "id": "T2",
+    "title": "assertSafe destructive-plan guard + NULL-options guard",
+    "files": [
+      "scripts/catalogue/go-live-plan.mjs",
+      "scripts/catalogue/apply-go-live-min.mjs",
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "tests": [
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "done_when": "go-live-plan.mjs exports assertSafe(mutations) -> string[] violations, allow-list per design §4: mutation keys within {createIfNotExists, createOrReplace, patch}; no createOrReplace of _type 'product'; patch keys within {id, set}; no set key equal to 'slug' or starting 'slug.'; no target id starting 'drafts.'. run() calls it on every path: dry run prints violations and exits 1, --write aborts before sending anything. Product loop omits the options key from set when source?.options == null && !p.hardware (NULL never becomes []). Red-first tests pass: assertSafe on plan(makeWorld()).mutations is []; injected delete mutation, slug set, and product createOrReplace each produce a violation and abort a --write before any POST; the off-sheet disable patch sets exactly {disabled: true}; no set anywhere in the plan carries a slug key; a fixture product with options null and no column-H hardware gets no options key in its patch.",
+    "after": [
+      "T1"
+    ],
+    "criteria": [
+      "2",
+      "3",
+      "8",
+      "20",
+      "32"
+    ]
+  },
+  {
+    "id": "T3",
+    "title": "Plan-logic breakage checks (criterion-29 quartet plus field-level assertions)",
+    "files": [
+      "scripts/tests/catalogue-go-live.test.mjs",
+      "scripts/catalogue/go-live-plan.mjs"
+    ],
+    "tests": [
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "done_when": "Tests over the go-live-plan.mjs exports, each failing if the named logic is broken: one-row-published (exactly one published row per KEEP_PUBLISHED profile after keyed patches; zero-or-two-published fixture yields a problem naming the profile, and problems make run() exit non-zero; published row carries uValue and shgc); hardware-alignment (alignHardware makes column-H standard, demotes previous standard to optional, never shrinks the list, leaves non-hardware options alone); dimension-rule-merge (buildDimensionRule replaces bounds, carries foreign keys through, recomputes maxAreaM2; door minima 1900 and AMJ80 slider max 2400 asserted from P); nothing-deleted (no delete mutation in the full plan). Field assertions from P and NEW_PROFILES: derived rows' certificationRef starts 'DERIVED' with no wersWindowId and the owning P notes repeat the derivation; no 'Uw' in paragraphs of any P entry with uw null; amj80-series-awning-window uses profile thermal-amj80t-thermally-broken-awning-window named 'AMJ80ST Awning Window' and no mutation targets the amj80-awning profile; amj80t-casement-door is tb:true with 5+12+5 glass; specs and keySpecs both carry Grade; Night Sky is the only isDefault:true colour, no colour removed; AMJ72T pair and AMJ68 bi-fold patch frameSystem to sys-80 and no mutation targets sys-72. go-live-plan.mjs edited only where a test exposes drift from the spec.",
+    "after": [
+      "T2"
+    ],
+    "criteria": [
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "27",
+      "29"
+    ]
+  },
+  {
+    "id": "T4",
+    "title": "Convergent NEW_PROFILES step + --verify as replan-to-zero-drift",
+    "files": [
+      "scripts/catalogue/apply-go-live-min.mjs",
+      "scripts/catalogue/go-live-plan.mjs",
+      "scripts/tests/catalogue-go-live.test.mjs",
+      "scripts/tests/fixtures/go-live-world.mjs"
+    ],
+    "tests": [
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "done_when": "loadWorld also fetches the six NEW_PROFILES ids with every authored field into world.fullProfiles; go-live-plan.mjs exports normProfile(doc) (authored fields only, published defaulted false, absent keys dropped) and plan step 2 emits createOrReplace only when !same(normProfile(existing), normProfile(desired)). --verify = loadWorld + plan + assertSafe: any remaining mutation prints 'DRIFT <documentId>: <changed field keys>' (patch -> Object.keys(set), create -> 'missing') and fails; the existing estimator-view GROQ table check is kept unchanged. Fixture gains altered(world, docId, field, value). Red-first tests pass: run({verify:true}) on a converged fixture returns 0; on an altered fixture returns 1 with output naming both the document id and the field key; plan on the converged fixture emits no NEW_PROFILES createOrReplace.",
+    "after": [
+      "T3"
+    ],
+    "criteria": [
+      "7",
+      "28"
+    ]
+  },
+  {
+    "id": "T5",
+    "title": "rate-cards.sql scan test, no-remote-D1 scan, CONTEXT.md term, local D1 rehearsal, regression suites",
+    "files": [
+      "scripts/tests/catalogue-go-live.test.mjs",
+      "CONTEXT.md"
+    ],
+    "tests": [
+      "scripts/tests/catalogue-go-live.test.mjs"
+    ],
+    "done_when": "Tests read docs/runs/catalogue-go-live-min/rate-cards.sql WITHOUT modifying it (file stays byte-identical in the diff): comments stripped, no DELETE/DROP/ALTER/CREATE TABLE token; statements only UPDATE pricing_rate_card and INSERT INTO pricing_rate_card; every UPDATE carries the version-bump expression \"'v' || (CAST(substr(version, 2) AS INTEGER) + 1)\" and updated_at; every INSERT row starts at 'v1'; '354.64' present and '322.40' absent. A source-scan test asserts neither scripts/catalogue/apply-go-live-min.mjs nor scripts/catalogue/go-live-plan.mjs contains 'child_process' or 'wrangler'. CONTEXT.md gains the 'Derived thermal row' glossary entry from design §8 near 'Authored-as-none vs not-yet-authored'. Developer executes the local D1 rehearsal from design §6 (db:migrate:local, wrangler d1 execute --local --file rate-cards.sql, SELECT checks): five new cards at v1, three old differently-keyed cards still present, pricing_rate_card row count not decreased, and a go-live product prices locally. Regression suites named in design §6 run green: test:catalogue, estimator-rules, seo, unit (GST display).",
+    "after": [
+      "T4"
+    ],
+    "criteria": [
+      "4",
+      "5",
+      "6",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "33",
+      "34",
+      "35"
+    ]
+  }
+]
