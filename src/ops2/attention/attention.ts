@@ -2,34 +2,34 @@
 // scripts/tests/ops2-attention.test.mjs exactly the way
 // ops2-navigation.test.mjs bundles destinations.ts.
 //
-// Design: docs/runs/ops2-attention/02-design.md §3.
+// Design: docs/runs/ops2-attention-prefilter/02-design.md §3.2.
 
-import { WAIT_CHIPS, type ChipKey } from "../projects/queue";
 import { destination, type DestinationId } from "../nav/destinations";
+import {
+  ATTENTION_FILTERS,
+  attentionQuery,
+  selectProjects,
+  type AttentionKey,
+  type ProjectQueueRow,
+} from "../projects/queue";
+import type { SummaryLoad } from "./useSummary";
+import type { QueueLoad } from "../projects/useProjectQueue";
 
+/** Only what Attention still reads from /api/ops/summary (P4) — the four
+ *  project counts moved to the queue selector below. */
 export type SummaryCounts = {
-  submissions: number;
-  inReview: number;
-  readyToIssue: number;
-  awaitingPayment: number;
   newEnquiries: number;
   tradeApplications: number;
 };
 
-const SUMMARY_KEYS: readonly (keyof SummaryCounts)[] = [
-  "submissions",
-  "inReview",
-  "readyToIssue",
-  "awaitingPayment",
-  "newEnquiries",
-  "tradeApplications",
-];
+const SUMMARY_KEYS: readonly (keyof SummaryCounts)[] = ["newEnquiries", "tradeApplications"];
 
 /**
  * Strict on purpose (G4): a body that cannot be counted is DEGRADED, never
- * zero. `degraded: true` → "degraded". Any of the six keys missing or not a
- * finite number → "degraded" too — an under-claiming parse here is exactly
- * the reassuring lie the legacy dashboard told.
+ * zero. `degraded: true` → "degraded". Either key missing or not a finite
+ * number → "degraded" too — an under-claiming parse here is exactly the
+ * reassuring lie the legacy dashboard told. Project-count fields (the old
+ * weak summary SQL) are simply unread.
  */
 export function parseSummary(body: unknown): SummaryCounts | "degraded" {
   if (typeof body !== "object" || body === null) return "degraded";
@@ -44,14 +44,35 @@ export function parseSummary(body: unknown): SummaryCounts | "degraded" {
   return counts as SummaryCounts;
 }
 
+export type AttentionLoad =
+  | { status: "loading" }
+  | { status: "ready"; counts: SummaryCounts; rows: readonly ProjectQueueRow[] }
+  | { status: "error"; headline: string; detail: string }
+  | { status: "unauthorised"; headline: string; detail: string };
+
+/**
+ * Ready only when BOTH sources answered; any failure is the whole page's
+ * failure (criterion 15: a count that cannot be derived is drawn as failure,
+ * never zero). Precedence: unauthorised > error > loading > ready. Only
+ * `summary` can carry "unauthorised" — `useProjectQueue` folds its own
+ * 401/403 into "error".
+ */
+export function combineLoads(summary: SummaryLoad, queue: QueueLoad): AttentionLoad {
+  if (summary.status === "unauthorised") return summary;
+  if (summary.status === "error") return summary;
+  if (queue.status === "error") return queue;
+  if (summary.status === "loading" || queue.status === "loading") return { status: "loading" };
+  return { status: "ready", counts: summary.counts, rows: queue.rows };
+}
+
 export type AttentionRow = {
-  key: keyof SummaryCounts;
+  key: AttentionKey | keyof SummaryCounts;
   count: number;
   /** The work, without its number ("new submissions"). The page renders it in
    *  its own slot beside the count so the number can be tabular and leading
    *  (mock §2). */
   noun: string;
-  href: string; // path from nav/destinations + optional ?wait=
+  href: string; // path from nav/destinations + optional ?attn=
 };
 
 export type AttentionGroup = {
@@ -60,64 +81,76 @@ export type AttentionGroup = {
   rows: AttentionRow[];
 };
 
-function projectsHref(wait: ChipKey): string {
-  const key = WAIT_CHIPS.find((c) => c.key === wait)?.key;
-  if (!key) throw new Error(`ops2: no WAIT_CHIPS entry for "${wait}"`);
-  return `${destination("projects").path}?wait=${key}`;
-}
-
-type RowSpec = {
-  key: keyof SummaryCounts;
-  noun: (count: number) => string;
-  href: string;
+const PROJECT_NOUNS: Record<AttentionKey, (count: number) => string> = {
+  submissions: (n) => `new submission${n === 1 ? "" : "s"}`,
+  inReview: () => "being priced",
+  readyToIssue: () => "ready to issue",
+  awaitingPayment: () => "awaiting payment",
 };
 
-const GROUP_SPECS: readonly { id: DestinationId; rows: readonly RowSpec[] }[] = [
-  {
-    id: "projects",
-    rows: [
-      { key: "submissions", noun: (n) => `new submission${n === 1 ? "" : "s"}`, href: projectsHref("us") },
-      { key: "inReview", noun: () => "being priced", href: projectsHref("us") },
-      { key: "readyToIssue", noun: () => "ready to issue", href: projectsHref("us") },
-      { key: "awaitingPayment", noun: () => "awaiting payment", href: projectsHref("customer") },
-    ],
-  },
-  {
-    id: "enquiries",
-    rows: [
-      { key: "newEnquiries", noun: () => "waiting for a reply", href: destination("enquiries").path },
-    ],
-  },
-  {
-    id: "customers",
-    rows: [
-      {
-        key: "tradeApplications",
-        noun: (n) => `trade application${n === 1 ? "" : "s"} waiting on a decision`,
-        href: destination("customers").path,
-      },
-    ],
-  },
-];
+/**
+ * Projects rows: count = selectProjects(rows, attentionQuery(key)).length,
+ * the same selector the queue itself counts and lists through — the number
+ * on this page and the list it opens can never disagree. Zero-suppressed
+ * (criterion 14), lifecycle order fixed by ATTENTION_FILTERS.
+ */
+function projectRows(rows: readonly ProjectQueueRow[]): AttentionRow[] {
+  const rowsOut: AttentionRow[] = [];
+  for (const filter of ATTENTION_FILTERS) {
+    const count = selectProjects(rows, attentionQuery(filter.key)).length;
+    if (count === 0) continue;
+    rowsOut.push({
+      key: filter.key,
+      count,
+      noun: PROJECT_NOUNS[filter.key](count),
+      href: `${destination("projects").path}?attn=${filter.key}`,
+    });
+  }
+  return rowsOut;
+}
 
 /**
  * Zero-suppressed at both levels (G2): a zero count emits no row; a group
- * whose rows are all suppressed is absent entirely. All six zero → [].
- * Group order fixed: Projects, Enquiries, Customers. Within Projects,
- * lifecycle order: submissions, inReview, readyToIssue, awaitingPayment.
+ * whose rows are all suppressed is absent entirely. Group order fixed:
+ * Projects, Enquiries, Customers. Enquiries/Customers rows pass straight
+ * through from the summary counts, unchanged from before (P4/13).
  */
-export function attentionGroups(counts: SummaryCounts): AttentionGroup[] {
+export function attentionGroups(
+  counts: SummaryCounts,
+  rows: readonly ProjectQueueRow[],
+): AttentionGroup[] {
   const groups: AttentionGroup[] = [];
-  for (const spec of GROUP_SPECS) {
-    const rows: AttentionRow[] = [];
-    for (const rowSpec of spec.rows) {
-      const count = counts[rowSpec.key];
-      if (count === 0) continue;
-      const noun = rowSpec.noun(count);
-      rows.push({ key: rowSpec.key, count, noun, href: rowSpec.href });
-    }
-    if (rows.length === 0) continue;
-    groups.push({ id: spec.id, label: destination(spec.id).label, rows });
+
+  const projects = projectRows(rows);
+  if (projects.length > 0) {
+    groups.push({ id: "projects", label: destination("projects").label, rows: projects });
   }
+
+  if (counts.newEnquiries > 0) {
+    groups.push({
+      id: "enquiries",
+      label: destination("enquiries").label,
+      rows: [{
+        key: "newEnquiries",
+        count: counts.newEnquiries,
+        noun: "waiting for a reply",
+        href: destination("enquiries").path,
+      }],
+    });
+  }
+
+  if (counts.tradeApplications > 0) {
+    groups.push({
+      id: "customers",
+      label: destination("customers").label,
+      rows: [{
+        key: "tradeApplications",
+        count: counts.tradeApplications,
+        noun: `trade application${counts.tradeApplications === 1 ? "" : "s"} waiting on a decision`,
+        href: destination("customers").path,
+      }],
+    });
+  }
+
   return groups;
 }

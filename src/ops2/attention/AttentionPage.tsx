@@ -6,13 +6,17 @@ import { RowList, Row } from "../chrome/RowList";
 import { destination } from "../nav/destinations";
 import { DESTINATION_ICON } from "../nav/icons";
 import { browserHref } from "../shellBase";
-import { attentionGroups } from "./attention";
+import { useProjectQueue } from "../projects/useProjectQueue";
+import { attentionGroups, combineLoads } from "./attention";
 import { useSummary } from "./useSummary";
 
 /**
- * The console's front door (design.md §5). One request (useSummary), grouped
- * by attentionGroups() into Projects/Enquiries/Customers, zero-suppressed at
- * both levels — so what renders is exactly what needs a decision today.
+ * The console's front door (design.md §5, ops2-attention-prefilter §3.2). Two
+ * requests — useSummary (enquiries/trade counts) and useProjectQueue (the
+ * rows the four project counts are now derived from) — merged by
+ * combineLoads and grouped by attentionGroups() into
+ * Projects/Enquiries/Customers, zero-suppressed at both levels — so what
+ * renders is exactly what needs a decision today.
  *
  * A row leads, never acts (G3): `edge={null}` because no leading-edge fact
  * applies here, and onActivate is the only control a row carries.
@@ -22,7 +26,13 @@ import { useSummary } from "./useSummary";
  * shared — the shared unit is the CSS class, not the component.
  */
 export function AttentionPage() {
-  const { load, reload } = useSummary();
+  const { load: summaryLoad, reload: reloadSummary } = useSummary();
+  const { load: queueLoad, reload: reloadQueue } = useProjectQueue();
+  const load = combineLoads(summaryLoad, queueLoad);
+  const reload = () => {
+    reloadSummary();
+    reloadQueue();
+  };
   const history = useHistory();
 
   return (
@@ -57,7 +67,7 @@ export function AttentionPage() {
       )}
 
       {load.status === "ready" && (() => {
-        const groups = attentionGroups(load.counts);
+        const groups = attentionGroups(load.counts, load.rows);
         if (groups.length === 0) {
           return (
             <div className="pq-empty" data-testid="attention-empty">
