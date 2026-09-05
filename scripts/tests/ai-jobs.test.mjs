@@ -360,3 +360,31 @@ test("AC-42 signing in schedules no AI job and re-decides no product", async () 
   assert.ok(callers.get("ops.ts").every((fn) => /retry|runProjectEstimate/.test(fn)), callers.get("ops.ts").join());
   assert.ok(callers.get("parse.ts").every((fn) => /retry|matchSchedule/.test(fn)), callers.get("parse.ts").join());
 });
+
+// --- Criterion 11 and the ops "Try again" button ------------------------------
+// Criterion 11 excludes an ops-triggered BUILDING-MODEL run (the `ai_runs`
+// subsystem) from the parse counts. It does not speak to the ops retry of a
+// customer's own document, and the two must not be conflated:
+//
+// The reclaim branch updates the claim IN PLACE, same generation. That row is
+// the only record the counts have of the customer's document. Tagging it 'ops'
+// would delete a real customer parse from both cards - a document that failed,
+// was retried by staff and then succeeded would appear nowhere at all, which is
+// the opposite of the visibility this feature exists to give. The fall-through
+// enqueue, which starts a genuinely NEW generation from ops, is tagged 'ops'
+// and correctly excluded.
+test("an ops retry reclaims in place and leaves the claim's origin alone", async () => {
+  const { env, writes } = retryEnv({
+    ai_generation: 21,
+    status_customer: "draft",
+    status: "failed",
+    debounce_token: "old-token",
+  });
+  await retryCurrentAiExtraction(env, { waitUntil() {} }, "project-1", "ops");
+  assert.equal(writes.length, 1);
+  assert.doesNotMatch(
+    writes[0].sql,
+    /triggered_by/,
+    "the customer's parse keeps its origin, or staff pressing retry erases it from the counts",
+  );
+});

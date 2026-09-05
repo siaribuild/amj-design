@@ -5,6 +5,7 @@
 // attention.ts — no Worker types, no IO.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -1005,4 +1006,103 @@ test("notificationCount: one failing source cannot hide every other notification
   const two = async () => 2;
   const count = await __testingSources.countFrom([boom, two], { env: {}, snapshot: null });
   assert.equal(count, 2, "a source that throws contributes nothing and stops nothing");
+});
+
+// --- V2 regression: criterion 8, "one document == one parse" -----------------
+// Spec 01-spec.md:95 — a document retried three times before succeeding counts
+// as exactly one success and zero errors. PARSE_OUTCOME_SQL selects one row per
+// ai_job_claim generation and never mentions project_id, so the three
+// generations of one upload land in the counts as three parses.
+//
+// D1 is shimmed over node:sqlite so the module's own SQL really executes: a
+// hand-fed row array could only assert what the test author already believed
+// the query returned.
+function sqliteD1(rows) {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE ai_job_claim (
+    project_id TEXT NOT NULL,
+    source_generation INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    triggered_by TEXT NOT NULL DEFAULT 'upload',
+    PRIMARY KEY (project_id, source_generation)
+  )`);
+  const insert = db.prepare(
+    `INSERT INTO ai_job_claim (project_id, source_generation, status, updated_at, triggered_by)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  for (const r of rows) {
+    insert.run(r.projectId, r.generation, r.status, r.updatedAt, r.triggeredBy ?? "upload");
+  }
+  return {
+    prepare(sql) {
+      return {
+        bind: (...args) => ({ all: async () => ({ results: db.prepare(sql).all(...args) }) }),
+      };
+    },
+  };
+}
+
+function utcStamp(msAgo) {
+  return new Date(Date.now() - msAgo).toISOString().slice(0, 19).replace("T", " ");
+}
+
+// A RETRY REUSES ITS ROW. `retryCurrentAiExtraction` reclaims in place -
+// `UPDATE ai_job_claim ... WHERE project_id=? AND source_generation=?`
+// (worker/lib/ai/jobs.ts) - and the automatic retry path only bumps `attempts`
+// on the same row. So the criterion-8 scenario, "one document whose parse was
+// retried three times", is ONE claim row whose final status is what counts.
+//
+// Separate generations are not retries of one parse: `source_generation` moves
+// when the project's document set changes (upload, delete), so each is its own
+// parse job. Under the owner's Q1 ruling - one parse event = one claim
+// lifecycle, superseding "one document == one parse" - they count separately.
+test("writeMonitoringSnapshot: a parse retried until it succeeds is ONE success (criterion 8)", async () => {
+  let stored = null;
+  const env = {
+    DB: sqliteD1([
+      // The row a real retry leaves behind: same generation, reset in place,
+      // finally completed. Three attempts happened; one claim lifecycle exists.
+      { projectId: "proj_retried", generation: 0, status: "completed", updatedAt: utcStamp(3600_000) },
+    ]),
+    KV: { put: async (_k, v) => { stored = JSON.parse(v); } },
+  };
+  await writeMonitoringSnapshot(env, async () => { throw new Error("no money fetch"); });
+  assert.equal(stored.success7d, 1, "the document succeeded once");
+  assert.equal(stored.error7d, 0, "its earlier attempts were the same claim, not separate failures");
+  const totals = stored.days.reduce((a, d) => ({ s: a.s + d.success, e: a.e + d.error }), { s: 0, e: 0 });
+  assert.equal(totals.s, 1);
+  assert.equal(totals.e, 0);
+});
+
+test("writeMonitoringSnapshot: separate generations are separate parse jobs, not one retried parse", async () => {
+  let stored = null;
+  const env = {
+    DB: sqliteD1([
+      { projectId: "proj_regen", generation: 0, status: "failed", updatedAt: utcStamp(3 * 3600_000) },
+      { projectId: "proj_regen", generation: 1, status: "failed", updatedAt: utcStamp(2 * 3600_000) },
+      { projectId: "proj_regen", generation: 2, status: "completed", updatedAt: utcStamp(3600_000) },
+    ]),
+    KV: { put: async (_k, v) => { stored = JSON.parse(v); } },
+  };
+  await writeMonitoringSnapshot(env, async () => { throw new Error("no money fetch"); });
+  // Three generations means the document set changed twice and was parsed three
+  // times. Collapsing them would hide two real failures from the error card -
+  // the card this feature exists to make someone act on.
+  assert.equal(stored.success7d, 1);
+  assert.equal(stored.error7d, 2, "each generation is its own claim lifecycle");
+});
+
+test("writeMonitoringSnapshot: a failed parse counts as one error", async () => {
+  let stored = null;
+  const env = {
+    DB: sqliteD1([
+      { projectId: "proj_lost", generation: 0, status: "failed", updatedAt: utcStamp(3600_000) },
+      { projectId: "proj_ok", generation: 0, status: "completed", updatedAt: utcStamp(3600_000) },
+    ]),
+    KV: { put: async (_k, v) => { stored = JSON.parse(v); } },
+  };
+  await writeMonitoringSnapshot(env, async () => { throw new Error("no money fetch"); });
+  assert.equal(stored.error7d, 1);
+  assert.equal(stored.success7d, 1);
 });

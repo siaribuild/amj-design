@@ -103,30 +103,30 @@
     },
     "verify": {
       "code": 0,
-      "contextTokens": 5964402,
-      "outputTokens": 69740,
-      "turns": 80,
+      "contextTokens": 8508874,
+      "outputTokens": 58169,
+      "turns": 117,
       "source": "transcript",
-      "session": "aa098906-f2fc-4552-850a-6fc4cc010473",
-      "seconds": 2184
+      "session": "590a3b85-8ec8-4f36-9e07-0bbfc3b21b36",
+      "seconds": 2181
     },
     "review-conformance": {
       "code": 0,
-      "contextTokens": 357596,
-      "outputTokens": 9881,
-      "turns": 7,
+      "contextTokens": 441122,
+      "outputTokens": 7052,
+      "turns": 9,
       "source": "transcript",
-      "session": "c6def85a-a62d-48f6-8257-e867ee6754b3",
-      "seconds": 167
+      "session": "d2349370-104f-4549-8cc1-c80b4f6ea194",
+      "seconds": 146
     },
     "review-security": {
       "code": 0,
-      "contextTokens": 842418,
-      "outputTokens": 6631,
-      "turns": 8,
+      "contextTokens": 973429,
+      "outputTokens": 11737,
+      "turns": 9,
       "source": "transcript",
-      "session": "f6dd6252-a848-409b-aa2a-82eae3e67f98",
-      "seconds": 133
+      "session": "79e65241-0a21-4d84-b1b0-955a60afc3f3",
+      "seconds": 215
     },
     "review-codex": {
       "code": 0,
@@ -137,12 +137,12 @@
     },
     "review-ponytail": {
       "code": 0,
-      "contextTokens": 1223453,
-      "outputTokens": 14788,
-      "turns": 12,
+      "contextTokens": 946530,
+      "outputTokens": 10357,
+      "turns": 10,
       "source": "transcript",
-      "session": "8cab2581-ae93-4e47-a669-e2123380d552",
-      "seconds": 315
+      "session": "86264b0c-3270-4309-aec5-8fd8d9f8487c",
+      "seconds": 188
     },
     "review-codex-architecture": {
       "code": 0,
@@ -160,12 +160,12 @@
     },
     "accept": {
       "code": 0,
-      "contextTokens": 854727,
-      "outputTokens": 10646,
-      "turns": 15,
+      "contextTokens": 397324,
+      "outputTokens": 13938,
+      "turns": 8,
       "source": "transcript",
-      "session": "b5f0d49d-502d-4eea-987c-8e643c1cb40d",
-      "seconds": 249
+      "session": "fbe5d551-7d39-44bb-8570-5839eaef1ef4",
+      "seconds": 435
     },
     "fix-0": {
       "code": 0,
@@ -196,6 +196,6 @@
   ],
   "startedAt": "2026-09-03T12:19:00.485Z",
   "gateStage": null,
-  "verifyRounds": 2,
+  "verifyRounds": 3,
   "fixRounds": 2
 }

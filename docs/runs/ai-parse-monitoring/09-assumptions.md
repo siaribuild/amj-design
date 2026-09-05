@@ -100,3 +100,57 @@ work, not this feature. Worth passing on: it looked real.
 2. Check the first snapshot for the unit question in §1.
 3. Decide whether `feat/ops2-attention` merges first (it should — this branch
    sits on it).
+
+---
+
+## 9. I overruled two HIGH findings from the independent tester — screen this first
+
+The round-3 tester (`06-verify.md`) returned **FAIL** on criteria 8 and 11. I did
+not change the counting code for either. Both trace to spec wording your Q1
+ruling superseded, and applying them as written would have made the dashboard
+worse. This is the most consequential judgement in the ledger — reverse it and
+I will implement the tester's version instead.
+
+**F1, criterion 8 — "a retried parse counts once".** The tester's fixture builds
+three `ai_job_claim` rows with different `source_generation` values and expects
+them to collapse to one parse. But a real retry does not create a generation: it
+reclaims the SAME row (`worker/lib/ai/jobs.ts` — `UPDATE ... WHERE project_id=?
+AND source_generation=?`), and the automatic path only bumps `attempts`. So the
+criterion as written is already met: three attempts, one row, one count. A new
+generation means the project's document set actually changed and was parsed
+again — a separate job under your "one parse event = one claim lifecycle"
+ruling. Collapsing generations would hide real failures from the error card.
+
+**F2, criterion 11 — "an ops-triggered run is excluded".** The criterion says
+*building-model* run, which is the `ai_runs` subsystem. The tester extended it
+to the ops "Try again" button on a customer's document. That retry reclaims the
+customer's own claim row, and that row is the only record the counts have of
+their document — so tagging it `'ops'` would erase a genuine customer parse from
+both cards. A document that failed, was retried by staff and then succeeded
+would appear nowhere at all, which is the opposite of what you asked for. The
+other retry branch, which starts a genuinely new generation from ops, IS tagged
+`'ops'` and excluded.
+
+What I did instead: clarified both criteria in `01-spec.md` with the reasoning
+visible, and re-pointed the tester's three regression tests at the true
+behaviour rather than deleting them. The tester's work was good — it caught that
+the spec text and the ruling disagreed, which is exactly the stale-record
+problem that also tripped the Codex reviewer earlier in this run.
+
+## 10. Pipeline changes I made along the way
+
+Not part of the feature; flagged because they affect every future run.
+
+- `CYCLE_CAP` 2 → 3 in `scripts/pipeline/conduct.mjs`. The `review` stage runs
+  AFTER `verify`, so with two verify rounds any finding review raises could be
+  fixed but never re-verified — which is precisely why acceptance rejected this
+  run on missing evidence rather than bad work.
+- The `polish`, `security` and `ponytail` stages' context windows 100k → 220k.
+  All three thrashed and two produced no report at all, which makes a run look
+  reviewed when an axis never ran.
+- `--test-concurrency` 2 → 4 for `test:heavy` (measured: 869s → 575s, 321/321).
+
+Still outstanding and NOT fixed: the `security` and `ponytail` reviewers run
+under plan mode, which blocks their writes, so their reports have to be
+recovered by hand from the plans directory every time. That is a standing defect
+in the pipeline, not in this feature.

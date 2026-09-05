@@ -1,354 +1,287 @@
-# 06 — Independent verification: AI parse monitoring (round 2)
+# 06 — Independent verification: `ai-parse-monitoring`
 
-Tester stage over the `feat/ai-parse-monitoring` work described in `04-build.md`,
-checked against the 28 acceptance criteria in `01-spec.md`. Nothing reported by
-the developer was taken on trust; every row below carries evidence produced
-first-hand in this session. Where a criterion could only be checked by reading
-code, the row says so explicitly rather than implying execution.
+**Verdict: FAIL** — 26 of 28 acceptance criteria verified; criteria **8** and **11**
+are not met, and each is currently defended by a passing test in the repo that
+asserts the wrong behaviour. Two HIGH findings, one MEDIUM, two LOW, three COSMETIC.
 
----
+Verified independently of `04-build.md`: every criterion below was re-established
+from the spec, exercised against the code or a live worker, and its actual output
+recorded. Nothing in the build report was taken on trust.
 
-## Verdict: **FAIL**
-
-One HIGH finding — the monitoring endpoint authenticates through a path that does
-not exist in production, which breaches criterion 28 directly and makes criteria
-1–22 unreachable for real staff once deployed. Two MEDIUM correctness findings in
-`src/data/monitoring.ts`. Two LOW findings and one COSMETIC set of build-report
-discrepancies.
-
-The feature is well built and well tested *for the environment the tests run in*.
-That is precisely the problem: the local harness disables Cloudflare Access, so
-the entire local suite passes against a code path production never takes.
-
-### Gates run in this session
-
-| Command | Result |
-| --- | --- |
-| `npm run typecheck:gate` | exit 0 — 62 non-fatal diagnostics, 0 fatal |
-| `npm run test:ops2` | tests 107 / pass 107 / fail 0 |
-| `npm run test:api` | tests 77 / pass 77 / fail 0 |
-| `npm run test:ai-jobs` | tests 14 / pass 14 / fail 0 |
-| `node --test scripts/tests/ai-monitoring.test.mjs` | tests 23 / pass 19 / **fail 4** — the four `V-F*` tests added to pin the findings below. Before those additions this file was 19/19. |
-| `npx playwright test scripts/tests/web/ops2-attention.spec.ts` | 21 passed (1.1m) — the UI coverage requirement is satisfied, including the bubble and stale-state gaps raised in round 1 |
-
-Live abuse-case execution used `node scripts/tests/web-server.mjs` on
-`127.0.0.1:8788` (migrated and seeded local D1), with `curl` transcripts recorded
-per criterion below.
+- Date: 2026-09-05
+- Spec: `docs/runs/ai-parse-monitoring/01-spec.md` §2, criteria 1–28
+- Diff under test: `migrations/0064_ai_job_claim_triggered_by.sql`, `src/data/monitoring.ts`,
+  `worker/index.ts`, `worker/lib/ai/jobs.ts`, `worker/lib/monitoring.ts`,
+  `worker/routes/ops.ts`, the ops2 attention surface, `scripts/tests/**`
+- No implementation file was modified by this verification. Three new **failing**
+  regression tests were added (test files only) and are listed under the findings
+  they reproduce.
 
 ---
 
-## Findings
+## 1. Gates
 
-### V-F1 — HIGH — the monitoring route introduces a new auth path that production does not serve
+| Gate | Command | Result |
+|---|---|---|
+| TypeScript | `npm run typecheck:gate` | PASS — `✓ no fatal type errors (58 non-fatal remain)` |
+| ops2 console suite | `npm run test:ops2` | PASS — 107/107 |
+| worker API suite | `npm run test:api` | PASS — 77/77 |
+| AI jobs suite | `npm run test:ai-jobs` | **FAIL** — 14 pass / 1 fail (the failure is this document's F2 regression test) |
+| AI monitoring suite | `npm run test:ai-monitoring` | **FAIL** — 43 pass / 2 fail (both failures are this document's F1 regression tests) |
+| Playwright (UI gate) | `npx playwright test scripts/tests/web/ops2-attention.spec.ts` | PASS — 21/21 against the dev server |
 
-**Criterion violated:** 28 ("refused by the same ops2 staff guard every other ops2
-surface uses — no new auth path is introduced for this page"). Consequentially
-criteria 1–22 as well: in production no staff request reaches the payload at all.
+Before my three tests were added, `test:ai-jobs` was 14/14 and `test:ai-monitoring`
+was 43/43. Every red line in this run is a defect this verification exposed, not a
+pre-existing break.
 
-`worker/routes/ops.ts:355` resolves identity with `resolveUser`:
-
-```ts
-ops.get("/monitoring", async (c) => {
-  const user = await resolveUser(c.env, c.req.raw);          // worker/routes/ops.ts:355
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const staff = user.type === "internal" ? { role: user.role } : null;
-  if (!isStaffUser(staff)) return c.json({ error: "forbidden" }, 403);
-  return c.json(await monitoringPayload(c.env));
-});
-```
-
-`resolveUser` (`worker/lib/auth.ts:379`) reads the `sess:<token>` session cookie
-out of KV and nothing else. It has no Cloudflare Access support. Every other ops
-route — 41 of them — uses `resolveStaff`, which chooses between the Access JWT
-(`Cf-Access-Jwt-Assertion`) and the session cookie depending on configuration
-(`worker/lib/staff.ts`). This route is the only exception:
-
-```
-$ grep -rn "resolveUser" worker/routes/ops.ts
-355:  const user = await resolveUser(c.env, c.req.raw);
-```
-
-Production has Access configured — `wrangler.jsonc:171` sets
-`"ACCESS_TEAM_DOMAIN": "drg-group"` and `"ACCESS_AUD": "89cb7205…"`. When those
-are set, staff identity arrives as an Access JWT header, the ops OTP routes that
-mint session cookies return 404, and there is no `sess:` cookie for `resolveUser`
-to find. The route therefore answers **401 to every genuine staff request in
-production**, and the Attention page renders its "sign in" denial screen to an
-owner who is already signed in.
-
-The reason no existing test catches this is in the harness itself
-(`scripts/tests/web-server.mjs:56-68`):
-
-```js
-// Local/E2E env: dev OTP codes on, Cloudflare Access off (staff session fallback),
-"--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
-```
-
-With Access blanked, the cookie path is live, so the local staff session works and
-all 21 Playwright tests plus the `test:api` abuse cases pass. They exercise a
-branch production does not take.
-
-The route comment defends the choice — it wants 401 and 403 to be distinguishable
-so the panel can tell "sign in" from "not for you". That is a legitimate UX need
-and it is not the reason to reject the finding; the fix is to obtain that
-distinction from `resolveStaff` (or a small shared helper over it), not to
-reintroduce a cookie-only reader that Access bypasses.
-
-Reproduce:
-
-```
-node --test scripts/tests/ai-monitoring.test.mjs
-```
-
-Fails at `V-F1 GET /api/ops/monitoring uses the shared ops staff guard
-(criterion 28: no new auth path)`, `AssertionError [ERR_ASSERTION] … operator: '=='`
-— "the monitoring route must resolve identity through resolveStaff like every
-other ops route".
-
-A behavioural reproduction is to run the harness with Access left configured
-(`--var ACCESS_TEAM_DOMAIN:drg-group`) and request `/api/ops/monitoring` with a
-staff session; it answers 401 where `/api/ops/summary` answers 200.
+The UI gate is satisfied: `scripts/tests/web/ops2-attention.spec.ts` carries 21
+Playwright tests, of which 7 cover the monitoring section, 3 the notification bell,
+and 2 the unauthorised paths. Client-side decisions (which card reddens, which
+empty state renders, what the stale sentence says) are covered in the browser, not
+only in node.
 
 ---
 
-### V-F2 — MEDIUM — up to 24 hours of parses inside the SQL window are silently discarded
+## 2. Criteria
 
-**Criteria affected:** 7 (card totals) and 13 (bucket sums equal the cards).
-
-`worker/lib/monitoring.ts:10` selects a **rolling 7×24h** window:
-
-```sql
-AND updated_at >= datetime(?, '-7 days')
-```
-
-`assembleParseCounts` (`src/data/monitoring.ts:33-47`) then builds buckets for the
-seven Melbourne **calendar days** `now-6d … now`, and drops anything that misses:
-
-```ts
-for (let i = 6; i >= 0; i--) { …days.push({ day: melbourneDayKey(d), … }); }
-const byDay = new Map(days.map((d) => [d.day, d]));
-for (const row of rows) {
-  const bucket = byDay.get(melbourneDayKey(new Date(row.updatedAt)));
-  if (!bucket) continue;          // src/data/monitoring.ts:47
-  …
-}
-```
-
-The rolling window reaches back to `now − 168h`; the earliest bucket starts at
-00:00 Melbourne on `now − 6d`. Everything between those two boundaries — up to
-23h59m of real parses, in the worst case a whole day of traffic — is returned by
-D1 and then thrown away by the `continue`. It is missing from the chart *and*
-from the success/error cards, because the totals are accumulated inside the same
-loop. Staff see under-reported error counts with no indication anything was
-dropped.
-
-Spec §4's assumption (rolling 7×24h SQL window, Melbourne calendar-day buckets)
-and the implementation are individually defensible; they simply do not line up,
-and the mismatch is currently resolved by discarding data. Either the SQL window
-should start at the earliest bucket's Melbourne midnight, or the out-of-bucket
-rows should still be counted in the card totals.
-
-Reproduce:
-
-```
-node --test scripts/tests/ai-monitoring.test.mjs
-```
-
-Fails at `V-F2 assembleParseCounts: rows inside the rolling 7x24h SQL window are
-never dropped by calendar bucketing` — `actual: 1, expected: 2`, "every success
-the SQL window returned must be counted". The fixture puts `now` at 2026-09-05
-14:00 Melbourne and two rows at 2026-08-29 16:00 and 20:00 Melbourne, both inside
-`now − 7d`, both dropped.
-
----
-
-### V-F3 — MEDIUM — a zero spend cap produces `NaN` and reads as "not red"
-
-**Criterion affected:** 17 (cap-used percentage above the ceiling shows 1).
-
-`src/data/monitoring.ts:71`:
-
-```ts
-if ((money.billedSpendUsd / money.capUsd) * 100 > ceilingPct) return true;
-```
-
-With `capUsd === 0` — an account with no headroom at all, which is exactly the
-state this feature exists to warn about — the expression is `0/0 = NaN` when
-spend is also zero, and `NaN > 80` is `false`. The bubble stays at 0 and the page
-is not red. With any non-zero spend it becomes `Infinity > 80`, so the same
-account flips between "fine" and "red" on the presence of a single cent of spend.
-Both behaviours come from one unguarded division, so this is a single defect.
-
-`money.available === false` is handled above this line, so this is not the
-"unavailable never reds" case of criterion 19 — the numbers are present and
-claimed valid.
-
-Reproduce:
-
-```
-node --test scripts/tests/ai-monitoring.test.mjs
-```
-
-Fails at `V-F3 evaluateRed: a zero spend cap is red whenever there is spend, and
-never NaN-quiet` — `actual: false, expected: true`, "cap of 0 means no headroom
-at all — that is a red, not a quiet false".
-
----
-
-### V-F4 — LOW — `parseMonitoringSnapshot` validates but does not whitelist
-
-**Criterion affected:** 26, as defence in depth. No live leak today.
-
-`parseMonitoringSnapshot` (`src/data/monitoring.ts:4-24`) checks the fields it
-cares about and then returns the caller's object unchanged (`return record;`,
-line 24). Anything else present in the stored KV value flows through it, through
-`monitoringPayload`'s spread (`worker/lib/monitoring.ts:118`) and out to the
-client. A planted `internalDebug: "leak-me"`, `money.cfToken`, and
-`money.accountId` all survive the round trip.
-
-Second half of the same weakness: `available` is compared with `=== true` and
-`=== false` only, so `money: { available: "yes" }` matches neither branch, skips
-every field check, and is returned as a valid snapshot.
-
-Today the only writer is `writeMonitoringSnapshot`, which constructs the object
-field by field (`worker/lib/monitoring.ts:21`) and never puts a token or an
-account id in it, so criterion 26 is met in practice. This is the guard failing
-to be a guard: the function's whole job is to be the boundary between untrusted
-stored JSON and a staff-visible payload, and it passes unknown fields straight
-through. Severity is LOW because exploiting it requires KV write access, which is
-a larger compromise already.
-
-Reproduce:
-
-```
-node --test scripts/tests/ai-monitoring.test.mjs
-```
-
-Fails at `V-F4 parseMonitoringSnapshot: returns only whitelisted fields and
-rejects a non-boolean money.available` — `actual: 'leak-me', expected: undefined`,
-"unknown top-level fields must not pass through".
-
----
-
-### V-F5 — LOW — `CF_ACCOUNT_ID` is still the literal placeholder
-
-`wrangler.jsonc:133` reads
-`"CF_ACCOUNT_ID": "paste-real-cf-account-id-before-deploying"`, which is the exact
-string `worker/lib/monitoring.ts:46` matches to return
-`{ available: false, reason: "account_id_missing" }`. Deployed as-is, the two
-money cards are permanently "unavailable" and the red bubble can never fire, so
-half the feature ships inert.
-
-The graceful degradation is correct and tested — this is a deploy-checklist item,
-not a code defect. It belongs on the run's deploy notes so it is not discovered
-by an owner wondering why the balance card never populates.
-
-```
-$ grep -n "CF_ACCOUNT_ID" wrangler.jsonc
-133:    "CF_ACCOUNT_ID": "paste-real-cf-account-id-before-deploying",
-```
-
----
-
-### V-F6 — COSMETIC — `04-build.md` does not match the tree
-
-Three claims in the build report are wrong. None affect behaviour; recorded so
-the next reader does not treat the document as verified fact.
-
-- It reports the typecheck gate at 59 non-fatal diagnostics. `npm run typecheck:gate`
-  reports 62.
-- It reports `test:ai-monitoring` at 16 tests. The file contained 19 before this
-  pass added four.
-- It describes the `account_id_missing` handling as "already shipped and tested".
-  That change is uncommitted in the working tree.
-
----
-
-## Criterion-by-criterion evidence
+### Cards — money
 
 | # | Criterion | Verdict | Evidence |
-| --- | --- | --- | --- |
-| 1 | Credit balance `$12.34`, no CF call during page load | PASS | Playwright `monitoring: ready snapshot renders cards, as-at, and 7 chart columns` (`scripts/tests/web/ops2-attention.spec.ts:281`), snapshot fixture `creditBalanceUsd: 12.34`. The page reads `/api/ops/monitoring` only, and the route body (`worker/routes/ops.ts:350-360`) calls `monitoringPayload`, which is a single KV read with no fetch. |
-| 2 | Cap outstanding = headroom, with the cap it was measured against | PASS | Same Playwright test (fixture `billedSpendUsd: 40`, `capUsd: 50`); unit test `capOutstanding: cap minus billedSpend` (`scripts/tests/ai-monitoring.test.mjs:246`). Neither figure is hardcoded — both come from the snapshot. |
-| 3 | Per-gateway cap, falling back to account-level, source recorded | PASS | `fetchMoneyNumbers: gateway cap failure falls back to spending-limit with capSource 'account'` (line 355). Implementation `worker/lib/monitoring.ts:58-68`. |
-| 4 | No token → unavailable, not zero, not red; counts still render | PASS | `fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zero fetch calls` (line 279) plus Playwright `monitoring: money unavailable shows an unavailable state, not zero, while counts/chart still show D1 numbers` (line 294). |
-| 5 | CF non-2xx/timeout → counts still refreshed, money unavailable, logged, page loads | PASS | `writeMonitoringSnapshot: CF failure still writes fresh D1 counts with money unavailable, and logs no secret` (line 306); Playwright `monitoring: a 500 shows the error panel with a retry button` (line 345). |
-| 6 | Stale snapshot states the age of the figures | PASS | Playwright `monitoring: stale snapshot renders the stale sentence and per-card as-at stamps` (line 355) — the round-1 gap is closed. |
-| 7 | 40 successes / 3 errors over 7 days show on the cards | **FAIL** | The happy path passes (`assembleParseCounts: bucket sums equal the two totals for sample rows`, line 189), but V-F2 shows rows inside the SQL window are dropped from these totals. Under-reports. |
-| 8 | Three retries of one document = one success, zero errors | PASS | Verified by reading the retry path rather than by a dedicated test: `retryCurrentAiExtraction` (`worker/lib/ai/jobs.ts:339-372`) resets the existing claim row in place (`UPDATE ai_job_claim SET status='scheduled', attempts=0 …`) rather than inserting a second row, so one document keeps exactly one row and terminates once. The fall-through at line 375 creates a new generation only for a re-run of an already-completed parse, which is a deliberate new run. |
-| 9 | `processing` 31 min old counts as one error | PASS, with a wording gap | `writeMonitoringSnapshot: D1 count query matches design §3.2 verbatim` (line 251) pins `status = 'processing' AND updated_at < datetime(?, '-30 minutes')`. The predicate does not test `attempts`, matching the spec's "one SQL predicate" (grill decision 9) rather than the prose "with attempts exhausted"; a 31-minute row with attempts remaining also counts as an error. Recorded as a spec/implementation wording gap, not a defect. |
-| 10 | `processing` 5 min old counts as neither | PASS | Same SQL predicate — the row matches none of the three status arms. |
-| 11 | Ops-triggered building-model run excluded | PASS | `PARSE_OUTCOME_SQL` filters `triggered_by = 'upload'` (`worker/lib/monitoring.ts:9`). Tagging verified at every writer: `worker/routes/ops.ts:2088` passes `"ops"` into `retryCurrentAiExtraction`; the insert at `worker/lib/ai/jobs.ts:267-274` binds the parameter; the two upload-path inserts (`worker/routes/files.ts:299`, `:453`) omit the column and take the migration's `DEFAULT 'upload'`; `worker/routes/parse.ts:47` is the customer retry and correctly defaults to `upload`. |
-| 12 | No parses at all → cards `0`, chart empty state | PASS | Unit `assembleParseCounts: zero rows produce exactly 7 Melbourne-day buckets, oldest-first, all zero` (line 174); Playwright `monitoring: an all-zero window renders an explicit empty chart state` (line 320) and `monitoring: no snapshot yet renders the empty state` (line 336). |
-| 13 | 7 buckets, sums equal the cards | **FAIL** | The internal sum is consistent (cards and buckets accumulate in the same loop), but both are short by whatever V-F2 discards. The criterion asks the sum to equal the counts *of the window*, and it does not. |
-| 14 | A zero-parse day is a zero bucket, not a missing day | PASS | Unit test at line 174 (7 buckets always emitted); Playwright asserts 7 chart columns with a zero day in the fixture. |
-| 15 | Not red → count 0, no bubble | PASS | Playwright `bell: no badge when notificationCount is 0` (line 373); unit `evaluateRed: false when neither the floor nor the ceiling trips` (line 238). |
-| 16 | Balance below floor → bubble `1` | PASS | `evaluateRed: true when creditBalanceUsd is below the dollar floor` (line 212); Playwright `bell: badge reads 1 when notificationCount is 1` (line 383) — the round-1 bubble gap is closed. |
-| 17 | Cap-used above ceiling → `1`; both tripping → still `1` | PARTIAL | `evaluateRed: true when billedSpend/cap exceeds the percent ceiling` (line 220) and `evaluateRed: a single boolean true when both the floor and ceiling trip` (line 228) both pass. V-F3 shows the percentage arm is wrong when `capUsd` is 0. |
-| 18 | Tapping the bubble navigates to Attention | PASS | Playwright `bell: clicking it lands on /attention` (line 391). |
-| 19 | Money unavailable → count 0, no false alarm | PASS | `evaluateRed: false when money unavailable` (line 207); `worker/lib/monitoring.ts:88-93` returns 0 when there is no snapshot. |
-| 20 | Source list appends without touching the bubble or aggregator | PASS | `NOTIFICATION_SOURCES` is a flat array with one v1 member and `notificationCount` sums it with no source-specific branching (`worker/lib/monitoring.ts:95-106`). Read, not executed — the criterion is structural. |
-| 21 | Existing `*/10` cron writes one snapshot; no new trigger | PASS | `wrangler.jsonc:110` is still `["*/10 * * * *"]`, a single entry; `worker/index.ts:357` is the only `writeMonitoringSnapshot` call, inside the existing `scheduled` handler, and it writes one KV key. |
-| 22 | Two ops2 pages open → no CF call, both read the same KV snapshot | PASS | `monitoringPayload: ships the server-evaluated red flag and floor/ceiling, from ONE KV read (F3/F11)` (line 427) and `monitoringPayload: no snapshot yet — null snapshot, zero notifications, no KV read wasted` (line 454). The read path contains no fetch. |
-| 23 | Signed-out visitor → 401/403, no data | PASS (executed live) | `curl -i http://127.0.0.1:8788/api/ops/monitoring` → `HTTP/1.1 401 Unauthorized`, body `{"error":"unauthorized"}`. Also asserted in `scripts/tests/api-edge.test.mjs:1517` ("ops monitoring: staff-only, and leaks nothing to anyone else"), which ran green. |
-| 24 | Signed-in Customer → 403, no data | PASS (executed live) | Signed in as `verify-cust-<ts>@example.com` through the dev OTP flow, then `curl -i -b cookie /api/ops/monitoring` → `HTTP/1.1 403 Forbidden`, body `{"error":"forbidden"}`. Also covered by the api-edge suite and by Playwright `a signed-in customer (non-staff) loading /attention gets the unauthorised treatment, not zero counts` (line 215), which hits the real server with a real customer session. |
-| 25 | Signed-in Manufacturer partner → 403, no data | PASS (suite-executed, not hand-executed) | Executed inside `npm run test:api` (`scripts/tests/api-edge.test.mjs:1517-1543`, manufacturer-partner arm), which ran green and whose assertions were read verbatim. The hand attempt could not complete: `/api/ops/auth/challenge` for `partner@amjtradedirect.test` returned `{"ok":true}` with no `devCode` because that account is not in this instance's seed, so the follow-up request was unauthenticated and answered 401 rather than 403. |
-| 26 | Payload carries no token, account id, or gateway credentials | PASS, with V-F4 | The real writer builds the snapshot field by field (`worker/lib/monitoring.ts:21`) and never includes a credential; the live staff response was `{"snapshot":null,"notificationCount":0}`. But `parseMonitoringSnapshot` does not whitelist, so anything written into KV reaches the client — see V-F4. |
-| 27 | CF failure log contains no token, no Authorization value | PASS | `pathSuffix` (`worker/lib/monitoring.ts:31-34`) slices from `/ai-gateway/`, so neither the account id in the URL prefix nor the header is ever formatted into the message; asserted by the "logs no secret" arm of the test at line 306. |
-| 28 | Customer guessing `/attention` refused by the same ops2 staff guard; no new auth path | **FAIL** | The refusal itself works (Playwright line 215, live 403 above), but the second half of the criterion is breached: `/api/ops/monitoring` is the only ops route not using `resolveStaff`. See V-F1. |
+|---|---|---|---|
+| 1 | Balance `12.34` renders `$12.34`, no CF call on page load | PASS | Playwright `monitoring: ready snapshot renders cards, as-at, and 7 chart columns` renders from the KV snapshot only; the page calls `GET /api/ops/monitoring`, which `worker/routes/ops.ts` serves from `readMonitoringSnapshot` with no outbound fetch. Live: two consecutive loads produced zero outbound Cloudflare requests in the worker log. |
+| 2 | Headroom `$12.00` shown against cap `$20.00`, neither hardcoded | PASS | `capOutstanding` (`src/data/monitoring.ts:237`) computes `capUsd - billedSpendUsd`; node test `capOutstanding: cap minus billedSpend` (`scripts/tests/ai-monitoring.test.mjs:256`), and the Playwright ready-snapshot test renders both figures from payload fields. |
+| 3 | Per-gateway cap fails → account-level fallback, source recorded | PASS | node `fetchMoneyNumbers: gateway cap failure falls back to spending-limit with capSource 'account'` (`:372`) and `fetchMoneyNumbers: the account fallback converts cents to dollars` (`:738`). `capSource` is part of the stored snapshot type (`src/data/monitoring.ts:12`). |
+| 4 | No token → money unavailable (not zero, not red); counts still render | PASS | node `fetchMoneyNumbers: CF_MONITORING_TOKEN unset yields token_missing with zero fetch calls` (`:294`); Playwright `monitoring: money unavailable shows an unavailable state, not zero…` and `monitoring: money unavailable with a missing/placeholder CF_ACCOUNT_ID says so distinctly from a missing token`. |
+| 5 | CF non-2xx/timeout → D1 counts still refreshed, money unavailable, logged, page loads | PASS | node `writeMonitoringSnapshot: CF failure still writes fresh D1 counts with money unavailable` (`:322`) and `fetchMoneyNumbers: a stalled Cloudflare endpoint is bounded` (`:603`). Live: with the CF host unreachable, the cron still wrote a snapshot with fresh counts and `available:false`, and the page rendered. |
+| 6 | Snapshot older than 30 min → each card states its age | PASS | Playwright `monitoring: stale snapshot renders the stale sentence and per-card as-at stamps`. |
+
+### Cards — parse counts
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 7 | 40 success / 3 failed → cards show `40` and `3` | PASS | Live against a real worker and real D1 (`.codex-tmp/tester2/state`): seeded 40 completed and 3 failed upload claims, ran the cron, `GET /api/ops/monitoring` returned `success7d: 40, error7d: 3`. |
+| 8 | One document retried three times before succeeding counts as **one** success and zero errors | **FAIL** | **F1.** `PARSE_OUTCOME_SQL` (`worker/lib/monitoring.ts:9-27`) returns one row per job-claim generation and never selects `project_id`, so no per-document collapse is possible; `assembleParseCounts` then counts every row handed in (`src/data/monitoring.ts:173-186`). Reproduced by `npm run test:ai-monitoring` → `writeMonitoringSnapshot: three retried generations of ONE document count as one parse` fails `2 !== 0`. |
+| 9 | `processing` row 31 minutes old with attempts exhausted → one error | PASS | The `-30 minutes` clause in `PARSE_OUTCOME_SQL`. Live: a `processing` row stamped 31 minutes back produced `error7d: 1`. |
+| 10 | `processing` row 5 minutes old → neither success nor error | PASS | Same live run: the 5-minute row appeared in neither total and in no bucket. |
+| 11 | Ops-triggered run excluded from both counts and from the chart | **FAIL** | **F2.** The SQL filter `triggered_by = 'upload'` is right, but the ops retry never writes the column. `retryCurrentAiExtraction` (`worker/lib/ai/jobs.ts`) reclaims an existing claim in place with an UPDATE that does not mention `triggered_by`, so the row stays `'upload'` and is counted. Live: `POST /api/ops/projects/<id>/retry-extraction` → `HTTP 202 {"accepted":true,"alreadyQueued":false,"generation":0,"status":"queued"}`, then the row reads back `triggered_by: "upload"`. Reproduced by `npm run test:ai-jobs`. |
+| 12 | No parses at all → cards show `0`, chart shows an empty state | PASS | Playwright `monitoring: an all-zero window renders an explicit empty chart state` and `monitoring: no snapshot yet renders the empty state`; node `assembleParseCounts: zero rows produce exactly 7 Melbourne-day buckets` (`:184`). |
+
+### Chart
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 13 | 7 day-buckets; bucket sums equal the two count cards | PASS (see F3) | node `assembleParseCounts: bucket sums equal the two totals for sample rows` (`:199`) and its DST-day variant (`:578`); `parseWindowStart` anchors the SQL window to the oldest bucket's Melbourne midnight, so no returned row falls outside the buckets. Live: seeded spread rows summed to the cards exactly. The sums are consistent — but F3 records that *which* day a parse lands in is not stable. |
+| 14 | A day with zero parses is a zero bucket, not a missing day | PASS | Playwright `monitoring: ready snapshot renders cards, as-at, and 7 chart columns` asserts 7 columns; node `assembleParseCounts: the seven buckets are consecutive Melbourne calendar dates across the DST switch` (`:565`). |
+
+### Notification bubble
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 15 | Not red → count 0, no bubble drawn | PASS | node `evaluateRed: false when neither the floor nor the ceiling trips` (`:248`); the Playwright bell test for the zero case. |
+| 16 | Balance below the floor → `1` | PASS | node `evaluateRed: true when creditBalanceUsd is below the dollar floor` (`:222`). |
+| 17 | Cap above the ceiling → `1`; both tripped → still `1` | PASS | node `evaluateRed: a single boolean true when both the floor and ceiling trip` (`:238`) and `notificationCount: one source` (`:424`). |
+| 18 | Tapping a non-zero bubble navigates to the Attention page | PASS | The bell navigation test in `scripts/tests/web/ops2-attention.spec.ts`. |
+| 19 | Money unavailable → count 0 (no false alarms) | PASS | node `evaluateRed: false when money unavailable` (`:217`); the `available === true` guards in `evaluateRedFlags` (`src/data/monitoring.ts:223-224`). |
+| 20 | A second source appends without changing bubble, aggregation, or container | PASS | Exactly one v1 source implementation and no source-specific branching in the aggregator; node `notificationCount: one failing source cannot hide every other notification` (`:1002`). |
+
+### Freshness / cron
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 21 | The existing `*/10` cron writes one KV snapshot; no new trigger | PASS | `wrangler.jsonc` still declares exactly the one `*/10 * * * *` trigger; `writeMonitoringSnapshot` writes the single key `monitoring:snapshot`. Live: after a cron run, that one key was present. |
+| 22 | Two open pages → neither triggers a CF call; both read the same snapshot | PASS | Live: two sequential loads of `/api/ops/monitoring` produced zero outbound Cloudflare requests in the worker log and identical `takenAt`. |
+
+### Abuse cases — each forbidden action attempted for real
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 23 | Signed-out visitor → 401/403, no data | PASS | `curl` with an empty cookie jar → `HTTP 403 {"error":"forbidden"}`. The body carries no balance, spend, cap or count. |
+| 24 | Signed-in Customer → 403, no monitoring data | PASS | Signed in a customer via the dev OTP flow, replayed that session cookie against `ops.localhost` → `HTTP 403 {"error":"forbidden"}`. |
+| 25 | Manufacturer partner account → 403, no monitoring data | PASS | Signed in a manufacturer account, confirmed via `GET /api/ops/me` → `"role":"manufacturer"`, then `GET /api/ops/monitoring` → `HTTP 403`. `resolveStaff` excludes `role === "manufacturer"`. |
+| 26 | Payload contains no CF token, no account id, no gateway credentials | PASS | The staff `HTTP 200` body was inspected in full: only `takenAt`, `money` (numbers plus `capSource`/`reason`), `days`, `success7d`, `error7d`, the red flags and the two thresholds. `parseMonitoringSnapshot` (`src/data/monitoring.ts:82`) rebuilds the object field by field rather than passing the stored value through. |
+| 27 | A CF failure log line contains no token, no Authorization value | PASS | Forced a CF failure, then grepped the worker log: 0 hits for the token value, 0 for `authorization` (case-insensitive). |
+| 28 | A Customer guessing `/attention` is refused by the same ops2 staff guard | PASS | Playwright `a signed-in customer (non-staff) loading /attention gets the unauthorised treatment, not zero counts`; node `V-F1 GET /api/ops/monitoring uses the shared ops staff guard (criterion 28: no new auth path)` (`:545`). |
 
 ---
 
-## Round-1 findings, re-checked
+## 3. Findings
 
-- Notification bubble browser coverage (criteria 15–18): **closed.** Four `bell:`
-  tests now render a zero badge, a `1` badge, and a click that lands on
-  `/attention`.
-- Stale-snapshot rendering (criterion 6): **closed.** Covered at spec line 355.
-- Hard-dated Playwright fixture: **closed.** The healthy-page test no longer
-  depends on a fixed calendar date.
-- Placeholder `CF_ACCOUNT_ID`: **still open**, carried forward as V-F5.
+### F1 — Criterion 8 is not met: a retried parse counts once per attempt (HIGH)
 
-## Probed and cleared
+A document retried three times before succeeding is counted as three parses — one
+success and two errors — so both cards over-report, and the inflated one is the
+error card this feature exists to make people act on.
 
-Suspicions raised and disproved, recorded so the next round does not re-spend the
-time:
+`PARSE_OUTCOME_SQL` (`worker/lib/monitoring.ts:9-27`) selects one row per
+`ai_job_claim` row, which is one row per `(project_id, source_generation)`. It
+never selects `project_id`, so nothing downstream could collapse generations even
+if it tried; `assembleParseCounts` (`src/data/monitoring.ts:173-186`) counts every
+row it is handed. The fix belongs in the query: the latest generation per
+`project_id` is the parse, and earlier generations are attempts at the same parse.
 
-- **Lexicographic vs datetime comparison in the 30-minute predicate.** Every
-  writer sets `updated_at = datetime('now')`, so the stored format matches what
-  `datetime(?, '-30 minutes')` produces and the comparison is sound.
-- **Double counting on retry.** Covered under criterion 8 — the retry path updates
-  the claim row in place.
-- **Notification aggregator branching per source.** No branching; the array is
-  summed uniformly.
-- **Migration safety.** `migrations/0064_ai_job_claim_triggered_by.sql` is a
-  single additive `ALTER TABLE … ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'upload'`.
-  No table rebuild, so none of the cascade-delete risk that has bitten this repo
-  before.
+For the developer: `scripts/tests/ai-monitoring.test.mjs:261`
+(`writeMonitoringSnapshot: D1 count query matches design §3.2 verbatim`) asserts
+the query string character for character and will need updating with the fix. It
+is a change-detector rather than a behavioural test — it currently locks in the
+wrong counting rule.
 
-## Failing tests attached to this report
-
-Appended to `scripts/tests/ai-monitoring.test.mjs` after line 460, under a header
-naming this document. They are red on purpose and must not be deleted to go green:
-
-- `V-F1 GET /api/ops/monitoring uses the shared ops staff guard (criterion 28: no new auth path)`
-- `V-F2 assembleParseCounts: rows inside the rolling 7x24h SQL window are never dropped by calendar bucketing`
-- `V-F3 evaluateRed: a zero spend cap is red whenever there is spend, and never NaN-quiet`
-- `V-F4 parseMonitoringSnapshot: returns only whitelisted fields and rejects a non-boolean money.available`
-
-One command runs all four:
+Reproduce:
 
 ```
-node --test scripts/tests/ai-monitoring.test.mjs
+npm run test:ai-monitoring
 ```
 
-Current output: `tests 23 / pass 19 / fail 4`.
+Actual:
 
-## Routing
+```
+✖ writeMonitoringSnapshot: three retried generations of ONE document count as one parse
+  AssertionError: its earlier generations are the same parse, not two failures
+  2 !== 0   (scripts/tests/ai-monitoring.test.mjs:1064)
+✖ writeMonitoringSnapshot: a document whose last generation failed counts as one error
+  2 !== 1   (scripts/tests/ai-monitoring.test.mjs:1081)
+ℹ tests 45  ℹ pass 43  ℹ fail 2
+```
 
-V-F1, V-F2 and V-F3 need a developer session. V-F4 and V-F5 are LOW and can go to
-the run's debt file if the owner prefers to ship; V-F5 must reach the deploy
-checklist either way, because without it the money half of the feature is inert in
-production. V-F6 is a documentation correction.
+The two failing tests are at `scripts/tests/ai-monitoring.test.mjs:1050` and
+`:1070`. They drive the module's own SQL through an in-memory `node:sqlite` D1
+shim, so they fail on the real query rather than on hand-fed rows.
 
-No implementation code was modified by this pass.
+### F2 — Criterion 11 is not met: an ops retry is still counted as an upload parse (HIGH)
+
+The migration adds `triggered_by` and the query filters on `= 'upload'`, so the
+mechanism is in place — but the ops "Try again" path never writes the column.
+`retryCurrentAiExtraction` (`worker/lib/ai/jobs.ts`) has two branches; the branch
+that reclaims an existing claim in place issues an UPDATE that does not mention
+`triggered_by`, leaving the row at its original `'upload'`. Every ops retry is
+therefore counted in the cards and drawn in the chart — precisely what criterion 11
+forbids.
+
+Live evidence, the forbidden state produced end to end:
+
+```
+POST /api/ops/projects/<id>/retry-extraction
+HTTP 202 {"accepted":true,"alreadyQueued":false,"generation":0,"status":"queued"}
+```
+
+then reading the row back from D1:
+
+```
+triggered_by: "upload"
+```
+
+Reproduce:
+
+```
+npm run test:ai-jobs
+```
+
+Actual:
+
+```
+✖ an ops retry tags the reclaimed claim so the parse counts still exclude it
+  AssertionError: the reclaim must record who triggered it, or an ops run is counted as an upload parse
+  expected: /triggered_by=/   (scripts/tests/ai-jobs.test.mjs:385)
+ℹ tests 15  ℹ pass 14  ℹ fail 1
+```
+
+The failing test is at `scripts/tests/ai-jobs.test.mjs:376`. The existing test at
+`scripts/tests/ai-jobs.test.mjs:203` asserts the opposite —
+`assert.doesNotMatch(writes[0].sql, /triggered_by/, "the in-place reset never touches triggered_by")`
+— so it enshrines the defect and must be updated as part of the fix, not worked
+around.
+
+### F3 — An ops retry rewrites the chart's history (MEDIUM)
+
+Both the buckets and the SQL window key on `updated_at`, which the retry path
+overwrites. Observed live: retrying a document whose parse had failed on
+2026-09-03 moved that error out of the `2026-09-03` bucket and into `2026-09-05`.
+The chart is presented as a 7-day record of what happened; a past day quietly
+changing its numbers undermines that.
+
+Reproduce (local worker, with an old failed claim seeded):
+
+```
+POST /api/ops/projects/<id>/retry-extraction
+# then run the cron and compare the day buckets before and after
+```
+
+Fixing F2 removes the visible symptom for ops retries, because an `'ops'`-tagged
+row leaves the counts entirely. The underlying property — buckets keyed on a
+mutable timestamp — remains, and the developer should decide whether the bucket
+date should come from a stable column instead.
+
+### F4 — The credit-floor comparison is not pinned by any test (LOW)
+
+Mutating `<` to `<=` at `src/data/monitoring.ts:223`
+(`balance.creditBalanceUsd < floorUsd`) leaves both `test:ai-monitoring` and
+`test:ops2` fully green. The boundary case — a balance exactly equal to the floor —
+is unspecified and untested, so behaviour at the threshold can drift unnoticed.
+
+Reproduce: change `<` to `<=` on that line, run `npm run test:ai-monitoring` and
+`npm run test:ops2` (both stay green), then restore.
+
+### F5 — The cap-ceiling comparison is not pinned by any test (LOW)
+
+Same result at `src/data/monitoring.ts:206`: mutating `>` to `>=` inside
+`capBreached` leaves every suite green. The existing test `capBreached: the page's
+warning and the server's red flag agree at the rounding edge` (`:763`) pins
+agreement between two callers, not the threshold itself.
+
+Reproduce: change `>` to `>=` on that line, run `npm run test:ai-monitoring` and
+`npm run test:ops2` (both stay green), then restore.
+
+### F6 — `04-build.md` reports the wrong pre-existing typecheck count (COSMETIC)
+
+`docs/runs/ai-parse-monitoring/04-build.md:43` and `:56` state "59 pre-existing
+non-fatal" errors. The gate reports 58.
+
+Reproduce:
+
+```
+npm run typecheck:gate
+# ✓ no fatal type errors (58 non-fatal remain)
+```
+
+### F7 — `04-build.md` overstates a test assertion (COSMETIC)
+
+The F3/F11 notes in `04-build.md` claim `scripts/tests/ops2-attention.test.mjs`
+asserts both `snapshot.floorUsd` and `ceilingPct`. Line 264 of that file asserts
+`/snapshot\.floorUsd/` only.
+
+Reproduce:
+
+```
+grep -n "ceilingPct" scripts/tests/ops2-attention.test.mjs
+```
+
+### F8 — Dead `resolveUser` import (COSMETIC)
+
+`worker/routes/ops.ts:10` imports `resolveUser`, which has zero call sites in the
+file. This feature introduced it: `git log -S"resolveUser," -- worker/routes/ops.ts`
+blames `72bbfe7e` ("T4: ops monitoring route, ops-tagged retry, cron append"), and
+`81d9bcd0` later removed the 401/403 split that used it.
+
+Reproduce:
+
+```
+grep -c "resolveUser(" worker/routes/ops.ts
+# 0
+```
+
+---
+
+## 4. Routing
+
+- **F1 and F2** block acceptance. Each needs a developer session, each has a failing
+  test attached that the fix must turn green, and each requires updating an existing
+  test that currently asserts the defective behaviour
+  (`ai-monitoring.test.mjs:261` and `ai-jobs.test.mjs:203` respectively).
+- **F3** should be decided by the developer alongside F2 — the symptom goes away
+  with the fix, the property does not.
+- **F4, F5, F6, F7, F8** belong in `docs/runs/ai-parse-monitoring/DEBT.md` rather
+  than costing a developer session of their own.
+
+Per the pipeline rule, no implementation code was changed here. The three new tests
+live in `scripts/tests/ai-monitoring.test.mjs` and `scripts/tests/ai-jobs.test.mjs`
+and are red on purpose; `git status --porcelain` shows no file modified under
+`worker/`, `src/data/`, `src/ops/`, or `migrations/` by this verification.
