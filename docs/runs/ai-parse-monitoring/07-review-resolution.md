@@ -45,3 +45,21 @@ so fixes applied after a review are invisible to the verdict unless something
 writes them into this glob. Round 2's acceptance rejected partly for a P1 that
 had already been fixed; round 3's did the same. Worth fixing in the conductor
 rather than by hand next time.
+
+## Round 6 — the final review pass, over `a76b8119..HEAD`
+
+Reports beside this file were written BEFORE the fixes below; they still show
+these open. Verified by `npm run test:ai-monitoring` (51/51, and again under
+TZ=Australia/Melbourne), `test:ops2` 126/126, `test:api` 80/80, and the
+Playwright attention suite 25/25.
+
+| Finding | Raised by | Resolution |
+|---|---|---|
+| **P2 — the gateway-count guard blanks a valid ACCOUNT-level cap** | codex | Fixed in `78216e9d`. usage-history is account-scoped, so an account cap is already measured against account spend; the scope question now runs only when `capSource === "gateway"`. |
+| **P2 — the chart card never carries the stale stamp** | codex | Fixed in `78216e9d`. |
+| **ponytail — logFailure parses the path back out of a message this module composed** | ponytail | Fixed in `78216e9d`: the path travels as a field on a `CfFailure`, so the criterion-27 guarantee is the error TYPE, not a string protocol. |
+| **ponytail — `notificationCount`'s optional snapshot silently re-reads KV** | ponytail | Fixed in `78216e9d`: the argument is required. |
+| **ponytail — `__testingSources` re-exports an already-exported function** | ponytail | Fixed in `78216e9d`. |
+| **ponytail — `.claude/launch.json` reformatted for no behaviour** | ponytail | Reverted in `78216e9d`. |
+| **security-review** | security | **No HIGH or MEDIUM findings.** |
+| Everything else | architecture, ponytail | Recorded in `DEBT.md` with a reason, including the notification registry's placement — two reviewers now agree, and it is the owner's call. |
