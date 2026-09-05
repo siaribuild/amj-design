@@ -15,7 +15,7 @@ import { sessionTotals, stageTotals, latestRateLimitAnchor, windowTotals, finalR
 import {
   STAGES, REVIEWERS, cmds, checkPlan, checkSpec, fixSpec, stageSpec, resetAdvisory, claudeArgs, paneArgs, resumeArgs, answerArgs, answerRefusal,
   browserMcp, mcpAdvisory,
-  verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP,
+  verifyPrompt, sensitiveDiff, isDeferred, FIX_CAP, autocompactArgs, CONTEXT_CAP,
 } from '../pipeline/conduct.mjs'
 import { LABEL, checkLabel, writePrompt, ensureCockpit, launchStage, watch } from '../pipeline/herd.mjs'
 
@@ -437,6 +437,26 @@ test('tree links tasks to the criteria they claim, and never smears an overall v
     'an untagged task must fall into UNLINKED, not silently vanish')
 })
 
+test('tree reads the wrapped { tasks: [...] } shape the same as the bare array', () => {
+  // readTasks exists because the architect has twice written
+  // { feature, design, tasks: [...] } instead of a bare array, and plan/build
+  // both route through it for that reason. tree still JSON.parsed 02-tasks.json
+  // raw and iterated the result as an array, so this exact wrapped shape threw
+  // here while working everywhere else readTasks is used.
+  const projects = tmp('tree-wrapped-projects')
+  const { root } = seedRun('tree-wrapped-run', {})
+  const dir = join(root, 'docs', 'runs', 'demo')
+  writeFileSync(join(dir, '02-tasks.json'), JSON.stringify({
+    feature: 'demo', design: '02-design.md',
+    tasks: [{ id: 't1', title: 'wrapped task', after: [] }],
+  }))
+
+  const out = conduct(root, projects, 'tree')
+
+  assert.match(out, /t1\s+wrapped task/,
+    'a wrapped 02-tasks.json must render in tree the same as a bare array')
+})
+
 test('confirm-exhaustion on a GATED stage never prints the gate for an unfinished agent', () => {
   // Codex stop-gate finding: settleStage's exhaustion return (status:
   // "running", genuinely truthy) still flowed into afterStage at the caller -
@@ -751,6 +771,18 @@ test('writePrompt allowlists the slug too, not just the label', () => {
     'the legal path must be unchanged')
 })
 
+test('autocompactArgs pins lever 1 in both directions', () => {
+  // CONTEXT_CAP is null (owner ruling 2026-09-05) so every real boot omits the
+  // flag - pin that live value, not just the general behaviour.
+  assert.equal(CONTEXT_CAP, null, 'CONTEXT_CAP moved - the boots below no longer reflect it')
+  assert.deepEqual(autocompactArgs(null, 120000), [],
+    'a null cap must omit --autocompact entirely, not pass it with an empty value')
+  assert.deepEqual(autocompactArgs(120000, undefined), ['--autocompact', '120000'],
+    'a set cap with no per-stage compact must fall back to the cap itself')
+  assert.deepEqual(autocompactArgs(80000, 120000), ['--autocompact', '120000'],
+    'a per-stage compact must win over the general cap when both are set')
+})
+
 test('the pane boot carries the same native args as the headless one, plus the session id', () => {
   const ux = STAGES.find((s) => s.id === 'ux')
   const a = paneArgs(ux, 'sess-uuid', true)
@@ -760,9 +792,11 @@ test('the pane boot carries the same native args as the headless one, plus the s
   // An interactive boot must not be handed the headless-only flags.
   for (const flag of ['-p', '--output-format', '--verbose'])
     assert.ok(!a.includes(flag), 'pane boot passed the headless flag ' + flag)
-  // Lever 1 and the agent identity are not headless-only, and must survive.
+  // The agent identity is not headless-only, and must survive.
   assert.equal(a[a.indexOf('--agent') + 1], 'ux-designer')
-  assert.equal(a[a.indexOf('--autocompact') + 1], String(ux.compact))
+  // Lever 1 is OFF (CONTEXT_CAP null, owner ruling 2026-09-05) - the flag must
+  // not appear at all, not appear with a stale/empty value.
+  assert.ok(!a.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted')
   assert.equal(a[a.indexOf('--mcp-config') + 1], '.mcp.json')
   assert.ok(a.includes('--strict-mcp-config'))
   const reviewer = { ...REVIEWERS.find((r) => r.id === 'conformance'), readonly: true }
@@ -813,7 +847,8 @@ test('an answered stage is resumed as itself - and a read-only reviewer is not a
 
   assert.equal(a[a.indexOf('--agent') + 1], design.agent, 'the answered stage lost its agent')
   assert.equal(a[a.indexOf('--resume') + 1], 'sess-uuid')
-  assert.equal(a[a.indexOf('--autocompact') + 1], String(design.compact))
+  // Lever 1 is OFF (CONTEXT_CAP null) - an answered boot must not resurrect it.
+  assert.ok(!a.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted')
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions')
   assert.ok(a.includes('--strict-mcp-config'))
 
@@ -1783,13 +1818,9 @@ test('a stage whose agent is gone is relaunched with --resume, on the SAME sessi
   assert.equal(native[1], 'sess-gone')
   assert.ok(!native.includes('--session-id'),
     'a resume must not also claim a fresh session id - one of them would be a lie')
-  // READ THE CAP, NEVER SPELL IT. This asserted a literal '120000' and broke the
-  // moment the caps moved to 600k — a red suite that says nothing about the
-  // behaviour under test, which is that a RESTORED boot still passes the lever
-  // at all. STAGES is already imported at the top of this file.
-  const specCap = String(STAGES.find((st) => st.id === 'spec').compact)
-  assert.equal(native[native.indexOf('--autocompact') + 1], specCap,
-    'the restored boot dropped lever 1')
+  // Lever 1 is OFF (CONTEXT_CAP null) - a resumed boot must stay omitted too,
+  // the same as a fresh one, not selectively resurrect the flag.
+  assert.ok(!native.includes('--autocompact'), 'lever 1 is off - --autocompact must be omitted on resume')
 
   assert.equal(runJson(s).stages.spec.session, 'sess-gone', 'the session id changed across a restore')
   assert.equal(runJson(s).stages.spec.previousSessions, undefined,

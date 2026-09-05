@@ -11,9 +11,12 @@
 // stages hand off through files on disk instead of through a model's context.
 //
 // Three levers, in measured order of impact:
-//   1. Context per turn is capped (--autocompact). Context tokens are the sum of
-//      context re-sent each turn; an uncapped 1M window is why single runs hit
-//      182M. Capping at ~120k takes a straight multiple off every role.
+//   1. Context per turn WAS capped (--autocompact). Context tokens are the sum
+//      of context re-sent each turn; an uncapped 1M window is why single runs
+//      hit 182M, and capping at ~120k took a straight multiple off every role.
+//      TURNED OFF by the owner on 2026-09-05 because it was failing stages
+//      rather than merely metering them - see CONTEXT_CAP for what happened and
+//      what it costs. Levers 2 and 3 still stand.
 //   2. The orchestrator is gone. This script costs nothing.
 //   3. Long roles are sliced into short, scoped runs and handed exact paths.
 //      Splitting an N-turn run into k runs divides its quadratic term by k.
@@ -162,6 +165,29 @@ function readTasks(file) {
   if (!Array.isArray(tasks)) throw new Error(file + ': no task array (expected [...] or { tasks: [...] })')
   return tasks
 }
+
+/**
+ * The per-stage context cap, or null for none.
+ *
+ * REMOVED BY THE OWNER, 2026-09-05, after three stages died on it rather than
+ * on their work: build-T5 and polish each hit "autocompact is thrashing - the
+ * context refilled to the limit within 3 turns of the previous compact, 3 times
+ * in a row" and exited having written nothing. Polish had made TEN ordinary file
+ * reads. This repo's source carries more rationale comment than code on purpose,
+ * so a stage that must hold a mock plus the chrome it composes from is over the
+ * line before it has done anything, and the cap converts that into a stage
+ * failure instead of a larger bill.
+ *
+ * WHAT IT COSTS, stated rather than buried: this was lever 1 of the three in the
+ * header note, and the measured one - an uncapped window is what turned single
+ * v1 runs into 182M context tokens. Expect runs to cost materially more. Levers
+ * 2 (no orchestrator) and 3 (sliced roles, exact paths) are untouched and still
+ * carry most of the structural saving.
+ *
+ * The per-stage `compact:` values below are LEFT IN PLACE deliberately: setting
+ * this back to a number restores the old behaviour exactly, in one line.
+ */
+const CONTEXT_CAP = null
 
 const STAGES = [
   {
@@ -630,6 +656,12 @@ export const mcpAdvisory = (spec, ok) => spec.mcp && !ok
 // fatal - it holds warm in its pane, which is what pane mode is for.
 const PANE_PERMISSION = 'acceptEdits'
 
+// Lever 1's on/off switch, pulled out pure so both branches - flag omitted
+// while CONTEXT_CAP is null, flag passed when a cap is set - are pinned by a
+// test without touching the module's live CONTEXT_CAP constant.
+export const autocompactArgs = (cap, compact) =>
+  cap === null ? [] : ['--autocompact', String(compact || cap)]
+
 // Rides on the session itself rather than on each prompt, because a rule every
 // prompt has to remember to repeat is a rule one of them will forget. The
 // conductor is the orchestrator: a stage that dispatches its own subagents
@@ -645,9 +677,8 @@ const NO_SUBAGENTS = "You are ONE stage of a scripted pipeline. Never dispatch s
 function sessionArgs(spec, mcpOk, mode) {
   const a = []
   if (spec.agent) a.push('--agent', spec.agent)
-  // Lever 1. Context tokens are the sum of context re-sent per turn; an
-  // uncapped 1M window is what turns a long run into 182M.
-  a.push('--autocompact', String(spec.compact || 120000))
+  // Lever 1, OFF BY OWNER DECISION (2026-09-05). See CONTEXT_CAP.
+  a.push(...autocompactArgs(CONTEXT_CAP, spec.compact))
   a.push('--permission-mode', spec.readonly ? 'plan' : mode)
   if (spec.mcp && mcpOk) a.push('--mcp-config', '.mcp.json')
   // Always strict: an inherited user or global config drags its tool
@@ -1135,6 +1166,7 @@ export function checkPlan(tasks, design, spec) {
 }
 
 async function runBuild(run, spec, panes) {
+
   const tp = join(RUNS, run.slug, '02-tasks.json')
   // The fix tier collapses spec and design to nothing, so nobody sliced this
   // build: the ask IS the task, and it is ONE developer session. Still
@@ -1568,7 +1600,20 @@ function decisionsOpen(run) {
  * still stands.
  */
 const CYCLE_CAP = 2
-export const FIX_CAP = 3
+// 6, not 3, and raised deliberately rather than worked around. The cap is a
+// COST guard - "more of this cycle costs more than the findings it returns" -
+// and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
+// run the fourth finding was a P1 that left `npm test` red for every developer
+// in the repo, and both of the cap's own exits were worse than paying for
+// another round: shipping it is shipping a broken suite, and fixing it by hand
+// bypasses the developer AND Probity's red-test gate, against CLAUDE.md's
+// "reviewers report; only the developer fixes".
+//
+// What the cap is really protecting against is a fix cycle that stops
+// converging. Rounds 1-3 here each closed a distinct finding and none
+// reopened, so the signal it watches for was absent. If a run ever spends six,
+// that IS the stall the comment above describes - stop and look.
+export const FIX_CAP = 6
 
 const CAPS = {
   verify: { cap: CYCLE_CAP, field: 'verifyRounds', what: 'verify rounds' },
@@ -1725,11 +1770,9 @@ const cmds = {
       (tier === 'full' ? `
 
   Next - the grill. It is the one stage that talks to you, so it does not run
-  here. In its own herdr pane, in this directory (--autocompact caps the
-  window the same way every conducted stage does - a long interactive grill
-  with none would grow toward the default and resend it on every turn):
+  here. In its own herdr pane, in this directory:
 
-      claude --autocompact 100000
+      claude
       > /grilling      (then paste the ask)
 
   Put its conclusions, and the actors-and-needs section, into
@@ -2189,7 +2232,7 @@ If you believe the finding is wrong, say so and change nothing.`
 }
 cmds.status = cmds.report
 
-export { STAGES, REVIEWERS, cmds }
+export { STAGES, REVIEWERS, cmds, CONTEXT_CAP }
 
 // Importing this file must not run it: the test suite reads the tables and calls
 // the commands directly, and main() ends in process.exit.

@@ -16,6 +16,7 @@ import { join } from "node:path";
 const OPS_HOST = "http://ops.localhost:8788";
 const OPS2 = `${OPS_HOST}/ops2`;
 const PROJECTS = `${OPS2}/projects`;
+const PRODUCTS = `${OPS2}/products`;
 
 // Sign in as a SEEDED admin, read from seed.sql — the same reasoning as
 // scripts/tests/web/ops.spec.ts, whose comment records why a literal
@@ -122,6 +123,25 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
   // the record shows the project's title too, so a bare text match finds both.
   await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
   await expect(page.getByText("Northcote extension")).toBeVisible();
+});
+
+test("a sibling route's own ?wait= is ignored by a Projects page kept mounted behind it", async ({ page }) => {
+  // Ionic keeps ProjectsPage mounted once visited, so its `?wait=` effect
+  // watches the GLOBAL location — unguarded, it would fire for a search string
+  // that belongs to a different route entirely. Reproduced with real browser
+  // history rather than a page.goto for the second hop: goto reloads the
+  // document and never mounts Projects at all, which is not this bug.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${PRODUCTS}?wait=customer`);
+  await page.locator('.ops2-nav__item[href$="/projects"]').click();
+  await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
+
+  // Back to the first entry: pathname /products, search ?wait=customer, with
+  // Projects still mounted (hidden) behind it. A pathname-unguarded effect
+  // reads this search, applies the Projects chip and calls
+  // `history.replace(PROJECTS.path)` — yanking the reader off /products.
+  await page.goBack();
+  await expect(page).toHaveURL(`${PRODUCTS}?wait=customer`);
 });
 
 test("search replaces the title row in place, and the header does not grow", async ({ page }) => {

@@ -26,6 +26,15 @@
       "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
       "runtimeArgs": ["run", "dev", "--prefix", "sanity"],
       "port": 3333
+    },
+    {
+      "name": "ops2-worker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/tests/web-server.mjs"
+      ],
+      "port": 8788,
+      "url": "http://ops.localhost:8788"
     }
   ]
 }

@@ -26,6 +26,7 @@
 --   u_staff4 → scripts/tests/web/ops2-line-why.spec.ts
 --   u_staff5 → scripts/tests/web/ops2-drawing-viewer.spec.ts
 --   u_staff6 → scripts/tests/web/ops2-record-feedback.spec.ts
+--   u_staff7 → scripts/tests/web/ops2-attention.spec.ts
 -- A new browser suite that signs in needs a new row here.
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_demo',  'gediminas.bereznevicius@gmail.com',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
@@ -48,7 +49,9 @@ INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_staff4', 'tomas@openframe.com.au', 'Tomas Reid',    NULL,             'internal', 'estimator', datetime('now')),
   ('u_staff5', 'mira@openframe.com.au', 'Mira Kovac',    NULL,             'internal', 'estimator', datetime('now')),
   -- ESTIMATOR, same reason as u_staff3/4/5.
-  ('u_staff6', 'noor@openframe.com.au', 'Noor Haddad',    NULL,             'internal', 'estimator', datetime('now'));
+  ('u_staff6', 'noor@openframe.com.au', 'Noor Haddad',    NULL,             'internal', 'estimator', datetime('now')),
+  -- ESTIMATOR, same reason as u_staff3/4/5/6.
+  ('u_staff7', 'liis@openframe.com.au', 'Liis Tamm',    NULL,             'internal', 'estimator', datetime('now'));
 
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES

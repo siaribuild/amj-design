@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -196,6 +197,25 @@ export async function requestJson(session, path, options = {}, expectedStatus = 
     throw new Error(`${options.method ?? "GET"} ${path}: expected ${expectedStatus}, received ${response.status}\n${JSON.stringify(body)}`);
   }
   return { response, body };
+}
+
+/**
+ * A refused ops request must carry NO part of the summary — not just the first
+ * key someone thought to check.
+ *
+ * It was `assert.equal(body.submissions, undefined)`, which is one of six
+ * counts: a denial leaking `inReview` or `awaitingPayment` — the pipeline of a
+ * business a manufacturer partner competes with — stayed green. The six are
+ * the keys `/api/ops/summary` answers with that this console reads
+ * (src/ops2/attention/attention.ts).
+ */
+export const SUMMARY_COUNT_KEYS = [
+  "submissions", "inReview", "readyToIssue", "awaitingPayment", "newEnquiries", "tradeApplications",
+];
+
+export function assertNoCounts(body, label = "denial body carries no counts") {
+  const leaked = SUMMARY_COUNT_KEYS.filter((key) => body?.[key] !== undefined);
+  assert.deepEqual(leaked, [], `${label} — leaked: ${leaked.join(", ")}`);
 }
 
 // Every login gets its own source address. Code issuance is now capped per source

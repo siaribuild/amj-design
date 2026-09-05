@@ -52,6 +52,7 @@ test("the destination list is the owner's, in his order and his two sections", (
       ["workspace", "Products", "/products"],
       ["workspace", "Pricing", "/pricing"],
       ["workspace", "Customers", "/customers"],
+      ["workspace", "Enquiries", "/enquiries"],
       ["system", "Files", "/files"],
       ["system", "Audit", "/audit"],
       ["system", "Settings", "/settings"],
@@ -203,6 +204,21 @@ test("the line route is not exact, so its children mount the page it already has
     assert.ok(!path.includes("/drawing"),
       `"${path}" registers the drawing as its own Route — the grammar is one route, one page`);
   }
+});
+
+test("the attention destination renders its own page, not the destination placeholder", () => {
+  const shell = read("src/ops2/Ops2App.tsx");
+  const bare = shell.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(
+    bare,
+    /import\s*\{\s*AttentionPage\s*\}\s*from\s*"\.\/attention\/AttentionPage"/,
+    "Ops2App must import AttentionPage from ./attention/AttentionPage",
+  );
+  assert.match(
+    bare,
+    /d\.id === "attention" \? <AttentionPage \/> :/,
+    "the attention destination must render AttentionPage instead of falling through to DestinationRoot",
+  );
 });
 
 test("the suffix is read off the address, whatever the ids are made of", () => {

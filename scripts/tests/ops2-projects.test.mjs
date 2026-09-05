@@ -412,3 +412,13 @@ test("three quick filters, and the fourth the mock had is now a refinement", () 
     ["nobody"],
   );
 });
+
+test("?wait= from a notification link is read as a one-shot chip, or not at all", () => {
+  // T4: a referral link into the queue names a chip in the URL. Only a real
+  // chip key is honoured — WAIT_CHIPS is the one list of what those are.
+  assert.equal(M.chipFromSearch("?wait=us"), "us");
+  assert.equal(M.chipFromSearch("?wait=customer"), "customer");
+  assert.equal(M.chipFromSearch("?wait=all"), "all");
+  assert.equal(M.chipFromSearch("?wait=bogus"), null, "not one of WAIT_CHIPS' own keys");
+  assert.equal(M.chipFromSearch(""), null, "no param is not an instruction");
+});
