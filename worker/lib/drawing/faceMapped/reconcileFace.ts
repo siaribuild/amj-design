@@ -1,5 +1,6 @@
 import type { Skill } from "../../estimator/skills/types";
 import { parseModelJson } from "../../estimator/skills/json";
+import type { CropBoxPt } from "../contract";
 import { pairOpening, type FaceMatch, type FaceMatchInput } from "./matchFrames";
 
 /**
@@ -14,6 +15,9 @@ export const FACE_RECONCILE_LIMITS = { maxFaces: 4 };
 export interface FaceReconcileTask extends FaceMatchInput {
   faceKey: string;
   reason: string;
+  /** The face's own part of its sheet, so the look is at the drawing the
+   * question is about and not at four elevations. */
+  regionPt?: CropBoxPt;
 }
 
 /** The faces worth one more look, in the order they were found. */

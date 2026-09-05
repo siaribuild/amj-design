@@ -37,7 +37,7 @@ export type CompositionOutcome =
 const BATCH_SIZE = 4;
 /** §7.6 fixes this: four batches in flight, not a caller's preference. */
 const MAX_CONCURRENT_BATCHES = 4;
-const OPERATIONS: OpeningOperation[] = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"];
+export const OPERATIONS: OpeningOperation[] = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"];
 const AXES: SplitAxis[] = ["vertical", "horizontal"];
 /** Parts read off a drawing are eyeballed fractions, so they need not add to
  * exactly one - but they do have to add to about one frame. */

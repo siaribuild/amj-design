@@ -12,7 +12,8 @@ import type { Env } from "../../types";
 import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
-import { runFaceMappedParser, type FaceMappedCall, type FaceMappedDeps } from "./faceMapped/run";
+import { runFaceMappedParser, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
+import type { FaceMappedPhase } from "./faceMapped/report";
 import { pageScales } from "./harvest";
 import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
 import { chooseStrategy, selectPages } from "./selectPages";
@@ -64,7 +65,7 @@ export interface EnrichDeps {
    *  consulted behind it. */
   runFaceMapped?: Omit<FaceMappedDeps, "render" | "storeCrop" | "onProgress"> & {
     /** Phase A's look at a sheet whose text layer says nothing. */
-    readSheet(input: FaceMappedCall & { pageNo: number }): Promise<{ ratio: number | null; drawingTitle: string | null } | null>;
+    readSheet(input: FaceMappedCall<{ ratio: number | null; drawingTitle: string | null }> & { pageNo: number }): Promise<{ ratio: number | null; drawingTitle: string | null } | null>;
   };
 }
 
@@ -205,6 +206,8 @@ async function enrichFile(
         .map((page) => page.pageNo)
         .filter((pageNo) => !tiers.has(pageNo) || !stated.has(pageNo));
       const readSheet = deps.runFaceMapped.readSheet;
+      // Phase A's looks are spent before the engine starts, and are its spend.
+      const sheetSpend = { modelCalls: 0, cachedTurns: 0, inputTokens: 0, outputTokens: 0, failureKind: null as string | null, warnings: [] as string[] };
       const recovered = silent.length
         ? await recoverSheetFacts({
           inspected,
@@ -214,7 +217,21 @@ async function enrichFile(
             render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
             readSheet: async ({ pageNo, imageDataUrl }) => {
               const skill = makeSheetFactsSkill(pageNo);
-              const read = await readSheet({ pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [imageDataUrl], skill });
+              const read = await readSheet({
+                pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [imageDataUrl], skill,
+                usage: (spent) => {
+                  sheetSpend.modelCalls += spent.modelCalls;
+                  if (spent.cached) sheetSpend.cachedTurns += 1;
+                  sheetSpend.inputTokens += spent.inputTokens;
+                  sheetSpend.outputTokens += spent.outputTokens;
+                  for (const warning of spent.warnings) if (warning !== "stage_replayed" && !sheetSpend.warnings.includes(warning)) sheetSpend.warnings.push(warning);
+                },
+              }).catch((error: unknown) => {
+                // A provider failure keeps its kind on the way to the report,
+                // even though the recovery loop goes on to the next sheet.
+                if (error instanceof StageCallError) sheetSpend.failureKind = error.failureKind;
+                throw error;
+              });
               return read ? { pageNo, ratio: read.ratio, title: read.drawingTitle } : null;
             },
           },
@@ -266,12 +283,30 @@ async function enrichFile(
               return null;
             }
           },
+          // Progress is persisted under ai_job_claim.drawings_phase, whose CHECK
+          // (migration 0062) knows six names. A seventh is an UPDATE that fails
+          // silently, so this engine's phases are told in the persisted
+          // vocabulary; its messages and durations stop here, because carrying
+          // them is a pipeline change, not this engine's.
           onProgress: async (event) => {
-            await args.onProgress?.(event.done, event.total, event.phase as DrawingProgressPhase);
+            await args.onProgress?.(event.done, event.total, PERSISTED_PHASE[event.phase]);
           },
         },
       });
+      for (const [pageNo, facts] of recovered) {
+        if (facts.error) sheetSpend.warnings.push(`sheet ${pageNo} could not be read: ${facts.error}`);
+      }
       run.report.steps.strategy = strategy;
+      if (sheetSpend.failureKind || sheetSpend.warnings.length) {
+        run.report.providerFailure = {
+          failureKind: run.report.providerFailure?.failureKind ?? sheetSpend.failureKind,
+          warnings: [...(run.report.providerFailure?.warnings ?? []), ...sheetSpend.warnings],
+        };
+      }
+      run.report.modelCalls += sheetSpend.modelCalls;
+      run.report.cachedTurns = (run.report.cachedTurns ?? 0) + sheetSpend.cachedTurns;
+      run.report.inputTokens = (run.report.inputTokens ?? 0) + sheetSpend.inputTokens;
+      run.report.outputTokens = (run.report.outputTokens ?? 0) + sheetSpend.outputTokens;
       return run;
     }
 
@@ -684,6 +719,16 @@ export type DrawingParserMode = "disabled" | "legacy" | "full_document" | "face_
 
 export type FaceMappedStageKind = "sheet" | "plan" | "inventory" | "reconcile" | "composition";
 
+/** The face-mapped engine's phases in the vocabulary the progress row persists.
+ *  Exhaustive by type: a new phase without a persisted name does not compile. */
+const PERSISTED_PHASE: Record<FaceMappedPhase, DrawingProgressPhase> = {
+  plan_faces: "floorplan_location",
+  elevation_frames: "elevation_inventory",
+  opening_crops: "render_crops",
+  composition_reads: "opening_read",
+  drawing_complete: "opening_read",
+};
+
 /**
  * A face-mapped look at a page, as the stage layer runs it: the skill that will
  * judge the answer is the skill the stage runs, so junk is a failed stage and
@@ -693,7 +738,7 @@ export type FaceMappedStageKind = "sheet" | "plan" | "inventory" | "reconcile" |
  * served each other's cached answer. Phase E reads under the verification model
  * (§7.6); the other phases under the primary.
  */
-export function faceMappedStageRequest(env: Env, kind: FaceMappedStageKind, input: FaceMappedCall & { attempt?: number }) {
+export function faceMappedStageRequest<O>(env: Env, kind: FaceMappedStageKind, input: FaceMappedCall<O> & { attempt?: number }) {
   return {
     skill: input.skill,
     // A corrective retry is a different request: with the cache on, one that
@@ -775,14 +820,18 @@ export async function runDrawingEnrichmentStage(
       return res.data;
     },
   };
-  const faceMappedCall = (kind: FaceMappedStageKind) => async (input: FaceMappedCall) => {
-    const res = await runStage(env, {
+  const faceMappedCall = (kind: FaceMappedStageKind) => async <O>(input: FaceMappedCall<O> & { attempt?: number }): Promise<O | null> => {
+    const res = await runStage<FaceMappedCallInput, O>(env, {
       aiRunId: args.aiRunId,
       projectId: args.projectId,
       ...faceMappedStageRequest(env, kind, input),
-    } as never);
+    });
+    await input.usage?.({
+      modelCalls: res.modelCalls, cached: res.cached,
+      inputTokens: res.inputTokens, outputTokens: res.outputTokens, warnings: res.warnings,
+    });
     if (!res.ok && res.failureKind !== "invalid_output") throw new StageCallError(res.failureKind, res.warnings);
-    return res.data as never;
+    return res.data;
   };
 
   const deps: EnrichDeps = depsOverride

@@ -25,7 +25,7 @@ await build({
       export { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } from ${p("worker/lib/drawing/agent.ts")};
       export { buildFullDocumentHarvest, applyVisualNorthToHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS } from ${p("worker/lib/drawing/fullDocumentAgent.ts")};
       export { buildFullDocumentHarvest as buildHarvest, applyVisualNorthToHarvest as applyVisualNorth, viewScaleCandidates, pageScales } from ${p("worker/lib/drawing/harvest.ts")};
-      export { documentFaceSheets, documentFaceRegions } from ${p("worker/lib/drawing/sheetFaces.ts")};
+      export { documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys } from ${p("worker/lib/drawing/sheetFaces.ts")};
       export { placeOpeningsOnPlan } from ${p("worker/lib/drawing/faceMapped/planFaces.ts")};
       export { runFaceMappedParser } from ${p("worker/lib/drawing/faceMapped/run.ts")};
       export { faceMappedReadings, faceMappedProgress } from ${p("worker/lib/drawing/faceMapped/report.ts")};
@@ -38,7 +38,7 @@ await build({
       export { planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS } from ${p("worker/lib/drawing/faceMapped/planFacesSkill.ts")};
       export { recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill } from ${p("worker/lib/drawing/pageScaleRecovery.ts")};
       export { expectedWidthPt } from ${p("worker/lib/drawing/faceMapped/contract.ts")};
-      export { StageCallError } from ${p("worker/lib/ai/stage.ts")};
+      export { StageCallError, runStage } from ${p("worker/lib/ai/stage.ts")};
       export { applyDrawingConsistencyFlags, drawingFaceKey } from ${p("worker/lib/drawing/consistency.ts")};
       export { measureSplit, composeMeasuredSplit } from ${p("worker/lib/drawing/measure.ts")};
       export { parseCompositionComment } from ${p("worker/lib/drawing/comments.ts")};
@@ -56,7 +56,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2356,6 +2356,71 @@ test("elevation inventory: the call is closed to the face it is about (§7.2)", 
   assert.equal(skill.validate("not json at all"), null, "junk is junk");
 });
 
+test("elevation inventory: a face drawn once per storey sheet is read from the sheet for its storey (Spec3)", () => {
+  const built = elevationFaceTasks({
+    placements: [
+      { ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" },
+      { ...placedAt("W2", 1, 0.6, 1), elevation: "NORTH", storey: "FIRST FLOOR" },
+    ],
+    faceSheets: new Map([["NORTH", [7, 8]]]),
+    widthByTag: new Map([["W1", 900], ["W2", 900]]),
+    sheets: new Map([
+      [7, { overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+      [8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+    ]),
+    sheetStoreys: new Map([[7, "GROUND FLOOR"], [8, "FIRST FLOOR"]]),
+  });
+  assert.deepEqual(built.tasks.map((t) => [t.storey, t.pageNo]), [["GROUND FLOOR", 7], ["FIRST FLOOR", 8]]);
+  assert.deepEqual(built.skipped, []);
+
+  // The same face on two sheets of different sizes has two regions, and each
+  // task gets the one on its own sheet.
+  const sized = elevationFaceTasks({
+    placements: [
+      { ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" },
+      { ...placedAt("W2", 1, 0.6, 1), elevation: "NORTH", storey: "FIRST FLOOR" },
+    ],
+    faceSheets: new Map([["NORTH", [7, 8]]]),
+    widthByTag: new Map([["W1", 900], ["W2", 900]]),
+    sheets: new Map([
+      [7, { overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 800], scaleCandidates: [] }],
+      [8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 2000, 1200], scaleCandidates: [] }],
+    ]),
+    sheetStoreys: new Map([[7, "GROUND FLOOR"], [8, "FIRST FLOOR"]]),
+    regionByFace: new Map([
+      ["7|NORTH", { pageNo: 7, regionPt: [0, 0, 500, 800] }],
+      ["8|NORTH", { pageNo: 8, regionPt: [0, 0, 1000, 1200] }],
+    ]),
+  });
+  assert.deepEqual(sized.tasks.map((t) => t.overviewBoxPt), [[0, 0, 500, 800], [0, 0, 1000, 1200]]);
+
+  // Two sheets that both claim the storey are still nobody's.
+  const twice = elevationFaceTasks({
+    placements: [{ ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" }],
+    faceSheets: new Map([["NORTH", [7, 8]]]),
+    widthByTag: new Map([["W1", 900]]),
+    sheets: new Map([
+      [7, { overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+      [8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+    ]),
+    sheetStoreys: new Map([[7, "GROUND FLOOR"], [8, "GROUND FLOOR"]]),
+  });
+  assert.equal(twice.tasks.length, 0);
+
+  // Two sheets and no storey to tell them apart is still a refusal.
+  const blind = elevationFaceTasks({
+    placements: [{ ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" }],
+    faceSheets: new Map([["NORTH", [7, 8]]]),
+    widthByTag: new Map([["W1", 900]]),
+    sheets: new Map([
+      [7, { overviewRenderId: "r7", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+      [8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }],
+    ]),
+  });
+  assert.equal(blind.tasks.length, 0);
+  assert.match(blind.skipped[0].reason, /sheets 7, 8/);
+});
+
 test("elevation inventory: two faces whose names run together are still two faces (§7.2)", () => {
   // Joining a face and a storey with a space makes "A B" on storey "C" and "A"
   // on storey "B C" the same group, and one of the two loses its openings to
@@ -3202,10 +3267,14 @@ test("run: a face the drawing could not settle gets one look, and stays unsettle
   })) }));
 
   const looked = [];
+  const renders = [];
   const settled = await runFaceMappedParser({
     ...evenly,
     deps: {
-      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      render: async ({ pageNo, crops }) => {
+        renders.push({ pageNo, crops });
+        return { images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 };
+      },
       storeCrop: async (id) => `key_${id}`,
       readPlanPage: async () => null,
       inventoryElevation: answering(async () => frames),
@@ -3217,6 +3286,8 @@ test("run: a face the drawing could not settle gets one look, and stays unsettle
     },
   });
   assert.equal(looked.length, 1, "one look at the one face that needed it");
+  assert.equal(renders.filter((r) => r.pageNo === 5 && !r.crops).length, 0,
+    "the elevation is shown as the face's own region, never as the whole sheet");
   assert.deepEqual(settled.readings.map((r) => r.splitState), ["value", "value"]);
   assert.equal(settled.readings.every((r) => r.flags.includes("agentEvidenceWeak")), true,
     "a direction nothing on the page settled is not a verified one");
@@ -3465,6 +3536,7 @@ test("run: a page that will not render costs its own openings, not the file (P4)
   assert.deepEqual(run.readings.map((r) => [r.externalRef, r.splitState]), [["W1", "value"], ["W2", "not_read"]],
     "the wall whose sheet rendered is read; the other is not, and the file is not lost");
   assert.match(run.readings[1].gapNote, /render/);
+  assert.match(run.readings[1].gapNote, /container timed out/, "and the reason says what the container said");
   assert.equal(run.readings[1].elevation, "SOUTH", "what the plan settled survives the render that did not");
 });
 
@@ -3587,6 +3659,10 @@ test("skills: what a skill accepted, archived and read back, is what it accepted
     return once;
   };
   roundTrip(makeSheetFactsSkill(3), { ratio: 100, drawingTitle: "GROUND FLOOR PLAN" });
+  assert.equal(makeSheetFactsSkill(3).validate({}), null,
+    "an answer that says nothing is malformed, not a sheet with no title and no scale");
+  assert.deepEqual(makeSheetFactsSkill(3).validate({ ratio: null, drawingTitle: null }), { ratio: null, drawingTitle: null },
+    "saying none is an answer");
   roundTrip(makePlanFaceSkill(
     { pageNo: 4, candidates: [{ planCandidateId: "W2_p4_1", tag: "W2", boxNorm: [0.4, 0.6, 0.46, 0.64] }] },
     new Set(["A", "B"]),
@@ -3708,6 +3784,226 @@ test("run: a page's scale is borrowed once, from every frame matched on it (Spec
   assert.equal(byTag.W1.cropBasis, "calibrated");
   assert.equal(byTag.W4.confidence, "low", "the half-width frame disagrees with the page, whatever its own face says");
   assert.equal(run.readings.find((r) => r.externalRef === "W4").flags.includes("drawingInconsistency"), true);
+});
+
+test("run: a crop too big to hold is not read, and the rest are (S1)", async () => {
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "W2", x0: 457, top: 250, x1: 483, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const stored = [];
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 900, heightMm: 1200, typeText: "AWNING" },
+    ],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      // The first crop asked for comes back absurdly large.
+      render: async ({ pageNo, crops }) => ({
+        images: [{ pngB64: crops && crops[0][0] < 300 ? "A".repeat(3_000_000) : `page${pageNo}`, widthPx: 1_000, heightPx: 800 }],
+        dpi: 100,
+      }),
+      storeCrop: async (id) => { stored.push(id); return `key_${id}`; },
+      readPlanPage: async () => null,
+      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }, { box: [0.5, 0.3, 0.5255, 0.6] }] }),
+      reconcileFace: async () => null,
+      readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) })),
+    },
+  });
+  assert.deepEqual(run.readings.map((r) => [r.externalRef, r.splitState]), [["W1", "not_read"], ["W2", "value"]]);
+  assert.match(run.readings[0].gapNote, /too large|too big/i);
+  assert.deepEqual(stored, ["W2_5_NORTH_GROUND-FLOOR_2"], "what will not fit is not stored either");
+});
+
+test("run: what the stage layer spent is what the report says (P6)", async () => {
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      // The inventory came back from the archive; the composition cost a call.
+      inventoryElevation: async (input) => {
+        await input.usage?.({ modelCalls: 0, cached: true, inputTokens: 0, outputTokens: 0, warnings: ["stage_replayed"] });
+        return input.skill.validate({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }] });
+      },
+      reconcileFace: async () => null,
+      readComposition: async (input) => {
+        await input.usage?.({ modelCalls: 1, cached: false, inputTokens: 1_200, outputTokens: 40, warnings: [] });
+        return input.skill.validate({ readings: input.batch.map((task) => ({
+          tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+          operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+        })) });
+      },
+    },
+  });
+  assert.equal(run.report.modelCalls, 1, "a replayed stage is not a model call");
+  assert.equal(run.report.cachedTurns, 1);
+  assert.equal(run.report.inputTokens, 1_200);
+  assert.equal(run.report.outputTokens, 40);
+});
+
+test("run: a provider failure keeps its kind on the way to the report (S3, Spec6)", async () => {
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      inventoryElevation: async (input) => {
+        await input.usage?.({ modelCalls: 1, cached: false, inputTokens: 900, outputTokens: 0, warnings: ["HTTP 503"] });
+        throw new StageCallError("transient_provider", ["HTTP 503"]);
+      },
+      reconcileFace: async () => null,
+      readComposition: async () => null,
+    },
+  });
+  assert.equal(run.readings[0].splitState, "not_read");
+  assert.deepEqual(run.report.providerFailure, { failureKind: "transient_provider", warnings: ["HTTP 503"] },
+    "operations can tell a provider outage from a bad read");
+  assert.equal(run.report.modelCalls, 1, "and the call that failed was still a call");
+});
+
+test("run: every render that fails says so, wherever it fails (S3)", async () => {
+  // The plan page will not render for the recovery look, and the elevation's
+  // face region will not render for the second look: each opening that loses
+  // out says which render, and what the container said.
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "W2", x0: 457, top: 250, x1: 483, bottom: 264 },
+    { text: "W3", x0: 457, top: 540, x1: 483, bottom: 554 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  let elevationRenders = 0;
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [
+      { tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W2", widthMm: 1800, heightMm: 1200, typeText: "AWNING" },
+      { tag: "W3", widthMm: 900, heightMm: 1200, typeText: "AWNING" },
+    ],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo, crops }) => {
+        if (pageNo === 3) throw new Error("plan render: container timed out");
+        if (pageNo === 5 && crops && ++elevationRenders > 1) throw new Error("face render: container timed out");
+        return { images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 };
+      },
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.1, 0.3, 0.151, 0.6] }, { box: [0.5, 0.3, 0.551, 0.6] }] }),
+      reconcileFace: async () => null,
+      readComposition: async () => null,
+    },
+  });
+  const byTag = Object.fromEntries(run.readings.map((r) => [r.externalRef, r]));
+  assert.match(byTag.W3.gapNote, /plan render: container timed out/, "the recovery look that could not be taken says why");
+  assert.match(byTag.W1.gapNote, /face render: container timed out/, "and so does the second look");
+});
+
+test("run: frames that disagree with the printed scale by one factor recalibrate the page (Spec2, §7.4)", async () => {
+  // The sheet says 1:100. Three 1800mm openings are drawn 102pt wide - the size
+  // 1800mm has at 1:50 - and they agree with each other. Section 7.4: record the
+  // conflict and derive one effective scale from their median ratio. One
+  // opening cannot recalibrate a view; three that agree can.
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "W2", x0: 407, top: 250, x1: 433, bottom: 264 },
+    { text: "W3", x0: 627, top: 250, x1: 653, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: ["W1", "W2", "W3"].map((tag) => ({ tag, widthMm: 1800, heightMm: 1200, typeText: "AWNING" })),
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), scaleSources: new Map([[5, "printed"]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      // Crowded left like the plan; each 102pt wide on a 1000pt sheet.
+      inventoryElevation: answering({ storeyBand: [0.02, 0.2, 0.98, 0.7], frames: [
+        { box: [0.05, 0.3, 0.152, 0.6] }, { box: [0.20, 0.3, 0.302, 0.6] }, { box: [0.50, 0.3, 0.602, 0.6] },
+      ] }),
+      reconcileFace: async () => null,
+      readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) })),
+    },
+  });
+  const byTag = Object.fromEntries(run.report.perOpening.map((o) => [o.tag, o]));
+  assert.deepEqual(["W1", "W2", "W3"].map((tag) => byTag[tag].cropBasis), ["calibrated", "calibrated", "calibrated"],
+    "sized from the frames' own scale, not the one the sheet printed");
+  assert.deepEqual(["W1", "W2", "W3"].map((tag) => byTag[tag].scaleSource), ["calibrated", "calibrated", "calibrated"]);
+  const w1 = run.readings.find((r) => r.externalRef === "W1");
+  assert.equal(w1.flags.includes("drawingInconsistency"), true, "the conflict with the printed scale is recorded");
+  assert.match(w1.gapNote ?? "", /1:100/);
 });
 
 test("run: a tag printed on the elevation reaches the matcher (§7.3)", async () => {
@@ -4082,16 +4378,16 @@ test("sheet faces: four elevations on one sheet are four regions of it (§7.2)",
     geometry: { pageNo: 9, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
   };
   const regions = documentFaceRegions([sheet]);
-  assert.deepEqual([...regions.keys()], ["NORTH", "EAST"]);
-  assert.deepEqual(regions.get("NORTH"), { pageNo: 9, regionPt: [0, 0, 397.5, 800] });
-  assert.deepEqual(regions.get("EAST"), { pageNo: 9, regionPt: [397.5, 0, 1_000, 800] });
+  assert.deepEqual([...regions.keys()], ["9|NORTH", "9|EAST"], "keyed by sheet and face: a face drawn on two sheets has two regions");
+  assert.deepEqual(regions.get("9|NORTH"), { pageNo: 9, regionPt: [0, 0, 397.5, 800] });
+  assert.deepEqual(regions.get("9|EAST"), { pageNo: 9, regionPt: [397.5, 0, 1_000, 800] });
 
   // One face on its own sheet is the whole sheet.
   const alone = documentFaceRegions([{
     ...sheet,
     page: { ...sheet.page, words: sheet.page.words.slice(0, 2) },
   }]);
-  assert.deepEqual(alone.get("NORTH"), { pageNo: 9, regionPt: [0, 0, 1_000, 800] });
+  assert.deepEqual(alone.get("9|NORTH"), { pageNo: 9, regionPt: [0, 0, 1_000, 800] });
 });
 
 test("sheet faces: an elevation named in two words keeps both (§7.2)", () => {
@@ -4121,8 +4417,8 @@ test("sheet faces: four elevations in a two-by-two grid are four cells (P5)", ()
     geometry: { pageNo: 9, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 80, imageCount: 0, imageAreaFraction: 0 },
   };
   const regions = documentFaceRegions([sheet]);
-  assert.deepEqual([...regions.keys()].sort(), ["EAST", "NORTH", "SOUTH", "WEST"]);
-  const cell = (name) => regions.get(name).regionPt;
+  assert.deepEqual([...regions.keys()].sort(), ["9|EAST", "9|NORTH", "9|SOUTH", "9|WEST"]);
+  const cell = (name) => regions.get(`9|${name}`).regionPt;
   // Titles sit under their drawings: a row reaches from the title above down
   // to its own; columns meet halfway between titles.
   assert.deepEqual(cell("NORTH"), [0, 0, 425, 387]);
@@ -4141,8 +4437,76 @@ test("sheet faces: two stacked elevations close together are two rows, not two c
     geometry: { pageNo: 9, widthPt: 1_000, heightPt: 1_000, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
   };
   const regions = documentFaceRegions([sheet]);
-  assert.deepEqual(regions.get("NORTH").regionPt, [0, 0, 1_000, 407]);
-  assert.deepEqual(regions.get("SOUTH").regionPt, [0, 407, 1_000, 447]);
+  assert.deepEqual(regions.get("9|NORTH").regionPt, [0, 0, 1_000, 407]);
+  assert.deepEqual(regions.get("9|SOUTH").regionPt, [0, 407, 1_000, 447]);
+});
+
+test("sheet faces: an elevation sheet says which storey it draws (Spec3)", () => {
+  const sheet = (pageNo, words) => ({
+    page: { pageNo, text: words.map((w) => w.text).join(" "), words },
+    geometry: { pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+  });
+  const ground = sheet(7, [
+    { text: "NORTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "ELEVATION", x0: 155, top: 400, x1: 230, bottom: 414 },
+    { text: "GROUND", x0: 700, top: 760, x1: 760, bottom: 774 }, { text: "FLOOR", x0: 765, top: 760, x1: 810, bottom: 774 },
+    { text: "ELEVATIONS", x0: 815, top: 760, x1: 900, bottom: 774 },
+  ]);
+  const upper = sheet(8, [
+    { text: "NORTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "ELEVATION", x0: 155, top: 400, x1: 230, bottom: 414 },
+  ]);
+  const storeys = documentSheetStoreys([ground, upper], new Map([[8, "FIRST FLOOR ELEVATIONS"]]));
+  assert.deepEqual([...storeys.entries()], [[7, "GROUND FLOOR"], [8, "FIRST FLOOR"]],
+    "read from the title band where the sheet prints one, and from the recovered title where it does not");
+
+  // A sheet whose band holds both a drawing's title and the sheet's own:
+  // NORTH is the face, GROUND FLOOR is the storey, and neither is the other.
+  const both = sheet(9, [
+    { text: "NORTH", x0: 100, top: 760, x1: 150, bottom: 774 }, { text: "ELEVATION", x0: 155, top: 760, x1: 230, bottom: 774 },
+    { text: "GROUND", x0: 700, top: 760, x1: 760, bottom: 774 }, { text: "FLOOR", x0: 765, top: 760, x1: 810, bottom: 774 },
+    { text: "ELEVATIONS", x0: 815, top: 760, x1: 900, bottom: 774 },
+  ]);
+  assert.deepEqual([...documentFaceSheets([both]).keys()], ["NORTH"], "a sheet title is not a face");
+  assert.deepEqual(documentSheetStoreys([both], new Map(), new Set(["NORTH"])).get(9), "GROUND FLOOR",
+    "and a face title is not a storey");
+
+  // A set that titles its sheets in the singular - GROUND FLOOR ELEVATION -
+  // reads the same as one that titles its drawings that way, until the plans
+  // are consulted: GROUND FLOOR is a storey the plans name, so it is not a face.
+  const planStoreys = new Set(["GROUND FLOOR", "FIRST FLOOR"]);
+  const singular = [
+    sheet(7, [{ text: "NORTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "ELEVATION", x0: 155, top: 400, x1: 230, bottom: 414 }]),
+    sheet(8, [{ text: "NORTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "ELEVATION", x0: 155, top: 400, x1: 230, bottom: 414 }]),
+  ];
+  const recovered = new Map([[7, "GROUND FLOOR ELEVATION"], [8, "FIRST FLOOR ELEVATION"]]);
+  assert.deepEqual([...documentSheetStoreys(singular, recovered, new Set(["NORTH"]), planStoreys).entries()],
+    [[7, "GROUND FLOOR"], [8, "FIRST FLOOR"]]);
+  const bandSingular = sheet(9, [
+    { text: "GROUND", x0: 700, top: 760, x1: 760, bottom: 774 }, { text: "FLOOR", x0: 765, top: 760, x1: 810, bottom: 774 },
+    { text: "ELEVATION", x0: 815, top: 760, x1: 900, bottom: 774 },
+    { text: "NORTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "ELEVATION", x0: 155, top: 400, x1: 230, bottom: 414 },
+  ]);
+  assert.deepEqual([...documentFaceSheets([bandSingular], planStoreys).keys()], ["NORTH"],
+    "a storey the plans name is not a face, whatever number its title word takes");
+  assert.equal(documentSheetStoreys([bandSingular], new Map(), new Set(["NORTH"]), planStoreys).get(9), "GROUND FLOOR");
+
+  // The plural is a sheet's title and names a storey whatever else the label
+  // has been taken for; a stale face name does not veto it.
+  assert.equal(documentSheetStoreys([ground], new Map(), new Set(["NORTH", "GROUND FLOOR"])).get(7), "GROUND FLOOR");
+
+  // The storeys the plans name, in their own words. A set titled FLOOR PLAN has
+  // one storey and calls it FLOOR; that is a label, not an error, and refusing
+  // it would lose every opening on a single-storey house.
+  const plan = (pageNo, words, title) => ({
+    page: { pageNo, text: title ?? words.map((w) => w.text).join(" "), words },
+    geometry: { pageNo, widthPt: 1_000, heightPt: 800, rotation: 0, textChars: 40, imageCount: 0, imageAreaFraction: 0 },
+  });
+  const plans = [
+    plan(3, [{ text: "GROUND", x0: 700, top: 760, x1: 760, bottom: 774 }, { text: "FLOOR", x0: 765, top: 760, x1: 810, bottom: 774 }, { text: "PLAN", x0: 815, top: 760, x1: 860, bottom: 774 }]),
+    plan(4, []),
+    plan(5, [{ text: "FLOOR", x0: 765, top: 760, x1: 810, bottom: 774 }, { text: "PLAN", x0: 815, top: 760, x1: 860, bottom: 774 }]),
+  ];
+  assert.deepEqual([...documentPlanStoreys(plans, new Map([[4, "FIRST FLOOR PLAN"]]))].sort(), ["FIRST FLOOR", "FLOOR", "GROUND FLOOR"],
+    "read from the title band, or the recovered title where the band is silent");
 });
 
 test("sheet faces: a section is not an elevation (P2-AC15)", () => {
@@ -7002,10 +7366,12 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     FILES: { get: async () => ({ arrayBuffer: async () => new ArrayBuffer(3) }), put: async () => {} },
     PLAN_PARSE: {},
   };
+  const phases = [];
   const result = await enrichOpenings(env, {
     projectId: "p", aiRunId: "r",
     files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
     scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    onProgress: async (_done, _total, phase) => { phases.push(phase); },
   }, {
     inspect: async () => inspected,
     render: async () => ({ images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
@@ -7013,8 +7379,9 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     runFloorplan: async () => null,
     runOpening: async () => null,
     runFaceMapped: {
-      readSheet: answering(async ({ pageNo }) => {
+      readSheet: answering(async ({ pageNo, usage }) => {
         used.push(`sheet ${pageNo}`);
+        await usage?.({ modelCalls: 1, cached: false, inputTokens: 500, outputTokens: 20, warnings: [] });
         return pageNo === 3
           ? { pageNo, ratio: 100, drawingTitle: "GROUND FLOOR PLAN" }
           : { pageNo, ratio: 100, drawingTitle: "ELEVATIONS" };
@@ -7033,8 +7400,47 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
   assert.deepEqual(result.readings.map((r) => [r.externalRef, r.splitState, r.elevation]), [["W1", "value", "NORTH"]],
     "and the plan the look found is the plan the openings are placed on");
   assert.equal(result.report.files[0].steps.placements.fromText, 1);
+  assert.equal(result.report.files[0].modelCalls, 4, "two sheet reads, one inventory, one composition - the sheet reads count too");
+
+  // The same set, with the sheet read failing at the provider for one page and
+  // the render failing for the other: both are named in the report, not
+  // swallowed by the recovery loop.
+  const failing = await enrichOpenings(env, {
+    projectId: "p", aiRunId: "r2",
+    files: [{ fileId: "f", r2Key: "k", checksum: "abc" }],
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+  }, {
+    inspect: async () => inspected,
+    // The enrichment adapter passes the render request fourth, after the
+    // container namespace, project and PDF bytes.
+    render: async (_namespace, _projectId, _pdfBytes, { pageNo }) => {
+      if (pageNo === 3) throw new Error("container timed out on sheet 3");
+      return { images: [{ pngB64: "AAA", widthPx: 1_000, heightPx: 800 }], dpi: 100 };
+    },
+    runElevation: async () => null,
+    runFloorplan: async () => null,
+    runOpening: async () => null,
+    runFaceMapped: {
+      readSheet: async ({ usage }) => {
+        await usage?.({ modelCalls: 1, cached: false, inputTokens: 500, outputTokens: 0, warnings: ["HTTP 503"] });
+        throw new StageCallError("transient_provider", ["HTTP 503"]);
+      },
+      readPlanPage: async () => null,
+      inventoryElevation: async () => null,
+      reconcileFace: async () => null,
+      readComposition: async () => null,
+    },
+  });
+  assert.equal(failing.report.files[0].providerFailure?.failureKind, "transient_provider",
+    "a sheet read that failed at the provider is a provider failure on the report");
+  assert.equal(failing.report.files[0].providerFailure?.warnings.some((w) => /container timed out on sheet 3/.test(w)), true,
+    "and a sheet that would not render is named with what the container said");
   assert.equal(result.report.files[0].perOpening[0].scaleSource, "recovered",
     "a scale a look at the sheet supplied is reported as recovered, not as printed");
+  const allowed = new Set(["inventory", "elevation_inventory", "floorplan_location", "orientation", "render_crops", "opening_read"]);
+  assert.equal(phases.length > 0, true);
+  assert.deepEqual(phases.filter((phase) => !allowed.has(phase)), [],
+    "progress is persisted under ai_job_claim.drawings_phase, whose CHECK knows six names; a seventh is a silently dropped UPDATE");
 });
 
 test("switch wiring: face-mapped mode reads the file, and the other engines stay out of it (Task 11)", async () => {
@@ -7194,6 +7600,44 @@ test("switch wiring: a production stage call carries the real validator and the 
   const second = faceMappedStageRequest(env, "composition", { skill, prompt: "p", imageDataUrls: ["data:,a"], attempt: 2 });
   assert.notDeepEqual(first.input, second.input);
   assert.equal(second.input.attempt, 2);
+});
+
+test("switch wiring: a face-mapped stage replays from its archive without a model call (P7, Task 12)", async () => {
+  // The stage layer, not a stand-in: the first call spends a model call and
+  // archives what the validator accepted; the second, with the cache on, is
+  // served from the archive, re-validated, and costs nothing. Phase E and the
+  // phases before it alike.
+  const skill = makeCompositionSkill([{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: null }]);
+  const answer = { readings: [{ tag: "W1", frameId: "f1", cropRenderId: "c1", operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high" }] };
+  const aiCalls = [];
+  const r2 = new Map();
+  let hit = null;
+  const env = {
+    AI_STAGE_CACHE: "on", AI_GATEWAY_ID: "gw-test",
+    AI: { run: async (model, params) => { aiCalls.push({ model, params }); return { response: JSON.stringify(answer), usage: { prompt_tokens: 10, completion_tokens: 5 } }; } },
+    DB: { prepare: (sql) => ({ bind: (...bound) => ({
+      first: async () => /INSERT INTO ai_stage_runs/.test(sql) ? { id: bound[0] } : (sql.includes("FROM ai_stage_runs") ? hit : null),
+      run: async () => ({}),
+      all: async () => ({ results: [] }),
+    }) }) },
+    FILES: { get: async (k) => (r2.has(k) ? { text: async () => r2.get(k) } : null), put: async (k, v) => { r2.set(k, v); } },
+  };
+  const request = { ...faceMappedStageRequest(env, "composition", { skill, prompt: skill.buildPrompt(), imageDataUrls: ["data:,a"], attempt: 1 }), aiRunId: "run1", projectId: "prj1" };
+
+  const first = await runStage(env, request);
+  assert.equal(first.ok, true);
+  assert.equal(first.cached, false);
+  assert.equal(aiCalls.length, 1);
+  const archived = [...r2.keys()].find((key) => key.includes(skill.id));
+  assert.ok(archived, "what the validator accepted is archived");
+  hit = { id: "prev", result_r2_key: archived };
+
+  const second = await runStage(env, request);
+  assert.equal(second.cached, true, "the same request is served from the archive");
+  assert.equal(second.modelCalls, 0);
+  assert.equal(aiCalls.length, 1, "and costs no tokens");
+  assert.deepEqual(second.data, first.data, "and is the same answer");
+  assert.deepEqual(readingsToOutcomes(second.data, [{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: null }])[0].state, "value");
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {

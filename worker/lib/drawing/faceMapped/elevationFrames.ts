@@ -65,6 +65,9 @@ export function elevationFaceTasks(args: {
   sheets: Map<number, { overviewRenderId: string; overviewBoxPt: CropBoxPt; scaleCandidates: DrawingScaleCandidate[] }>;
   /** Where each face is drawn on its sheet, where a sheet draws more than one. */
   regionByFace?: Map<string, { pageNo: number; regionPt: CropBoxPt }>;
+  /** Which storey each elevation sheet draws, where it says. A face drawn once
+   * per storey sheet is read from the sheet for its storey. */
+  sheetStoreys?: Map<number, string>;
 }): { tasks: ElevationFaceTask[]; skipped: SkippedFace[] } {
   const groups = new Map<string, PlanOpeningPlacement[]>();
   for (const placement of args.placements) {
@@ -79,14 +82,18 @@ export function elevationFaceTasks(args: {
   for (const group of groups.values()) {
     const ordered = [...group].sort((a, b) => a.wallOrder - b.wallOrder);
     const { elevation, storey } = ordered[0];
-    const pages = args.faceSheets.get(elevation) ?? [];
+    const drawnOn = args.faceSheets.get(elevation) ?? [];
     const refuse = (reason: string) =>
       skipped.push({ elevation, storey, tags: ordered.map((p) => p.tag), reason });
 
-    if (pages.length === 0) {
+    if (drawnOn.length === 0) {
       refuse(`no elevation sheet in this document is titled for face ${elevation}`);
       continue;
     }
+    // A face drawn on more than one sheet is one sheet per storey, or it is a
+    // set nobody can read: the sheet whose title names this storey is the one.
+    const forStorey = drawnOn.filter((pageNo) => args.sheetStoreys?.get(pageNo)?.toUpperCase() === storey.toUpperCase());
+    const pages = drawnOn.length === 1 ? drawnOn : forStorey.length === 1 ? forStorey : drawnOn;
     if (pages.length > 1) {
       refuse(`face ${elevation} is drawn on sheets ${pages.join(", ")}, and which one to read is not settled`);
       continue;
@@ -106,7 +113,7 @@ export function elevationFaceTasks(args: {
       // them position by position rather than as a bag of numbers.
       scheduledWidthsMm: ordered.flatMap((p) => args.widthByTag.get(p.tag) ?? []),
       overviewRenderId: sheet.overviewRenderId,
-      overviewBoxPt: args.regionByFace?.get(elevation)?.regionPt ?? sheet.overviewBoxPt,
+      overviewBoxPt: args.regionByFace?.get(`${pages[0]}|${elevation}`)?.regionPt ?? sheet.overviewBoxPt,
       scaleCandidates: sheet.scaleCandidates,
     });
   }

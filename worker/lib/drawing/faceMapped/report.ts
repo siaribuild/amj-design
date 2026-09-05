@@ -1,5 +1,5 @@
-import type { CropBoxPt, DrawingFileReport, DrawingReading, GapCode } from "../contract";
-import type { CompositionOutcome } from "./compositions";
+import type { CropBoxPt, DrawingFileReport, DrawingReading, GapCode, OpeningOperation } from "../contract";
+import { OPERATIONS, type CompositionOutcome } from "./compositions";
 import { normalizeOpeningRef } from "../../ai/energyMap";
 
 /**
@@ -121,12 +121,11 @@ export function faceMappedReadings(args: {
 /** True when the schedule names an operation the drawing does not show. Only a
  * schedule that names one at all can disagree: "ALUMINIUM WINDOW" says nothing
  * about how it opens, and silence is not a contradiction. */
-function disagreesWithSchedule(operations: string[], typeText: string | null | undefined): boolean {
+function disagreesWithSchedule(operations: OpeningOperation[], typeText: string | null | undefined): boolean {
   if (!typeText) return false;
   const said = typeText.toLowerCase();
-  const named = ["fixed", "awning", "casement", "sliding", "louvre", "hinged", "sidelight"]
-    .filter((operation) => said.includes(operation));
-  return named.length > 0 && !named.some((operation) => operations.includes(operation as never));
+  const named = OPERATIONS.filter((operation) => said.includes(operation));
+  return named.length > 0 && !named.some((operation) => operations.includes(operation));
 }
 
 export type FaceMappedPhase =
@@ -178,13 +177,14 @@ export function faceMappedFileReport(args: {
   compositions: CompositionOutcome[];
   placed: number;
   recovered: number;
-  modelCalls: number;
+  /** What the run cost, as the stage layer reported it. */
+  spent: { modelCalls: number; cachedTurns: number; inputTokens: number; outputTokens: number; warnings: string[]; failureKind: string | null };
   containerCalls: number;
   startedAt: number;
   /** Where each read opening came from, by the engine's spelling of its tag. */
   lineage: Map<string, {
     planCandidateId: string; frameId: string; direction: "with_plan" | "against_plan";
-    scaleSource: "printed" | "recovered" | null; cropBasis: DrawingFileReport["perOpening"][number]["cropBasis"];
+    scaleSource: "printed" | "recovered" | "calibrated" | null; cropBasis: DrawingFileReport["perOpening"][number]["cropBasis"];
   }>;
 }): DrawingFileReport {
   return {
@@ -230,7 +230,13 @@ export function faceMappedFileReport(args: {
       };
     }),
     wallMs: Date.now() - args.startedAt,
-    modelCalls: args.modelCalls,
+    modelCalls: args.spent.modelCalls,
+    cachedTurns: args.spent.cachedTurns,
+    inputTokens: args.spent.inputTokens,
+    outputTokens: args.spent.outputTokens,
+    ...(args.spent.warnings.length || args.spent.failureKind
+      ? { providerFailure: { failureKind: args.spent.failureKind, warnings: args.spent.warnings } }
+      : {}),
     containerCalls: args.containerCalls,
   };
 }

@@ -1,4 +1,5 @@
 import type { CropBoxPt, PageInventory, PageText, PageWord } from "./contract";
+import { printedStorey } from "./locate";
 
 /**
  * Phase A, document vocabulary: what this set calls its faces, and which sheet
@@ -20,15 +21,22 @@ export interface SheetPage {
 
 // A section cuts through the building; an elevation looks at one of its walls.
 // Only the second names a face, and reading one off the first lets a
-// cut-through be inventoried as though it were the wall.
-const VIEW_TITLE = /^ELEVATIONS?$/;
+// cut-through be inventoried as though it were the wall. A drawing's title is
+// singular - NORTH ELEVATION - and a sheet's is plural - GROUND FLOOR
+// ELEVATIONS; the plural names the storey a sheet draws, never a face.
+const VIEW_TITLE = /^ELEVATION$/;
+// No word of a storey is itself ELEVATION: NORTH ELEVATION GROUND FLOOR
+// ELEVATIONS holds one face title and one sheet title, not a storey called
+// ELEVATION GROUND FLOOR. The plural is a sheet's title and always names a
+// storey; the singular names one only when the plans name it too.
+const SHEET_TITLE = /\b((?:(?!ELEVATIONS?\b)[A-Z][A-Z0-9]*)(?:\s+(?!ELEVATIONS?\b)[A-Z0-9]+){0,2})\s+(ELEVATIONS?)\b/g;
 /** Titles whose baselines differ by less than this many title heights are one
  * row of drawings. */
 const ROW_TOLERANCE = 1.5;
 const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
 
 /** Every face title printed in a set, with where it is printed. */
-function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: number; y: number; height: number }[] {
+function faceTitles(pages: SheetPage[], storeyNames: Set<string> = new Set()): { label: string; pageNo: number; x: number; y: number; height: number }[] {
   const found: { label: string; pageNo: number; x: number; y: number; height: number }[] = [];
   for (const { page, geometry } of pages) {
     const rows = new Map<number, PageWord[]>();
@@ -63,6 +71,9 @@ function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: num
         for (const { parts, words } of [run(-1), run(1)]) {
           if (!parts.length) continue;
           const label = parts.join(" ");
+          // GROUND FLOOR ELEVATION reads like a drawing's title until the plans
+          // are consulted: a storey the plans name is a sheet's title, not a face.
+          if (storeyNames.has(label)) continue;
           // The title's own place on the sheet is where its name is printed,
           // which is what separates one elevation's region from the next.
           const neighbour = {
@@ -87,9 +98,9 @@ function faceTitles(pages: SheetPage[]): { label: string; pageNo: number; x: num
 }
 
 /** Face name to the sheets that draw it, in page order. */
-export function documentFaceSheets(pages: SheetPage[]): Map<string, number[]> {
+export function documentFaceSheets(pages: SheetPage[], storeyNames: Set<string> = new Set()): Map<string, number[]> {
   const sheets = new Map<string, number[]>();
-  for (const { label, pageNo } of faceTitles(pages)) {
+  for (const { label, pageNo } of faceTitles(pages, storeyNames)) {
     const seen = sheets.get(label) ?? [];
     if (!seen.includes(pageNo)) sheets.set(label, [...seen, pageNo]);
   }
@@ -105,13 +116,16 @@ export function documentFaceSheets(pages: SheetPage[]): Map<string, number[]> {
  * where each drawing is: side by side, they meet halfway between their titles;
  * stacked, each reaches from the title above down to its own.
  */
-export function documentFaceRegions(pages: SheetPage[]): Map<string, { pageNo: number; regionPt: CropBoxPt }> {
+export function documentFaceRegions(pages: SheetPage[], storeyNames: Set<string> = new Set()): Map<string, { pageNo: number; regionPt: CropBoxPt }> {
+  // Keyed by sheet and face: a face drawn once per storey sheet has a region on
+  // each, and the second must not overwrite the first.
+  const keyOf = (pageNo: number, label: string) => `${pageNo}|${label}`;
   const regions = new Map<string, { pageNo: number; regionPt: CropBoxPt }>();
   for (const { geometry } of pages) {
-    const onSheet = faceTitles(pages).filter((title) => title.pageNo === geometry.pageNo);
+    const onSheet = faceTitles(pages, storeyNames).filter((title) => title.pageNo === geometry.pageNo);
     if (!onSheet.length) continue;
     if (onSheet.length === 1) {
-      regions.set(onSheet[0].label, { pageNo: geometry.pageNo, regionPt: [0, 0, geometry.widthPt, geometry.heightPt] });
+      regions.set(keyOf(geometry.pageNo, onSheet[0].label), { pageNo: geometry.pageNo, regionPt: [0, 0, geometry.widthPt, geometry.heightPt] });
       continue;
     }
     // Rows first, then columns within a row: a sheet of four elevations is as
@@ -134,9 +148,58 @@ export function documentFaceRegions(pages: SheetPage[]): Map<string, { pageNo: n
       across.forEach((title, at) => {
         const left = at === 0 ? 0 : (across[at - 1].x + title.x) / 2;
         const right = at === across.length - 1 ? geometry.widthPt : (title.x + across[at + 1].x) / 2;
-        regions.set(title.label, { pageNo: geometry.pageNo, regionPt: [left, top, right, bottom] });
+        regions.set(keyOf(geometry.pageNo, title.label), { pageNo: geometry.pageNo, regionPt: [left, top, right, bottom] });
       });
     });
   }
   return regions;
+}
+
+/**
+ * Which storey each elevation sheet draws, where it says: the words before
+ * ELEVATION(S) in its title - GROUND FLOOR ELEVATIONS, UPPER FLOOR ELEVATIONS.
+ * A set that draws each face once per storey needs this to tell the two NORTH
+ * sheets apart; a set that draws all its faces on one sheet has none, and that
+ * is an answer too. A face name printed as a drawing's own title is not a
+ * storey, so the document's face names are excluded.
+ */
+export function documentSheetStoreys(
+  pages: SheetPage[],
+  recoveredTitles: Map<number, string> = new Map(),
+  faceNames: Set<string> = new Set(),
+  storeyNames: Set<string> = new Set(),
+): Map<number, string> {
+  const storeys = new Map<number, string>();
+  for (const { page, geometry } of pages) {
+    const band = page.words.filter((word) => word.top >= geometry.heightPt * 0.85).map((word) => word.text).join(" ");
+    for (const text of [recoveredTitles.get(geometry.pageNo), band]) {
+      if (!text) continue;
+      // Every sheet title in the band, not the first thing before ELEVATIONS:
+      // a face's own title may share the band with the sheet's.
+      const storey = [...text.toUpperCase().matchAll(SHEET_TITLE)]
+        .map((match) => ({ label: printedStorey(`${match[1]} PLAN`), plural: match[2] === "ELEVATIONS" }))
+        // The plural is a sheet's title and names a storey whatever else its
+        // label was taken for; the singular names one only when the plans name
+        // it too, and a face name that is not a plan storey is a face.
+        .find(({ label, plural }) => label && (plural || storeyNames.has(label)) && (plural || !faceNames.has(label) || storeyNames.has(label)))?.label;
+      if (storey) {
+        storeys.set(geometry.pageNo, storey);
+        break;
+      }
+    }
+  }
+  return storeys;
+}
+
+/** The storeys a document's plan sheets name, in their own words - the
+ * vocabulary that tells GROUND FLOOR ELEVATION, a sheet's title, from NORTH
+ * ELEVATION, a drawing's. */
+export function documentPlanStoreys(planPages: SheetPage[], recoveredTitles: Map<number, string> = new Map()): Set<string> {
+  const storeys = new Set<string>();
+  for (const { page, geometry } of planPages) {
+    const band = page.words.filter((word) => word.top >= geometry.heightPt * 0.85).map((word) => word.text).join(" ");
+    const storey = printedStorey(recoveredTitles.get(geometry.pageNo) ?? "") ?? printedStorey(band);
+    if (storey) storeys.add(storey);
+  }
+  return storeys;
 }

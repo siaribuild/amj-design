@@ -102,6 +102,10 @@ export async function recoverPageScales(args: {
  * it is. A sheet states both in the same place, so asking twice would be paying
  * twice for one glance. */
 export interface SheetFacts {
+  /** Why nothing could be read, when nothing could: a timeout and a malformed
+   * render are different operational problems, and a sheet that vanished
+   * without a word is the worst of them. */
+  error?: string;
   ratio: number | null;
   /** The drawing title exactly as printed, so a storey can be read from it by
    * whatever rule reads storeys — this does not interpret it. */
@@ -162,6 +166,10 @@ export function makeSheetFactsSkill(pageNo: number): Skill<{ prompt?: string; im
       const payload = typeof raw === "string" ? parseModelJson(raw) : raw;
       if (!payload || typeof payload !== "object") return null;
       const record = payload as Record<string, unknown>;
+      // Both facts must be answered, if only with null. An empty object is a
+      // reader that said nothing, and treating it as a sheet with no title and
+      // no scale makes a graphics-only plan disappear without a word.
+      if (!("ratio" in record) || !("drawingTitle" in record || "title" in record)) return null;
       const title = record.drawingTitle ?? record.title;
       return {
         ratio: typeof record.ratio === "number" && Number.isFinite(record.ratio) ? record.ratio : null,
@@ -223,8 +231,8 @@ export async function recoverSheetFacts(args: {
         ? args.stated.get(pageNo) ?? null
         : validateStatedScale({ pageNo, ratio: answer.ratio }, pageNo);
       return { ratio, title, role: roleOf(title) };
-    } catch {
-      return null;
+    } catch (error) {
+      return { ratio: null, title: null, role: null, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

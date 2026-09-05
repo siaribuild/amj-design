@@ -1,28 +1,18 @@
 import type { Skill } from "../../estimator/skills/types";
 import type { CropBoxPt, DrawingFileReport, DrawingReading, RenderRequest, RenderResponse } from "../contract";
-import { documentFaceRegions, documentFaceSheets } from "../sheetFaces";
-import {
-  compositionBatches, makeCompositionSkill, runCompositions,
-  type CompositionOutcome, type CompositionTask,
-} from "./compositions";
-import { openingCropTasks, type OpeningCropTask } from "./crops";
-import {
-  elevationFaceTasks, makeElevationInventorySkill, validateElevationFrames,
-  type ElevationFaceTask,
-} from "./elevationFrames";
+import type { CompositionRead, CompositionTask } from "./compositions";
+import { StageCallError } from "../../ai/stage";
+import { readOpenings } from "./readOpenings";
 import {
   faceMappedFileReport, faceMappedProgress, faceMappedReadings,
-  type CropForReport, type PlacedForReport,
+  type FaceMappedPhase, type PlacedForReport,
 } from "./report";
-import { matchFacePlacements, type MatchedOpeningFrame } from "./matchFrames";
-import { faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, type FaceReconcileTask } from "./reconcileFace";
 import { makePlanFaceSkill, planFaceRecoveryRequest, type RecoveredFace } from "./planFacesSkill";
-import type { ElevationInventoryRead } from "./elevationFrames";
-import type { CompositionRead } from "./compositions";
+import { documentFaceSheets, documentPlanStoreys } from "../sheetFaces";
+import type { ElevationFaceTask, ElevationInventoryRead } from "./elevationFrames";
+import { matchOpenings, pageBox } from "./matchOpenings";
 import { calibrateWidths } from "./widths";
 import { placeOpeningsOnPlan, type PlanPage } from "./planFaces";
-import { rosterVocabulary } from "./tags";
-import { openingTagWords } from "../locate";
 import { normalizeOpeningRef } from "../../ai/energyMap";
 
 /**
@@ -33,11 +23,11 @@ import { normalizeOpeningRef } from "../../ai/energyMap";
 export interface FaceMappedDeps {
   render(request: RenderRequest): Promise<RenderResponse>;
   storeCrop(id: string, pngB64: string): Promise<string | null>;
-  readPlanPage(input: FaceMappedCall & { pageNo: number }): Promise<{ placements: (RecoveredFace & { planCandidateId: string })[] } | null>;
-  inventoryElevation(input: FaceMappedCall & { task: ElevationFaceTask }): Promise<ElevationInventoryRead | null>;
-  reconcileFace(input: FaceMappedCall & { faceKey: string; frameIds: string[] }): Promise<{ pairs: { tag: string; frameId: string }[] } | null>;
-  readComposition(input: FaceMappedCall & { batch: CompositionTask[]; attempt: number }): Promise<CompositionRead | null>;
-  onProgress?(event: { phase: string; message: string; done: number; total: number; ms: number }): Promise<void>;
+  readPlanPage(input: FaceMappedCall<PlanFaceRead> & { pageNo: number }): Promise<PlanFaceRead | null>;
+  inventoryElevation(input: FaceMappedCall<ElevationInventoryRead> & { task: ElevationFaceTask }): Promise<ElevationInventoryRead | null>;
+  reconcileFace(input: FaceMappedCall<FaceReconcileRead> & { faceKey: string; frameIds: string[] }): Promise<FaceReconcileRead | null>;
+  readComposition(input: FaceMappedCall<CompositionRead> & { batch: CompositionTask[]; attempt: number }): Promise<CompositionRead | null>;
+  onProgress?(event: { phase: FaceMappedPhase; message: string; done: number; total: number; ms: number }): Promise<void>;
 }
 
 /** The request a look at a page is, as it is made: the skill the call runs
@@ -49,17 +39,38 @@ export interface FaceMappedCallInput {
   prompt?: string;
   imageDataUrls: string[];
 }
-export interface FaceMappedCall extends FaceMappedCallInput {
+export interface FaceMappedCall<O = unknown> extends FaceMappedCallInput {
   prompt: string;
-  skill: Skill<FaceMappedCallInput, unknown>;
+  skill: Skill<FaceMappedCallInput, O>;
+  /** What the call cost, from the layer that knows: a replayed stage is not a
+   *  model call, and tokens are counted where they are spent. A dep that does
+   *  not report is counted as one call. */
+  usage?(spent: StageUsage): void | Promise<void>;
 }
 
+export interface StageUsage {
+  modelCalls: number;
+  cached: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  warnings: string[];
+}
+
+/** What a run spent, as its stage calls reported it. */
+export interface RunSpend {
+  modelCalls: number;
+  cachedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  warnings: string[];
+  failureKind: string | null;
+}
+
+type PlanFaceRead = { placements: (RecoveredFace & { planCandidateId: string })[] };
+type FaceReconcileRead = { pairs: { tag: string; frameId: string }[] };
+
 const RENDER_DPI = 100;
-/** A face is a fraction of its sheet, so it is rendered closer than a page. */
-const FACE_DPI = 150;
 const CROP_DPI = 300;
-/** How many of a run's composition batches may be asked twice. */
-const COMPOSITION_RETRY_BUDGET = 4;
 
 export async function runFaceMappedParser(args: {
   fileId: string;
@@ -86,26 +97,60 @@ export async function runFaceMappedParser(args: {
   const widthByTag = new Map(args.scheduleRows
     .filter((row) => row.widthMm > 0)
     .map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row.widthMm]));
-  const faceSheets = documentFaceSheets(args.elevationPages);
-  let modelCalls = 0;
+  const planStoreys = documentPlanStoreys(args.planPages, args.sheetTitles);
+  const faceSheets = documentFaceSheets(args.elevationPages, planStoreys);
   let containerCalls = 0;
+  // Spend, as the stage layer reports it. A dep that reports nothing is one
+  // call, which is what it was before anyone counted.
+  const spent: RunSpend = { modelCalls: 0, cachedTurns: 0, inputTokens: 0, outputTokens: 0, warnings: [], failureKind: null };
+  const counted = <T>(call: (usage: FaceMappedCall["usage"]) => Promise<T>): Promise<T> => {
+    let reported = false;
+    const usage = (u: StageUsage) => {
+      reported = true;
+      spent.modelCalls += u.modelCalls;
+      if (u.cached) spent.cachedTurns += 1;
+      spent.inputTokens += u.inputTokens;
+      spent.outputTokens += u.outputTokens;
+      for (const warning of u.warnings) if (warning !== "stage_replayed" && !spent.warnings.includes(warning)) spent.warnings.push(warning);
+    };
+    return call(usage)
+      // A provider failure keeps its kind: an outage and a bad read are
+      // different problems, and the report is where operations tells them apart.
+      .catch((error: unknown) => {
+        if (error instanceof StageCallError) {
+          spent.failureKind = error.failureKind;
+          for (const warning of error.warnings) if (!spent.warnings.includes(warning)) spent.warnings.push(warning);
+        }
+        throw error;
+      })
+      .finally(() => { if (!reported) spent.modelCalls += 1; });
+  };
 
   // A page that will not render costs the openings on it and nothing else:
   // one container timeout on one elevation sheet is not a reason to report a
   // whole schedule as unread.
+  // The reason is kept: an opening that was lost to a timeout and one lost to
+  // a malformed render are two different operational problems.
+  const renderFailures = new Map<number, string>();
   const pageImage = async (pageNo: number, box?: CropBoxPt, dpi = RENDER_DPI) => {
     containerCalls += 1;
     try {
       const rendered = await args.deps.render({ pageNo, dpi, ...(box ? { crops: [box] } : {}) });
       const image = rendered.images[0];
+      if (!image) renderFailures.set(pageNo, "the render came back without an image");
       return image ? { pngB64: image.pngB64, url: `data:image/png;base64,${image.pngB64}` } : null;
-    } catch {
+    } catch (error) {
+      renderFailures.set(pageNo, error instanceof Error ? error.message : String(error));
       return null;
     }
   };
+  const renderReason = (pageNo: number, what: string) =>
+    `${what} could not be rendered: ${renderFailures.get(pageNo) ?? "no image came back"}`;
+  const renderNotes = new Map<string, string>();
   // Provenance is a fact the caller knows and this engine does not: a number
   // alone cannot say whether a sheet printed it or a model read it.
-  const scaleSourceOf = (pageNo: number) => args.scaleSources?.get(pageNo) ?? null;
+  const scaleSourceOf = (pageNo: number) =>
+    recalibrated.has(pageNo) ? "calibrated" as const : args.scaleSources?.get(pageNo) ?? null;
 
   // ── Phase C: which wall each opening is in, and where along it. ──────────
   await progress.step("plan_faces", "Mapping floor plans", 0, roster.length);
@@ -119,11 +164,13 @@ export async function runFaceMappedParser(args: {
   for (const request of asked) {
     const skill = makePlanFaceSkill(request, faceNames);
     const image = await pageImage(request.pageNo);
-    if (!image) continue;
-    modelCalls += 1;
-    const answer = await args.deps.readPlanPage({
-      pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill,
-    }).catch(() => null);
+    if (!image) {
+      for (const candidate of request.candidates) renderNotes.set(candidate.tag, renderReason(request.pageNo, "the plan page"));
+      continue;
+    }
+    const answer = await counted((usage) => args.deps.readPlanPage({
+      pageNo: request.pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill, usage,
+    })).catch(() => null);
     for (const { planCandidateId, ...face } of answer?.placements ?? []) faceByCandidate.set(planCandidateId, face);
   }
   if (faceByCandidate.size) {
@@ -136,181 +183,62 @@ export async function runFaceMappedParser(args: {
   const unplaced = new Map<string, string>();
   for (const outcome of outcomes) {
     if (outcome.state === "resolved") placements.set(outcome.placement.tag, outcome.placement);
-    else unplaced.set(outcome.tag, outcome.reason);
+    else unplaced.set(outcome.tag, renderNotes.has(outcome.tag) ? `${outcome.reason}; ${renderNotes.get(outcome.tag)} for a look` : outcome.reason);
   }
   await progress.step("plan_faces", "Mapping floor plans", placements.size, roster.length);
 
-  // ── Phase D: the frames each face draws, and which opening each one is. ──
-  const faceRegions = documentFaceRegions(args.elevationPages);
-  const built = elevationFaceTasks({
-    placements: outcomes.flatMap((o) => o.state === "resolved" ? [o.placement] : []),
-    faceSheets,
-    widthByTag,
-    sheets: new Map([...faceSheets.values()].flat().map((pageNo) => [pageNo, {
-      overviewRenderId: `p${pageNo}`,
-      overviewBoxPt: pageBox(args.elevationPages, pageNo),
-      scaleCandidates: [],
-    }])),
-    // A sheet drawing four elevations shows a reader all four; the face's own
-    // part of it shows the one the question is about.
-    regionByFace: faceRegions,
+  // ── Phase D: which frame on each face is which opening. ─────────────────
+  const matched = await matchOpenings({
+    outcomes, faceSheets, faceNames, planStoreys, roster, widthByTag,
+    elevationPages: args.elevationPages, sheetTitles: args.sheetTitles, pageScales: args.pageScales,
+    render: pageImage, renderReason, counted, unplaced, progress,
+    inventoryElevation: args.deps.inventoryElevation, reconcileFace: args.deps.reconcileFace,
   });
-  for (const skipped of built.skipped) {
-    for (const tag of skipped.tags) unplaced.set(tag, skipped.reason);
-  }
-
-  const matched: MatchedOpeningFrame[] = [];
-  const unsettled: FaceReconcileTask[] = [];
-  let done = 0;
-  for (const task of built.tasks) {
-    await progress.step("elevation_frames", `Locating elevation frames · ${task.elevation}, ${task.storey}`, done, built.tasks.length);
-    done += 1;
-    // The face's own region, at a resolution that holds up when it is a
-    // quarter of a sheet.
-    const image = await pageImage(task.pageNo, task.overviewBoxPt, FACE_DPI);
-    if (!image) {
-      for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, `sheet ${task.pageNo} could not be rendered`);
-      continue;
-    }
-    modelCalls += 1;
-    const inventorySkill = makeElevationInventorySkill(task);
-    const read = await args.deps.inventoryElevation({
-      task, prompt: inventorySkill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill: inventorySkill,
-    }).catch(() => null);
-    const inventory = read ? validateElevationFrames(read, task) : null;
-    if (!inventory || inventory.state === "unresolved") {
-      const reason = inventory?.reason ?? "the look at this face did not come back";
-      for (const placement of placementsOn(outcomes, task)) unplaced.set(placement.tag, reason);
-      continue;
-    }
-    const match = matchFacePlacements({
-      placements: placementsOn(outcomes, task),
-      frames: inventory.frames,
-      widthByTag,
-      pageScaleRatio: args.pageScales.get(task.pageNo) ?? null,
-      // Some sets label their elevations too, and a tag printed inside a frame
-      // says which opening it is outright.
-      tagWordsPt: elevationTagWords(args.elevationPages, task.pageNo, roster),
-    });
-    if (match.direction === "unresolved") {
-      unsettled.push({
-        faceKey: task.faceKey,
-        reason: match.reason,
-        placements: placementsOn(outcomes, task),
-        frames: inventory.frames,
-        widthByTag,
-        pageScaleRatio: args.pageScales.get(task.pageNo) ?? null,
-      });
-      continue;
-    }
-    matched.push(...match.matches);
-  }
-
-  // §7.3 step 5: the faces neither reading settled get one look each, at the
-  // plan and the elevation together. A face that look cannot settle either is
-  // left unmatched — its openings keep the wall the plan gave them and lose
-  // only the frame nobody could name.
-  for (const face of faceReconciliationTasks(unsettled)) {
-    const skill = makeFaceReconcileSkill(face);
-    const image = await pageImage(face.frames[0].pageNo);
-    const planImage = await pageImage(face.placements[0].planPageNo);
-    // The second look is at the plan and the elevation together (§7.3 step 5).
-    // Without the plan it is the first look again, and is not taken.
-    if (!image || !planImage) {
-      const reason = !planImage
-        ? `${face.reason}; the plan page could not be rendered for a second look`
-        : face.reason;
-      for (const placement of face.placements) unplaced.set(placement.tag, reason);
-      continue;
-    }
-    modelCalls += 1;
-    const settled = reconcileMatches(await args.deps.reconcileFace({
-      faceKey: face.faceKey,
-      prompt: skill.buildPrompt({ imageDataUrls: [] }),
-      // The plan region and the elevation together (§7.3 step 5).
-      imageDataUrls: [planImage?.url, image.url].flatMap((url) => url ? [url] : []),
-      frameIds: face.frames.map((frame) => frame.frameId),
-      skill,
-    }).catch(() => null), face);
-    if (settled) matched.push(...settled.matches);
-    else for (const placement of face.placements) unplaced.set(placement.tag, face.reason);
-  }
-  for (const face of unsettled.slice(faceReconciliationTasks(unsettled).length)) {
-    for (const placement of face.placements) unplaced.set(placement.tag, face.reason);
-  }
 
   // §14: a page that states no scale borrows one from every frame matched on
   // it - the median across the page, not each face's own, so a face drawn at
   // half the width of the rest is a disagreement rather than a private scale.
+  //
+  // And a page that states a scale most of its frames disagree with by one
+  // factor (§7.4) - printed 1:100, drawn at 1:50 - records the conflict and is
+  // sized from the frames' own median instead. One opening cannot recalibrate
+  // a view; three that agree with each other can.
+  const recalibrated = new Set<number>();
   for (const pageNo of new Set(matched.map((match) => match.frame.pageNo))) {
-    if (args.pageScales.get(pageNo) != null) continue;
-    const onPage = calibrateWidths(matched.filter((match) => match.frame.pageNo === pageNo), widthByTag);
-    for (const calibrated of onPage) matched[matched.findIndex((match) => match.tag === calibrated.tag)] = calibrated;
+    const onPage = matched.filter((match) => match.frame.pageNo === pageNo);
+    const stated = args.pageScales.get(pageNo);
+    const conflicts = onPage.filter((match) => match.widthAgreement === "conflict").length;
+    if (stated != null && !(conflicts >= 3 && conflicts > onPage.length / 2)) continue;
+    const calibrated = calibrateWidths(
+      onPage.map((match) => ({ ...match, expectedWidthPt: null, widthBasis: null, widthAgreement: "unknown" as const })),
+      widthByTag,
+    );
+    if (!calibrated.some((match) => match.widthBasis === "calibrated")) continue;
+    if (stated != null) recalibrated.add(pageNo);
+    for (const match of calibrated) {
+      matched[matched.findIndex((was) => was.tag === match.tag)] = stated == null ? match : {
+        ...match,
+        confidence: "ambiguous",
+        warnings: [...match.warnings, `most frames on sheet ${pageNo} disagree with its printed 1:${stated} scale by one factor; widths are sized from their own median`],
+      };
+    }
   }
 
-  // ── Phase D and E together: crops are made in batches of four, read, and let
-  // go - at most four batches in flight (§7.6), so at most sixteen crops. The
-  // base64 of a 300 DPI crop is the largest thing this run holds, and holding
-  // every crop of a 27-opening set at once is how a Worker runs out of memory
-  // on a big house.
-  const crops = new Map<string, CropForReport>();
-  const cropBasis = new Map<string, OpeningCropTask["basis"]>();
-  const cropTasks = openingCropTasks({
-    matches: matched.map((match) => ({
-      tag: match.tag, frame: match.frame, expectedWidthPt: match.expectedWidthPt, widthBasis: match.widthBasis,
-    })),
+  // ── Phase D and E together: the crops are made and read, batch by batch. ─
+  const { crops, cropBasis, compositions, cropCount } = await readOpenings({
+    matched,
     pageSizeOf: (pageNo) => {
       const box = pageBox(args.elevationPages, pageNo);
       return [box[2], box[3]];
     },
     sourceFileId: args.sourceFileId,
+    render: (pageNo, box) => pageImage(pageNo, box, CROP_DPI),
+    renderReason,
+    storeCrop: args.deps.storeCrop,
+    ask: (input) => counted((usage) => args.deps.readComposition({ ...input, usage })),
+    progress,
+    unplaced,
   });
-  const cropById = new Map(cropTasks.map((task) => [`${task.tag}_${task.frameId}`, task]));
-  let compositions: CompositionOutcome[] = [];
-  if (cropTasks.length) {
-    let cropped = 0;
-    await progress.step("composition_reads", "Reading opening compositions", 0, cropTasks.length);
-    compositions = await runCompositions({
-      tasks: cropTasks.map((task) => ({
-        tag: task.tag, frameId: task.frameId, cropRenderId: `${task.tag}_${task.frameId}`, imageDataUrl: null,
-      })),
-      // Retries included: a document cannot spend the run's whole budget on one
-      // batch that will not answer.
-      callCeiling: compositionBatches(cropTasks).length + COMPOSITION_RETRY_BUDGET,
-      prepare: async (batch) => {
-        for (const task of batch) {
-          const crop = cropById.get(task.cropRenderId)!;
-          const image = await pageImage(crop.pageNo, crop.bboxPt, CROP_DPI);
-          if (!image) {
-            unplaced.set(task.tag, "the crop for this opening could not be rendered");
-            continue;
-          }
-          const cropKey = await args.deps.storeCrop(task.cropRenderId, image.pngB64);
-          // A crop that is nowhere is not evidence. Reading it anyway produces
-          // an answer whose lineage cannot be followed back to anything, which
-          // is the one thing a reading has to be able to do.
-          if (!cropKey) {
-            unplaced.set(task.tag, "the crop for this opening could not be stored");
-            continue;
-          }
-          crops.set(task.tag, { cropRenderId: task.cropRenderId, cropKey, pageNo: crop.pageNo, bboxPt: crop.bboxPt, frameBoxPt: crop.frameBoxPt });
-          cropBasis.set(task.tag, crop.basis);
-          task.imageDataUrl = image.url;
-        }
-        cropped += batch.length;
-        await progress.step("opening_crops", "Creating opening crops", cropped, cropTasks.length);
-      },
-      onBatch: (done, total) => progress.step("composition_reads", "Reading opening compositions", done, total),
-      ask: async (batch, attempt, skill) => {
-        modelCalls += 1;
-        return args.deps.readComposition({
-          batch, attempt, skill,
-          prompt: skill.buildPrompt({ imageDataUrls: [] }),
-          imageDataUrls: batch.map((task) => task.imageDataUrl!),
-        });
-      },
-    });
-  }
 
   for (const tag of crops.keys()) unplaced.delete(tag);
   const readings = faceMappedReadings({
@@ -339,7 +267,7 @@ export async function runFaceMappedParser(args: {
       readings,
       pagesRead: args.planPages.length + args.elevationPages.length,
       crops: crops.size,
-      attempted: cropTasks.length,
+      attempted: cropCount,
       compositions,
       placed: placements.size,
       recovered: faceByCandidate.size,
@@ -351,41 +279,9 @@ export async function runFaceMappedParser(args: {
         scaleSource: scaleSourceOf(match.frame.pageNo),
         cropBasis: cropBasis.get(match.tag) ?? null,
       }])),
-      modelCalls,
+      spent,
       containerCalls,
       startedAt: started,
     }),
   };
-}
-
-/** The openings the plan put on one face and storey, in wall order. */
-function placementsOn(
-  outcomes: ReturnType<typeof placeOpeningsOnPlan>,
-  task: { elevation: string; storey: string },
-) {
-  return outcomes
-    .flatMap((outcome) => outcome.state === "resolved" ? [outcome.placement] : [])
-    .filter((placement) => placement.elevation === task.elevation && placement.storey === task.storey)
-    .sort((a, b) => a.wallOrder - b.wallOrder);
-}
-
-/** Opening tags printed on one elevation sheet, in page points. Where a set
- * labels its elevations, this is the only direct statement of which frame is
- * which opening the drawings ever make. */
-function elevationTagWords(pages: PlanPage[], pageNo: number, roster: string[]) {
-  const sheet = pages.find((page) => page.geometry.pageNo === pageNo);
-  if (!sheet) return [];
-  const { vocabulary, tagOf } = rosterVocabulary(roster);
-  return openingTagWords(sheet.page.words, vocabulary, sheet.geometry).map(({ tag, word }) => ({
-    tag: tagOf.get(tag) ?? tag,
-    boxPt: [word.x0, word.top, word.x1, word.bottom] as CropBoxPt,
-  }));
-}
-
-/** A page's own size in points. Every box the engine hands out is in these,
- * and assuming a size instead puts every crop in the top-left corner of a
- * sheet that is nothing like that size. */
-function pageBox(pages: PlanPage[], pageNo: number): CropBoxPt {
-  const geometry = pages.find((page) => page.geometry.pageNo === pageNo)?.geometry;
-  return [0, 0, geometry?.widthPt ?? 0, geometry?.heightPt ?? 0];
 }

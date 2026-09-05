@@ -145,6 +145,70 @@ Three of the review's points are rejected, with the contract as the reason:
   four and at most four batches in flight. Sixteen 300 DPI crops is well inside
   a Worker's memory; one at a time would be a different contract.
 
+## Third review, 2026-09-05: twelve findings, and what changed
+
+- **No aggregate image-memory limit.** A crop over 2 MB of base64 is refused and
+  its opening reported unread, so at most sixteen crops of at most 2 MB are ever
+  resident - well inside a Worker's 128 MB.
+- **Type safety suppressed at the stage boundary.** The stage request and call
+  are generic in the skill's output; no casts remain.
+- **Render failures lost their cause.** Every reason now carries what the
+  container said - a timeout and a malformed render are different problems.
+- **Duplicated operation vocabulary.** One list, imported.
+- **Sheet recovery accepted `{}` as success.** A reader that says nothing is
+  malformed, not a sheet with no title and no scale; the stage records the
+  failure.
+- **Repeated face names across storey sheets.** A sheet says which storey it
+  draws, and a face drawn once per storey sheet is read from the sheet for its
+  storey. Two sheets with no storey to tell them apart are still refused.
+- **Reconciliation image scope.** The elevation side is the face's own region.
+  The plan side stays the plan page: a plan page is one drawing.
+- **Progress contract.** `ai_job_claim.drawings_phase` has a CHECK constraint
+  with six names (migration 0062); this engine's phases were reaching it as a
+  seventh and the UPDATE was failing silently. They are now told in the persisted
+  vocabulary. Messages and durations stop at the adapter: carrying them needs a
+  column, and changing the CHECK is a table rebuild.
+- **Audit measurements.** The stage layer reports what each call cost; a
+  replayed stage is not a model call, and tokens are counted where they are
+  spent. The report carries model calls, cached turns, tokens and provider
+  warnings.
+- **Replay testing.** A test drives the real stage layer twice with the cache
+  on: the second call is served from the archive, costs nothing, and is the same
+  answer.
+- **`run.ts` size.** The crop-and-read driver and the match phase are their own
+  modules; `run.ts` is 242 lines, under the 317 the owner accepted.
+
+- **Calibration for a scale the frames contradict.** First rejected, then found
+  in §7.4: "if several matched frames disagree consistently with the printed
+  scale by the same factor, record the conflict and derive one effective scale
+  from their median ratio." A page whose printed scale a majority of at least
+  three matched frames disagree with is sized from the frames' own median,
+  every reading on it carries the conflict, and its scale source reads
+  `calibrated`. One opening cannot recalibrate a view; three that agree can.
+  While doing this, a width disagreement shared by every pairing was found to
+  drown the position signal that decides direction; only the part that differs
+  between the two readings counts now.
+
+A second Codex pass on this round found six partials and seven concrete cases,
+all closed: a face title and a storey title sharing a band (a drawing's title is
+singular, a sheet's plural); regions keyed by sheet as well as face; Phase A's
+sheet reads counted in the spend; every render failure named where it costs;
+a provider failure keeping its kind; an exhaustive persisted-phase map.
+
+A third Codex pass found two more, both closed: a set that titles its sheets in
+the singular - GROUND FLOOR ELEVATION - now reads as a storey because the plans
+name GROUND FLOOR (the storeys a document's plan sheets print are what tell a
+sheet title from a face title when the title word is singular); and a Phase A
+sheet read that fails at the provider or the container now reaches the report
+with its kind and what the container said, instead of the sheet vanishing.
+
+Standing, with reasons: a plan page is one drawing, so the page is the plan
+region for a second look (Codex accepts). On aggregate image memory Codex does
+not accept: this engine keeps at most sixteen crops of at most 2 MB, but the
+container client parses the render response before this engine sees it, with
+no size cap of its own. That cap would live in the shared container client, used
+by every engine, and is put to the owner rather than added here.
+
 ## Readiness
 
 **The release gate has not passed, and this document does not claim it has.**

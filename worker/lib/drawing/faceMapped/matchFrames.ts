@@ -198,13 +198,19 @@ export function matchFacePlacements(args: FaceMatchInput): FaceMatch {
     if (args.pageScaleRatio != null) return expectedWidthPt(widthMm, args.pageScaleRatio);
     return largestScheduled > 0 ? widthMm / largestScheduled * largestDrawn : null;
   });
-  const withPlan = disagreement(fractions, centres, widths, expected).total;
-  const againstPlan = disagreement(
+  const forward = disagreement(fractions, centres, widths, expected);
+  const backward = disagreement(
     fractions,
     [...centres].reverse().map((centre) => 1 - centre),
     [...widths].reverse(),
     expected,
-  ).total;
+  );
+  // A width disagreement both pairings share - every frame drawn at twice the
+  // printed scale, say - says nothing about which way the wall reads, and left
+  // in it drowns the positions that do. Only the part that differs counts.
+  const shared = Math.min(forward.width, backward.width);
+  const withPlan = forward.position + forward.width - shared;
+  const againstPlan = backward.position + backward.width - shared;
 
   // A tag printed inside a frame says which opening that frame is outright, and
   // outranks any argument from where things sit. A label that agrees with
