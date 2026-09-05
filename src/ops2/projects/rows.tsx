@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { IonIcon } from "@ionic/react";
 import { alertCircleOutline, eyeOutline } from "ionicons/icons";
 import { useHistory } from "react-router-dom";
-import { Row, RowList } from "../chrome/RowList";
+import { Row, RowList, isPlainClick } from "../chrome/RowList";
 import { browserHref } from "../shellBase";
 import {
   ageLabel, nextActionOf, priceOf, rowFlags, waitingSentence,
@@ -59,17 +59,6 @@ function Flags({ row, compact = false }: { row: ProjectQueueRow; compact?: boole
     </span>
   );
 }
-
-/**
- * Was this an ordinary left click, or an instruction to the browser?
- *
- * Ctrl/Cmd/Shift/Alt-click and middle-click mean "open it somewhere else", and
- * an anchor already knows how. Swallowing them takes away the very affordance
- * the anchor exists for — two projects open side by side at a desk — while
- * leaving it looking present.
- */
-const isPlainClick = (event: ReactMouseEvent) =>
-  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 /**
  * A click anywhere in a wide row.

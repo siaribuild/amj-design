@@ -52,6 +52,19 @@ test("every sign-in address the operations guide names is in the seed", () => {
   assert.deepEqual(missing, [], "OPERATIONS.md names sign-in accounts the seed does not create");
 });
 
+/**
+ * Suites the battery never names — matched on the whole argument.
+ *
+ * NOT `battery.includes(f)`: a bare basename is a substring of longer ones
+ * ("api.test.mjs" inside "meta-api.test.mjs"), so that spelling called a suite
+ * reachable that nothing runs, and the guard could be deleted from `npm test`
+ * without going red.
+ */
+const unreachableSuites = (battery, suites) => {
+  const args = new Set(battery.split(/\s+/));
+  return suites.filter((f) => !args.has(`scripts/tests/${f}`));
+};
+
 test("every node suite in scripts/tests is reachable from `npm test`", () => {
   // A suite that no npm script names is a suite nobody runs. It passes the
   // moment its author runs it by hand, then silently stops being a gate:
@@ -66,6 +79,18 @@ test("every node suite in scripts/tests is reachable from `npm test`", () => {
   const battery = `${scripts["test:pure"]} ${scripts["test:heavy"]}`;
   const suites = readdirSync(join(projectRoot, "scripts", "tests"))
     .filter((f) => f.endsWith(".test.mjs"));
-  const unreachable = suites.filter((f) => !battery.includes(f));
-  assert.deepEqual(unreachable, [], "test suites exist that `npm test` never runs");
+  assert.deepEqual(unreachableSuites(battery, suites), [], "test suites exist that `npm test` never runs");
+});
+
+test("reachability is an exact argument match, not a substring of another suite's name", () => {
+  // `battery.includes("api.test.mjs")` is true for a battery that only runs
+  // `meta-api.test.mjs`, and `pipeline.test.mjs` hides behind
+  // `ai-pipeline.test.mjs` the same way — so the guard above could be removed
+  // from `npm test` and stay green. The check is on the argument, not the text.
+  const battery = "node --test scripts/tests/meta-api.test.mjs scripts/tests/ai-pipeline.test.mjs";
+  assert.deepEqual(
+    unreachableSuites(battery, ["api.test.mjs", "pipeline.test.mjs"]),
+    ["api.test.mjs", "pipeline.test.mjs"],
+  );
+  assert.deepEqual(unreachableSuites(battery, ["meta-api.test.mjs"]), []);
 });

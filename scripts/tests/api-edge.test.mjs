@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import {
-  Session, completeAccount, demoEmail, freePort, login, makeRunDir, removeRunDir,
-  requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
+  Session, assertNoCounts, completeAccount, demoEmail, freePort, login, makeRunDir,
+  removeRunDir, requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 // 420s, raised from 300s (2026-08-28), which was raised from 180s (2026-08-14)
@@ -1504,7 +1504,7 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
       for (const path of ["/api/ops/projects", "/api/ops/customers", "/api/ops/files",
         "/api/ops/audit", "/api/ops/staff", "/api/ops/pricing/rate-cards", "/api/ops/summary"]) {
         const denied = await requestJson(mfr, path, {}, 403);
-        assert.equal(denied.body.submissions, undefined, "denial body carries no counts");
+        assertNoCounts(denied.body);
       }
       await requestJson(mfr, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
       await requestJson(mfr, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} }, 403);

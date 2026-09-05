@@ -34,7 +34,13 @@ export function useSummary(): { load: SummaryLoad; reload: () => void } {
           setLoad({
             status: "unauthorised",
             headline: "This account can't see what's waiting.",
-            detail: "Projects are staff-only. Ask an administrator to add the role.",
+            // NAMES WHAT THIS PAGE ACTUALLY SUMMARISES, in the product's own
+            // actor word. Copied from useProjectQueue, it said "Projects" —
+            // one of the three destinations Attention spans — and "an
+            // administrator", which is not a role this product has: staff-ness
+            // is an axis on an account (CONTEXT.md, Actors).
+            detail:
+              "Projects, Enquiries and Customers are staff-only. Ask OpenFrame Staff to add the role to this account.",
           });
           return;
         }

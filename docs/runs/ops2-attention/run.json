@@ -1,7 +1,7 @@
 {
   "slug": "ops2-attention",
   "tier": "full",
-  "base": "284f89ff",
+  "base": "c796e0a0823fc8212e1e073e0959d504fd7bcc80",
   "branch": "apertly-main",
   "ui": true,
   "stages": {
@@ -148,30 +148,30 @@
     },
     "review-conformance": {
       "code": 0,
-      "contextTokens": 232949,
-      "outputTokens": 5895,
-      "turns": 5,
+      "contextTokens": 182486,
+      "outputTokens": 3504,
+      "turns": 4,
       "source": "transcript",
-      "session": "a3ee6341-caf8-40c8-be5a-e0b36e517fc9",
-      "seconds": 101
+      "session": "2efe4fe4-d39e-400f-8c2d-0db9bbd65602",
+      "seconds": 86
     },
     "review-security": {
       "code": 0,
-      "contextTokens": 762674,
-      "outputTokens": 7173,
-      "turns": 8,
+      "contextTokens": 582903,
+      "outputTokens": 4631,
+      "turns": 7,
       "source": "transcript",
-      "session": "91106fbe-3df9-4001-8654-8ed3535cec20",
-      "seconds": 129
+      "session": "807610c3-4240-424c-aab7-46a1190e714a",
+      "seconds": 110
     },
     "review-ponytail": {
       "code": 0,
-      "contextTokens": 739037,
-      "outputTokens": 9788,
-      "turns": 9,
+      "contextTokens": 569842,
+      "outputTokens": 4668,
+      "turns": 7,
       "source": "transcript",
-      "session": "ada40efc-6826-45fc-982f-d32ee97e3275",
-      "seconds": 161
+      "session": "3fa0ab10-c4e7-460c-a2d1-8d984c1029b3",
+      "seconds": 116
     },
     "review-codex": {
       "code": 0,
@@ -211,6 +211,24 @@
       "source": "transcript",
       "session": "e6dfc029-bacc-454d-a657-7566a02d3383",
       "seconds": 584
+    },
+    "fix-5": {
+      "code": 0,
+      "contextTokens": 6049795,
+      "outputTokens": 23901,
+      "turns": 63,
+      "source": "transcript",
+      "session": "bc4ae826-9ee3-4c54-9b6c-85b3650cea26",
+      "seconds": 1014
+    },
+    "fix-6": {
+      "code": 0,
+      "contextTokens": 6242062,
+      "outputTokens": 30887,
+      "turns": 50,
+      "source": "transcript",
+      "session": "7fcbfe6e-216d-4d19-ae20-471355f3427e",
+      "seconds": 1672
     }
   },
   "tasksDone": [
@@ -223,6 +241,6 @@
     "T7"
   ],
   "startedAt": "2026-09-03T04:05:58.330Z",
-  "fixRounds": 5,
-  "verifyRounds": 2
+  "fixRounds": 2,
+  "verifyRounds": 0
 }

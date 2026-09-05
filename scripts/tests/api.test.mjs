@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import {
-  Session, completeAccount, freePort, login, makeRunDir, removeRunDir, requestJson,
-  run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
+  Session, assertNoCounts, completeAccount, freePort, login, makeRunDir, removeRunDir,
+  requestJson, run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 // 300s, raised from 180s (2026-08-14). This file boots a Worker and a local D1
@@ -72,7 +72,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.deepEqual(health.body.bindings, { db: true, files: true, kv: true });
       await requestJson(anonymous, "/api/not-a-route", {}, 404);
       const anonSummary = await requestJson(anonymous, "/api/ops/summary", {}, 403);
-      assert.equal(anonSummary.body.submissions, undefined, "denial body carries no counts");
+      assertNoCounts(anonSummary.body);
       await requestJson(anonymous, "/api/orders/o_1", {}, 404);
       await requestJson(anonymous, "/api/auth/verify", { method: "POST", json: { email: "bad", code: "1" } }, 400);
       const neutral = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-00000" } });

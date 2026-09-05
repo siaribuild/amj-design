@@ -77,11 +77,13 @@ test("groups render with the endpoint's numbers and expose no mutating control",
     "1 trade application waiting on a decision",
   );
 
-  // Every row is exactly one button (RowList/Row: the press button is the
-  // only control a row carries) — no checkbox, no secondary action.
-  await expect(projects.getByRole("button")).toHaveCount(4);
-  await expect(enquiries.getByRole("button")).toHaveCount(1);
-  await expect(customers.getByRole("button")).toHaveCount(1);
+  // Every row is exactly one control, and it is a LINK — RowList/Row's press
+  // element is the only control a row carries, and every attention row
+  // navigates. No checkbox, no secondary action, and no button either.
+  await expect(projects.getByRole("link")).toHaveCount(4);
+  await expect(enquiries.getByRole("link")).toHaveCount(1);
+  await expect(customers.getByRole("link")).toHaveCount(1);
+  await expect(projects.getByRole("button")).toHaveCount(0);
 });
 
 test("submissions row goes to /projects with Needs-us lit, All clears it", async ({ page }) => {
@@ -100,6 +102,23 @@ test("submissions row goes to /projects with Needs-us lit, All clears it", async
   await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "false");
 });
 
+test("awaiting-payment row lands on /projects with the Customer chip lit, not the default", async ({ page }) => {
+  // THE CASE THAT PROVES THE MECHANISM. `submissions` carries `?wait=us` and
+  // `us` is EMPTY_QUERY's own chip (queue.ts), so a submissions-row assertion
+  // passes with the whole `?wait=` consumption effect deleted. This row carries
+  // `?wait=customer`, which nothing but that effect can produce.
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.goto(ATTENTION);
+
+  await page.getByTestId("attention-row-awaitingPayment").click();
+  await expect(page).toHaveURL(`${OPS2}/projects`); // and the param is stripped after use
+
+  const chips = page.getByTestId("queue-chip");
+  await expect(chips.nth(2)).toHaveAttribute("aria-pressed", "true"); // Customer
+  await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "false"); // Needs us — the default, off
+  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "false"); // All
+});
+
 test("enquiries row goes to the /enquiries placeholder root", async ({ page }) => {
   await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
   await page.goto(ATTENTION);
@@ -108,6 +127,30 @@ test("enquiries row goes to the /enquiries placeholder root", async ({ page }) =
   await expect(page).toHaveURL(`${OPS2}/enquiries`);
   await expect(page.getByRole("heading", { name: "Enquiries", level: 1 })).toBeVisible();
   await expect(page.getByText("Nothing is built here yet.")).toBeVisible();
+});
+
+test("an attention row is a link, and a modified click opens the destination beside, not instead", async ({ page, context }) => {
+  // A row that GOES somewhere is a link. Rendered as a bare <button> it kept
+  // its look and lost middle-click, Ctrl/Cmd-click, "copy link address" and the
+  // link role — the same affordance the Projects queue's wide row carries, and
+  // for the same desk reason: two things open at once.
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.goto(ATTENTION);
+
+  const link = page.getByTestId("attention-row-awaitingPayment");
+  await expect(link).toHaveAttribute("href", "/ops2/projects?wait=customer");
+
+  const opened = context.waitForEvent("page");
+  await link.click({ modifiers: ["ControlOrMeta"] });
+  const second = await opened;
+  await second.waitForLoadState();
+  expect(new URL(second.url()).pathname).toBe("/ops2/projects");
+  await expect(second.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
+  await second.close();
+
+  // And the tab it was opened FROM did not move.
+  expect(new URL(page.url()).pathname).toBe("/ops2/attention");
+  await expect(page.getByTestId("attention-row-awaitingPayment")).toBeVisible();
 });
 
 test("trade applications row goes to /customers", async ({ page }) => {
@@ -286,7 +329,13 @@ test("a signed-in customer (non-staff) loading /attention gets the unauthorised 
   const error = page.getByTestId("attention-error");
   await expect(error).toBeVisible();
   await expect(error).toHaveText(/This account can't see what's waiting\./);
-  await expect(error).toHaveText(/staff-only/);
+  // NAMES WHAT ATTENTION ACTUALLY SPANS, in CONTEXT.md's own actor word.
+  // The copy was cribbed from useProjectQueue and still said "Projects" (one
+  // of the three destinations this page summarises) and "an administrator",
+  // which is not a role this product has — the axis is Staff.
+  await expect(error).toHaveText(/Projects, Enquiries and Customers are staff-only\./);
+  await expect(error).toHaveText(/Ask OpenFrame Staff/);
+  await expect(error).not.toHaveText(/administrator/i);
   await expect(page.locator('[data-testid^="attention-row-"]')).toHaveCount(0);
   await context.close();
 });

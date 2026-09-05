@@ -288,3 +288,74 @@ and the param is still stripped after use.
 Verify: `npx playwright test ops2-projects ops2-attention` 30/30. `npm run
 typecheck:gate` green (61 pre-existing non-fatal, none new). `npm run
 test:ops2` 122/122.
+
+## Review finding fix — `07-review-codex.md`, five defects
+
+**(1) MEDIUM — a browser test that could not fail.**
+`scripts/tests/web/ops2-attention.spec.ts` proved `?wait=` consumption by
+clicking the SUBMISSIONS row and asserting the `Needs us` chip lit — but
+`us` is `EMPTY_QUERY`'s own chip (`src/ops2/projects/queue.ts`), so the
+assertion held with the whole consumption effect deleted. Added *"awaiting-payment
+row lands on /projects with the Customer chip lit, not the default"*: that row
+carries `?wait=customer`, which nothing but the effect can produce. Asserts
+Customer pressed AND `Needs us` and `All` not. The submissions case is kept —
+it still pins the default's own behaviour and the All-clears-it path.
+
+**(2) MEDIUM — the reachability guard was unsound.** `docs.test.mjs` used
+`battery.includes(f)` on bare basenames, so `api.test.mjs` counted as reachable
+because `meta-api.test.mjs` is in the battery, and `pipeline.test.mjs` hid
+behind `ai-pipeline.test.mjs`. Removing a real suite from `npm test` could stay
+green. Red first: added *"reachability is an exact argument match, not a
+substring of another suite's name"*, which failed (expected two unreachable,
+got none). Green: extracted `unreachableSuites(battery, suites)` matching the
+whole argument `scripts/tests/<file>` against the battery's split args.
+
+**(3) MEDIUM, security-adjacent — one of six count keys was asserted.** The
+abuse pins in `api.test.mjs` and `api-edge.test.mjs` only checked
+`body.submissions === undefined`, so a denial leaking `inReview`,
+`readyToIssue`, `awaitingPayment`, `newEnquiries` or `tradeApplications` — a
+manufacturer partner reading a competitor's pipeline — stayed green. Added
+`assertNoCounts()` + `SUMMARY_COUNT_KEYS` to `scripts/tests/helpers.mjs`
+(the six keys Attention consumes) and used it at both sites. Proven to fail on
+a leak before adoption: `assertNoCounts({inReview: 2})` → "leaked: inReview".
+
+**(4) MEDIUM — wrong words in the unauthorised panel.**
+`src/ops2/attention/useSummary.ts` said *"Projects are staff-only. Ask an
+administrator to add the role."* — copy left from `useProjectQueue`, naming one
+of the three destinations Attention spans and a role this product does not have
+(`CONTEXT.md` Actors: the axis is **Staff**). Red first: the existing
+unauthorised browser test grew three assertions (names the three destinations,
+says "Ask OpenFrame Staff", contains no "administrator") and failed on the old
+string. New copy: *"Projects, Enquiries and Customers are staff-only. Ask
+OpenFrame Staff to add the role to this account."*
+
+**(5) MEDIUM — a row that goes somewhere was a `<button>`.** Attention rows
+navigated by `history.push` through `chrome/RowList`'s `Row`, losing
+middle-click, Ctrl/Cmd-click, "copy link address" and the link role. Red first:
+*"an attention row is a link, and a modified click opens the destination beside,
+not instead"* (asserts `href="/ops2/projects?wait=customer"`, Ctrl-clicks, the
+new tab lands on Projects, the original tab does not move), plus the existing
+control-count case flipped from `getByRole("button")` to `getByRole("link")`
+with `button` pinned at 0.
+
+Fix: `Row` takes an optional `href`; present → the pressable is an `<a>`
+carrying the SAME `.ops2-row__open` class, so the RowList invariant holds —
+leading edge, selection tint and hover wash are still all computed on one
+element. Plain clicks are still the router's (`preventDefault` + `onActivate`);
+modified clicks are the browser's. `isPlainClick` moved from
+`projects/rows.tsx` to `chrome/RowList.tsx` and is imported back by the desk
+table rather than duplicated. `rows.css` gains `text-decoration: none` so the
+anchor spells the same row as the button.
+
+Two guards bit during the fix, and both were right:
+
+- `ops2-record.test.mjs` went `ReferenceError: window is not defined` when
+  `RowList` imported `browserHref` — `../shellBase` reads `window.location` at
+  module scope and that suite bundles `LineReview` for node. So `href` is a
+  BROWSER href, based by the caller (`AttentionPage` passes
+  `browserHref(row.href)`), and chrome stays window-free.
+- `ops2-frame.test.mjs`'s basename guard then flagged `href={href}`. Rather
+  than weaken it, added a second narrow exception — a file that declares
+  `href?: string` as a prop and forwards it builds no URL, and the caller's own
+  `href={browserHref(...)}` is checked by the same loop, so the base is still
+  applied exactly once.

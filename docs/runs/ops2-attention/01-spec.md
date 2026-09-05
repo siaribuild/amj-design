@@ -105,8 +105,26 @@ Every criterion is Given–When–Then and independently walkable.
 ### Navigation out of a row
 
 9. **Given** a drawn Projects count, **When** Staff presses its row, **Then**
-   the app navigates to `/projects` with the queue already filtered to the set
-   that row counted, and the queue's own `Needs us` default is untouched.
+   the app navigates to `/projects` with the queue filtered to the WAIT AXIS
+   that count belongs to — `?wait=us` for work on our desk, `?wait=customer` for
+   work we are waiting on them for — and the queue's own `Needs us` default is
+   untouched for anyone arriving another way.
+
+   **THE QUEUE IS NOT PROMISED TO CONTAIN EXACTLY THE COUNTED SET, and that is
+   G7's settled answer rather than a shortfall.** An earlier draft of this
+   criterion said "filtered to the set that row counted"; the Codex review
+   caught that the code does not do that and never agreed to. The counts come
+   from one SQL row in `/api/ops/summary`; the queue's chips come from
+   `selectProjects` over `/api/ops/projects`. They are different predicates —
+   the summary's `ready_to_issue` is two `status_internal` values with no
+   unresolved lines, while the queue's is the issue gate's own `issuableNow`,
+   which also demands settled delivery. A link that promised the two agreed
+   would be promising something neither side can honour, and the reader would
+   have no way to tell which number was lying.
+
+   So the row promises only what is true: the work you pressed is in the list
+   you land on. Per-count queue filters were offered to the owner and declined
+   (G7 (i), the architect's stated resolution).
 
 10. **Given** Staff has landed on `/projects` from an Attention row, **When**
     they look at the queue's controls, **Then** the control the URL named reads
