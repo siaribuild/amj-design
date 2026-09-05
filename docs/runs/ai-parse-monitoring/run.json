@@ -1,7 +1,7 @@
 {
   "slug": "ai-parse-monitoring",
   "tier": "full",
-  "base": "284f89ff",
+  "base": "591a912d",
   "branch": "feat/ai-parse-monitoring",
   "ui": true,
   "stages": {
@@ -15,15 +15,13 @@
       "seconds": 83
     },
     "design": {
-      "contextTokens": 1730314,
-      "outputTokens": 48238,
-      "turns": 29,
+      "code": 0,
+      "contextTokens": 2127442,
+      "outputTokens": 49919,
+      "turns": 35,
       "source": "transcript",
-      "session": "72a44481-b531-4a62-9d2b-053531fa78d7",
-      "seconds": 1049,
-      "status": "done",
-      "mode": "headless",
-      "code": 0
+      "session": "c2626a07-12f1-4105-a705-a0c375c8afbd",
+      "seconds": 1092
     },
     "ux": {
       "code": 0,
@@ -33,9 +31,171 @@
       "source": "transcript",
       "session": "04c30828-e55f-4ba2-913c-4569d728c12a",
       "seconds": 1019
+    },
+    "build-T1": {
+      "code": 0,
+      "contextTokens": 8497694,
+      "outputTokens": 36624,
+      "turns": 112,
+      "source": "transcript",
+      "session": "8f921a3b-ba14-40fc-b0b5-a3fb88b0cfc5",
+      "seconds": 1422
+    },
+    "build-T2": {
+      "code": 0,
+      "contextTokens": 1923521,
+      "outputTokens": 13809,
+      "turns": 25,
+      "source": "transcript",
+      "session": "e8b31163-e208-44f3-8ebf-7ef8f007d8e4",
+      "seconds": 376
+    },
+    "build-T3": {
+      "code": 0,
+      "contextTokens": 4961502,
+      "outputTokens": 42024,
+      "turns": 64,
+      "source": "transcript",
+      "session": "79e97086-0a5d-4e18-a9dd-1d9bdb6da9d6",
+      "seconds": 1616
+    },
+    "build-T4": {
+      "code": 0,
+      "contextTokens": 3483444,
+      "outputTokens": 14175,
+      "turns": 46,
+      "source": "transcript",
+      "session": "f721daae-649e-4f06-8690-0914a9195170",
+      "seconds": 1506
+    },
+    "build-T5": {
+      "code": 0,
+      "contextTokens": 6670700,
+      "outputTokens": 55523,
+      "turns": 83,
+      "source": "transcript",
+      "session": "470e38fa-5e74-48d2-b610-0f99e7165c58",
+      "seconds": 2954
+    },
+    "build-T6": {
+      "code": 0,
+      "contextTokens": 4711283,
+      "outputTokens": 23859,
+      "turns": 60,
+      "source": "transcript",
+      "session": "bd69ebab-4585-407d-a69a-f6453298a59c",
+      "seconds": 1233
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 9045014,
+      "outputTokens": 52183,
+      "turns": 68,
+      "source": "transcript",
+      "session": "2dec1f18-bbbb-4b57-92d8-6dbe87510e20",
+      "seconds": 1524
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 5964402,
+      "outputTokens": 69740,
+      "turns": 80,
+      "source": "transcript",
+      "session": "aa098906-f2fc-4552-850a-6fc4cc010473",
+      "seconds": 2184
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 357596,
+      "outputTokens": 9881,
+      "turns": 7,
+      "source": "transcript",
+      "session": "c6def85a-a62d-48f6-8257-e867ee6754b3",
+      "seconds": 167
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 842418,
+      "outputTokens": 6631,
+      "turns": 8,
+      "source": "transcript",
+      "session": "f6dd6252-a848-409b-aa2a-82eae3e67f98",
+      "seconds": 133
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 1223453,
+      "outputTokens": 14788,
+      "turns": 12,
+      "source": "transcript",
+      "session": "8cab2581-ae93-4e47-a669-e2123380d552",
+      "seconds": 315
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "accept": {
+      "code": 0,
+      "contextTokens": 854727,
+      "outputTokens": 10646,
+      "turns": 15,
+      "source": "transcript",
+      "session": "b5f0d49d-502d-4eea-987c-8e643c1cb40d",
+      "seconds": 249
+    },
+    "fix-0": {
+      "code": 0,
+      "contextTokens": 6974468,
+      "outputTokens": 53114,
+      "turns": 92,
+      "source": "transcript",
+      "session": "e356a5d5-a450-4192-937a-38a57654aacf",
+      "seconds": 4047
+    },
+    "fix-1": {
+      "code": 0,
+      "contextTokens": 8104848,
+      "outputTokens": 37358,
+      "turns": 105,
+      "source": "transcript",
+      "session": "247e18a0-e458-4b1d-a749-bdad850dd337",
+      "seconds": 3747
     }
   },
-  "tasksDone": [],
+  "tasksDone": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+  ],
   "startedAt": "2026-09-03T12:19:00.485Z",
-  "gateStage": null
+  "gateStage": null,
+  "verifyRounds": 2,
+  "fixRounds": 2
 }

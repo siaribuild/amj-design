@@ -1,451 +1,377 @@
 # ai-parse-monitoring — design
 
-Stage 2. Spec: `docs/runs/ai-parse-monitoring/01-spec.md` (28 criteria). Grill decisions in
-`00-ask.md` are binding. Branch `feat/ai-parse-monitoring` off `apertly/main` (284f89ff).
-
-**Counting unit — RESOLVED** (owner, 2026-09-03): count claims — one parse event = one
-claim lifecycle. Grill decision 4's "one document == one parse" is superseded by this
-ruling; the error card stays claim-based per decision 9. No per-document estimating. The
-design below is written to exactly this answer.
+Stage 2. Sources: `docs/runs/ai-parse-monitoring/01-spec.md` (28 criteria, binding),
+`docs/runs/ai-parse-monitoring/00-ask.md` (grill decisions 1–10 + addendum, binding).
+Branch: `feat/ai-parse-monitoring` off `feat/ops2-attention` (591a912d) per the
+grill addendum — the cards land below the attention groups that branch built.
 
 ---
 
-## 1. Shape of the solution
+## 1. Shape in one paragraph
 
-No new cron, no new auth path, **no D1 migration** (see §3). One new deep module on the
-worker (`worker/lib/monitoring.ts`) does everything expensive — Cloudflare money fetch, D1
-counts, day buckets, red evaluation — once per cron tick, and writes a single JSON snapshot
-to the existing `KV` namespace. Everything else is a reader:
+The `*/10` cron (already firing in `worker/index.ts` `scheduled()`) gains one job:
+fetch the three Cloudflare money numbers, run one D1 count query over
+`ai_job_claim`, assemble a `MonitoringSnapshot`, write it to KV under
+`monitoring:snapshot`. One new staff-only endpoint, `GET /api/ops/monitoring`,
+returns `{ snapshot, notificationCount }` from that KV read — no Cloudflare call
+ever happens on a page load (criteria 1, 22). The ops2 Attention page appends a
+monitoring section (two money cards, two count cards, one 7-day CSS-bar chart)
+below its existing groups; the header bell and the phone attention tab draw the
+notification count. All arithmetic and validation is pure code in
+`src/data/monitoring.ts`; `worker/lib/monitoring.ts` is the IO shell around it.
 
-```
-*/10 cron ──> writeMonitoringSnapshot(env) ──> KV["monitoring:snapshot:v1"]
-                                                     │
-GET /api/ops/monitoring/snapshot  (resolveStaff) ────┤
-                                                     ▼
-        ops2 AttentionPage (5 cards + chart)   ops2 bubble (bell badge + tab badge)
-```
+## 2. Hand-off file index
 
-Red is computed **once, at write time**, and stored on the snapshot (`red: boolean`). The
-client never re-derives it — one place per fact. Thresholds come from wrangler `vars`
-(`AI_BALANCE_FLOOR_USD`, `AI_CAP_USED_CEILING_PCT`), read only by the cron writer.
-
-## 2. Affected files — hand-off index
+Every path repo-relative. Line numbers are against the base branch
+`feat/ops2-attention` @ 591a912d.
 
 ### New files
 
-| Path | What lands there |
+| Path | What it is |
 |---|---|
-| `src/data/monitoring.ts` | Shared types + pure helpers (§2.1). Client and worker both import; no I/O. |
-| `worker/lib/monitoring.ts` | Snapshot writer/reader: CF money client, D1 counts, buckets, `isRed` application, KV put/get (§2.2–2.4). |
-| `src/ops2/pages/AttentionPage.tsx` | The card container: 5 cards + chart + empty/unavailable/stale states (§2.6). |
-| `src/ops2/notifications/sources.ts` | `NotificationSource` interface, source list (one entry), aggregator, `useNotificationCount()` hook (§2.7). |
-| `scripts/tests/ai-monitoring.test.mjs` | Pure suite (esbuild-bundle pattern from `scripts/tests/ai-jobs.test.mjs`). |
-| `scripts/tests/monitoring-api.test.mjs` | Heavy suite (harness pattern from `scripts/tests/api.test.mjs`, plus `--test-scheduled`). |
-| `scripts/tests/ops2-attention.test.mjs` | ops2 suite (bundle + source-assertion pattern from `scripts/tests/ops2-frame.test.mjs`). |
+| `migrations/0064_ai_job_claim_triggered_by.sql` | `ALTER TABLE ai_job_claim ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'upload';` — see §4. |
+| `src/data/monitoring.ts` | Pure core: snapshot types, `parseMonitoringSnapshot`, `melbourneDayKey`, `assembleParseCounts`, `capOutstanding`, `evaluateRed`. No IO, no Worker types. |
+| `worker/lib/monitoring.ts` | IO shell: `fetchMoneyNumbers`, `writeMonitoringSnapshot` (cron job), `readMonitoringSnapshot`, `NotificationSource` list + `notificationCount`. |
+| `src/ops2/attention/useMonitoring.ts` | Fetch hook for `/api/ops/monitoring` — copy the mechanics of `src/ops2/attention/useSummary.ts` (loading / error / data triple, abort on unmount). |
+| `src/ops2/chrome/useNotificationCount.ts` | Module-cached hook (≈60s TTL, module-level promise cache — no context provider) reading the same endpoint's `.notificationCount`; shared by desk bell and phone tab. |
+| `scripts/tests/ai-monitoring.test.mjs` | New node:test suite: esbuild-bundles `src/data/monitoring.ts` (pure tests) and `worker/lib/monitoring.ts` with a fake env (lib tests). Patterns: pure-bundle from `scripts/tests/ops2-attention.test.mjs:1-60`, fake `{ DB, KV }` env from `scripts/tests/ai-jobs.test.mjs:1-80`. |
 
-### Edited files
+### Changed files
 
-| Path | Where | Change |
-|---|---|---|
-| `worker/types.ts` | end of `Env` (after `ABR_BASE_URL`, line ~104) | add `CF_ACCOUNT_ID?`, `CF_MONITORING_API_TOKEN?`, `AI_BALANCE_FLOOR_USD?`, `AI_CAP_USED_CEILING_PCT?` (all `string?`, doc comments per house style) |
-| `wrangler.jsonc` | `vars` block (near `AI_GATEWAY_ID: "openframe-estimator"`) | add `CF_ACCOUNT_ID`, `AI_BALANCE_FLOOR_USD: "5"`, `AI_CAP_USED_CEILING_PCT: "80"`. Token is a secret, NOT a var. |
-| `worker/index.ts` | `scheduled` handler, lines ~340–354 | append `await writeMonitoringSnapshot(env).catch((e) => console.log("monitoring snapshot failed", e?.message));` in the existing per-job `.catch()` style — no new trigger (criterion 21) |
-| `worker/routes/ops.ts` | near `/summary` (line ~311), same guard idiom | add `ops.get("/monitoring/snapshot", …)` — guard + KV read + JSON, ≤10 lines (§2.5) |
-| `src/ops2/Ops2App.tsx` | route swap ~line 200–202; phone tab bar lines 272–289 | add `d.id === "attention" ? <AttentionPage /> :` branch; add `IonBadge` inside the Attention `IonTabButton` when count > 0 |
-| `src/ops2/chrome/OpsPage.tsx` | desk bell button, lines 173–180 | render count badge inside the existing `ops2-bell` button when count > 0 (button already navigates to `HOME_PATH` — criterion 18 is free) |
-| `package.json` | `test:pure` (line 17), `test:heavy` (line 18), scripts block | add the three new suites + `test:monitoring` convenience script (§5) |
-| `CONTEXT.md` | vocabulary section | add **Snapshot**, **Red**, **Errored parse**; amend Attention-page description (§7) |
+| Path | Landing point |
+|---|---|
+| `worker/lib/ai/jobs.ts` | `enqueueAiExtraction` (line 245, INSERT at 265–273): optional `triggeredBy: "upload" \| "ops" = "upload"` param, written into the INSERT column list. `retryCurrentAiExtraction` (line 288): accept and thread the same param to its `enqueueAiExtraction` fall-through only — the in-place reset UPDATE (lines 337–354) must NOT touch `triggered_by` (§4.1). |
+| `worker/routes/ops.ts` | (a) The ops re-parse route's call `retryCurrentAiExtraction(c.env, c.executionCtx, projectId)` at line 2074 passes `"ops"`. (b) New thin route `GET /api/ops/monitoring` guarded by `isStaffUser` (line 110) — NOT the bare `resolveStaff` pattern `/summary` uses at 311–312, because a manufacturer partner must be refused (criterion 25). Body: one call into `worker/lib/monitoring.ts`, JSON out. |
+| `worker/routes/parse.ts` | Line 47 (customer retry call site): unchanged — listed so the developer verifies the default keeps it `'upload'`. |
+| `worker/index.ts` | `scheduled()` at line 340: append `writeMonitoringSnapshot(env).catch((e) => console.log("[monitoring] snapshot failed", e?.message))`, matching the `.catch`-isolated siblings at 344–353. No new trigger (criterion 21). |
+| `worker/types.ts` | After `AI_GATEWAY_ID` (line 54): `CF_MONITORING_TOKEN?` (secret — comment per the `ABR_GUID` precedent at lines 96–100), `CF_ACCOUNT_ID?`, `AI_CREDIT_FLOOR_USD?`, `AI_CAP_CEILING_PCT?`. |
+| `wrangler.jsonc` | `vars` block (lines 113–165): add `CF_ACCOUNT_ID`, `AI_CREDIT_FLOOR_USD: "5"`, `AI_CAP_CEILING_PCT: "80"`. `CF_MONITORING_TOKEN` is set via `wrangler secret put`, never committed. |
+| `src/ops2/attention/AttentionPage.tsx` | Monitoring section appended below the existing groups ("the page is theirs, the AI-parsing section is ours" — grill addendum). |
+| `src/ops2/styles/attention.css` | Card + chart styles. Chart is plain CSS bars (7 buckets × 2 divs); no chart library. |
+| `src/ops2/chrome/OpsPage.tsx` | Bell button lines 173–180 (`ops2-bell`, already navigates to `HOME_PATH`): draw badge when `useNotificationCount() > 0`. |
+| `src/ops2/Ops2App.tsx` | Phone tab bar, attention `IonTabButton` inside `TAB_DESTINATIONS.map` at 276–281: badge for `d.id === "attention"` when count > 0. |
+| `src/ops2/styles/nav.css` | Badge styles beside the existing `ops2-bell` rules. |
+| `package.json` | Add `"test:ai-monitoring"` script (per-suite convention, e.g. `test:ai-jobs` line 39) and append `scripts/tests/ai-monitoring.test.mjs` to the `test:pure` file list (line 17) so `npm test` runs it. |
+| `scripts/tests/ai-jobs.test.mjs` | New asserts: INSERT carries `triggered_by`; default is `'upload'`; `"ops"` reaches the INSERT via `retryCurrentAiExtraction`'s fall-through; the in-place reset UPDATE's SQL does not mention `triggered_by`. |
+| `scripts/tests/api-edge.test.mjs` | New subtests against the already-booted worker: criteria 23–26 (see test plan). |
+| `CONTEXT.md` | Ops-console section: new terms added by the architect in this stage (done — see §9). |
 
-No other file changes. `src/ops2/nav/destinations.ts` already has the attention destination
-and `HOME_PATH = "/attention"` — untouched. `src/ops2/pages/DestinationRoot.tsx` untouched
-(the swap happens in `Ops2App.tsx`, which is where the projects swap already lives).
+## 3. Data model
 
-### 2.1 `src/data/monitoring.ts` — shared types + pure rules
+### 3.1 Snapshot types (`src/data/monitoring.ts`)
 
 ```ts
 export type MoneySnapshot =
-  | { available: true; balanceUsd: number; billedSpendUsd: number;
-      capUsd: number | null; capSource: "gateway" | "account" | null }
-  | { available: false; reason: string };   // machine code, never an error body or token
+  | { available: true; creditBalanceUsd: number; billedSpendUsd: number;
+      capUsd: number; capSource: "gateway" | "account" }
+  | { available: false; reason: string };   // "token_missing" | "fetch_failed" | …
 
-export interface ParseDayBucket { day: string; /* YYYY-MM-DD, Australia/Melbourne */
+export interface DayBucket { day: string /* YYYY-MM-DD, Australia/Melbourne */;
   success: number; error: number }
 
 export interface MonitoringSnapshot {
-  takenAt: string;                          // ISO, UTC
+  takenAt: string;          // ISO — criterion 6 renders "as at HH:MM" from this
   money: MoneySnapshot;
-  counts: { success: number; error: number };
-  days: ParseDayBucket[];                   // exactly 7, oldest first, zero-filled
-  red: boolean;                             // evaluated at write time — single source
+  success7d: number;
+  error7d: number;
+  days: DayBucket[];        // exactly 7, oldest first, zero buckets present (criterion 14)
 }
-
-export function capOutstandingUsd(m: MoneySnapshot): number | null;
-  // available && capUsd != null ? capUsd - billedSpendUsd : null  (criterion 2)
-
-export function isRed(m: MoneySnapshot, floorUsd: number, ceilingPct: number): boolean;
-  // !m.available → false (criterion 19 — unavailable never red)
-  // balanceUsd < floorUsd → true (criterion 16)
-  // capUsd != null && capUsd > 0 && (billedSpendUsd / capUsd) * 100 > ceilingPct → true (criterion 17)
-  // capUsd null → cap clause can never fire; balance clause still can
-
-export function isStale(takenAt: string, now: Date, maxAgeMinutes = 30): boolean; // criterion 6
 ```
 
-Pure functions, no I/O, testable in the esbuild bundle. Client renders `red`? No — client
-renders the badge from `snapshot.red`; `isRed` runs only in the cron writer. The helper
-lives here (not in `worker/lib/`) purely so the pure test suite and the worker share it and
-so nothing ever re-implements the rule client-side.
+`parseMonitoringSnapshot(raw: unknown): MonitoringSnapshot | null` — strict
+shape validation, same posture as `parseSummary` in
+`src/ops2/attention/attention.ts`: a malformed snapshot is `null`, and the page
+renders that as "no snapshot yet", never as zeros (the Attention rule: degraded
+draws as failure, not as zero).
 
-### 2.2 Counting — the D1 read (claim-level, owner ruling 2026-09-03)
+KV: key `monitoring:snapshot`, `JSON.stringify(snapshot)`, **no TTL** — staleness
+is displayed via `takenAt` (criterion 6, spec §4 ASSUMED), never enforced by
+expiry, because an expired key would turn "cron broken" into an empty page.
 
-One query against `ai_job_claim` only (uses the existing
-`idx_ai_job_claim_status (status, updated_at)` index — no new index):
+### 3.2 The counting predicate (one home)
+
+Grill decision 9: one SQL predicate. It lives once, in
+`worker/lib/monitoring.ts`, as the count query:
 
 ```sql
-SELECT status, updated_at FROM ai_job_claim
-WHERE (status IN ('completed','failed') AND updated_at >= datetime('now','-7 days'))
-   OR (status = 'processing'
-       AND updated_at >= datetime('now','-7 days')
-       AND updated_at <= datetime('now','-30 minutes'))
+SELECT updated_at,
+       CASE WHEN status = 'completed' THEN 'success' ELSE 'error' END AS outcome
+FROM ai_job_claim
+WHERE triggered_by = 'upload'
+  AND updated_at >= datetime(?, '-7 days')
+  AND (status = 'completed'
+       OR status = 'failed'
+       OR (status = 'processing' AND updated_at < datetime(?, '-30 minutes')))
 ```
 
-Classification in TS: `completed` → success; `failed` → error; stale `processing` → error
-(criterion 9); `processing` younger than 30 min excluded by the SQL (criterion 10);
-`scheduled`/`superseded` never selected. This is the spec's "one SQL predicate" (grill
-decision 9), with the classification kept in TS so the same rows feed both the totals and
-the buckets — the cards and the chart cannot disagree (criterion 13 holds by construction,
-not by two queries agreeing).
+(both `?` = the same `now` ISO string, so the window and the staleness test share
+one clock). `scheduled` and fresh `processing` rows match nothing — neither
+success nor error (criterion 10). The heartbeat bumps `updated_at` every 15s, so
+`processing` + 30-minutes-stale means genuinely stuck (criterion 9). One claim
+row per document generation and superseded generations go terminal, so one
+document counts once (criterion 8). Uses the existing
+`idx_ai_job_claim_status (status, updated_at)` index; no new index.
 
-Why `updated_at`, not `created_at`, for "older than 30 minutes": `updated_at` is bumped on
-every transition into `processing` (claim/reclaim in `worker/lib/ai/jobs.ts`), so it is the
-last sign of life; a claim *created* 40 minutes ago but legitimately re-leased 2 minutes ago
-is healthy. Leases max out at 10 minutes and the reaper runs on the same cron, so no healthy
-row ever shows a 30-minute-old `processing` `updated_at`. Progress writes
-(`drawings_done` etc.) do not bump `updated_at`, and don't need to — no healthy run holds
-`processing` that long.
+Bucketing is pure: `assembleParseCounts(rows: {updatedAt: string; outcome:
+"success" | "error"}[], now: Date)` in `src/data/monitoring.ts` returns
+`{ success7d, error7d, days }` with the Melbourne day key from
+`Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Melbourne" })` (en-CA
+yields `YYYY-MM-DD` directly).
 
-Retries never create claim rows — `retryCurrentAiExtraction` (worker/lib/ai/jobs.ts,
-~line 320) **resets the same row** (`UPDATE … SET status='scheduled', attempts=0 …`). So a
-doc retried three times before succeeding is one `completed` row = one success
-(criterion 8), with zero code written for it.
+**The window is seven Melbourne calendar dates** — today and the six before it,
+so between 144 and 168 hours depending on the time of day. It is NOT the
+rolling 7×24h this section originally specified, and the two cannot both be
+true: a rolling window spans parts of eight calendar dates, which seven buckets
+cannot represent. The original wording had the query reaching back further than
+any bucket, so D1 returned rows that were then dropped on the floor — missing
+from the chart *and* from the card totals beside it, with nothing saying so.
 
-Criterion 11 (exclude ops building-model runs) is satisfied structurally: counts read
-**only** `ai_job_claim`; ops-triggered building-model runs write `ai_runs` /
-`ai_stage_runs` without a claim, so they never appear. The test proves it by inserting an
-`ai_runs` row with no claim and asserting counts unchanged.
+Chosen deliberately (2026-09-05, after the architect's own review raised the
+incoherence): the cards must describe exactly what the chart shows
+(criterion 13), and "last 7 days" on a seven-column chart reads as seven days,
+not as seven-days-and-a-bit. `parseWindowStart(now)` is the single boundary —
+00:00 Melbourne on the oldest bucket's date — and the SQL binds it, so no row
+can exist outside the buckets.
 
-**Ruling record:** the owner accepted claim-level counting (2026-09-03), superseding
-grill decision 4's per-document wording. This section is final; no per-document join or
-document estimate exists anywhere in the feature.
-
-### 2.3 Day buckets
-
-D1/SQLite has no timezone support, so bucketing is TS: for each classified row, bucket
-`updated_at` into a `YYYY-MM-DD` day key via `Intl.DateTimeFormat("en-CA", { timeZone:
-"Australia/Melbourne" })` (spec §4 assumption). Build the 7 day keys first (today back to
-today−6, Melbourne), zero-fill, then add rows in — so a zero day is a zero bucket, never a
-missing one (criteria 12, 14). Totals = sums over the same classified rows (criterion 13).
-
-Edge accepted: the window is rolling 7×24h while buckets are Melbourne calendar days, so
-the oldest bucket is partial. That is what the spec's own assumption pairs, and an owner
-reading "last 7 days" gets exactly that.
-
-### 2.4 `worker/lib/monitoring.ts` — the writer
+### 3.3 Red (`evaluateRed`)
 
 ```ts
-export const SNAPSHOT_KEY = "monitoring:snapshot:v1";
-
-export async function writeMonitoringSnapshot(env: Env, fetchImpl = fetch): Promise<void>;
-export async function readMonitoringSnapshot(env: Env): Promise<MonitoringSnapshot | null>;
+evaluateRed(snapshot: MonitoringSnapshot, floorUsd: number, ceilingPct: number): boolean
 ```
 
-`fetchImpl` is the test seam (same idiom as `ABR_BASE_URL`'s purpose: drive the suite, not
-the live API).
+`money.available === false` ⇒ `false` (criterion 19 — unavailable never alarms).
+Otherwise: `creditBalanceUsd < floorUsd || (billedSpendUsd / capUsd) * 100 >
+ceilingPct`. One boolean out — criterion 17's "still 1" is automatic because
+red is one source, not two.
 
-**Money fetch** (grill decision 5, criterion 3), base
-`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}`, header
-`Authorization: Bearer ${env.CF_MONITORING_API_TOKEN}`, each call wrapped in
-`AbortSignal.timeout(10_000)`:
+`capOutstanding(money)` = `capUsd - billedSpendUsd` (criterion 2, spec §4
+"remaining headroom").
 
-1. Balance: `GET …/ai-gateway/billing/credit-balance`.
-2. Billed spend: `GET …/ai-gateway/billing/usage-history` — take the current (latest)
-   billing period's spend.
-3. Cap: `GET …/ai-gateway/gateways/${env.AI_GATEWAY_ID}` → `result.spend_limits.rules`
-   (if multiple rules, take the minimum limit — the binding one). On any failure of that
-   call: `GET …/ai-gateway/billing/spending-limit` and record `capSource: "account"`;
-   success on the first records `capSource: "gateway"` (criterion 3). Both fail → `capUsd:
-   null, capSource: null` — balance and spend can still render.
+## 4. Migration 0064 — `triggered_by`
 
-No token or no account id configured → skip all calls, `money = { available: false,
-reason: "not-configured" }` (criterion 4). Any required call (balance or spend) non-2xx,
-timeout, or unparseable → `money = { available: false, reason: "cf-error" }`; the D1
-counts are still computed and the snapshot still written (criterion 5).
+File: `migrations/0064_ai_job_claim_triggered_by.sql`
 
-**Response-shape caveat (deliberate):** the three billing endpoints' exact JSON shapes are
-not verifiable until the token exists. The extractors read a small set of candidate numeric
-fields and treat anything else as `unavailable` — the failure mode is "unavailable",
-never a wrong number rendered as real money. The deploy step (§6) has the developer capture
-one real response per endpoint with `curl` once the owner provisions the token, and pin the
-test fixtures to those captures. Residual risk until then: fixture shapes are our best
-reading of the CF docs, marked in the test file.
+```sql
+-- Marks who caused a claim generation: 'upload' (customer document flow — the
+-- default, and everything historical) or 'ops' (staff re-evaluation of an
+-- already-completed parse). Monitoring counts uploads only (spec criterion 11).
+-- children affected: none — nothing REFERENCES ai_job_claim (verified by grep,
+-- matching migration 0059's own statement). Pure ADD COLUMN: additive class,
+-- no rebuild, no PRAGMA defer_foreign_keys needed.
+ALTER TABLE ai_job_claim ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'upload';
+```
 
-**Logging** (criterion 27): on CF failure log **only** `endpoint path + HTTP status /
-error name`. The token never enters a log line because the logging call is handed the path
-string and status, never the Request object or headers. The pure suite asserts captured
-log output contains neither the token value nor the string `Authorization`.
+d1-migration-safety compliance: additive change (rule 1 — no ceremony), but the
+cascade check was still run: `grep -rh 'REFERENCES ai_job_claim' migrations/`
+(excluding comments) finds **zero live constraints** — the only mention is
+0059's comment stating the same fact. No child tables, no cascade exposure, no
+rebuild strategy required. Historical rows default to `'upload'`, which is
+correct: before this feature only the upload path created claims (the ops
+re-parse existed, but tagging its history is impossible and the 7-day window
+ages it out inside a week — accepted, noted as residual in §8).
 
-**Red:** `red = isRed(money, parseFloat(env.AI_BALANCE_FLOOR_USD ?? "5"),
-parseFloat(env.AI_CAP_USED_CEILING_PCT ?? "80"))` — evaluated here, stored on the
-snapshot, nowhere else.
+### 4.1 Threading semantics (the criterion-11 call)
 
-**KV:** `env.KV.put(SNAPSHOT_KEY, JSON.stringify(snapshot))` — **no TTL**. A stale
-snapshot is shown with its age (criterion 6), not expired into an empty page (spec §4).
+- `enqueueAiExtraction(env, ctx, projectId, opts, triggeredBy = "upload")` —
+  the INSERT (jobs.ts:265–273) gains the column.
+- `retryCurrentAiExtraction` threads `triggeredBy` **only to its
+  completed-generation → new-generation fall-through** (a staff re-evaluation of
+  an already-parsed document = a building-model run, excluded from counts). Its
+  in-place reset of a failed/abandoned claim (UPDATE at 337–354) does **not**
+  touch `triggered_by`: staff repairing a failed *customer upload* is still that
+  upload's parse, and it should count (as a success once it completes).
+  **ASSUMED:** this reading of criterion 11 — ops-retry-of-a-failed-upload
+  counts as an upload parse; only ops re-evaluation of a completed parse is
+  excluded. Grounded in the spec's own vocabulary ("one document == one parse")
+  but it is a judgement call the owner can flip with a one-line change at the
+  call site.
+- `worker/routes/ops.ts:2074` passes `"ops"`. `worker/routes/parse.ts:47` is
+  untouched (default applies).
 
-### 2.5 Route — `worker/routes/ops.ts`
+## 5. Money fetch (`fetchMoneyNumbers`)
 
-Inline near `/summary` (~line 311), the exact existing guard idiom:
+`fetchMoneyNumbers(env: Env, fetchImpl = fetch): Promise<MoneySnapshot>` — the
+injectable `fetchImpl` is the test seam (same style as the ABR client's URL
+seam).
+
+Endpoints, verbatim from grill decision 5, all under
+`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}`:
+
+1. Credit balance: `GET …/ai-gateway/billing/credit-balance`
+2. Billed spend: `GET …/ai-gateway/billing/usage-history`
+3. Cap: `GET …/ai-gateway/gateways/openframe-estimator` →
+   `spend_limits.rules`; on any failure, fall back to
+   `GET …/ai-gateway/billing/spending-limit` (account-level, write-deprecated
+   but readable). `capSource: "gateway" | "account"` records which answered
+   (criterion 3). The gateway slug is `env.AI_GATEWAY_ID` (already
+   `"openframe-estimator"` in vars) — not a second hardcoding.
+
+Auth: `Authorization: Bearer ${env.CF_MONITORING_TOKEN}`. Token unset ⇒ return
+`{ available: false, reason: "token_missing" }` without any fetch (criterion 4).
+Any non-2xx / thrown fetch / unparseable body ⇒ `{ available: false, reason:
+"fetch_failed" }` and one `console.log("[monitoring] cf fetch failed", …)` line
+that contains the endpoint path suffix and status only — never the token, never
+the Authorization header, never the full URL with account id (criterion 27).
+
+`writeMonitoringSnapshot(env)` sequencing: run the D1 count query first, then
+the money fetch; assemble and write the snapshot regardless of money outcome —
+a Cloudflare outage still refreshes the counts (criterion 5). Its own throw is
+caught at the `scheduled()` call site like the sibling jobs.
+
+## 6. Endpoint and notification seed
+
+**One** route: `GET /api/ops/monitoring` (worker/routes/ops.ts, thin):
 
 ```ts
-ops.get("/monitoring/snapshot", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  const snapshot = await readMonitoringSnapshot(c.env);
-  return c.json({ ok: true, snapshot }); // snapshot may be null before first cron tick
-});
+// guard: isStaffUser(staff) — refuses visitor (401), customer (403),
+// manufacturer partner (403). Same helper every ops2 data route uses.
+{ snapshot: MonitoringSnapshot | null, notificationCount: number }
 ```
 
-Thin by construction: guard + read + serialize. `resolveStaff` (worker/lib/staff.ts,
-lines 137–158) already returns null for signed-out, Customers, **and** manufacturer-role
-users — criteria 23–25 need no new code, only tests. Do NOT use `resolveOpsUser` (it
-admits manufacturers). No sub-router: one GET does not earn a file.
+`snapshot` is the KV read through `parseMonitoringSnapshot` (`null` before the
+first cron run — the page renders "no snapshot yet"; `notificationCount` is `0`
+then, because there is nothing to be red about).
 
-`snapshot: null` (cron never ran) is a state the page renders ("no snapshot yet"), not an
-error.
-
-### 2.6 `src/ops2/pages/AttentionPage.tsx`
-
-Fetches `/api/ops/monitoring/snapshot` once on mount. Renders, in order (spec §4: with no
-"needs a person" content in v1, the cards are the page):
-
-- **Credit balance** — `$12.34` from `money.balanceUsd` (criterion 1).
-- **Cap outstanding** — `capOutstandingUsd(money)` headroom plus the cap it was measured
-  against, both from the snapshot, neither hardcoded (criterion 2). Cap null → card shows
-  "no cap set".
-- Both money cards render an explicit **"unavailable"** state when `!money.available` —
-  not zero, not red styling (criterion 4).
-- **Success (7d)** and **Errors (7d)** from `counts` (criterion 7); zero renders `0`
-  (criterion 12).
-- **Chart** — 7 grouped bars from `days`, plain divs + CSS heights, **no chart library**
-  (five numbers a day do not earn a dependency). Zero-parse window → empty-state message
-  in the chart card (criterion 12); zero days render as zero-height bars with the day
-  label present (criterion 14).
-- Every card shows "as at HH:MM" when `isStale(snapshot.takenAt, new Date())`
-  (criterion 6); `snapshot === null` → a single "no snapshot yet — cron pending" state.
-
-No Cloudflare call exists anywhere in the client — the page's only fetch is the worker
-endpoint (criteria 1, 22 by construction).
-
-### 2.7 `src/ops2/notifications/sources.ts` — the seed subsystem
-
-Criterion 20 explicitly mandates an interface with exactly one v1 implementation — the spec
-overrides the no-single-impl-interface reflex here, and says how it will be verified.
+Notification seed (criterion 20 mandates the interface — ponytail's
+one-implementation rule is explicitly overridden by the spec here), in
+`worker/lib/monitoring.ts`:
 
 ```ts
-export interface NotificationSource {
-  id: string;
-  count(): Promise<number>;
-}
-
-export const sources: NotificationSource[] = [aiBudgetRed]; // exactly one in v1
-
-export async function notificationCount(): Promise<number> {
-  const ns = await Promise.all(sources.map((s) => s.count().catch(() => 0)));
-  return ns.reduce((a, b) => a + b, 0);  // no source-specific branching — criterion 20
-}
-
-export function useNotificationCount(): number; // hook: fetch on mount, 0 until resolved
+export type NotificationSource = (env: Env) => Promise<number>;
+const aiBudgetRed: NotificationSource = async (env) => { /* read snapshot,
+  evaluateRed with thresholds parsed from env (defaults 5 / 80) */ };
+export const NOTIFICATION_SOURCES: readonly NotificationSource[] = [aiBudgetRed];
+export const notificationCount = async (env) =>
+  (await Promise.all(NOTIFICATION_SOURCES.map((s) => s(env)))).reduce(sum, 0);
 ```
 
-`aiBudgetRed.count()` fetches the snapshot endpoint and returns `snapshot?.red ? 1 : 0` —
-red was already collapsed to one boolean at write time, so balance-and-cap-both-red is
-still `1` (criterion 17) and unavailable money is `red: false` hence `0` (criterion 19). A
-failed fetch counts 0 — a broken endpoint must not paint a false alarm.
+No source-specific branching in the aggregator; a second source is one array
+entry. The route calls `readMonitoringSnapshot` once and derives both fields
+from that single KV read (not two reads).
 
-**Badge surfaces** (both consume `useNotificationCount()`, both render nothing at 0 —
-criterion 15):
+## 7. UI
 
-- Desk: inside the existing bell button (`src/ops2/chrome/OpsPage.tsx:173–180`) — the
-  button already `history.push(HOME_PATH)` on click, so tapping the non-zero bubble
-  navigates to Attention with zero new code (criterion 18).
-- Phone: `IonBadge` inside the Attention `IonTabButton` (`src/ops2/Ops2App.tsx:272–289`)
-  — the tab is already the navigation.
-
-## 3. Data model and migrations
-
-**No migration.** The feature is reads over the existing `ai_job_claim` (migration 0023,
-whose `(status, updated_at)` index serves the query) plus one KV key. The
-d1-migration-safety concerns (53 cascades, the production rebuild incident) are moot
-because `migrations/` is untouched — this is a design property, not an omission: the
-snapshot is derived, rebuildable every 10 minutes, and belongs in KV precisely so no schema
-is spent on it.
-
-## 4. Sequencing
-
-1. **T1 — shared model** (`src/data/monitoring.ts` + pure tests): types, `isRed`,
-   `capOutstandingUsd`, `isStale`. Everything else imports this.
-2. **T2 — writer** (`worker/lib/monitoring.ts`, Env/vars, cron append + pure tests):
-   money client with fallback + redaction, counts query, buckets, KV write.
-3. **T3 — route + heavy suite**: the guarded endpoint; `monitoring-api.test.mjs` boots
-   the real worker, seeds claims, fires the cron via `--test-scheduled` +
-   `GET /__scheduled?cron=*%2F10+*+*+*+*`, and executes the abuse cases for real.
-4. **T4 — Attention page** + route swap + page tests.
-5. **T5 — notification seed** + both badges + tests.
-6. **T6 — vocabulary**: CONTEXT.md terms (§7).
-
-T1→T2→T3 strictly ordered; T4 needs T1 (types) and T3 (endpoint shape); T5 needs T4's test
-file. T6 last.
-
-## 5. Test plan
-
-All three files below are named in `02-tasks.json` and wired into `package.json` in the
-same task that creates them — a named-but-never-created test file is this pipeline's most
-repeated failure.
-
-**`scripts/tests/ai-monitoring.test.mjs`** — pure, added to `test:pure` (line 17) and a new
-`"test:monitoring"` script. esbuild-bundle pattern from `ai-jobs.test.mjs` (stdin entry
-re-exporting from `worker/lib/monitoring.ts` + `src/data/monitoring.ts`, fake `env`
-objects). Proves: `isRed` truth table incl. unavailable-never-red and cap-null (16, 17,
-19); `capOutstandingUsd` (2); `isStale` (6); classification and window predicate — SQL
-string shape + row classification for completed / failed / 31-min processing / 5-min
-processing / superseded (8, 9, 10); Melbourne bucketing, zero-fill, sums == totals (12,
-13, 14); money: gateway cap → `capSource:"gateway"`, gateway failure → account fallback →
-`capSource:"account"` (3); no token → not-configured (4); CF 500/timeout → money
-unavailable, counts still present, snapshot still written via fake KV (5); captured log
-lines contain no token and no `Authorization` (27); `JSON.stringify(snapshot)` contains
-neither the token value nor the account id (26, unit-level).
-
-**`scripts/tests/monitoring-api.test.mjs`** — heavy, added to `test:heavy` (line 18).
-Harness copied from `api.test.mjs` (local D1 migrate, seed via `wrangler d1 execute`,
-`wrangler dev --local` with the same `--var` set, helpers from `helpers.mjs`), plus
-`--test-scheduled`. Seeds: 2 completed claims, 1 failed, 1 processing @ 31 min, 1
-processing @ 5 min, 1 superseded, 1 `ai_runs` row with no claim. Fires the cron, then:
-staff GET → 200, success=2, error=2, `ai_runs` invisible (7, 9, 10, 11, 21); money
-unavailable (no token in test env) and endpoint still 200 (4); signed-out GET → 401/403
-with no numeric fields (23); Customer session → 403 (24); manufacturer session (via
-`MANUFACTURER_EMAIL_DOMAINS` var + OTP login) → 403 (25); staff payload key-whitelist —
-no token, no account id, no `Authorization` anywhere in the body (26); second staff GET
-returns the identical snapshot (22 — pages read KV, never CF).
-
-**`scripts/tests/ops2-attention.test.mjs`** — pure, added to `test:pure` and to the
-existing `test:ops2` script. Pattern from `ops2-frame.test.mjs`: bundle the pure modules,
-source-assert the JSX. Proves: page renders 5 cards from a stubbed snapshot with correct
-headroom arithmetic (1, 2, 7); unavailable money state while count cards still render (4);
-stale snapshot → "as at HH:MM" (6); zero counts → `0` + chart empty state (12); 7 buckets
-incl. zero days (13, 14); aggregator sums the source list with no reference to any source
-id, and `sources` has exactly one entry (20); bubble renders nothing at 0, `1` when
-`red` (15, 16, 17 via the write-time collapse); badge lives inside the existing bell
-button whose `onClick` navigates (18); page introduces no auth code — data flows only
-through the staff-guarded endpoint (28, structural half; the endpoint half is in the heavy
-suite).
-
-`package.json` changes: append the two pure files to `test:pure`, the heavy file to
-`test:heavy`, add `"test:monitoring": "node --test scripts/tests/ai-monitoring.test.mjs scripts/tests/ops2-attention.test.mjs"`,
-and append `ops2-attention.test.mjs` to `test:ops2`.
-
-## 6. Deploy / setup (owner-facing, not code)
-
-1. Owner creates ONE Cloudflare API token — scopes **AI Gateway: Read + Account
-   Analytics: Read** (grill decision 7) — and runs
-   `wrangler secret put CF_MONITORING_API_TOKEN`.
-2. `CF_ACCOUNT_ID` set in `wrangler.jsonc` vars (account id is dashboard-visible, not a
-   secret; the token is the secret).
-3. Developer captures one real response per billing endpoint with `curl`, pins the test
-   fixtures, adjusts extractors if the shapes differ from the design's reading.
-4. Sensitive-surface deploy protocol applies: preview via `wrangler versions upload`,
-   read-only smoke (open Attention, confirm money renders or shows "unavailable"), then
-   promote.
-
-## 7. CONTEXT.md vocabulary (architect-owned; T6 applies the wording)
-
-- **Snapshot** — the KV record (`monitoring:snapshot:v1`) of Cloudflare money numbers +
-  D1 parse counts, written by the `*/10` cron, read by the Attention page and the
-  notification bubble. Derived and rebuildable; never a source of truth.
-- **Red** — the single v1 notification condition: credit balance below
-  `AI_BALANCE_FLOOR_USD` OR cap-used % above `AI_CAP_USED_CEILING_PCT`, evaluated once at
-  snapshot-write time. Unavailable money is never red.
-- **Errored parse** — a claim terminally `failed`, or `processing` with `updated_at`
-  older than 30 minutes (the silent-death gap). One SQL predicate.
-- Attention page — amend: the ops2 `/attention` route is the monitoring card container
-  (five cards + 7-day chart); "what needs a person" content leads when it exists.
-
-- **Parse** — one job-claim lifecycle (one `ai_job_claim` row); retries and
-  re-generations collapse into it. One parse event = one claim. Supersedes grill
-  decision 4's "one document == one parse" (owner ruling, 2026-09-03).
+- **Cards** (`AttentionPage.tsx`, below the groups): credit balance (`$12.34`),
+  cap outstanding (`$12.00 of $20.00 cap`), 7-day successes, 7-day errors.
+  Money cards render an explicit "unavailable" state when
+  `money.available === false` — not zero, not red (criterion 4). Every card
+  prints "as at HH:MM" from `takenAt` (criterion 6; Melbourne time via the same
+  `Intl` formatter family). `snapshot === null` ⇒ the section renders a single
+  "no snapshot yet" state.
+- **Chart**: 7 columns, two stacked/paired CSS bars each (success/error),
+  heights proportional to the max bucket; zero-parse window renders the 7
+  zero-height columns with an "no parses in the last 7 days" caption
+  (criterion 12), zero days appear as zero columns (criterion 14). Plain divs +
+  `attention.css` — a chart library for 14 rectangles fails the ladder.
+- **Bubble**: `useNotificationCount` in `src/ops2/chrome/` — module-level cache
+  `{ value, fetchedAt, inflight }` with ≈60s TTL so the desk bell
+  (OpsPage.tsx:173–180) and the phone attention tab (Ops2App.tsx:276–281) share
+  one fetch per minute across all mounted pages. Count 0 ⇒ no badge drawn
+  (criterion 15). Bell already navigates to `HOME_PATH` (= `/attention`), so
+  criterion 18 is existing behaviour; the phone tab is the attention tab itself.
+- `/attention` auth: unchanged — the ops2 shell's existing staff guard covers it
+  (criterion 28; no new auth path).
 
 ## 8. Security
 
-**Data classification.** The snapshot carries account-level **commercial/financial data**
-(AI credit balance, billed spend, spend cap — the company's, not a customer's) and
-derived operational counts. The Cloudflare API token is a **credential secret**
-(`wrangler secret put`, never a var, never in the repo). No customer PII, no payout/bank
-data enters this feature. Smallest surface: the snapshot stores only derived numbers, a
-source label, a timestamp, and one boolean — the token and account id are used inside
-`writeMonitoringSnapshot` and structurally cannot reach the snapshot, the payload, or a
-log line (criteria 26, 27; both tested).
+**Data classification.** The snapshot carries account-level *commercial/financial
+data*: AI credit balance, billed spend, spend cap (Cloudflare account figures),
+plus operational counts. Not customer PII. Stored in KV (staff-side namespace,
+same store as sessions), served only to Staff. The Cloudflare API token is a
+Worker **secret** (`wrangler secret put CF_MONITORING_TOKEN`), scoped read-only
+(AI Gateway: Read + Account Analytics: Read), never a `VITE_*` var, never in
+`wrangler.jsonc`, never in the payload, never logged.
 
 **Trust boundaries.**
-- *Worker → Cloudflare API*: outbound only, bearer token, 10s timeout, responses treated
-  as untrusted input (tolerant numeric extraction; unparseable → "unavailable", never a
-  guessed number).
-- *ops ↔ Worker*: the only inbound crossing. Validated by `resolveStaff` — the same
-  session/Access verification every ops2 surface uses; no new auth path (criterion 28).
-- *Customer ↔ Worker*: this feature adds **nothing** on the customer boundary.
+- ops ↔ Worker: `GET /api/ops/monitoring` — session-resolved staff, `isStaffUser`
+  refuses non-staff and manufacturer partners before any KV read.
+- Worker ↔ Cloudflare API: outbound only, bearer token attached in exactly one
+  function (`fetchMoneyNumbers`); responses are parsed defensively (a malformed
+  CF body becomes `available:false`, never a thrown 500 into the cron).
+- customer ↔ Worker: no new surface. `/attention` stays behind the existing ops2
+  guard.
 
-**Authorization model per endpoint.** One new route:
-`GET /api/ops/monitoring/snapshot` — callable by Staff only; guard is
-`resolveStaff(c.env, c.req.raw)` returning non-null, else `403 {error:"forbidden"}` with
-no data fields. **Account-scoping filter: none, deliberately** — the data is
-account-global (the business's own spend and parse health), not per-customer rows, so
-there is no WHERE clause to scope and nothing to leak between customers; the entire
-payload is staff-only or absent. `resolveStaff` already excludes manufacturer-role users
-(worker/lib/staff.ts:137–158), covering criterion 25 without new code.
+**Authorization per endpoint.** One new endpoint. `GET /api/ops/monitoring`:
+caller must resolve to a staff session and pass `isStaffUser` (ops.ts:110 —
+staff AND not manufacturer). There is no account-scoping WHERE clause because
+the data is account-global operational telemetry, not per-customer rows — the
+scoping *is* the staff gate. The D1 count query touches `ai_job_claim` only
+(status/updated_at/triggered_by), no customer columns, no joins to `user` or
+`project`.
 
 **Abuse cases → criteria.**
-- Signed-out / Customer / Manufacturer requesting the endpoint → 403, zero data fields
-  (criteria 23–25; executed in `monitoring-api.test.mjs`).
-- Payload scraping for credentials → token/account id never serialized (criterion 26;
-  asserted at unit and API level).
-- Log scraping → no token, no Authorization value in any log line (criterion 27; unit
-  test on captured logs).
-- `/attention` route guessing → same ops2 staff guard as every ops2 surface; the page
-  adds no auth code and its only data path is the guarded endpoint (criterion 28;
-  structural test + the endpoint tests).
-- Parameter tampering / enumeration: the endpoint takes no parameters; nothing to tamper.
-- Replay: read-only endpoint returning staff-only derived data; replaying a staff
-  request yields the same snapshot — no state change possible. Residual risk: none
-  beyond an already-compromised staff session, which is out of this feature's scope.
-- False-alarm injection: an attacker cannot write the snapshot (KV key written only by
-  the cron; no write endpoint exists).
+- Signed-out visitor requests endpoint → 401, no values (criterion 23, tested).
+- Customer session requests endpoint → 403, no values (criterion 24, tested).
+- Manufacturer partner requests endpoint → 403, no values (criterion 25, tested
+  — this is why the guard is `isStaffUser`, not bare `resolveStaff`).
+- Payload inspection → contains derived numbers, `capSource`, `takenAt` only; no
+  token, no account id, no gateway credentials (criterion 26, tested by shape
+  assertion on the success response).
+- Log inspection on CF failure → no token/Authorization value (criterion 27,
+  tested at lib level by capturing `console.log`).
+- Parameter tampering / enumeration: endpoint takes no parameters; nothing to
+  tamper. Replay: read-only endpoint, no state change.
+- **Residual risk:** pre-0064 ops re-parses of completed documents in the
+  current 7-day window count as upload parses until the window rolls past them
+  (≤7 days after deploy). Cosmetic, self-healing, accepted.
 
-## 9. Rejected alternatives
+## 9. Domain vocabulary
 
-- **D1 table for snapshots** — rejected: derived, rebuildable-every-10-min data doesn't
-  earn schema in a database whose rebuilds have cascade-deleted production rows. KV is
-  the platform-native fit.
-- **Computing counts on page load (no snapshot for D1 numbers)** — rejected: criterion 22
-  requires snapshot reads for money anyway; two data paths for one page means the cards
-  and bubble can disagree. One writer, many readers.
-- **Client-side red evaluation** — rejected: thresholds live in worker vars; shipping
-  them to the client duplicates the fact and lets page and bubble drift (one place per
-  fact).
-- **Chart library** — rejected: 14 numbers as divs + CSS. A dependency is not earned.
-- **Per-document counting via `file_asset` join** — escalated as Q1, then rejected by
-  owner ruling (2026-09-03): the schema has no document↔claim link, decision 9's error
-  predicate is already claim-based, and a per-document number would be an estimate that
-  looks precise and isn't. Claim-level counting is binding.
-- **`resolveOpsUser` for the guard** — rejected: it admits manufacturer partners;
-  criterion 25 forbids exactly that. `resolveStaff` is the correct existing seam.
-- **KV TTL on the snapshot** — rejected: expiry turns "cron broken" into an empty page;
-  the spec chose "old number labelled old" (criterion 6, §4 assumption).
-- **New cron trigger / separate schedule** — forbidden by criterion 21; the existing
-  `*/10` handler's per-job `.catch()` style already isolates failures.
+`CONTEXT.md` (Ops console section) gains: **Monitoring snapshot**, **Errored
+parse**, **Red (notification source)** — written by the architect in this stage.
+"Parse" itself already reads naturally from "Schedule parse"; the errored-parse
+entry carries the counting rule.
+
+## 10. Sequencing and test plan
+
+Build order (= `02-tasks.json`):
+
+1. **T1 — pure core.** `src/data/monitoring.ts` + `scripts/tests/ai-monitoring.test.mjs`
+   (parse strictness, bucketing incl. zero days and Melbourne day edges,
+   `evaluateRed` incl. unavailable⇒false and both-thresholds⇒still-one-red,
+   `capOutstanding`) + `package.json` wiring (`test:pure` list + `test:ai-monitoring`).
+2. **T2 — migration + threading.** `migrations/0064…` + `worker/lib/ai/jobs.ts`
+   param + `scripts/tests/ai-jobs.test.mjs` asserts (default `'upload'`; `"ops"`
+   through the fall-through; reset UPDATE untouched).
+3. **T3 — IO shell.** `worker/lib/monitoring.ts` + `worker/types.ts` +
+   `wrangler.jsonc` vars + lib tests in `ai-monitoring.test.mjs` (fake env: count
+   SQL captured and asserted verbatim incl. `triggered_by='upload'`; token
+   missing ⇒ unavailable without fetch; CF failure ⇒ counts still written +
+   log line free of token; cap fallback ⇒ `capSource:"account"`).
+4. **T4 — route + cron.** `worker/routes/ops.ts` (route + line-2074 `"ops"`) +
+   `worker/index.ts` append + `scripts/tests/api-edge.test.mjs` subtests
+   (criteria 23–26 against the booted worker: anon 401, customer 403,
+   manufacturer 403 — each asserting no monitoring values in the body; staff 200
+   payload shape contains no token/account id).
+5. **T5 — cards + chart.** `useMonitoring.ts`, `AttentionPage.tsx`,
+   `attention.css`.
+6. **T6 — bubble.** `useNotificationCount.ts`, `OpsPage.tsx`, `Ops2App.tsx`,
+   `nav.css`.
+
+Test-file ownership: `ai-monitoring.test.mjs` is created in T1 and extended in
+T3; `ai-jobs.test.mjs` (already in `test:pure`) extended in T2;
+`api-edge.test.mjs` (already in `test:heavy`) extended in T4. All three run
+under `npm test`.
+
+## 11. Rejected alternatives
+
+- **Two endpoints (snapshot vs count):** one payload (~1KB) serves both readers;
+  a second route is a second guard to keep correct. Rejected.
+- **Compute counts at request time (no cron snapshot):** would put a D1 scan and
+  a CF fetch on page load — criterion 1/22 forbid the CF half, and splitting the
+  halves gives the money and counts different clocks. Rejected.
+- **KV TTL for staleness:** expiry turns "cron broken" into "no data", the
+  failure mode criterion 6 exists to avoid. Rejected.
+- **Chart library (recharts):** 14 rectangles; CSS bars are smaller than the
+  import line. Rejected.
+- **React context for the bubble count:** module-level cache in the hook gives
+  the same single-fetch property without threading a provider through two
+  shells. Rejected.
+- **Deriving criterion 11 from `origin`/existing columns:** no existing
+  `ai_job_claim` column distinguishes ops re-evaluation; provenance must be
+  written at the enqueue moment or it is unrecoverable. Hence 0064. Rejected
+  alternatives to the column (a KV side-list of ops-triggered claim ids) fail
+  the one-place-per-fact rule.
+- **Reusing `/summary`'s bare `resolveStaff` guard:** criterion 25 requires
+  refusing manufacturer partners; `isStaffUser` already encodes that predicate.
+  Rejected.
