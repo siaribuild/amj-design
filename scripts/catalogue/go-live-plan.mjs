@@ -497,7 +497,7 @@ function plan(world) {
       descriptionParagraphs: p.paragraphs,
       keySpecs: buildKeySpecs(p),
       specs: buildSpecs(p, names),
-      options: rekey(alignHardware(source?.options, p.hardware), "opt"),
+      ...(source?.options == null && !p.hardware ? {} : { options: rekey(alignHardware(source?.options, p.hardware), "opt") }),
       dimensionRule: buildDimensionRule(p, existing?.dimensionRule ?? source?.dimensionRule),
       seo: buildSeo(p, name, existing?.seo),
       ...(p.notes ? { notes: p.notes } : {}),
@@ -541,8 +541,28 @@ function plan(world) {
   return { mutations, report, problems, summary: { amend, create } };
 }
 
+// Defence in depth: re-validate the computed mutation list against a fixed
+// allow-list before it ever reaches the network, independent of whether the
+// plan-building logic above is trusted. See docs/runs/catalogue-go-live-min/02-design.md §4.
+const ALLOWED_MUTATION_KEYS = new Set(["createIfNotExists", "createOrReplace", "patch"]);
+function assertSafe(mutations) {
+  const violations = [];
+  for (const m of mutations) {
+    for (const k of Object.keys(m)) if (!ALLOWED_MUTATION_KEYS.has(k)) violations.push(`disallowed mutation key "${k}"`);
+    if (m.patch) {
+      for (const k of Object.keys(m.patch)) if (k !== "id" && k !== "set") violations.push(`disallowed patch key "${k}"`);
+      if (m.patch.id?.startsWith("drafts.")) violations.push(`disallowed draft target id "${m.patch.id}"`);
+      if (m.patch.set) {
+        for (const k of Object.keys(m.patch.set)) if (k === "slug" || k.startsWith("slug.")) violations.push(`disallowed set key "${k}"`);
+      }
+    }
+    if (m.createOrReplace?._type === "product") violations.push(`disallowed createOrReplace of a product`);
+  }
+  return violations;
+}
+
 export {
   NEW_GLAZINGS, NEW_PROFILES, KEEP_PUBLISHED, P, DISABLE, DEFAULT_COLOUR, HW,
   buildSpecs, buildKeySpecs, buildSeo, buildDimensionRule, alignHardware, rekey, same,
-  plan,
+  plan, assertSafe,
 };

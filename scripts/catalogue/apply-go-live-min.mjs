@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { plan, P, DISABLE } from "./go-live-plan.mjs";
+import { plan, assertSafe, P, DISABLE } from "./go-live-plan.mjs";
 
 const PROJECT_ID = "xjtrm1ex";
 const DATASET = "production";
@@ -95,7 +95,7 @@ async function runVerify(io, log) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export async function run({ write = false, verify = false, fetchImpl = globalThis.fetch, log = console.log, error = console.error } = {}) {
+export async function run({ write = false, verify = false, fetchImpl = globalThis.fetch, log = console.log, error = console.error, planImpl = plan } = {}) {
   const token = resolveToken();
   if (write && !token) {
     error("no Sanity write token: set SANITY_WRITE_TOKEN or log in with the Sanity CLI (~/.config/sanity/config.json)");
@@ -105,11 +105,17 @@ export async function run({ write = false, verify = false, fetchImpl = globalThi
   if (verify) return runVerify(io, log);
 
   const world = await loadWorld(io);
-  const { mutations, report, problems, summary } = plan(world);
+  const { mutations, report, problems, summary } = planImpl(world);
   for (const line of report) log("  " + line);
   if (problems.length) {
     error(`${problems.length} problem(s) — nothing written:`);
     for (const p of problems) error("  ✗ " + p);
+    return 1;
+  }
+  const violations = assertSafe(mutations);
+  if (violations.length) {
+    error(`${violations.length} unsafe mutation(s) — nothing written:`);
+    for (const v of violations) error("  ✗ " + v);
     return 1;
   }
   log(`${summary.amend} amend target(s), ${summary.create} create target(s)`);
