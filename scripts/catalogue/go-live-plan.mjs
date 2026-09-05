@@ -433,6 +433,20 @@ const rekey = (arr, prefix) => (arr ?? []).map((o, i) => ({ ...o, _key: `${prefi
 const stable = (v) => JSON.stringify(v, Object.keys(v ?? {}).sort ? undefined : undefined);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+// Normalize a thermalProfile doc to its authored content only, so a real/fixture
+// doc and a NEW_PROFILES literal can be compared for drift with same(). Drops
+// system fields (_id/_type/_rev/row _key); defaults published to false.
+const ROW_OPTIONAL_KEYS = ["tvw", "heatingStars", "coolingStars", "wersWindowId", "certificationRef"];
+function normProfile(doc) {
+  if (!doc) return null;
+  const rows = (doc.rows ?? []).map((r) => {
+    const row = { glazing: r.glazing?._ref ?? r.glazing, uValue: r.uValue ?? null, shgc: r.shgc ?? null, published: r.published ?? false };
+    for (const k of ROW_OPTIONAL_KEYS) if (r[k] != null) row[k] = r[k];
+    return row;
+  });
+  return { name: doc.name, slug: doc.slug?.current ?? doc.slug, frameTechnology: doc.frameTechnology, rows };
+}
+
 // ── Plan ──────────────────────────────────────────────────────────────────────
 function plan(world) {
   const ids = new Set([...world.families, ...world.categories, ...world.systems, ...world.profiles, ...world.options].map((d) => d._id));
@@ -451,11 +465,17 @@ function plan(world) {
     ids.add(g._id);
   }
   // 2. new profiles — every glazing they reference must exist (or be created above).
+  //    createOrReplace only when the fetched full doc actually differs (converged: no mutation).
+  const fullProfileById = new Map((world.fullProfiles ?? []).map((p) => [p._id, p]));
   for (const pr of NEW_PROFILES) {
     for (const r of pr.rows) if (!ids.has(r.glazing._ref)) problems.push(`${pr._id}: glazing ${r.glazing._ref} does not exist`);
-    if (profileById.has(pr._id)) report.push(`profile ${pr._id} exists — replaced with the same content`);
-    else report.push(`create profile ${pr._id} (${pr.rows.length} rows, ${pr.rows.filter((r) => r.published).length} published)`);
-    mutations.push({ createOrReplace: pr });
+    const existing = fullProfileById.get(pr._id);
+    if (existing && same(normProfile(existing), normProfile(pr))) {
+      report.push(`profile ${pr._id}: unchanged`);
+    } else {
+      report.push(existing ? `profile ${pr._id} exists — content differs, replacing` : `create profile ${pr._id} (${pr.rows.length} rows, ${pr.rows.filter((r) => r.published).length} published)`);
+      mutations.push({ createOrReplace: pr });
+    }
     ids.add(pr._id);
   }
   // 3. one published row per go-live profile.
@@ -509,7 +529,19 @@ function plan(world) {
         // After the last product in Studio's drag order; the plugin re-ranks on the next drag.
         orderRank: "0|1000d0:", ...set,
       };
-      if (world.products.has(p.slug)) { mutations.push({ patch: { id: `product-${p.slug}`, set } }); report.push(`product ${p.slug}: exists, re-patched`); amend++; }
+      if (world.products.has(p.slug)) {
+        const existingCreated = world.products.get(p.slug);
+        const changed = Object.keys(set).filter((k) => !same(existingCreated[k], set[k]));
+        if (changed.length) {
+          const patch = {};
+          for (const k of changed) patch[k] = set[k];
+          mutations.push({ patch: { id: `product-${p.slug}`, set: patch } });
+          report.push(`product ${p.slug}: exists, ${changed.join(", ")}`);
+          amend++;
+        } else {
+          report.push(`product ${p.slug}: unchanged`);
+        }
+      }
       else { mutations.push({ createIfNotExists: doc }); report.push(`create product ${p.slug} (from ${p.copyFrom})`); create++; }
       continue;
     }
@@ -563,6 +595,6 @@ function assertSafe(mutations) {
 
 export {
   NEW_GLAZINGS, NEW_PROFILES, KEEP_PUBLISHED, P, DISABLE, DEFAULT_COLOUR, HW,
-  buildSpecs, buildKeySpecs, buildSeo, buildDimensionRule, alignHardware, rekey, same,
+  buildSpecs, buildKeySpecs, buildSeo, buildDimensionRule, alignHardware, rekey, same, normProfile,
   plan, assertSafe,
 };

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { run, resolveToken } from "../catalogue/apply-go-live-min.mjs";
 import { plan, assertSafe, DISABLE, KEEP_PUBLISHED, alignHardware, buildDimensionRule, P, NEW_PROFILES, HW, DEFAULT_COLOUR, buildSpecs, buildKeySpecs } from "../catalogue/go-live-plan.mjs";
-import { makeWorld, makeTransport } from "./fixtures/go-live-world.mjs";
+import { makeWorld, makeTransport, altered } from "./fixtures/go-live-world.mjs";
 
 test("dry run: zero writes, correct summary line", async () => {
   const world = makeWorld();
@@ -299,6 +299,67 @@ test("field: AMJ72T pair and AMJ68 bi-fold patch frameSystem to sys-80, never sy
     assert.equal(P.find((p) => p.slug === slug).system, "sys-80", slug);
   }
   for (const p of P) assert.notEqual(p.system, "sys-72", p.slug);
+});
+
+// T4: plan() step 2 must skip createOrReplace for a NEW_PROFILES doc that
+// already matches (converged) — no unconditional re-push of identical content.
+test("NEW_PROFILES: converged fixture emits no createOrReplace for any of them", () => {
+  const world = makeWorld();
+  const { mutations } = plan(world);
+  const ids = new Set(NEW_PROFILES.map((p) => p._id));
+  const stray = mutations.filter((m) => m.createOrReplace && ids.has(m.createOrReplace._id));
+  assert.deepEqual(stray, []);
+});
+
+// makeWorld() is deliberately pre-migration (drives the "21 amend, 1 create"
+// dry-run test) — repeatedly apply plan()'s own mutations until it emits none,
+// for a world with zero remaining drift, for the --verify tests below. The
+// created product needs a second pass: its first-round options are copied
+// from copyFrom's PRE-patch state, then re-aligned once copyFrom itself
+// converges — same fixed point a second real --write run would reach.
+function convergedWorld() {
+  let world = makeWorld();
+  for (let i = 0; i < 5; i++) {
+    const { mutations } = plan(world);
+    if (!mutations.length) return world;
+    const products = new Map(world.products);
+    const options = [...world.options];
+    for (const m of mutations) {
+      if (m.createIfNotExists?._id?.startsWith("product-")) {
+        const slug = m.createIfNotExists._id.slice("product-".length);
+        products.set(slug, { ...m.createIfNotExists, slug: { current: slug } });
+        continue;
+      }
+      if (!m.patch) continue; // NEW_PROFILES/glazing creates: already converged in makeWorld()
+      const { id, set } = m.patch;
+      const slug = id.startsWith("product-") ? id.slice("product-".length) : null;
+      if (slug && products.has(slug)) { products.set(slug, { ...products.get(slug), ...set }); continue; }
+      const oi = options.findIndex((o) => o._id === id);
+      if (oi !== -1) { options[oi] = { ...options[oi], ...set }; continue; }
+      throw new Error(`convergedWorld: unhandled patch target ${id}`);
+    }
+    world = { ...world, products, options };
+  }
+  throw new Error("convergedWorld: did not converge in 5 rounds");
+}
+
+// T4: --verify replans and fails on any remaining mutation (drift), printing
+// 'DRIFT <documentId>: <keys>' — patch keys via Object.keys(set), create via 'missing'.
+test("run({verify:true}): converged fixture exits 0", async () => {
+  const world = convergedWorld();
+  const { fetchImpl } = makeTransport(world);
+  const code = await run({ verify: true, fetchImpl, log: () => {}, error: () => {} });
+  assert.equal(code, 0);
+});
+
+test("run({verify:true}): altered fixture exits 1 and names the doc id and field", async () => {
+  const docId = "thermal-amj80-glass-louvre";
+  const world = altered(makeWorld(), docId, "frameTechnology", "wrong-value");
+  const { fetchImpl } = makeTransport(world);
+  const lines = [];
+  const code = await run({ verify: true, fetchImpl, log: (l) => lines.push(l), error: (l) => lines.push(l) });
+  assert.equal(code, 1);
+  assert.ok(lines.some((l) => l.includes(`DRIFT ${docId}`) && l.includes("missing")), lines.join("\n"));
 });
 
 test("write: an unsafe plan aborts before any POST", async () => {
