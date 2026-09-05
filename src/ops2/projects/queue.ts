@@ -181,9 +181,9 @@ export function attentionQuery(key: AttentionKey): QueueQuery {
 }
 
 /**
- * `?attn=` validated against the closed key set, same pattern as
- * `chipFromSearch`. Anything else — unknown, injected, oversized — is
- * `null`: no instruction, never an error, never echoed.
+ * `?attn=` validated against the closed key set. Anything else — unknown,
+ * injected, oversized — is `null`: no instruction, never an error, never
+ * echoed.
  */
 export function attentionFromSearch(search: string): AttentionKey | null {
   const key = new URLSearchParams(search).get("attn");
@@ -201,19 +201,6 @@ export function attentionFromSearch(search: string): AttentionKey | null {
  * illustrating chip states rather than specifying the default. One line to flip.
  */
 export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: "", attention: null };
-
-/**
- * `?wait=` from a notification link, read once and only once.
- *
- * Validates against `WAIT_CHIPS`' own keys rather than trusting the param —
- * a stale or hand-typed link naming a chip that no longer exists must not
- * silently apply itself as a query. `null` means "no instruction", not "the
- * default chip"; the caller decides what null does.
- */
-export function chipFromSearch(search: string): ChipKey | null {
-  const key = new URLSearchParams(search).get("wait");
-  return WAIT_CHIPS.some((c) => c.key === key) ? (key as ChipKey) : null;
-}
 
 /**
  * Fixed order, not user-sortable: ours first, then longest neglected.

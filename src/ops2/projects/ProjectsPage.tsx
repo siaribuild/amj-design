@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
+  useIonViewWillEnter,
 } from "@ionic/react";
 import { funnelOutline, searchOutline, warningOutline } from "ionicons/icons";
 import { destination } from "../nav/destinations";
@@ -11,8 +12,8 @@ import { FilterSheet } from "./FilterSheet";
 import { ProjectCards, ProjectTable } from "./rows";
 import { useProjectQueue } from "./useProjectQueue";
 import {
-  EMPTY_QUERY, REFINEMENTS, chipFromSearch, chipStates, emptyStateFor,
-  refinementStates, selectProjects, type QueueQuery,
+  ATTENTION_FILTERS, EMPTY_QUERY, REFINEMENTS, attentionFromSearch, attentionQuery,
+  chipStates, emptyStateFor, refinementStates, selectProjects, type QueueQuery,
 } from "./queue";
 
 const PROJECTS = destination("projects");
@@ -67,22 +68,42 @@ export function ProjectsPage() {
   const location = useLocation();
   const history = useHistory();
 
-  // `?wait=` from a notification link is a one-shot instruction, not initial
-  // state: `IonRouterOutlet` keeps this page mounted across navigation, so a
-  // second visit with a stale/absent param must not re-apply an old chip.
-  // Applied via effect, then the param is stripped so a refresh doesn't repeat it.
+  // `?attn=` from an Attention row's link is a one-shot instruction, not
+  // initial state: `IonRouterOutlet` keeps this page mounted across
+  // navigation, so a second visit with a stale/absent param must not re-apply
+  // an old prefilter. Applied via effect, then the param is stripped so a
+  // refresh doesn't repeat it.
   //
   // GUARDED ON `location.pathname` because that mounted-but-hidden state means
   // this effect keeps watching the GLOBAL location: without the guard, a
-  // sibling route's own `?wait=` (e.g. `/products?wait=customer`) applies the
-  // Projects chip and `history.replace`s the reader off the page they asked for.
+  // sibling route's own `?attn=` (e.g. `/products?attn=submissions`) applies
+  // the Projects prefilter and `history.replace`s the reader off the page
+  // they asked for.
+  //
+  // AN UNRECOGNISED VALUE (design §3.3 point 2) still strips the param but
+  // resets to `EMPTY_QUERY` rather than leaving the current query alone — the
+  // raw value reaches no DOM sink and is validated into `null` before it does
+  // anything.
   useEffect(() => {
     if (location.pathname !== PROJECTS.path) return;
-    const chip = chipFromSearch(location.search);
-    if (chip === null) return;
-    setQuery({ ...EMPTY_QUERY, chip });
+    if (!new URLSearchParams(location.search).has("attn")) return;
+    const key = attentionFromSearch(location.search);
+    setQuery(key ? attentionQuery(key) : EMPTY_QUERY);
     history.replace(PROJECTS.path);
   }, [location.pathname, location.search]);
+
+  // Re-entering the view with no `attn` instruction while the prefilter is
+  // still on (rail navigation, back from a record) resets it — design §3.3
+  // point 3. Read through a ref rather than the `location` closed over by
+  // `useIonViewWillEnter`'s first render: the arrival that CARRIES the param
+  // is safe regardless, because at that enter moment the search still holds
+  // it (the strip above happens in the effect, after).
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  useIonViewWillEnter(() => {
+    if (new URLSearchParams(locationRef.current.search).has("attn")) return;
+    setQuery((q) => (q.attention ? EMPTY_QUERY : q));
+  });
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array
@@ -101,6 +122,15 @@ export function ProjectsPage() {
   const activeRefinements = query.refinements
     .map((key) => REFINEMENTS.find((r) => r.key === key)?.label)
     .filter((label): label is string => !!label);
+
+  // The prefilter's label LEADS the strip (design §3.3 point 4) — the reader
+  // arrived because an Attention row named it, and it stays named until Clear.
+  const attentionLabel = query.attention
+    ? ATTENTION_FILTERS.find((f) => f.key === query.attention)?.label
+    : undefined;
+  const activeLabels = [attentionLabel, ...activeRefinements].filter(
+    (label): label is string => !!label,
+  );
 
   const closeSearch = () => { setSearching(false); setQuery((q) => ({ ...q, search: "" })); };
 
@@ -347,13 +377,16 @@ export function ProjectsPage() {
           {/* WHICH refinements are on, not just how many. A count tells you the
               number of filters and still leaves you guessing which row went
               missing and why. */}
-          {activeRefinements.length > 0 && (
+          {activeLabels.length > 0 && (
             <div className="pq-active" data-testid="queue-active-filters">
-              <span>{activeRefinements.join(" + ")}</span>
+              <span>{activeLabels.join(" + ")}</span>
               <IonButton
                 fill="clear"
                 size="small"
-                onClick={() => setQuery((q) => ({ ...q, refinements: [] }))}
+                // The prefilter's Clear is the one exit back to `Needs us`
+                // (design §3.3 point 4, P6) — refinements and search included.
+                // With no prefilter on, today's refinements-only clear stands.
+                onClick={() => setQuery((q) => (q.attention ? EMPTY_QUERY : { ...q, refinements: [] }))}
               >
                 Clear
               </IonButton>
