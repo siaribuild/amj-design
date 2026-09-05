@@ -16,7 +16,7 @@ const outfile = join(runDir, "ai-monitoring-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart } from ${p("src/data/monitoring.ts")};
+      export { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached } from ${p("src/data/monitoring.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "ai-monitoring-entry.ts",
@@ -29,7 +29,7 @@ await build({
   logLevel: "silent",
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
-const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart } = M;
+const { parseMonitoringSnapshot, assembleParseCounts, evaluateRed, capOutstanding, parseWindowStart, capBreached } = M;
 
 // worker/lib/monitoring.ts — IO shell (D1 counts, CF money fetch, KV
 // snapshot, notification sources). Design §3.2, §5, §6.
@@ -362,14 +362,17 @@ test("fetchMoneyNumbers: gateway cap failure falls back to spending-limit with c
     if (url.includes("/billing/credit-balance")) {
       return { ok: true, json: async () => ({ result: { balance: 12.34 } }) };
     }
+    // Cloudflare's documented shapes, not the ones this fixture first assumed:
+    // usage is history[].aggregated_value, and the account cap is
+    // config.amount in CENTS.
     if (url.includes("/billing/usage-history")) {
-      return { ok: true, json: async () => ({ result: { totalUsd: 8 } }) };
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 8 }] } }) };
     }
     if (url.includes(`/ai-gateway/gateways/`)) {
       return { ok: false, status: 404 };
     }
     if (url.includes("/billing/spending-limit")) {
-      return { ok: true, json: async () => ({ result: { limit: 20 } }) };
+      return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
     }
     throw new Error(`unexpected url ${url}`);
   };
@@ -533,4 +536,213 @@ test("V-F1 GET /api/ops/monitoring uses the shared ops staff guard (criterion 28
     !/resolveUser\(/.test(body),
     "resolveUser is session-cookie-only and is bypassed by Cloudflare Access in production",
   );
+});
+
+// --- Review round (docs/runs/ai-parse-monitoring/07-review-*.md) --------------
+
+test("assembleParseCounts: the seven buckets are consecutive Melbourne calendar dates across the DST switch", () => {
+  // 2026-10-04 02:00 is when Melbourne springs forward. At 00:30 on the 5th,
+  // stepping back in 24h jumps emits Oct 3 then Oct 5 and never Oct 4, so rows
+  // from the missing date counted toward the cards with no bucket to hold them.
+  const now = new Date("2026-10-04T13:30:00.000Z"); // 2026-10-05 00:30 Melbourne
+  const result = assembleParseCounts([], now);
+  assert.deepEqual(
+    result.days.map((d) => d.day),
+    ["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"],
+  );
+  assert.equal(new Set(result.days.map((d) => d.day)).size, 7, "no date may repeat");
+});
+
+test("assembleParseCounts: bucket sums equal the totals on the DST day", () => {
+  const now = new Date("2026-10-04T13:30:00.000Z"); // 2026-10-05 00:30 Melbourne
+  const rows = [
+    { updatedAt: "2026-10-03T20:00:00.000Z", outcome: "success" }, // Oct 4 Melbourne
+    { updatedAt: "2026-10-04T13:00:00.000Z", outcome: "error" }, // Oct 5 Melbourne
+  ];
+  const result = assembleParseCounts(rows, now);
+  const sum = result.days.reduce(
+    (acc, d) => ({ success: acc.success + d.success, error: acc.error + d.error }),
+    { success: 0, error: 0 },
+  );
+  assert.equal(sum.success, result.success7d);
+  assert.equal(sum.error, result.error7d);
+  assert.equal(result.success7d, 1);
+  assert.equal(result.error7d, 1);
+});
+
+test("parseWindowStart: is midnight Melbourne of the oldest bucket, not now-minus-168h", () => {
+  const now = new Date("2026-09-05T04:00:00.000Z"); // 2026-09-05 14:00 Melbourne
+  const start = parseWindowStart(now);
+  // 2026-08-30 00:00 AEST (UTC+10) === 2026-08-29T14:00Z
+  assert.equal(start.toISOString(), "2026-08-29T14:00:00.000Z");
+  assert.equal(assembleParseCounts([], now).days[0].day, "2026-08-30");
+});
+
+test("fetchMoneyNumbers: a stalled Cloudflare endpoint is bounded, not waited on forever", async () => {
+  // A hang here used to block writeMonitoringSnapshot before its KV write, so a
+  // Cloudflare stall also cost the D1 counts, which Cloudflare has no part in.
+  // Bounded on the test side too: without an abort signal this would hang the
+  // suite rather than fail it, and a test that hangs reports nothing.
+  let sawSignal = false;
+  const fetchImpl = (_url, init) => {
+    sawSignal = !!init?.signal;
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+  };
+  const call = fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1", CF_TIMEOUT_MS: 50 },
+    fetchImpl,
+  );
+  const outcome = await Promise.race([
+    call,
+    new Promise((resolve) => setTimeout(() => resolve("never-returned"), 5000)),
+  ]);
+  assert.equal(sawSignal, true, "every Cloudflare request must carry an abort signal");
+  assert.deepEqual(outcome, { available: false, reason: "fetch_failed" });
+});
+
+test("fetchMoneyNumbers: decodes the documented Cloudflare response shapes", async () => {
+  // The shapes below are Cloudflare's, from the generated SDK types: usage is
+  // history[].aggregated_value (summed), the gateway cap is rules[].limit, and
+  // the account fallback is config.amount IN CENTS. Reading undefined here does
+  // not throw — it produced available:true with undefined figures, which the
+  // snapshot parser then rejected whole, hiding the D1 counts too.
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (url.includes("/billing/credit-balance")) {
+      return { ok: true, json: async () => ({ result: { balance: 12.34, has_default_payment_method: true } }) };
+    }
+    if (url.includes("/billing/usage-history")) {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            history: [
+              { id: "a", aggregated_value: 5, start_time: 1, end_time: 2 },
+              { id: "b", aggregated_value: 3, start_time: 2, end_time: 3 },
+            ],
+          },
+        }),
+      };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({
+          result: { spend_limits: { enabled: true, rules: [{ id: "r1", limit: 20, limitType: "cost", window: 2592000 }] } },
+        }),
+      };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.deepEqual(result, {
+    available: true,
+    creditBalanceUsd: 12.34,
+    billedSpendUsd: 8, // 5 + 3, summed across the history entries
+    capUsd: 20,
+    capSource: "gateway",
+  });
+  // value_grouping_window is a REQUIRED query parameter; without it the usage
+  // call is a 400 and the money half of the feature never works at all.
+  assert.ok(
+    seen.some((u) => u.includes("/billing/usage-history") && /value_grouping_window=(day|hour)/.test(u)),
+    "usage-history must carry the required value_grouping_window parameter",
+  );
+});
+
+test("fetchMoneyNumbers: a 200 that does not carry the documented fields is unavailable, never a half-filled snapshot", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: {} }) };
+    if (url.includes("/billing/usage-history")) return { ok: true, json: async () => ({ result: { history: [] } }) };
+    if (url.includes("/ai-gateway/gateways/")) {
+      return { ok: true, json: async () => ({ result: { spend_limits: { rules: [] } } }) };
+    }
+    if (url.includes("/billing/spending-limit")) {
+      return { ok: true, json: async () => ({ result: { enabled: false, config: { amount: null, duration: null } } }) };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.deepEqual(result, { available: false, reason: "fetch_failed" });
+});
+
+test("fetchMoneyNumbers: the gateway cap is the unscoped cost rule, not simply the first one", async () => {
+  // A gateway carries up to 20 rules, each independently scoped to a model,
+  // provider or metadata key. A scoped rule is a cap on part of the traffic,
+  // so reporting it as THE cap understates the budget the console claims.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 50 } }) };
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 1 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            spend_limits: {
+              enabled: true,
+              rules: [
+                { id: "scoped", limit: 5, limitType: "cost", window: 86400, model: { mode: "filter", values: ["gemini"] } },
+                { id: "whole-gateway", limit: 20, limitType: "cost", window: 2592000 },
+              ],
+            },
+          },
+        }),
+      };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.equal(result.capUsd, 20);
+  assert.equal(result.capSource, "gateway");
+});
+
+test("fetchMoneyNumbers: the account fallback converts cents to dollars", async () => {
+  // config.amount is the one money field Cloudflare documents a unit for, and
+  // that unit is CENTS (the paired POST says so). Reported raw it was a 100x
+  // overstatement of the cap.
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 12.34 } }) };
+    if (url.includes("/billing/usage-history")) {
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 8 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) return { ok: false, status: 404 };
+    if (url.includes("/billing/spending-limit")) {
+      return { ok: true, json: async () => ({ result: { enabled: true, config: { amount: 2000, duration: "monthly" } } }) };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  const result = await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  assert.equal(result.capUsd, 20, "2000 cents is twenty dollars");
+  assert.equal(result.capSource, "account");
+});
+
+test("capBreached: the page's warning and the server's red flag agree at the rounding edge", () => {
+  // The card rounded 79.6% to 80 and warned on >=, while evaluateRed compared
+  // the raw 79.6 on >: the tile carried a cap warning that the bell and the
+  // red flag both denied. One predicate, both surfaces, no rounding in it.
+  const money = { available: true, creditBalanceUsd: 100, billedSpendUsd: 79.6, capUsd: 100 };
+  assert.equal(capBreached(money, 80), false, "79.6% is not above an 80% ceiling");
+  assert.equal(evaluateRed({ money }, 5, 80), capBreached(money, 80));
+  const over = { ...money, billedSpendUsd: 80.4 };
+  assert.equal(capBreached(over, 80), true);
+  assert.equal(evaluateRed({ money: over }, 5, 80), capBreached(over, 80));
+  // No headroom at all is a breach however it is phrased.
+  assert.equal(capBreached({ ...money, capUsd: 0 }, 80), true);
 });

@@ -130,7 +130,10 @@
     // billing endpoint's account id (not a secret — paste the real id before
     // deploying). CF_MONITORING_TOKEN is a `wrangler secret put`-only value,
     // deliberately absent here. Floor/ceiling drive the red-status threshold.
-    "CF_ACCOUNT_ID": "paste-real-cf-account-id-before-deploying",
+    // The DRG Group account id, confirmed with `wrangler whoami` — and already
+    // committed above as the container image's registry namespace, so it is not
+    // a secret. The TOKEN is (wrangler secret CF_MONITORING_TOKEN).
+    "CF_ACCOUNT_ID": "c3834ff3509fa7cb4c9769a6dee6c2d8",
     "AI_CREDIT_FLOOR_USD": "5",
     "AI_CAP_CEILING_PCT": "80",
     // 'auto': extraction fires on upload, no drawing enrichment. Deploy with

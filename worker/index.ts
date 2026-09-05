@@ -339,7 +339,11 @@ export default {
     await consumeAiJobs(batch, env);
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    await drainLearningOutbox(env, 50);
+    // Caught like every sweep below it. Unguarded, a throw here ended the whole
+    // scheduled run, so the four jobs after it silently never happened — the
+    // "neither job may sink the other" rule stated two lines down applied to
+    // everything except the one that runs first.
+    await drainLearningOutbox(env, 50).catch((e) => console.log(`[learning] outbox drain failed: ${String(e)}`));
     // Sweep for pricing gaps, so a missed publish webhook cannot hide one
     // indefinitely. Caught separately: neither job may sink the other.
     await reconcilePricing(env).catch((e) => console.log(`[reconcile] scheduled sweep failed: ${String(e)}`));

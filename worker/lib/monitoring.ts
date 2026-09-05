@@ -34,17 +34,56 @@ function pathSuffix(url: string): string {
   return i === -1 ? "?" : url.slice(i);
 }
 
+// A stalled billing endpoint must not cost us the D1 counts: without a bound,
+// writeMonitoringSnapshot waits on the fetch forever and never reaches its KV
+// write, losing the half of the snapshot Cloudflare has no part in. Overridable
+// so the test can prove the abort rather than wait ten seconds for it.
+const CF_TIMEOUT_MS = 10_000;
+
 async function cfGet(env: Env, fetchImpl: typeof fetch, path: string): Promise<any> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}${path}`;
-  const res = await fetchImpl(url, { headers: { Authorization: `Bearer ${env.CF_MONITORING_TOKEN}` } });
+  const res = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${env.CF_MONITORING_TOKEN}` },
+    signal: AbortSignal.timeout(Number(env.CF_TIMEOUT_MS ?? CF_TIMEOUT_MS)),
+  });
   if (!res.ok) throw new Error(`status ${res.status} for ${pathSuffix(url)}`);
   const body = await res.json();
   return body.result;
 }
 
+// Reading a field Cloudflare does not send yields undefined rather than
+// throwing, and an undefined that reaches the snapshot is dropped by
+// JSON.stringify — which made the parser reject the WHOLE snapshot and hid the
+// D1 counts as well. Every number crossing this boundary is checked here.
+function requireNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`missing ${field} for /ai-gateway/`);
+  }
+  return value;
+}
+
 // Kept as a real string (not imported from wrangler.jsonc) so this check
 // stays valid even if the comment above the placeholder in wrangler.jsonc changes.
 const PLACEHOLDER_ACCOUNT_ID = "paste-real-cf-account-id-before-deploying";
+
+/** The gateway-wide cost cap, in the units Cloudflare reports it in.
+ *
+ *  A gateway carries up to 20 spend rules and each may be scoped to a model, a
+ *  provider or a metadata key. A scoped rule caps PART of the traffic, so
+ *  reporting one as "the cap" would understate the budget the console claims to
+ *  be measuring against. Only an unscoped, enabled cost rule describes the
+ *  whole gateway; if there is none, we do not know the cap and say so by
+ *  failing to the account fallback. */
+function gatewayCapUsd(gateway: any): number | undefined {
+  const rules = gateway?.spend_limits?.rules;
+  if (!Array.isArray(rules)) return undefined;
+  const whole = rules.find(
+    (r: any) =>
+      r?.limitType === "cost" && r?.enabled !== false && !r?.model && !r?.provider &&
+      (!r?.metadata || Object.keys(r.metadata).length === 0),
+  );
+  return whole?.limit;
+}
 
 export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetch): Promise<MoneySnapshot> {
   if (!env.CF_MONITORING_TOKEN) return { available: false, reason: "token_missing" };
@@ -54,20 +93,42 @@ export async function fetchMoneyNumbers(env: Env, fetchImpl: typeof fetch = fetc
   try {
     const [balance, usage] = await Promise.all([
       cfGet(env, fetchImpl, "/ai-gateway/billing/credit-balance"),
-      cfGet(env, fetchImpl, "/ai-gateway/billing/usage-history"),
+      // value_grouping_window is REQUIRED; without it this is a 400 and the
+      // money half of the console never works at all. 'day' because the cards
+      // report a month to date, not an hourly curve.
+      cfGet(env, fetchImpl, "/ai-gateway/billing/usage-history?value_grouping_window=day"),
     ]);
+    // history[] is a series of windows, so the spend is their sum — there is no
+    // single total field on this response.
+    const history = Array.isArray(usage?.history) ? usage.history : null;
+    if (!history?.length) throw new Error("empty usage history for /ai-gateway/");
+    const billedSpendUsd = history.reduce(
+      (total: number, entry: any) => total + requireNumber(entry?.aggregated_value, "aggregated_value"),
+      0,
+    );
     let capUsd: number;
     let capSource: "gateway" | "account";
     try {
       const gateway = await cfGet(env, fetchImpl, `/ai-gateway/gateways/${env.AI_GATEWAY_ID}`);
-      capUsd = gateway.spend_limits.rules[0].amount;
+      capUsd = requireNumber(gatewayCapUsd(gateway), "spend_limits.rules[].limit");
       capSource = "gateway";
     } catch {
+      // Deprecated by Cloudflare (its POST sibling always 403s now) and every
+      // config field is nullable, so this is a fallback that frequently has
+      // nothing to give — which is a cap we do not know, not a cap of zero.
       const account = await cfGet(env, fetchImpl, "/ai-gateway/billing/spending-limit");
-      capUsd = account.limit;
+      // The ONE money field on this surface whose unit Cloudflare documents,
+      // and it is cents. Reported raw it overstated the cap a hundredfold.
+      capUsd = requireNumber(account?.config?.amount, "config.amount") / 100;
       capSource = "account";
     }
-    return { available: true, creditBalanceUsd: balance.balance, billedSpendUsd: usage.totalUsd, capUsd, capSource };
+    return {
+      available: true,
+      creditBalanceUsd: requireNumber(balance?.balance, "balance"),
+      billedSpendUsd,
+      capUsd,
+      capSource,
+    };
   } catch (err) {
     const path = err instanceof Error ? err.message.replace(/^status \d+ for /, "") : "?";
     console.log(`ai-parse monitoring: CF fetch failed for ${path}`);

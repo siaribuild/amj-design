@@ -67,15 +67,33 @@ function melbourneOffsetMs(instant: Date): number {
   return wall - instant.getTime();
 }
 
-/** The instant the earliest chart bucket begins: 00:00 Melbourne on `now − 6d`.
+/** The seven Melbourne calendar dates the chart covers, oldest first, ending on
+ *  the Melbourne date of `now`.
+ *
+ *  Stepping back in 24-hour jumps and formatting each instant is what this used
+ *  to do, and it is wrong twice a year: on the day Melbourne springs forward,
+ *  `now − 24h` lands on the same calendar date it started from, so one date is
+ *  emitted twice and another is skipped entirely — rows for the missing date
+ *  then count toward the cards with no bucket to sit in. Calendar dates are
+ *  counted in dates. UTC has no DST, so a UTC-anchored date does that exactly. */
+function melbourneDayKeys(now: Date): string[] {
+  const anchor = Date.parse(`${melbourneDayKey(now)}T00:00:00Z`);
+  const keys = [];
+  for (let i = 6; i >= 0; i--) {
+    keys.push(new Date(anchor - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  }
+  return keys;
+}
+
+/** The instant the earliest chart bucket begins: 00:00 Melbourne on the oldest
+ *  of those seven dates.
  *
  *  The SQL window MUST start here and not at `now − 7×24h`. A rolling window
  *  reaches further back than the buckets do, so the query returns rows no
  *  bucket can hold, and the card totals then disagree with the chart they sit
  *  beside (criterion 13). One window, one boundary, both surfaces. */
 export function parseWindowStart(now: Date): Date {
-  const dayKey = melbourneDayKey(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
-  const naive = Date.parse(`${dayKey}T00:00:00Z`);
+  const naive = Date.parse(`${melbourneDayKeys(now)[0]}T00:00:00Z`);
   // Second pass: the first offset is read at the wrong instant when midnight
   // sits on the far side of a DST change, and re-reading it at the corrected
   // instant lands on the right side of the switch.
@@ -87,11 +105,7 @@ export function assembleParseCounts(
   rows: { updatedAt: string; outcome: "success" | "error" }[],
   now: Date,
 ): { success7d: number; error7d: number; days: { day: string; success: number; error: number }[] } {
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    days.push({ day: melbourneDayKey(d), success: 0, error: 0 });
-  }
+  const days = melbourneDayKeys(now).map((day) => ({ day, success: 0, error: 0 }));
   const byDay = new Map(days.map((d) => [d.day, d]));
   let success7d = 0;
   let error7d = 0;
@@ -112,6 +126,25 @@ export function assembleParseCounts(
   return { success7d, error7d, days };
 }
 
+/** Is spend past the cap's ceiling? The ONE place that question is answered.
+ *
+ *  The page used to ask it a second way — round the percentage for display,
+ *  then compare the rounded number on `>=` — which disagreed with this one
+ *  across a whole percent: at 79.6% of an 80% ceiling the card carried a
+ *  warning while the red flag and the notification bubble both said fine.
+ *  Round for the eye, never for the decision. */
+export function capBreached(
+  money: { billedSpendUsd: number; capUsd: number },
+  ceilingPct: number,
+): boolean {
+  // A cap of zero is no headroom at all — the very state this card exists to
+  // warn about. Left to the division it reads as NaN (quietly "not breached")
+  // with no spend and Infinity with a single cent, so one account would flip
+  // on its first request of the month.
+  if (money.capUsd <= 0) return true;
+  return (money.billedSpendUsd / money.capUsd) * 100 > ceilingPct;
+}
+
 export function evaluateRed(
   snapshot: {
     money:
@@ -124,13 +157,7 @@ export function evaluateRed(
   const money = snapshot.money;
   if (money.available === false) return false;
   if (money.creditBalanceUsd < floorUsd) return true;
-  // A cap of zero is no headroom at all — the very state this card exists to
-  // warn about. Left to the division it reads as NaN (quietly "not red") with
-  // no spend and Infinity (red) with a single cent, so the same account would
-  // flip on its first request of the month.
-  if (money.capUsd <= 0) return true;
-  if ((money.billedSpendUsd / money.capUsd) * 100 > ceilingPct) return true;
-  return false;
+  return capBreached(money, ceilingPct);
 }
 
 export function capOutstanding(money: { capUsd: number; billedSpendUsd: number }): number {

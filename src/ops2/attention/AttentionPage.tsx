@@ -8,7 +8,7 @@ import { DESTINATION_ICON } from "../nav/icons";
 import { attentionGroups } from "./attention";
 import { useSummary } from "./useSummary";
 import { useMonitoring, formatAsAt, snapshotAge, formatDayLabel } from "./useMonitoring";
-import { capOutstanding } from "../../data/monitoring";
+import { capBreached, capOutstanding } from "../../data/monitoring";
 
 /**
  * The console's front door (design.md §5). One request (useSummary), grouped
@@ -202,7 +202,9 @@ export function AttentionPage() {
         if (money.available === false) {
           unavailable = money.reason === "token_missing"
             ? "Unavailable. No Cloudflare token configured"
-            : `Unavailable. Cloudflare did not answer at ${asAt}`;
+            : money.reason === "account_id_missing"
+              ? "Unavailable. No Cloudflare account configured"
+              : `Unavailable. Cloudflare did not answer at ${asAt}`;
         }
         const capPct = money.available && money.capUsd > 0
           ? Math.round((money.billedSpendUsd / money.capUsd) * 100)
@@ -247,7 +249,7 @@ export function AttentionPage() {
                     <p className="att-card__note">
                       {!money.available
                         ? unavailable
-                        : capPct >= snapshot.ceilingPct
+                        : capBreached(money, snapshot.ceilingPct)
                           ? `⚠ ${capPct}% of the $${money.capUsd.toFixed(2)} gateway cap used`
                           : `$${money.billedSpendUsd.toFixed(2)} of the $${money.capUsd.toFixed(2)} ${money.capSource} cap used (${capPct}%)`}
                     </p>
