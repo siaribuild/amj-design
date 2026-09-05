@@ -112,3 +112,34 @@ ADR 0018: records design §8.1 — refinements fail criteria 4/10 structurally (
 `ready`'s semantics), plus independently against owner's 2026-09-01 no-extra-controls ruling.
 
 Nothing further needed by next task from t6.
+
+## Fix: F1 red test was order-dependent, not a DTO defect
+
+Reviewer finding (07-review-*): `scripts/tests/api.test.mjs:246` asserted
+`p_submitted.statusCustomer === "submitted"`, but it sits inside the long
+"local Worker, D1, KV, R2, auth, quote and order journeys" suite whose earlier
+steps call `start-pricing` and `issue-quote` on that same project seven lines
+above. By the time the assertion ran the project was legitimately
+`quote_issued`, so the test encoded seed state a journey had already moved.
+The worker DTO fix was correct — the failure message proved the field was
+present and populated.
+
+Red confirmed before the change (`actual: 'quote_issued', expected:
+'submitted'`). The test was made order-independent rather than weakened: for
+each of `p_submitted` and `p_order` it now asserts the list row's
+`statusCustomer` and `orderStage` agree with what `GET /api/ops/projects/:id`
+reports for that same project at that same moment (`record.project.statusCustomer`
+and `record.order?.stage ?? null`). That is the property the attention prefilter
+depends on — list and record telling the same story — and it holds wherever the
+assertion sits in the journey.
+
+The null-versus-missing half of D1 is kept and tightened: for any project the
+record shows as order-less, the row must have the `orderStage` key present
+(`Object.hasOwn`, not a loose `== null` that `undefined` would satisfy) with
+value `null`, because the awaiting-payment predicate is a membership test on
+that value. A counter asserts at least one order-less project was seen, so that
+half can never silently stop running.
+
+Verified: `node --test --test-concurrency=1 scripts/tests/api.test.mjs` — 31/31
+pass, 0 fail. `npm run test:ops2` — 134/134. `npm run typecheck:gate` — no fatal
+type errors.
