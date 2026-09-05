@@ -34,10 +34,11 @@ opening". The engine refuses rather than guesses, so nothing wrong is reported �
 but nothing is read either.
 
 **The counts disagree.** A face where the plan places three openings comes back
-with one frame, or two. Since a count disagreement is a conflict rather than an
-answer, the whole face is refused. Giving each face its own region of its sheet
-(rather than the whole sheet with four elevations on it) improved this and did
-not fix it.
+with one frame, or two. A count disagreement is a conflict rather than an answer,
+and since review round nine it goes to the face's second look, which pairs the
+frames it has and names the openings it cannot see; before that the whole face
+was refused. Giving each face its own region of its sheet (rather than the whole
+sheet with four elevations on it) improved the counts and did not fix them.
 
 Both are the same problem: what the elevation read returns is not yet good
 enough to crop from. That is the next piece of work, and it is now measurable —
@@ -176,7 +177,7 @@ Three of the review's points are rejected, with the contract as the reason:
   on: the second call is served from the archive, costs nothing, and is the same
   answer.
 - **`run.ts` size.** The crop-and-read driver and the match phase are their own
-  modules; `run.ts` is 242 lines, under the 317 the owner accepted.
+  modules; `run.ts` is 316 lines, under the 317 the owner accepted.
 
 - **Calibration for a scale the frames contradict.** First rejected, then found
   in §7.4: "if several matched frames disagree consistently with the printed
@@ -203,11 +204,91 @@ sheet read that fails at the provider or the container now reaches the report
 with its kind and what the container said, instead of the sheet vanishing.
 
 Standing, with reasons: a plan page is one drawing, so the page is the plan
-region for a second look (Codex accepts). On aggregate image memory Codex does
-not accept: this engine keeps at most sixteen crops of at most 2 MB, but the
-container client parses the render response before this engine sees it, with
-no size cap of its own. That cap would live in the shared container client, used
-by every engine, and is put to the owner rather than added here.
+region for a second look (Codex accepts).
+
+### Review round nine: four standards findings and seven spec findings
+
+Each a test before it was a change.
+
+- **Render response bounded where it is read.** The container client reads the
+  body against `MAX_CONTAINER_RESPONSE_BYTES` (16 MB) as it arrives - refused by
+  declared length where it declares one, by count where it does not - and the
+  reader is cancelled on overflow. This closes the memory finding that stood
+  through two rounds; the engine's own 2 MB crop cap stays as defence in depth.
+- **One spend counter.** `spendCounter()` is shared: Phase A's sheet reads in
+  `enrich.ts` and every engine phase report to the same one, and the report is
+  not two totals added by hand.
+- **`printedStorey`** lost the parameter nobody passed.
+- **Count conflicts get their second look (§10).** A face whose frame count
+  disagrees with the plan carries the frames it found into reconciliation
+  instead of losing every opening on it. The look may pair each opening and
+  frame at most once, in one reading of the wall; an opening it leaves out is
+  named `not drawn on this elevation, by the second look` and is the only one
+  lost. A single pair is a direction untested.
+- **Recalibration is an ops note.** A page whose printed scale most frames
+  contradict is sized from their median and the reading stands: no confidence
+  downgrade, no `drawingInconsistency`, nothing blocked downstream. The note
+  and the effective scale reach the report as `scaleNote` and `scaleRatio`.
+  Doing this showed the calibrator inheriting the doubt the printed-scale
+  verdict had cast; it now retracts that verdict's warning and recomputes
+  confidence from whether the direction was read (`directionSettled`).
+- **A single sheet titled for another storey fails closed** - when the storey
+  it names is one the plans know. A sheet titled in words the plans never use
+  (GROUND FLOOR ELEVATIONS over a FLOOR PLAN) has said nothing the engine can
+  hold it to, and is read as before.
+- **Face names are what the plan marks.** FIRST FLOOR NORTH ELEVATION names
+  NORTH, and so does DRAWING TITLE NORTH ELEVATION: the face is the shortest end
+  of the title run, nearest ELEVATION, that the plan text prints and no storey
+  name contains. Regions are keyed the same way.
+- **The report says where each opening was lost**: `faceKey`, `scaleRatio`,
+  `scaleNote`, `failurePhase` (the first phase that lost it, in the five names
+  of handover section 12), `gapCode`, `gapNote`, for every scheduled opening.
+- **A render with no image is an error with a name** in Phase A, not a null.
+- **Progress reads in order and finishes**: elevation frames report 0/N then
+  each face as it completes, ending N/N; crops are reported before the
+  compositions read from them.
+- The release blocker is unchanged and is stated below.
+
+Codex over the result found eleven more, all closed, each a test first: the
+call's deadline now covers the body, not just the headers (a renderer that
+answers and then stalls is a timeout); the second look must pair as many as the
+smaller side has, so one pair out of three is a refusal, not a reading; a face
+name is the longest end of its title the plan prints, so SOUTH WEST is not the
+WEST inside it; FIRST FLOOR NORTH ELEVATION says FIRST FLOOR, however its title
+goes on; the phase that lost an opening is written once, and a frame whose crop
+cannot be sized is lost at the crop with a reason; a single opening reports no
+direction, while one the second look chose is reported; every reconciled pairing
+says why the drawing alone could not make it, and names any frame no scheduled
+opening claims; reads are not reported until every crop is, so the persisted
+phase never goes backwards under four concurrent waves; a face's region is
+anchored on its name, not on the storey words run into its title; and a sheet
+title in words the plans never use is not a contradiction.
+
+A second Codex pass found six more, all closed the same way: the call's
+deadline is one clearable timer around headers and body, and a body is let go
+without waiting for a stream that may never settle its own cancellation; an
+error response whose body stalls or is too big is that failure, not a generic
+render_failed; every progress write in the crop-and-read driver goes down one
+chain, a wave is counted whatever happened inside it, and a store that throws
+costs its crop only; one reconciled pair claims no direction; and a storey the
+plans know is matched against the whole sheet title, longest name first, so
+LOWER GROUND FLOOR is not read as GROUND FLOOR.
+
+A third pass found six more, closed the same way: a body read that rejects with
+the fetch's own abort is the deadline, by name; a progress write that fails
+costs nothing but itself, because progress is not evidence; each wave's
+progress carries the count it was made at, so three waves report 4, 8, 12 and
+not the latest count three times; one reconciled pair says its direction was
+not tested rather than settled; and crop and read progress is counted over the
+scheduled roster - 7 of 27, not 7 of 7 - as §9 requires.
+
+A fourth pass found one: reads that settled while crops were still rendering
+were reported only as the latest count. Every settled batch is now queued and
+reported in order once the crops are, as §9 asks; a fifth pass verified it.
+
+Not yet checked, and said so: the three-run identity, cost and timing comparison
+§14 requires; compound face names on a real set (none of the three prints one);
+a storey-prefixed elevation title on a real set (none of the three prints one).
 
 ## Readiness
 

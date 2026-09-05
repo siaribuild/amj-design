@@ -240,8 +240,8 @@ export interface PlanPageFacts {
  * draws plans of is the page role's question, not this one. */
 const DETERMINER = /^(?:THIS|THESE|THAT|THE|A|AN|ANY|ALL|NO|EACH|EVERY|SUCH)$/;
 
-export function printedStorey(titleText: string, view: "PLAN" | "ELEVATIONS?" = "PLAN"): string | null {
-  const match = new RegExp(String.raw`\b([A-Z][A-Z0-9]*(?:\s+[A-Z0-9]+){0,2})\s+${view}\b`).exec(titleText.toUpperCase());
+export function printedStorey(titleText: string): string | null {
+  const match = /\b([A-Z][A-Z0-9]*(?:\s+[A-Z0-9]+){0,2})\s+PLAN\b/.exec(titleText.toUpperCase());
   if (!match) return null;
   const label = match[1].replace(/\s+/g, " ").trim();
   if (!label || label === "PLAN" || /^ELEVATIONS?$/.test(label)) return null;

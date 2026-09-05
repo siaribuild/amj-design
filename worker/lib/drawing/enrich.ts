@@ -12,7 +12,7 @@ import type { Env } from "../../types";
 import type { DarknessProfile, DrawingFileReport, DrawingProgressPhase, DrawingReading, DrawingReport, GapCode, InspectResponse, Orientation, SplitReading } from "./contract";
 import { ContainerClientError, inspectPdf, renderPage } from "./containerClient";
 import { cropKey } from "./crops";
-import { runFaceMappedParser, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
+import { runFaceMappedParser, spendCounter, type FaceMappedCall, type FaceMappedCallInput, type FaceMappedDeps } from "./faceMapped/run";
 import type { FaceMappedPhase } from "./faceMapped/report";
 import { pageScales } from "./harvest";
 import { makeSheetFactsSkill, recoverSheetFacts, type SheetFacts } from "./pageScaleRecovery";
@@ -206,8 +206,9 @@ async function enrichFile(
         .map((page) => page.pageNo)
         .filter((pageNo) => !tiers.has(pageNo) || !stated.has(pageNo));
       const readSheet = deps.runFaceMapped.readSheet;
-      // Phase A's looks are spent before the engine starts, and are its spend.
-      const sheetSpend = { modelCalls: 0, cachedTurns: 0, inputTokens: 0, outputTokens: 0, failureKind: null as string | null, warnings: [] as string[] };
+      // Phase A's looks are spent before the engine starts, and are its spend:
+      // one counter, handed on.
+      const spend = spendCounter();
       const recovered = silent.length
         ? await recoverSheetFacts({
           inspected,
@@ -217,21 +218,9 @@ async function enrichFile(
             render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
             readSheet: async ({ pageNo, imageDataUrl }) => {
               const skill = makeSheetFactsSkill(pageNo);
-              const read = await readSheet({
-                pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [imageDataUrl], skill,
-                usage: (spent) => {
-                  sheetSpend.modelCalls += spent.modelCalls;
-                  if (spent.cached) sheetSpend.cachedTurns += 1;
-                  sheetSpend.inputTokens += spent.inputTokens;
-                  sheetSpend.outputTokens += spent.outputTokens;
-                  for (const warning of spent.warnings) if (warning !== "stage_replayed" && !sheetSpend.warnings.includes(warning)) sheetSpend.warnings.push(warning);
-                },
-              }).catch((error: unknown) => {
-                // A provider failure keeps its kind on the way to the report,
-                // even though the recovery loop goes on to the next sheet.
-                if (error instanceof StageCallError) sheetSpend.failureKind = error.failureKind;
-                throw error;
-              });
+              const read = await spend.counted((usage) => readSheet({
+                pageNo, prompt: skill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [imageDataUrl], skill, usage,
+              }));
               return read ? { pageNo, ratio: read.ratio, title: read.drawingTitle } : null;
             },
           },
@@ -247,6 +236,9 @@ async function enrichFile(
           const geometry = inspected.inventory.pages.find((item) => item.pageNo === page.pageNo);
           return geometry ? [{ page, geometry }] : [];
         });
+      for (const [pageNo, facts] of recovered) {
+        if (facts.error) spend.spent.warnings.push(`sheet ${pageNo} could not be read: ${facts.error}`);
+      }
       const scales = new Map(stated);
       const scaleSources = new Map<number, "printed" | "recovered">();
       for (const [pageNo, ratio] of stated) if (ratio != null) scaleSources.set(pageNo, "printed");
@@ -270,6 +262,7 @@ async function enrichFile(
         // whole page's text over instead makes every plan sheet claim the same
         // storey.
         sheetTitles: new Map([...recovered].flatMap(([pageNo, facts]) => facts.title ? [[pageNo, facts.title] as const] : [])),
+        spend,
         deps: {
           ...deps.runFaceMapped,
           render: (request) => deps.render(env.PLAN_PARSE, args.projectId, pdfBytes, request),
@@ -293,20 +286,7 @@ async function enrichFile(
           },
         },
       });
-      for (const [pageNo, facts] of recovered) {
-        if (facts.error) sheetSpend.warnings.push(`sheet ${pageNo} could not be read: ${facts.error}`);
-      }
       run.report.steps.strategy = strategy;
-      if (sheetSpend.failureKind || sheetSpend.warnings.length) {
-        run.report.providerFailure = {
-          failureKind: run.report.providerFailure?.failureKind ?? sheetSpend.failureKind,
-          warnings: [...(run.report.providerFailure?.warnings ?? []), ...sheetSpend.warnings],
-        };
-      }
-      run.report.modelCalls += sheetSpend.modelCalls;
-      run.report.cachedTurns = (run.report.cachedTurns ?? 0) + sheetSpend.cachedTurns;
-      run.report.inputTokens = (run.report.inputTokens ?? 0) + sheetSpend.inputTokens;
-      run.report.outputTokens = (run.report.outputTokens ?? 0) + sheetSpend.outputTokens;
       return run;
     }
 

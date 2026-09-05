@@ -218,7 +218,7 @@ export async function recoverSheetFacts(args: {
     try {
       const render = await args.deps.render({ pageNo, dpi: RECOVERY_DPI });
       const image = render.images[0];
-      if (!image?.pngB64) return null;
+      if (!image?.pngB64) return { ratio: null, title: null, role: null, error: "the render came back without an image" };
       const answer = await args.deps.readSheet({
         pageNo,
         imageDataUrl: `data:image/png;base64,${image.pngB64}`,

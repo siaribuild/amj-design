@@ -1,4 +1,4 @@
-import type { CropBoxPt, DrawingFileReport, DrawingReading, GapCode, OpeningOperation } from "../contract";
+import type { CropBoxPt, DrawingFileReport, DrawingReading, FailurePhase, GapCode, OpeningOperation } from "../contract";
 import { OPERATIONS, type CompositionOutcome } from "./compositions";
 import { normalizeOpeningRef } from "../../ai/energyMap";
 
@@ -181,11 +181,15 @@ export function faceMappedFileReport(args: {
   spent: { modelCalls: number; cachedTurns: number; inputTokens: number; outputTokens: number; warnings: string[]; failureKind: string | null };
   containerCalls: number;
   startedAt: number;
-  /** Where each read opening came from, by the engine's spelling of its tag. */
+  /** Where each placed opening came from and how far it got, by the engine's
+   * spelling of its tag. */
   lineage: Map<string, {
-    planCandidateId: string; frameId: string; direction: "with_plan" | "against_plan";
-    scaleSource: "printed" | "recovered" | "calibrated" | null; cropBasis: DrawingFileReport["perOpening"][number]["cropBasis"];
+    planCandidateId: string; faceKey: string | null; frameId: string | null; direction: "with_plan" | "against_plan" | null;
+    scaleSource: "printed" | "recovered" | "calibrated" | null; scaleRatio: number | null; scaleNote: string | null;
+    cropBasis: DrawingFileReport["perOpening"][number]["cropBasis"];
   }>;
+  /** The first phase that lost each opening it did not read. */
+  lostAt: Map<string, FailurePhase>;
 }): DrawingFileReport {
   return {
     fileId: args.fileId,
@@ -214,7 +218,8 @@ export function faceMappedFileReport(args: {
       northAssumed: false,
     },
     perOpening: args.readings.map((reading) => {
-      const from = args.lineage.get(normalizeOpeningRef(reading.externalRef) ?? reading.externalRef);
+      const key = normalizeOpeningRef(reading.externalRef) ?? reading.externalRef;
+      const from = args.lineage.get(key);
       return {
         tag: reading.externalRef,
         outcome: reading.splitState === "value" ? "read" as const : "not_read" as const,
@@ -223,10 +228,16 @@ export function faceMappedFileReport(args: {
         confidence: reading.confidence,
         flags: reading.flags,
         planCandidateId: from?.planCandidateId ?? null,
+        faceKey: from?.faceKey ?? null,
         frameId: from?.frameId ?? null,
         direction: from?.direction ?? null,
         scaleSource: from?.scaleSource ?? null,
+        scaleRatio: from?.scaleRatio ?? null,
+        scaleNote: from?.scaleNote ?? null,
         cropBasis: from?.cropBasis ?? null,
+        failurePhase: args.lostAt.get(key) ?? null,
+        gapCode: reading.gapCode,
+        gapNote: reading.gapNote,
       };
     }),
     wallMs: Date.now() - args.startedAt,

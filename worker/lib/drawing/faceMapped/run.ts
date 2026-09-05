@@ -1,5 +1,5 @@
 import type { Skill } from "../../estimator/skills/types";
-import type { CropBoxPt, DrawingFileReport, DrawingReading, RenderRequest, RenderResponse } from "../contract";
+import type { CropBoxPt, DrawingFileReport, DrawingReading, FailurePhase, RenderRequest, RenderResponse } from "../contract";
 import type { CompositionRead, CompositionTask } from "./compositions";
 import { StageCallError } from "../../ai/stage";
 import { readOpenings } from "./readOpenings";
@@ -72,36 +72,11 @@ type FaceReconcileRead = { pairs: { tag: string; frameId: string }[] };
 const RENDER_DPI = 100;
 const CROP_DPI = 300;
 
-export async function runFaceMappedParser(args: {
-  fileId: string;
-  sourceFileId: string;
-  scheduleRows: { tag: string; widthMm: number; typeText?: string | null }[];
-  planPages: PlanPage[];
-  elevationPages: PlanPage[];
-  /** Page scales from Phase A, by page number. */
-  pageScales: Map<number, number | null>;
-  /** Where each scale came from: printed in the sheet's text, or read off a
-   *  render of it. A matcher cannot tell them apart from the number alone. */
-  scaleSources?: Map<number, "printed" | "recovered">;
-  sheetTitles: Map<number, string>;
-  deps: FaceMappedDeps;
-}): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
-  const started = Date.now();
-  const progress = faceMappedProgress(async (event) => { await args.deps.onProgress?.(event); });
-  const roster = args.scheduleRows.map((row) => row.tag);
-  // A row whose width the schedule did not state is not a row that says zero.
-  // Treating it as a measurement makes every frame drawn for it a conflict.
-  // Keyed by the tag as the engine spells it, not as the schedule did: a row
-  // written W-1 is the opening the plan prints as W01, and every phase between
-  // here and the report calls it W1.
-  const widthByTag = new Map(args.scheduleRows
-    .filter((row) => row.widthMm > 0)
-    .map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row.widthMm]));
-  const planStoreys = documentPlanStoreys(args.planPages, args.sheetTitles);
-  const faceSheets = documentFaceSheets(args.elevationPages, planStoreys);
-  let containerCalls = 0;
-  // Spend, as the stage layer reports it. A dep that reports nothing is one
-  // call, which is what it was before anyone counted.
+/** One counter for everything a document's run spends, wherever it is spent:
+ * the caller's Phase A looks and this engine's phases report to the same one,
+ * so the report is not two totals added by hand. A dep that reports nothing
+ * is one call, which is what it was before anyone counted. */
+export function spendCounter() {
   const spent: RunSpend = { modelCalls: 0, cachedTurns: 0, inputTokens: 0, outputTokens: 0, warnings: [], failureKind: null };
   const counted = <T>(call: (usage: FaceMappedCall["usage"]) => Promise<T>): Promise<T> => {
     let reported = false;
@@ -125,6 +100,41 @@ export async function runFaceMappedParser(args: {
       })
       .finally(() => { if (!reported) spent.modelCalls += 1; });
   };
+  return { spent, counted };
+}
+
+export async function runFaceMappedParser(args: {
+  fileId: string;
+  sourceFileId: string;
+  scheduleRows: { tag: string; widthMm: number; typeText?: string | null }[];
+  planPages: PlanPage[];
+  elevationPages: PlanPage[];
+  /** Page scales from Phase A, by page number. */
+  pageScales: Map<number, number | null>;
+  /** Where each scale came from: printed in the sheet's text, or read off a
+   *  render of it. A matcher cannot tell them apart from the number alone. */
+  scaleSources?: Map<number, "printed" | "recovered">;
+  sheetTitles: Map<number, string>;
+  /** The caller's counter, where it spent before this engine started. */
+  spend?: ReturnType<typeof spendCounter>;
+  deps: FaceMappedDeps;
+}): Promise<{ readings: DrawingReading[]; report: DrawingFileReport }> {
+  const started = Date.now();
+  const progress = faceMappedProgress(async (event) => { await args.deps.onProgress?.(event); });
+  const roster = args.scheduleRows.map((row) => row.tag);
+  // A row whose width the schedule did not state is not a row that says zero.
+  // Treating it as a measurement makes every frame drawn for it a conflict.
+  // Keyed by the tag as the engine spells it, not as the schedule did: a row
+  // written W-1 is the opening the plan prints as W01, and every phase between
+  // here and the report calls it W1.
+  const widthByTag = new Map(args.scheduleRows
+    .filter((row) => row.widthMm > 0)
+    .map((row) => [normalizeOpeningRef(row.tag) ?? row.tag, row.widthMm]));
+  const planStoreys = documentPlanStoreys(args.planPages, args.sheetTitles);
+  const planText = args.planPages.map((page) => page.page.text).join(" ");
+  const faceSheets = documentFaceSheets(args.elevationPages, planStoreys, planText);
+  let containerCalls = 0;
+  const { spent, counted } = args.spend ?? spendCounter();
 
   // A page that will not render costs the openings on it and nothing else:
   // one container timeout on one elevation sheet is not a reason to report a
@@ -150,7 +160,13 @@ export async function runFaceMappedParser(args: {
   // Provenance is a fact the caller knows and this engine does not: a number
   // alone cannot say whether a sheet printed it or a model read it.
   const scaleSourceOf = (pageNo: number) =>
-    recalibrated.has(pageNo) ? "calibrated" as const : args.scaleSources?.get(pageNo) ?? null;
+    calibratedRatio.has(pageNo) ? "calibrated" as const : args.scaleSources?.get(pageNo) ?? null;
+  // The first phase that lost an opening owns the loss (§7.7), named in the
+  // handover's words (§12).
+  const lostAt = new Map<string, FailurePhase>();
+  const lostIn = (phase: FailurePhase) => {
+    for (const tag of unplaced.keys()) if (!lostAt.has(tag)) lostAt.set(tag, phase);
+  };
 
   // ── Phase C: which wall each opening is in, and where along it. ──────────
   await progress.step("plan_faces", "Mapping floor plans", 0, roster.length);
@@ -186,12 +202,14 @@ export async function runFaceMappedParser(args: {
     else unplaced.set(outcome.tag, renderNotes.has(outcome.tag) ? `${outcome.reason}; ${renderNotes.get(outcome.tag)} for a look` : outcome.reason);
   }
   await progress.step("plan_faces", "Mapping floor plans", placements.size, roster.length);
+  lostIn("plan");
 
   // ── Phase D: which frame on each face is which opening. ─────────────────
+  const faceKeys = new Map<string, string>();
   const matched = await matchOpenings({
-    outcomes, faceSheets, faceNames, planStoreys, roster, widthByTag,
+    outcomes, faceSheets, faceNames, planStoreys, planText, roster, widthByTag,
     elevationPages: args.elevationPages, sheetTitles: args.sheetTitles, pageScales: args.pageScales,
-    render: pageImage, renderReason, counted, unplaced, progress,
+    render: pageImage, renderReason, counted, unplaced, faceKeys, lostIn, progress,
     inventoryElevation: args.deps.inventoryElevation, reconcileFace: args.deps.reconcileFace,
   });
 
@@ -200,28 +218,27 @@ export async function runFaceMappedParser(args: {
   // half the width of the rest is a disagreement rather than a private scale.
   //
   // And a page that states a scale most of its frames disagree with by one
-  // factor (§7.4) - printed 1:100, drawn at 1:50 - records the conflict and is
-  // sized from the frames' own median instead. One opening cannot recalibrate
-  // a view; three that agree with each other can.
-  const recalibrated = new Set<number>();
+  // factor (§7.4) - printed 1:100, drawn at 1:50 - is sized from the frames'
+  // own median instead, and the conflict is a note for operations: the frames
+  // agreeing with each other is what makes the reading sound, so nothing
+  // downstream is held up by the sheet's misprint. One opening cannot
+  // recalibrate a view; three that agree with each other can.
+  const calibratedRatio = new Map<number, number>();
+  const scaleNotes = new Map<number, string>();
   for (const pageNo of new Set(matched.map((match) => match.frame.pageNo))) {
     const onPage = matched.filter((match) => match.frame.pageNo === pageNo);
     const stated = args.pageScales.get(pageNo);
     const conflicts = onPage.filter((match) => match.widthAgreement === "conflict").length;
     if (stated != null && !(conflicts >= 3 && conflicts > onPage.length / 2)) continue;
-    const calibrated = calibrateWidths(
-      onPage.map((match) => ({ ...match, expectedWidthPt: null, widthBasis: null, widthAgreement: "unknown" as const })),
-      widthByTag,
-    );
-    if (!calibrated.some((match) => match.widthBasis === "calibrated")) continue;
-    if (stated != null) recalibrated.add(pageNo);
-    for (const match of calibrated) {
-      matched[matched.findIndex((was) => was.tag === match.tag)] = stated == null ? match : {
-        ...match,
-        confidence: "ambiguous",
-        warnings: [...match.warnings, `most frames on sheet ${pageNo} disagree with its printed 1:${stated} scale by one factor; widths are sized from their own median`],
-      };
+    const calibrated = calibrateWidths(onPage, widthByTag);
+    const sized = calibrated.find((match) => match.widthBasis === "calibrated" && match.expectedWidthPt);
+    if (!sized) continue;
+    // Points per millimetre back to a 1:R ratio: at 1:R a millimetre is 72/(25.4·R) points.
+    calibratedRatio.set(pageNo, 72 / (25.4 * (sized.expectedWidthPt! / widthByTag.get(sized.tag)!)));
+    if (stated != null) {
+      scaleNotes.set(pageNo, `most frames on sheet ${pageNo} disagree with its printed 1:${stated} scale by one factor; widths are sized from their own median, 1:${Math.round(calibratedRatio.get(pageNo)!)}`);
     }
+    for (const match of calibrated) matched[matched.findIndex((was) => was.tag === match.tag)] = match;
   }
 
   // ── Phase D and E together: the crops are made and read, batch by batch. ─
@@ -238,9 +255,12 @@ export async function runFaceMappedParser(args: {
     ask: (input) => counted((usage) => args.deps.readComposition({ ...input, usage })),
     progress,
     unplaced,
+    total: roster.length,
   });
 
   for (const tag of crops.keys()) unplaced.delete(tag);
+  lostIn("crop");
+  for (const outcome of compositions) if (outcome.state !== "value" && !lostAt.has(outcome.tag)) lostAt.set(outcome.tag, "composition");
   const readings = faceMappedReadings({
     fileId: args.fileId,
     sourceFileId: args.sourceFileId,
@@ -271,14 +291,24 @@ export async function runFaceMappedParser(args: {
       compositions,
       placed: placements.size,
       recovered: faceByCandidate.size,
-      // Where each reading came from, for the report to say.
-      lineage: new Map(matched.map((match) => [match.tag, {
-        planCandidateId: match.placement.planCandidateId,
-        frameId: match.frame.frameId,
-        direction: match.direction,
-        scaleSource: scaleSourceOf(match.frame.pageNo),
-        cropBasis: cropBasis.get(match.tag) ?? null,
-      }])),
+      // Where each reading came from, and where it stopped, for the report to say.
+      lineage: new Map(outcomes.flatMap((outcome) => {
+        if (outcome.state !== "resolved") return [];
+        const tag = outcome.placement.tag;
+        const match = matched.find((was) => was.tag === tag);
+        const pageNo = match?.frame.pageNo;
+        return [[tag, {
+          planCandidateId: outcome.placement.planCandidateId,
+          faceKey: faceKeys.get(tag) ?? null,
+          frameId: match?.frame.frameId ?? null,
+          direction: match && match.direction !== "untested" ? match.direction : null,
+          scaleSource: pageNo == null ? null : scaleSourceOf(pageNo),
+          scaleRatio: pageNo == null ? null : calibratedRatio.get(pageNo) ?? args.pageScales.get(pageNo) ?? null,
+          scaleNote: pageNo == null ? null : scaleNotes.get(pageNo) ?? null,
+          cropBasis: cropBasis.get(tag) ?? null,
+        }]];
+      })),
+      lostAt,
       spent,
       containerCalls,
       startedAt: started,

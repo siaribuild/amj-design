@@ -31,6 +31,9 @@ export async function readOpenings(args: {
   ask(input: { batch: CompositionTask[]; attempt: number; skill: Parameters<Parameters<typeof runCompositions>[0]["ask"]>[2]; prompt: string; imageDataUrls: string[] }): Promise<CompositionRead | null>;
   progress: ReturnType<typeof faceMappedProgress>;
   unplaced: Map<string, string>;
+  /** The scheduled roster, which every progress event counts against (§9):
+   * seven crops of twenty-seven openings is 7/27, not 7/7. */
+  total: number;
 }): Promise<{ crops: Map<string, CropForReport>; cropBasis: Map<string, OpeningCropTask["basis"]>; compositions: CompositionOutcome[]; cropCount: number }> {
   const crops = new Map<string, CropForReport>();
   const cropBasis = new Map<string, OpeningCropTask["basis"]>();
@@ -42,10 +45,31 @@ export async function readOpenings(args: {
     sourceFileId: args.sourceFileId,
   });
   const cropById = new Map(cropTasks.map((task) => [`${task.tag}_${task.frameId}`, task]));
+  // A frame whose crop could not be sized - off the sheet, or holding a
+  // neighbour's centre - is refused with a reason, not passed over.
+  for (const match of args.matched) {
+    if (!cropById.has(`${match.tag}_${match.frame.frameId}`)) args.unplaced.set(match.tag, "no crop could be sized for this frame: it runs off the sheet or would hold a neighbour");
+  }
   if (!cropTasks.length) return { crops, cropBasis, compositions: [], cropCount: 0 };
 
   let cropped = 0;
-  await args.progress.step("composition_reads", "Reading opening compositions", 0, cropTasks.length);
+  // Four waves run at once, so a fast wave's reads can finish while a slow
+  // wave's crops are still rendering, and two writes in flight can land in
+  // either order. Every progress write goes down one chain, each with the
+  // count it was made at, and reads are held - every settled batch its own
+  // milestone (§9) - until every crop has been reported, or the persisted
+  // phase goes from crops to reads and back to crops. Progress is not
+  // evidence: a write that fails costs nothing but itself.
+  let writes: Promise<void> = Promise.resolve();
+  const report = (phase: "opening_crops" | "composition_reads", message: string, count: number) =>
+    (writes = writes.then(() => args.progress.step(phase, message, count, args.total)).catch(() => {}));
+  const settled: number[] = [];
+  const reportReads = () => {
+    if (cropped !== cropTasks.length) return Promise.resolve();
+    for (const count of settled.splice(0)) report("composition_reads", "Reading opening compositions", count);
+    return writes;
+  };
+  await report("opening_crops", "Creating opening crops", 0);
   const compositions = await runCompositions({
     tasks: cropTasks.map((task) => ({
       tag: task.tag, frameId: task.frameId, cropRenderId: `${task.tag}_${task.frameId}`, imageDataUrl: null,
@@ -54,6 +78,7 @@ export async function readOpenings(args: {
     // batch that will not answer.
     callCeiling: compositionBatches(cropTasks).length + COMPOSITION_RETRY_BUDGET,
     prepare: async (batch) => {
+      try {
       for (const task of batch) {
         const crop = cropById.get(task.cropRenderId)!;
         const image = await args.render(crop.pageNo, crop.bboxPt);
@@ -65,7 +90,7 @@ export async function readOpenings(args: {
           args.unplaced.set(task.tag, `the crop for this opening is too large to hold (${Math.round(image.pngB64.length / 1e6)}MB)`);
           continue;
         }
-        const cropKey = await args.storeCrop(task.cropRenderId, image.pngB64);
+        const cropKey = await args.storeCrop(task.cropRenderId, image.pngB64).catch(() => null);
         // A crop that is nowhere is not evidence. Reading it anyway produces an
         // answer whose lineage cannot be followed back to anything, which is
         // the one thing a reading has to be able to do.
@@ -77,10 +102,15 @@ export async function readOpenings(args: {
         cropBasis.set(task.tag, crop.basis);
         task.imageDataUrl = image.url;
       }
-      cropped += batch.length;
-      await args.progress.step("opening_crops", "Creating opening crops", cropped, cropTasks.length);
+      } finally {
+        // Counted whatever happened inside: a wave that failed is still a wave
+        // that is over, and the reads must not wait on it forever.
+        cropped += batch.length;
+        await report("opening_crops", "Creating opening crops", cropped);
+        await reportReads();
+      }
     },
-    onBatch: (done, total) => args.progress.step("composition_reads", "Reading opening compositions", done, total),
+    onBatch: (done) => { settled.push(done); return reportReads(); },
     ask: (batch, attempt, skill) => args.ask({
       batch, attempt, skill,
       prompt: skill.buildPrompt({ imageDataUrls: [] }),

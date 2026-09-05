@@ -16,7 +16,8 @@ await build({
   stdin: {
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
-      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI } from ${p("worker/lib/drawing/contract.ts")};
+      export { readOpenings } from ${p("worker/lib/drawing/faceMapped/readOpenings.ts")};
+      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_CONTAINER_RESPONSE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
       export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
@@ -56,7 +57,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_CONTAINER_RESPONSE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -2353,6 +2354,13 @@ test("elevation inventory: the call is closed to the face it is about (§7.2)", 
   ] }), faceTask(3, [1800, 900, 600])).state, "resolved");
   assert.equal(validateElevationFrames(skill.validate({ frames: [] }), faceTask(3, [1800, 900, 600])).state, "unresolved",
     "a count that disagrees is an answer to record, not junk to refuse");
+  // A count that disagrees is a conflict for the second look, so the frames
+  // that were found travel with the refusal rather than being thrown away.
+  const short = validateElevationFrames(skill.validate({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [
+    { box: [0.1, 0.3, 0.16, 0.6] }, { box: [0.6, 0.3, 0.66, 0.6] },
+  ] }), faceTask(3, [1800, 900, 600]));
+  assert.equal(short.state, "unresolved");
+  assert.equal(short.frames?.length, 2, "what was found is kept for reconciliation");
   assert.equal(skill.validate("not json at all"), null, "junk is junk");
 });
 
@@ -2393,6 +2401,28 @@ test("elevation inventory: a face drawn once per storey sheet is read from the s
     ]),
   });
   assert.deepEqual(sized.tasks.map((t) => t.overviewBoxPt), [[0, 0, 500, 800], [0, 0, 1000, 1200]]);
+
+  // One sheet, titled for another storey: a known mismatch fails closed rather
+  // than cropping from the wrong floor.
+  const wrongFloor = elevationFaceTasks({
+    placements: [{ ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" }],
+    faceSheets: new Map([["NORTH", [8]]]),
+    widthByTag: new Map([["W1", 900]]),
+    sheets: new Map([[8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }]]),
+    sheetStoreys: new Map([[8, "FIRST FLOOR"]]),
+    storeyNames: new Set(["GROUND FLOOR", "FIRST FLOOR"]),
+  });
+  assert.equal(wrongFloor.tasks.length, 0);
+  assert.match(wrongFloor.skipped[0].reason, /FIRST FLOOR/);
+  // Without the plans' vocabulary, a differing title is words, not a contradiction.
+  const unknownWords = elevationFaceTasks({
+    placements: [{ ...placedAt("W1", 1, 0.2, 1), elevation: "NORTH", storey: "GROUND FLOOR" }],
+    faceSheets: new Map([["NORTH", [8]]]),
+    widthByTag: new Map([["W1", 900]]),
+    sheets: new Map([[8, { overviewRenderId: "r8", overviewBoxPt: [0, 0, 1000, 700], scaleCandidates: [] }]]),
+    sheetStoreys: new Map([[8, "FIRST FLOOR"]]),
+  });
+  assert.equal(unknownWords.tasks.length, 1);
 
   // Two sheets that both claim the storey are still nobody's.
   const twice = elevationFaceTasks({
@@ -2752,16 +2782,48 @@ test("face reconciliation: one look at a face nothing settled, at only what it w
     "the plan evidence a pairing was made on travels with it");
 
   // A frame the face does not have, a frame standing in for two openings, and
-  // an answer that leaves an opening out are all refusals - and so is a pairing
-  // that is neither reading of the wall, because a third one is an invention.
+  // a pairing that is neither reading of the wall are refusals - a third
+  // reading is an invention.
   for (const pairs of [
     [{ tag: "W1", frameId: "f9" }, { tag: "W2", frameId: "f2" }, { tag: "W3", frameId: "f1" }],
     [{ tag: "W1", frameId: "f1" }, { tag: "W2", frameId: "f1" }, { tag: "W3", frameId: "f3" }],
-    [{ tag: "W1", frameId: "f1" }],
     [{ tag: "W1", frameId: "f2" }, { tag: "W2", frameId: "f1" }, { tag: "W3", frameId: "f3" }],
+    // Three openings and three frames: one pair is not a reading of the wall.
+    [{ tag: "W1", frameId: "f1" }],
+    [{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f3" }],
   ]) {
     assert.equal(settle(pairs), null, JSON.stringify(pairs));
   }
+
+  // Two frames for three openings (§10): the look pairs both frames, in one
+  // reading, and the opening it leaves out is not drawn on this elevation and
+  // is named as unpaired. Covering fewer than it could is still a refusal.
+  const two = { ...task, frames: task.frames.slice(0, 2) };
+  const settleTwo = (pairs) => reconcileMatches(makeFaceReconcileSkill(two).validate({ pairs }), two);
+  const partial = settleTwo([{ tag: "W1", frameId: "f1" }, { tag: "W3", frameId: "f2" }]);
+  assert.deepEqual(partial.matches.map((m) => [m.tag, m.frame.frameId]), [["W1", "f1"], ["W3", "f2"]]);
+  assert.deepEqual(partial.unpaired, ["W2"]);
+  assert.equal(partial.direction, "with_plan");
+  assert.equal(partial.matches.every((m) => m.warnings.some((w) => w.includes(task.reason))), true,
+    "every pairing the look made says why the drawing alone could not make it");
+  assert.equal(settleTwo([{ tag: "W1", frameId: "f2" }, { tag: "W3", frameId: "f1" }]).direction, "against_plan");
+  assert.equal(settleTwo([{ tag: "W1", frameId: "f1" }]), null, "one pair where two frames were found covers too little");
+  assert.equal(settle([{ tag: "W1", frameId: "f3" }, { tag: "W2", frameId: "f1" }, { tag: "W3", frameId: "f2" }]), null,
+    "pairs that cross are not a reading of the wall");
+  // One frame for three openings: one pair is everything the look can say, and
+  // it says nothing about direction.
+  const one = { ...task, frames: task.frames.slice(0, 1) };
+  const single = reconcileMatches(makeFaceReconcileSkill(one).validate({ pairs: [{ tag: "W2", frameId: "f1" }] }), one);
+  assert.deepEqual([single.matches[0].tag, single.unpaired, single.matches[0].confidence], ["W2", ["W1", "W3"], "ambiguous"]);
+  assert.equal(single.matches[0].direction, "untested", "one pair reads the same either way round, and claims neither");
+  assert.match(single.matches[0].warnings.join(" "), /not tested/, "and its note says so, not that a look settled it");
+  // Three frames for two openings: both openings are paired, and the frame that
+  // is neither is named on each pairing rather than dropped without a word.
+  const more = { ...task, placements: task.placements.slice(0, 2) };
+  const extra = reconcileMatches(makeFaceReconcileSkill(more).validate({ pairs: [{ tag: "W1", frameId: "f1" }, { tag: "W2", frameId: "f3" }] }), more);
+  assert.deepEqual(extra.matches.map((m) => m.tag), ["W1", "W2"]);
+  assert.deepEqual(extra.unpaired, []);
+  assert.match(extra.matches[0].warnings.join("; "), /f2/, "the frame no scheduled opening claims is named");
 });
 
 // ── Phase D — crops (§7.5) ─────────────────────────────────────────────────
@@ -3536,6 +3598,13 @@ test("run: a page that will not render costs its own openings, not the file (P4)
   assert.deepEqual(run.readings.map((r) => [r.externalRef, r.splitState]), [["W1", "value"], ["W2", "not_read"]],
     "the wall whose sheet rendered is read; the other is not, and the file is not lost");
   assert.match(run.readings[1].gapNote, /render/);
+  const lost = run.report.perOpening.find((o) => o.tag === "W2");
+  assert.equal(lost.failurePhase, "frame_inventory", "the report says which phase lost it, in the handover's words (§12)");
+  assert.equal(lost.gapCode, "frame_ambiguous");
+  assert.match(lost.gapNote, /render/);
+  assert.equal(lost.faceKey, JSON.stringify([6, "SOUTH", "GROUND FLOOR"]));
+  assert.equal(run.report.perOpening.find((o) => o.tag === "W1").failurePhase, null);
+  assert.equal(run.report.perOpening.find((o) => o.tag === "W1").scaleRatio, 100);
   assert.match(run.readings[1].gapNote, /container timed out/, "and the reason says what the container said");
   assert.equal(run.readings[1].elevation, "SOUTH", "what the plan settled survives the render that did not");
 });
@@ -3578,11 +3647,64 @@ test("run: the report says where each reading came from (P6, P8)", async () => {
   assert.equal(opening.planCandidateId, "W1_p3_1");
   assert.equal(opening.frameId, run.readings[0] && opening.frameId, "the frame it was read from");
   assert.match(opening.frameId, /^5_NORTH/);
-  assert.equal(opening.direction, "with_plan");
+  assert.equal(opening.direction, null, "one opening on its face: no direction was tested, so none is claimed");
   assert.equal(opening.scaleSource, "recovered", "a scale a model read is not a scale the sheet printed");
   assert.equal(opening.cropBasis, "scaled");
-  assert.deepEqual(events.filter((e) => e.phase === "composition_reads").map((e) => e.done), [0, 1],
+  assert.deepEqual(events.filter((e) => e.phase === "composition_reads").map((e) => e.done), [1],
     "progress is reported as each batch settles");
+  assert.deepEqual(events.filter((e) => e.phase === "elevation_frames").map((e) => e.done), [0, 1],
+    "a phase that starts is a phase that finishes: the last face reports N of N");
+  const order = events.map((e) => e.phase);
+  assert.equal(order.indexOf("opening_crops") < order.indexOf("composition_reads"), true,
+    "crops are reported before the compositions read from them");
+});
+
+test("crops and reads: every crop is reported before any read, each wave once, over the roster (Codex 9.8, 9c)", async () => {
+  // Three waves run at once. The first two waves are cropped and read while the
+  // third wave's crops are still rendering. The progress sink is slow, as a D1
+  // write is, and fails once. Expected: crops 0, 4, 8, 12 in that order - each
+  // wave its own count, not the latest one twice - then reads 4, 8, 12, every
+  // settled batch its own milestone even though two of them settled before the
+  // crops were done; every event over the roster of 20 scheduled openings, not
+  // the 12 that reached this phase; and a failed progress write costs nothing
+  // but itself.
+  const events = [];
+  const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+  const progress = faceMappedProgress(async (event) => {
+    await delay(60);
+    events.push(event);
+    if (event.phase === "opening_crops" && event.done === 4) throw new Error("D1 unavailable");
+  });
+  const matched = Array.from({ length: 12 }, (_unused, at) => ({
+    tag: `W${at + 1}`, frame: cropFrame(`f${at + 1}`, at + 1, 100 + at * 70, 130 + at * 70), expectedWidthPt: 30, widthBasis: "scaled",
+  }));
+  const unplaced = new Map();
+  const result = await readOpenings({
+    matched, pageSizeOf: () => [1_000, 800], sourceFileId: "src_1", total: 20,
+    render: async (_pageNo, box) => {
+      // Wave two's crops take a little longer than wave one's; wave three's
+      // take longer than the first two waves' reads.
+      if (box[0] > 660) await delay(150);
+      else if (box[0] > 380) await delay(10);
+      return { pngB64: "AAAA", url: "data:image/png;base64,AAAA" };
+    },
+    renderReason: () => "render failed",
+    // A store that throws costs its crop and nothing else: the wave's count
+    // is still reported and the reads still start.
+    storeCrop: async (id) => { if (id.startsWith("W3_")) throw new Error("R2 unavailable"); return `key_${id}`; },
+    ask: async (input) => {
+      return input.skill.validate({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) });
+    },
+    progress, unplaced,
+  });
+  assert.equal(result.compositions.filter((outcome) => outcome.state === "value").length, 11);
+  assert.match(unplaced.get("W3"), /stored/);
+  assert.deepEqual(events.filter((event) => event.phase === "opening_crops").map((event) => event.done), [0, 4, 8, 12]);
+  assert.deepEqual(events.filter((event) => event.phase === "composition_reads").map((event) => event.done), [4, 8, 12]);
+  assert.equal(events.every((event) => event.total === 20), true, "over the roster, not over the openings that got this far");
 });
 
 test("compositions: crops are made in waves of four and let go before the next wave (S2)", async () => {
@@ -4002,8 +4124,104 @@ test("run: frames that disagree with the printed scale by one factor recalibrate
     "sized from the frames' own scale, not the one the sheet printed");
   assert.deepEqual(["W1", "W2", "W3"].map((tag) => byTag[tag].scaleSource), ["calibrated", "calibrated", "calibrated"]);
   const w1 = run.readings.find((r) => r.externalRef === "W1");
-  assert.equal(w1.flags.includes("drawingInconsistency"), true, "the conflict with the printed scale is recorded");
-  assert.match(w1.gapNote ?? "", /1:100/);
+  assert.equal(w1.flags.includes("drawingInconsistency"), false,
+    "a printed scale the frames contradict is an ops note; the reading itself stands, and is not blocked downstream");
+  assert.equal(w1.confidence, "high");
+  assert.equal(w1.gapNote, null);
+  assert.match(byTag.W1.scaleNote ?? "", /1:100/, "the conflict is recorded where ops reads it");
+  assert.equal(typeof byTag.W1.scaleRatio, "number", "with the effective scale the widths were sized by");
+  assert.equal(Math.round(byTag.W1.scaleRatio), 50);
+});
+
+test("run: a frame whose crop would run off the sheet is lost at the crop, and the report says so (Codex 9.5)", async () => {
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: [{ tag: "W1", widthMm: 1800, heightMm: 1200, typeText: "AWNING" }],
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      // Drawn hard against the sheet's left edge: a crop the scheduled width wide
+      // around it runs off the page, and is not made.
+      inventoryElevation: answering({ storeyBand: [0.0, 0.2, 0.95, 0.7], frames: [{ box: [0.0, 0.3, 0.02, 0.6] }] }),
+      reconcileFace: answering(async () => null),
+      readComposition: answering(async () => null),
+    },
+  });
+  const [reading] = run.readings;
+  assert.equal(reading.splitState, "not_read");
+  assert.equal(reading.gapCode, "frame_ambiguous");
+  assert.match(reading.gapNote, /off the sheet|neighbour/);
+  assert.equal(run.report.perOpening[0].failurePhase, "crop", "lost where the crop could not be made, not at the read that never happened");
+});
+
+test("run: a face with fewer frames than openings gets its second look, and the openings it cannot show are named (Spec1, §10)", async () => {
+  // The plan puts three openings on NORTH; the elevation draws two of them - the
+  // third is behind the garage. Section 10: a face count conflict is one face
+  // reconciliation, not a face lost. The look pairs what it can see; the
+  // opening it cannot is unresolved for that reason and nothing else.
+  const plan = facePage(3, "GROUND FLOOR PLAN", [
+    { text: "W1", x0: 297, top: 250, x1: 323, bottom: 264 },
+    { text: "W2", x0: 407, top: 250, x1: 433, bottom: 264 },
+    { text: "W3", x0: 627, top: 250, x1: 653, bottom: 264 },
+    { text: "LIVING", x0: 400, top: 320, x1: 460, bottom: 334 },
+    { text: "KITCHEN", x0: 560, top: 320, x1: 620, bottom: 334 },
+    { text: "BED", x0: 300, top: 470, x1: 360, bottom: 484 },
+    { text: "ENTRY", x0: 620, top: 470, x1: 680, bottom: 484 },
+    { text: "STUDY", x0: 480, top: 400, x1: 540, bottom: 414 },
+    { text: "NORTH", x0: 480, top: 250, x1: 530, bottom: 264 },
+  ]);
+  const elevations = facePage(5, "NORTH ELEVATION", [
+    { text: "NORTH", x0: 100, top: 700, x1: 150, bottom: 714 },
+    { text: "ELEVATION", x0: 155, top: 700, x1: 230, bottom: 714 },
+  ]);
+  const looked = [];
+  const run = await runFaceMappedParser({
+    fileId: "file_1", sourceFileId: "src_1",
+    scheduleRows: ["W1", "W2", "W3"].map((tag) => ({ tag, widthMm: 1800, heightMm: 1200, typeText: "AWNING" })),
+    planPages: [plan], elevationPages: [elevations],
+    pageScales: new Map([[5, 100]]), sheetTitles: new Map(),
+    deps: {
+      render: async ({ pageNo }) => ({ images: [{ pngB64: `page${pageNo}`, widthPx: 1_000, heightPx: 800 }], dpi: 100 }),
+      storeCrop: async (id) => `key_${id}`,
+      readPlanPage: async () => null,
+      inventoryElevation: answering({ storeyBand: [0.05, 0.2, 0.95, 0.7], frames: [{ box: [0.05, 0.3, 0.101, 0.6] }, { box: [0.50, 0.3, 0.551, 0.6] }] }),
+      reconcileFace: answering(async (input) => {
+        looked.push(input.frameIds.length);
+        // W1 is the left frame, W3 the right; W2 is not on this elevation.
+        return { pairs: [{ tag: "W1", frameId: input.frameIds[0] }, { tag: "W3", frameId: input.frameIds[1] }] };
+      }),
+      readComposition: answering(async (input) => ({ readings: input.batch.map((task) => ({
+        tag: task.tag, frameId: task.frameId, cropRenderId: task.cropRenderId,
+        operations: ["awning"], unitRatios: [1], divisionAxis: "vertical", confidence: "high",
+      })) })),
+    },
+  });
+  assert.deepEqual(looked, [2], "one look, given the two frames that were found");
+  const byTag = Object.fromEntries(run.readings.map((r) => [r.externalRef, r]));
+  assert.equal(byTag.W1.splitState, "value");
+  assert.equal(byTag.W3.splitState, "value");
+  assert.equal(byTag.W2.splitState, "not_read");
+  assert.match(byTag.W2.gapNote, /not drawn on this elevation|not paired/i);
+  assert.equal(byTag.W2.elevation, "NORTH", "it keeps the wall the plan gave it");
+  assert.equal(run.report.perOpening.find((o) => o.tag === "W2").failurePhase, "matching",
+    "lost by the look at the face, not by the count of its frames");
+  assert.equal(run.report.perOpening.find((o) => o.tag === "W1").direction, "with_plan",
+    "a direction the second look chose is a direction, and is reported");
 });
 
 test("run: a tag printed on the elevation reaches the matcher (§7.3)", async () => {
@@ -4487,6 +4705,48 @@ test("sheet faces: an elevation sheet says which storey it draws (Spec3)", () =>
   ]);
   assert.deepEqual([...documentFaceSheets([bandSingular], planStoreys).keys()], ["NORTH"],
     "a storey the plans name is not a face, whatever number its title word takes");
+
+  // FIRST FLOOR NORTH ELEVATION marks the wall NORTH, and DRAWING TITLE NORTH
+  // ELEVATION is a title-block heading run into a title. The plan says which
+  // words are a face: the longest end of the run that the plan itself prints.
+  const planText = "W1 W2 LIVING KITCHEN NORTH SOUTH EAST WEST GROUND FLOOR PLAN";
+  const prefixed = sheet(10, [
+    { text: "FIRST", x0: 100, top: 400, x1: 140, bottom: 414 }, { text: "FLOOR", x0: 145, top: 400, x1: 190, bottom: 414 },
+    { text: "NORTH", x0: 195, top: 400, x1: 245, bottom: 414 }, { text: "ELEVATION", x0: 250, top: 400, x1: 325, bottom: 414 },
+  ]);
+  const headed = sheet(11, [
+    { text: "DRAWING", x0: 100, top: 400, x1: 160, bottom: 414 }, { text: "TITLE", x0: 165, top: 400, x1: 205, bottom: 414 },
+    { text: "NORTH", x0: 210, top: 400, x1: 260, bottom: 414 }, { text: "ELEVATION", x0: 265, top: 400, x1: 340, bottom: 414 },
+  ]);
+  assert.deepEqual([...documentFaceSheets([prefixed, headed], planStoreys, planText).entries()], [["NORTH", [10, 11]]]);
+  // A sheet titled FIRST FLOOR NORTH ELEVATION has said which storey it draws,
+  // however its title goes on: the storey the plans know is read off the front.
+  assert.equal(documentSheetStoreys([prefixed], new Map([[10, "FIRST FLOOR NORTH ELEVATION"]]), new Set(["NORTH"]), planStoreys).get(10), "FIRST FLOOR");
+  assert.equal(documentSheetStoreys([prefixed], new Map([[10, "LOWER GROUND FLOOR NORTH ELEVATION"]]), new Set(["NORTH"]),
+    new Set(["GROUND FLOOR", "LOWER GROUND FLOOR"])).get(10), "LOWER GROUND FLOOR",
+    "the longest storey the plans know, not the three words a title regex kept");
+
+  // A compound face is not collapsed into the face inside it: a plan that marks
+  // SOUTH WEST and WEST has two faces, and SOUTH WEST ELEVATION is the first.
+  const compoundText = "W1 W2 SOUTH WEST WEST NORTH GROUND FLOOR PLAN";
+  const compound = sheet(12, [
+    { text: "SOUTH", x0: 100, top: 400, x1: 150, bottom: 414 }, { text: "WEST", x0: 155, top: 400, x1: 195, bottom: 414 },
+    { text: "ELEVATION", x0: 200, top: 400, x1: 275, bottom: 414 },
+  ]);
+  const plain = sheet(13, [{ text: "WEST", x0: 100, top: 400, x1: 140, bottom: 414 }, { text: "ELEVATION", x0: 145, top: 400, x1: 220, bottom: 414 }]);
+  assert.deepEqual([...documentFaceSheets([compound, plain], planStoreys, compoundText).keys()], ["SOUTH WEST", "WEST"]);
+
+  // The region a face is read from is anchored on its name, not on the storey
+  // or heading words run into its title: two drawings side by side meet halfway
+  // between NORTH and SOUTH, not halfway between FIRST and SOUTH.
+  const twoUp = sheet(14, [
+    { text: "FIRST", x0: 100, top: 400, x1: 140, bottom: 414 }, { text: "FLOOR", x0: 145, top: 400, x1: 190, bottom: 414 },
+    { text: "NORTH", x0: 195, top: 400, x1: 245, bottom: 414 }, { text: "ELEVATION", x0: 250, top: 400, x1: 325, bottom: 414 },
+    { text: "SOUTH", x0: 600, top: 400, x1: 650, bottom: 414 }, { text: "ELEVATION", x0: 655, top: 400, x1: 730, bottom: 414 },
+  ]);
+  const regions = documentFaceRegions([twoUp], planStoreys, planText);
+  assert.equal(Math.round(regions.get("14|NORTH").regionPt[2]), 423);
+  assert.equal(Math.round(regions.get("14|SOUTH").regionPt[0]), 423);
   assert.equal(documentSheetStoreys([bandSingular], new Map(), new Set(["NORTH"]), planStoreys).get(9), "GROUND FLOOR");
 
   // The plural is a sheet's title and names a storey whatever else the label
@@ -7435,6 +7695,13 @@ test("switch wiring: a sheet whose title block is drawn gets looked at before th
     "a sheet read that failed at the provider is a provider failure on the report");
   assert.equal(failing.report.files[0].providerFailure?.warnings.some((w) => /container timed out on sheet 3/.test(w)), true,
     "and a sheet that would not render is named with what the container said");
+
+  // A render that comes back with no image at all is a failure with a name too.
+  const empty = await recoverSheetFacts({
+    inspected, pageNos: [3], stated: new Map(),
+    deps: { render: async () => ({ images: [], dpi: 100 }), readSheet: async () => ({ pageNo: 3, ratio: 100, title: "GROUND FLOOR PLAN" }) },
+  });
+  assert.match(empty.get(3)?.error ?? "", /without an image/);
   assert.equal(result.report.files[0].perOpening[0].scaleSource, "recovered",
     "a scale a look at the sheet supplied is reported as recovered, not as printed");
   const allowed = new Set(["inventory", "elevation_inventory", "floorplan_location", "orientation", "render_crops", "opening_read"]);
@@ -7638,6 +7905,106 @@ test("switch wiring: a face-mapped stage replays from its archive without a mode
   assert.equal(aiCalls.length, 1, "and costs no tokens");
   assert.deepEqual(second.data, first.data, "and is the same answer");
   assert.deepEqual(readingsToOutcomes(second.data, [{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: null }])[0].state, "value");
+});
+
+test("container client: a render response too big to hold is refused before it is held (S1)", async () => {
+  // The engine keeps at most sixteen crops of two megabytes, but the response
+  // that carries a crop is read here first. A container that answers with far
+  // more than any render could need is refused at this boundary, by its
+  // declared length where it declares one and by counting bytes where it does
+  // not, so the isolate never allocates what it cannot afford.
+  const declared = { get: () => ({ fetch: async () => new Response("x".repeat(10), { headers: { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }), idFromName: () => "id" };
+  await assert.rejects(
+    renderPage(declared, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "too_large",
+  );
+  const streamed = {
+    get: () => ({ fetch: async () => new Response(new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array(1_048_576)); },
+    }), { headers: { "content-type": "application/json" } }) }),
+    idFromName: () => "id",
+  };
+  await assert.rejects(
+    renderPage(streamed, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "too_large",
+  );
+});
+
+test("container client: a body that stalls after its headers is a timeout, not a hang (Codex 9.1)", { timeout: 2000 }, async () => {
+  // Headers arrive, one chunk arrives, and then nothing: the same deadline that
+  // bounds the call bounds its body, or a stalled renderer holds the job open.
+  const stalled = {
+    get: () => ({ fetch: async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"images":[')); },
+    }), { headers: { "content-type": "application/json" } }) }),
+    idFromName: () => "id",
+  };
+  await assert.rejects(
+    renderPage(stalled, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, 50),
+    (error) => error instanceof ContainerClientError && error.code === "timeout",
+  );
+
+  // A stream whose cancellation never settles does not hold the deadline
+  // open: the call is over when its time is, whatever the stream does after.
+  const unyielding = {
+    get: () => ({ fetch: async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"images":[')); },
+      cancel() { return new Promise(() => {}); },
+    }), { headers: { "content-type": "application/json" } }) }),
+    idFromName: () => "id",
+  };
+  await assert.rejects(
+    renderPage(unyielding, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, 50),
+    (error) => error instanceof ContainerClientError && error.code === "timeout",
+  );
+
+  // The aborted fetch's own stream can reject before the deadline promise
+  // does; it is the same deadline, and is named as one.
+  const abortingBody = {
+    get: () => ({ fetch: async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"images":[')); },
+      pull() { return Promise.reject(new DOMException("The operation was aborted.", "AbortError")); },
+    }), { headers: { "content-type": "application/json" } }) }),
+    idFromName: () => "id",
+  };
+  await assert.rejects(
+    renderPage(abortingBody, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "timeout",
+  );
+
+  // A body refused by its declared length is let go, not left open.
+  let cancelled = false;
+  const declaredWide = {
+    get: () => ({ fetch: async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("x")); },
+      cancel() { cancelled = true; },
+    }), { headers: { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1), "content-type": "application/json" } }) }),
+    idFromName: () => "id",
+  };
+  await assert.rejects(
+    renderPage(declaredWide, "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "too_large",
+  );
+  assert.equal(cancelled, true);
+
+  // An error response whose body stalls or is too big is that failure, not a
+  // generic render_failed that hides which.
+  const failing = (body, headers = {}) => ({
+    get: () => ({ fetch: async () => new Response(body, { status: 500, headers: { "content-type": "application/json", ...headers } }) }),
+    idFromName: () => "id",
+  });
+  await assert.rejects(
+    renderPage(failing(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); } })), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }, 50),
+    (error) => error instanceof ContainerClientError && error.code === "timeout",
+  );
+  await assert.rejects(
+    renderPage(failing("{}", { "content-length": String(MAX_CONTAINER_RESPONSE_BYTES + 1) }), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "too_large",
+  );
+  await assert.rejects(
+    renderPage(failing("not json"), "prj", new Uint8Array([1]), { pageNo: 1, dpi: 100 }),
+    (error) => error instanceof ContainerClientError && error.code === "render_failed",
+  );
 });
 
 test("deployment config keeps the full-document drawing parser as the production default", async () => {

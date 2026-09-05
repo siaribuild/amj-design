@@ -39,7 +39,9 @@ export interface ElevationFrame {
 
 export type ElevationInventoryOutcome =
   | { state: "resolved"; task: ElevationFaceTask; frames: ElevationFrame[] }
-  | { state: "unresolved"; task: ElevationFaceTask; reason: string };
+  /** A count the plan disagrees with is a conflict, and the frames that were
+   * found travel with it: §10 gives that face one reconciliation, not a loss. */
+  | { state: "unresolved"; task: ElevationFaceTask; reason: string; frames?: ElevationFrame[] };
 
 /** A face the plan populated that no elevation can be asked about. Openings
  * lost here are lost silently unless something says so. */
@@ -68,6 +70,10 @@ export function elevationFaceTasks(args: {
   /** Which storey each elevation sheet draws, where it says. A face drawn once
    * per storey sheet is read from the sheet for its storey. */
   sheetStoreys?: Map<number, string>;
+  /** The storeys the plans name. A sheet titled for one of them draws that
+   * storey and no other; a sheet titled in words the plans never use has said
+   * nothing this engine can hold it to. */
+  storeyNames?: Set<string>;
 }): { tasks: ElevationFaceTask[]; skipped: SkippedFace[] } {
   const groups = new Map<string, PlanOpeningPlacement[]>();
   for (const placement of args.placements) {
@@ -93,6 +99,13 @@ export function elevationFaceTasks(args: {
     // A face drawn on more than one sheet is one sheet per storey, or it is a
     // set nobody can read: the sheet whose title names this storey is the one.
     const forStorey = drawnOn.filter((pageNo) => args.sheetStoreys?.get(pageNo)?.toUpperCase() === storey.toUpperCase());
+    const said = drawnOn.length === 1 ? args.sheetStoreys?.get(drawnOn[0])?.toUpperCase() : undefined;
+    // One sheet, titled for another storey the plans know: reading it anyway
+    // crops the wrong floor, so a known contradiction fails closed.
+    if (said && said !== storey.toUpperCase() && args.storeyNames?.has(said)) {
+      refuse(`sheet ${drawnOn[0]} draws face ${elevation} for ${said}, not ${storey}`);
+      continue;
+    }
     const pages = drawnOn.length === 1 ? drawnOn : forStorey.length === 1 ? forStorey : drawnOn;
     if (pages.length > 1) {
       refuse(`face ${elevation} is drawn on sheets ${pages.join(", ")}, and which one to read is not settled`);
@@ -201,30 +214,28 @@ export function validateElevationFrames(raw: unknown, task: ElevationFaceTask): 
     if (!repeat) inBand.push(box);
   }
   inBand.sort((a, b) => a[0] - b[0]);
+  const frames: ElevationFrame[] = inBand.map((box, at) => ({
+    frameId: `${task.pageNo}_${task.elevation}_${task.storey}_${at + 1}`.replace(/\s+/g, "-"),
+    faceKey: task.faceKey,
+    pageNo: task.pageNo,
+    elevation: task.elevation,
+    storey: task.storey,
+    orderLeftToRight: at + 1,
+    outerFrameBoxPt: toPoints(box, task.overviewBoxPt),
+    storeyBandPt: toPoints(band, task.overviewBoxPt),
+    confidence: "verified",
+    basis: [`read from ${task.overviewRenderId}`],
+  }));
 
-  if (inBand.length !== task.expectedOpeningCount) {
+  if (frames.length !== task.expectedOpeningCount) {
     return {
       state: "unresolved",
       task,
-      reason: `the elevation gives ${inBand.length} usable frames on this face where the plan places ${task.expectedOpeningCount} openings`,
+      reason: `the elevation gives ${frames.length} usable frames on this face where the plan places ${task.expectedOpeningCount} openings`,
+      frames,
     };
   }
-  return {
-    state: "resolved",
-    task,
-    frames: inBand.map((box, at) => ({
-      frameId: `${task.pageNo}_${task.elevation}_${task.storey}_${at + 1}`.replace(/\s+/g, "-"),
-      faceKey: task.faceKey,
-      pageNo: task.pageNo,
-      elevation: task.elevation,
-      storey: task.storey,
-      orderLeftToRight: at + 1,
-      outerFrameBoxPt: toPoints(box, task.overviewBoxPt),
-      storeyBandPt: toPoints(band, task.overviewBoxPt),
-      confidence: "verified",
-      basis: [`read from ${task.overviewRenderId}`],
-    })),
-  };
+  return { state: "resolved", task, frames };
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { CropBoxPt } from "../contract";
+import type { CropBoxPt, FailurePhase } from "../contract";
 import { openingTagWords } from "../locate";
 import { documentFaceRegions, documentSheetStoreys } from "../sheetFaces";
 import {
@@ -30,6 +30,9 @@ export async function matchOpenings(ctx: {
   faceNames: Set<string>;
   /** The storeys the plan sheets name: what tells a sheet's title from a face's. */
   planStoreys: Set<string>;
+  /** Everything the plan sheets print: what tells a face's name from the words
+   * printed beside it. */
+  planText: string;
   roster: string[];
   widthByTag: Map<string, number>;
   elevationPages: PlanPage[];
@@ -39,11 +42,15 @@ export async function matchOpenings(ctx: {
   renderReason(pageNo: number, what: string): string;
   counted<T>(call: (usage: FaceMappedCall["usage"]) => Promise<T>): Promise<T>;
   unplaced: Map<string, string>;
+  /** Which face each placed opening was looked for on, for the report. */
+  faceKeys: Map<string, string>;
+  /** Charges every opening lost so far and not yet charged to a phase. */
+  lostIn(phase: FailurePhase): void;
   progress: ReturnType<typeof faceMappedProgress>;
   inventoryElevation: FaceMappedDeps["inventoryElevation"];
   reconcileFace: FaceMappedDeps["reconcileFace"];
 }): Promise<MatchedOpeningFrame[]> {
-  const faceRegions = documentFaceRegions(ctx.elevationPages, ctx.planStoreys);
+  const faceRegions = documentFaceRegions(ctx.elevationPages, ctx.planStoreys, ctx.planText);
   const built = elevationFaceTasks({
     placements: ctx.outcomes.flatMap((o) => o.state === "resolved" ? [o.placement] : []),
     faceSheets: ctx.faceSheets,
@@ -57,6 +64,7 @@ export async function matchOpenings(ctx: {
     // part of it shows the one the question is about.
     regionByFace: faceRegions,
     sheetStoreys: documentSheetStoreys(ctx.elevationPages, ctx.sheetTitles, ctx.faceNames, ctx.planStoreys),
+    storeyNames: ctx.planStoreys,
   });
   for (const skipped of built.skipped) {
     for (const tag of skipped.tags) ctx.unplaced.set(tag, skipped.reason);
@@ -64,50 +72,62 @@ export async function matchOpenings(ctx: {
 
   const matched: MatchedOpeningFrame[] = [];
   const unsettled: FaceReconcileTask[] = [];
-  let done = 0;
-  for (const task of built.tasks) {
-    await ctx.progress.step("elevation_frames", `Locating elevation frames · ${task.elevation}, ${task.storey}`, done, built.tasks.length);
-    done += 1;
+  const lookAt = async (task: ElevationFaceTask) => {
+    for (const placement of placementsOn(ctx.outcomes, task)) ctx.faceKeys.set(placement.tag, task.faceKey);
     // The face's own region, at a resolution that holds up when it is a
     // quarter of a sheet.
     const image = await ctx.render(task.pageNo, task.overviewBoxPt, FACE_DPI);
     if (!image) {
       for (const placement of placementsOn(ctx.outcomes, task)) ctx.unplaced.set(placement.tag, ctx.renderReason(task.pageNo, `sheet ${task.pageNo}`));
-      continue;
+      return;
     }
     const inventorySkill = makeElevationInventorySkill(task);
     const read = await ctx.counted((usage) => ctx.inventoryElevation({
       task, prompt: inventorySkill.buildPrompt({ imageDataUrls: [] }), imageDataUrls: [image.url], skill: inventorySkill, usage,
     })).catch(() => null);
     const inventory = read ? validateElevationFrames(read, task) : null;
-    if (!inventory || inventory.state === "unresolved") {
+    const frames = inventory?.frames ?? [];
+    if (!inventory || !frames.length) {
       const reason = inventory?.reason ?? "the look at this face did not come back";
       for (const placement of placementsOn(ctx.outcomes, task)) ctx.unplaced.set(placement.tag, reason);
-      continue;
+      return;
     }
-    const match = matchFacePlacements({
-      placements: placementsOn(ctx.outcomes, task),
-      frames: inventory.frames,
-      widthByTag: ctx.widthByTag,
-      pageScaleRatio: ctx.pageScales.get(task.pageNo) ?? null,
-      // Some sets label their elevations too, and a tag printed inside a frame
-      // says which opening it is outright.
-      tagWordsPt: elevationTagWords(ctx.elevationPages, task.pageNo, ctx.roster),
-    });
+    // A count the plan disagrees with is a conflict for the second look (§10),
+    // not a reading to attempt: the matcher pairs Nth with Nth.
+    const match = inventory.state === "resolved"
+      ? matchFacePlacements({
+        placements: placementsOn(ctx.outcomes, task),
+        frames,
+        widthByTag: ctx.widthByTag,
+        pageScaleRatio: ctx.pageScales.get(task.pageNo) ?? null,
+        // Some sets label their elevations too, and a tag printed inside a frame
+        // says which opening it is outright.
+        tagWordsPt: elevationTagWords(ctx.elevationPages, task.pageNo, ctx.roster),
+      })
+      : { direction: "unresolved" as const, reason: inventory.reason, matches: [] };
     if (match.direction === "unresolved") {
       unsettled.push({
         faceKey: task.faceKey,
         regionPt: task.overviewBoxPt,
         reason: match.reason,
         placements: placementsOn(ctx.outcomes, task),
-        frames: inventory.frames,
+        frames,
         widthByTag: ctx.widthByTag,
         pageScaleRatio: ctx.pageScales.get(task.pageNo) ?? null,
       });
-      continue;
+      return;
     }
     matched.push(...match.matches);
+  };
+  // A phase that starts is a phase that finishes: the last face reports N of N.
+  if (built.tasks.length) await ctx.progress.step("elevation_frames", "Locating elevation frames", 0, built.tasks.length);
+  let done = 0;
+  for (const task of built.tasks) {
+    await lookAt(task);
+    done += 1;
+    await ctx.progress.step("elevation_frames", `Locating elevation frames · ${task.elevation}, ${task.storey}`, done, built.tasks.length);
   }
+  ctx.lostIn("frame_inventory");
 
   // §7.3 step 5: the faces neither reading settled get one look each, at the
   // plan and the elevation together. A face that look cannot settle either is
@@ -137,12 +157,15 @@ export async function matchOpenings(ctx: {
       skill,
       usage,
     })).catch(() => null), face);
-    if (settled) matched.push(...settled.matches);
-    else for (const placement of face.placements) ctx.unplaced.set(placement.tag, face.reason);
+    if (settled) {
+      matched.push(...settled.matches);
+      for (const tag of settled.unpaired ?? []) ctx.unplaced.set(tag, `${face.reason}; not drawn on this elevation, by the second look`);
+    } else for (const placement of face.placements) ctx.unplaced.set(placement.tag, face.reason);
   }
   for (const face of unsettled.slice(faceReconciliationTasks(unsettled).length)) {
     for (const placement of face.placements) ctx.unplaced.set(placement.tag, face.reason);
   }
+  ctx.lostIn("matching");
 
   return matched;
 }

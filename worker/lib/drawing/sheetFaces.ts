@@ -36,8 +36,26 @@ const ROW_TOLERANCE = 1.5;
 const FACE_NAME = /^[A-Z][A-Z0-9-]{0,11}$/;
 
 /** Every face title printed in a set, with where it is printed. */
-function faceTitles(pages: SheetPage[], storeyNames: Set<string> = new Set()): { label: string; pageNo: number; x: number; y: number; height: number }[] {
+function faceTitles(pages: SheetPage[], storeyNames: Set<string> = new Set(), planText?: string): { label: string; pageNo: number; x: number; y: number; height: number }[] {
   const found: { label: string; pageNo: number; x: number; y: number; height: number }[] = [];
+  const printed = planText == null ? null : ` ${planText.toUpperCase().replace(/\s+/g, " ").trim()} `;
+  const storeys = [...storeyNames].map((storey) => ` ${storey} `);
+  // FIRST FLOOR NORTH ELEVATION names the wall NORTH, and a title-block heading
+  // run into a title - DRAWING TITLE NORTH ELEVATION - names it too. The plan
+  // marks its walls in its own words, so the face is the longest end of the
+  // run, nearest ELEVATION, that the plan prints and no storey name contains:
+  // longest, so SOUTH WEST is not collapsed into the WEST inside it. The words
+  // it was read from go with it, because they are where the face's title is.
+  const faceOf = (parts: string[], words: PageWord[], nearestLast: boolean) => {
+    if (printed) {
+      for (let take = parts.length; take >= 1; take -= 1) {
+        const end = (nearestLast ? parts.slice(parts.length - take) : parts.slice(0, take)).join(" ");
+        // `words` run outward from ELEVATION, so the nearest `take` are the first.
+        if (printed.includes(` ${end} `) && !storeys.some((storey) => storey.includes(` ${end} `))) return { label: end, words: words.slice(0, take) };
+      }
+    }
+    return { label: parts.join(" "), words };
+  };
   for (const { page, geometry } of pages) {
     const rows = new Map<number, PageWord[]>();
     for (const word of page.words) {
@@ -66,11 +84,11 @@ function faceTitles(pages: SheetPage[], storeyNames: Set<string> = new Set()): {
             words.push(next);
             previous = next;
           }
-          return { parts: step < 0 ? parts.reverse() : parts, words };
+          return { parts: step < 0 ? parts.reverse() : parts, words, nearestLast: step < 0 };
         };
-        for (const { parts, words } of [run(-1), run(1)]) {
-          if (!parts.length) continue;
-          const label = parts.join(" ");
+        for (const title of [run(-1), run(1)]) {
+          if (!title.parts.length) continue;
+          const { label, words } = faceOf(title.parts, title.words, title.nearestLast);
           // GROUND FLOOR ELEVATION reads like a drawing's title until the plans
           // are consulted: a storey the plans name is a sheet's title, not a face.
           if (storeyNames.has(label)) continue;
@@ -98,9 +116,9 @@ function faceTitles(pages: SheetPage[], storeyNames: Set<string> = new Set()): {
 }
 
 /** Face name to the sheets that draw it, in page order. */
-export function documentFaceSheets(pages: SheetPage[], storeyNames: Set<string> = new Set()): Map<string, number[]> {
+export function documentFaceSheets(pages: SheetPage[], storeyNames: Set<string> = new Set(), planText?: string): Map<string, number[]> {
   const sheets = new Map<string, number[]>();
-  for (const { label, pageNo } of faceTitles(pages, storeyNames)) {
+  for (const { label, pageNo } of faceTitles(pages, storeyNames, planText)) {
     const seen = sheets.get(label) ?? [];
     if (!seen.includes(pageNo)) sheets.set(label, [...seen, pageNo]);
   }
@@ -116,13 +134,13 @@ export function documentFaceSheets(pages: SheetPage[], storeyNames: Set<string> 
  * where each drawing is: side by side, they meet halfway between their titles;
  * stacked, each reaches from the title above down to its own.
  */
-export function documentFaceRegions(pages: SheetPage[], storeyNames: Set<string> = new Set()): Map<string, { pageNo: number; regionPt: CropBoxPt }> {
+export function documentFaceRegions(pages: SheetPage[], storeyNames: Set<string> = new Set(), planText?: string): Map<string, { pageNo: number; regionPt: CropBoxPt }> {
   // Keyed by sheet and face: a face drawn once per storey sheet has a region on
   // each, and the second must not overwrite the first.
   const keyOf = (pageNo: number, label: string) => `${pageNo}|${label}`;
   const regions = new Map<string, { pageNo: number; regionPt: CropBoxPt }>();
   for (const { geometry } of pages) {
-    const onSheet = faceTitles(pages, storeyNames).filter((title) => title.pageNo === geometry.pageNo);
+    const onSheet = faceTitles(pages, storeyNames, planText).filter((title) => title.pageNo === geometry.pageNo);
     if (!onSheet.length) continue;
     if (onSheet.length === 1) {
       regions.set(keyOf(geometry.pageNo, onSheet[0].label), { pageNo: geometry.pageNo, regionPt: [0, 0, geometry.widthPt, geometry.heightPt] });
@@ -174,9 +192,15 @@ export function documentSheetStoreys(
     const band = page.words.filter((word) => word.top >= geometry.heightPt * 0.85).map((word) => word.text).join(" ");
     for (const text of [recoveredTitles.get(geometry.pageNo), band]) {
       if (!text) continue;
-      // Every sheet title in the band, not the first thing before ELEVATIONS:
-      // a face's own title may share the band with the sheet's.
-      const storey = [...text.toUpperCase().matchAll(SHEET_TITLE)]
+      // A storey the plans know, wherever a title puts it: LOWER GROUND FLOOR
+      // NORTH ELEVATION says LOWER GROUND FLOOR, however the title goes on and
+      // however many words that is - the longest known name first, so GROUND
+      // FLOOR does not win a title that says LOWER GROUND FLOOR.
+      const known = [...storeyNames].sort((a, b) => b.length - a.length)
+        .find((name) => new RegExp(String.raw`\b${name}\b(?:\s+[A-Z0-9]+){0,2}\s+ELEVATIONS?\b`).test(text.toUpperCase()));
+      // Otherwise every sheet title in the band, not the first thing before
+      // ELEVATIONS: a face's own title may share the band with the sheet's.
+      const storey = known ?? [...text.toUpperCase().matchAll(SHEET_TITLE)]
         .map((match) => ({ label: printedStorey(`${match[1]} PLAN`), plural: match[2] === "ELEVATIONS" }))
         // The plural is a sheet's title and names a storey whatever else its
         // label was taken for; the singular names one only when the plans name

@@ -9,6 +9,9 @@ import type { MatchedOpeningFrame } from "./matchFrames";
  * box is read off a drawing and includes however much of the frame is drawn. */
 export const WIDTH_TOLERANCE = 0.2;
 
+/** The one warning a width verdict leaves, whichever scale it was judged by. */
+export const isWidthWarning = (warning: string) => warning.startsWith("the frame's drawn width is");
+
 /**
  * §7.3 step 3, the part of the score the scale pays for: 1800mm is a known
  * number of points on a page printed at 1:100, so a frame drawn a third of that
@@ -63,15 +66,19 @@ export function calibrateWidths(matches: MatchedOpeningFrame[], widthByTag?: Map
     const expected = widthMm * median;
     const drawn = match.frame.outerFrameBoxPt[2] - match.frame.outerFrameBoxPt[0];
     const conflict = Math.abs(drawn - expected) / expected > WIDTH_TOLERANCE;
+    // A verdict against the page's printed scale is what calibration retracts:
+    // its warning and the doubt it cast go with it. A direction that was
+    // supplied rather than read stays unverified whatever the widths say.
+    const kept = match.warnings.filter((warning) => !isWidthWarning(warning));
     return {
       ...match,
       expectedWidthPt: expected,
       widthBasis: "calibrated",
       widthAgreement: conflict ? "conflict" : "within_tolerance",
-      confidence: conflict ? "ambiguous" : match.confidence,
+      confidence: conflict || match.directionSettled === false ? "ambiguous" : "verified",
       warnings: conflict
-        ? [...match.warnings, `the frame's drawn width is ${drawn.toFixed(1)}pt where the face's own scale puts ${widthMm}mm at ${expected.toFixed(1)}pt`]
-        : match.warnings,
+        ? [...kept, `the frame's drawn width is ${drawn.toFixed(1)}pt where the face's own scale puts ${widthMm}mm at ${expected.toFixed(1)}pt`]
+        : kept,
     };
   });
 }

@@ -7,18 +7,25 @@ export interface MatchedOpeningFrame {
   tag: string;
   placement: PlanOpeningPlacement;
   frame: ElevationFrame;
-  direction: "with_plan" | "against_plan";
+  /** Untested where one opening pairs with one frame the same way either way. */
+  direction: "with_plan" | "against_plan" | "untested";
   expectedWidthPt: number | null;
   widthAgreement: "within_tolerance" | "conflict" | "unknown";
   /** Where the expected width came from: the page's printed scale, or a scale
    * the matched frames themselves supplied (§14). Null where there is neither. */
   widthBasis: "scaled" | "calibrated" | null;
+  /** False when the direction was supplied or untested rather than read off
+   * the page: a doubt no width agreement, and no recalibration, can lift. */
+  directionSettled: boolean;
   confidence: "verified" | "ambiguous";
   warnings: string[];
 }
 
 export type FaceMatch =
-  | { direction: "with_plan" | "against_plan"; matches: MatchedOpeningFrame[]; reason: null }
+  /** `unpaired`: openings the plan put on this face that the second look found
+   * no frame for - behind a garage, round a return - named so the report can
+   * say so. */
+  | { direction: "with_plan" | "against_plan"; matches: MatchedOpeningFrame[]; reason: null; unpaired?: string[] }
   | { direction: "unresolved"; matches: never[]; reason: string };
 
 /**
@@ -115,6 +122,7 @@ export function pairOpening(
     expectedWidthPt: width.expected,
     widthAgreement: width.agreement,
     widthBasis: width.expected == null ? null : "scaled",
+    directionSettled: settled,
     // Nothing contradicted this pairing, which is all "verified" ever claims.
     confidence: settled && width.agreement !== "conflict" ? "verified" : "ambiguous",
     warnings: width.warnings,
@@ -160,6 +168,8 @@ export function matchFacePlacements(args: FaceMatchInput): FaceMatch {
         ...only,
         // Nothing corroborated this pairing. It is the only one available,
         // which is a reason to keep it and not a reason to call it verified.
+        direction: "untested",
+        directionSettled: false,
         confidence: "ambiguous",
         warnings: [...only.warnings, "one opening on this face, so which end the elevation counts from was never tested"],
       }],

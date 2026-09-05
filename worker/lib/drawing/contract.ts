@@ -9,6 +9,10 @@ export const MAX_PDF_BYTES = 40 * 1024 * 1024;
 export const MAX_PAGES = 60;
 export const MAX_CROPS_PER_PAGE = 12;
 export const MAX_DPI = 300;
+/** The most the container may answer with. A page render at 100 DPI is well
+ * under a megabyte and a 300 DPI crop a few hundred kilobytes; an answer past
+ * this is a render gone wrong, and the Worker never holds it to find out. */
+export const MAX_CONTAINER_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export type DrawingProgressPhase =
   | "inventory"
@@ -174,6 +178,9 @@ export interface DrawingRunStepCounts {
   failedPhase?: string;
 }
 
+/** The phase that lost an opening, in the handover's words (§12). */
+export type FailurePhase = "plan" | "frame_inventory" | "matching" | "crop" | "composition";
+
 export interface DrawingFileReport {
   fileId: string;
   sourceFileIds?: string[];
@@ -193,6 +200,15 @@ export interface DrawingFileReport {
     direction?: "with_plan" | "against_plan" | null;
     scaleSource?: "printed" | "recovered" | "calibrated" | null;
     cropBasis?: "scaled" | "calibrated" | "wider_frame" | "wide_unscaled" | null;
+    /** The face the opening was looked for on, the scale its widths were sized
+     *  by, a note where that scale contradicts the sheet, and where and why it
+     *  was lost - so an audit of one opening does not start from the log. */
+    faceKey?: string | null;
+    scaleRatio?: number | null;
+    scaleNote?: string | null;
+    failurePhase?: FailurePhase | null;
+    gapCode?: GapCode | null;
+    gapNote?: string | null;
     attempts?: number;
     acceptedTurn?: number | null;
     corrections?: {
