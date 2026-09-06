@@ -109,3 +109,104 @@ test:ops2` 143/143. `npm run typecheck:gate` clean (64 pre-existing non-fatal,
 unchanged). `npm test` (typecheck + test:pure + test:heavy) 353/353. Committed
 separately from the polish stage's still-uncommitted CSS/CONTEXT/ADR changes,
 which this fix did not touch.
+
+## Review findings 1 (P0) and 2 (P1) from `07-review-architecture.md`
+
+The finding was correct, and its diagnosis of the previous session was correct
+too: both red tests had been written into `scripts/tests/web/ops2-projects.spec.ts`
+and neither implementation had been made — `git diff` showed no change under
+`src/` at all. Both are now implemented.
+
+### P0 — six filters exceeded the phone sheet
+
+**Option taken: let the sheet scroll its own content**, via Ionic's own
+`expandToScroll={false}` on the sheet form in `src/ops2/chrome/SidePanel.tsx`.
+
+Why that one of the three the finding offered:
+
+- Ionic renders a sheet as a **full-height `.ion-page` translated down** to its
+  breakpoint, so at `0.5` the content box is twice the visible band: nothing
+  overflows, and content that cannot overflow cannot scroll. That is the actual
+  cause, and it is why `05-polish.md` measured `scrollHeight === clientHeight`
+  with `In production` clipped and `Clear all filters` parked at y≈704.
+- `expandToScroll={false}` is the platform's switch for exactly this
+  (`@ionic/core` 8.5+; `animations/sheet.js` caps `.ion-page` at
+  `currentBreakpoint * 100%`, and `gestures/sheet.js` stops forcing
+  `scrollY: false` below the max breakpoint). No CSS reaching into Ionic
+  internals, no new breakpoint arithmetic of our own.
+- **A third breakpoint `[0, 0.5, 1]` was rejected**: it still requires a *drag*
+  before the sixth control exists at all, so a reader who does not think to drag
+  a sheet that shows no sign of being draggable is in the same position, and the
+  red test — which clicks rather than asserting visibility — would still fail.
+- **`phoneForm="screen"` for the filter was rejected**: it abandons the bottom
+  sheet, which is the owner's instruction by name ("Filter panel at the bottom is
+  to be taken from the mock"). The sheet stays the mock's sheet; it stops hiding
+  its own tail.
+
+**Existing panels: unaffected in form, improved in reach.** The prop is scoped
+`sheet ? false : undefined`, so the `side` (desk, 520px) and `screen` forms —
+which pass no breakpoints at all — are untouched. The other sheet-form callers
+(`DeliveryAddressPanel`, `DeliveryPricePanel`, `MetaTab`, `PricePanel`,
+`ProjectRecordPage`, `WhyDetail`) gain a scrollable phone sheet where they
+previously had a silently clipped one; none of them can lose anything, because
+today none of their content scrolls either. Two adjacent risks checked and clear:
+Ionic's `modal-no-expand-scroll` rule repositions `ion-footer`, and ops2 renders
+no `IonFooter` anywhere (`grep` clean) — `SidePanel`'s footer is a plain
+`div.pq-sheet__foot` inside `ion-content`, so it now scrolls into reach with the
+list. And `projects.css`'s sticky-footer pinning is scoped
+`.pq-sheet--side:has(ion-list)`, i.e. the desk panel only, so the phone sheet's
+behaviour is decided in one place.
+
+### P1 — arrival now ends on departure
+
+`src/ops2/projects/ProjectsPage.tsx`: the off-route branch resets **both** the
+query and the ref, and the return-time protocol is gone. `arrivalRef` is a plain
+`useRef(false)` again — the third value existed only to carry an unfinished reset
+across a navigation, which is the defect itself. The reset effect watches
+`location.pathname` alone (`location.search`/`location.key` deps dropped; there
+is nothing to do on the way in — `?attn=` is the other effect's job).
+
+Nothing moved onto `ionViewWillEnter`, per the finding and per the measured
+facts recorded in that file: it does not fire on a rail-back, and the F2/F4
+history is preserved in the comments.
+
+### Tests
+
+Both red tests named by the finding already exist in
+`scripts/tests/web/ops2-projects.spec.ts` and were left byte-identical — in
+particular "on a short phone…" still *clicks* both controls rather than asserting
+`toBeVisible()`, which is the whole point of it.
+
+Because the browser suite cannot run this session (below), each fix also got a
+node-level red that *can*, in the suite that already owns source-shape assertions
+for that file:
+
+- `scripts/tests/ops2-frame.test.mjs` — "SidePanel: the phone sheet scrolls its
+  own content…". Watched fail (`expandToScroll` absent), then pass.
+- `scripts/tests/ops2-projects.test.mjs` — "ProjectsPage: leaving the queue ends
+  the arrival there and then…". Watched fail (`setQuery(EMPTY_QUERY)` not in the
+  departure branch), then pass.
+
+### Verification — BROWSER VERIFICATION IS PENDING, and why
+
+- `npm run typecheck:gate` — clean (64 pre-existing non-fatal, unchanged).
+- `npm run test:ops2` — 145/145.
+- `npm test` — 353/353, exit 0 (typecheck + `test:pure` + `test:heavy`, 691s).
+- `npm run test:web` — **NOT RUN.** Playwright is pinned to port 8788
+  (`playwright.config.ts`), and another repository
+  (`E:\Projects\amj-ops2-customers`) is holding 8788/8789 with its own harness.
+  Confirmed live with `netstat`. Per the instruction for this fix the ports were
+  not killed, not reassigned, and no test was weakened or skipped to manufacture
+  a green.
+
+**So the two browser tests that define these fixes have not been executed against
+the fixes.** They must be run once the ports free:
+
+```
+npx playwright test scripts/tests/web/ops2-projects.spec.ts
+```
+
+The P0 fix in particular changes runtime layout behaviour inside Ionic's sheet
+gesture, and only a real 375×667 viewport proves the last refinement and the
+footer are clickable. Treat this fix as implemented-and-unverified until that run
+is on record.

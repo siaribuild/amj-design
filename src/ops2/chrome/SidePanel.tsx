@@ -178,6 +178,25 @@ export function SidePanel({
       // try to drag itself up from the bottom edge.
       initialBreakpoint={sheet ? 0.5 : undefined}
       breakpoints={sheet ? [0, 0.5] : undefined}
+      // AND THE SHEET SCROLLS WHAT IT CANNOT SHOW.
+      //
+      // Ionic renders a sheet as a FULL-HEIGHT `.ion-page` translated down to
+      // its breakpoint, so at 0.5 the content box is twice the band anyone can
+      // see: nothing overflows, and content that cannot overflow cannot scroll.
+      // Measured at 375x667 with the filter's six controls (`05-polish.md`) —
+      // `In production` clipped, `Clear all filters` at y=704, the handle
+      // dragging to nothing because `[0, 0.5]` has no higher stop. Three
+      // controls fitted half a phone; six do not, and the next surface to reach
+      // seven would have found this again.
+      //
+      // `expandToScroll={false}` is Ionic's own switch for it (8.5+): it caps
+      // the content at `breakpoint * 100%`, so the overflow happens INSIDE the
+      // visible band and `ion-content` scrolls there. Chosen over a third
+      // breakpoint, which still needs a drag before the last control exists,
+      // and over `phoneForm="screen"` for the filter, which would abandon the
+      // bottom sheet the owner asked for by name. The sheet stays the mock's
+      // sheet; it simply stops hiding its own tail.
+      expandToScroll={sheet ? false : undefined}
       enterAnimation={fromRight ? slideIn : undefined}
       leaveAnimation={fromRight ? slideOut : undefined}
       className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}`}

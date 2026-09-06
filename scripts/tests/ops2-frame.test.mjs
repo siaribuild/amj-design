@@ -356,3 +356,31 @@ test("ops2 has exactly ONE drawing viewer, and the shared legend survives outsid
   // the customer site actually share, and it is not what was deleted.
   assert.match(elevation, /export function Elevation\(/);
 });
+
+test("SidePanel: the phone sheet scrolls its own content, so a tall panel's last control and footer stay reachable", () => {
+  // REVIEW FINDING 1 (P0, 07-review-architecture.md). At 375x667 the filter's
+  // six controls exceed the half-height sheet: `In production` is clipped and
+  // `Clear all filters` sits below the window with no way to reach either.
+  //
+  // The cause is Ionic's own default, not this component's markup. A sheet
+  // modal renders a FULL-HEIGHT `.ion-page` translated down to its breakpoint,
+  // so at 0.5 the content box is twice the visible band — nothing overflows,
+  // and content that cannot overflow cannot scroll. `expandToScroll` is the
+  // native switch for exactly that (`@ionic/core` 8.8, sheet.js): false caps
+  // `.ion-page` at `currentBreakpoint * 100%`, so the content overflows INSIDE
+  // the visible band and `ion-content` scrolls there.
+  //
+  // Asserted here rather than only in the browser because it is a property of
+  // the shared component every phone sheet in the console inherits, and the
+  // browser suite that proves it (`web/ops2-projects.spec.ts`, "on a short
+  // phone…") needs a viewport the node suites cannot open.
+  const panel = read("src/ops2/chrome/SidePanel.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.match(panel, /expandToScroll=\{/,
+    "the sheet form must set expandToScroll — Ionic's default translates a full-height content box out of reach");
+  const prop = panel.match(/expandToScroll=\{([^}]*)\}/)[1];
+  assert.match(prop, /\bfalse\b/, "and it must be false for the sheet, which is what makes the content scroll below the max breakpoint");
+  assert.match(prop, /\bsheet\b/,
+    "scoped to the sheet form: the side and screen forms are already full height and pass no breakpoints at all");
+});

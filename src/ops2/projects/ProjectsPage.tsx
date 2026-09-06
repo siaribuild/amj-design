@@ -83,23 +83,20 @@ export function ProjectsPage() {
   // resets to `EMPTY_QUERY` rather than leaving the current query alone — the
   // raw value reaches no DOM sink and is validated into `null` before it does
   // anything.
-  // WHICH ARRIVAL OWNS THE PREFILTER ON SCREEN — an identity, not a flag.
+  // IS AN ARRIVAL STANDING ON SCREEN RIGHT NOW? That is the whole question, so
+  // it is a plain boolean.
   //
-  // A boolean cleared by the next `ionViewWillEnter` was the first attempt (F2)
-  // and it produced F4: on a fast hop the arrival's own enter event never fires
-  // at all, so the flag was still set when the reader came back, the reset
-  // consumed it as though THAT were the arrival, and the prefilter stayed on for
-  // good — the queue opening narrowed on plain rail navigation, which is
-  // exactly what P5/criterion 11 forbids.
-  //
-  // `arrivalRef` is three-valued rather than a plain boolean, because the same
-  // "no `attn` in the URL right now" fact means two different things depending
-  // on how we got there: freshly stripped by the effect below (skip the reset,
-  // it just ran) versus stripped a visit ago and the reader has since left and
-  // come back (do the reset). `null` = no arrival to protect; `true` = arrival
-  // applied, still standing on this route; `false` = it was `true` and the
-  // route was left since — the reset below consumes exactly that transition.
-  const arrivalRef = useRef<boolean | null>(null);
+  // It was three-valued for a while, and the third value only existed to carry
+  // an unfinished reset across a navigation: leaving flipped `true` to `false`
+  // and the RETURN did the clearing. That deferral is the defect the shape
+  // invited — see the reset below. A flag cleared by the next
+  // `ionViewWillEnter` was the earlier attempt (F2) and produced F4: on a fast
+  // hop the arrival's own enter event never fires at all, so the flag was still
+  // set on the way back, the reset consumed it as though THAT were the arrival,
+  // and the prefilter stayed on for good — the queue opening narrowed on plain
+  // rail navigation, which is what P5/criterion 11 forbids. The fix for that
+  // was never the ref's arity; it was hanging the reset off the router.
+  const arrivalRef = useRef(false);
 
   useEffect(() => {
     if (location.pathname !== PROJECTS.path) return;
@@ -109,7 +106,7 @@ export function ProjectsPage() {
     history.replace(PROJECTS.path);
     // A bogus key already left `EMPTY_QUERY` behind, so there is nothing later
     // for the reset to protect or undo — only a real arrival needs the flag.
-    arrivalRef.current = key ? true : null;
+    arrivalRef.current = !!key;
   }, [location.pathname, location.search]);
 
   // THE RESET LIVES ON THE LOCATION, NOT ON IONIC'S LIFECYCLE.
@@ -124,27 +121,29 @@ export function ProjectsPage() {
   // behaved the same: neither ever ran.
   //
   // A location change always happens, because it IS the navigation. So the
-  // reset hangs off the router, and asks `arrivalRef` the question the
-  // lifecycle could not answer: has the reader left this route since the
-  // arrival applied?
+  // reset hangs off the router, which sees the departure the lifecycle never
+  // reported.
   //
-  // LEAVING THE ROUTE ENDS THE ARRIVAL. Opening a record and coming back is a
-  // POP to the very entry that applied the filter, so an identity test on the
-  // entry alone would keep a prefilter the reader has visibly navigated away
-  // from — leaving flips `true` to `false` here rather than waiting to be
-  // asked, and the return trip below turns that `false` into the reset.
+  // LEAVING THE ROUTE ENDS THE ARRIVAL — ON DEPARTURE, WHICH IS THE ONLY MOMENT
+  // THAT MEANS ANYTHING. Opening a record and coming back is a POP to the very
+  // entry that applied the filter, so an identity test on the entry alone would
+  // keep a prefilter the reader has visibly navigated away from.
+  //
+  // The clearing happens HERE, in the off-route branch, and not one navigation
+  // later. `IonRouterOutlet` keeps this page mounted behind the record, so a
+  // reset deferred to the return leaves the queue holding a query nobody asked
+  // for the whole time it is hidden — and paints it for a frame on the way back,
+  // before an effect that runs after paint can clear it.
+  //
+  // There is nothing to do on the way IN. `?attn=` is handled by the effect
+  // above, and a route with no arrival standing has nothing to undo — which is
+  // why this watches `pathname` alone.
   useEffect(() => {
-    if (location.pathname !== PROJECTS.path) {
-      if (arrivalRef.current === true) arrivalRef.current = false;
-      return;
-    }
-    if (new URLSearchParams(location.search).has("attn")) return;
-    if (arrivalRef.current === true) return; // just stripped by the effect above
-    if (arrivalRef.current === false) {
-      arrivalRef.current = null;
-      setQuery(EMPTY_QUERY);
-    }
-  }, [location.pathname, location.search, location.key]);
+    if (location.pathname === PROJECTS.path) return;
+    if (!arrivalRef.current) return;
+    arrivalRef.current = false;
+    setQuery(EMPTY_QUERY);
+  }, [location.pathname]);
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array

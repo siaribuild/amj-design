@@ -182,6 +182,41 @@ test("rail navigation and back from a record both reset the attention prefilter"
   await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
 });
 
+test("leaving the queue ends the arrival on departure, not on the way back", async ({ page }) => {
+  // Design §3.3's seam is LEAVING ENDS THE ARRIVAL. The three-state ref only
+  // flipped `true → false` when the route was left and did the reset on the
+  // RETURN, so the page held the prefiltered query for the whole time it was
+  // hidden and painted it once on the way back, before the effect cleared it.
+  //
+  // Asserted where that difference is readable: `IonRouterOutlet` keeps this
+  // page MOUNTED behind a record, so its own strip and rows can be counted
+  // while the record is the screen — the same mounted-but-hidden fact the
+  // sibling-route test above relies on.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_att1", ref: "OF-Q-90", title: "A submission", statusCustomer: "submitted" }),
+      fixtureRow({ id: "p_att2", ref: "OF-Q-91", title: "Not a submission" }),
+    ] },
+  }));
+
+  await page.goto(`${PROJECTS}?attn=submissions`);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("New submissions");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+
+  await page.getByTestId("queue-row").filter({ hasText: "A submission" }).click();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_att1$/);
+  // The record is on screen and the arrival is ALREADY over behind it.
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+
+  // And the return needs no protocol of its own: nothing is left to undo.
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+});
+
 test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs us", async ({ page }) => {
   // Design §3.3, contract points 1 and 4. `readyToIssue` reads the server's
   // own `issuable` verdict — one row true, one false — so the narrowing is
@@ -629,6 +664,39 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
   await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("queue-row")).toHaveCount(1);
+});
+
+test("on a short phone the panel's last refinement and its Clear are both reachable", async ({ page }) => {
+  // 375×667 — an iPhone SE, and the shortest phone this console is used on.
+  // 05-polish.md recorded the failure and did not fix it: the half-height sheet
+  // shows five of the six controls, clips `In production`, and parks `Clear all
+  // filters` at y≈704, below the window. Ionic renders the phone form as a
+  // full-height wrapper translated down, so nothing overflows and the content
+  // does not scroll, and `breakpoints={[0, 0.5]}` leaves no higher stop to drag
+  // to. Three refinements fitted in half a phone; six do not — which is exactly
+  // how the build's own 390×844 tests missed it.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_prod", ref: "OF-Q-1", title: "Underway", waitingOn: "Nobody", phase: "Production" }),
+    ] },
+  }));
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto(PROJECTS);
+  await page.getByTestId("queue-funnel").click();
+  const sheet = page.getByTestId("queue-filter-sheet");
+  await expect(sheet.getByText("Filters", { exact: true })).toBeVisible();
+
+  // CLICKED, not merely asserted visible: `toBeVisible()` passes for a control
+  // parked below the window — it asks for a box, not for a box anyone can
+  // reach. A real click is what fails when nothing can bring it into view.
+  const last = page.getByTestId("queue-refinement").last();
+  await expect(last).toHaveAttribute("data-refinement", "production");
+  await last.click({ timeout: 5000 });
+  await expect(page.getByTestId("queue-funnel-count")).toHaveText("1");
+
+  // And the footer's own control, enabled only because that tick landed.
+  await sheet.getByRole("button", { name: "Clear all filters" }).click({ timeout: 5000 });
+  await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
 });
 
 test("ticking, composing and unticking refinements never asks the network again (criteria 5, 6, 7, 20)", async ({ page }) => {

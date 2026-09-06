@@ -554,3 +554,32 @@ test("every arrival's card count equals the panel's own count for the mapped ref
     assert.equal(cardCount, panelCount, `${arrival.key}: card and panel must never disagree`);
   }
 });
+
+test("ProjectsPage: leaving the queue ends the arrival there and then, with no return-time protocol (review finding 2)", () => {
+  // REVIEW FINDING 2 (P1, 07-review-architecture.md). Design §3.3's seam is
+  // LEAVING ENDS THE ARRIVAL. The shipped ref was three-valued and only flipped
+  // `true -> false` on departure, deferring the actual `setQuery(EMPTY_QUERY)`
+  // to the RETURN — so the page held the prefiltered query for the whole time
+  // it was hidden behind a record, and painted it once on the way back before
+  // the effect cleared it after paint.
+  //
+  // `IonRouterOutlet` keeps this page mounted, so that stale query is
+  // observable while the record is on screen — which is what the browser test
+  // ("leaving the queue ends the arrival on departure, not on the way back")
+  // asserts. Held here too because the mechanism is the ref's shape, and a
+  // three-valued ref is exactly what would grow back.
+  const code = read("src/ops2/projects/ProjectsPage.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  const at = code.indexOf("arrivalRef.current = false");
+  assert.ok(at > 0, "departure must still clear the flag it set");
+  const branch = code.slice(at - 300, at + 300);
+  assert.match(branch, /setQuery\(EMPTY_QUERY\)/,
+    "and clear the QUERY in the same breath — a hidden page must not keep the prefilter");
+
+  assert.ok(!/arrivalRef\.current === false/.test(code),
+    "no return-time protocol: nothing may be left for the return trip to consume");
+  assert.ok(!/boolean \| null/.test(code),
+    "the ref is a plain boolean again — 'is an arrival standing?' is the only question left");
+});
