@@ -34,7 +34,8 @@ import { PostPage } from "../pages/PostPage";
 import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getPostBySlug } from "../data/catalogue";
 import { parseScheduleText } from "../data/scheduleParse";
-import { matchSchedule } from "../data/scheduleMatch";
+import { matchSchedule, resolveScheduleType } from "../data/scheduleMatch";
+import { Elevation } from "../components/quote-project/Elevation";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
@@ -563,35 +564,176 @@ D N° HEIGHT WIDTH GLAZING D. GLAZE REQ. MATERIAL DOOR TYPE COMMENTS
 1 2100 2400 CLEAR YES ALUMINIUM STACKER SLIDING
 2 2100 3500 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
 
-/** The source schedule, parsed into the columns worth SHOWING.
+/* The DOCUMENT'S OWN DIALECT. A drafting sheet speaks a neutral technical sans
+ * in near-black ink; the site's own faces and sage are the other voice in this
+ * section, and the contrast between them is the point. Local constants rather
+ * than theme tokens because this section is the only surface that draws a
+ * document — if a second one ever appears, they graduate to theme.css. */
+const DRAFT_INK = "#1a1a19";
+const SAGE_DEEP = "#3f5a4c";  /* --sage-deep */
+const DRAFT_FONT = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
+
+/** What to CALL an opening on the home demo.
  *
- *  The panel used to render the raw text in a <pre>, which is what the parser
- *  reads but not what a visitor needs to see: HEAD HT., GLAZING and D.GLAZE REQ.
- *  are noise here, and the raw form gives no column alignment on a narrow screen.
- *  This keeps the four columns the claim is about — the item tag, its size, and
- *  what it is — and lays them out as a table.
+ *  The matcher leaves productSlug empty whenever the family has nothing
+ *  offerable — casement windows are in that state today — and the old fallback
+ *  printed the schedule's own shouting caps ("CASEMENT") straight onto the
+ *  marketing page. The read is still correct, so say what was read in the
+ *  catalogue's words: the family name, then the raw type in sentence case, and
+ *  only then a neutral noun. Nothing here invents a product.
+ */
+function openingName(l: { productSlug: string; rawType?: string; code: string }): string {
+  const product = getProductBySlug(l.productSlug);
+  if (product) return product.name;
+  const { familySlug } = resolveScheduleType(l.code.startsWith("D") ? "door" : "window", l.rawType ?? null);
+  const family = familySlug ? getFamily(familySlug) : null;
+  if (family) return family.name;
+  const raw = (l.rawType ?? "").trim();
+  return raw ? raw.charAt(0) + raw.slice(1).toLowerCase() : "Opening";
+}
+
+/** Thousands separators, the way the console prints a dimension. An unreadable
+ *  size stays as it came rather than being dressed up as a number. */
+function fmtMm(v: string): string {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n.toLocaleString("en-AU") : v || "—";
+}
+
+/* ─── THE PLAN FRAGMENT ───────────────────────────────────────────────────────
+ * A cropped corner of a ground-floor plan, drawn in the sheet's own dialect:
+ * black linework on white, dimension chains with witness ticks, poché walls,
+ * room names in tracked caps, a swing arc — and an opening id beside each
+ * opening, with a leader to it.
  *
- *  Deliberately NOT reusing parseScheduleText: this is presentation of the source
- *  document, and it must show what is PRINTED (height before width, as on the
- *  sheet) rather than the normalised result, which is the other panel's job. */
-function sampleScheduleRows(): { section: string; rows: { code: string; h: string; w: string; type: string }[] }[] {
-  const out: { section: string; rows: { code: string; h: string; w: string; type: string }[] }[] = [];
-  let current: (typeof out)[number] | null = null;
-  for (const line of SAMPLE_SCHEDULE.split("\n")) {
-    if (/SCHEDULE$/.test(line)) { current = { section: line, rows: [] }; out.push(current); continue; }
-    if (/^[WD] N°/.test(line) || !current) continue;
-    const parts = line.trim().split(/\s+/);
-    const isDoor = current.section.startsWith("EXTERNAL");
-    // Windows print: n° height width headHt glazing dglaze TYPE…
-    // Doors print:   n° height width glazing dglaze material TYPE…
-    const typeFrom = isDoor ? 6 : 6;
-    out[out.length - 1].rows.push({
-      code: `${isDoor ? "D" : "W"}${parts[0].padStart(2, "0")}`,
-      h: parts[1], w: parts[2],
-      type: parts.slice(typeFrom).join(" "),
-    });
-  }
-  return out;
+ * The ids are PLAIN (owner). They used to be the drafting split-tag circle —
+ * number over sheet code — and the circle was decoration around the only part
+ * doing work. Nothing here animates, for the same reason: an id is read, not
+ * watched.
+ *
+ * ONE DRAWING, TWO CROPS. Same coordinate space at both widths; only the
+ * viewBox window changes, so an element outside it is absent rather than
+ * shrunk, and the plan is never panned sideways. The mobile window is chosen
+ * BY THE ROW LIST: every row shown on a phone has its tag inside the crop, or
+ * a row would tap to nothing — which would break the one claim this section
+ * makes. Tags outside it leave the tab order with it.
+ */
+const PLAN_CROP_DESKTOP = "185 10 495 400";
+const PLAN_CROP_MOBILE = "185 28 325 380";
+
+/** Where each opening sits, in schedule order. `mobile` says the tag survives
+ *  the phone crop — which is what decides whether its row is shown there. */
+const PLAN_TAGS: { x: number; y: number; leader: string; mobile: boolean }[] = [
+  { x: 236, y: 82, leader: "M236 74 L236 48", mobile: true },
+  { x: 435, y: 82, leader: "M435 74 L435 48", mobile: true },
+  { x: 597, y: 140, leader: "M613 140 L637 140", mobile: false },
+  { x: 335, y: 368, leader: "M335 380 L335 398", mobile: true },
+  { x: 531, y: 368, leader: "M531 380 L531 396", mobile: false },
+];
+
+function PlanFragment({ codes, lit, onLit }: {
+  codes: string[];
+  lit: string | null;
+  onLit: (code: string | null) => void;
+}) {
+  const draw = (viewBox: string, mobileOnly: boolean) => (
+    <svg viewBox={viewBox} role="group"
+      aria-label="Cropped corner of the ground floor plan, with each opening tagged"
+      className={`block w-full h-auto ${mobileOnly ? "lg:hidden" : "hidden lg:block"}`}>
+      <g stroke={DRAFT_INK} fill="none">
+        {/* dimension chain, top */}
+        <g strokeWidth=".7" stroke="rgba(0,0,0,.55)">
+          <line x1="44" y1="22" x2="640" y2="22" />
+          {[44, 120, 172, 210, 262, 380, 490, 640].map((x) => (
+            <line key={x} x1={x} y1="16" x2={x} y2="34" />
+          ))}
+        </g>
+        <g fontSize="8" fill="#333" stroke="none" style={{ fontFamily: DRAFT_FONT }} textAnchor="middle">
+          <text x="82" y="18">760</text><text x="146" y="18">850</text><text x="191" y="18">380</text>
+          <text x="236" y="18">850</text><text x="321" y="18">1180</text>
+          <text x="435" y="18">1810</text><text x="565" y="18">1500</text>
+        </g>
+        {/* dimension chain, left */}
+        <g strokeWidth=".7" stroke="rgba(0,0,0,.55)">
+          <line x1="22" y1="44" x2="22" y2="400" />
+          <line x1="16" y1="44" x2="34" y2="44" /><line x1="16" y1="244" x2="34" y2="244" />
+          <line x1="16" y1="400" x2="34" y2="400" />
+        </g>
+        {/* external walls, poché */}
+        <g strokeWidth="6">
+          <line x1="41" y1="44" x2="120" y2="44" /><line x1="172" y1="44" x2="210" y2="44" />
+          <line x1="262" y1="44" x2="380" y2="44" /><line x1="490" y1="44" x2="643" y2="44" />
+          <line x1="640" y1="41" x2="640" y2="70" /><line x1="640" y1="210" x2="640" y2="403" />
+          <line x1="44" y1="41" x2="44" y2="403" />
+          <line x1="41" y1="400" x2="240" y2="400" /><line x1="430" y1="400" x2="443" y2="400" />
+          <line x1="620" y1="400" x2="643" y2="400" />
+        </g>
+        {/* window openings: the triple line a plan draws across a gap */}
+        <g strokeWidth="1">
+          <line x1="120" y1="41" x2="172" y2="41" /><line x1="120" y1="44" x2="172" y2="44" /><line x1="120" y1="47" x2="172" y2="47" />
+          <line x1="210" y1="41" x2="262" y2="41" /><line x1="210" y1="44" x2="262" y2="44" /><line x1="210" y1="47" x2="262" y2="47" />
+          <line x1="380" y1="41" x2="490" y2="41" /><line x1="380" y1="44" x2="490" y2="44" /><line x1="380" y1="47" x2="490" y2="47" />
+          <line x1="637" y1="70" x2="637" y2="210" /><line x1="640" y1="70" x2="640" y2="210" /><line x1="643" y1="70" x2="643" y2="210" />
+          <line x1="240" y1="400" x2="430" y2="400" /><line x1="240" y1="403" x2="430" y2="403" />
+        </g>
+        {/* the stacker's offset leaves */}
+        <g strokeWidth="1.6">
+          <line x1="443" y1="397" x2="563" y2="397" /><line x1="500" y1="403" x2="620" y2="403" />
+        </g>
+        {/* internal walls */}
+        <g strokeWidth="3.5">
+          <line x1="44" y1="244" x2="300" y2="244" /><line x1="345" y1="244" x2="640" y2="244" />
+          <line x1="380" y1="244" x2="380" y2="332" /><line x1="180" y1="244" x2="180" y2="400" />
+        </g>
+        {/* door swing */}
+        <g strokeWidth=".9">
+          <line x1="300" y1="244" x2="300" y2="288" />
+          <path d="M300 288 A44 44 0 0 1 344 244" strokeDasharray="3 3" />
+        </g>
+        <g style={{ fontFamily: DRAFT_FONT }} stroke="none" fill="#333">
+          <text x="252" y="278" fontSize="7.5">1200 x 900</text>
+          <text x="252" y="287" fontSize="7.5">CIRCULATION SPACE</text>
+          <text x="52" y="394" fontSize="7">DP</text>
+          <text x="628" y="60" fontSize="7" textAnchor="end">DP</text>
+          <text x="600" y="394" fontSize="7" textAnchor="end">SS</text>
+        </g>
+        <rect x="46" y="384" width="6" height="6" strokeWidth=".8" />
+        <rect x="630" y="48" width="6" height="6" strokeWidth=".8" />
+      </g>
+      {/* room names */}
+      <g style={{ fontFamily: DRAFT_FONT }} fontSize="10.5" letterSpacing="2" fill="#3a3a38">
+        <text x="200" y="150">FAMILY</text>
+        <text x="452" y="150">MEALS</text>
+        <text x="235" y="330">KITCHEN</text>
+        <text x="440" y="330">OUTDOOR</text><text x="440" y="344">LIVING</text>
+      </g>
+      {/* THE IDS — theirs, and ours to light */}
+      {codes.map((code, i) => {
+        const t = PLAN_TAGS[i];
+        if (!t || (mobileOnly && !t.mobile)) return null;
+        const isLit = lit === code;
+        return (
+          <g key={code} className="cursor-pointer focus:outline-none"
+            role="button" tabIndex={0} aria-label={`${code} — show the matched line`}
+            onMouseEnter={() => onLit(code)} onMouseLeave={() => onLit(null)}
+            onFocus={() => onLit(code)} onBlur={() => onLit(null)}
+            onClick={() => onLit(code)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onLit(code); } }}>
+            {/* the hit target, sized to clear 44px at the rendered scale */}
+            <circle cx={t.x} cy={t.y} r="26" fill="transparent" stroke="transparent" />
+            <path d={t.leader} stroke={DRAFT_INK} strokeWidth=".7" fill="none" />
+            <text x={t.x} y={t.y + 4} textAnchor="middle" fontSize="13" fontWeight="700"
+              style={{ fontFamily: DRAFT_FONT }}
+              fill={isLit ? SAGE_DEEP : DRAFT_INK}>{code}</text>
+            {isLit && (
+              <line x1={t.x - 17} y1={t.y + 9} x2={t.x + 17} y2={t.y + 9}
+                stroke={SAGE} strokeWidth="1.5" />
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+  return <>{draw(PLAN_CROP_DESKTOP, false)}{draw(PLAN_CROP_MOBILE, true)}</>;
 }
 
 /** The two filled/hollow cells used across the site for the 0 / 50 / 100 arc.
@@ -621,27 +763,14 @@ function HomePage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: str
       return { lines: [] as ReturnType<typeof matchSchedule>, ready: 0 };
     }
   }, []);
-  const flagged = sample.lines.length - sample.ready;
-
-  const scheduleSections = sampleScheduleRows();
 
   const heroImg = imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 });
 
-  // Reveal the matched rows once, on first scroll into view. This is the entire
-  // motion budget below the hero, spent on the one thing worth watching.
-  const resultRef = useRef<HTMLDivElement | null>(null);
-  const [revealed, setRevealed] = useState(false);
-  useEffect(() => {
-    const el = resultRef.current;
-    if (!el || revealed) return;
-    if (typeof IntersectionObserver === "undefined"
-      || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setRevealed(true); return; }
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) { setRevealed(true); io.disconnect(); }
-    }, { threshold: 0.15 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [revealed]);
+  // WHICH OPENING IS LIT, shared by the plan and the list: the tag and its
+  // line are the same fact, so one piece of state owns both. Null is the
+  // resting state — the section says everything it has to say unlit.
+  const [lit, setLit] = useState<string | null>(null);
+  const planCodes = sample.lines.map((l) => l.code);
 
   const systems: { title: string; desc: string; chips: string[]; more: boolean; cta: string; img: string; alt: string }[] = [
     {
@@ -856,136 +985,103 @@ function HomePage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: str
       </section>
 
       {/* ─── THE MINUTE ──────────────────────────────────────────────────────
-          The evidence for the headline, and the section the mock does not have —
-          which is why the mock's page reads as a list of assurances rather than a
-          demonstration. The rows below are produced by the SAME parser and
-          matcher the product runs; nothing here is drawn by hand.
-          No dollar figures anywhere: rate cards are commercial D1 data, so a
-          price on this page would be either invented or published margin. */}
-      <section className="relative ground-paper border-t border-black/8 section-pad">
+          THE TAG IS THE LINE. A builder's finger already jumps from an opening
+          tag on a plan to its row on the schedule; this section shows that same
+          mark twice — printed in the plan's own ink, and redrawn beside the
+          product it came back as — and lets the visitor light either side.
+
+          The rows are still produced by the SAME parser and matcher the product
+          runs (parseScheduleText → matchSchedule), so the demo cannot drift from
+          what the product actually does. Only the presentation changed.
+
+          Owner rulings this section is built on, all of them corrections:
+           • The document is a DRAWING, dark ink on white, in its own neutral
+             drafting sans. The dark bg-ink schedule panel that used to sit here
+             was a web rendition of a document and read as nothing a builder has
+             ever been handed.
+           • The plan is a CROPPED CORNER, never the whole plate: the crop keeps
+             context readable and draws every element large enough to hit.
+           • Rows carry VALUE, not process. No "✓ ready", no "· to confirm", no
+             sentences — the opening, its drawing, the product, the size.
+           • It is marketing material caught at a glance, not read: one support
+             line, and no timing claim (the "< 1 min" figure that used to sit
+             here could not be kept, and a missed promise is worse than none).
+           • Nothing animates. The ids are the one thing that must read at once.
+          No dollar figures anywhere: rate cards are commercial D1 data. */}
+      <section className="relative ground-paper border-t border-line section-pad">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The minute</SLabel>
-          <div className="split-row mb-8">
-            <div className="split-prose">
-              <h2 className="text-ink mb-2.5 t-ds2">
-                It's already drawn. Stop typing it out twice.
-              </h2>
-              <p className="text-body leading-relaxed t-bd">
-                Item numbers, sizes, glazing, door material — your draftsperson already drew it.
-                Upload the PDF and every row comes back matched to a system. Nothing retyped, nothing
-                re-measured, nothing lost between the plans and the price.
-              </p>
-            </div>
-            {/* The page's missing large numeral. "Under a minute" is the wording
-                the quote page already uses; do not out-claim the product with a
-                precise figure nobody measured. */}
-            <div className="lg:text-right lg:flex-shrink-0">
-              <div className="figure">
-                &lt; 1 min
-              </div>
-              <div className="text-quiet mt-1.5 t-cap">from upload to a matched list</div>
-            </div>
+          <div className="split-prose mb-8">
+            <h2 className="text-ink mb-2.5 t-ds2">
+              The tag on your plan is the line on your list.
+            </h2>
+            <p className="text-body leading-relaxed t-bd">
+              The mark your draftsperson drew, matched and sized — without retyping a thing.
+            </p>
           </div>
 
-          {/* Hairline-collapsed pair: the source document, then what came back. */}
-          <div className="grid grid-cols-1 lg:grid-cols-2">
-            {/* The source document — the schedule text itself, not a photograph
-                of one. It is the literal input to the parser running beside it,
-                which is the strongest possible version of this panel and needs no
-                stock imagery standing in for the real thing. */}
-            <div className="relative border border-black/10 bg-ink flex flex-col min-h-[300px]">
-              <div className="px-4 py-2.5 border-b border-white/12 flex items-center justify-between">
-                <span className="text-white/50 font-data t-label">From your plans</span>
-                {/* No invented sheet number: the honest label is what it is. */}
-                <span className="text-white/35 font-data t-data-sm">window &amp; door schedule</span>
+          {/* The pair is ONE object: card-set carries the corner and the lift,
+              its cells stay flat and keep only their hairlines. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[58fr_42fr] card-set">
+            {/* THEIR DOCUMENT. Paper, because a card is paper and a plan is ink
+                on white — the drawing needs no panel of its own to sit in. */}
+            <div className="card flex flex-col min-h-[300px]">
+              <div className="panel-head px-4 py-2.5">
+                <span className="text-quiet font-data t-label">Floor plan</span>
               </div>
-              {/* Laid out as the columns it is, not as a wall of digits. Only the
-                  four that matter to the claim — the item tag, its printed size,
-                  and what it is. HEAD HT., GLAZING and D.GLAZE REQ. are on the
-                  real sheet and are noise here. */}
-              <div className="flex-1 px-4 py-3.5">
-                <table className="w-full font-data t-data-sm">
-                  <thead>
-                    <tr className="text-sage-light">
-                      <th className="text-left font-normal pb-1">N°</th>
-                      <th className="text-right font-normal pb-1">HEIGHT</th>
-                      <th className="text-right font-normal pb-1">WIDTH</th>
-                      <th className="text-left font-normal pb-1 pl-4">TYPE</th>
-                    </tr>
-                  </thead>
-                  {scheduleSections.map((sec) => (
-                    <tbody key={sec.section}>
-                      <tr><td colSpan={4} className="text-sage-light/70 pt-2.5 pb-0.5 tracking-[0.1em] t-cap">{sec.section}</td></tr>
-                      {sec.rows.map((r) => (
-                        <tr key={r.code} className="text-white/70">
-                          <td className="text-left">{r.code}</td>
-                          <td className="text-right">{r.h}</td>
-                          <td className="text-right">{r.w}</td>
-                          <td className="text-left pl-4 text-white/55">{r.type}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  ))}
-                </table>
+              <div className="flex-1 p-2.5">
+                <PlanFragment codes={planCodes} lit={lit} onLit={setLit} />
               </div>
-              {/* The footnote that was here — "height is printed before width,
-                  exactly as your draftsperson drew it" — is gone. The table's own
-                  HEIGHT and WIDTH column headers already say it, so it was a
-                  caption restating a label, and it spent the closing line of the
-                  source panel on a convention rather than on the point.
-                  The panel now ends where the document ends, which is right: it
-                  is a facsimile of the visitor's own schedule, and a real one has
-                  no footer. */}
             </div>
 
-            {/* This panel was bg-white on a paper section — invisible, with an
-                unfilled header on top of it, so three boundaries in a row read as
-                nothing. It is a card now (bone on paper), which also gives the
-                pair its shape: a dark source document beside a light result. */}
-            <div ref={resultRef} className="card lg:-ml-px -mt-px lg:mt-0 flex flex-col">
-              <div className="panel-head px-4 py-2.5 flex items-center justify-between">
-                <span className="text-quiet font-data t-label">What came back</span>
-                <span className="text-quiet font-data t-data-sm">{sample.lines.length} lines</span>
+            {/* WHAT CAME BACK. The console's own columns, so the list a visitor
+                sees here is the list staff see there. */}
+            <div className="card lg:-ml-px -mt-px lg:mt-0 flex flex-col">
+              <div className="panel-head px-4 py-2.5 grid grid-cols-[64px_minmax(0,1fr)] lg:grid-cols-[64px_minmax(0,1fr)_auto] gap-3">
+                <span className="text-quiet font-data t-label">Opening</span>
+                <span className="text-quiet font-data t-label">Product</span>
+                <span className="text-quiet font-data t-label text-right hidden lg:block">Size</span>
               </div>
-              <div className="divide-y divide-black/8 flex-1">
+              <div className="flex-1 flex flex-col">
                 {sample.lines.map((l, i) => {
-                  const product = getProductBySlug(l.productSlug);
+                  const name = openingName(l);
+                  const tag = PLAN_TAGS[i];
+                  const isLit = lit != null && lit === l.code;
                   return (
-                    <div key={l.code}
-                      className="px-4 py-2.5 flex items-baseline gap-3 transition-all duration-200"
-                      style={{
-                        opacity: revealed ? 1 : 0,
-                        transform: revealed ? "translateY(0)" : "translateY(6px)",
-                        transitionDelay: `${i * 55}ms`,
-                      }}>
-                      <span className="text-sage w-9 flex-shrink-0 font-data t-data-sm">{l.code}</span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-ink truncate font-display t-bd-sm">
-                          {product?.name ?? l.rawType ?? "Needs a product"}
-                        </span>
-                        <span className="block text-quiet font-data t-data-sm">
-                          {l.height} × {l.width}
-                        </span>
+                    <button key={l.code} type="button"
+                      onMouseEnter={() => setLit(l.code)} onMouseLeave={() => setLit(null)}
+                      onFocus={() => setLit(l.code)} onBlur={() => setLit(null)}
+                      onClick={() => setLit(l.code)}
+                      aria-label={`${l.code} — ${name}, show it on the plan`}
+                      className={`grid grid-cols-[30px_22px_minmax(0,1fr)] lg:grid-cols-[30px_22px_minmax(0,1fr)_auto]
+                        items-center gap-x-3 gap-y-px w-full text-left px-4 py-3 border-t border-line first:border-t-0
+                        flex-1 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2
+                        focus-visible:ring-sage focus-visible:ring-offset-0 ${isLit ? "bg-sage-wash" : "bg-paper hover:bg-sage-wash"}
+                        ${tag && !tag.mobile ? "hidden lg:grid" : ""}`}>
+                      {/* The opening id, plain — the console prints it plain, and
+                          the circle it used to wear was decoration around it. */}
+                      <span className={`font-data t-data-sm font-semibold ${isLit ? "text-sage-deep" : "text-ink"}`}>
+                        {l.code}
                       </span>
-                      {/* Never colour alone: the word carries the state. amber-800
-                          is the review colour the quote page already uses. */}
-                      <span className={`flex-shrink-0 ${l.status === "Ready" ? "text-sage" : "text-amber-800"} font-data t-data-sm`}>
-                        {l.status === "Ready" ? "✓ ready" : "· to confirm"}
+                      {/* The opening drawn to its own arrangement, by the ONE
+                          shared generator every other surface uses (ADR 0010).
+                          `square` is that component's own answer to a scan-down
+                          list: uniform column, arrangement still derived from the
+                          real width. `fluid` lets this 22px box size it. */}
+                      <span className="block w-[22px]">
+                        <Elevation productSlug={l.productSlug} widthMm={l.width} heightMm={l.height}
+                          size="xs" square fluid opening={!l.productSlug} />
                       </span>
-                    </div>
+                      <span className="min-w-0 text-ink truncate font-display t-bd-sm">
+                        {openingName(l)}
+                        {l.location && <span className="text-quiet"> · {l.location}</span>}
+                      </span>
+                      <span className="text-body font-data t-data-sm lg:text-right whitespace-nowrap col-start-3 lg:col-start-4">
+                        {fmtMm(l.height)} × {fmtMm(l.width)} mm
+                      </span>
+                    </button>
                   );
                 })}
-              </div>
-              {/* The OUTCOME band — the one place sage belongs on this panel.
-                  Was an inline rgba(90,122,106,0.07), i.e. alpha over an assumed
-                  white ground; over the panel's new bone it composites to about
-                  #E6E5DF, which is grey with the hue gone. Opaque token instead. */}
-              <div className="panel-result px-4 py-3 text-ink-soft t-cap">
-                {/* Leads with what the machine did, then what it hands over. The
-                    flags are the point, not an apology: it says which lines need a
-                    decision instead of guessing and quoting the wrong frame. */}
-                {sample.lines.length} of {sample.lines.length} lines read and matched
-                {flagged > 0 && <> · {flagged} flagged for a technician to confirm</>}
               </div>
             </div>
           </div>
