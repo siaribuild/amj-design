@@ -1329,3 +1329,44 @@ test("fetchMoneyNumbers: a failed call logs its HTTP status, not just the path",
   assert.doesNotMatch(logged, /api\.cloudflare\.com/);
   assert.doesNotMatch(logged, /acct1/);
 });
+
+test("fetchMoneyNumbers: the usage window is aligned, because the endpoint proxies Stripe", async () => {
+  // Cloudflare's usage-history is a thin proxy for Stripe's billing meter event
+  // summaries API — same parameter names, same day|hour enum, same
+  // {id, aggregated_value, start_time, end_time} response. Stripe requires the
+  // bounds to align: minute boundaries always, and hour boundaries for hourly
+  // granularity. Raw Date.now() instants align with nothing, and production
+  // answered HTTP 500 to every request for a week's worth of ticks — a status
+  // Cloudflare's own OpenAPI spec does not even declare.
+  let usageUrl = "";
+  const fetchImpl = async (url) => {
+    if (url.includes("/billing/credit-balance")) return { ok: true, json: async () => ({ result: { balance: 5000 } }) };
+    if (url.includes("/billing/usage-history")) {
+      usageUrl = url;
+      return { ok: true, json: async () => ({ result: { history: [{ aggregated_value: 250 }] } }) };
+    }
+    if (url.includes("/ai-gateway/gateways/")) {
+      return {
+        ok: true,
+        json: async () => ({ result: { spend_limits: { enabled: true, rules: [{ limit: 20, limitType: "cost", window: 2592000 }] } } }),
+      };
+    }
+    if (url.endsWith("/ai-gateway/gateways")) {
+      return { ok: true, json: async () => ({ result: [{ id: "gw1" }] }) };
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  await fetchMoneyNumbers(
+    { CF_MONITORING_TOKEN: "tok", CF_ACCOUNT_ID: "acct1", AI_GATEWAY_ID: "gw1" },
+    fetchImpl,
+  );
+  const params = new URL(usageUrl).searchParams;
+  const start = Number(params.get("start_time"));
+  const end = Number(params.get("end_time"));
+  const HOUR = 3600000;
+  assert.equal(params.get("value_grouping_window"), "hour");
+  assert.equal(start % HOUR, 0, "start_time must sit on an hour boundary");
+  assert.equal(end % HOUR, 0, "end_time must sit on an hour boundary");
+  assert.ok(end <= Date.now(), "end_time is never in the future");
+  assert.equal(Math.round((end - start) / (24 * HOUR)), 30, "still the cap's own 30-day window");
+});

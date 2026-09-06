@@ -193,15 +193,28 @@ async function fetchBudget(env: Env, fetchImpl: typeof fetch): Promise<BudgetSna
         return { available: false, reason: "spend_not_attributable" };
       }
     }
-    const end = Date.now();
-    const start = end - cap.windowDays * 24 * 60 * 60 * 1000;
+    // ALIGNED TO THE HOUR, both ends. This endpoint proxies Stripe's billing
+    // meter event summaries API — same parameter names, same day|hour enum,
+    // same {id, aggregated_value, start_time, end_time} response — and Stripe
+    // requires the bounds to align: minute boundaries always, hour boundaries
+    // for hourly granularity. Raw Date.now() instants align with nothing, and
+    // production answered HTTP 500 to every tick for a week, a status
+    // Cloudflare's own OpenAPI spec does not declare.
+    //
+    // Hourly rather than daily: daily alignment would force the window to end
+    // at last UTC midnight, hiding up to a day of spend from a budget gauge.
+    // This gives up only the current partial hour, and never asks for a future
+    // instant.
+    const HOUR_MS = 60 * 60 * 1000;
+    const end = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+    const start = end - cap.windowDays * 24 * HOUR_MS;
     // value_grouping_window is REQUIRED; without it this is a 400 and the money
     // half of the console never works at all. The bounds are the cap's own
     // window - unbounded, this summed the account's entire history against a
     // thirty-day cap, so the percentage only ever climbed.
     const usage = await cfGet(
       env, fetchImpl,
-      `/ai-gateway/billing/usage-history?value_grouping_window=day&start_time=${start}&end_time=${end}`,
+      `/ai-gateway/billing/usage-history?value_grouping_window=hour&start_time=${start}&end_time=${end}`,
     );
     // history[] is a series of windows, so the spend is their sum - there is no
     // single total field. An EMPTY array is a real answer: a window with
