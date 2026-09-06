@@ -17,3 +17,32 @@ over PA–PF (criterion 19).
 Next: t2 (attention.ts) and t3 (ProjectsPage.tsx) still import
 ATTENTION_FILTERS/attentionQuery — typecheck:gate fails until t3, exactly as
 design's sequencing states (gate at t3, not t1/t2). Don't re-run it before then.
+
+## t2 - Point the Attention destination's card counts at ATTENTION_ARRIVALS/arrivalQuery
+Files: src/ops2/attention/attention.ts, scripts/tests/ops2-attention.test.mjs.
+Renamed ATTENTION_FILTERS→ATTENTION_ARRIVALS, attentionQuery→arrivalQuery
+throughout both (import, bundle exports, projectRows loop, comments). No
+other logic touched — 4-key AttentionKey shape and PROJECT_NOUNS untouched.
+Tests (20, all green) assert same substance as before: counts 1/2/1/2, row
+order, PF narrowing, href grammar, statusCustomer payload guard.
+Confirmed red first: esbuild bundle failed with "No matching export ...
+ATTENTION_FILTERS/attentionQuery" until attention.ts's import was fixed.
+Next: t3 (ProjectsPage.tsx) still on old names — typecheck:gate fails until
+then, as designed. Not run here per DONE_WHEN.
+
+## t3 - Rework ProjectsPage arrival/reset, strip and Clear onto the refinements-only model
+Files: src/ops2/projects/ProjectsPage.tsx, src/ops2/styles/projects.css,
+scripts/tests/web/ops2-projects.spec.ts. Replaced the entry-key ref
+(attnEntryRef: string|null, compared history.location.key) with arrivalRef
+(boolean|null): true = arrival applied and route not yet left, false = left
+since, null = nothing to protect — leave-reset effect consumes false→reset.
+Deleted attentionLabel/brand pill (arrival's refinement now shows through the
+ordinary activeRefinements text, no special styling); strip Clear always
+`setQuery(EMPTY_QUERY)`, no more attention-conditional branch. Removed the
+dead `.pq-flag[data-tone="brand"]` CSS rule.
+Spec (22/22 green): refinement count 3→6 and two `nth(2)` refinement clicks
+now addressed by `[data-refinement="production"]` (six entries can reorder,
+an index can't be trusted); mobile funnel test's Clear now asserts "Needs us"
+chip pressed + 1 row. Lines 128-257 (?attn= arrival/reset/bogus/signed-out)
+untouched, still green — confirmed byte-identical against git diff.
+typecheck:gate clean. Next task: none queued after t3 in this task set.
