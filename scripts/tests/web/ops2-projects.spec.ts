@@ -528,11 +528,25 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     await loading;
     await expect(page.getByTestId("queue-row")).toHaveCount(4);
 
+    // READ ONCE THE PROMISE HAS STOPPED MOVING, SAME AS ABOVE. `toHaveCount(4)`
+    // only proves the four rows exist, not that the band above them and the
+    // list below have finished the reflow their arrival triggers — an
+    // unsettled read here is the identical race `during` was guarded against,
+    // moved to the other side of the comparison, and it is real: it once
+    // failed a full-file run at 390px (docs/runs/ops2-attention-filters-in-panel
+    // /06-verify.md, finding 1) and passed in isolation, which is a load-timing
+    // signature, not a layout defect the bounds should be widened for.
+    const after = await settled(async () => ({
+      row: (await page.locator(".pq-controls").boundingBox())!,
+      list: (await page.locator(width >= 1024 ? ".pq-table-wrap" : ".pq-cards").boundingBox())!,
+    }));
+    const rowSettled = after.row;
+    const list = after.list;
+
     // 1. THE BAND DOES NOT CHANGE SHAPE when the data lands. Rendering the real
     //    row only once the queue arrived grew the band by a row at that moment
     //    and shoved the whole list down — the jump the skeleton exists to
     //    prevent, reintroduced one level above it.
-    const rowSettled = (await page.locator(".pq-controls").boundingBox())!;
     expect(Math.abs(rowSettled.y - rowDuring.y), `the control row moves at ${width}px`)
       .toBeLessThanOrEqual(2);
     expect(Math.abs(rowSettled.height - rowDuring.height), `the band changes height at ${width}px`)
@@ -541,8 +555,6 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     // 2. AND THE LIST LANDS WHERE IT WAS PROMISED, both edges. The top alone is
     //    set by the band above it and says nothing about whether the block is
     //    the right size.
-    const list = (await page.locator(width >= 1024 ? ".pq-table-wrap" : ".pq-cards")
-      .boundingBox())!;
     expect(Math.abs(list.y - listDuring.y), `the list starts elsewhere at ${width}px`)
       .toBeLessThanOrEqual(2);
     expect(Math.abs(list.height - listDuring.height), `the list is not the promised height at ${width}px`)

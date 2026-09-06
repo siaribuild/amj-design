@@ -73,8 +73,8 @@ export interface ProjectQueueRow {
   stateLabel: string;
   orderNo: string | null;
   /** The server's own customer-facing status (P2). Empty string when absent —
-   *  matches none of `ATTENTION_FILTERS`' predicates, same under-claiming rule
-   *  as `issuable`. */
+   *  matches none of the `submissions`/`inReview` `REFINEMENTS` predicates,
+   *  same under-claiming rule as `issuable`. */
   statusCustomer: string;
   /** The order's stage, if one exists. `null` — no order yet, or the field
    *  was absent. */
@@ -490,7 +490,7 @@ export function parseProjectQueue(body: unknown): ProjectQueueRow[] {
       stateLabel: str(r.stateLabel) ?? phase,
       orderNo: str(r.orderNo),
       // Absence under-claims — same rule as `issuable`: a row that did not say
-      // where it stands matches none of `ATTENTION_FILTERS`' predicates.
+      // where it stands matches none of `REFINEMENTS`' `statusCustomer` predicates.
       statusCustomer: str(r.statusCustomer) ?? "",
       orderStage: str(r.orderStage),
     }];

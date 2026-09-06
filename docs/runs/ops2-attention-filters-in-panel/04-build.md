@@ -67,3 +67,45 @@ Needs us, "2" under All; ticking it anyway under Needs us → queue-empty names
 under All (mutually exclusive rows) → empty names both labels.
 typecheck:gate clean (64 pre-existing non-fatal, unchanged). Committed 7b964a6d.
 Next: none queued after t4 in this task set.
+
+## Fix — 06-verify Finding 1 (medium): "the skeleton is the shape that actually
+## arrives, at both widths" regressed on a full-file run, passed on baseline
+Investigated before touching anything, per the finding's own instruction not
+to widen the 4px bound blind. Audited every line the failing assertion's two
+sides depend on against `git diff 9567992e4..HEAD`: `QueueSkeleton`'s fixed
+560px/305px height (`ProjectsPage.tsx`), `Row`/`RowList`/`ProjectCards`
+(`rows.tsx`), `rowFlags` and the card CSS (`projects.css` `.pq-card*`) are all
+byte-identical to baseline — the diff touches none of them. `Row` is a plain
+`<li>`/`<button>`/`<a>` by ADR 0014, specifically NOT `IonItem`, so the real
+row list carries no Ionic custom elements to hydrate; only the skeleton's own
+`ion-skeleton-text` does, and that side already gets the `settled()` treatment
+this file's own history (`21d84863e`, "two geometry reads taken before the
+layout stopped moving") added for exactly this race class, "under a parallel
+battery."
+
+Could not reproduce the reported failure: 3 clean full-file reruns (75
+test-executions, redirected to a file per the finding's instruction, never
+piped), one full-file rerun under 24 competing CPU-bound busy-loops, and a
+standalone script reproducing the same route-hold/measure sequence via raw
+Playwright + CDP with `Emulation.setCPUThrottlingRate` up to 20x — all stayed
+within the 4px bound (390px: promised 560, settled real height 558.125,
+diff 1.875px, stable across every throttle level tried).
+
+Given a real, unreproduced-by-me discrepancy was reported with a clean 4-run
+A/B/C/D attribution matrix, and given the one asymmetry the code actually has
+— `during` (the skeleton reading) is read with `settled()`, `rowSettled`/`list`
+(the real, post-load reading) are read once, immediately after
+`toHaveCount(4)` resolves, with no wait for layout to stop moving — I closed
+that asymmetry rather than guess further: both post-load reads now go through
+the same `settled()` helper already defined in this file, unifying the two
+sides of the comparison under the identical discipline. Bounds (2px, 4px)
+untouched; no production code changed — none of it was implicated by the
+diff. Folded in Finding 2 (low) alongside: `queue.ts:76,493`'s two comments
+naming the deleted `ATTENTION_FILTERS` now name `REFINEMENTS` instead.
+
+Verified: `npx playwright test scripts/tests/web/ops2-projects.spec.ts >
+file 2>&1; echo $?` → exit 0, 25/25, three separate clean runs. `npm run
+test:ops2` 143/143. `npm run typecheck:gate` clean (64 pre-existing non-fatal,
+unchanged). `npm test` (typecheck + test:pure + test:heavy) 353/353. Committed
+separately from the polish stage's still-uncommitted CSS/CONTEXT/ADR changes,
+which this fix did not touch.
