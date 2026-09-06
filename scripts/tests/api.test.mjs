@@ -240,6 +240,50 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(issued.body.goods, 4550);
     });
 
+    // D1 (docs/runs/ops2-attention-prefilter/DECISIONS.md): the row DTO was
+    // dropping statusCustomer/orderStage even though the query already selects
+    // both — the attention prefilter's predicates read them off this list.
+    await t.test("GET /api/ops/projects row DTO carries statusCustomer/orderStage; role abuse on projects and summary", async () => {
+      const list = await requestJson(ops, "/api/ops/projects");
+      // Order-INDEPENDENT: the list row and the record endpoint must tell the
+      // same story about the same project at the same moment. A hardcoded
+      // status literal here only holds until a step is inserted above it (this
+      // suite's journey issues p_submitted's quote seven lines up), and it
+      // proves nothing about the DTO beyond self-consistency.
+      let orderless = 0;
+      for (const id of ["p_submitted", "p_order"]) {
+        const row = list.body.projects.find((p) => p.id === id);
+        const record = (await requestJson(ops, `/api/ops/projects/${id}`)).body;
+        assert.equal(row.statusCustomer, record.project.statusCustomer, `${id}: list statusCustomer agrees with the record`);
+        assert.equal(row.orderStage, record.order?.stage ?? null, `${id}: list orderStage agrees with the record`);
+        // No order — null, not a missing key, so a consumer can tell "no order"
+        // from "field missing"; the awaiting-payment predicate is a membership
+        // test on this value.
+        if (!record.order) {
+          orderless += 1;
+          assert.ok(Object.hasOwn(row, "orderStage"), `${id}: orderStage key present, not omitted`);
+          assert.equal(row.orderStage, null);
+        }
+      }
+      assert.ok(orderless >= 1, "at least one order-less project, so the null-vs-missing half actually ran");
+
+      // ── Abuse cases: anonymous, customer, manufacturer partner — 403/401,
+      // no projects array, no summary counts. ──────────────────────────────
+      const anonProjects = await requestJson(anonymous, "/api/ops/projects", {}, 403);
+      assert.equal(anonProjects.body.projects, undefined);
+      const custProjects = await requestJson(customer, "/api/ops/projects", {}, 403);
+      assert.equal(custProjects.body.projects, undefined);
+      const custSummary = await requestJson(customer, "/api/ops/summary", {}, 403);
+      assertNoCounts(custSummary.body);
+
+      const partner = new Session(baseUrl);
+      await login(partner, "/api/ops/auth", "partner-t1@partner.example");
+      const partnerProjects = await requestJson(partner, "/api/ops/projects", {}, 403);
+      assert.equal(partnerProjects.body.projects, undefined);
+      const partnerSummary = await requestJson(partner, "/api/ops/summary", {}, 403);
+      assertNoCounts(partnerSummary.body);
+    });
+
     const sarah = new Session(baseUrl);
     let newOrder;
     await t.test("customer quote retrieval and concurrent acceptance", async () => {

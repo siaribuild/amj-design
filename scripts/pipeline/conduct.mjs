@@ -1613,6 +1613,15 @@ function decisionsOpen(run) {
 // run had no verify left to prove it, so acceptance rejected on missing
 // evidence rather than on bad work. Raising FIX_CAP alone does not reach it:
 // six fixes against two verifies is the same dead end with more steps.
+//
+// ops2-attention-prefilter hit the identical wall independently, which is the
+// second data point for the same conclusion: two rounds of findings (three
+// HIGHs between them, every one ship-blocking) and no verify left to record
+// that they were fixed. Acceptance rejected "on evidence, not on behaviour".
+//
+// Wind it back to 2 the moment a run spends three rounds and the third returns
+// nothing new — THAT is the non-convergence this guards against, and neither
+// run showed it.
 export const CYCLE_CAP = 3
 // 6, not 3, and raised deliberately rather than worked around. The cap is a
 // COST guard - "more of this cycle costs more than the findings it returns" -

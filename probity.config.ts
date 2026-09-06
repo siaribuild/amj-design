@@ -1,9 +1,11 @@
 import { defineConfig, enforceTdd } from '@nizos/probity'
 
 // TDD guardrails (Probity). Scope chosen deliberately:
-// - worker/** and src/data/** carry the business logic covered by scripts/tests/*.mjs
+// - worker/**, src/data/** and src/ops2/** carry the business logic covered by
+//   scripts/tests/*.mjs
 // - scripts/tests/** is included so test writes are held to one-failing-test-at-a-time
-// - UI components (src/ outside data/), migrations, docs, and config stay exempt.
+// - the customer site's components (src/ outside data/ and ops2/), migrations,
+//   docs, and config stay exempt.
 //
 // WHY THE WINDOW IS WIDENED (2026-08-15, referral program build)
 //
@@ -49,7 +51,27 @@ import { defineConfig, enforceTdd } from '@nizos/probity'
 export default defineConfig({
   rules: [
     {
-      files: ['worker/**', 'src/data/**', 'scripts/tests/**'],
+      // WIDENED 2026-09-06, owner's instruction, after the ops2-attention run.
+      //
+      // `src/ops2/**` was exempt under "UI components (src/ outside data/)", a
+      // convention written before ops2 existed. It is wrong for what ops2
+      // became: `attention.ts`, `queue.ts` and `record.ts` are pure model files
+      // carrying as much business rule as anything in `src/data/` — which is
+      // exactly why each has its own node suite. The path said "components";
+      // the contents are logic.
+      //
+      // What it cost: the whole Attention feature was built with no TDD
+      // enforcement on the implementation, only on its tests. A row promising
+      // "1 ready to issue" shipped opening a queue of everything waiting on us,
+      // and the acceptance criterion that forbade it was edited to match the
+      // code instead — in `docs/`, which stays exempt and always will, because
+      // a doc cannot be red.
+      //
+      // `.tsx` is included deliberately rather than only `.ts`. The split
+      // between "model" and "component" is the same judgement call that
+      // produced this gap; a page that decides what to render from a count is
+      // making a decision, and the file extension is not evidence either way.
+      files: ['worker/**', 'src/data/**', 'src/ops2/**', 'scripts/tests/**'],
       rules: [
         enforceTdd({
           maxEvents: 40,

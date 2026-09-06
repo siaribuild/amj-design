@@ -442,6 +442,11 @@ ops.get("/projects", async (c) => {
       customerName: r.customer_name ?? r.contact_name ?? null,
       customerEmail: r.customer_email ?? r.contact_email ?? null,
       org: r.org_name ?? null,
+      // D1 (docs/runs/ops2-attention-prefilter/DECISIONS.md): the attention
+      // prefilter's predicates read these two off the row list directly — no
+      // order yet must serialise as null, not vanish as a missing key.
+      statusCustomer: r.status_customer,
+      orderStage: r.order_stage ?? null,
       lineCount: Number(r.line_count ?? 0),
       value, valueBasis,
       unresolved: Number(r.unresolved ?? 0),

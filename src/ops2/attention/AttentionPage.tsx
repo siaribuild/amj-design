@@ -6,15 +6,19 @@ import { RowList, Row } from "../chrome/RowList";
 import { destination } from "../nav/destinations";
 import { DESTINATION_ICON } from "../nav/icons";
 import { browserHref } from "../shellBase";
-import { attentionGroups } from "./attention";
+import { useProjectQueue } from "../projects/useProjectQueue";
+import { attentionGroups, combineLoads } from "./attention";
 import { useSummary } from "./useSummary";
 import { useMonitoring, formatAsAt, snapshotAge, formatDayLabel } from "./useMonitoring";
 import { capOutstanding } from "../../data/monitoring";
 
 /**
- * The console's front door (design.md §5). One request (useSummary), grouped
- * by attentionGroups() into Projects/Enquiries/Customers, zero-suppressed at
- * both levels — so what renders is exactly what needs a decision today.
+ * The console's front door (design.md §5, ops2-attention-prefilter §3.2). Two
+ * requests — useSummary (enquiries/trade counts) and useProjectQueue (the
+ * rows the four project counts are now derived from) — merged by
+ * combineLoads and grouped by attentionGroups() into
+ * Projects/Enquiries/Customers, zero-suppressed at both levels — so what
+ * renders is exactly what needs a decision today.
  *
  * A row leads, never acts (G3): `edge={null}` because no leading-edge fact
  * applies here, and onActivate is the only control a row carries.
@@ -24,8 +28,27 @@ import { capOutstanding } from "../../data/monitoring";
  * shared — the shared unit is the CSS class, not the component.
  */
 export function AttentionPage() {
-  const { load, reload } = useSummary();
+  // THREE REQUESTS, TWO CONCERNS. `useSummary` carries the enquiries and trade
+  // counts; `useProjectQueue` carries the rows the four PROJECT counts are
+  // derived from (prefilter run — a count and the list it opens are one
+  // computation, so the count cannot come from the summary body). `combineLoads`
+  // merges those two into the gate's own load.
+  //
+  // `useMonitoring` is the third and is deliberately SEPARATE, not folded into
+  // `combineLoads`: monitoring renders below the groups and the page is the gate
+  // first, monitoring second (CONTEXT.md). A monitoring outage must not blank
+  // the thing this screen exists for, and `combineLoads` propagates failure by
+  // design — so joining them would let a stale snapshot hide the work.
+  const { load: summaryLoad, reload: reloadSummary } = useSummary();
+  const { load: queueLoad, reload: reloadQueue } = useProjectQueue();
+  const load = combineLoads(summaryLoad, queueLoad);
   const { load: monitoringLoad, reload: monitoringReload } = useMonitoring();
+  // The gate's retry re-reads both of the gate's own sources. Monitoring keeps
+  // `monitoringReload` for its own card, for the same separation.
+  const reload = () => {
+    reloadSummary();
+    reloadQueue();
+  };
   const history = useHistory();
 
   /* ONE FRESHNESS LINE, IN THE BAND, governing every figure below it — not
@@ -76,7 +99,32 @@ export function AttentionPage() {
       )}
 
       {load.status === "ready" && (() => {
-        const groups = attentionGroups(load.counts);
+        // CAUGHT, BECAUSE A THROW IN RENDER IS WORSE THAN THE BUG IT REPORTS.
+        // `attentionGroups` refuses a projects payload that carries no
+        // `statusCustomer` on any row, rather than counting every predicate to
+        // zero and drawing a screen that reads "nothing is waiting". Uncaught,
+        // that refusal would unmount the tree and leave a white page — trading
+        // a lie for a blank. The panel says the counts could not be read, which
+        // is the true statement, and the console stays navigable.
+        let groups;
+        try {
+          groups = attentionGroups(load.counts, load.rows);
+        } catch {
+          return (
+            <div className="pq-error ds-surface-card" data-testid="attention-error" role="alert">
+              <IonIcon icon={warningOutline} aria-hidden="true" />
+              <div>
+                <strong>Can't tell you what's waiting.</strong>
+                <IonNote className="ds-type-caption">
+                  The projects list came back without the fields these counts are
+                  read from, so none are shown. This is not an empty console —
+                  try again, or open Projects directly.
+                </IonNote>
+              </div>
+              <IonButton size="small" fill="outline" onClick={reload}>Try again</IonButton>
+            </div>
+          );
+        }
         if (groups.length === 0) {
           return (
             <div className="pq-empty" data-testid="attention-empty">
