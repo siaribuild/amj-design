@@ -46,3 +46,24 @@ an index can't be trusted); mobile funnel test's Clear now asserts "Needs us"
 chip pressed + 1 row. Lines 128-257 (?attn= arrival/reset/bogus/signed-out)
 untouched, still green — confirmed byte-identical against git diff.
 typecheck:gate clean. Next task: none queued after t3 in this task set.
+
+## t4 - Add the three panel-behaviour web tests: tick/untick/compose, the way back after Clear, the labelled zero
+Files: scripts/tests/web/ops2-projects.spec.ts only, appended after the
+funnel/filter-panel test (line 620), no src touched, 25/25 green.
+Test 1: 6-row fixture (PA-PF), ticks Awaiting payment (Delta+Echo), composes
+with a search term + Unresolved lines (intersection → Echo alone, chip/search
+provably unmoved), unticks back. Route-call counter asserts exactly 1
+request for the whole sequence. NOTE: search term chosen to match BOTH rows
+throughout (`customerName: "Bright Living"`, not a per-row substring) —
+`.fill("")` to clear IonSearchbar's underlying input did NOT clear Ionic's
+own state (verified: `inputValue()` still read the old term after fill("")),
+so the untick step never touches the search box at all, only the checkbox.
+Test 2: goto ?attn=submissions → PA alone, strip Clear → both rows (fixture
+waitingOn:"Us"), re-tick "New submissions" from panel → PA alone again, URL
+stays bare /ops2/projects throughout.
+Test 3: invoiced pair waitingOn:"Customer"; Awaiting payment reads "0" under
+Needs us, "2" under All; ticking it anyway under Needs us → queue-empty names
+"Awaiting payment" with chip still pressed; ticking submissions+inReview
+under All (mutually exclusive rows) → empty names both labels.
+typecheck:gate clean (64 pre-existing non-fatal, unchanged). Committed 7b964a6d.
+Next: none queued after t4 in this task set.
