@@ -133,6 +133,15 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--theme-spacing-lg);
 }
+/* ALL FOUR CARDS ONE HEIGHT. The two groups already stretch to the same row
+   height, but a pair is a flex item in a column and so is only as tall as its
+   own content — so the cards settled at two different heights whenever the
+   groups' notes wrapped differently ("Unavailable. Cloudflare did not answer
+   at 14:32" against "Failed, or stuck over 30 minutes"). Growing the pair
+   hands that height to the cards' own grid, which stretches them by default. */
+.att-monitoring .att-group > .att-pair {
+  flex: 1;
+}
 
 .att-card {
   display: flex;
