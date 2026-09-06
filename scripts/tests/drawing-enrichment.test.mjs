@@ -17,8 +17,7 @@ await build({
     contents: `
       export { cropKey, purgeProjectCrops } from ${p("worker/lib/drawing/crops.ts")};
       export { readOpenings } from ${p("worker/lib/drawing/faceMapped/readOpenings.ts")};
-      export { progressMilestoneCeiling } from ${p("worker/lib/drawing/faceMapped/report.ts")};
-      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES } from ${p("worker/lib/drawing/contract.ts")};
+      export { MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, COMPOSITION_BATCH_SIZE, COMPOSITION_RETRY_BUDGET } from ${p("worker/lib/drawing/contract.ts")};
       export { inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS } from ${p("worker/lib/drawing/containerClient.ts")};
       export { chooseStrategy, selectPages } from ${p("worker/lib/drawing/selectPages.ts")};
       export { elevationRegions, boxesByRegion } from ${p("worker/lib/drawing/elevationRegions.ts")};
@@ -58,7 +57,7 @@ await build({
   external: ["cloudflare:workers"],
 });
 const { validateAgentTurn, runDrawingAgent, makeDrawingAgentSkill, DRAWING_AGENT_LIMITS } = await import(pathToFileURL(outfile).href);
-const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, progressMilestoneCeiling, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
+const { buildHarvest, applyVisualNorth, viewScaleCandidates, pageScales, recoverPageScales, validateStatedScale, recoverSheetFacts, makeSheetFactsSkill, documentFaceSheets, documentFaceRegions, documentSheetStoreys, documentPlanStoreys, placeOpeningsOnPlan, planFaceRecoveryRequest, validatePlanFaceAnswer, makePlanFaceSkill, PLAN_FACE_LIMITS, matchFacePlacements, calibrateWidths, faceReconciliationTasks, makeFaceReconcileSkill, reconcileMatches, FACE_RECONCILE_LIMITS, elevationFaceTasks, validateElevationFrames, makeElevationInventorySkill, openingCropTasks, compositionBatches, makeCompositionSkill, runCompositions, readingsToOutcomes, faceMappedReadings, faceMappedProgress, runFaceMappedParser, readOpenings, expectedWidthPt, applyVisualNorthToHarvest, buildFullDocumentHarvest, validateFullDocumentTurn, runFullDocumentAgent, makeFullDocumentAgentSkill, FULL_DOCUMENT_AGENT_LIMITS, StageCallError, runStage, applyDrawingConsistencyFlags, drawingFaceKey, drawingParserMode, cropKey, purgeProjectCrops, MAX_PDF_BYTES, MAX_PAGES, MAX_CROPS_PER_PAGE, MAX_DPI, MAX_INSPECT_RESPONSE_BYTES, MAX_RENDER_RESPONSE_BYTES, FACE_MAPPED_MAX_PDF_BYTES, FACE_MAPPED_INSPECT_RESPONSE_BYTES, FACE_MAPPED_RENDER_RESPONSE_BYTES, MAX_RETAINED_CROP_BYTES, RETAINED_INSPECTION_BYTES, WORKER_ISOLATE_BYTES, COMPOSITION_BATCH_SIZE, COMPOSITION_RETRY_BUDGET, inspectPdf, renderPage, ContainerClientError, INSPECT_TIMEOUT_MS, RENDER_TIMEOUT_MS, chooseStrategy, selectPages, elevationRegions, boxesByRegion, elevationOrderKey, locateFloorplanPage, orientationsFromNorth, resolveNorth, mapPool, measureSplit, composeMeasuredSplit, parseCompositionComment, compositionFromSchedule, reconcileReading, elevationInventorySkill, validateFloorplanRead, northArrowSkill, openingReadSkill, assignOpenings, applyDrawingOrientation, conflictReason, persistReadings, readings, enrichOpenings, runDrawingEnrichmentStage, faceMappedStageRequest, runGate } = await import(pathToFileURL(outfile).href);
 
 // ── Step 2 — strategy (AC-13) ──────────────────────────────────────────────
 function inv(pages) {
@@ -4305,7 +4304,17 @@ test("run: a face with fewer frames than openings gets its second look, and an o
     "a direction the second look chose is a direction, and is reported");
   assert.equal(hidden.events.some((event) => /Rechecking 3 unclear openings/.test(event.message)), true,
     "the second look is a milestone the user can see (§9)");
-  assert.ok(hidden.events.length <= progressMilestoneCeiling(3), "a run with a second look stays under the ceiling the progress log is sized by");
+  // What the engine emits at most for `openings`, counted from every emitter:
+  // two for the plans; one per face and storey - at worst one per opening -
+  // plus the phase start and the recheck; one per crop wave plus the start; one
+  // per read wave plus one per recheck; and the close. It governs nothing in
+  // production (the log is bounded in bytes, jobs.ts); it pins the emitter
+  // count here so a new emitter is a deliberate change.
+  const progressMilestoneCeiling = (openings) => {
+    const waves = Math.ceil(openings / COMPOSITION_BATCH_SIZE);
+    return 2 + (openings + 2) + (1 + waves) + (waves + COMPOSITION_RETRY_BUDGET) + 1;
+  };
+  assert.ok(hidden.events.length <= progressMilestoneCeiling(3), "a run with a second look stays under the emitter count");
 
   // The same pairs with nothing said about W2: the look did not see it hidden,
   // so it is an inventory or matching conflict still open, and says so.
@@ -8380,4 +8389,55 @@ test("deployment config keeps the full-document drawing parser as the production
   assert.match(config, /"AI_EXTRACTION_MODE"\s*:\s*"agentic_full"/);
   assert.match(config, /"AI_PRIMARY_MODEL"\s*:\s*"google\/gemini-3\.6-flash"/);
   assert.match(config, /"AI_VERIFY_MODEL"\s*:\s*"google\/gemini-3\.6-flash"/);
+});
+
+test("switch wiring: a face-mapped stage past its deadline says it skipped the escalation, and takes no call for it (round fourteen)", async () => {
+  const skill = makeCompositionSkill([{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: null }]);
+  const aiCalls = [];
+  const env = {
+    AI_ESCALATION_MODE: "on", AI_GATEWAY_ID: "gw-test",
+    // Holds the thread past the deadline before answering, invalid: the answer
+    // is in hand before the timer fires, the repair is refused, the schema
+    // failure triggers the escalation, and the escalation is past the deadline.
+    AI: { run: async () => { aiCalls.push(1); const until = Date.now() + 40; while (Date.now() < until) { /* hold */ } return { response: "not json at all" }; } },
+    DB: { prepare: (sql) => ({ bind: (...bound) => ({
+      first: async () => /INSERT INTO ai_stage_runs/.test(sql) ? { id: bound[0] } : null,
+      run: async () => ({}),
+      all: async () => ({ results: [] }),
+    }) }) },
+    FILES: { get: async () => null, put: async () => {} },
+  };
+  const request = { ...faceMappedStageRequest(env, "composition", { skill, prompt: skill.buildPrompt(), imageDataUrls: ["data:,a"] }), aiRunId: "run1", projectId: "prj1", deadlineAt: Date.now() + 25 };
+  const result = await runStage(env, request);
+  assert.equal(result.ok, false);
+  assert.equal(aiCalls.length, 1, "no repair and no escalation past the deadline");
+  assert.equal(result.escalation.triggered, true);
+  assert.equal(result.escalation.taken, false);
+  assert.ok(result.warnings.includes("skill_repair_skipped:deadline"));
+  assert.ok(result.warnings.includes("skill_escalation_skipped:deadline"));
+});
+
+test("switch wiring: an escalation whose repair the deadline cuts short keeps that reason on the stage's record (round fourteen)", async () => {
+  const skill = makeCompositionSkill([{ tag: "W1", frameId: "f1", cropRenderId: "c1", imageDataUrl: null }]);
+  let calls = 0;
+  const env = {
+    AI_ESCALATION_MODE: "on", AI_GATEWAY_ID: "gw-test",
+    // Primary invalid, its repair invalid: the schema failure triggers the
+    // escalation inside the deadline; the escalation's primary is invalid and
+    // its repair hangs until the deadline cuts it.
+    AI: { run: () => { calls += 1; return calls < 4 ? Promise.resolve({ response: "not json at all" }) : new Promise(() => {}); } },
+    DB: { prepare: (sql) => ({ bind: (...bound) => ({
+      first: async () => /INSERT INTO ai_stage_runs/.test(sql) ? { id: bound[0] } : null,
+      run: async () => ({}),
+      all: async () => ({ results: [] }),
+    }) }) },
+    FILES: { get: async () => null, put: async () => {} },
+  };
+  const request = { ...faceMappedStageRequest(env, "composition", { skill, prompt: skill.buildPrompt(), imageDataUrls: ["data:,a"] }), aiRunId: "run1", projectId: "prj1", deadlineAt: Date.now() + 250 };
+  const result = await runStage(env, request);
+  assert.equal(result.ok, false);
+  assert.equal(calls, 4, "primary, repair, escalation primary, escalation repair");
+  assert.equal(result.escalation.triggered, true);
+  assert.equal(result.escalation.taken, false);
+  assert.ok(result.warnings.includes("escalation:skill_repair_timeout"), result.warnings.join("|"));
 });

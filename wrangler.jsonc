@@ -100,6 +100,10 @@
       {
         "queue": "apertly-ai-jobs",
         "max_batch_size": 1,
+        // One job at a time: the face-mapped drawing engine bounds one run at
+        // ~120 MB of the isolate's 128 MB (worker/lib/drawing/contract.ts), and
+        // the limit is the isolate's, not the invocation's.
+        "max_concurrency": 1,
         "max_batch_timeout": 5,
         "max_retries": 3,
         "dead_letter_queue": "apertly-ai-jobs-dlq"

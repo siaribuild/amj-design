@@ -1,6 +1,7 @@
 // Typed client for the OpenFrame backend Worker (/api/*). Same-origin: in prod the
 // Worker serves both the SPA and the API; in dev Vite proxies /api to :8787.
 import type { QItem, QSegment } from "./configurator";
+import type { DrawingProgressPhase } from "./drawingProgress";
 
 export interface ApiProject {
   id: string;
@@ -568,8 +569,9 @@ export interface ParseJob {
 }
 
 // ── AI extraction status (multi-file UX spec §2) ─────────────────────────────
-/** The persisted progress vocabulary the worker writes (its contract.ts). */
-export type DrawingsPhase = "inventory" | "elevation_inventory" | "floorplan_location" | "orientation" | "render_crops" | "opening_read";
+/** The persisted progress vocabulary the worker writes - the same tuple
+ * (drawingProgress.ts), so a rename cannot compile on one side only. */
+export type DrawingsPhase = DrawingProgressPhase;
 
 export interface ExtractionRun {
   id: string;

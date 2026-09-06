@@ -1036,6 +1036,35 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
       assert.ok(accepted.body.order.id, "re-issuing after a change request still ends in an acceptable order");
     });
 
+    // With the queue consumer at one job at a time (wrangler.jsonc) a scheduled
+    // claim may wait its turn behind a long run: the retry route must not call
+    // that a failure to retry. Only a claim whose queue send failed is
+    // reclaimable, and that one is sent again.
+    await t.test("extraction-retry: a scheduled claim waiting its turn is not retryable; one whose queue send failed is (round fourteen)", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "queued-wait@example.com");
+      await completeAccount(buyer);
+      const draft = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [] } });
+      const pid = draft.body.project.id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE project SET ai_generation=1 WHERE id='${pid}';
+         INSERT INTO ai_job_claim
+           (project_id,source_generation,debounce_token,status,attempts,progress_stage,updated_at)
+         VALUES ('${pid}',1,'waiting','scheduled',0,'queued',datetime('now','-3 minutes'));`,
+      ], { env: wranglerEnv });
+      const waiting = await buyer.request("/api/projects/current/extraction-retry", { method: "POST" });
+      assert.equal(waiting.status, 409, "waiting its turn is not a failure to retry");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE ai_job_claim SET last_error='queue_send_failed', failure_class='transient' WHERE project_id='${pid}';`,
+      ], { env: wranglerEnv });
+      const failedSend = await requestJson(buyer, "/api/projects/current/extraction-retry", { method: "POST", json: {} });
+      assert.equal(failedSend.body.alreadyQueued, false, "a failed send is reclaimed and sent again");
+    });
+
     await t.test("registered customer can submit source documents for human review after an AI capacity limit", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "capacity-fallback@example.com");

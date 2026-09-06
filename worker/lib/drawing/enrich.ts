@@ -930,6 +930,9 @@ export async function runDrawingEnrichmentStage(
     const res = await runStage<FaceMappedCallInput, O>(env, {
       aiRunId: args.aiRunId,
       projectId: args.projectId,
+      // The stage's deadline reaches inside the turn: a call waits at most
+      // what remains of it, and no repair or escalation is taken past it.
+      deadlineAt: args.deadlineAt,
       ...faceMappedStageRequest(env, kind, input),
     });
     await input.usage?.({

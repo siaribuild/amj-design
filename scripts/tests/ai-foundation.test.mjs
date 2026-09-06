@@ -595,3 +595,53 @@ test("runner: a multimodal prompt gets the schema as a trailing TEXT part", asyn
   assert.ok(parts[0].inlineData, "the image is still first");
   assert.match(parts.at(-1).text, /JSON Schema/i, "the schema does not displace the image");
 });
+
+// ── Round fourteen: the drawing stage's deadline reaches inside a model turn ──
+test("runner: a deadline caps the provider call's wait and refuses the repair pass after it", async () => {
+  // Inside the deadline, a call may wait at most what remains of it - not the
+  // ninety-second default, which would spend the reserve the rest of the
+  // pipeline was promised.
+  const hanging = { AI: { run: () => new Promise(() => {}) } };
+  const startedAt = Date.now();
+  const timedOut = await runSkill(hanging, testSkill, { doc: "x" }, { deadlineAt: Date.now() + 80 });
+  assert.equal(timedOut.ok, false);
+  assert.ok(Date.now() - startedAt < 5_000, "the wait is the deadline's");
+  assert.ok(timedOut.warnings.some((warning) => /ai_model_timeout_/.test(warning)));
+
+  // No time left: nothing is dispatched at all - not even a call that would be
+  // raced against a zero-wait timer, since the provider call is made before the
+  // timer is installed.
+  const expired = [];
+  const gone = { AI: { run: async () => { expired.push(1); return { response: "{}" }; } } };
+  const refused = await runSkill(gone, testSkill, { doc: "x" }, { deadlineAt: Date.now() - 1 });
+  assert.equal(expired.length, 0, "nothing is dispatched with no time left");
+  assert.equal(refused.modelCalls, 0, "and nothing is counted as a call");
+  assert.equal(refused.ok, false);
+  assert.ok(refused.warnings.some((warning) => /ai_model_timeout_0ms/.test(warning)));
+
+  // An answer that arrives with the deadline just passed is still validated -
+  // and, invalid, gets no repair pass: no new dispatch after the deadline. The
+  // fake holds the thread past the deadline before answering, so its answer is
+  // in hand before the timer can fire.
+  const calls = [];
+  const late = { AI: { run: async () => { calls.push(1); const until = Date.now() + 40; while (Date.now() < until) { /* hold */ } return { response: "not json at all" }; } } };
+  const invalid = await runSkill(late, testSkill, { doc: "x" }, { deadlineAt: Date.now() + 25 });
+  assert.equal(invalid.ok, false);
+  assert.equal(calls.length, 1, "no repair after the deadline");
+  assert.ok(invalid.warnings.includes("skill_repair_skipped:deadline"));
+  assert.equal(invalid.failureKind, "invalid_output");
+
+  // A repair the deadline cuts short says so, stably, so a stage can keep the
+  // reason on its record.
+  let answered = 0;
+  const repairHangs = { AI: { run: () => { answered += 1; return answered === 1 ? Promise.resolve({ response: "not json at all" }) : new Promise(() => {}); } } };
+  const cut = await runSkill(repairHangs, testSkill, { doc: "x" }, { deadlineAt: Date.now() + 120 });
+  assert.equal(answered, 2, "the repair was dispatched, inside the deadline");
+  assert.ok(cut.warnings.includes("skill_repair_timeout"));
+
+  // Without a deadline the repair pass runs as it always did.
+  const asBefore = [];
+  const plain = { AI: { run: async () => { asBefore.push(1); return { response: "not json at all" }; } } };
+  await runSkill(plain, testSkill, { doc: "x" });
+  assert.equal(asBefore.length, 2);
+});

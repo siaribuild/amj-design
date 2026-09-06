@@ -38,8 +38,7 @@ parse.post("/projects/current/extraction-retry", async (c) => {
         j.status='failed'
         OR (j.status='processing' AND j.lease_expires_at IS NOT NULL
             AND j.lease_expires_at < datetime('now'))
-        OR (j.status='scheduled' AND j.retry_after IS NULL
-            AND j.updated_at < datetime('now','-45 seconds'))
+        OR (j.status='scheduled' AND j.last_error='queue_send_failed')
       )`,
   ).bind(project.id).first<{ retryable: number }>();
   if (!retryable) return c.json({ error: "not_retryable" }, 409);
@@ -345,7 +344,11 @@ parse.get("/projects/current/extraction-status", async (c) => {
   // to 150s so the 120s job deadline is the single authority and this only
   // catches an invocation that has recorded no stage or heartbeat for far longer
   // than any healthy run could. During the long concurrent doc-skill phase only
-  // the 15s heartbeat renews updated_at, so the window must clear that gap.
+  // the 15s heartbeat renews updated_at, so the window must clear that gap. A
+  // scheduled claim is not stalled by its age: with the queue consumer at one
+  // job at a time (wrangler.jsonc) it may wait behind a long run. Only a claim
+  // whose queue send failed is dead, and it is failed at once so the customer
+  // can retry; the reaper's five-minute scan is the other way back.
   const stalled = await c.env.DB.prepare(
     `UPDATE ai_job_claim
         SET status='failed', attempts=max(attempts,1),
@@ -359,7 +362,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
           (status='processing' AND updated_at < datetime('now','-150 seconds'))
           OR
           (status='scheduled' AND retry_after IS NULL
-            AND updated_at < datetime('now','-45 seconds'))
+            AND last_error='queue_send_failed')
         )`,
   ).bind(project.id, project.id).run().catch(() => null);
   if (Number(stalled?.meta?.changes ?? 0) > 0) {

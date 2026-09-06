@@ -3,6 +3,7 @@ import { runAiExtraction, type AiExtractionSummary } from "./pipeline";
 import { uuid } from "../util";
 import { hasAnyExactPricingCoverage } from "../estimator/catalogue";
 import { DRAWING_PROGRESS_PHASES, type DrawingProgressPhase } from "../drawing/contract";
+import { drawingParserMode } from "../drawing/enrich";
 
 export interface AiExtractionJob {
   projectId: string;
@@ -201,11 +202,6 @@ export function classifyJobException(error: unknown): {
     };
   }
   const message = errorText(error);
-  // The drawing stage throws the deadline when it reaches it after the race
-  // was decided the other way; either way it is the deadline, and transient.
-  if (message === "ai_processing_deadline_exceeded") {
-    return { failureClass: "transient", code: "ai_processing_deadline_exceeded" };
-  }
   if (looksRateLimited(message)) {
     return {
       failureClass: "quota",
@@ -281,6 +277,13 @@ export async function dispatchAiExtractionJob(
               retry_after=NULL, updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='scheduled'`,
     ).bind(job.projectId, job.generation).run().catch(() => {});
+    // Under face_mapped the isolate's memory is the queue's to hand out, one
+    // run at a time (max_concurrency, wrangler.jsonc): nothing runs in this
+    // request's lifetime beside what the queue already runs. The claim stays
+    // scheduled with its reason: the poll fails it at once for the customer's
+    // retry, and the reaper's five-minute scan of scheduled claims
+    // (reapAbandonedAiJobs) redispatches it through the queue regardless.
+    if (drawingParserMode(env) === "face_mapped") return;
     ctx.waitUntil(processAiExtractionJob(env, job).catch(() => {}));
   }
 }
@@ -337,8 +340,7 @@ export async function retryCurrentAiExtraction(
     `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token,
             (j.lease_expires_at IS NOT NULL AND j.lease_expires_at < datetime('now'))
               AS lease_dead,
-            (j.status='scheduled' AND j.retry_after IS NULL
-              AND j.updated_at < datetime('now','-45 seconds')) AS scheduled_dead
+            (j.status='scheduled' AND j.last_error='queue_send_failed') AS scheduled_dead
        FROM project p
        LEFT JOIN ai_job_claim j
          ON j.project_id=p.id AND j.source_generation=p.ai_generation
@@ -395,8 +397,7 @@ export async function retryCurrentAiExtraction(
           AND (status='failed'
                OR (status='processing' AND lease_expires_at IS NOT NULL
                    AND lease_expires_at < datetime('now'))
-               OR (status='scheduled' AND retry_after IS NULL
-                   AND updated_at < datetime('now','-45 seconds')))
+               OR (status='scheduled' AND last_error='queue_send_failed'))
           AND EXISTS (
             SELECT 1 FROM project
              WHERE id=? AND status_customer='draft' AND ai_generation=?
@@ -773,11 +774,20 @@ export async function reapAbandonedAiJobs(env: Env): Promise<{ claims: number; r
   }
 
   for (const job of redispatch) {
-    if (env.AI_JOBS) {
-      await env.AI_JOBS.send(job).catch(() => {});
-    } else {
-      await processAiExtractionJob(env, job).catch(() => {});
-    }
+    if (!env.AI_JOBS) { await processAiExtractionJob(env, job).catch(() => {}); continue; }
+    // The claim says what became of the send. Sent, it is a healthy scheduled
+    // claim again - a marker left by a failed first send would have the poll
+    // fail it before the consumer reached it. Unsent, it is marked, so the poll
+    // and the retry see it and nothing looks queued forever.
+    // retry_after is cleared with it: the poll fails a send-failed claim only
+    // when none is set, and a re-scheduled lease carries one. The token guard
+    // keeps an old cron result off a claim the customer's retry replaced.
+    const sent = await env.AI_JOBS.send(job).then(() => true, () => false);
+    await env.DB.prepare(
+      `UPDATE ai_job_claim
+          SET last_error=?, failure_class=?, retry_after=NULL, updated_at=datetime('now')
+        WHERE project_id=? AND source_generation=? AND status='scheduled' AND debounce_token=?`,
+    ).bind(sent ? null : "queue_send_failed", sent ? null : "transient", job.projectId, job.generation, job.debounceToken).run().catch(() => {});
   }
   return { claims, runs };
 }

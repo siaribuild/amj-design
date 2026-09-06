@@ -218,6 +218,7 @@ async function callModel(
   telemetry: SkillTelemetry | undefined,
   attempt: "primary" | "repair",
   reasoningEffort?: string,
+  timeoutMs = MODEL_CALL_DEADLINE_MS,
 ) {
   // NOTE: Google's structured-output fields (responseMimeType / responseSchema)
   // are NOT in Cloudflare's documented parameter set for this model, so they are
@@ -241,12 +242,15 @@ async function callModel(
   const startedAt = Date.now();
   let outcome: "completed" | "timeout" | "failed" = "completed";
   try {
+    // With no time left nothing is dispatched: the provider call would be made
+    // before a zero-wait timer could refuse it.
+    if (timeoutMs <= 0) throw new Error(`ai_model_timeout_${timeoutMs}ms`);
     return await Promise.race([
       (env.AI as any).run(model, body, gatewayOpts(env)),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`ai_model_timeout_${MODEL_CALL_DEADLINE_MS}ms`)),
-          MODEL_CALL_DEADLINE_MS,
+          () => reject(new Error(`ai_model_timeout_${timeoutMs}ms`)),
+          timeoutMs,
         );
       }),
     ]);
@@ -276,9 +280,21 @@ export async function runSkill<I, O>(
   env: Env,
   skill: Skill<I, O>,
   input: I,
-  opts?: { model?: string; reasoningEffort?: string; telemetry?: SkillTelemetry },
+  opts?: {
+    model?: string;
+    reasoningEffort?: string;
+    telemetry?: SkillTelemetry;
+    /** Absolute time after which nothing new is dispatched: a call in flight
+     *  may wait at most what remains, and the repair pass is not taken past it.
+     *  Only the face-mapped drawing stage passes one; every other caller keeps
+     *  the ninety-second call deadline and its repair pass as they were. */
+    deadlineAt?: number;
+  },
 ): Promise<SkillRun<O>> {
   const model = opts?.model ?? primaryModel(env);
+  const callTimeout = () => opts?.deadlineAt == null
+    ? MODEL_CALL_DEADLINE_MS
+    : Math.min(MODEL_CALL_DEADLINE_MS, Math.max(0, opts.deadlineAt - Date.now()));
   if (!env.AI) {
     return {
       ok: false, data: null, warnings: ["skill_call_failed", "skill_call_transient", "skill_call_error:ai_unavailable"],
@@ -298,7 +314,9 @@ export async function runSkill<I, O>(
     skill,
   );
   try {
-    modelCalls++;
+    // A call is counted when it is made; with no time left none is.
+    const primaryTimeout = callTimeout();
+    if (primaryTimeout > 0) modelCalls++;
     const out: any = await callModel(
       env,
       model,
@@ -307,6 +325,7 @@ export async function runSkill<I, O>(
       opts?.telemetry,
       "primary",
       opts?.reasoningEffort,
+      primaryTimeout,
     );
     const usage = readModelUsage(out);
     inputTokens += usage.input; outputTokens += usage.output;
@@ -345,7 +364,12 @@ export async function runSkill<I, O>(
 
   // §22.3 repair policy: exactly ONE repair call on schema failure, feeding the
   // invalid response back. Transport failure of the repair keeps the original miss.
-  if (data == null) {
+  if (data == null && opts?.deadlineAt != null && Date.now() >= opts.deadlineAt) {
+    // The answer came back invalid after the deadline: no new dispatch past it.
+    warnings.push("skill_repair_skipped:deadline");
+    warnings.push("skill_output_invalid");
+    failureKind = "invalid_output";
+  } else if (data == null) {
     try {
       // Repair the structure, not the source extraction. Re-sending a 30-page
       // document (and its images) doubled input spend while adding no information
@@ -357,7 +381,8 @@ export async function runSkill<I, O>(
         "INVALID RESPONSE:",
         rawText.slice(0, 16000),
       ].join("\n\n");
-      modelCalls++;
+      const repairTimeout = callTimeout();
+      if (repairTimeout > 0) modelCalls++;
       const out: any = await callModel(
         env,
         model,
@@ -366,6 +391,7 @@ export async function runSkill<I, O>(
         opts?.telemetry,
         "repair",
         opts?.reasoningEffort,
+        repairTimeout,
       );
       const usage = readModelUsage(out);
       inputTokens += usage.input; outputTokens += usage.output;
@@ -376,6 +402,8 @@ export async function runSkill<I, O>(
       failureKind = classifyProviderFailure(e);
       warnings.push(failureWarning(failureKind));
       warnings.push(`skill_repair_error:${failureKind}`);
+      // A repair the deadline cut short says so, stably, for the stage's record.
+      if (e instanceof Error && e.message.includes("ai_model_timeout_")) warnings.push("skill_repair_timeout");
     }
     if (data == null) {
       warnings.push("skill_output_invalid");

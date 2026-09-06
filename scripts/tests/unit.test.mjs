@@ -40,7 +40,7 @@ await build({
       export { actionsFor } from ${p("worker/lib/ops-actions.ts")};
       export { OPS2_BASE, isUnderOps2, ops2RouterBase, withBase } from ${p("src/data/ops2Routing.ts")};
       export { actionErrorText } from ${p("src/data/opsActionErrors.ts")};
-      export { checklistStepDuration, documentChecklist, drawingProgressEnded, mergeDrawingLog, pollWindowMs } from ${p("src/data/useProjectDocuments.ts")};
+      export { checklistStepDuration, documentChecklist, drawingProgressEnded, mergeDrawingLog, pollWindowMs, pollWindowElapsed } from ${p("src/data/useProjectDocuments.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -1835,4 +1835,13 @@ test("drawingProgressEnded: leaving drawing work closes its timer even when insp
   assert.equal(M.drawingProgressEnded({ progressStage: "extracting_schedule" }), false);
   assert.equal(M.drawingProgressEnded({ progressStage: "building_envelope", drawingsDone: 19, drawingsTotal: 19 }), true);
   assert.equal(M.drawingProgressEnded({ progressStage: "matching_and_pricing", drawingsDone: 0, drawingsTotal: 19 }), true);
+});
+
+test("pollWindowElapsed: the client backstop's clock starts when the run is running, not while it waits its turn in the queue", () => {
+  // With the queue consumer at one job at a time (wrangler.jsonc) a job may
+  // wait as long as another runs; waiting is not stalling, so the window is
+  // the run's, not the wait's.
+  assert.equal(M.pollWindowElapsed({ runningSince: null, now: 10_000_000, windowMs: 660_000 }), false, "queued: never expires");
+  assert.equal(M.pollWindowElapsed({ runningSince: 1_000, now: 1_000 + 660_000 - 1, windowMs: 660_000 }), false);
+  assert.equal(M.pollWindowElapsed({ runningSince: 1_000, now: 1_000 + 660_000, windowMs: 660_000 }), true);
 });

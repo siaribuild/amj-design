@@ -231,6 +231,13 @@ export function checklistStepDuration(
  *  the server's own answer cannot drift; a second literal always can. */
 export const POLL_WINDOW_MARGIN_MS = 60_000;
 export const POLL_WINDOW_FALLBACK_MS = 150_000;
+/** The client backstop's clock starts when the run is running, not while it
+ * waits its turn: with the queue consumer at one job at a time (wrangler.jsonc)
+ * a job may wait as long as another runs, and waiting is not stalling. */
+export function pollWindowElapsed(args: { runningSince: number | null; now: number; windowMs: number }): boolean {
+  return args.runningSince != null && args.now - args.runningSince >= args.windowMs;
+}
+
 export function pollWindowMs(serverDeadlineMs?: number | null): number {
   return (serverDeadlineMs ?? POLL_WINDOW_FALLBACK_MS) + POLL_WINDOW_MARGIN_MS;
 }
@@ -560,6 +567,8 @@ export function useProjectDocuments(
     // Widened to the server's own stated deadline as soon as a status read
     // reports one; until then, the historical literal.
     let windowMs = pollWindowMs();
+    // The window is the run's, not the wait's (pollWindowElapsed).
+    let runningSince: number | null = null;
     const tick = async (n: number) => {
       if (epoch !== pollEpoch.current) return;
       let inFlight = false;
@@ -568,7 +577,7 @@ export function useProjectDocuments(
       // authority on actual failure. We only give up on our own if the whole
       // run window elapses with no terminal status at all — a stall is
       // surfaced as concern, not death.
-      const windowElapsed = Date.now() - t0 >= windowMs;
+      const windowElapsed = pollWindowElapsed({ runningSince, now: Date.now(), windowMs });
       try {
         const { run, basis } = await extractionStatus();
         if (epoch !== pollEpoch.current) return;
@@ -576,6 +585,7 @@ export function useProjectDocuments(
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
           inFlight = true;
+          if (run.status === "running" && runningSince == null) runningSince = Date.now();
           if (run.deadlineMs) windowMs = pollWindowMs(run.deadlineMs);
           lastDiagnostic = run.diagnostic ?? null;
           if (run.progressStage !== lastStage) { lastStage = run.progressStage; }
@@ -627,7 +637,7 @@ export function useProjectDocuments(
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, windowMs - (Date.now() - t0));
+      const remaining = Math.max(250, windowMs - (Date.now() - (runningSince ?? Date.now())));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);

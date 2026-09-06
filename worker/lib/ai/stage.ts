@@ -68,6 +68,11 @@ export interface StageArgs<I, O> {
   /** Derive §13.2 escalation signals from the validated output (optional —
    *  schema failure is always signalled automatically). */
   signals?: (data: O | null, run: SkillRun<O>) => StageSignals;
+  /** Absolute time after which nothing new is dispatched inside this stage:
+   *  each call waits at most what remains, and neither the repair pass nor the
+   *  escalation is taken past it (round fourteen). Only the face-mapped drawing
+   *  stage passes one. */
+  deadlineAt?: number;
 }
 
 export interface StageResult<O> {
@@ -166,6 +171,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
     model,
     reasoningEffort: args.reasoningEffort,
     telemetry: { aiRunId, projectId },
+    deadlineAt: args.deadlineAt,
   });
   let modelCalls = run.modelCalls;
   let inputTokens = run.inputTokens;
@@ -177,17 +183,24 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   if (run.failureKind === "invalid_output") signals.schemaFailedAfterRepair = true;
   const decision = evaluateEscalation(signals);
   let taken = false;
-  if (decision.triggered && escalationEnabled(env)) {
+  const pastDeadline = args.deadlineAt != null && Date.now() >= args.deadlineAt;
+  // A skipped escalation says so, or `triggered` without `taken` reads as
+  // shadow mode.
+  if (decision.triggered && escalationEnabled(env) && pastDeadline) run.warnings.push("skill_escalation_skipped:deadline");
+  if (decision.triggered && escalationEnabled(env) && !pastDeadline) {
     const escalated = await runSkill(env, skill, input, {
       model: escalationModel(env),
       reasoningEffort: args.reasoningEffort,
       telemetry: { aiRunId, projectId },
+      deadlineAt: args.deadlineAt,
     });
     modelCalls += escalated.modelCalls;
     inputTokens += escalated.inputTokens;
     outputTokens += escalated.outputTokens;
     repaired ||= escalated.repaired;
     if (escalated.ok) { run = escalated; taken = true; }
+    // An escalation the deadline cut short keeps that reason on the record.
+    else run.warnings.push(...escalated.warnings.filter((warning) => /ai_model_timeout_|skill_repair_timeout|skill_repair_skipped:deadline/.test(warning)).map((warning) => `escalation:${warning}`));
   }
 
   // ── Archive the raw output to R2 (§7.1) ─────────────────────────────────────

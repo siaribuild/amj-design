@@ -28,7 +28,7 @@ await build({
   stdin: {
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
-      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed } from ${p("worker/lib/ai/pipeline.ts")};
+      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed, drawingStageDeadline } from ${p("worker/lib/ai/pipeline.ts")};
       export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
@@ -47,7 +47,7 @@ await build({
 });
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
-  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
+  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, drawingContextForOpening, thermalContextFor, buildSplitHints, persistDrawingStage, DrawingDeadlinePassed, drawingStageDeadline, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, thermalInputsFor, requirementSnapshot, modelReachCounters,
   resolveDefaultEnvelope, ARCHETYPES, buildExampleRecord,
@@ -1743,10 +1743,11 @@ test("a proposal that CAN price the opening retires the reason saying it could n
 });
 
 test("persistDrawingStage: a face-mapped run past its deadline writes nothing more, and the deadline is not swallowed (S2)", async () => {
-  // The job runner gives up on the extraction at its deadline. Whatever the
-  // drawing stage still returns after it is not written - neither the report
-  // nor the readings - and the refusal is an exception the caller sees, not a
-  // warning it walks past into split hints, model persistence and pricing.
+  // The drawing stage has its own deadline, the job's less a reserve. Whatever
+  // it still returns after that is not written - neither the report nor the
+  // readings - and the refusal is an exception the caller sees and carries on
+  // from with the schedule alone, inside the time the reserve kept for the
+  // split hints, the model and the pricing (round fourteen).
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   const harness = ({ mode = "face_mapped", reportWriteMs = 0, persistMs = 0 } = {}) => {
     const writes = [];
@@ -1800,4 +1801,11 @@ test("persistDrawingStage: a face-mapped run past its deadline writes nothing mo
   const asBefore = await legacy.run(Date.now() - 1, 0);
   assert.equal(legacy.persisted.length, 1);
   assert.deepEqual(asBefore.readings, legacy.stageResult.readings);
+});
+
+test("drawingStageDeadline: the drawing stage is given the job's deadline less a reserve, so the schedule fallback and the pricing keep their time when the drawings run out of theirs", () => {
+  // The reserve is the whole deadline a non-drawing job gets, which the rest of
+  // the pipeline is known to fit.
+  assert.equal(drawingStageDeadline(1_000_000), 1_000_000 - 120_000);
+  assert.equal(drawingStageDeadline(undefined), undefined);
 });

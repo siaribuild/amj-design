@@ -24,6 +24,7 @@ await build({
         MAX_PROGRESS_MESSAGE_CHARS,
         parseDrawingProgressLog,
         processAiExtractionJob,
+        reapAbandonedAiJobs,
       } from ${p("worker/lib/ai/jobs.ts")};
       export { completeAiRun } from ${p("worker/lib/ai/runs.ts")};
     `,
@@ -50,6 +51,7 @@ const {
   MAX_PROGRESS_MESSAGE_CHARS,
   parseDrawingProgressLog,
   processAiExtractionJob,
+  reapAbandonedAiJobs,
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
 
@@ -88,9 +90,9 @@ test("setDrawingProgress: writes phase + counts guarded by the exact processing 
   // The log is one D1 row, so it stops growing by bytes - not by a count that
   // assumes how many plan files or schedule rows a project holds - well inside
   // the row limit, while the snapshot columns keep writing; past it the client
-  // shows the live snapshot. (A 480-row run emits at most 730 milestones from
-  // the engine, progressMilestoneCeiling in report.ts, plus the stage's
-  // inventory milestone; the guard holds several such runs.)
+  // shows the live snapshot. (A 480-row plan file emits at most 730 milestones
+  // from the engine plus the stage's inventory milestone - the emitter count is
+  // pinned in drawing-enrichment.test.mjs; the guard holds several such files.)
   assert.match(calls[0].sql, new RegExp(`drawings_log=CASE WHEN length\\(CAST\\(coalesce\\(drawings_log,'\\[\\]'\\) AS BLOB\\)\\) < ${MAX_PROGRESS_LOG_BYTES} THEN json_insert\\(coalesce\\(drawings_log,'\\[\\]'\\), '\\$\\[#\\]', json\\(\\?\\)\\) ELSE drawings_log END`));
   assert.equal(MAX_PROGRESS_LOG_BYTES, 400_000);
   assert.match(calls[0].sql, /WHERE project_id=\? AND source_generation=\? AND status='processing'\s+AND processing_token=\?/);
@@ -292,7 +294,9 @@ test("retry reclaims a scheduled claim that was never dispatched", async () => {
   assert.equal(result.alreadyQueued, false);
   assert.equal(result.job.generation, 19);
   assert.equal(writes.length, 1);
-  assert.match(writes[0].sql, /status='scheduled' AND retry_after IS NULL/);
+  // A scheduled claim is dead only when its queue send failed - not by age,
+  // since with the consumer at one job at a time it may wait behind a long run.
+  assert.match(writes[0].sql, /status='scheduled' AND last_error='queue_send_failed'/);
   assert.equal(sends.length, 1);
 });
 
@@ -357,10 +361,6 @@ test("AC-42 signing in schedules no AI job and re-decides no product", async () 
   assert.ok(callers.get("parse.ts").every((fn) => /retry|matchSchedule/.test(fn)), callers.get("parse.ts").join());
 });
 
-test("classifyJobException: a deadline that reached the runner as an exception is the deadline, transient, not a document nobody understood", () => {
-  assert.deepEqual(classifyJobException(new Error("ai_processing_deadline_exceeded")), { failureClass: "transient", code: "ai_processing_deadline_exceeded" });
-});
-
 test("setDrawingProgress: a milestone's words are bounded - they carry names read off the customer's drawings", async () => {
   const calls = [];
   const fakeEnv = { DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); } }) }) } };
@@ -370,9 +370,9 @@ test("setDrawingProgress: a milestone's words are bounded - they carry names rea
   assert.equal(JSON.parse(calls[0].args[4]).message.length, MAX_PROGRESS_MESSAGE_CHARS, "the log entry");
 });
 
-test("processAiExtractionJob: a pipeline that throws the deadline is recorded as the deadline, transient, and the run it abandons is cancelled", async () => {
+test("processAiExtractionJob: an exception out of the pipeline is recorded transient, and the run it abandons is cancelled", async () => {
   const statements = [];
-  const deadline = () => { throw new Error("ai_processing_deadline_exceeded"); };
+  const outage = () => { throw new Error("container unreachable"); };
   const env = {
     DB: {
       prepare: (sql) => ({ bind: (...args) => ({
@@ -380,23 +380,78 @@ test("processAiExtractionJob: a pipeline that throws the deadline is recorded as
         first: async () => {
           if (sql.startsWith("SELECT ai_generation, status_customer FROM project")) return { ai_generation: 4, status_customer: "draft" };
           if (/UPDATE ai_job_claim\s+SET status='processing'/.test(sql)) return { project_id: "proj_1", attempts: 1 };
-          return deadline();
+          return outage();
         },
         run: async () => {
           statements.push({ sql, args });
           if (sql.startsWith("UPDATE ai_job_claim") || sql.startsWith("INSERT INTO ai_runs")) return { meta: { changes: 1 } };
-          return deadline();
+          return outage();
         },
-        all: async () => deadline(),
+        all: async () => outage(),
       }) }),
       batch: async (bound) => { statements.push(...bound); return bound.map(() => ({ meta: { changes: 1 } })); },
     },
     KV: { get: async () => null, delete: async () => {} },
   };
   const result = await processAiExtractionJob(env, { projectId: "proj_1", generation: 4, debounceToken: "tok" });
-  // One automatic attempt is configured, so the deadline is terminal.
+  // One automatic attempt is configured, so the failure is terminal.
   assert.equal(result.state, "failed");
   const transition = statements.find((s) => /UPDATE ai_job_claim\s+SET status=\?, lease_expires_at=NULL/.test(s.sql));
-  assert.deepEqual(transition.args.slice(0, 3), ["failed", "ai_processing_deadline_exceeded", "transient"]);
+  assert.deepEqual(transition.args.slice(0, 3), ["failed", "ai_runtime_temporarily_unavailable", "transient"]);
   assert.ok(statements.some((s) => /UPDATE ai_runs SET status='cancelled'/.test(s.sql)), "the abandoned run row is cancelled");
+});
+
+test("dispatchAiExtractionJob: a queue send that fails is not run inline under face_mapped - the claim stays scheduled for redispatch; the other modes run inline as before", async () => {
+  const inline = [];
+  const make = (mode) => {
+    const writes = [];
+    const env = {
+      AI_EXTRACTION_MODE: mode,
+      KV: { put: async () => {} },
+      AI_JOBS: { send: async () => { throw new Error("queue down"); } },
+      DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { writes.push({ sql, args }); return { meta: { changes: 1 } }; }, first: async () => null }) }) },
+    };
+    const ctx = { waitUntil: (promise) => { inline.push(mode); promise.catch(() => {}); } };
+    return { env, ctx, writes };
+  };
+  // The isolate's memory is the queue's to hand out, one run at a time
+  // (max_concurrency, wrangler.jsonc): nothing runs in this request's lifetime.
+  const faceMapped = make("face_mapped");
+  await dispatchAiExtractionJob(faceMapped.env, faceMapped.ctx, { projectId: "p", generation: 1, debounceToken: "t" });
+  assert.ok(faceMapped.writes.some((w) => /last_error='queue_send_failed'/.test(w.sql)), "the claim records why it waits");
+  assert.deepEqual(inline, []);
+  const other = make("auto_drawings");
+  await dispatchAiExtractionJob(other.env, other.ctx, { projectId: "p", generation: 1, debounceToken: "t" });
+  assert.deepEqual(inline, ["auto_drawings"]);
+});
+
+test("reapAbandonedAiJobs: the claim says what became of a redispatch - sent, it is a healthy scheduled claim again; unsent, it is marked, so nothing looks queued forever", async () => {
+  const make = (send) => {
+    const writes = [];
+    const env = {
+      AI_JOBS: { send },
+      // The reaper's first scan is prepared without a bind: the statement
+      // answers bound or not.
+      DB: { prepare: (sql) => {
+        const statement = (args) => ({
+          all: async () => /status='processing' AND lease_expires_at/.test(sql) ? { results: [] } : { results: [{ project_id: "p", source_generation: 3, debounce_token: "t" }] },
+          run: async () => { writes.push({ sql, args }); return { meta: { changes: 1 } }; },
+          first: async () => null,
+        });
+        return { ...statement([]), bind: (...args) => statement(args) };
+      } },
+    };
+    return { env, writes };
+  };
+  // The outcome clears retry_after too - the poll fails a send-failed claim
+  // only when none is set, and a re-scheduled lease carries one - and is
+  // guarded by the claim's token, so an old cron result cannot overwrite a
+  // claim the customer's retry replaced meanwhile.
+  const marker = (writes) => writes.find((w) => /SET last_error=\?, failure_class=\?, retry_after=NULL, updated_at=datetime\('now'\)\s+WHERE project_id=\? AND source_generation=\? AND status='scheduled' AND debounce_token=\?/.test(w.sql));
+  const sent = make(async () => {});
+  await reapAbandonedAiJobs(sent.env);
+  assert.deepEqual(marker(sent.writes)?.args, [null, null, "p", 3, "t"], "a sent redispatch clears a marker a failed first send left, so the poll does not fail healthy work");
+  const unsent = make(async () => { throw new Error("queue down"); });
+  await reapAbandonedAiJobs(unsent.env);
+  assert.deepEqual(marker(unsent.writes)?.args, ["queue_send_failed", "transient", "p", 3, "t"], "a redispatch that failed to send is marked for the poll and the retry");
 });

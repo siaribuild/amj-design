@@ -193,6 +193,38 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });
 
+    // With the queue consumer at one job at a time (wrangler.jsonc), a healthy
+    // scheduled claim may wait behind a long face-mapped run; the poll must not
+    // fail it for its age. Only a claim whose queue send failed is dead, and
+    // that one is failed at once so the customer can retry.
+    await t.test("extraction-status: a healthy scheduled claim is not failed for waiting; a send-failed one is failed at once (round fourteen)", async () => {
+      const s = new Session(baseUrl);
+      const created = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Queued-behind-a-long-run project", items: [{
+          code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+          width: "1200", height: "900", qty: 1,
+          options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+          lineTotal: 1,
+        }] },
+      });
+      const pid = created.body.project.id;
+      const gen = (await sql(`SELECT ai_generation FROM project WHERE id='${pid}'`))[0].ai_generation;
+      await sql(
+        `INSERT INTO ai_job_claim (project_id, source_generation, debounce_token, status, progress_stage, updated_at)
+         VALUES ('${pid}', ${gen}, 'test-token', 'scheduled', 'queued', datetime('now','-3 minutes'))`,
+      );
+      await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal((await sql(`SELECT status FROM ai_job_claim WHERE project_id='${pid}'`))[0].status, "scheduled", "waiting is not stalling");
+
+      await sql(`UPDATE ai_job_claim SET last_error='queue_send_failed', failure_class='transient' WHERE project_id='${pid}'`);
+      const failed = await requestJson(s, "/api/projects/current/extraction-status");
+      assert.equal((await sql(`SELECT status FROM ai_job_claim WHERE project_id='${pid}'`))[0].status, "failed", "a send that failed is dead at once");
+      assert.equal(failed.body.run.diagnostic?.retryable, true);
+
+      await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
+    });
+
     await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {
       const line = (code) => ({
         code, location: "Site", productSlug: "amj80-series-sliding-window",

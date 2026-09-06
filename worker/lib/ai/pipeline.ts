@@ -9,6 +9,7 @@
 // through the delivered deterministic engine over opening_instance — that
 // remains the selection substrate until a later phase cuts it over, so the
 // existing review UI keeps working while the new model accrues.
+import { FACE_MAPPED_DEADLINE_RESERVE_MS } from "../drawing/contract";
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import { createAiRun, completeAiRun } from "./runs";
@@ -573,7 +574,12 @@ export interface AiExtractionSummary {
   errorCode?: string | null;
 }
 
-/** The job's deadline reached the drawing stage after it was given up on. */
+/** The drawing stage's deadline: the job's less the reserve the rest of the
+ * pipeline needs (contract.ts). Undefined stays undefined - no clock, no gate. */
+export function drawingStageDeadline(deadlineAt?: number): number | undefined {
+  return deadlineAt == null ? undefined : deadlineAt - FACE_MAPPED_DEADLINE_RESERVE_MS;
+}
+
 export class DrawingDeadlinePassed extends Error {
   constructor() {
     super("ai_processing_deadline_exceeded");
@@ -583,11 +589,12 @@ export class DrawingDeadlinePassed extends Error {
 
 /**
  * Runs the drawing stage and persists what it produced - the report, then the
- * readings - inside the job's deadline. Past it, a face-mapped extraction has
- * been given up on and its retry may be running: nothing more is written, and
- * the deadline is thrown for the caller to stop on. A write that began in time
- * may still land; the check is made before each. The other modes never had
- * this clock and are not gated by it. `deps` are the seam the persistence
+ * readings - inside the drawing stage's deadline (the job's less a reserve).
+ * Past it nothing more is written, and the deadline is thrown for the caller
+ * to catch: the pipeline carries on with the schedule alone inside the
+ * reserve. A write that began in time may still land; the check is made before
+ * each and after the last. The other modes never had this clock and are not
+ * gated by it. `deps` are the seam the persistence
  * boundaries are tested through; production passes none.
  */
 export async function persistDrawingStage(
@@ -883,15 +890,15 @@ export async function runAiExtraction(
       ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase, message?: string) =>
           setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase, message)
       : undefined;
-    const staged = await persistDrawingStage(env, { projectId, run, planPdfDocs, scheduleRows, onProgress, deadlineAt: opts.deadlineAt, warnings });
+    const staged = await persistDrawingStage(env, { projectId, run, planPdfDocs, scheduleRows, onProgress, deadlineAt: drawingStageDeadline(opts.deadlineAt), warnings });
     drawingReadings = staged.readings;
     drawingReport = staged.report;
     applyDrawingOrientation(model, drawingReadings);
   } catch (err) {
-    // The job's deadline is not a warning to walk past into the split hints,
-    // the model and the pricing: the extraction has been given up on, and stops.
-    if (err instanceof DrawingDeadlinePassed) throw err;
-    warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
+    // The drawings ran out of their time (its own warning, pushed where it was
+    // refused) or failed: either way the schedule carries the run from here,
+    // inside the time the reserve kept for it (contract.ts, round fourteen).
+    if (!(err instanceof DrawingDeadlinePassed)) warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
   }
 
   const technicalReviewReasons = new Map<string, Set<string>>();
@@ -1213,9 +1220,6 @@ export async function runAiExtraction(
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
   } catch (error) {
-    // The job's deadline is the runner's to record, as the deadline: not a
-    // failed summary that reads as a document nobody understood.
-    if (error instanceof DrawingDeadlinePassed) throw error;
     console.log({
       event: "ai_pipeline_error", aiRunId: run.id, projectId,
       name: error instanceof Error ? error.name : "Error",

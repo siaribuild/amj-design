@@ -305,15 +305,23 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   state was the wrong shape for a Worker and is gone, and so (round thirteen,
   on the reviewer's ruling) is round twelve's per-isolate run slot: it
   serialised unrelated jobs with a silent wait of up to ten minutes and a
-  starvation case, which is a policy nobody approved. **What remains is a
-  fact the owner must decide on**: the limit is the isolate's, one isolate
-  serves concurrent requests, and this engine bounds one run at 120 MB. Two
-  face-mapped jobs in one isolate at once could exceed 128 MB. The honest
-  control is the job runner's, not this engine's: the queue consumer's
-  concurrency (`wrangler.jsonc`, `max_concurrency: 1` for `apertly-ai-jobs`)
-  or a Durable Object that hands out turns. Jobs are also dispatched from
-  routes through `waitUntil`, which the queue setting does not cover. This
-  engine holds no state across requests. The body is decoded as it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
+  starvation case, which is a policy nobody approved. The limit is the
+  isolate's, one isolate serves concurrent requests, and this engine bounds one
+  run at 120 MB, so two face-mapped jobs in one isolate at once could exceed
+  128 MB. **Round fourteen, on the reviewer's ruling, took the minimal
+  mitigation**: the queue consumer runs one job at a time (`wrangler.jsonc`,
+  `max_concurrency: 1` for `apertly-ai-jobs`), and under `face_mapped` a job
+  whose queue send fails is not run in the request's lifetime through
+  `waitUntil` as the other modes' are - the claim stays scheduled with its
+  reason: the poll fails it at once for the customer's retry, and the reaper's
+  five-minute scan of scheduled claims redispatches it through the queue
+  regardless. With the consumer at one job at a time a healthy scheduled claim
+  may wait behind a long run, so the poll and the retry no longer call a
+  scheduled claim dead for its age - only for a failed send (tested through the
+  route). The path with no queue binding at all - local development - still
+  runs inline. A Durable Object handing out turns remains
+  the stronger control, if the owner wants one. This engine holds no state
+  across requests. The body is decoded as it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
   their inspection and render caps stay 16 MB, their calls carry none of this
   engine's limits, they read files as they always did and are refused where
   they always were, and their crop retention is as it was. The face-mapped
@@ -322,9 +330,15 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   second look and the sheet read - carry version v2. The framed request copy
   stays: the container reads its request by Content-Length, and the container
   is unchanged on this branch.
-- **After the job's deadline: no new dispatch; no crop, progress, report or
-  reading written.** The job runner computes one absolute deadline; the
-  pipeline carries it down; both of this engine's call funnels refuse once it
+- **After the drawing stage's deadline - the job's less a 120-second reserve
+  (round fourteen) - no new dispatch and no new write; no late result
+  published.** The job runner computes one absolute deadline; the pipeline
+  carries it down, less the reserve (`FACE_MAPPED_DEADLINE_RESERVE_MS`, the
+  whole deadline a non-drawing job gets, which the rest of the pipeline is
+  known to fit), and the stage carries it into every model turn: a call waits
+  at most what remains of it, and neither the repair pass nor the escalation
+  is taken past it (tested at the runner; only this engine passes the clock,
+  every other caller's calls are as they were); both of this engine's call funnels refuse once it
   has passed - every model call, and every render when its turn comes (checked
   at dispatch, because four waves can queue before the deadline and reach it
   after) - and container calls made inside it are given no more time than
@@ -334,14 +348,19 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   deadline - not even the first, which follows the read from R2 - the stage
   returns no readings and names `deadline` as the phase (a file that had
   already failed for a reason of its own keeps that reason), and the pipeline
-  writes neither report nor readings, checking before each, **and stops**: the
-  deadline is thrown out of the drawing stage, not logged as a warning and
-  walked past into the split hints, the model and the pricing (round
-  thirteen). The persistence boundaries themselves are tested: a stage that
-  returns late writes nothing; a report write that crosses the deadline lands
-  but the readings behind it do not; another mode is untouched. A write that
-  began in time may still land - the check is before each write, not a
-  transaction around it. The abandoned run row is cancelled by the runner as
+  writes neither report nor readings, checking before each and after the last,
+  **and carries on with the schedule alone**: the deadline is thrown out of the
+  drawing stage and caught there, and the split hints, the model and the
+  pricing run inside the reserve (round fourteen, on the reviewer's ruling that
+  the handover's schedule fallback must survive a drawing failure; round
+  thirteen's stop is superseded). The persistence boundaries themselves are
+  tested: a stage that returns late writes nothing; a report write that
+  crosses the deadline lands but the readings behind it do not; a readings
+  write that crosses it lands and still throws; another mode is untouched. The
+  guarantee, worded as round fourteen asked: no new write is initiated after
+  the deadline and no late result is published - a write that began in time
+  may still land, since the check is before each write, not a transaction
+  around it. The abandoned run row is cancelled by the runner as
   it records the failure. What can still land: the stage archive
   row of a call that was already in flight, and the pipeline's own downstream
   writes for the run, which are as they were for every mode - the job runner's
@@ -366,7 +385,8 @@ progress cap short of the largest run and the two clocks mixed, both closed.
   too, since they carry names read off the customer's drawings - and started
   afresh on every attempt, so what a five-second poll did not happen to catch
   is still a row. How many milestones a run emits is counted from every emitter
-  (`progressMilestoneCeiling`, report.ts, checked against a real run's events):
+  (the emitter count pinned in drawing-enrichment.test.mjs, checked against a
+  real run's events; it governs nothing in production):
   at most 730 per plan file from the engine for a 480-row schedule, plus the
   stage's one inventory milestone per file - a run's total is the sum over its
   plan files - so the cap holds several such files. The guard is checked before
@@ -437,7 +457,44 @@ scope and the soft cap misstated, both fixed in the wording above. A fifth pass
 found the failed terminal branch left that log unmerged (the same one line, now
 there) and a test naming a phase that does not exist; nothing else.
 
-- **Owner ruling needed.** §9 says progress is append-only at milestones. The
+Round fourteen - the reviewer, over the pushed result - ruled, and it was done,
+each a test first: queue concurrency one and no inline run under `face_mapped`
+(above); the drawing stage's own deadline with a reserve, the schedule fallback
+preserved (above); the progress vocabulary in one shared module
+(`src/data/drawingProgress.ts`), the Worker re-exporting it and the browser
+typing by it, so a rename cannot compile on one side only; and the emitter
+count moved into the test that uses it, out of production. Codex over the
+result found two P1s, both closed: the poll and the retry called a scheduled
+claim dead after forty-five seconds, which with the consumer at one job at a
+time would fail healthy work waiting its turn (above); and the reserve was not
+kept inside a model turn - a call could cross the drawing deadline and start a
+ninety-second repair after it (above). A second pass found two more P1s, both
+closed: the browser's own backstop timed the queue wait and the run on one
+window, so a job that waited its turn behind a long run would be called
+interrupted a minute into its own; the window now starts when the run is
+running (`pollWindowElapsed`, tested) and a queued job is never expired by the
+browser. And a call with no time left was still dispatched, raced against a
+zero-wait timer that could not win; nothing is dispatched with no time left
+(tested). Its two P3s: the retry route still aged a scheduled claim - the same
+one clause, fixed; and a skipped or cut-short escalation was silent - it says
+so now (`skill_escalation_skipped:deadline`, and a cut-short escalation's
+timeout kept on the record; tested through the stage). A third pass found the
+reaper silent about its resend - a resend that failed to send left a claim
+looking queued forever, and one that sent left the failed-send marker for the
+poll to fail before the consumer reached it; the claim now says what became of
+it (tested) - and two counts: a refused dispatch counted as a call, a cut-short
+repair lost its reason; both fixed. A fourth pass: the reaper's outcome must
+clear `retry_after` too (the poll fails a send-failed claim only when none is
+set, and a re-scheduled lease carries one) and is guarded by the claim's token
+against a retry that replaced it meanwhile; and a cut-short escalation repair is
+now shown kept through the stage. Done, tested. What the reviewer
+stated as standing, stands: the functional gate has not passed - frames, crops
+and compositions are not reliable - and this engine stays switch-only; the
+append-only bound and the stricter limits are recommended for ratification,
+with the handover to be updated - the owner's edit, not made here.
+
+- **Owner ruling needed - the reviewer recommends approval and a handover
+  update.** §9 says progress is append-only at milestones. The
   log is one D1 row and is bounded at 400 KB - roughly four to five 480-row
   plan files, or a great many ordinary ones - and past the bound milestones are
   not kept; the snapshot columns go on and the customer sees the live state, so the
@@ -447,7 +504,12 @@ there) and a test naming a phase that does not exist; nothing else.
   whole log each time, so an unbounded log is a payload problem before it is a
   storage one. The alternative is one row per milestone and an incremental read.
 
-**Owner ruling needed.** The handover says the existing byte limits apply.
+**Owner ruling needed - the reviewer recommends ratifying, provided oversized
+responses demonstrably fall back.** They do: a response over its cap is refused
+at the container boundary as `too_large`, by declared length and by counted
+bytes (tested in drawing-enrichment.test.mjs); the stage records that as the
+file's failed phase with no readings for it (`enrich.ts`), and the schedule
+carries the run. The handover says the existing byte limits apply.
 This engine reads PDFs up to 20 MB and responses up to 8 MB (inspection) and
 4 MB (render), where the shared limits are 40 / 16 / 16. The stricter limits are
 the ones the per-run memory arithmetic closes at: with the per-call PDF copy

@@ -52,9 +52,15 @@ export const MAX_RETAINED_CROP_BYTES = COMPOSITION_BATCH_SIZE * COMPOSITION_CONC
 export const COMPOSITION_RETRY_BUDGET = 4;
 
 /** The persisted progress vocabulary (migration 0062): the six names the
- * CHECK constraint knows, as a value so the API can validate against it. */
-export const DRAWING_PROGRESS_PHASES = ["inventory", "elevation_inventory", "floorplan_location", "orientation", "render_crops", "opening_read"] as const;
-export type DrawingProgressPhase = (typeof DRAWING_PROGRESS_PHASES)[number];
+ * CHECK constraint knows, as a value so the API can validate against it. One
+ * home, shared with the browser (src/data/drawingProgress.ts). */
+export { DRAWING_PROGRESS_PHASES, type DrawingProgressPhase } from "../../../src/data/drawingProgress";
+
+/** The drawing stage's own deadline is the job's less this reserve (§8, round
+ * fourteen): when the drawings run out of time the pipeline carries on with
+ * the schedule alone, and the split hints, the model and the pricing still
+ * have the whole deadline a non-drawing job gets, which they are known to fit. */
+export const FACE_MAPPED_DEADLINE_RESERVE_MS = 120_000;
 
 export type ContainerFailureCode = "too_large" | "too_many_pages" | "bad_request" | "not_a_pdf" | "render_failed" | "timeout";
 

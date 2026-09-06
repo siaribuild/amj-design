@@ -1,18 +1,5 @@
 import type { CropBoxPt, DrawingFileReport, DrawingReading, FailurePhase, GapCode, OpeningOperation } from "../contract";
 import { OPERATIONS, type CompositionOutcome } from "./compositions";
-import { COMPOSITION_BATCH_SIZE, COMPOSITION_RETRY_BUDGET } from "../contract";
-
-/** The most milestones the engine emits for a run of `openings` scheduled
- * openings (§9), counted from every emitter in it: two for the plans; one per
- * face and storey the plan populated - at worst one per opening - plus the
- * phase start and the recheck; one per crop wave plus the start; one per read
- * wave plus one per recheck; and the close. The stage around it adds one
- * inventory milestone per file. Checked against a real run; the log itself is
- * bounded in bytes (jobs.ts). */
-export function progressMilestoneCeiling(openings: number): number {
-  const waves = Math.ceil(openings / COMPOSITION_BATCH_SIZE);
-  return 2 + (openings + 2) + (1 + waves) + (waves + COMPOSITION_RETRY_BUDGET) + 1;
-}
 import { normalizeOpeningRef } from "../../ai/energyMap";
 
 /**
