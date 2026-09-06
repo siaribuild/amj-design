@@ -6,8 +6,8 @@
 
 import { destination, type DestinationId } from "../nav/destinations";
 import {
-  ATTENTION_FILTERS,
-  attentionQuery,
+  ATTENTION_ARRIVALS,
+  arrivalQuery,
   selectProjects,
   type AttentionKey,
   type ProjectQueueRow,
@@ -89,15 +89,15 @@ const PROJECT_NOUNS: Record<AttentionKey, (count: number) => string> = {
 };
 
 /**
- * Projects rows: count = selectProjects(rows, attentionQuery(key)).length,
+ * Projects rows: count = selectProjects(rows, arrivalQuery(key)).length,
  * the same selector the queue itself counts and lists through — the number
  * on this page and the list it opens can never disagree. Zero-suppressed
- * (criterion 14), lifecycle order fixed by ATTENTION_FILTERS.
+ * (criterion 14), lifecycle order fixed by ATTENTION_ARRIVALS.
  */
 function projectRows(rows: readonly ProjectQueueRow[]): AttentionRow[] {
   const rowsOut: AttentionRow[] = [];
-  for (const filter of ATTENTION_FILTERS) {
-    const count = selectProjects(rows, attentionQuery(filter.key)).length;
+  for (const filter of ATTENTION_ARRIVALS) {
+    const count = selectProjects(rows, arrivalQuery(filter.key)).length;
     if (count === 0) continue;
     rowsOut.push({
       key: filter.key,

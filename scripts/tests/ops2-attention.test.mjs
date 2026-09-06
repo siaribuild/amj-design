@@ -1,8 +1,8 @@
 // Attention model (pure) — scripts/tests/ops2-attention.test.mjs
 //
 // Bundles src/ops2/attention/attention.ts together with the modules it is
-// specified to route through — src/ops2/projects/queue.ts (ATTENTION_FILTERS,
-// attentionQuery, selectProjects — the counting selector itself) and
+// specified to route through — src/ops2/projects/queue.ts (ATTENTION_ARRIVALS,
+// arrivalQuery, selectProjects — the counting selector itself) and
 // src/ops2/nav/destinations.ts (DESTINATIONS, the registered-route source of
 // truth) — exactly the way ops2-navigation.test.mjs bundles destinations.ts
 // with lineRoute.ts. This keeps the model's compile-time types (AttentionKey,
@@ -28,7 +28,7 @@ await build({
   stdin: {
     contents: `
       export { parseSummary, attentionGroups, combineLoads } from ${p("src/ops2/attention/attention.ts")};
-      export { ATTENTION_FILTERS, attentionQuery, selectProjects } from ${p("src/ops2/projects/queue.ts")};
+      export { ATTENTION_ARRIVALS, arrivalQuery, selectProjects } from ${p("src/ops2/projects/queue.ts")};
       export { DESTINATIONS } from ${p("src/ops2/nav/destinations.ts")};
     `,
     resolveDir: projectRoot,
@@ -42,7 +42,7 @@ await build({
   logLevel: "silent",
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
-const { parseSummary, attentionGroups, combineLoads, ATTENTION_FILTERS, attentionQuery, selectProjects, DESTINATIONS } = M;
+const { parseSummary, attentionGroups, combineLoads, ATTENTION_ARRIVALS, arrivalQuery, selectProjects, DESTINATIONS } = M;
 
 test.after(async () => {
   await removeRunDir(runDir);
@@ -50,10 +50,10 @@ test.after(async () => {
 
 // A registered pathname for every destination, per criterion 7.
 const REGISTERED_PATHS = new Set(DESTINATIONS.map((d) => d.path));
-const ATTENTION_KEYS = new Set(ATTENTION_FILTERS.map((f) => f.key));
+const ATTENTION_KEYS = new Set(ATTENTION_ARRIVALS.map((a) => a.key));
 
 /** A row in the shape `GET /api/ops/projects` actually returns — the fields
- *  ATTENTION_FILTERS reads, and nothing invented. Mirrors the `row()` helper
+ *  ATTENTION_ARRIVALS reads, and nothing invented. Mirrors the `row()` helper
  *  in ops2-projects.test.mjs. */
 const row = (over = {}) => ({
   id: "p_" + (over.ref ?? "x"), ref: over.ref ?? "OF-Q-10000", title: "A project",
@@ -98,10 +98,10 @@ function assertRowHref(row, expectAttn) {
   assert.equal(url.search, `?attn=${expectAttn}`, `${row.key} href must be exactly ?attn=${expectAttn}`);
 }
 
-test("attentionGroups: each project row's count is selectProjects(rows, attentionQuery(key)).length over PA-PF (criteria 1-4)", () => {
+test("attentionGroups: each project row's count is selectProjects(rows, arrivalQuery(key)).length over PA-PF (criteria 1-4)", () => {
   const groups = attentionGroups(SUMMARY_COUNTS, PA_PF);
-  for (const filter of ATTENTION_FILTERS) {
-    const expected = selectProjects(PA_PF, attentionQuery(filter.key)).length;
+  for (const filter of ATTENTION_ARRIVALS) {
+    const expected = selectProjects(PA_PF, arrivalQuery(filter.key)).length;
     const row = projectRow(groups, filter.key);
     if (expected === 0) {
       assert.equal(row, null, `${filter.key} expected zero-suppressed`);
@@ -134,8 +134,8 @@ test("attentionGroups: PF matches no predicate, proving narrowing (criterion 5)"
   // Every set omits at least one row another predicate matches — PB/PD/PE
   // are absent from submissions, PA/PD/PE absent from inReview, etc. Spot
   // check the two that hold every non-matching row.
-  assert.equal(selectProjects(PA_PF, attentionQuery("submissions")).length, 1);
-  assert.equal(selectProjects(PA_PF, attentionQuery("readyToIssue")).length, 1);
+  assert.equal(selectProjects(PA_PF, arrivalQuery("submissions")).length, 1);
+  assert.equal(selectProjects(PA_PF, arrivalQuery("readyToIssue")).length, 1);
 });
 
 test("attentionGroups: a state move flips counts and swaps list membership (criterion 6)", () => {
@@ -148,7 +148,7 @@ test("attentionGroups: a state move flips counts and swaps list membership (crit
   assert.equal(projectRow(after, "submissions"), null); // 1 -> 0, suppressed
   assert.equal(projectRow(after, "inReview").count, 3); // 2 -> 3
 
-  const inReviewRefs = selectProjects(moved, attentionQuery("inReview")).map((r) => r.ref);
+  const inReviewRefs = selectProjects(moved, arrivalQuery("inReview")).map((r) => r.ref);
   assert.deepEqual(inReviewRefs.sort(), ["PA", "PB", "PC"]);
 });
 
@@ -159,7 +159,7 @@ test("attentionGroups: readyToIssue is exactly rows.filter(r => r.issuable) what
   ];
   const groups = attentionGroups(SUMMARY_COUNTS, rows);
   const readyRefs = projectRow(groups, "readyToIssue")
-    ? selectProjects(rows, attentionQuery("readyToIssue")).map((r) => r.ref)
+    ? selectProjects(rows, arrivalQuery("readyToIssue")).map((r) => r.ref)
     : [];
   assert.deepEqual(readyRefs.sort(), rows.filter((r) => r.issuable).map((r) => r.ref).sort());
 });
