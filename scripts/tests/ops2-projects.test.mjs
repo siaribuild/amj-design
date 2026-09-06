@@ -17,9 +17,11 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
+const read = (rel) => readFileSync(join(projectRoot, rel), "utf8");
 const runDir = await makeRunDir("ops2-projects");
 const outfile = join(runDir, "ops2-projects-bundle.mjs");
 await build({
@@ -98,7 +100,7 @@ test("every number on screen IS the length of the list its own control produces"
       ...M.chipStates(rows, query),
       ...M.refinementStates(rows, query),
     ];
-    assert.ok(controls.length >= 3 + 3, "every control on screen must report itself");
+    assert.ok(controls.length >= 3 + 6, "every control on screen must report itself");
     for (const control of controls) {
       assert.equal(
         control.count,
@@ -159,7 +161,7 @@ test("a label says what it actually counts, or it is the wrong label", () => {
   //    the All chip, and what "active" should mean is a question for the owner.
   const all = M.chipStates([row({})], M.EMPTY_QUERY)[0];
   assert.equal(all.label, "All");
-  assert.deepEqual(all.query, { chip: "all", refinements: [], search: "", attention: null });
+  assert.deepEqual(all.query, { chip: "all", refinements: [], search: "" });
 
   // 3. And the gate's own verdict is what `Ready to issue` reads, now that the
   //    refinement is the only place it appears. It WAS re-derived — ours, in
@@ -292,7 +294,7 @@ test("an empty list says WHY it is empty, because the reasons are opposites", ()
   const nothingForUs = M.emptyStateFor(rows, { ...M.EMPTY_QUERY, chip: "us" });
   assert.equal(nothingForUs.headline, "Nothing is waiting on us.");
   assert.match(nothingForUs.detail, /submissions/i);
-  assert.deepEqual(nothingForUs.clear, { label: "Show all", query: { chip: "all", refinements: [], search: "", attention: null } });
+  assert.deepEqual(nothingForUs.clear, { label: "Show all", query: { chip: "all", refinements: [], search: "" } });
 
   const noMatch = M.emptyStateFor(rows, { ...M.EMPTY_QUERY, search: "zzz" });
   assert.match(noMatch.headline, /zzz/, "the words that found nothing are quoted back");
@@ -440,7 +442,7 @@ test("the Attention gate's four predicates select exactly what they claim, over 
     row({ ref: "PE", statusCustomer: "accepted", issuable: false, orderStage: "balance_invoiced" }),
     row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" }),
   ];
-  const refsFor = (key) => M.selectProjects(rows, M.attentionQuery(key)).map((r) => r.ref);
+  const refsFor = (key) => M.selectProjects(rows, M.arrivalQuery(key)).map((r) => r.ref);
 
   assert.deepEqual(refsFor("submissions"), ["PA"]);
   assert.deepEqual(refsFor("inReview"), ["PB", "PC"]);
@@ -460,20 +462,95 @@ test("the Attention gate's four predicates select exactly what they claim, over 
   );
 });
 
-test("emptyStateFor explains an Attention prefilter whose set moved on, with the way back", () => {
+test("emptyStateFor explains an arrival whose set moved on, as an ordinary named refinement", () => {
+  // Attention is no longer a second axis, so its arrival is now the same
+  // "refinements are NAMED" empty state every other refinement gets — no
+  // special-cased branch, no "Back to Needs us" of its own.
   const rows = [row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" })];
-  const state = M.emptyStateFor(rows, M.attentionQuery("submissions"));
-  assert.match(state.headline, /New submissions/);
-  assert.equal(state.detail, "This set moved on after Attention counted it.");
-  assert.deepEqual(state.clear, { label: "Back to Needs us", query: M.EMPTY_QUERY });
+  const state = M.emptyStateFor(rows, M.arrivalQuery("submissions"));
+  assert.equal(state.headline, "No projects match these filters.");
+  assert.match(state.detail, /New submissions/);
+  assert.equal(state.clear.label, "Clear filters");
 });
 
 test("attentionFromSearch validates against the closed key set — bogus, injected or oversized input is null", () => {
   assert.equal(M.attentionFromSearch("?attn=submissions"), "submissions");
   assert.equal(M.attentionFromSearch("?attn=readyToIssue"), "readyToIssue");
-  assert.equal(M.attentionFromSearch("?attn=bogus"), null, "not one of ATTENTION_FILTERS' own keys");
+  assert.equal(M.attentionFromSearch("?attn=bogus"), null, "not one of ATTENTION_ARRIVALS' own keys");
   assert.equal(M.attentionFromSearch("?attn=' OR '1'='1"), null, "SQL fragment");
   assert.equal(M.attentionFromSearch("?attn=<script>alert(1)</script>"), null, "script payload");
   assert.equal(M.attentionFromSearch("?attn=" + "a".repeat(10_000)), null, "10kB input");
   assert.equal(M.attentionFromSearch(""), null, "no param is not an instruction");
+});
+
+test("a chip's true zero still reads zero on the refinement, even where the chip hides the rows (criterion 11)", () => {
+  // The pair is real work, sitting behind `Needs us` — the chip does not lie
+  // about there being none of it under `All`; it is simply not the reviewer's
+  // to act on right now. `Awaiting payment` must say so exactly: 0 under the
+  // chip that hides them, the true count under `All`.
+  const rows = [
+    row({ ref: "PD", waitingOn: "Customer", orderStage: "deposit_invoiced" }),
+    row({ ref: "PE", waitingOn: "Customer", orderStage: "balance_invoiced" }),
+  ];
+  const countFor = (chip) =>
+    M.refinementStates(rows, { chip, refinements: [], search: "" })
+      .find((c) => c.key === "awaitingPayment").count;
+  assert.equal(countFor("us"), 0, "the chip that hides them reads their true zero, not a stale figure");
+  assert.equal(countFor("all"), 2);
+
+  // Ticking it anyway, under the chip that hides them, is an honest empty
+  // with a way out — the chip itself untouched.
+  const state = M.emptyStateFor(rows, { chip: "us", refinements: ["awaitingPayment"], search: "" });
+  assert.match(state.detail, /Awaiting payment/);
+  assert.equal(state.clear.query.chip, "us", "clearing the filter does not also flip the chip");
+  assert.deepEqual(M.selectProjects(rows, { chip: "us", refinements: ["awaitingPayment"], search: "" }), []);
+});
+
+test("REFINEMENTS holds six entries, one 'Ready to issue', in the panel's order (criterion 1, 2)", () => {
+  assert.deepEqual(
+    M.REFINEMENTS.map((r) => r.key),
+    ["submissions", "inReview", "ready", "awaitingPayment", "unresolved", "production"],
+  );
+  const labels = M.REFINEMENTS.map((r) => r.label);
+  assert.deepEqual(labels, [
+    "New submissions", "Being priced", "Ready to issue",
+    "Awaiting payment", "Unresolved lines", "In production",
+  ]);
+  assert.equal(new Set(labels).size, labels.length, "no two refinements say the same thing");
+  assert.equal(labels.filter((l) => l === "Ready to issue").length, 1, "exactly one, not the old duplicate");
+});
+
+test("the attention axis is gone from the model's own source, not just its exports (criterion 18)", () => {
+  // Scoped to queue.ts, this task's only source file — ProjectsPage.tsx and
+  // attention.ts still call the old names until the tasks that touch them
+  // land; the whole-directory purge is those tasks' pin, not this one's.
+  const stripComments = (text) => text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  const code = stripComments(read("src/ops2/projects/queue.ts"));
+  for (const banned of ["ATTENTION_FILTERS", "attentionQuery", "attentionStates"]) {
+    assert.ok(!code.includes(banned), `queue.ts still has ${banned} in code (not just a comment)`);
+  }
+  const queryDecl = code.slice(
+    code.indexOf("interface QueueQuery"),
+    code.indexOf("}", code.indexOf("interface QueueQuery")),
+  );
+  assert.ok(!queryDecl.includes("attention"), "QueueQuery no longer carries an attention field");
+});
+
+test("every arrival's card count equals the panel's own count for the mapped refinement (criterion 19)", () => {
+  const rows = [
+    row({ ref: "PA", statusCustomer: "submitted", issuable: false, orderStage: null }),
+    row({ ref: "PB", statusCustomer: "under_review", issuable: false, orderStage: null }),
+    row({ ref: "PC", statusCustomer: "under_review", issuable: true, orderStage: null }),
+    row({ ref: "PD", statusCustomer: "accepted", issuable: false, orderStage: "deposit_invoiced" }),
+    row({ ref: "PE", statusCustomer: "accepted", issuable: false, orderStage: "balance_invoiced" }),
+    row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" }),
+  ];
+  const panelCounts = M.refinementStates(rows, { chip: "all", refinements: [], search: "" });
+  for (const arrival of M.ATTENTION_ARRIVALS) {
+    const cardCount = M.selectProjects(rows, M.arrivalQuery(arrival.key)).length;
+    const panelCount = panelCounts.find((c) => c.key === arrival.refinement).count;
+    assert.equal(cardCount, panelCount, `${arrival.key}: card and panel must never disagree`);
+  }
 });
