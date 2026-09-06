@@ -34,6 +34,10 @@ export function FilterSheet({
 }) {
   return (
     <SidePanel open={open} onClose={onClose} title="Filters" testId="queue-filter-sheet"
+      // NAMED, so `projects.css` can pin this panel's footer without guessing
+      // at `SidePanel`'s insides. `testId` cannot do this job: it is a test
+      // handle, and styling one would make the tests load-bearing for the look.
+      panelClass="pq-sheet--filters"
       footer={
         <>
           <IonButton fill="clear" size="small" disabled={activeCount === 0} onClick={onClear}>

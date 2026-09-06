@@ -182,8 +182,43 @@ test("rail navigation and back from a record both reset the attention prefilter"
   await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
 });
 
+test("leaving the queue ends the arrival on departure, not on the way back", async ({ page }) => {
+  // Design §3.3's seam is LEAVING ENDS THE ARRIVAL. The three-state ref only
+  // flipped `true → false` when the route was left and did the reset on the
+  // RETURN, so the page held the prefiltered query for the whole time it was
+  // hidden and painted it once on the way back, before the effect cleared it.
+  //
+  // Asserted where that difference is readable: `IonRouterOutlet` keeps this
+  // page MOUNTED behind a record, so its own strip and rows can be counted
+  // while the record is the screen — the same mounted-but-hidden fact the
+  // sibling-route test above relies on.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_att1", ref: "OF-Q-90", title: "A submission", statusCustomer: "submitted" }),
+      fixtureRow({ id: "p_att2", ref: "OF-Q-91", title: "Not a submission" }),
+    ] },
+  }));
+
+  await page.goto(`${PROJECTS}?attn=submissions`);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("New submissions");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+
+  await page.getByTestId("queue-row").filter({ hasText: "A submission" }).click();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_att1$/);
+  // The record is on screen and the arrival is ALREADY over behind it.
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+
+  // And the return needs no protocol of its own: nothing is left to undo.
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+});
+
 test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs us", async ({ page }) => {
-  // Design §3.3, contract points 1 and 4. `readyToIssue` reads the server's
+  // Design §3.3, contract points 1 and 4. `ready` reads the server's
   // own `issuable` verdict — one row true, one false — so the narrowing is
   // real rather than incidental.
   await page.route(QUEUE_URL, (route) => route.fulfill({
@@ -193,7 +228,7 @@ test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs 
     ] },
   }));
 
-  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  await page.goto(`${PROJECTS}?attn=ready`);
   // The param is stripped — a one-shot instruction, not a bookmarkable state.
   await expect(page).toHaveURL(PROJECTS);
   await expect(page.getByTestId("queue-active-filters")).toContainText("Ready to issue");
@@ -242,7 +277,7 @@ test("?attn=bogus and injection payloads render the default set, nothing echoed"
   }
 });
 
-test("signed out, ?attn=readyToIssue hits the same wall as every other visit and shows no rows", async ({ browser }) => {
+test("signed out, ?attn=ready hits the same wall as every other visit and shows no rows", async ({ browser }) => {
   // Test plan criterion 18. A fresh context, none of the file's `beforeEach`
   // cookies: `GET /api/ops/projects` refuses with 403 regardless of the query
   // string — the parameter is consumed client-side over rows already fetched,
@@ -250,7 +285,7 @@ test("signed out, ?attn=readyToIssue hits the same wall as every other visit and
   // refusal surface as an authenticated non-staff account, not a filtered list.
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  await page.goto(`${PROJECTS}?attn=ready`);
   await expect(page.getByTestId("queue-error")).toBeVisible();
   await expect(page.getByTestId("queue-row")).toHaveCount(0);
   await context.close();
@@ -398,7 +433,9 @@ test("the tab strip never clips a label, and the bubble is part of the button", 
   const sheet = page.getByTestId("queue-filter-sheet");
   await page.getByTestId("queue-funnel").click();
   await expect(sheet).toBeVisible();
-  await page.getByTestId("queue-refinement").nth(2).click();
+  // Addressed by key, not position — six refinements now (t1's merge), and
+  // this test only needs any one of them ticked.
+  await page.locator('[data-testid="queue-refinement"][data-refinement="production"]').click();
   await page.keyboard.press("Escape");
   // WAIT FOR IT TO ACTUALLY BE GONE. The first version of this test asserted
   // the sheet was open again straight after the tap, and passed — because
@@ -526,11 +563,25 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     await loading;
     await expect(page.getByTestId("queue-row")).toHaveCount(4);
 
+    // READ ONCE THE PROMISE HAS STOPPED MOVING, SAME AS ABOVE. `toHaveCount(4)`
+    // only proves the four rows exist, not that the band above them and the
+    // list below have finished the reflow their arrival triggers — an
+    // unsettled read here is the identical race `during` was guarded against,
+    // moved to the other side of the comparison, and it is real: it once
+    // failed a full-file run at 390px (docs/runs/ops2-attention-filters-in-panel
+    // /06-verify.md, finding 1) and passed in isolation, which is a load-timing
+    // signature, not a layout defect the bounds should be widened for.
+    const after = await settled(async () => ({
+      row: (await page.locator(".pq-controls").boundingBox())!,
+      list: (await page.locator(width >= 1024 ? ".pq-table-wrap" : ".pq-cards").boundingBox())!,
+    }));
+    const rowSettled = after.row;
+    const list = after.list;
+
     // 1. THE BAND DOES NOT CHANGE SHAPE when the data lands. Rendering the real
     //    row only once the queue arrived grew the band by a row at that moment
     //    and shoved the whole list down — the jump the skeleton exists to
     //    prevent, reintroduced one level above it.
-    const rowSettled = (await page.locator(".pq-controls").boundingBox())!;
     expect(Math.abs(rowSettled.y - rowDuring.y), `the control row moves at ${width}px`)
       .toBeLessThanOrEqual(2);
     expect(Math.abs(rowSettled.height - rowDuring.height), `the band changes height at ${width}px`)
@@ -539,8 +590,6 @@ test("the skeleton is the shape that actually arrives, at both widths", async ({
     // 2. AND THE LIST LANDS WHERE IT WAS PROMISED, both edges. The top alone is
     //    set by the band above it and says nothing about whether the block is
     //    the right size.
-    const list = (await page.locator(width >= 1024 ? ".pq-table-wrap" : ".pq-cards")
-      .boundingBox())!;
     expect(Math.abs(list.y - listDuring.y), `the list starts elsewhere at ${width}px`)
       .toBeLessThanOrEqual(2);
     expect(Math.abs(list.height - listDuring.height), `the list is not the promised height at ${width}px`)
@@ -583,7 +632,9 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(sheet.getByText("Filters", { exact: true })).toBeVisible();
 
   const refinements = page.getByTestId("queue-refinement");
-  await expect(refinements).toHaveCount(3);
+  // Six now — the Attention gate's four merged in alongside the original two
+  // (queue.ts REFINEMENTS, t1).
+  await expect(refinements).toHaveCount(6);
   await expect(sheet.getByText("Ready to issue")).toBeVisible();
   await expect(sheet.getByText("Unresolved lines")).toBeVisible();
   // The fourth quick filter the mock argued for, demoted rather than deleted —
@@ -591,10 +642,13 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(sheet.getByText("In production")).toBeVisible();
 
   // Each states its effect BEFORE it is chosen: one of the two is in
-  // production, so nothing here is ticked blind.
-  await expect(sheet.getByTestId("queue-refinement-count").nth(2)).toHaveText("1");
+  // production, so nothing here is ticked blind. `production` is addressed by
+  // its own key now that the merge changed its position in the list, rather
+  // than by an index that six entries could shift under.
+  const production = page.locator('[data-testid="queue-refinement"][data-refinement="production"]');
+  await expect(production.getByTestId("queue-refinement-count")).toHaveText("1");
 
-  await refinements.nth(2).click();
+  await production.click();
   await page.getByRole("button", { name: "Done" }).click();
 
   // The bubble now says how many are on, and the strip above the list says WHICH
@@ -604,10 +658,198 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(page.getByTestId("queue-row")).toHaveCount(1);
   await expect(page.getByText("Underway")).toBeVisible();
 
-  // And one way to clear the lot.
+  // And one way to clear the lot — the strip's Clear is a full reset back to
+  // `Needs us` now, refinements-only or not: one row (`p_us`, waiting on Us).
   await page.getByTestId("queue-active-filters").getByRole("button", { name: "Clear" }).click();
   await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+});
+
+test("on a short phone the panel's last refinement and its Clear are both reachable", async ({ page }) => {
+  // 375×667 — an iPhone SE, and the shortest phone this console is used on.
+  // 05-polish.md recorded the failure and did not fix it: the half-height sheet
+  // shows five of the six controls, clips `In production`, and parks `Clear all
+  // filters` at y≈704, below the window. Ionic renders the phone form as a
+  // full-height wrapper translated down, so nothing overflows and the content
+  // does not scroll, and `breakpoints={[0, 0.5]}` leaves no higher stop to drag
+  // to. Three refinements fitted in half a phone; six do not — which is exactly
+  // how the build's own 390×844 tests missed it.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_prod", ref: "OF-Q-1", title: "Underway", waitingOn: "Nobody", phase: "Production" }),
+    ] },
+  }));
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto(PROJECTS);
+  await page.getByTestId("queue-funnel").click();
+  const sheet = page.getByTestId("queue-filter-sheet");
+  await expect(sheet.getByText("Filters", { exact: true })).toBeVisible();
+
+  // CLICKED, not merely asserted visible: `toBeVisible()` passes for a control
+  // parked below the window — it asks for a box, not for a box anyone can
+  // reach. A real click is what fails when nothing can bring it into view.
+  const last = page.getByTestId("queue-refinement").last();
+  await expect(last).toHaveAttribute("data-refinement", "production");
+  await last.click({ timeout: 5000 });
+  await expect(page.getByTestId("queue-funnel-count")).toHaveText("1");
+
+  // And the footer's own control, enabled only because that tick landed.
+  await sheet.getByRole("button", { name: "Clear all filters" }).click({ timeout: 5000 });
+  await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
+});
+
+test("ticking, composing and unticking refinements never asks the network again (criteria 5, 6, 7, 20)", async ({ page }) => {
+  let requests = 0;
+  await page.route(QUEUE_URL, (route) => {
+    requests += 1;
+    return route.fulfill({
+      json: { projects: [
+        fixtureRow({ id: "p_a", ref: "OF-Q-1", title: "Alpha", statusCustomer: "submitted" }),
+        fixtureRow({ id: "p_b", ref: "OF-Q-2", title: "Bravo", statusCustomer: "under_review" }),
+        fixtureRow({ id: "p_c", ref: "OF-Q-3", title: "Charlie", issuable: true }),
+        fixtureRow({ id: "p_d", ref: "OF-Q-4", title: "Delta", customerName: "Bright Living", waitingOn: "Customer", orderStage: "deposit_invoiced" }),
+        fixtureRow({ id: "p_e", ref: "OF-Q-5", title: "Echo", customerName: "Bright Living", waitingOn: "Customer", orderStage: "balance_invoiced", unresolved: 1 }),
+        fixtureRow({ id: "p_f", ref: "OF-Q-6", title: "Foxtrot", phase: "Production" }),
+      ] },
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(PROJECTS);
+  await page.getByTestId("queue-chip").first().click(); // All
+  await expect(page.getByTestId("queue-row")).toHaveCount(6);
+
+  await page.getByTestId("queue-funnel").click();
+  const awaitingPayment = page.locator('[data-testid="queue-refinement"][data-refinement="awaitingPayment"]');
+  await awaitingPayment.click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-funnel-count")).toHaveText("1");
+  await expect(page.getByTestId("queue-active-filters")).toContainText("Awaiting payment");
   await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByText("Delta")).toBeVisible();
+  await expect(page.getByText("Echo")).toBeVisible();
+
+  // A search term (matching both rows already on screen, by customer name —
+  // it narrows nothing further here, it just has to survive the tick) and a
+  // second refinement (matching Echo alone) compose: the result is the
+  // intersection of all three, and neither the chip nor the search box moves
+  // because ticking a checkbox is the only thing that changed.
+  await page.getByTestId("queue-search").locator("input").fill("bright");
+  await page.getByTestId("queue-funnel").click();
+  const unresolved = page.locator('[data-testid="queue-refinement"][data-refinement="unresolved"]');
+  await unresolved.click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-funnel-count")).toHaveText("2");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Echo")).toBeVisible();
+  await expect(page.getByTestId("queue-search").locator("input")).toHaveValue("bright");
+  await expect(page.getByTestId("queue-chip").first()).toHaveAttribute("aria-pressed", "true");
+
+  // Untick the second refinement, search left exactly as it was: back to the
+  // pre-tick view (Delta reappears) and the bubble decrements rather than
+  // resetting to zero.
+  await page.getByTestId("queue-funnel").click();
+  await unresolved.click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-funnel-count")).toHaveText("1");
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByTestId("queue-search").locator("input")).toHaveValue("bright");
+
+  // ONE REQUEST FOR THE WHOLE SEQUENCE: filtering is client-side over the rows
+  // already in hand, so no filter value — ticked, typed, or cleared — ever
+  // reaches the Worker as a second `GET /api/ops/projects`.
+  expect(requests, "the queue was re-fetched while only refinements changed").toBe(1);
+});
+
+test("Clear ends an arrival, but re-ticking its own filter from the panel gets back to it (criterion 9)", async ({ page }) => {
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      // Both fixture rows default `waitingOn: "Us"` (design's own note): the
+      // point is that `Needs us` leaves the set unchanged once Clear lands on
+      // it, so re-ticking the arrival's refinement from the panel is the only
+      // thing that narrows the list back down.
+      fixtureRow({ id: "p_a", ref: "OF-Q-1", title: "Alpha", statusCustomer: "submitted" }),
+      fixtureRow({ id: "p_b", ref: "OF-Q-2", title: "Bravo" }),
+    ] },
+  }));
+
+  // The very URL the Attention card links to (href-asserted there).
+  await page.goto(`${PROJECTS}?attn=submissions`);
+  await expect(page).toHaveURL(PROJECTS);
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Alpha")).toBeVisible();
+
+  await page.getByTestId("queue-active-filters").getByRole("button", { name: "Clear" }).click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+
+  // Re-tick from the panel — not the card, not the URL — and land on exactly
+  // the arrival's own set again.
+  await page.getByTestId("queue-funnel").click();
+  await page.locator('[data-testid="queue-refinement"][data-refinement="submissions"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
+  await expect(page.getByText("Alpha")).toBeVisible();
+  await expect(page).toHaveURL(PROJECTS);
+});
+
+test("the labelled zero, and an honest empty naming whichever filters put it there (criteria 4, 10, 11, 12)", async ({ page }) => {
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      // Both invoiced rows wait on the CUSTOMER, not us — the pair D1's
+      // labelled zero is pinned on: `Needs us` must show 0 for them honestly,
+      // never omit the control because nothing on screen would match it.
+      fixtureRow({ id: "p_d", ref: "OF-Q-1", title: "Delta", waitingOn: "Customer", orderStage: "deposit_invoiced" }),
+      fixtureRow({ id: "p_e", ref: "OF-Q-2", title: "Echo", waitingOn: "Customer", orderStage: "balance_invoiced" }),
+      fixtureRow({ id: "p_a", ref: "OF-Q-3", title: "Alpha", statusCustomer: "submitted" }),
+      fixtureRow({ id: "p_b", ref: "OF-Q-4", title: "Bravo", statusCustomer: "under_review" }),
+    ] },
+  }));
+  await page.goto(PROJECTS);
+
+  // Arrival is `Needs us`: the true count for `Awaiting payment` here is
+  // zero, not an absent or dashed control.
+  await page.getByTestId("queue-funnel").click();
+  const awaitingPayment = page.locator('[data-testid="queue-refinement"][data-refinement="awaitingPayment"]');
+  await expect(awaitingPayment.getByTestId("queue-refinement-count")).toHaveText("0");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // Under `All` the same control counts the true number — the zero above was
+  // the chip's own honesty, not a bug in the control.
+  await page.getByTestId("queue-chip").first().click(); // All
+  await page.getByTestId("queue-funnel").click();
+  await expect(awaitingPayment.getByTestId("queue-refinement-count")).toHaveText("2");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // Tick it anyway, back under `Needs us`: the empty names the filter holding
+  // the door shut and hands back the way out, and the chip that brought the
+  // reader here stays lit — no auto-widening (D1, rejected alternative).
+  await page.getByTestId("queue-chip").nth(1).click(); // Needs us
+  await page.getByTestId("queue-funnel").click();
+  await awaitingPayment.click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-row")).toHaveCount(0);
+  const empty = page.getByTestId("queue-empty");
+  await expect(empty).toContainText("Awaiting payment");
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+
+  // Two ticked under `All`: the empty names both, not a count.
+  await page.getByTestId("queue-chip").first().click(); // All
+  await page.getByTestId("queue-funnel").click();
+  await awaitingPayment.click(); // untick — start this half clean
+  await page.locator('[data-testid="queue-refinement"][data-refinement="submissions"]').click();
+  await page.locator('[data-testid="queue-refinement"][data-refinement="inReview"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await expect(page.getByTestId("queue-row")).toHaveCount(0);
+  await expect(empty).toContainText("New submissions");
+  await expect(empty).toContainText("Being priced");
 });
 
 // ── The states the seed cannot produce ───────────────────────────────────────

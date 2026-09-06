@@ -73,8 +73,8 @@ export interface ProjectQueueRow {
   stateLabel: string;
   orderNo: string | null;
   /** The server's own customer-facing status (P2). Empty string when absent —
-   *  matches none of `ATTENTION_FILTERS`' predicates, same under-claiming rule
-   *  as `issuable`. */
+   *  matches none of the `submissions`/`inReview` `REFINEMENTS` predicates,
+   *  same under-claiming rule as `issuable`. */
   statusCustomer: string;
   /** The order's stage, if one exists. `null` — no order yet, or the field
    *  was absent. */
@@ -90,15 +90,10 @@ export interface QueueQuery {
   refinements: readonly RefinementKey[];
   /** Raw text as typed. Trimming and casing are this module's business. */
   search: string;
-  /** The Attention gate's prefilter, set only by an Attention row's link
-   *  (`?attn=`). Not a funnel control — see `ATTENTION_FILTERS`. */
-  attention: AttentionKey | null;
 }
 
-export type RefinementKey = "ready" | "unresolved" | "production";
-
-/** The Attention gate's four project groups. */
-export type AttentionKey = "submissions" | "inReview" | "readyToIssue" | "awaitingPayment";
+export type RefinementKey =
+  | "submissions" | "inReview" | "ready" | "awaitingPayment" | "unresolved" | "production";
 
 /**
  * The chips — WHO IS WAITING, which is the question the queue exists to answer,
@@ -140,9 +135,16 @@ export const WAIT_CHIPS: readonly { key: ChipKey; label: string; waitingOn: Wait
 export const REFINEMENTS: readonly {
   key: RefinementKey; label: string; test: (row: ProjectQueueRow) => boolean;
 }[] = [
+  // The first four are the Attention gate's own predicates, P2's, verbatim —
+  // never a phase or label proxy. Merged in as ordinary refinements rather
+  // than a second axis (ADR 0020, grill P1): one funnel, one selector.
+  { key: "submissions",     label: "New submissions",  test: (r) => r.statusCustomer === "submitted" },
+  { key: "inReview",        label: "Being priced",     test: (r) => r.statusCustomer === "under_review" },
   // The server's verdict, and nothing else. Adding a client-side condition here
   // would recreate exactly the drift this replaced.
-  { key: "ready", label: "Ready to issue", test: (r) => r.issuable },
+  { key: "ready",           label: "Ready to issue",   test: (r) => r.issuable },
+  { key: "awaitingPayment", label: "Awaiting payment",
+    test: (r) => r.orderStage === "deposit_invoiced" || r.orderStage === "balance_invoiced" },
   // UNRESOLVED, NOT "UNPRICED", and the difference is the server's own. The
   // endpoint counts `status <> 'ready' OR line_total IS NULL`, so a line that is
   // fully priced and sitting in technical review is unresolved and is not
@@ -156,28 +158,30 @@ const REFINEMENT_BY_KEY = new Map(REFINEMENTS.map((r) => [r.key, r]));
 const CHIP_BY_KEY = new Map(WAIT_CHIPS.map((c) => [c.key, c]));
 
 /**
- * The Attention gate's four predicates, P2's, verbatim — never a phase or
- * label proxy. Not a funnel control: set only by an Attention row's link
- * (`?attn=`), never toggled here (owner ruling 2026-09-01, default NO on
- * extra ops controls — ADR 0018).
+ * The Attention gate's four cards — WHICH REFINEMENTS THEY ARE, not a key
+ * space of their own. ADR 0020 says one axis, so a card names the refinement
+ * it sets and `?attn=` carries that name unchanged.
+ *
+ * This was a `{ key, refinement }` mapping table, and three of its four entries
+ * mapped a key to itself: the whole table existed because one card was spelled
+ * `readyToIssue` where its refinement is `ready`. That is the second axis
+ * growing back as a naming convention — and the lookup it needed carried a
+ * non-null assertion that would compile, then throw, the day a fifth card
+ * arrived without an entry.
  */
-export const ATTENTION_FILTERS: readonly {
-  key: AttentionKey; label: string; test: (row: ProjectQueueRow) => boolean;
-}[] = [
-  { key: "submissions",     label: "New submissions",  test: (r) => r.statusCustomer === "submitted" },
-  { key: "inReview",        label: "Being priced",     test: (r) => r.statusCustomer === "under_review" },
-  { key: "readyToIssue",    label: "Ready to issue",   test: (r) => r.issuable },
-  { key: "awaitingPayment", label: "Awaiting payment",
-    test: (r) => r.orderStage === "deposit_invoiced" || r.orderStage === "balance_invoiced" },
-];
+export const ATTENTION_ARRIVALS = [
+  "submissions", "inReview", "ready", "awaitingPayment",
+] as const satisfies readonly RefinementKey[];
+
+export type AttentionKey = typeof ATTENTION_ARRIVALS[number];
 
 /**
  * The exact state an Attention row's press produces. `chip: "all"` so the
  * predicate alone defines the set — an `us` intersection would empty
  * `awaitingPayment` (those rows are waitingOn Customer).
  */
-export function attentionQuery(key: AttentionKey): QueueQuery {
-  return { chip: "all", refinements: [], search: "", attention: key };
+export function arrivalQuery(key: AttentionKey): QueueQuery {
+  return { chip: "all", refinements: [key], search: "" };
 }
 
 /**
@@ -187,7 +191,7 @@ export function attentionQuery(key: AttentionKey): QueueQuery {
  */
 export function attentionFromSearch(search: string): AttentionKey | null {
   const key = new URLSearchParams(search).get("attn");
-  return ATTENTION_FILTERS.some((f) => f.key === key) ? (key as AttentionKey) : null;
+  return ATTENTION_ARRIVALS.includes(key as AttentionKey) ? (key as AttentionKey) : null;
 }
 
 /**
@@ -200,7 +204,7 @@ export function attentionFromSearch(search: string): AttentionKey | null {
  * `All`. ASSUMED: the desktop drawing decides it, and the mobile one is read as
  * illustrating chip states rather than specifying the default. One line to flip.
  */
-export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: "", attention: null };
+export const EMPTY_QUERY: QueueQuery = { chip: "us", refinements: [], search: "" };
 
 /**
  * Fixed order, not user-sortable: ours first, then longest neglected.
@@ -368,20 +372,6 @@ export function emptyStateFor(
     };
   }
 
-  // AN ATTENTION PREFILTER, EMPTIED. Reachable only when state moved between
-  // the gate's render and the press — the count was real when Attention took
-  // it, so the message says the set moved on rather than blaming a filter the
-  // reader never touched. Checked before search: this prefilter is never a
-  // manually-typed control, so it is the truer explanation whenever it is on.
-  if (query.attention) {
-    const filter = ATTENTION_FILTERS.find((f) => f.key === query.attention)!;
-    return {
-      headline: `Nothing here is “${filter.label}” any more.`,
-      detail: "This set moved on after Attention counted it.",
-      clear: { label: "Back to Needs us", query: EMPTY_QUERY },
-    };
-  }
-
   const term = query.search.trim();
   if (term) {
     // IS IT STRANDED, OR IS IT ABSENT? Those are different sentences and only
@@ -394,8 +384,8 @@ export function emptyStateFor(
     // for a project that refinement excluded reported "Nothing matches" and
     // blamed the term. The term was fine; a filter the reader had switched on
     // was hiding the job.
-    const narrowed = query.chip !== "all" || query.refinements.length > 0 || query.attention !== null;
-    const elsewhere = selectProjects(rows, { chip: "all", refinements: [], search: query.search, attention: null });
+    const narrowed = query.chip !== "all" || query.refinements.length > 0;
+    const elsewhere = selectProjects(rows, { chip: "all", refinements: [], search: query.search });
     if (elsewhere.length > 0 && narrowed) {
       return {
         headline: `Nothing matches “${term}” in this filter.`,
@@ -428,14 +418,14 @@ export function emptyStateFor(
     return {
       headline: "Nothing is waiting on us.",
       detail: "New submissions and enquiries land here as they arrive.",
-      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "", attention: null } },
+      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "" } },
     };
   }
   if (query.chip === "customer") {
     return {
       headline: "Nothing is waiting on the customer.",
       detail: "Issued quotes and invoices sent for payment land here.",
-      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "", attention: null } },
+      clear: { label: "Show all", query: { chip: "all", refinements: [], search: "" } },
     };
   }
 
@@ -503,7 +493,7 @@ export function parseProjectQueue(body: unknown): ProjectQueueRow[] {
       stateLabel: str(r.stateLabel) ?? phase,
       orderNo: str(r.orderNo),
       // Absence under-claims — same rule as `issuable`: a row that did not say
-      // where it stands matches none of `ATTENTION_FILTERS`' predicates.
+      // where it stands matches none of `REFINEMENTS`' `statusCustomer` predicates.
       statusCustomer: str(r.statusCustomer) ?? "",
       orderStage: str(r.orderStage),
     }];
@@ -647,7 +637,5 @@ export function selectProjects(
     .filter((r) => waiting === null || r.waitingOn === waiting)
     .filter((r) => !term || matches(r, term))
     .filter((r) => refinements.every((f) => f.test(r)))
-    .filter((r) => !query.attention
-      || ATTENTION_FILTERS.find((f) => f.key === query.attention)!.test(r))
     .sort(byUrgency);
 }

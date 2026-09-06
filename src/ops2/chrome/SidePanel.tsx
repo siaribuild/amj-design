@@ -71,7 +71,7 @@ const slideOut = (baseEl: HTMLElement) =>
 
 export function SidePanel({
   open, onClose, title, testId, footer, children,
-  phoneForm = "sheet", dismiss = "done",
+  phoneForm = "sheet", dismiss = "done", panelClass,
 }: {
   open: boolean;
   /**
@@ -115,6 +115,19 @@ export function SidePanel({
    * defect one surface over.
    */
   dismiss?: "done" | { back: string };
+  /**
+   * The caller's own name for its panel, carried onto the modal alongside the
+   * form classes so a stylesheet can reach THIS panel without reaching into
+   * this component.
+   *
+   * It exists because the filter's footer pinning was scoped with
+   * `:has(ion-list)` — identifying a caller by which elements it happens to
+   * put inside a shared component. That breaks two ways with nobody touching
+   * the filter: the next list-backed panel inherits a sticky footer it never
+   * asked for, and a markup change in here silently unpins this one. A class
+   * the caller declares is the seam; the children are not.
+   */
+  panelClass?: string;
   children: ReactNode;
 }) {
   const wide = useRailWidth();
@@ -178,9 +191,28 @@ export function SidePanel({
       // try to drag itself up from the bottom edge.
       initialBreakpoint={sheet ? 0.5 : undefined}
       breakpoints={sheet ? [0, 0.5] : undefined}
+      // AND THE SHEET SCROLLS WHAT IT CANNOT SHOW.
+      //
+      // Ionic renders a sheet as a FULL-HEIGHT `.ion-page` translated down to
+      // its breakpoint, so at 0.5 the content box is twice the band anyone can
+      // see: nothing overflows, and content that cannot overflow cannot scroll.
+      // Measured at 375x667 with the filter's six controls (`05-polish.md`) —
+      // `In production` clipped, `Clear all filters` at y=704, the handle
+      // dragging to nothing because `[0, 0.5]` has no higher stop. Three
+      // controls fitted half a phone; six do not, and the next surface to reach
+      // seven would have found this again.
+      //
+      // `expandToScroll={false}` is Ionic's own switch for it (8.5+): it caps
+      // the content at `breakpoint * 100%`, so the overflow happens INSIDE the
+      // visible band and `ion-content` scrolls there. Chosen over a third
+      // breakpoint, which still needs a drag before the last control exists,
+      // and over `phoneForm="screen"` for the filter, which would abandon the
+      // bottom sheet the owner asked for by name. The sheet stays the mock's
+      // sheet; it simply stops hiding its own tail.
+      expandToScroll={sheet ? false : undefined}
       enterAnimation={fromRight ? slideIn : undefined}
       leaveAnimation={fromRight ? slideOut : undefined}
-      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}`}
+      className={`pq-sheet${form === "side" ? " pq-sheet--side" : ""}${form === "screen" ? " pq-sheet--screen" : ""}${panelClass ? ` ${panelClass}` : ""}`}
       data-testid={testId}
       // REMOUNT WHEN THE FORM CHANGES. Ionic settles `isSheetModal`, its gesture
       // and its breakpoint during `present()`, so a window crossing the change
