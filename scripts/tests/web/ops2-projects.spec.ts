@@ -398,7 +398,9 @@ test("the tab strip never clips a label, and the bubble is part of the button", 
   const sheet = page.getByTestId("queue-filter-sheet");
   await page.getByTestId("queue-funnel").click();
   await expect(sheet).toBeVisible();
-  await page.getByTestId("queue-refinement").nth(2).click();
+  // Addressed by key, not position — six refinements now (t1's merge), and
+  // this test only needs any one of them ticked.
+  await page.locator('[data-testid="queue-refinement"][data-refinement="production"]').click();
   await page.keyboard.press("Escape");
   // WAIT FOR IT TO ACTUALLY BE GONE. The first version of this test asserted
   // the sheet was open again straight after the tap, and passed — because
@@ -583,7 +585,9 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(sheet.getByText("Filters", { exact: true })).toBeVisible();
 
   const refinements = page.getByTestId("queue-refinement");
-  await expect(refinements).toHaveCount(3);
+  // Six now — the Attention gate's four merged in alongside the original two
+  // (queue.ts REFINEMENTS, t1).
+  await expect(refinements).toHaveCount(6);
   await expect(sheet.getByText("Ready to issue")).toBeVisible();
   await expect(sheet.getByText("Unresolved lines")).toBeVisible();
   // The fourth quick filter the mock argued for, demoted rather than deleted —
@@ -591,10 +595,13 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(sheet.getByText("In production")).toBeVisible();
 
   // Each states its effect BEFORE it is chosen: one of the two is in
-  // production, so nothing here is ticked blind.
-  await expect(sheet.getByTestId("queue-refinement-count").nth(2)).toHaveText("1");
+  // production, so nothing here is ticked blind. `production` is addressed by
+  // its own key now that the merge changed its position in the list, rather
+  // than by an index that six entries could shift under.
+  const production = page.locator('[data-testid="queue-refinement"][data-refinement="production"]');
+  await expect(production.getByTestId("queue-refinement-count")).toHaveText("1");
 
-  await refinements.nth(2).click();
+  await production.click();
   await page.getByRole("button", { name: "Done" }).click();
 
   // The bubble now says how many are on, and the strip above the list says WHICH
@@ -604,10 +611,12 @@ test("the funnel opens the mock's panel, and its bubble counts what is on", asyn
   await expect(page.getByTestId("queue-row")).toHaveCount(1);
   await expect(page.getByText("Underway")).toBeVisible();
 
-  // And one way to clear the lot.
+  // And one way to clear the lot — the strip's Clear is a full reset back to
+  // `Needs us` now, refinements-only or not: one row (`p_us`, waiting on Us).
   await page.getByTestId("queue-active-filters").getByRole("button", { name: "Clear" }).click();
   await expect(page.getByTestId("queue-funnel-count")).toHaveCount(0);
-  await expect(page.getByTestId("queue-row")).toHaveCount(2);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("queue-row")).toHaveCount(1);
 });
 
 // ── The states the seed cannot produce ───────────────────────────────────────
