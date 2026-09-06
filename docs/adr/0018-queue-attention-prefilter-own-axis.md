@@ -1,6 +1,6 @@
 # 0018 — The Attention prefilter is a fourth query axis, not a funnel refinement
 
-**Status:** accepted
+**Status:** superseded by 0020 — the axis is deleted; the four filters are ordinary refinements.
 **Full design:** `docs/runs/ops2-attention-prefilter/02-design.md` §8.1
 
 ## Context

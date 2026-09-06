@@ -1,0 +1,120 @@
+{
+  "slug": "ops2-attention-filters-in-panel",
+  "tier": "full",
+  "base": "9567992e4713680715d6018586e5d5cdb9050d6c",
+  "branch": "feat/ops2-attention-filters-in-panel",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "contextTokens": 299042,
+      "outputTokens": 12951,
+      "turns": 6,
+      "source": "transcript",
+      "session": "f70da4bf-3d47-446e-8a2f-7313b67fe95b",
+      "seconds": 186,
+      "status": "done",
+      "mode": "headless",
+      "code": 0
+    },
+    "design": {
+      "contextTokens": 2802200,
+      "outputTokens": 36289,
+      "turns": 24,
+      "source": "transcript",
+      "session": "5f2ae2fd-8d45-4ac3-940d-c519933f3990",
+      "seconds": 531,
+      "status": "done",
+      "mode": "headless"
+    },
+    "ux": {
+      "contextTokens": 8707620,
+      "outputTokens": 55159,
+      "turns": 53,
+      "source": "transcript",
+      "session": "65a448b7-e9d3-4d3d-bcc5-5bf208c7018d",
+      "seconds": 762,
+      "status": "done",
+      "mode": "headless",
+      "code": 0
+    },
+    "build-t1": {
+      "code": 0,
+      "contextTokens": 5136172,
+      "outputTokens": 26421,
+      "turns": 49,
+      "source": "transcript",
+      "session": "5cb81845-0b20-48c3-9cfe-07f9dfdd6df4",
+      "seconds": 584
+    },
+    "build-t2": {
+      "code": 0,
+      "contextTokens": 1318667,
+      "outputTokens": 5267,
+      "turns": 17,
+      "source": "transcript",
+      "session": "92b2edf7-19cc-4462-9d8e-136d122e71b6",
+      "seconds": 164
+    },
+    "build-t3": {
+      "code": 0,
+      "contextTokens": 4993342,
+      "outputTokens": 36746,
+      "turns": 43,
+      "source": "transcript",
+      "session": "eb8d91c9-b792-4e29-9d9f-021e851c0482",
+      "seconds": 668
+    },
+    "build-t4": {
+      "code": 0,
+      "contextTokens": 7186617,
+      "outputTokens": 43015,
+      "turns": 64,
+      "source": "transcript",
+      "session": "d826a76b-59b3-4e7b-8df9-2f7c065c19f5",
+      "seconds": 1088
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 12406948,
+      "outputTokens": 54983,
+      "turns": 85,
+      "source": "transcript",
+      "session": "059bc803-5907-4f0b-91d8-44a05bc861d9",
+      "seconds": 1498
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 5349339,
+      "outputTokens": 27644,
+      "turns": 49,
+      "source": "transcript",
+      "session": "727f7c33-f853-488e-acc0-f0097bb4edde",
+      "seconds": 1988
+    },
+    "fix-0": {
+      "code": 0,
+      "contextTokens": 12947487,
+      "outputTokens": 55134,
+      "turns": 92,
+      "source": "transcript",
+      "session": "5e4ba0dc-705c-43eb-b4b3-d9a7d8ca758e",
+      "seconds": 2712
+    }
+  },
+  "tasksDone": [
+    "t1",
+    "t2",
+    "t3",
+    "t4"
+  ],
+  "startedAt": "2026-09-06T12:11:50.275Z",
+  "gateStage": null,
+  "verifyRounds": 1,
+  "fixRounds": 1
+}

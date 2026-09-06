@@ -309,17 +309,13 @@ ion-searchbar.pq-search .searchbar-input {
   font-size: var(--theme-font-size-sm);
   color: var(--ds-text-secondary);
 }
-/* The names wrap; `Clear` never does. The strip carries a chip and a run of
-   plain text at different baselines, so the run is centred against the chip
-   rather than left to sit on the text baseline, and it wraps to a second line
-   at 375 instead of squeezing the exit. */
-.pq-active__names {
-  display: flex;
-  align-items: center;
-  gap: var(--theme-spacing-xs);
-  flex-wrap: wrap;
-  min-width: 0;
-}
+/* The names wrap; `Clear` never does. One run of plain text since the prefilter
+   pill went — an arrival's filter and a hand-ticked one are the same thing and
+   cannot look different — so the run simply wraps to a second and third line at
+   375 instead of squeezing the exit beside it. The flex row this used to be
+   existed to sit the pill and the text on one baseline, and it had exactly one
+   item left. */
+.pq-active__names { min-width: 0; }
 
 /* ── The filter panel, at the desk ──────────────────────────────────────────
  * A RIGHT-HAND SLIDE-OUT. `ion-modal` centres its wrapper in the viewport, so
@@ -389,6 +385,37 @@ ion-modal.pq-sheet--screen::part(content) { box-shadow: none; }
   flex-direction: column;
   gap: var(--theme-spacing-2xs);
   padding: var(--theme-spacing-sm) var(--theme-spacing-md);
+}
+
+/* THE FOOTER SITS AT THE FOOT OF THE PANEL — as the mock draws it, under a
+   hairline, rather than floating halfway up the panel directly beneath the last
+   control. `SidePanel` renders the footer INSIDE `ion-content`, so it followed
+   the list wherever the list ended; with six controls instead of three that
+   became a long way from the bottom edge on a 900px window.
+   SCOPED TO THE DESK PANEL WITH A LIST IN IT, which is the filter and only the
+   filter (`FilterSheet` is the sole `IonList` caller). The other callers'
+   footers are a caption and a confirm button under short content, and pinning
+   those would restyle record screens this feature never touched.
+   THE PHONE SHEET IS DELIBERATELY NOT TOUCHED HERE: its footer is off the
+   bottom of the window for a reason CSS cannot reach — see 05-polish.md. */
+.pq-sheet--side:has(ion-list) ion-content::part(scroll) {
+  display: flex;
+  flex-direction: column;
+}
+.pq-sheet--side:has(ion-list) .pq-sheet__foot {
+  margin-top: auto;
+  /* Opaque and edged: once pinned it can have list under it at other heights. */
+  position: sticky;
+  bottom: 0;
+  background: var(--ds-surface-card);
+  border-top: 1px solid var(--ds-border-subtle);
+}
+/* Left, as the mock draws it at BOTH widths — pure alignment, so unlike the
+   pinning above it costs the phone sheet nothing. Stretched full width the
+   label centres itself, which reads as a dialog's primary action rather than
+   the quiet exit it is. */
+.pq-sheet:has(ion-list) .pq-sheet__foot ion-button {
+  align-self: flex-start;
 }
 
 /* ── Rows: the phone list ───────────────────────────────────────────────────

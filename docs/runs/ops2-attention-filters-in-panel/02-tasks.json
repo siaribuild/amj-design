@@ -1,0 +1,38 @@
+[
+  {
+    "id": "t1",
+    "title": "Merge the four attention predicates into REFINEMENTS and delete the attention axis from the queue model",
+    "files": ["src/ops2/projects/queue.ts", "scripts/tests/ops2-projects.test.mjs"],
+    "tests": ["scripts/tests/ops2-projects.test.mjs"],
+    "done_when": "npm run test:ops2 -- (ops2-projects) is green with REFINEMENTS holding six entries in spec order, QueueQuery.attention/ATTENTION_FILTERS/attentionQuery gone, arrivalQuery+ATTENTION_ARRIVALS exported, emptyStateFor's attention branch removed, and new node tests pinning the labelled zero (criterion 11), the single 'Ready to issue', the source-text symbol purge, and card-equals-panel counts; design 02-design.md section 2 lists every line to touch.",
+    "after": [],
+    "criteria": ["1", "2", "3", "4", "10", "11", "12", "18", "19"]
+  },
+  {
+    "id": "t2",
+    "title": "Point the Attention destination's card counts at ATTENTION_ARRIVALS/arrivalQuery",
+    "files": ["src/ops2/attention/attention.ts", "scripts/tests/ops2-attention.test.mjs"],
+    "tests": ["scripts/tests/ops2-attention.test.mjs"],
+    "done_when": "scripts/tests/ops2-attention.test.mjs is green with its bundle exporting ATTENTION_ARRIVALS/arrivalQuery instead of ATTENTION_FILTERS/attentionQuery and every assertion (counts 1/2/1/2, row order, PF narrowing, href grammar, statusCustomer payload guard) unchanged in substance; do not run typecheck:gate here (ProjectsPage compiles again at t3).",
+    "after": ["t1"],
+    "criteria": ["13", "17", "19"]
+  },
+  {
+    "id": "t3",
+    "title": "Rework ProjectsPage arrival/reset, strip and Clear onto the refinements-only model",
+    "files": ["src/ops2/projects/ProjectsPage.tsx", "src/ops2/styles/projects.css", "scripts/tests/web/ops2-projects.spec.ts"],
+    "tests": ["scripts/tests/web/ops2-projects.spec.ts"],
+    "done_when": "npm run typecheck:gate is clean and scripts/tests/web/ops2-projects.spec.ts is green after: arrivalRef leave-reset replaces the entry-key machinery (measured ionViewWillEnter comments preserved), brand pill and attentionLabel deleted (css 514-521 removed), strip Clear sets EMPTY_QUERY, FilterSheet.tsx untouched; in the spec edit ONLY the existing assertions design section 2 names (lines ~401, ~586-610: refinement count 3 to 6, nth(2) to data-refinement=production, Clear now asserts Needs us pressed and 1 row) and leave the ?attn= arrival/reset/bogus/signed-out tests (lines 128-257) byte-identical and green.",
+    "after": ["t1"],
+    "criteria": ["1", "5", "8", "13", "14", "15", "16", "17", "21"]
+  },
+  {
+    "id": "t4",
+    "title": "Add the three panel-behaviour web tests: tick/untick/compose, the way back after Clear, the labelled zero",
+    "files": ["scripts/tests/web/ops2-projects.spec.ts"],
+    "tests": ["scripts/tests/web/ops2-projects.spec.ts"],
+    "done_when": "Three new tests appended after the filter-panel block (design section 2, 'New tests') pass without touching src: intersection + one-request counter (criteria 5-7, 20), goto ?attn=submissions then Clear then re-tick from the panel shows PA alone again (criterion 9), and Awaiting payment reads exactly 0 under Needs us / 2 under All with an honest empty naming both ticked filters and the chip unmoved (criteria 4, 10-12).",
+    "after": ["t3"],
+    "criteria": ["4", "5", "6", "7", "9", "10", "11", "12", "20"]
+  }
+]
