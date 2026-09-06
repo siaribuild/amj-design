@@ -154,3 +154,28 @@ Still outstanding and NOT fixed: the `security` and `ponytail` reviewers run
 under plan mode, which blocks their writes, so their reports have to be
 recovered by hand from the plans directory every time. That is a standing defect
 in the pipeline, not in this feature.
+
+---
+
+## RESOLVED against production, 2026-09-06
+
+Item 1 above (the money units) is settled by live evidence. Recorded here
+because the guesses were wrong in both directions and the correction cost a
+silent alarm.
+
+| Field | Guess | Truth | How it was settled |
+|---|---|---|---|
+|  | dollars | **CENTS** | Owner read $4.28 on the Cloudflare dashboard; the card showed $428.07. Fixed by dividing by 100. The direction mattered: $4.28 is BELOW the $5 floor, so the hundredfold reading put it far above and the low-credit alarm stayed silent on the day it was due. |
+| gateway  | unknown, left unconverted | **DOLLARS** | Live snapshot returned  against the owner's known $20/month cap. Converting it on the strength of the balance finding would have shown a $0.20 cap and screamed red permanently. |
+| account  | cents (documented) | **CENTS** | The only one Cloudflare documents. |
+| GraphQL  | dollars | **DOLLARS** | $14.74 against the $20 cap, 74% — consistent, and the cap is enforced in the same unit. |
+
+The lesson worth keeping: two money fields in one product carried two different
+units, and only one of them was documented. Nothing here should convert a money
+figure on the strength of a sibling field.
+
+ was abandoned entirely — it answered HTTP
+500 to every request because it proxies Stripe's meter-summary API and inherits
+an alignment rule Cloudflare documents nowhere. Spend now comes from the
+gateway-scoped GraphQL analytics dataset, which is also the unit the cap is
+enforced in.
