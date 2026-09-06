@@ -1036,11 +1036,9 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
       assert.ok(accepted.body.order.id, "re-issuing after a change request still ends in an acceptable order");
     });
 
-    // With the queue consumer at one job at a time (wrangler.jsonc) a scheduled
-    // claim may wait its turn behind a long run: the retry route must not call
-    // that a failure to retry. Only a claim whose queue send failed is
-    // reclaimable, and that one is sent again.
-    await t.test("extraction-retry: a scheduled claim waiting its turn is not retryable; one whose queue send failed is (round fourteen)", async () => {
+    // A fresh scheduled claim is live. A send-failed claim is reclaimable; stale
+    // ordinary-queue claims are covered by the extraction-status watchdog.
+    await t.test("extraction-retry: a fresh scheduled claim is not retryable; one whose queue send failed is", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "queued-wait@example.com");
       await completeAccount(buyer);
@@ -1052,10 +1050,10 @@ test("API edge cases and negative paths", { timeout: 420_000 }, async (t) => {
         `UPDATE project SET ai_generation=1 WHERE id='${pid}';
          INSERT INTO ai_job_claim
            (project_id,source_generation,debounce_token,status,attempts,progress_stage,updated_at)
-         VALUES ('${pid}',1,'waiting','scheduled',0,'queued',datetime('now','-3 minutes'));`,
+         VALUES ('${pid}',1,'waiting','scheduled',0,'queued',datetime('now'));`,
       ], { env: wranglerEnv });
       const waiting = await buyer.request("/api/projects/current/extraction-retry", { method: "POST" });
-      assert.equal(waiting.status, 409, "waiting its turn is not a failure to retry");
+      assert.equal(waiting.status, 409, "fresh queued work is not a failure to retry");
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--command",

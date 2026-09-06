@@ -308,19 +308,18 @@ reported in order once the crops are, as §9 asks; a fifth pass verified it.
   starvation case, which is a policy nobody approved. The limit is the
   isolate's, one isolate serves concurrent requests, and this engine bounds one
   run at 120 MB, so two face-mapped jobs in one isolate at once could exceed
-  128 MB. **Round fourteen, on the reviewer's ruling, took the minimal
-  mitigation**: the queue consumer runs one job at a time (`wrangler.jsonc`,
-  `max_concurrency: 1` for `apertly-ai-jobs`), and under `face_mapped` a job
-  whose queue send fails is not run in the request's lifetime through
-  `waitUntil` as the other modes' are - the claim stays scheduled with its
-  reason: the poll fails it at once for the customer's retry, and the reaper's
-  five-minute scan of scheduled claims redispatches it through the queue
-  regardless. With the consumer at one job at a time a healthy scheduled claim
-  may wait behind a long run, so the poll and the retry no longer call a
-  scheduled claim dead for its age - only for a failed send (tested through the
-  route). The path with no queue binding at all - local development - still
-  runs inline. A Durable Object handing out turns remains
-  the stronger control, if the owner wants one. This engine holds no state
+  128 MB. **Round fifteen isolates that policy**: only
+  `apertly-face-mapped-ai-jobs` has `max_concurrency: 1`; the existing queue
+  keeps its normal autoscaling and its historical stale-message watchdog. If
+  the dedicated queue is unavailable or rejects the send, the existing queue
+  receives an explicitly schedule-only fallback job, preserving a usable quote
+  without running the memory-heavy parser in the request. With no queue binding
+  at all - local development - that schedule-only fallback runs inline. Both
+  `apertly-face-mapped-ai-jobs` and `apertly-face-mapped-ai-jobs-dlq` must exist
+  before deployment. Queue-wait policy reads the deployment's current parser
+  mode rather than storing a mode on each claim; switch modes only after the
+  queue drains, or accept that in-flight claims adopt the new mode's watchdog.
+  This engine holds no state
   across requests. The body is decoded as it streams. **The other modes are unchanged**: `MAX_PDF_BYTES` stays 40 MB,
   their inspection and render caps stay 16 MB, their calls carry none of this
   engine's limits, they read files as they always did and are refused where
@@ -459,21 +458,23 @@ there) and a test naming a phase that does not exist; nothing else.
 
 Round fourteen - the reviewer, over the pushed result - ruled, and it was done,
 each a test first: queue concurrency one and no inline run under `face_mapped`
-(above); the drawing stage's own deadline with a reserve, the schedule fallback
+(superseded by the isolated queue above); the drawing stage's own deadline with a reserve, the schedule fallback
 preserved (above); the progress vocabulary in one shared module
 (`src/data/drawingProgress.ts`), the Worker re-exporting it and the browser
 typing by it, so a rename cannot compile on one side only; and the emitter
 count moved into the test that uses it, out of production. Codex over the
 result found two P1s, both closed: the poll and the retry called a scheduled
-claim dead after forty-five seconds, which with the consumer at one job at a
-time would fail healthy work waiting its turn (above); and the reserve was not
+claim dead after forty-five seconds, which with the then-shared consumer at one
+job at a time would fail healthy work waiting its turn; and the reserve was not
 kept inside a model turn - a call could cross the drawing deadline and start a
 ninety-second repair after it (above). A second pass found two more P1s, both
 closed: the browser's own backstop timed the queue wait and the run on one
-window, so a job that waited its turn behind a long run would be called
-interrupted a minute into its own; the window now starts when the run is
-running (`pollWindowElapsed`, tested) and a queued job is never expired by the
-browser. And a call with no time left was still dispatched, raced against a
+window, so a face-mapped job that waited its turn behind a long run would be
+called interrupted a minute into its own; the window now starts when the run
+is running for that isolated mode (`pollWindowElapsed`, tested), while existing
+modes retain their bounded queued-work watchdog, and a queued face-mapped job is
+never expired by the browser. And a call with no time left was still dispatched,
+raced against a
 zero-wait timer that could not win; nothing is dispatched with no time left
 (tested). Its two P3s: the retry route still aged a scheduled claim - the same
 one clause, fixed; and a skipped or cut-short escalation was silent - it says
@@ -487,8 +488,10 @@ repair lost its reason; both fixed. A fourth pass: the reaper's outcome must
 clear `retry_after` too (the poll fails a send-failed claim only when none is
 set, and a re-scheduled lease carries one) and is guarded by the claim's token
 against a retry that replaced it meanwhile; and a cut-short escalation repair is
-now shown kept through the stage. Done, tested. What the reviewer
-stated as standing, stands: the functional gate has not passed - frames, crops
+now shown kept through the stage. Done, tested. Duplicate queue messages that
+meet a live lease are acknowledged; the lease-expiry path already recovers a
+dead holder, so retries only created queue and dead-letter noise. What the
+reviewer stated as standing, stands: the functional gate has not passed - frames, crops
 and compositions are not reliable - and this engine stays switch-only; the
 append-only bound and the stricter limits are recommended for ratification,
 with the handover to be updated - the owner's edit, not made here.

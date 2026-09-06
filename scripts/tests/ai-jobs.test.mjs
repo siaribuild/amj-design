@@ -4,6 +4,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { unstable_readConfig } from "wrangler";
 import { makeRunDir, projectRoot } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -17,12 +18,15 @@ await build({
         classifyJobException,
         customerSafeJobDiagnostic,
         dispatchAiExtractionJob,
+        consumeAiJobs,
+        sendAiExtractionJob,
         retryCurrentAiExtraction,
         aiJobDeadlineMs,
         setDrawingProgress,
         MAX_PROGRESS_LOG_BYTES,
         MAX_PROGRESS_MESSAGE_CHARS,
         parseDrawingProgressLog,
+        failStalledAiExtraction,
         processAiExtractionJob,
         reapAbandonedAiJobs,
       } from ${p("worker/lib/ai/jobs.ts")};
@@ -44,12 +48,15 @@ const {
   classifyJobException,
   customerSafeJobDiagnostic,
   dispatchAiExtractionJob,
+  consumeAiJobs,
+  sendAiExtractionJob,
   retryCurrentAiExtraction,
   aiJobDeadlineMs,
   setDrawingProgress,
   MAX_PROGRESS_LOG_BYTES,
   MAX_PROGRESS_MESSAGE_CHARS,
   parseDrawingProgressLog,
+  failStalledAiExtraction,
   processAiExtractionJob,
   reapAbandonedAiJobs,
   completeAiRun,
@@ -76,6 +83,18 @@ test("aiJobDeadlineMs: drawing parsers receive 600s while non-drawing modes keep
   assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "face_mapped" }), 600_000);
   assert.equal(aiJobDeadlineMs({ AI_EXTRACTION_MODE: "auto" }), 120_000);
   assert.equal(aiJobDeadlineMs({}), 120_000);
+});
+
+test("face_mapped has its own single-consumer queue without serialising existing AI jobs", async () => {
+  const config = unstable_readConfig({ config: join(projectRoot, "wrangler.jsonc") }, { hideWarnings: true });
+  const producer = (binding) => config.queues.producers.find((item) => item.binding === binding);
+  const consumer = (queue) => config.queues.consumers.find((item) => item.queue === queue);
+
+  assert.equal(producer("FACE_MAPPED_AI_JOBS")?.queue, "apertly-face-mapped-ai-jobs");
+  assert.equal(consumer("apertly-ai-jobs")?.max_concurrency, undefined,
+    "the existing production modes retain the queue's normal autoscaling");
+  assert.equal(consumer("apertly-face-mapped-ai-jobs")?.max_concurrency, 1,
+    "only the memory-heavy face_mapped engine is serialised");
 });
 
 test("setDrawingProgress: writes phase + counts guarded by the exact processing token", async () => {
@@ -264,6 +283,36 @@ test("staff retry is idempotent while the current generation is already queued",
   assert.equal(sends.length, 0);
 });
 
+test("customer retry refuses a healthy claim inside the jobs layer", async () => {
+  const { env, writes, sends } = retryEnv({
+    ai_generation: 17,
+    status_customer: "draft",
+    status: "scheduled",
+    debounce_token: "live-token",
+    scheduled_dead: 0,
+  });
+  await assert.rejects(
+    retryCurrentAiExtraction(env, { waitUntil() {} }, "project-1", { failedOnly: true }),
+    /ai_job_not_retryable/,
+  );
+  assert.equal(writes.length, 0);
+  assert.equal(sends.length, 0);
+});
+
+test("the stalled-job watchdog preserves the existing queue timeout outside face_mapped", async () => {
+  const calls = [];
+  const env = (mode) => ({
+    AI_EXTRACTION_MODE: mode,
+    DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { calls.push({ sql, args }); return { meta: { changes: 0 } }; } }) }) },
+    KV: { delete: async () => {} },
+  });
+  await failStalledAiExtraction(env("agentic_full"), "ordinary");
+  await failStalledAiExtraction(env("face_mapped"), "mapped");
+  assert.match(calls[0].sql, /updated_at < datetime\('now','-45 seconds'\)/);
+  assert.deepEqual(calls[0].args, ["ordinary", "ordinary", 0]);
+  assert.deepEqual(calls[1].args, ["mapped", "mapped", 1], "face_mapped alone may wait behind its single consumer");
+});
+
 test("retry reclaims an expired processing lease instead of reporting dead work as live", async () => {
   const { env, writes, sends } = retryEnv({
     ai_generation: 18,
@@ -281,7 +330,7 @@ test("retry reclaims an expired processing lease instead of reporting dead work 
   assert.equal(sends.length, 1);
 });
 
-test("retry reclaims a scheduled claim that was never dispatched", async () => {
+test("retry reclaims a scheduled claim lost by an existing mode", async () => {
   const { env, writes, sends } = retryEnv({
     ai_generation: 19,
     status_customer: "draft",
@@ -294,9 +343,9 @@ test("retry reclaims a scheduled claim that was never dispatched", async () => {
   assert.equal(result.alreadyQueued, false);
   assert.equal(result.job.generation, 19);
   assert.equal(writes.length, 1);
-  // A scheduled claim is dead only when its queue send failed - not by age,
-  // since with the consumer at one job at a time it may wait behind a long run.
-  assert.match(writes[0].sql, /status='scheduled' AND last_error='queue_send_failed'/);
+  assert.match(writes[0].sql, /updated_at < datetime\('now','-45 seconds'\)/,
+    "the autoscaled queue retains its historical age-based reclaim");
+  assert.match(writes[0].sql, /last_error='queue_send_failed'/);
   assert.equal(sends.length, 1);
 });
 
@@ -401,35 +450,102 @@ test("processAiExtractionJob: an exception out of the pipeline is recorded trans
   assert.ok(statements.some((s) => /UPDATE ai_runs SET status='cancelled'/.test(s.sql)), "the abandoned run row is cancelled");
 });
 
-test("dispatchAiExtractionJob: a queue send that fails is not run inline under face_mapped - the claim stays scheduled for redispatch; the other modes run inline as before", async () => {
-  const inline = [];
-  const make = (mode) => {
-    const writes = [];
-    const env = {
-      AI_EXTRACTION_MODE: mode,
-      KV: { put: async () => {} },
-      AI_JOBS: { send: async () => { throw new Error("queue down"); } },
-      DB: { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { writes.push({ sql, args }); return { meta: { changes: 1 } }; }, first: async () => null }) }) },
-    };
-    const ctx = { waitUntil: (promise) => { inline.push(mode); promise.catch(() => {}); } };
-    return { env, ctx, writes };
+test("dispatchAiExtractionJob: face_mapped is isolated and a failed send falls back to schedule-only on the existing queue", async () => {
+  const ordinary = [];
+  const faceMapped = [];
+  const env = {
+    AI_EXTRACTION_MODE: "face_mapped",
+    KV: { put: async () => {} },
+    AI_JOBS: { send: async (...args) => { ordinary.push(args); } },
+    FACE_MAPPED_AI_JOBS: { send: async (...args) => { faceMapped.push(args); } },
   };
-  // The isolate's memory is the queue's to hand out, one run at a time
-  // (max_concurrency, wrangler.jsonc): nothing runs in this request's lifetime.
-  const faceMapped = make("face_mapped");
-  await dispatchAiExtractionJob(faceMapped.env, faceMapped.ctx, { projectId: "p", generation: 1, debounceToken: "t" });
-  assert.ok(faceMapped.writes.some((w) => /last_error='queue_send_failed'/.test(w.sql)), "the claim records why it waits");
-  assert.deepEqual(inline, []);
-  const other = make("auto_drawings");
-  await dispatchAiExtractionJob(other.env, other.ctx, { projectId: "p", generation: 1, debounceToken: "t" });
-  assert.deepEqual(inline, ["auto_drawings"]);
+  const job = { projectId: "p", generation: 1, debounceToken: "t" };
+  await dispatchAiExtractionJob(env, { waitUntil() {} }, job);
+  assert.deepEqual(faceMapped, [[job, { delaySeconds: 0 }]]);
+  assert.deepEqual(ordinary, []);
+
+  env.FACE_MAPPED_AI_JOBS.send = async () => { throw new Error("face queue down"); };
+  await dispatchAiExtractionJob(env, { waitUntil() {} }, job);
+  assert.equal(ordinary.length, 1);
+  assert.deepEqual(ordinary[0][0], { ...job, drawingFallback: "queue_send_failed" },
+    "the safe queue carries an explicit diagnostic and cannot run drawing enrichment");
+
+  ordinary.length = 0;
+  await dispatchAiExtractionJob({ ...env, AI_EXTRACTION_MODE: "agentic_full" }, { waitUntil() {} }, job);
+  assert.deepEqual(ordinary, [[job, { delaySeconds: 0 }]], "existing modes keep their existing queue");
+});
+
+test("face_mapped queue fallback distinguishes a rejected send from an unavailable binding", async () => {
+  const job = { projectId: "p", generation: 1, debounceToken: "t" };
+  const unavailable = await sendAiExtractionJob({ AI_EXTRACTION_MODE: "face_mapped" }, job);
+  assert.deepEqual(unavailable, {
+    sent: false,
+    attempted: false,
+    job: { ...job, drawingFallback: "queue_unavailable" },
+  });
+
+  const rejected = await sendAiExtractionJob({
+    AI_EXTRACTION_MODE: "face_mapped",
+    FACE_MAPPED_AI_JOBS: { send: async () => { throw new Error("down"); } },
+  }, job);
+  assert.deepEqual(rejected, {
+    sent: false,
+    attempted: true,
+    job: { ...job, drawingFallback: "queue_send_failed" },
+  });
+});
+
+test("dispatchAiExtractionJob: an inline recovery is not exposed as failed before it claims the job", async () => {
+  const writes = [];
+  let inline;
+  const statement = (sql, args = []) => ({
+    bind: (...bound) => statement(sql, bound),
+    first: async () => null,
+    run: async () => { writes.push({ sql, args }); return { meta: { changes: 1 } }; },
+  });
+  const env = {
+    AI_EXTRACTION_MODE: "face_mapped",
+    KV: { put: async () => {} },
+    FACE_MAPPED_AI_JOBS: { send: async () => { throw new Error("face queue down"); } },
+    AI_JOBS: { send: async () => { throw new Error("ordinary queue down"); } },
+    DB: { prepare: (sql) => statement(sql) },
+  };
+  await dispatchAiExtractionJob(env, { waitUntil: (promise) => { inline = promise; } }, {
+    projectId: "p", generation: 1, debounceToken: "t",
+  });
+  await inline;
+  assert.equal(writes.some(({ sql }) => /SET last_error=\?, failure_class=\?/.test(sql)), false,
+    "the poll must not see queue_send_failed while the inline schedule fallback is starting");
+});
+
+test("consumeAiJobs: a duplicate held by a live lease is acknowledged, not retried into the queue", async () => {
+  let acked = 0;
+  let retried = 0;
+  const env = {
+    DB: { prepare: (sql) => ({
+      bind: () => ({
+        first: async () => sql.startsWith("SELECT ai_generation")
+          ? { ai_generation: 1, status_customer: "draft" }
+          : sql.startsWith("SELECT status")
+            ? { status: "processing", attempts: 1, retry_after: null }
+            : null,
+      }),
+    }) },
+  };
+  await consumeAiJobs({ messages: [{
+    body: { projectId: "p", generation: 1, debounceToken: "t" },
+    ack: () => { acked += 1; },
+    retry: () => { retried += 1; },
+  }] }, env);
+  assert.equal(acked, 1);
+  assert.equal(retried, 0);
 });
 
 test("reapAbandonedAiJobs: the claim says what became of a redispatch - sent, it is a healthy scheduled claim again; unsent, it is marked, so nothing looks queued forever", async () => {
   const make = (send) => {
     const writes = [];
     const env = {
-      AI_JOBS: { send },
+      AI_JOBS: { send: async (...args) => { writes.push({ send: args }); return send(...args); } },
       // The reaper's first scan is prepared without a bind: the statement
       // answers bound or not.
       DB: { prepare: (sql) => {
@@ -447,10 +563,12 @@ test("reapAbandonedAiJobs: the claim says what became of a redispatch - sent, it
   // only when none is set, and a re-scheduled lease carries one - and is
   // guarded by the claim's token, so an old cron result cannot overwrite a
   // claim the customer's retry replaced meanwhile.
-  const marker = (writes) => writes.find((w) => /SET last_error=\?, failure_class=\?, retry_after=NULL, updated_at=datetime\('now'\)\s+WHERE project_id=\? AND source_generation=\? AND status='scheduled' AND debounce_token=\?/.test(w.sql));
+  const marker = (writes) => writes.filter((w) => /SET last_error=\?, failure_class=\?, retry_after=NULL, updated_at=datetime\('now'\)\s+WHERE project_id=\? AND source_generation=\? AND status='scheduled' AND debounce_token=\?/.test(w.sql)).at(-1);
   const sent = make(async () => {});
   await reapAbandonedAiJobs(sent.env);
   assert.deepEqual(marker(sent.writes)?.args, [null, null, "p", 3, "t"], "a sent redispatch clears a marker a failed first send left, so the poll does not fail healthy work");
+  assert.ok(sent.writes.indexOf(marker(sent.writes)) < sent.writes.findIndex((entry) => entry.send),
+    "the marker is cleared before publish, so a status poll cannot fail a message already accepted by the queue");
   const unsent = make(async () => { throw new Error("queue down"); });
   await reapAbandonedAiJobs(unsent.env);
   assert.deepEqual(marker(unsent.writes)?.args, ["queue_send_failed", "transient", "p", 3, "t"], "a redispatch that failed to send is marked for the poll and the retry");

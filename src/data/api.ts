@@ -600,6 +600,9 @@ export interface ExtractionRun {
    *  backstop is derived from it rather than guessed, so the two cannot drift
    *  apart — they did once, and a completed run was reported as interrupted. */
   deadlineMs?: number;
+  /** True only for an engine isolated behind a deliberately single-consumer
+   * queue. Existing autoscaled modes keep their bounded queued-work watchdog. */
+  queueMayWait?: boolean;
   /** How many of the project's openings have been read from the drawings, and
    *  how many there are. Present only while a drawing read is running.
    *

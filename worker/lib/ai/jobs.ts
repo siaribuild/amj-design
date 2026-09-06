@@ -9,6 +9,7 @@ export interface AiExtractionJob {
   projectId: string;
   generation: number;
   debounceToken: string;
+  drawingFallback?: "queue_send_failed" | "queue_unavailable";
 }
 
 interface BackgroundContext {
@@ -55,6 +56,10 @@ export function aiJobDeadlineMs(env: Pick<Env, "AI_EXTRACTION_MODE">): number {
   const mode = (env.AI_EXTRACTION_MODE ?? "").trim().toLowerCase();
   return mode === "auto_drawings" || mode === "agentic_full" || mode === "face_mapped"
     ? 600_000 : AI_JOB_DEADLINE_MS;
+}
+
+export function aiQueueMayWait(env: Pick<Env, "AI_EXTRACTION_MODE">): boolean {
+  return drawingParserMode(env) === "face_mapped";
 }
 
 /** Drawing progress, same shape and same token guard as pipeline.ts's own
@@ -258,34 +263,64 @@ export async function dispatchAiExtractionJob(
   // A transient KV failure must not turn an already-committed upload/delete into
   // an HTTP failure (or strand the claim before it reaches the queue).
   await env.KV.put(`aidebounce:${job.projectId}`, job.debounceToken, { expirationTtl: 300 }).catch(() => {});
-  try {
-    if (env.AI_JOBS) {
-      await env.AI_JOBS.send(job, { delaySeconds });
-    } else {
-      ctx.waitUntil((async () => {
-        if (delaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        await processAiExtractionJob(env, job);
-      })());
+  const queued = await sendAiExtractionJob(env, job, delaySeconds);
+  if (queued.sent) return;
+  // The source manifest and claim are durable. Run the schedule-only fallback
+  // inline, but do not mark it send-failed: the status poll would be allowed to
+  // fail that marker before this promise claims the healthy work.
+  ctx.waitUntil((async () => {
+    if (!queued.attempted && delaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+    await processAiExtractionJob(env, queued.job);
+  })().catch(() => {}));
+}
+
+export async function sendAiExtractionJob(
+  env: Env,
+  job: AiExtractionJob,
+  delaySeconds = 0,
+): Promise<{ sent: boolean; attempted: boolean; job: AiExtractionJob }> {
+  const faceMapped = drawingParserMode(env) === "face_mapped" && !job.drawingFallback;
+  const primary = faceMapped ? env.FACE_MAPPED_AI_JOBS : env.AI_JOBS;
+  if (primary) {
+    try {
+      await primary.send(job, { delaySeconds });
+      return { sent: true, attempted: true, job };
+    } catch {
+      // A face-mapped queue failure must not lose the quote. The ordinary queue
+      // receives a schedule-only job, keeping the heavy parser out of this isolate.
     }
-  } catch {
-    // The source manifest and job claim are already durable. Keep the claim
-    // recoverable and run the same idempotent processor in this request lifetime
-    // rather than recording a terminal queue failure.
-    await env.DB.prepare(
-      `UPDATE ai_job_claim
-          SET last_error='queue_send_failed', failure_class='transient',
-              retry_after=NULL, updated_at=datetime('now')
-        WHERE project_id=? AND source_generation=? AND status='scheduled'`,
-    ).bind(job.projectId, job.generation).run().catch(() => {});
-    // Under face_mapped the isolate's memory is the queue's to hand out, one
-    // run at a time (max_concurrency, wrangler.jsonc): nothing runs in this
-    // request's lifetime beside what the queue already runs. The claim stays
-    // scheduled with its reason: the poll fails it at once for the customer's
-    // retry, and the reaper's five-minute scan of scheduled claims
-    // (reapAbandonedAiJobs) redispatches it through the queue regardless.
-    if (drawingParserMode(env) === "face_mapped") return;
-    ctx.waitUntil(processAiExtractionJob(env, job).catch(() => {}));
   }
+  if (faceMapped) {
+    const fallback = {
+      ...job,
+      drawingFallback: primary ? "queue_send_failed" as const : "queue_unavailable" as const,
+    };
+    if (env.AI_JOBS) {
+      try {
+        await env.AI_JOBS.send(fallback, { delaySeconds });
+        return { sent: true, attempted: true, job: fallback };
+      } catch {
+        return { sent: false, attempted: true, job: fallback };
+      }
+    }
+    return { sent: false, attempted: Boolean(primary), job: fallback };
+  }
+  return { sent: false, attempted: Boolean(primary), job };
+}
+
+async function setQueueSendFailure(env: Env, job: AiExtractionJob, failed: boolean): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `UPDATE ai_job_claim
+        SET last_error=?, failure_class=?, retry_after=NULL, updated_at=datetime('now')
+      WHERE project_id=? AND source_generation=? AND status='scheduled' AND debounce_token=?`,
+  ).bind(
+    failed ? "queue_send_failed" : null,
+    failed ? "transient" : null,
+    job.projectId,
+    job.generation,
+    job.debounceToken,
+  ).run().catch(() => null);
+  return Number(result?.meta?.changes ?? 0) === 1;
 }
 
 export async function enqueueAiExtraction(
@@ -335,17 +370,21 @@ export async function retryCurrentAiExtraction(
   env: Env,
   ctx: BackgroundContext,
   projectId: string,
+  options: { failedOnly?: boolean } = {},
 ): Promise<{ job: AiExtractionJob; alreadyQueued: boolean }> {
+  const queueMayWait = aiQueueMayWait(env) ? 1 : 0;
   const current = await env.DB.prepare(
     `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token,
             (j.lease_expires_at IS NOT NULL AND j.lease_expires_at < datetime('now'))
               AS lease_dead,
-            (j.status='scheduled' AND j.last_error='queue_send_failed') AS scheduled_dead
+            (j.status='scheduled' AND j.retry_after IS NULL
+              AND (j.last_error='queue_send_failed'
+                OR (?=0 AND j.updated_at < datetime('now','-45 seconds')))) AS scheduled_dead
        FROM project p
        LEFT JOIN ai_job_claim j
          ON j.project_id=p.id AND j.source_generation=p.ai_generation
       WHERE p.id=?`,
-  ).bind(projectId).first<{
+  ).bind(queueMayWait, projectId).first<{
     ai_generation: number;
     status_customer: string;
     status: string | null;
@@ -355,6 +394,11 @@ export async function retryCurrentAiExtraction(
   }>();
   if (!current) throw new Error("project_not_found");
   if (current.status_customer !== "draft") throw new Error("project_not_mutable");
+
+  const reclaimable = current.status === "failed" ||
+    (current.status === "processing" && !!current.lease_dead) ||
+    (current.status === "scheduled" && !!current.scheduled_dead);
+  if (options.failedOnly && !reclaimable) throw new Error("ai_job_not_retryable");
 
   // A 'processing' row whose lease has expired is not work in flight — it is an
   // isolate that died holding the claim. Reporting it as already queued is why
@@ -376,9 +420,6 @@ export async function retryCurrentAiExtraction(
   // Reclaim both a cleanly failed row and an abandoned one. The abandoned case
   // is the same reset — the previous holder is provably gone — and routing it
   // here rather than to enqueue avoids fighting the claim row that still exists.
-  const reclaimable = current.status === "failed" ||
-    (current.status === "processing" && !!current.lease_dead) ||
-    (current.status === "scheduled" && !!current.scheduled_dead);
   if (reclaimable) {
     const job: AiExtractionJob = {
       projectId,
@@ -397,7 +438,9 @@ export async function retryCurrentAiExtraction(
           AND (status='failed'
                OR (status='processing' AND lease_expires_at IS NOT NULL
                    AND lease_expires_at < datetime('now'))
-               OR (status='scheduled' AND last_error='queue_send_failed'))
+               OR (status='scheduled' AND retry_after IS NULL
+                   AND (last_error='queue_send_failed'
+                     OR (?=0 AND updated_at < datetime('now','-45 seconds')))))
           AND EXISTS (
             SELECT 1 FROM project
              WHERE id=? AND status_customer='draft' AND ai_generation=?
@@ -406,6 +449,7 @@ export async function retryCurrentAiExtraction(
       job.debounceToken,
       projectId,
       job.generation,
+      queueMayWait,
       projectId,
       job.generation,
     ).run();
@@ -502,6 +546,38 @@ async function clearDebounceIfCurrent(env: Env, job: AiExtractionJob): Promise<v
   if (latestToken === job.debounceToken) await env.KV.delete(key).catch(() => {});
 }
 
+/** Fail only work which its configured queue policy says can no longer be live.
+ * face_mapped may wait; existing modes retain their bounded scheduled watchdog. */
+export async function failStalledAiExtraction(env: Env, projectId: string): Promise<boolean> {
+  const queueMayWait = aiQueueMayWait(env) ? 1 : 0;
+  const stalled = await env.DB.prepare(
+    `UPDATE ai_job_claim
+        SET status='failed', attempts=max(attempts,1),
+            last_error='ai_processing_stalled', failure_class='transient',
+            retry_after=NULL, lease_expires_at=NULL, processing_token=NULL,
+            updated_at=datetime('now')
+      WHERE project_id=? AND source_generation=(
+        SELECT ai_generation FROM project WHERE id=?
+      )
+        AND (
+          (status='processing' AND updated_at < datetime('now','-150 seconds'))
+          OR
+          (status='scheduled' AND retry_after IS NULL
+            AND (last_error='queue_send_failed'
+              OR (?=0 AND updated_at < datetime('now','-45 seconds'))))
+        )`,
+  ).bind(projectId, projectId, queueMayWait).run().catch(() => null);
+  if (Number(stalled?.meta?.changes ?? 0) === 0) return false;
+  await env.DB.prepare(
+    `UPDATE ai_runs SET status='cancelled', completed_at=datetime('now')
+      WHERE project_id=? AND source_generation=(
+        SELECT ai_generation FROM project WHERE id=?
+      ) AND status='running'`,
+  ).bind(projectId, projectId).run().catch(() => {});
+  await env.KV.delete(`aidebounce:${projectId}`).catch(() => {});
+  return true;
+}
+
 export async function processAiExtractionJob(
   env: Env,
   job: AiExtractionJob,
@@ -592,6 +668,7 @@ export async function processAiExtractionJob(
       sourceGeneration: job.generation,
       processingToken,
       deadlineAt,
+      drawingFallback: job.drawingFallback,
     });
     const summary = await Promise.race([
       extraction,
@@ -671,13 +748,14 @@ export async function consumeAiJobs(
   for (const message of batch.messages) {
     try {
       const result = await processAiExtractionJob(env, message.body);
-      if (result.state === "deferred" || result.state === "leased") {
+      if (result.state === "deferred") {
         message.retry({
-          delaySeconds: result.retryAfterSeconds ?? (result.state === "leased" ? 310 : 60),
+          delaySeconds: result.retryAfterSeconds ?? 60,
         });
       } else {
-        // Permanent and exhausted failures are durable in D1. Retrying the same
-        // immutable input would only repeat spend, so acknowledge the queue item.
+        // A live lease already owns duplicate work; an expired lease is recovered
+        // by reapAbandonedAiJobs. Permanent/exhausted failures are durable in D1.
+        // None becomes useful by retrying this same queue message.
         message.ack();
       }
     } catch {
@@ -774,20 +852,19 @@ export async function reapAbandonedAiJobs(env: Env): Promise<{ claims: number; r
   }
 
   for (const job of redispatch) {
-    if (!env.AI_JOBS) { await processAiExtractionJob(env, job).catch(() => {}); continue; }
-    // The claim says what became of the send. Sent, it is a healthy scheduled
-    // claim again - a marker left by a failed first send would have the poll
-    // fail it before the consumer reached it. Unsent, it is marked, so the poll
-    // and the retry see it and nothing looks queued forever.
-    // retry_after is cleared with it: the poll fails a send-failed claim only
-    // when none is set, and a re-scheduled lease carries one. The token guard
-    // keeps an old cron result off a claim the customer's retry replaced.
-    const sent = await env.AI_JOBS.send(job).then(() => true, () => false);
-    await env.DB.prepare(
-      `UPDATE ai_job_claim
-          SET last_error=?, failure_class=?, retry_after=NULL, updated_at=datetime('now')
-        WHERE project_id=? AND source_generation=? AND status='scheduled' AND debounce_token=?`,
-    ).bind(sent ? null : "queue_send_failed", sent ? null : "transient", job.projectId, job.generation, job.debounceToken).run().catch(() => {});
+    const hasQueue = drawingParserMode(env) === "face_mapped"
+      ? Boolean(env.FACE_MAPPED_AI_JOBS || env.AI_JOBS)
+      : Boolean(env.AI_JOBS);
+    if (!hasQueue) { await processAiExtractionJob(env, job).catch(() => {}); continue; }
+    // Clear the failed-send marker before publish. Clearing it afterwards left
+    // a window where the status poll could fail a message the queue had accepted.
+    // The token guard also prevents an old cron result touching a customer retry.
+    if (!(await setQueueSendFailure(env, job, false))) continue;
+    const queued = await sendAiExtractionJob(env, job);
+    if (!queued.sent) {
+      if (queued.attempted) await setQueueSendFailure(env, queued.job, true);
+      else await processAiExtractionJob(env, queued.job).catch(() => {});
+    }
   }
   return { claims, runs };
 }

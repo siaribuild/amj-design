@@ -11,7 +11,7 @@ import {
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 import { uuid } from "../lib/util";
-import { aiJobDeadlineMs, customerSafeJobDiagnostic, parseDrawingProgressLog, retryCurrentAiExtraction } from "../lib/ai/jobs";
+import { aiJobDeadlineMs, aiQueueMayWait, customerSafeJobDiagnostic, failStalledAiExtraction, parseDrawingProgressLog, retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { derivedKeys } from "../lib/ai/ingest";
 import { purgeProjectCrops } from "../lib/drawing/crops";
 
@@ -31,21 +31,13 @@ parse.post("/projects/current/extraction-retry", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
-  const retryable = await c.env.DB.prepare(
-    `SELECT 1 AS retryable FROM ai_job_claim j
-      JOIN project p ON p.id=j.project_id AND p.ai_generation=j.source_generation
-      WHERE j.project_id=? AND (
-        j.status='failed'
-        OR (j.status='processing' AND j.lease_expires_at IS NOT NULL
-            AND j.lease_expires_at < datetime('now'))
-        OR (j.status='scheduled' AND j.last_error='queue_send_failed')
-      )`,
-  ).bind(project.id).first<{ retryable: number }>();
-  if (!retryable) return c.json({ error: "not_retryable" }, 409);
   try {
-    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, project.id);
+    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, project.id, { failedOnly: true });
     return c.json({ ok: true, alreadyQueued: queued.alreadyQueued });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === "ai_job_not_retryable") {
+      return c.json({ error: "not_retryable" }, 409);
+    }
     return c.json({ error: "retry_failed" }, 409);
   }
 });
@@ -345,35 +337,9 @@ parse.get("/projects/current/extraction-status", async (c) => {
   // catches an invocation that has recorded no stage or heartbeat for far longer
   // than any healthy run could. During the long concurrent doc-skill phase only
   // the 15s heartbeat renews updated_at, so the window must clear that gap. A
-  // scheduled claim is not stalled by its age: with the queue consumer at one
-  // job at a time (wrangler.jsonc) it may wait behind a long run. Only a claim
-  // whose queue send failed is dead, and it is failed at once so the customer
-  // can retry; the reaper's five-minute scan is the other way back.
-  const stalled = await c.env.DB.prepare(
-    `UPDATE ai_job_claim
-        SET status='failed', attempts=max(attempts,1),
-            last_error='ai_processing_stalled', failure_class='transient',
-            retry_after=NULL, lease_expires_at=NULL, processing_token=NULL,
-            updated_at=datetime('now')
-      WHERE project_id=? AND source_generation=(
-        SELECT ai_generation FROM project WHERE id=?
-      )
-        AND (
-          (status='processing' AND updated_at < datetime('now','-150 seconds'))
-          OR
-          (status='scheduled' AND retry_after IS NULL
-            AND last_error='queue_send_failed')
-        )`,
-  ).bind(project.id, project.id).run().catch(() => null);
-  if (Number(stalled?.meta?.changes ?? 0) > 0) {
-    await c.env.DB.prepare(
-      `UPDATE ai_runs SET status='cancelled', completed_at=datetime('now')
-        WHERE project_id=? AND source_generation=(
-          SELECT ai_generation FROM project WHERE id=?
-        ) AND status='running'`,
-    ).bind(project.id, project.id).run().catch(() => {});
-    await c.env.KV.delete(`aidebounce:${project.id}`).catch(() => {});
-  }
+  // face_mapped alone may wait behind its isolated single consumer. Existing
+  // modes retain their historical queued-work watchdog inside the jobs layer.
+  await failStalledAiExtraction(c.env, project.id);
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
             j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at,
@@ -417,6 +383,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
         // against a 600s auto_drawings lease — and a run that went on to
         // succeed was reported to the customer as interrupted.
         deadlineMs: aiJobDeadlineMs(c.env),
+        queueMayWait: aiQueueMayWait(c.env),
         // The server's clock, so the client can put the server-stamped progress
         // log onto its own clock beside its own stage timings.
         serverNow: Date.now(),

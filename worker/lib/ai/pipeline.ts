@@ -654,7 +654,7 @@ export async function persistDrawingStage(
 export async function runAiExtraction(
   env: Env,
   projectId: string,
-  opts: { sourceGeneration?: number; processingToken?: string; deadlineAt?: number } = {},
+  opts: { sourceGeneration?: number; processingToken?: string; deadlineAt?: number; drawingFallback?: "queue_send_failed" | "queue_unavailable" } = {},
 ): Promise<AiExtractionSummary> {
   const manifest = await env.DB.prepare(
     "SELECT id, checksum, filename FROM file_asset WHERE project_id = ? AND virus_status = 'clean' ORDER BY id",
@@ -671,7 +671,7 @@ export async function runAiExtraction(
     sourceGeneration,
     sourceManifestHash,
   });
-  const warnings: string[] = [];
+  const warnings: string[] = opts.drawingFallback ? [`drawing_enrichment_fallback:${opts.drawingFallback}`] : [];
   const stageFailures: SkillFailureKind[] = [];
 
   // Structured wall-clock telemetry for phases spanning I/O. Synchronous CPU
@@ -874,31 +874,33 @@ export async function runAiExtraction(
   // replace the plan-derived fallback (§3.5).
   let drawingReadings: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["readings"] = [];
   let drawingReport: Awaited<ReturnType<typeof runDrawingEnrichmentStage>>["report"] = null;
-  try {
-    const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
-    const scheduleRows = merged.lines
-      .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
-      .map((l) => ({
-        tag: l.tag,
-        widthMm: l.widthMm,
-        heightMm: l.heightMm,
-        typeText: l.typeText ?? null,
-        commentText: l.notes ?? null,
-        ...drawingContextForOpening(model, l.tag),
-      }));
-    const onProgress = opts.processingToken
-      ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase, message?: string) =>
-          setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase, message)
-      : undefined;
-    const staged = await persistDrawingStage(env, { projectId, run, planPdfDocs, scheduleRows, onProgress, deadlineAt: drawingStageDeadline(opts.deadlineAt), warnings });
-    drawingReadings = staged.readings;
-    drawingReport = staged.report;
-    applyDrawingOrientation(model, drawingReadings);
-  } catch (err) {
-    // The drawings ran out of their time (its own warning, pushed where it was
-    // refused) or failed: either way the schedule carries the run from here,
-    // inside the time the reserve kept for it (contract.ts, round fourteen).
-    if (!(err instanceof DrawingDeadlinePassed)) warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
+  if (!opts.drawingFallback) {
+    try {
+      const planPdfDocs = planDocs.filter((d) => d.kind === "pdf").map((d) => ({ fileId: d.fileId }));
+      const scheduleRows = merged.lines
+        .filter((l): l is typeof l & { tag: string; widthMm: number; heightMm: number } => !!l.tag && l.widthMm != null && l.heightMm != null)
+        .map((l) => ({
+          tag: l.tag,
+          widthMm: l.widthMm,
+          heightMm: l.heightMm,
+          typeText: l.typeText ?? null,
+          commentText: l.notes ?? null,
+          ...drawingContextForOpening(model, l.tag),
+        }));
+      const onProgress = opts.processingToken
+        ? async (done: number, total: number, phase: import("../drawing/contract").DrawingProgressPhase, message?: string) =>
+            setDrawingProgress(env, projectId, sourceGeneration, opts.processingToken!, done, total, phase, message)
+        : undefined;
+      const staged = await persistDrawingStage(env, { projectId, run, planPdfDocs, scheduleRows, onProgress, deadlineAt: drawingStageDeadline(opts.deadlineAt), warnings });
+      drawingReadings = staged.readings;
+      drawingReport = staged.report;
+      applyDrawingOrientation(model, drawingReadings);
+    } catch (err) {
+      // The drawings ran out of their time (its own warning, pushed where it was
+      // refused) or failed: either way the schedule carries the run from here,
+      // inside the time the reserve kept for it (contract.ts, round fourteen).
+      if (!(err instanceof DrawingDeadlinePassed)) warnings.push(`drawing_enrichment_failed:${err instanceof Error ? err.name : "Error"}`);
+    }
   }
 
   const technicalReviewReasons = new Map<string, Set<string>>();

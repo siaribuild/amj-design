@@ -1837,11 +1837,11 @@ test("drawingProgressEnded: leaving drawing work closes its timer even when insp
   assert.equal(M.drawingProgressEnded({ progressStage: "matching_and_pricing", drawingsDone: 0, drawingsTotal: 19 }), true);
 });
 
-test("pollWindowElapsed: the client backstop's clock starts when the run is running, not while it waits its turn in the queue", () => {
-  // With the queue consumer at one job at a time (wrangler.jsonc) a job may
-  // wait as long as another runs; waiting is not stalling, so the window is
-  // the run's, not the wait's.
-  assert.equal(M.pollWindowElapsed({ runningSince: null, now: 10_000_000, windowMs: 660_000 }), false, "queued: never expires");
-  assert.equal(M.pollWindowElapsed({ runningSince: 1_000, now: 1_000 + 660_000 - 1, windowMs: 660_000 }), false);
-  assert.equal(M.pollWindowElapsed({ runningSince: 1_000, now: 1_000 + 660_000, windowMs: 660_000 }), true);
+test("pollWindowElapsed: only face_mapped may wait indefinitely for its isolated consumer", () => {
+  assert.equal(M.pollWindowElapsed({ queuedSince: 1_000, runningSince: null, now: 1_000 + 660_000, windowMs: 660_000, queueMayWait: false }), true,
+    "existing autoscaled modes retain their queue watchdog");
+  assert.equal(M.pollWindowElapsed({ queuedSince: 1_000, runningSince: null, now: 10_000_000, windowMs: 660_000, queueMayWait: true }), false,
+    "face_mapped waiting behind its one consumer is not a stall");
+  assert.equal(M.pollWindowElapsed({ queuedSince: 1_000, runningSince: 2_000, now: 2_000 + 660_000 - 1, windowMs: 660_000, queueMayWait: true }), false);
+  assert.equal(M.pollWindowElapsed({ queuedSince: 1_000, runningSince: 2_000, now: 2_000 + 660_000, windowMs: 660_000, queueMayWait: true }), true);
 });

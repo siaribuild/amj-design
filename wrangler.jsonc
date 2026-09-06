@@ -94,19 +94,25 @@
   "ai": { "binding": "AI" },
   "queues": {
     "producers": [
-      { "binding": "AI_JOBS", "queue": "apertly-ai-jobs" }
+      { "binding": "AI_JOBS", "queue": "apertly-ai-jobs" },
+      { "binding": "FACE_MAPPED_AI_JOBS", "queue": "apertly-face-mapped-ai-jobs" }
     ],
     "consumers": [
       {
         "queue": "apertly-ai-jobs",
         "max_batch_size": 1,
-        // One job at a time: the face-mapped drawing engine bounds one run at
-        // ~120 MB of the isolate's 128 MB (worker/lib/drawing/contract.ts), and
-        // the limit is the isolate's, not the invocation's.
-        "max_concurrency": 1,
         "max_batch_timeout": 5,
         "max_retries": 3,
         "dead_letter_queue": "apertly-ai-jobs-dlq"
+      },
+      {
+        "queue": "apertly-face-mapped-ai-jobs",
+        "max_batch_size": 1,
+        // One face-mapped job at a time: its ~120 MB bound is isolate-wide.
+        "max_concurrency": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "apertly-face-mapped-ai-jobs-dlq"
       }
     ]
   },
@@ -143,6 +149,7 @@
     // agent runs. It starts with the free deterministic PDF harvest, then uses
     // bounded whole-set model turns. This is the production default; deploy with
     // auto_drawings or auto explicitly when the fallback path is required.
+    // 'face_mapped': the switch-only face/order engine on its isolated queue.
     // 'manual': emergency kill-switch, ops-triggered only, unchanged.
     "AI_EXTRACTION_MODE": "agentic_full",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist

@@ -164,6 +164,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // auto_drawings lease) and a completed run was shown as interrupted.
       assert.equal(typeof withCounts.body.run.deadlineMs, "number");
       assert.ok(withCounts.body.run.deadlineMs >= 120_000);
+      assert.equal(withCounts.body.run.queueMayWait, false,
+        "the autoscaled production queue keeps its historical bounded wait");
       // The subphase explains the long stretch the opening counter cannot move
       // through — page-wide preparation is real work, not a stall.
       assert.equal(withCounts.body.run.drawingsPhase, "opening_read");
@@ -193,11 +195,10 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       await sql(`DELETE FROM ai_job_claim WHERE project_id='${pid}'`);
     });
 
-    // With the queue consumer at one job at a time (wrangler.jsonc), a healthy
-    // scheduled claim may wait behind a long face-mapped run; the poll must not
-    // fail it for its age. Only a claim whose queue send failed is dead, and
-    // that one is failed at once so the customer can retry.
-    await t.test("extraction-status: a healthy scheduled claim is not failed for waiting; a send-failed one is failed at once (round fourteen)", async () => {
+    // Existing modes use the autoscaled queue and retain the historical bounded
+    // watchdog. face_mapped reports queueMayWait because only its own queue is
+    // deliberately single-consumer.
+    await t.test("extraction-status: the ordinary queue retains its age watchdog; a send-failed claim fails at once", async () => {
       const s = new Session(baseUrl);
       const created = await requestJson(s, "/api/projects/current/lines", {
         method: "PUT",
@@ -215,9 +216,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
          VALUES ('${pid}', ${gen}, 'test-token', 'scheduled', 'queued', datetime('now','-3 minutes'))`,
       );
       await requestJson(s, "/api/projects/current/extraction-status");
-      assert.equal((await sql(`SELECT status FROM ai_job_claim WHERE project_id='${pid}'`))[0].status, "scheduled", "waiting is not stalling");
+      assert.equal((await sql(`SELECT status FROM ai_job_claim WHERE project_id='${pid}'`))[0].status, "failed", "a lost message on the autoscaled queue is bounded");
 
-      await sql(`UPDATE ai_job_claim SET last_error='queue_send_failed', failure_class='transient' WHERE project_id='${pid}'`);
+      await sql(`UPDATE ai_job_claim SET status='scheduled', updated_at=datetime('now'), last_error='queue_send_failed', failure_class='transient' WHERE project_id='${pid}'`);
       const failed = await requestJson(s, "/api/projects/current/extraction-status");
       assert.equal((await sql(`SELECT status FROM ai_job_claim WHERE project_id='${pid}'`))[0].status, "failed", "a send that failed is dead at once");
       assert.equal(failed.body.run.diagnostic?.retryable, true);

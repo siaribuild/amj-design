@@ -42,7 +42,10 @@ export interface Env {
   AI?: unknown;
   /** Durable registered-user AI extraction jobs. Anonymous requests never write
    * to this queue. Optional only for local tests/development. */
-  AI_JOBS?: Queue<{ projectId: string; generation: number; debounceToken: string }>;
+  AI_JOBS?: Queue<{ projectId: string; generation: number; debounceToken: string; drawingFallback?: "queue_send_failed" | "queue_unavailable" }>;
+  /** The memory-heavy face-mapped parser is isolated from the production queue
+   * so its single-consumer limit cannot serialise the existing engines. */
+  FACE_MAPPED_AI_JOBS?: Queue<{ projectId: string; generation: number; debounceToken: string; drawingFallback?: "queue_send_failed" | "queue_unavailable" }>;
   /** Extraction engine selector: 'deterministic' (default/on-stack), 'ai'
    *  (force Workers AI), or 'auto' (deterministic, escalate to AI when weak). */
   PARSE_ENGINE?: string;
@@ -79,7 +82,8 @@ export interface Env {
    *  (02-design-v2.md §4).
    *  'agentic_full': 'auto' plus the parallel full-document drawing agent;
    *  it starts from the free deterministic PDF harvest and reasons across the
-   *  opening set in bounded turns. 'manual': ops-triggered only (tests, or an
+   *  opening set in bounded turns. 'face_mapped': the switch-only face/order
+   *  engine on its isolated queue. 'manual': ops-triggered only (tests, or an
    *  emergency spend kill-switch), unchanged. */
   AI_EXTRACTION_MODE?: string;
   /** 'on' restores the stage replay archive. Anything else (the default) forces
