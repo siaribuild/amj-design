@@ -1,0 +1,246 @@
+{
+  "slug": "ops2-attention",
+  "tier": "full",
+  "base": "c796e0a0823fc8212e1e073e0959d504fd7bcc80",
+  "branch": "apertly-main",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 125312,
+      "outputTokens": 6361,
+      "turns": 3,
+      "source": "transcript",
+      "session": "fbedcb29-f8b3-4fd7-a959-9225f3da82b1",
+      "seconds": 92
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 1269502,
+      "outputTokens": 28193,
+      "turns": 22,
+      "source": "transcript",
+      "session": "dd80feec-0f3b-4bb5-a676-900c9c425864",
+      "seconds": 626
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 1923569,
+      "outputTokens": 56115,
+      "turns": 20,
+      "source": "transcript",
+      "session": "c79f5cbf-e94e-4590-8133-1ff6a9b1b75f",
+      "seconds": 806
+    },
+    "build-T1": {
+      "code": 0,
+      "contextTokens": 1661568,
+      "outputTokens": 7400,
+      "turns": 23,
+      "source": "transcript",
+      "session": "3337c3d4-57d7-4292-a05a-e5cc1ead4d8f",
+      "seconds": 330
+    },
+    "build-T2": {
+      "code": 0,
+      "contextTokens": 3591950,
+      "outputTokens": 20583,
+      "turns": 46,
+      "source": "transcript",
+      "session": "b2357b99-800e-42c8-9aaf-ebb1ddc06d33",
+      "seconds": 744
+    },
+    "build-T3": {
+      "code": 0,
+      "contextTokens": 3739809,
+      "outputTokens": 25768,
+      "turns": 48,
+      "source": "transcript",
+      "session": "abcf2bcd-35af-412e-a124-939f59a77981",
+      "seconds": 1388
+    },
+    "build-T4": {
+      "code": 0,
+      "contextTokens": 1539673,
+      "outputTokens": 5777,
+      "turns": 21,
+      "source": "transcript",
+      "session": "abc0d491-ef47-4d2e-8279-07555a3fa5c9",
+      "seconds": 293
+    },
+    "build-T5": {
+      "code": 0,
+      "contextTokens": 2381823,
+      "outputTokens": 15748,
+      "turns": 30,
+      "source": "transcript",
+      "session": "01f28db9-baa7-4867-a013-d4e119444779",
+      "seconds": 873
+    },
+    "build-T6": {
+      "code": 0,
+      "contextTokens": 1653499,
+      "outputTokens": 5450,
+      "turns": 24,
+      "source": "transcript",
+      "session": "ad21ce4c-1134-4904-b486-ab95bf961571",
+      "seconds": 610
+    },
+    "build-T7": {
+      "code": 0,
+      "contextTokens": 6925833,
+      "outputTokens": 73739,
+      "turns": 91,
+      "source": "transcript",
+      "session": "7e28fc59-aeea-4901-ac69-6fb613cb1b50",
+      "seconds": 3069
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 5872424,
+      "outputTokens": 24546,
+      "turns": 48,
+      "source": "transcript",
+      "session": "edfdd916-5a0d-4220-a75a-ec1548e565e3",
+      "seconds": 964
+    },
+    "fix-0": {
+      "code": 0,
+      "contextTokens": 2892901,
+      "outputTokens": 10917,
+      "turns": 39,
+      "source": "transcript",
+      "session": "0d84851e-c58c-4950-8f17-c1dde9cfa205",
+      "seconds": 457
+    },
+    "fix-1": {
+      "code": 0,
+      "contextTokens": 2219597,
+      "outputTokens": 8180,
+      "turns": 30,
+      "source": "transcript",
+      "session": "1eb03814-de51-472c-9c72-eb7d0e057d79",
+      "seconds": 457
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 2016726,
+      "outputTokens": 23477,
+      "turns": 20,
+      "source": "transcript",
+      "session": "e708e0e8-2c22-4c35-9556-46dab25a2d37",
+      "seconds": 1176
+    },
+    "fix-2": {
+      "code": 0,
+      "contextTokens": 2019062,
+      "outputTokens": 6488,
+      "turns": 27,
+      "source": "transcript",
+      "session": "107608d5-c45d-417a-8b83-ff4bcd4a5e1b",
+      "seconds": 528
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 182486,
+      "outputTokens": 3504,
+      "turns": 4,
+      "source": "transcript",
+      "session": "2efe4fe4-d39e-400f-8c2d-0db9bbd65602",
+      "seconds": 86
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 582903,
+      "outputTokens": 4631,
+      "turns": 7,
+      "source": "transcript",
+      "session": "807610c3-4240-424c-aab7-46a1190e714a",
+      "seconds": 110
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 569842,
+      "outputTokens": 4668,
+      "turns": 7,
+      "source": "transcript",
+      "session": "3fa0ab10-c4e7-460c-a2d1-8d984c1029b3",
+      "seconds": 116
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "fix-3": {
+      "code": 0,
+      "contextTokens": 5167292,
+      "outputTokens": 21131,
+      "turns": 57,
+      "source": "transcript",
+      "session": "f2e09093-315b-41e0-9388-c71b7a78f28f",
+      "seconds": 618
+    },
+    "fix-4": {
+      "code": 0,
+      "contextTokens": 3023355,
+      "outputTokens": 12590,
+      "turns": 37,
+      "source": "transcript",
+      "session": "e6dfc029-bacc-454d-a657-7566a02d3383",
+      "seconds": 584
+    },
+    "fix-5": {
+      "code": 0,
+      "contextTokens": 6049795,
+      "outputTokens": 23901,
+      "turns": 63,
+      "source": "transcript",
+      "session": "bc4ae826-9ee3-4c54-9b6c-85b3650cea26",
+      "seconds": 1014
+    },
+    "fix-6": {
+      "code": 0,
+      "contextTokens": 6242062,
+      "outputTokens": 30887,
+      "turns": 50,
+      "source": "transcript",
+      "session": "7fcbfe6e-216d-4d19-ae20-471355f3427e",
+      "seconds": 1672
+    }
+  },
+  "tasksDone": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7"
+  ],
+  "startedAt": "2026-09-03T04:05:58.330Z",
+  "fixRounds": 2,
+  "verifyRounds": 0
+}

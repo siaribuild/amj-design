@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import {
-  Session, completeAccount, freePort, login, makeRunDir, removeRunDir, requestJson,
-  run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
+  Session, assertNoCounts, completeAccount, freePort, login, makeRunDir, removeRunDir,
+  requestJson, run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 // 300s, raised from 180s (2026-08-14). This file boots a Worker and a local D1
@@ -71,7 +71,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(health.body.ok, true);
       assert.deepEqual(health.body.bindings, { db: true, files: true, kv: true });
       await requestJson(anonymous, "/api/not-a-route", {}, 404);
-      await requestJson(anonymous, "/api/ops/summary", {}, 403);
+      const anonSummary = await requestJson(anonymous, "/api/ops/summary", {}, 403);
+      assertNoCounts(anonSummary.body);
       await requestJson(anonymous, "/api/orders/o_1", {}, 404);
       await requestJson(anonymous, "/api/auth/verify", { method: "POST", json: { email: "bad", code: "1" } }, 400);
       const neutral = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-00000" } });
@@ -283,6 +284,50 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // remains is the one that always mattered — every line priced and resolved.
       const issued = await requestJson(ops, "/api/ops/projects/p_submitted/issue-quote", { method: "POST", json: {} });
       assert.equal(issued.body.goods, 4550);
+    });
+
+    // D1 (docs/runs/ops2-attention-prefilter/DECISIONS.md): the row DTO was
+    // dropping statusCustomer/orderStage even though the query already selects
+    // both — the attention prefilter's predicates read them off this list.
+    await t.test("GET /api/ops/projects row DTO carries statusCustomer/orderStage; role abuse on projects and summary", async () => {
+      const list = await requestJson(ops, "/api/ops/projects");
+      // Order-INDEPENDENT: the list row and the record endpoint must tell the
+      // same story about the same project at the same moment. A hardcoded
+      // status literal here only holds until a step is inserted above it (this
+      // suite's journey issues p_submitted's quote seven lines up), and it
+      // proves nothing about the DTO beyond self-consistency.
+      let orderless = 0;
+      for (const id of ["p_submitted", "p_order"]) {
+        const row = list.body.projects.find((p) => p.id === id);
+        const record = (await requestJson(ops, `/api/ops/projects/${id}`)).body;
+        assert.equal(row.statusCustomer, record.project.statusCustomer, `${id}: list statusCustomer agrees with the record`);
+        assert.equal(row.orderStage, record.order?.stage ?? null, `${id}: list orderStage agrees with the record`);
+        // No order — null, not a missing key, so a consumer can tell "no order"
+        // from "field missing"; the awaiting-payment predicate is a membership
+        // test on this value.
+        if (!record.order) {
+          orderless += 1;
+          assert.ok(Object.hasOwn(row, "orderStage"), `${id}: orderStage key present, not omitted`);
+          assert.equal(row.orderStage, null);
+        }
+      }
+      assert.ok(orderless >= 1, "at least one order-less project, so the null-vs-missing half actually ran");
+
+      // ── Abuse cases: anonymous, customer, manufacturer partner — 403/401,
+      // no projects array, no summary counts. ──────────────────────────────
+      const anonProjects = await requestJson(anonymous, "/api/ops/projects", {}, 403);
+      assert.equal(anonProjects.body.projects, undefined);
+      const custProjects = await requestJson(customer, "/api/ops/projects", {}, 403);
+      assert.equal(custProjects.body.projects, undefined);
+      const custSummary = await requestJson(customer, "/api/ops/summary", {}, 403);
+      assertNoCounts(custSummary.body);
+
+      const partner = new Session(baseUrl);
+      await login(partner, "/api/ops/auth", "partner-t1@partner.example");
+      const partnerProjects = await requestJson(partner, "/api/ops/projects", {}, 403);
+      assert.equal(partnerProjects.body.projects, undefined);
+      const partnerSummary = await requestJson(partner, "/api/ops/summary", {}, 403);
+      assertNoCounts(partnerSummary.body);
     });
 
     const sarah = new Session(baseUrl);
@@ -1761,7 +1806,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // same, because losing candidates are a consultation surface, not an
       // account's data (D15). Their prices expose the rate card's shape.
       await requestJson(customer, "/api/ops/projects/p_1/estimate", { method: "POST", json: {} }, 403);
-      await requestJson(customer, "/api/ops/summary", {}, 403);
+      const custSummary = await requestJson(customer, "/api/ops/summary", {}, 403);
+      assert.equal(custSummary.body.submissions, undefined, "denial body carries no counts");
       await requestJson(anonymous, "/api/ops/lines/ql_e/configurations", {}, 403);
       await requestJson(customer, "/api/ops/lines/ql_e/configurations", {}, 403);
 

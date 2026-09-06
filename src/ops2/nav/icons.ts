@@ -1,6 +1,6 @@
 import {
   alertCircleOutline, layersOutline, cubeOutline, pricetagsOutline,
-  peopleOutline, folderOpenOutline, documentTextOutline, settingsOutline,
+  peopleOutline, chatbubblesOutline, folderOpenOutline, documentTextOutline, settingsOutline,
 } from "ionicons/icons";
 import type { DestinationId } from "./destinations";
 
@@ -25,6 +25,7 @@ export const DESTINATION_ICON: Record<DestinationId, string> = {
   products: cubeOutline,
   pricing: pricetagsOutline,
   customers: peopleOutline,
+  enquiries: chatbubblesOutline,
   files: folderOpenOutline,
   audit: documentTextOutline,
   settings: settingsOutline,

@@ -1,0 +1,200 @@
+{
+  "slug": "ops2-attention-prefilter",
+  "tier": "full",
+  "base": "4a1acc69",
+  "branch": "feat/ops2-attention-prefilter",
+  "ui": true,
+  "stages": {
+    "spec": {
+      "code": 0,
+      "contextTokens": 121503,
+      "outputTokens": 6099,
+      "turns": 3,
+      "source": "transcript",
+      "session": "af524c75-58ed-4b3e-a9d0-6b5f924c56b2",
+      "seconds": 99
+    },
+    "design": {
+      "code": 0,
+      "contextTokens": 2281855,
+      "outputTokens": 50400,
+      "turns": 23,
+      "source": "transcript",
+      "session": "6da83405-4bb4-4150-b5c9-0d3acea6dc92",
+      "seconds": 738
+    },
+    "ux": {
+      "code": 0,
+      "contextTokens": 5526868,
+      "outputTokens": 48187,
+      "turns": 37,
+      "source": "transcript",
+      "session": "c6d1551c-30a8-4b90-bdda-bbb2b6ee0a50",
+      "seconds": 614
+    },
+    "build-t1": {
+      "code": 0,
+      "contextTokens": 1378656,
+      "outputTokens": 7033,
+      "turns": 19,
+      "source": "transcript",
+      "session": "27c79efd-778b-4fca-9179-b182853ada1d",
+      "seconds": 544
+    },
+    "build-t2": {
+      "code": 0,
+      "contextTokens": 4902279,
+      "outputTokens": 26207,
+      "turns": 48,
+      "source": "transcript",
+      "session": "ccc96a3d-adf6-4fa8-9735-8e6b8831c015",
+      "seconds": 589
+    },
+    "build-t3": {
+      "code": 0,
+      "contextTokens": 2656549,
+      "outputTokens": 23287,
+      "turns": 28,
+      "source": "transcript",
+      "session": "d762629a-e589-4cb3-88b6-c80245330743",
+      "seconds": 363
+    },
+    "build-t4": {
+      "code": 0,
+      "contextTokens": 14520358,
+      "outputTokens": 58163,
+      "turns": 100,
+      "source": "transcript",
+      "session": "0ba84637-2872-410c-ae67-ed1d77b2dbb4",
+      "seconds": 1778
+    },
+    "build-t5": {
+      "code": 0,
+      "contextTokens": 13450181,
+      "outputTokens": 103335,
+      "turns": 86,
+      "source": "transcript",
+      "session": "f4e10479-5507-4dc8-ab57-b1010e74906e",
+      "seconds": 2231
+    },
+    "build-t6": {
+      "code": 0,
+      "contextTokens": 801211,
+      "outputTokens": 4061,
+      "turns": 12,
+      "source": "transcript",
+      "session": "0285d8d4-b5b5-4f9a-8273-7a4b42df2178",
+      "seconds": 105
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 3784133,
+      "outputTokens": 15546,
+      "turns": 38,
+      "source": "transcript",
+      "session": "2b4c9ca1-f110-44f4-9a3d-b4ba5e6c2354",
+      "seconds": 548
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 12867015,
+      "outputTokens": 52741,
+      "turns": 102,
+      "source": "transcript",
+      "session": "c8391669-36d4-4aa0-8012-4dec2a7c221c",
+      "seconds": 1793
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 484781,
+      "outputTokens": 3843,
+      "turns": 6,
+      "source": "transcript",
+      "session": "8df9ad40-9a0a-4414-89f6-f4f05f249dfa",
+      "seconds": 164
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 126648,
+      "outputTokens": 3427,
+      "turns": 3,
+      "source": "transcript",
+      "session": "9c279806-cf51-420e-af3d-1a3e90be75d1",
+      "seconds": 112
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 643172,
+      "outputTokens": 6557,
+      "turns": 8,
+      "source": "transcript",
+      "session": "3b75f58a-3bed-42c3-bb06-ff6db903ef13",
+      "seconds": 182
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "accept": {
+      "code": 0,
+      "contextTokens": 702472,
+      "outputTokens": 10786,
+      "turns": 11,
+      "source": "transcript",
+      "session": "cbe1b8ef-4981-4dfc-92a0-1b09815535d9",
+      "seconds": 162
+    },
+    "fix-0": {
+      "code": 0,
+      "contextTokens": 2499098,
+      "outputTokens": 9577,
+      "turns": 30,
+      "source": "transcript",
+      "session": "93ad3720-2775-42a7-abb3-2488326255e0",
+      "seconds": 327
+    },
+    "fix-1": {
+      "code": 0,
+      "contextTokens": 881055,
+      "outputTokens": 5637,
+      "turns": 13,
+      "source": "transcript",
+      "session": "29bbfd30-ec2d-464b-95b0-e30f4a6edff8",
+      "seconds": 521
+    }
+  },
+  "tasksDone": [
+    "t1",
+    "t2",
+    "t3",
+    "t4",
+    "t5",
+    "t6"
+  ],
+  "startedAt": "2026-09-05T17:57:51.899Z",
+  "verifyRounds": 3,
+  "fixRounds": 2
+}

@@ -42,6 +42,7 @@ const row = (over = {}) => ({
   customerName: "A customer", org: null, lineCount: 1, value: 1000,
   valueBasis: "est.", unresolved: 0, issuable: false, waitingOn: "Us", daysInStage: 1,
   phase: "Pricing", phaseIndex: 1, stateLabel: "Pricing", orderNo: null,
+  statusCustomer: "", orderStage: null,
   updatedAt: "2026-08-20 00:00:00", ...over,
 });
 
@@ -158,7 +159,7 @@ test("a label says what it actually counts, or it is the wrong label", () => {
   //    the All chip, and what "active" should mean is a question for the owner.
   const all = M.chipStates([row({})], M.EMPTY_QUERY)[0];
   assert.equal(all.label, "All");
-  assert.deepEqual(all.query, { chip: "all", refinements: [], search: "" });
+  assert.deepEqual(all.query, { chip: "all", refinements: [], search: "", attention: null });
 
   // 3. And the gate's own verdict is what `Ready to issue` reads, now that the
   //    refinement is the only place it appears. It WAS re-derived — ours, in
@@ -291,7 +292,7 @@ test("an empty list says WHY it is empty, because the reasons are opposites", ()
   const nothingForUs = M.emptyStateFor(rows, { ...M.EMPTY_QUERY, chip: "us" });
   assert.equal(nothingForUs.headline, "Nothing is waiting on us.");
   assert.match(nothingForUs.detail, /submissions/i);
-  assert.deepEqual(nothingForUs.clear, { label: "Show all", query: { chip: "all", refinements: [], search: "" } });
+  assert.deepEqual(nothingForUs.clear, { label: "Show all", query: { chip: "all", refinements: [], search: "", attention: null } });
 
   const noMatch = M.emptyStateFor(rows, { ...M.EMPTY_QUERY, search: "zzz" });
   assert.match(noMatch.headline, /zzz/, "the words that found nothing are quoted back");
@@ -411,4 +412,68 @@ test("three quick filters, and the fourth the mock had is now a refinement", () 
     refs({ chip: "all", refinements: ["production"], search: "" }),
     ["nobody"],
   );
+});
+
+test("parseProjectQueue keeps statusCustomer and orderStage, under-claiming when absent", () => {
+  const [withData, absent] = M.parseProjectQueue({
+    projects: [
+      { id: "p1", statusCustomer: "submitted", orderStage: "deposit_invoiced" },
+      { id: "p2" },
+    ],
+  });
+  assert.equal(withData.statusCustomer, "submitted");
+  assert.equal(withData.orderStage, "deposit_invoiced");
+  // Absence under-claims — same rule as `issuable`: a row that did not say
+  // where it stands matches none of the Attention predicates.
+  assert.equal(absent.statusCustomer, "");
+  assert.equal(absent.orderStage, null);
+});
+
+test("the Attention gate's four predicates select exactly what they claim, over design §5's fixture", () => {
+  // PA–PF from docs/runs/ops2-attention-prefilter/02-design.md §5. Counts
+  // 1 / 2 / 1 / 2 — non-empty, pairwise non-identical, and PF proves narrowing.
+  const rows = [
+    row({ ref: "PA", statusCustomer: "submitted", issuable: false, orderStage: null }),
+    row({ ref: "PB", statusCustomer: "under_review", issuable: false, orderStage: null }),
+    row({ ref: "PC", statusCustomer: "under_review", issuable: true, orderStage: null }),
+    row({ ref: "PD", statusCustomer: "accepted", issuable: false, orderStage: "deposit_invoiced" }),
+    row({ ref: "PE", statusCustomer: "accepted", issuable: false, orderStage: "balance_invoiced" }),
+    row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" }),
+  ];
+  const refsFor = (key) => M.selectProjects(rows, M.attentionQuery(key)).map((r) => r.ref);
+
+  assert.deepEqual(refsFor("submissions"), ["PA"]);
+  assert.deepEqual(refsFor("inReview"), ["PB", "PC"]);
+  assert.deepEqual(refsFor("readyToIssue"), ["PC"]);
+  assert.deepEqual(refsFor("awaitingPayment"), ["PD", "PE"]);
+
+  // PF matches none — proves narrowing (criterion 5).
+  for (const key of ["submissions", "inReview", "readyToIssue", "awaitingPayment"]) {
+    assert.ok(!refsFor(key).includes("PF"), `PF must not appear in ${key}`);
+  }
+
+  // readyToIssue is the gate's own verdict, not a re-derivation: it always
+  // equals rows.filter(issuable), whatever else a row claims.
+  assert.deepEqual(
+    refsFor("readyToIssue"),
+    rows.filter((r) => r.issuable).map((r) => r.ref),
+  );
+});
+
+test("emptyStateFor explains an Attention prefilter whose set moved on, with the way back", () => {
+  const rows = [row({ ref: "PF", statusCustomer: "accepted", issuable: false, orderStage: "manufacturing" })];
+  const state = M.emptyStateFor(rows, M.attentionQuery("submissions"));
+  assert.match(state.headline, /New submissions/);
+  assert.equal(state.detail, "This set moved on after Attention counted it.");
+  assert.deepEqual(state.clear, { label: "Back to Needs us", query: M.EMPTY_QUERY });
+});
+
+test("attentionFromSearch validates against the closed key set — bogus, injected or oversized input is null", () => {
+  assert.equal(M.attentionFromSearch("?attn=submissions"), "submissions");
+  assert.equal(M.attentionFromSearch("?attn=readyToIssue"), "readyToIssue");
+  assert.equal(M.attentionFromSearch("?attn=bogus"), null, "not one of ATTENTION_FILTERS' own keys");
+  assert.equal(M.attentionFromSearch("?attn=' OR '1'='1"), null, "SQL fragment");
+  assert.equal(M.attentionFromSearch("?attn=<script>alert(1)</script>"), null, "script payload");
+  assert.equal(M.attentionFromSearch("?attn=" + "a".repeat(10_000)), null, "10kB input");
+  assert.equal(M.attentionFromSearch(""), null, "no param is not an instruction");
 });

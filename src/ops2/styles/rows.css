@@ -57,6 +57,10 @@
   text-align: left;
   font: inherit;
   color: inherit;
+  /* The pressable is an `<a>` when the row navigates (RowList `href`) and a
+     `<button>` when it does not — this and `color: inherit` above are what make
+     the anchor spell the same row as the button. */
+  text-decoration: none;
   cursor: pointer;
 }
 

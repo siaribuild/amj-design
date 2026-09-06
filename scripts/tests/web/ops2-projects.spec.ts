@@ -16,6 +16,7 @@ import { join } from "node:path";
 const OPS_HOST = "http://ops.localhost:8788";
 const OPS2 = `${OPS_HOST}/ops2`;
 const PROJECTS = `${OPS2}/projects`;
+const PRODUCTS = `${OPS2}/products`;
 
 // Sign in as a SEEDED admin, read from seed.sql — the same reasoning as
 // scripts/tests/web/ops.spec.ts, whose comment records why a literal
@@ -122,6 +123,137 @@ test("the queue arrives on what needs us, behind exactly three quick filters", a
   // the record shows the project's title too, so a bare text match finds both.
   await expect(page.getByTestId("queue-row").filter({ hasText: "Fitzroy townhouses" })).toBeVisible();
   await expect(page.getByText("Northcote extension")).toBeVisible();
+});
+
+test("a sibling route's own ?attn= is ignored by a Projects page kept mounted behind it", async ({ page }) => {
+  // Ionic keeps ProjectsPage mounted once visited, so its `?attn=` effect
+  // watches the GLOBAL location — unguarded, it would fire for a search string
+  // that belongs to a different route entirely. Reproduced with real browser
+  // history rather than a page.goto for the second hop: goto reloads the
+  // document and never mounts Projects at all, which is not this bug.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${PRODUCTS}?attn=submissions`);
+  await page.locator('.ops2-nav__item[href$="/projects"]').click();
+  await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
+
+  // Back to the first entry: pathname /products, search ?attn=submissions, with
+  // Projects still mounted (hidden) behind it. A pathname-unguarded effect
+  // reads this search, applies the Attention prefilter and calls
+  // `history.replace(PROJECTS.path)` — yanking the reader off /products.
+  await page.goBack();
+  await expect(page).toHaveURL(`${PRODUCTS}?attn=submissions`);
+});
+
+test("rail navigation and back from a record both reset the attention prefilter", async ({ page }) => {
+  // Design §3.3, contract point 3: re-entering the view without an `attn`
+  // instruction while the prefilter is on resets to `EMPTY_QUERY`.
+  //
+  // STUBBED, like the other tests in "the states the seed cannot produce"
+  // below QUEUE_URL's own declaration (referenced here by closure — the
+  // module finishes loading, defining it, before any test body runs): the
+  // real seed's projects predate `statusCustomer` reaching this endpoint, so
+  // no live row can be relied on to match an Attention predicate.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [fixtureRow({ id: "p_att1", ref: "OF-Q-90", title: "A submission", statusCustomer: "submitted" })] },
+  }));
+
+  await page.goto(`${PROJECTS}?attn=submissions`);
+  await expect(page).toHaveURL(PROJECTS);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("New submissions");
+
+  // Rail away, then rail back — a re-entry that carries no `attn` param.
+  await page.locator('.ops2-nav__item[href$="/products"]').click();
+  await page.locator('.ops2-nav__item[href$="/projects"]').click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+
+  // Re-apply, then leave and return via a record instead of the rail — a
+  // client-side hop, so the page stays mounted (hidden) behind the record,
+  // exactly like the existing "back from a record" tests further down. The
+  // record's own fetch is not stubbed here, so only the URL is asserted —
+  // same reasoning as "coming back to the queue re-reads it" below.
+  await page.goto(`${PROJECTS}?attn=submissions`);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("New submissions");
+  await page.getByTestId("queue-row").filter({ hasText: "A submission" }).click();
+  await expect(page).toHaveURL(/\/ops2\/projects\/p_att1$/);
+  await page.getByRole("button", { name: "Projects" }).click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a valid ?attn= narrows to its set, and the strip's Clear returns to Needs us", async ({ page }) => {
+  // Design §3.3, contract points 1 and 4. `readyToIssue` reads the server's
+  // own `issuable` verdict — one row true, one false — so the narrowing is
+  // real rather than incidental.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_ready", ref: "OF-Q-91", title: "Ready one", issuable: true }),
+      fixtureRow({ id: "p_notready", ref: "OF-Q-92", title: "Not ready one", issuable: false }),
+    ] },
+  }));
+
+  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  // The param is stripped — a one-shot instruction, not a bookmarkable state.
+  await expect(page).toHaveURL(PROJECTS);
+  await expect(page.getByTestId("queue-active-filters")).toContainText("Ready to issue");
+  const rows = page.getByTestId("queue-row");
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByText("Ready one")).toBeVisible();
+  await expect(page.getByText("Not ready one")).toHaveCount(0);
+
+  // Clear restores `EMPTY_QUERY` — `Needs us` lit, bare URL — not merely the
+  // refinements-only clear the same button does with no prefilter on: both
+  // fixture rows default `waitingOn: "Us"`, so both are back.
+  await page.getByTestId("queue-active-filters").getByRole("button", { name: "Clear" }).click();
+  await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+  await expect(page.getByTestId("queue-chip").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(rows).toHaveCount(2);
+  await expect(page).toHaveURL(PROJECTS);
+});
+
+test("?attn=bogus and injection payloads render the default set, nothing echoed", async ({ page }) => {
+  // Design §3.3 point 2 / test plan criteria 12 and 22: an unrecognised value
+  // is `null` before it reaches anything — `EMPTY_QUERY`, no error, no strip,
+  // param stripped the same as a valid one, and the raw string appears nowhere
+  // in the document.
+  await page.route(QUEUE_URL, (route) => route.fulfill({
+    json: { projects: [
+      fixtureRow({ id: "p_one", ref: "OF-Q-93", title: "One" }),
+      fixtureRow({ id: "p_two", ref: "OF-Q-94", title: "Two" }),
+    ] },
+  }));
+
+  const payloads = [
+    "bogus",
+    "'; DROP TABLE project; --",
+    "<script>window.__pwned = 1</script>",
+    "x".repeat(10_000),
+  ];
+  for (const payload of payloads) {
+    await page.goto(`${PROJECTS}?attn=${encodeURIComponent(payload)}`);
+    await expect(page).toHaveURL(PROJECTS);
+    await expect(page.getByTestId("queue-active-filters")).toHaveCount(0);
+    await expect(page.getByTestId("queue-error")).toHaveCount(0);
+    await expect(page.getByTestId("queue-row")).toHaveCount(2);
+    if (payload.length < 200) {
+      await expect(page.locator("body")).not.toContainText(payload);
+    }
+  }
+});
+
+test("signed out, ?attn=readyToIssue hits the same wall as every other visit and shows no rows", async ({ browser }) => {
+  // Test plan criterion 18. A fresh context, none of the file's `beforeEach`
+  // cookies: `GET /api/ops/projects` refuses with 403 regardless of the query
+  // string — the parameter is consumed client-side over rows already fetched,
+  // never sent to the server (design §6) — so the reader lands on the same
+  // refusal surface as an authenticated non-staff account, not a filtered list.
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${PROJECTS}?attn=readyToIssue`);
+  await expect(page.getByTestId("queue-error")).toBeVisible();
+  await expect(page.getByTestId("queue-row")).toHaveCount(0);
+  await context.close();
 });
 
 test("search replaces the title row in place, and the header does not grow", async ({ page }) => {

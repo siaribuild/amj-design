@@ -328,6 +328,7 @@ export async function enqueueAiExtraction(
   ctx: BackgroundContext,
   projectId: string,
   delaySeconds = 10,
+  triggeredBy: "upload" | "ops" = "upload",
 ): Promise<AiExtractionJob> {
   const current = await env.DB.prepare(
     "SELECT ai_generation FROM project WHERE id=? AND status_customer='draft'",
@@ -345,13 +346,13 @@ export async function enqueueAiExtraction(
     ).bind(job.generation, projectId, current.ai_generation),
     env.DB.prepare(
       `INSERT INTO ai_job_claim
-         (project_id, source_generation, debounce_token, status, attempts)
-       SELECT ?, ?, ?, 'scheduled', 0
+         (project_id, source_generation, debounce_token, status, attempts, triggered_by)
+       SELECT ?, ?, ?, 'scheduled', 0, ?
         WHERE EXISTS (
           SELECT 1 FROM project
            WHERE id=? AND status_customer='draft' AND ai_generation=?
         )`,
-    ).bind(projectId, job.generation, job.debounceToken, projectId, job.generation),
+    ).bind(projectId, job.generation, job.debounceToken, triggeredBy, projectId, job.generation),
   ]);
   if (Number(created[0]?.meta?.changes ?? 0) !== 1 ||
       Number(created[1]?.meta?.changes ?? 0) !== 1) {
@@ -370,8 +371,10 @@ export async function retryCurrentAiExtraction(
   env: Env,
   ctx: BackgroundContext,
   projectId: string,
-  options: { failedOnly?: boolean } = {},
+  options: { failedOnly?: boolean } | "upload" | "ops" = {},
 ): Promise<{ job: AiExtractionJob; alreadyQueued: boolean }> {
+  const failedOnly = typeof options === "object" && options.failedOnly;
+  const triggeredBy = typeof options === "string" ? options : "upload";
   const queueMayWait = aiQueueMayWait(env) ? 1 : 0;
   const current = await env.DB.prepare(
     `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token,
@@ -398,7 +401,7 @@ export async function retryCurrentAiExtraction(
   const reclaimable = current.status === "failed" ||
     (current.status === "processing" && !!current.lease_dead) ||
     (current.status === "scheduled" && !!current.scheduled_dead);
-  if (options.failedOnly && !reclaimable) throw new Error("ai_job_not_retryable");
+  if (failedOnly && !reclaimable) throw new Error("ai_job_not_retryable");
 
   // A 'processing' row whose lease has expired is not work in flight — it is an
   // isolate that died holding the claim. Reporting it as already queued is why
@@ -458,7 +461,7 @@ export async function retryCurrentAiExtraction(
     return { job, alreadyQueued: false };
   }
 
-  return { job: await enqueueAiExtraction(env, ctx, projectId, 0), alreadyQueued: false };
+  return { job: await enqueueAiExtraction(env, ctx, projectId, 0, triggeredBy), alreadyQueued: false };
 }
 
 async function recordJobFailure(

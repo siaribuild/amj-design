@@ -7,8 +7,9 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
-  isDevEnv, isEmail, normEmail, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
+  isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, signinChallenge, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { monitoringPayload } from "../lib/monitoring";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
@@ -347,6 +348,24 @@ ops.get("/summary", async (c) => {
   }
 });
 
+// GET /api/ops/monitoring — ai-parse monitoring snapshot + notification count.
+//
+// Gated by resolveStaff, the same guard the other ops routes use: it is the one
+// that knows staff arrive as a Cloudflare Access assertion in production and as
+// a session cookie only where Access is not configured. A cookie-only read here
+// answered 401 to every real staff request while the local suite — which blanks
+// Access — stayed green.
+//
+// One status for every refusal, like its siblings. This briefly split 401 from
+// 403 so the panel could say "sign in" rather than "not for you", but the panel
+// renders one message for both (useMonitoring.ts), and in production Access
+// turns anyone away before the Worker sees them — so the distinction cost a
+// second identity round-trip per denial and was never read.
+ops.get("/monitoring", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  return c.json(await monitoringPayload(c.env));
+});
+
 // GET /api/ops/queues/submissions — projects awaiting triage / review.
 ops.get("/queues/submissions", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
@@ -423,6 +442,11 @@ ops.get("/projects", async (c) => {
       customerName: r.customer_name ?? r.contact_name ?? null,
       customerEmail: r.customer_email ?? r.contact_email ?? null,
       org: r.org_name ?? null,
+      // D1 (docs/runs/ops2-attention-prefilter/DECISIONS.md): the attention
+      // prefilter's predicates read these two off the row list directly — no
+      // order yet must serialise as null, not vanish as a missing key.
+      statusCustomer: r.status_customer,
+      orderStage: r.order_stage ?? null,
       lineCount: Number(r.line_count ?? 0),
       value, valueBasis,
       unresolved: Number(r.unresolved ?? 0),
@@ -2132,7 +2156,7 @@ ops.post("/projects/:id/ai-runs", async (c) => {
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
   try {
-    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, projectId);
+    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, projectId, "ops");
     await logEvent(c.env, {
       actor: staff.id,
       entityType: "project",

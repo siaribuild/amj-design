@@ -15,10 +15,12 @@ import { NAV_DRAWER_ID, SHELL_CONTENT_ID, openNavDrawer } from "./nav/drawer";
 import { NavPanel } from "./nav/NavPanel";
 import { useRailWidth } from "./nav/useRailWidth";
 import { useBasenameCorrectedTabHrefs } from "./nav/tabHrefs";
+import { useNotificationCount } from "./chrome/useNotificationCount";
 import { DestinationRoot } from "./pages/DestinationRoot";
 import { ProjectsPage } from "./projects/ProjectsPage";
 import { ProjectRecordPage } from "./projects/ProjectRecordPage";
 import { LinePage } from "./projects/LinePage";
+import { AttentionPage } from "./attention/AttentionPage";
 
 // `react-router-dom` is v5 here, and that is deliberate: Ionic 8's router peers
 // on React Router 5 while the customer site stays on 7. Never import the bare
@@ -111,6 +113,7 @@ const NESTS_BELOW = new Set<DestinationId>(["projects"]);
  */
 export function Ops2App() {
   const wide = useRailWidth();
+  const notificationCount = useNotificationCount();
 
   // The tab bar's anchors carry the basename; its `href` PROP must not. Both
   // halves of that sentence are load-bearing and the reason is in tabHrefs.ts.
@@ -198,7 +201,9 @@ export function Ops2App() {
                     // three of the four things you would check, all correct.
                     exact={NESTS_BELOW.has(d.id)}
                     render={() => (
-                      d.id === "projects" ? <ProjectsPage /> : <DestinationRoot id={d.id} />
+                      d.id === "projects" ? <ProjectsPage /> :
+                      d.id === "attention" ? <AttentionPage /> :
+                      <DestinationRoot id={d.id} />
                     )}
                   />
                 ))}
@@ -271,8 +276,29 @@ export function Ops2App() {
               {!wide && (
                 <IonTabBar slot="bottom" className="ops2-tabbar">
                   {TAB_DESTINATIONS.map((d) => (
-                    <IonTabButton key={d.id} tab={d.id} href={d.path}>
+                    <IonTabButton
+                      key={d.id}
+                      tab={d.id}
+                      href={d.path}
+                    >
                       <IonIcon icon={DESTINATION_ICON[d.id]} aria-hidden="true" />
+                      {d.id === "attention" && notificationCount > 0 && (
+                        <>
+                          <span className="ops2-tab-badge" aria-hidden="true">{notificationCount}</span>
+                          {/* NAME FROM CONTENT, not aria-label: Ionic owns the
+                              element that carries role="tab" and does not
+                              forward a label prop onto it, so the count has to
+                              be text inside the button. It matters most here —
+                              the desk bell that says the same thing does not
+                              exist at this width (OpsPage, "DESK ONLY"), so
+                              without it a screen reader on a phone hears only
+                              "Attention" on the one surface where Attention is
+                              a permanent tab. */}
+                          <span className="ops2-sr-only">
+                            {`${notificationCount} item${notificationCount === 1 ? "" : "s"} waiting`}
+                          </span>
+                        </>
+                      )}
                       <IonLabel>{d.label}</IonLabel>
                     </IonTabButton>
                   ))}

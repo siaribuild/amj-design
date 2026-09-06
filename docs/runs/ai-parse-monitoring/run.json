@@ -1,7 +1,7 @@
 {
   "slug": "ai-parse-monitoring",
   "tier": "full",
-  "base": "284f89ff",
+  "base": "a76b8119",
   "branch": "feat/ai-parse-monitoring",
   "ui": true,
   "stages": {
@@ -15,15 +15,13 @@
       "seconds": 83
     },
     "design": {
-      "contextTokens": 1730314,
-      "outputTokens": 48238,
-      "turns": 29,
+      "code": 0,
+      "contextTokens": 2127442,
+      "outputTokens": 49919,
+      "turns": 35,
       "source": "transcript",
-      "session": "72a44481-b531-4a62-9d2b-053531fa78d7",
-      "seconds": 1049,
-      "status": "done",
-      "mode": "headless",
-      "code": 0
+      "session": "c2626a07-12f1-4105-a705-a0c375c8afbd",
+      "seconds": 1092
     },
     "ux": {
       "code": 0,
@@ -33,9 +31,176 @@
       "source": "transcript",
       "session": "04c30828-e55f-4ba2-913c-4569d728c12a",
       "seconds": 1019
+    },
+    "build-T1": {
+      "code": 0,
+      "contextTokens": 8497694,
+      "outputTokens": 36624,
+      "turns": 112,
+      "source": "transcript",
+      "session": "8f921a3b-ba14-40fc-b0b5-a3fb88b0cfc5",
+      "seconds": 1422
+    },
+    "build-T2": {
+      "code": 0,
+      "contextTokens": 1923521,
+      "outputTokens": 13809,
+      "turns": 25,
+      "source": "transcript",
+      "session": "e8b31163-e208-44f3-8ebf-7ef8f007d8e4",
+      "seconds": 376
+    },
+    "build-T3": {
+      "code": 0,
+      "contextTokens": 4961502,
+      "outputTokens": 42024,
+      "turns": 64,
+      "source": "transcript",
+      "session": "79e97086-0a5d-4e18-a9dd-1d9bdb6da9d6",
+      "seconds": 1616
+    },
+    "build-T4": {
+      "code": 0,
+      "contextTokens": 3483444,
+      "outputTokens": 14175,
+      "turns": 46,
+      "source": "transcript",
+      "session": "f721daae-649e-4f06-8690-0914a9195170",
+      "seconds": 1506
+    },
+    "build-T5": {
+      "code": 0,
+      "contextTokens": 6670700,
+      "outputTokens": 55523,
+      "turns": 83,
+      "source": "transcript",
+      "session": "470e38fa-5e74-48d2-b610-0f99e7165c58",
+      "seconds": 2954
+    },
+    "build-T6": {
+      "code": 0,
+      "contextTokens": 4711283,
+      "outputTokens": 23859,
+      "turns": 60,
+      "source": "transcript",
+      "session": "bd69ebab-4585-407d-a69a-f6453298a59c",
+      "seconds": 1233
+    },
+    "build": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "rollup": true
+    },
+    "polish": {
+      "code": 0,
+      "contextTokens": 9045014,
+      "outputTokens": 52183,
+      "turns": 68,
+      "source": "transcript",
+      "session": "2dec1f18-bbbb-4b57-92d8-6dbe87510e20",
+      "seconds": 1524
+    },
+    "verify": {
+      "code": 0,
+      "contextTokens": 16468501,
+      "outputTokens": 78445,
+      "turns": 103,
+      "source": "transcript",
+      "session": "754c14b2-69d1-4c6f-aee2-0cb30232bcb5",
+      "seconds": 2417
+    },
+    "review-conformance": {
+      "code": 0,
+      "contextTokens": 235061,
+      "outputTokens": 4396,
+      "turns": 5,
+      "source": "transcript",
+      "session": "768ffe2d-3dae-4a0f-b367-19da52cf3f2e",
+      "seconds": 112
+    },
+    "review-security": {
+      "code": 0,
+      "contextTokens": 755389,
+      "outputTokens": 6185,
+      "turns": 8,
+      "source": "transcript",
+      "session": "9f56c49b-e7d5-41cb-8402-0545103b00f1",
+      "seconds": 145
+    },
+    "review-codex": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review-ponytail": {
+      "code": 0,
+      "contextTokens": 725703,
+      "outputTokens": 6698,
+      "turns": 8,
+      "source": "transcript",
+      "session": "a396c279-9196-4246-9746-0e0fd4ee3992",
+      "seconds": 143
+    },
+    "review-codex-architecture": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "source": "codex"
+    },
+    "review": {
+      "code": 0,
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "rollup": true
+    },
+    "accept": {
+      "code": 0,
+      "contextTokens": 444365,
+      "outputTokens": 12522,
+      "turns": 7,
+      "source": "transcript",
+      "session": "69afe67b-20d4-40c8-bc08-8746b6ba15d2",
+      "seconds": 180
+    },
+    "fix-0": {
+      "code": 0,
+      "contextTokens": 6974468,
+      "outputTokens": 53114,
+      "turns": 92,
+      "source": "transcript",
+      "session": "e356a5d5-a450-4192-937a-38a57654aacf",
+      "seconds": 4047
+    },
+    "fix-1": {
+      "code": 0,
+      "contextTokens": 8104848,
+      "outputTokens": 37358,
+      "turns": 105,
+      "source": "transcript",
+      "session": "247e18a0-e458-4b1d-a749-bdad850dd337",
+      "seconds": 3747
     }
   },
-  "tasksDone": [],
+  "tasksDone": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+  ],
   "startedAt": "2026-09-03T12:19:00.485Z",
-  "gateStage": null
+  "gateStage": null,
+  "verifyRounds": 3,
+  "fixRounds": 0,
+  "notes": [
+    "apertly/main merged in at 89284534 (main had moved 113 commits and the ops2 Attention host page shipped with its own review fixes). base moved to a76b8119 = main tip, so base...HEAD is this feature alone.",
+    "verify/fix counters reset on the owner instruction of 2026-09-06: \"Redo ACs, run proper quality gates, reviews.\" The tree under test is materially different from the one the earlier rounds judged.",
+    "Probity does NOT cover src/ops2/** - probity.config.ts scopes TDD enforcement to worker/**, src/data/** and scripts/tests/**, and exempts UI components deliberately. The ops2 surface in this feature was therefore never gated by the red-test rule."
+  ]
 }

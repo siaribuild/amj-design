@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useHistory, useLocation } from "react-router-dom";
 import {
   IonBadge, IonButton, IonIcon, IonNote, IonSearchbar, IonSkeletonText,
 } from "@ionic/react";
@@ -10,8 +11,8 @@ import { FilterSheet } from "./FilterSheet";
 import { ProjectCards, ProjectTable } from "./rows";
 import { useProjectQueue } from "./useProjectQueue";
 import {
-  EMPTY_QUERY, REFINEMENTS, chipStates, emptyStateFor,
-  refinementStates, selectProjects, type QueueQuery,
+  ATTENTION_FILTERS, EMPTY_QUERY, REFINEMENTS, attentionFromSearch, attentionQuery,
+  chipStates, emptyStateFor, refinementStates, selectProjects, type QueueQuery,
 } from "./queue";
 
 const PROJECTS = destination("projects");
@@ -63,6 +64,85 @@ export function ProjectsPage() {
   const [query, setQuery] = useState<QueueQuery>(EMPTY_QUERY);
   const [searching, setSearching] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const location = useLocation();
+  const history = useHistory();
+
+  // `?attn=` from an Attention row's link is a one-shot instruction, not
+  // initial state: `IonRouterOutlet` keeps this page mounted across
+  // navigation, so a second visit with a stale/absent param must not re-apply
+  // an old prefilter. Applied via effect, then the param is stripped so a
+  // refresh doesn't repeat it.
+  //
+  // GUARDED ON `location.pathname` because that mounted-but-hidden state means
+  // this effect keeps watching the GLOBAL location: without the guard, a
+  // sibling route's own `?attn=` (e.g. `/products?attn=submissions`) applies
+  // the Projects prefilter and `history.replace`s the reader off the page
+  // they asked for.
+  //
+  // AN UNRECOGNISED VALUE (design §3.3 point 2) still strips the param but
+  // resets to `EMPTY_QUERY` rather than leaving the current query alone — the
+  // raw value reaches no DOM sink and is validated into `null` before it does
+  // anything.
+  // WHICH ARRIVAL OWNS THE PREFILTER ON SCREEN — an identity, not a flag.
+  //
+  // A boolean cleared by the next `ionViewWillEnter` was the first attempt (F2)
+  // and it produced F4: on a fast hop the arrival's own enter event never fires
+  // at all, so the flag was still set when the reader came back, the reset
+  // consumed it as though THAT were the arrival, and the prefilter stayed on for
+  // good — the queue opening narrowed on plain rail navigation, which is
+  // exactly what P5/criterion 11 forbids.
+  //
+  // A one-shot whose clearing depends on an event that may never fire is not a
+  // one-shot. So this records WHICH history entry applied the filter, and the
+  // reset asks a question that needs no event to have fired: "am I on a
+  // different entry from the one that set this?" React Router gives every entry
+  // a distinct `key`, and `history.replace` mints a new one — so the value
+  // stored here is the key of the entry the reader is standing on AFTER the
+  // strip, which is the entry the filter belongs to.
+  const attnEntryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (location.pathname !== PROJECTS.path) return;
+    if (!new URLSearchParams(location.search).has("attn")) return;
+    const key = attentionFromSearch(location.search);
+    setQuery(key ? attentionQuery(key) : EMPTY_QUERY);
+    history.replace(PROJECTS.path);
+    // Read AFTER the replace: `history.location.key` is the entry the strip
+    // just created, which is where the reader now stands.
+    attnEntryRef.current = history.location.key ?? null;
+  }, [location.pathname, location.search]);
+
+  // THE RESET LIVES ON THE LOCATION, NOT ON IONIC'S LIFECYCLE.
+  //
+  // MEASURED, after two fixes that failed identically because the premise was
+  // wrong rather than the logic: `ionViewWillEnter` DOES NOT FIRE on a rail
+  // navigation back into this view. Probed in the running console — arrival
+  // logs one `willEnter`, then rail-away and rail-back log nothing at all,
+  // while the prefilter stays on screen. Any reset written inside that hook is
+  // unreachable on the one path that needs it, which is why both a consumed
+  // flag (F2) and an entry-key comparison read from a render-lagged ref (F4)
+  // behaved the same: neither ever ran.
+  //
+  // A location change always happens, because it IS the navigation. So the
+  // reset hangs off the router, and asks the question the lifecycle could not
+  // answer: is the reader standing on a different history entry from the one
+  // that applied this filter? React Router mints a fresh key per entry and
+  // `history.replace` mints one for the strip, so same key means "still the
+  // arrival that set it" and any other key means "they navigated away and
+  // came back".
+  // LEAVING THE ROUTE ENDS THE ARRIVAL, which the entry key alone cannot say.
+  // Opening a record and coming back is a POP to the very entry that applied
+  // the filter, so the keys match and an identity test on its own would keep a
+  // prefilter the reader has visibly navigated away from. Clearing the ref the
+  // moment the pathname is not ours makes "did they leave" a fact rather than
+  // an inference, and the return trip then takes the reset branch below.
+  useEffect(() => {
+    if (location.pathname !== PROJECTS.path) { attnEntryRef.current = null; return; }
+    if (new URLSearchParams(location.search).has("attn")) return;
+    if (attnEntryRef.current && location.key === attnEntryRef.current) return;
+    attnEntryRef.current = null;
+    setQuery((q) => (q.attention ? EMPTY_QUERY : q));
+  }, [location.pathname, location.search, location.key]);
 
   // Derived INSIDE the memo, from `load` rather than from a `rows` computed
   // above it: `load.status === "ready" ? load.rows : []` produces a fresh array
@@ -81,6 +161,12 @@ export function ProjectsPage() {
   const activeRefinements = query.refinements
     .map((key) => REFINEMENTS.find((r) => r.key === key)?.label)
     .filter((label): label is string => !!label);
+
+  // The prefilter's label LEADS the strip (design §3.3 point 4) — the reader
+  // arrived because an Attention row named it, and it stays named until Clear.
+  const attentionLabel = query.attention
+    ? ATTENTION_FILTERS.find((f) => f.key === query.attention)?.label
+    : undefined;
 
   const closeSearch = () => { setSearching(false); setQuery((q) => ({ ...q, search: "" })); };
 
@@ -327,13 +413,33 @@ export function ProjectsPage() {
           {/* WHICH refinements are on, not just how many. A count tells you the
               number of filters and still leaves you guessing which row went
               missing and why. */}
-          {activeRefinements.length > 0 && (
+          {(attentionLabel || activeRefinements.length > 0) && (
             <div className="pq-active" data-testid="queue-active-filters">
-              <span>{activeRefinements.join(" + ")}</span>
+              <span className="pq-active__names">
+                {/* THE PREFILTER IS A CHIP, THE REFINEMENTS ARE TEXT. They are
+                    not the same kind of thing and the strip should not read as
+                    though they are: the prefilter is the set the reader was
+                    sent here for and the only thing on screen explaining a
+                    short list under a lit `All`, while a refinement is
+                    something they turned on themselves and can see in the
+                    funnel. The sage wash is the console's "this is on" colour,
+                    redundant to the name it carries. */}
+                {attentionLabel && (
+                  <span className="pq-flag" data-tone="brand">{attentionLabel}</span>
+                )}
+                {activeRefinements.length > 0 && (
+                  <span>
+                    {attentionLabel ? `+ ${activeRefinements.join(" + ")}` : activeRefinements.join(" + ")}
+                  </span>
+                )}
+              </span>
               <IonButton
                 fill="clear"
                 size="small"
-                onClick={() => setQuery((q) => ({ ...q, refinements: [] }))}
+                // The prefilter's Clear is the one exit back to `Needs us`
+                // (design §3.3 point 4, P6) — refinements and search included.
+                // With no prefilter on, today's refinements-only clear stands.
+                onClick={() => setQuery((q) => (q.attention ? EMPTY_QUERY : { ...q, refinements: [] }))}
               >
                 Clear
               </IonButton>
