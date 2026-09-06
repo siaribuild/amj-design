@@ -9,6 +9,7 @@ import { HOME_PATH } from "../nav/destinations";
 import { AccountButton } from "../nav/AccountButton";
 import { useOps2Account } from "../nav/account";
 import { useRailWidth } from "../nav/useRailWidth";
+import { useNotificationCount } from "./useNotificationCount";
 
 /**
  * Every destination's page frame: one place that says where you are, and the
@@ -96,6 +97,7 @@ export function OpsPage({
   const account = useOps2Account();
   const history = useHistory();
   const router = useIonRouter();
+  const notificationCount = useNotificationCount();
 
   /* A plain <button>, not IonBackButton: `ion-back-button` ignores `text=""`
      and ignores `text` changing after hydration (the handover's table), and
@@ -160,23 +162,27 @@ export function OpsPage({
                   notification surface — a link to a real place rather than a
                   control that opens a list nothing populates.
 
-                  DESK ONLY, now. On the phone Attention is a TAB, permanently
-                  on screen one tap away, so a bell in a band above the work was
-                  a second door to a room already visible from where you stand.
-                  Its unread count belongs on that tab — and cannot be drawn
-                  yet, because what counts as unread is the Attention
-                  destination's own definition and that destination is not
-                  built. A dot invented here would eventually contradict the
-                  page it points at, and a dot that is always on teaches the eye
-                  to stop looking. It goes on the day Attention has a count to
-                  lend it. */}
+                  DESK ONLY. On the phone Attention is a TAB, permanently on
+                  screen one tap away, so a bell in a band above the work was a
+                  second door to a room already visible from where you stand.
+                  Its unread count is the same notificationCount the phone tab
+                  badges — one shared hook, one shared fetch — and it draws
+                  nothing at zero: a dot that is always on teaches the eye to
+                  stop looking. */}
               <button
                 type="button"
                 className="ops2-bell"
-                aria-label="Attention"
+                aria-label={notificationCount > 0
+                  ? `Attention — ${notificationCount} item${notificationCount === 1 ? "" : "s"}`
+                  : "Attention"}
                 onClick={() => history.push(HOME_PATH)}
               >
                 <IonIcon icon={notificationsOutline} aria-hidden="true" />
+                {/* THE COUNT, not a dot: "1" says how much is waiting, and the
+                    button's own label says it in words for a screen reader. */}
+                {notificationCount > 0 && (
+                  <span className="ops2-bell__badge" aria-hidden="true">{notificationCount}</span>
+                )}
               </button>
               <AccountButton account={account} variant="topbar" id="ops2-account-topbar" />
             </IonButtons>

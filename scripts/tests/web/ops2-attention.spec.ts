@@ -498,6 +498,163 @@ test("a signed-in customer (non-staff) loading /attention gets the unauthorised 
   await context.close();
 });
 
+// Monitoring (T5) — second, independent request. SUMMARY_URL stubbed too so
+// the page's primary section resolves and stays out of the way.
+const MONITORING_URL = (url: URL) => url.pathname === "/api/ops/monitoring";
+// Relative to test-run time, not hard-pinned (F2, 06-verify.md): a fixed past
+// timestamp eventually crosses the 30-minute stale threshold on its own and
+// fails on a clock, not on a real regression.
+const FRESH_TAKEN_AT = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+const READY_SNAPSHOT = {
+  takenAt: FRESH_TAKEN_AT,
+  // Balance and budget are independently available: a cap we cannot read must
+  // not blank a credit balance that arrived perfectly well.
+  money: {
+    balance: { available: true, creditBalanceUsd: 12.34 },
+    budget: { available: true, billedSpendUsd: 40, capUsd: 50, capSource: "gateway", windowDays: 30 },
+  },
+  success7d: 20,
+  error7d: 3,
+  // red/floorUsd/ceilingPct: server merges these into the snapshot itself
+  // (worker/lib/monitoring.ts monitoringPayload, commit 5d07807a) — useMonitoring.ts
+  // requires all three on the snapshot object or it falls into "error" status.
+  redBalance: false,
+  redCap: false,
+  floorUsd: 5,
+  days: [
+    { day: "2026-08-30", success: 2, error: 0 },
+    { day: "2026-08-31", success: 3, error: 1 },
+    { day: "2026-09-01", success: 0, error: 0 },
+    { day: "2026-09-02", success: 4, error: 0 },
+    { day: "2026-09-03", success: 3, error: 1 },
+    { day: "2026-09-04", success: 5, error: 0 },
+    { day: "2026-09-05", success: 3, error: 1 },
+  ],
+};
+
+test("monitoring: ready snapshot renders cards, as-at, and 7 chart columns", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: READY_SNAPSHOT, notificationCount: 0 } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("monitoring-credit-balance")).toContainText("$12.34");
+  await expect(page.getByTestId("monitoring-cap-outstanding")).toContainText("$10.00");
+  await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
+  await expect(page.getByTestId("monitoring-error-count")).toContainText("3");
+  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(7);
+  await expect(page.getByText(/As at \d{2}:\d{2}/)).toBeVisible();
+});
+
+test("monitoring: money unavailable shows an unavailable state, not zero, while counts/chart still show D1 numbers", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, money: { balance: { available: false, reason: "token_missing" }, budget: { available: false, reason: "token_missing" } } }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  const credit = page.getByTestId("monitoring-credit-balance");
+  await expect(credit).toContainText("Unavailable. No Cloudflare token configured");
+  await expect(credit).not.toContainText("$0.00");
+  await expect(page.getByTestId("monitoring-success-count")).toContainText("20");
+});
+
+test("monitoring: money unavailable with a missing/placeholder CF_ACCOUNT_ID says so distinctly from a missing token", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, money: { balance: { available: false, reason: "account_id_missing" }, budget: { available: false, reason: "account_id_missing" } } }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  const credit = page.getByTestId("monitoring-credit-balance");
+  await expect(credit).toContainText("Unavailable. No Cloudflare account configured");
+  await expect(credit).not.toContainText("No Cloudflare token configured");
+  await expect(credit).not.toContainText("$0.00");
+});
+
+test("monitoring: an all-zero window renders an explicit empty chart state", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  const zeroDays = READY_SNAPSHOT.days.map((d) => ({ ...d, success: 0, error: 0 }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, success7d: 0, error7d: 0, days: zeroDays }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  // The approved mock (docs/mocks/ai-parse-monitoring.html §3, UX §5) keeps the
+  // seven day labels under the sentence — the window being described stays on
+  // screen — and draws no bars at all. A zero week is an answer, not a gap.
+  await expect(page.getByTestId("monitoring-chart")).toContainText("Nothing parsed in the last 7 days");
+  await expect(page.getByTestId("monitoring-chart").locator(".att-col")).toHaveCount(7);
+  await expect(page.getByTestId("monitoring-chart").locator(".att-bar")).toHaveCount(0);
+});
+
+test("monitoring: no snapshot yet renders the empty state", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 0 } }));
+  await page.goto(ATTENTION);
+
+  await expect(page.getByTestId("monitoring-empty")).toBeVisible();
+  await expect(page.getByTestId("monitoring-credit-balance")).toHaveCount(0);
+});
+
+test("monitoring: a 500 shows the error panel with a retry button", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ status: 500, body: "" }));
+  await page.goto(ATTENTION);
+
+  const errorPanel = page.getByTestId("monitoring-error");
+  await expect(errorPanel).toBeVisible();
+  await expect(errorPanel.getByRole("button", { name: "Try again" })).toBeVisible();
+});
+
+test("monitoring: stale snapshot renders the stale sentence and per-card as-at stamps", async ({ page }) => {
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  const staleTakenAt = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+  await page.route(MONITORING_URL, (route) => route.fulfill({
+    json: { snapshot: { ...READY_SNAPSHOT, takenAt: staleTakenAt }, notificationCount: 0 },
+  }));
+  await page.goto(ATTENTION);
+
+  await expect(page.locator(".att-asat")).toContainText("The 10-minute job may have stopped.");
+  await expect(page.getByTestId("monitoring-credit-balance").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-success-count").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-error-count").locator(".att-card__stamp")).toBeVisible();
+  await expect(page.getByTestId("monitoring-cap-outstanding").locator(".att-card__stamp")).toBeVisible();
+});
+
+const PROJECTS = `${OPS2}/projects`;
+// QUEUE_URL is declared once at the top of this file — the prefilter tests
+// needed it before the monitoring tests did, and two `const`s of the same name
+// is a parse error rather than a redefinition.
+
+test("bell: no badge when notificationCount is 0", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 0 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.goto(PROJECTS);
+
+  const bell = page.locator(".ops2-bell");
+  await expect(bell).toBeVisible();
+  await expect(bell.locator(".ops2-bell__badge")).toHaveCount(0);
+});
+
+test("bell: badge reads 1 when notificationCount is 1", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 1 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.goto(PROJECTS);
+
+  await expect(page.locator(".ops2-bell__badge")).toHaveText("1");
+});
+
+test("bell: clicking it lands on /attention", async ({ page }) => {
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: null, notificationCount: 1 } }));
+  await page.route(QUEUE_URL, (route) => route.fulfill({ json: { projects: [] } }));
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.goto(PROJECTS);
+
+  await page.locator(".ops2-bell").click();
+  await expect(page).toHaveURL(ATTENTION);
+  await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
+});
+
 test("the unauthorised panel has no retry — pressing it would fail the same way (mock §3.5)", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -579,4 +736,24 @@ test("a projects payload with no statusCustomer shows failure, not an empty cons
   await expect(page.getByTestId("attention-error")).toBeVisible();
   await expect(page.getByTestId("attention-empty")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Attention", level: 1 })).toBeVisible();
+});
+
+// TESTER-F6 (round 5) — the desk bell earns its accessible name
+// (`aria-label="Attention — 1 item"`), the phone tab does not: its badge span
+// is aria-hidden, its icon is aria-hidden, and IonLabel carries only
+// "Attention". On the phone the bell does not exist at all, so a screen-reader
+// user on the surface where Attention is a permanent tab gets no signal that
+// anything is waiting.
+test("bubble: the phone attention tab announces its count to assistive tech, as the desk bell does", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(SUMMARY_URL, (route) => route.fulfill({ json: SUMMARY_STUB }));
+  await page.route(MONITORING_URL, (route) => route.fulfill({ json: { snapshot: READY_SNAPSHOT, notificationCount: 1 } }));
+  await page.goto(ATTENTION);
+
+  // The badge is on screen — this is about what is ANNOUNCED, not what is drawn.
+  await expect(page.locator(".ops2-tab-badge")).toHaveText("1");
+  await expect(
+    page.getByRole("tab", { name: /1/ }),
+    "the attention tab's accessible name carries the count",
+  ).toHaveCount(1);
 });

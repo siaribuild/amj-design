@@ -314,3 +314,68 @@ test("rows that carry no statusCustomer are a payload failure, not an empty day"
     "a payload with no statusCustomer anywhere must be refused, not counted as zero",
   );
 });
+
+// AttentionPage.tsx — monitoring section (T5). Design: docs/runs/ai-parse-monitoring/02-design.md.
+// Same source-regex convention as the summary block above: read the .tsx as
+// text, strip comments, assert markers. The monitoring markup must sit AFTER
+// the summary's error block in source order so the existing non-global
+// errorBlockMatch regex above keeps isolating only the summary's error JSX.
+test("AttentionPage: monitoring section — useMonitoring wired, five load states, unavailable money, zero/empty chart (T5)", () => {
+  const page = read("src/ops2/attention/AttentionPage.tsx");
+  const bare = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(bare, /from\s*"\.\/useMonitoring"/, "must import useMonitoring");
+  assert.match(bare, /data-testid="monitoring-skeleton"/);
+  assert.match(bare, /data-testid="monitoring-error"/);
+  assert.match(bare, /data-testid="monitoring-empty"/);
+  assert.match(bare, /data-testid="monitoring-credit-balance"/);
+  assert.match(bare, /data-testid="monitoring-cap-outstanding"/);
+  assert.match(bare, /data-testid="monitoring-success-count"/);
+  assert.match(bare, /data-testid="monitoring-error-count"/);
+  assert.match(bare, /data-testid="monitoring-chart"/);
+  assert.match(bare, /"unavailable"/, "money cards must render an unavailable state, not zero");
+  assert.match(bare, /data-zero/, "zero-day bars must be marked so they render as flat columns");
+  assert.match(bare, /att-chart__empty/, "an all-zero window must render an explicit empty state");
+  assert.match(bare, /As at /, "every card states 'as at HH:MM'");
+  assert.match(bare, /snapshot\.days\.map/, "the chart must iterate the 7-day array");
+
+  const summaryErrorIndex = bare.indexOf('data-testid="attention-error"');
+  const monitoringErrorIndex = bare.indexOf('data-testid="monitoring-error"');
+  assert.ok(summaryErrorIndex !== -1 && monitoringErrorIndex !== -1 && summaryErrorIndex < monitoringErrorIndex,
+    "monitoring markup must come after the summary's error block so the errorBlockMatch regex above stays isolated");
+
+  assert.ok(!/activeOrders/.test(bare), "AttentionPage must never read activeOrders");
+  assert.ok(!/\bcustomers\b/.test(bare), "AttentionPage must never read the raw customers field");
+});
+
+// F3 (docs/runs/ai-parse-monitoring/06-verify.md): the red card must render
+// from the server-evaluated snapshot.red flag, never a client-side
+// recomputation of the raw money numbers against a threshold (UX §4/§6.2).
+test("AttentionPage: each AI-budget card reddens from its OWN precomputed flag, never from raw numbers (F3, UX 6.2)", () => {
+  const page = read("src/ops2/attention/AttentionPage.tsx");
+  const bare = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  const dataStateExprs = [...bare.matchAll(/data-state=\{([^}]*)\}/g)].map((m) => m[1]);
+  // Two cards, two conditions, two server-evaluated flags. One shared boolean
+  // reddened a healthy balance because the cap was high (Codex review), which
+  // UX 6.2 rules out: two conditions red at once render two red cards, so one
+  // condition red must render one.
+  const redExprs = dataStateExprs.filter((expr) => /balanceLow|capOver/.test(expr));
+  assert.ok(
+    redExprs.length >= 2,
+    "each AI-budget card's data-state must be driven by its own red flag",
+  );
+  const bareSource = bare.replace(/\s+/g, " ");
+  assert.match(bareSource, /const balanceLow = snapshot\.redBalance/);
+  assert.match(bareSource, /const capOver = snapshot\.redCap/);
+  for (const expr of redExprs) {
+    assert.ok(
+      !/[<>]/.test(expr),
+      `data-state expression "${expr}" must not compare raw numbers to a threshold — use the server's flag`,
+    );
+  }
+
+  assert.match(bare, /snapshot\.floorUsd/, "the floor shown in red copy must come from the server snapshot");
+  assert.match(bare, /Below the/, "credit-balance red note must state the floor was breached");
+  assert.match(bare, /cap used/, "cap-outstanding red note must keep stating the cap usage");
+});

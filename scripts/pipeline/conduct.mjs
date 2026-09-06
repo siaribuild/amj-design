@@ -1598,26 +1598,31 @@ function decisionsOpen(run) {
  * human decides. That is a CYCLE ceiling, not a token or dollar one - the stage
  * table's "no runaway guard" ruling is about the cost of a running stage, and
  * still stands.
+ *
+ * CYCLE_CAP is 3, not 2, because the stage order needs three: one verify after
+ * the build, one after the fixes that verify itself demands, and one after the
+ * fixes the REVIEW stage demands - and review runs after verify, so with a cap
+ * of 2 its findings could be fixed but never re-verified. ai-parse-monitoring
+ * hit exactly that: the review stage returned two P1s, they were fixed, and
+ * the run had no verify left to prove it, so acceptance rejected on missing
+ * evidence rather than on bad work.
  */
-// 3, not 2, and the reason is the cap's own premise rather than convenience.
+// 3, not 2: the `review` stage runs AFTER `verify`, so at 2 a finding review
+// raises can be fixed and then never re-verified. ai-parse-monitoring hit
+// exactly that — the review stage returned two P1s, they were fixed, and the
+// run had no verify left to prove it, so acceptance rejected on missing
+// evidence rather than on bad work. Raising FIX_CAP alone does not reach it:
+// six fixes against two verifies is the same dead end with more steps.
 //
-// It exists because "more of this verify/fix cycle costs more than the findings
-// it returns". On ops2-attention-prefilter that premise was false: round 1
-// returned two HIGHs (an approved worker change never made; pressing a row not
-// narrowing the list) and round 2 returned another HIGH (a prefilter surviving
-// rail navigation). Every round paid for itself in ship-blocking defects, so
-// the condition the cap watches for — a cycle that has stopped converging —
-// was not present.
-//
-// What forced the change is that the cap and the acceptance gate contradicted
-// each other: acceptance refuses to sign off while the last recorded tester
-// verdict is FAIL, and the cap refuses the tester round that would replace it.
-// Two guardrails deadlocking on a branch whose fixes are independently verified
-// green is not either one doing its job.
+// ops2-attention-prefilter hit the identical wall independently, which is the
+// second data point for the same conclusion: two rounds of findings (three
+// HIGHs between them, every one ship-blocking) and no verify left to record
+// that they were fixed. Acceptance rejected "on evidence, not on behaviour".
 //
 // Wind it back to 2 the moment a run spends three rounds and the third returns
-// nothing new — that IS the non-convergence this is for.
-const CYCLE_CAP = 3
+// nothing new — THAT is the non-convergence this guards against, and neither
+// run showed it.
+export const CYCLE_CAP = 3
 // 6, not 3, and raised deliberately rather than worked around. The cap is a
 // COST guard - "more of this cycle costs more than the findings it returns" -
 // and its escape hatch is "ship it, or fix it by hand". On the ops2-attention
